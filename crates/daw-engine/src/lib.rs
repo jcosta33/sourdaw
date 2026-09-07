@@ -1,4 +1,3 @@
-pub mod audio_bridge;
 pub mod audio_thread;
 pub mod capture;
 pub(crate) mod device;
@@ -9,6 +8,7 @@ pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
 pub mod offline;
+pub mod pdc;
 pub mod plugin_slot;
 pub mod scheduler;
 pub mod timeline;
@@ -20,20 +20,22 @@ use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
 };
+use midi::note_store::{MidiNoteStore, TimedMidiNote};
+use pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
-    graph_progress_channel, transport_position_channel, BuiltinEffectType, GraphCommand,
-    GraphProgressReader, GraphProgressSnapshot, PluginCore, RetiredGraphObjects,
-    TransportPositionReader, TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE,
-    EFFECT_TABLE_CAPACITY,
+    graph_progress_channel, master_meter_channel, transport_position_channel, BuiltinEffectType,
+    GraphCommand, GraphProgressReader, GraphProgressSnapshot, MasterMeterReader,
+    MasterMeterSnapshot, PluginCore, RetiredGraphObjects, TransportPositionReader,
+    TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    ClipPlayback, DeviceParam, DeviceParamTarget, RouteTarget, SendTap, TimelineBus, TimelineClip,
     TimelineRtDiagnosticsReader, TimelineRtDiagnosticsSnapshot, TimelineTrack,
 };
 
@@ -87,7 +89,7 @@ pub struct EngineHandle {
     /// Hands freshly provisioned retirement consumers to the reclaimer thread
     /// when the command channel is reallocated for a large batch.
     retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
-    _audio_thread: AudioThreadHandle,
+    audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     /// How many effect-table slots this handle has sent registrations for and
     /// not yet sent retirements for.
@@ -131,7 +133,7 @@ pub struct EngineHandle {
     /// public [`GraphCommand`] batch registers consumers too. An id joins on a
     /// registration, and leaves on an unregistration or on any command that
     /// finally drops its effect — exactly the set [`final_dropped_effect_id`]
-    /// names, which is `RemovePluginWithBridge` together with the retired
+    /// names, which is `RemovePlugin` together with the retired
     /// track- and bus-device variants, not plugin removals alone. That mirrors
     /// the callback, which prunes the bus inside its own final drop.
     ///
@@ -146,6 +148,7 @@ pub struct EngineHandle {
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
+    master_meter: MasterMeterReader,
     /// Stream errors the engine's output device reported.
     engine_events: Consumer<EngineEvent>,
     /// Stream errors the engine's input device reported.
@@ -153,20 +156,17 @@ pub struct EngineHandle {
     /// Its own ring rather than a shared one: the two backends run their
     /// error callbacks on different threads, and `EngineEvent`'s ring is
     /// SPSC, so one `Producer` cannot serve both sides (see
-    /// `audio_thread::capture_beside`). [`Self::drain_engine_events`] merges
+    /// `audio_thread::PendingCapture`). [`Self::drain_engine_events`] merges
     /// the two into one ordered `Vec`, output first.
     capture_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
-    /// What the render callback last published as the bridge's settled round
-    /// trip, in frames. Written by the audio thread, read here.
-    bridge_round_trip_frames: Arc<AtomicUsize>,
     /// What the capture ring published as its settled latency, in frames, or
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
     /// The kind of the capture-side refusal `capture_side` last stored, or
-    /// zero for none, encoded as `kind as u8 + 1`.
+    /// zero for none, encoded as `kind.to_slot()`.
     ///
     /// A refusal cannot cross the capture ring the way a mid-stream error
     /// does: whichever route produced it — a refused open, or a refused
@@ -177,6 +177,22 @@ pub struct EngineHandle {
     /// [`Self::drain_engine_events`] swaps it back to zero on every drain and
     /// turns a non-zero read into one `EngineEvent::StreamError`.
     capture_refusal: Arc<AtomicU8>,
+    /// Whether the output stream's render callback is still being called,
+    /// as decided by the audio thread's watchdog — see
+    /// `audio_thread::RenderLiveness`. This is the verdict
+    /// [`Self::is_rendering`] reads; a handle existing is not the same
+    /// thing, because a fatal output-stream error leaves this slot filled
+    /// with a handle whose callback stopped.
+    rendering: Arc<AtomicBool>,
+    /// The kind of the last non-xrun error the output stream reported, or
+    /// zero for none, encoded as `kind.to_slot()`.
+    ///
+    /// Detail beside `rendering`, not the verdict itself: it may be `Some`
+    /// while `rendering` is still `true` (a survived `DeviceChanged` reroute,
+    /// or a recovered WASAPI invalidation), and it is never cleared back to
+    /// zero, so [`Self::output_stream_fault`] always reports the newest
+    /// report the stream made. See `audio_thread::new_output_stream_fault_slot`.
+    output_stream_fault: Arc<AtomicU8>,
 }
 
 impl EngineHandle {
@@ -206,6 +222,7 @@ impl EngineHandle {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (master_meter_tx, master_meter_reader) = master_meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let spawned = spawn_audio_thread_with_diagnostics(
@@ -214,44 +231,47 @@ impl EngineHandle {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
+            master_meter_tx,
             engine_event_tx,
-            // The engine opens the default input device when it starts, the
-            // way Logic, Live and Cubase do — not later, when a recorder is
-            // created. The packaged app carries `NSMicrophoneUsageDescription`,
-            // so this is the one moment the OS asks the musician for
-            // microphone access. Handing an event ring over here is the whole
-            // of asking for capture.
+            // Handing an event ring over here is the whole of asking for
+            // capture, and it no longer opens anything: the ends an input
+            // open needs are parked on the owner thread, and the first
+            // consumer to register opens the device (`Self::push`). Starting
+            // the engine therefore touches no input device at all, which is
+            // what keeps a Bluetooth headset on its playback profile until a
+            // musician actually records — the hands-free renegotiation an
+            // input open forces takes the output stream down with it.
             //
             // A refused or absent input never fails engine start — capture is
-            // additive (see `audio_thread::capture_beside`) — so a refusal is
-            // a logged line plus an `Input`-side `EngineEvent`, and the
-            // engine runs without capture. The event does not cross the ring
-            // a mid-stream error would: a refusal can still be discovered
-            // after `open.start` has already handed this producer to a
-            // backend that goes on to drop it, so `capture_side` instead
+            // additive (see `audio_thread::open_pending_capture`) — so a
+            // refusal is a logged line plus an `Input`-side `EngineEvent`,
+            // and the engine runs without capture. The event does not cross
+            // the ring a mid-stream error would: a refusal can still be
+            // discovered after `open.start` has already handed this producer
+            // to a backend that goes on to drop it, so `capture_side` instead
             // stores the refused kind into a slot this handle also carries
             // (`capture_refusal`), and `Self::drain_engine_events` is what
-            // turns that stored kind into the one reported `EngineEvent`. The
-            // open shares the output's startup timeout and its one fallback
-            // attempt (`spawn_with_fallback`, above): an input device whose
-            // open hangs fails the whole engine start exactly as a hung
-            // output would, and there is no in-session engine restart that
-            // could reopen it later. A hung input open strands the owner
-            // thread that already started this output stream — `open.start`
-            // returned before this input open began, so the stream is live,
-            // but the factory building it is now blocked past the point the
-            // startup timeout gives up on it — and the fallback attempt then
-            // opens a second output stream on the same device, on a fresh
-            // owner thread, while the first stays stranded. Both render an
-            // empty graph, so nothing is audible either way, but two output
-            // streams exist on the device for as long as the hang lasts: the
-            // stranded thread's factory call only returns once the input
-            // open resolves, at which point it drops its own stream unheard,
-            // because nothing is still waiting on its readiness. On macOS a
-            // denied microphone permission does not surface as a refusal at
-            // all — CoreAudio opens the stream and delivers silence in place
-            // of real input rather than an error, so a denial reads as
-            // capture that opened but never carries audio.
+            // turns that stored kind into the one reported `EngineEvent`. One
+            // attempt is all any engine makes: a refused open is never
+            // retried by a later registration, exactly as a refusal at start
+            // was never retried in-session.
+            //
+            // The open no longer shares the output's startup timeout, because
+            // it no longer happens while the engine starts: it runs on the
+            // owner thread's command loop instead. A backend that hangs
+            // inside `open_default_input` therefore blocks that loop rather
+            // than engine start — a `Shutdown` queued behind the request
+            // waits until `AUDIO_STREAM_SHUTDOWN_TIMEOUT` gives up on it,
+            // exactly as a stranded factory did. Neither the render callback
+            // nor the liveness verdict is affected: the output stream is
+            // already started, and the liveness verdict is published from
+            // its own thread (`spawn_render_stall_watch`), which stays
+            // outside the owner thread's path and survives a hung open. On
+            // macOS a denied microphone
+            // permission does not surface as a refusal at all — CoreAudio
+            // opens the stream and delivers silence in place of real input
+            // rather than an error, so a denial reads as capture that opened
+            // but never carries audio.
             Some(capture_event_tx),
             force_default_buffer,
         )?;
@@ -259,7 +279,7 @@ impl EngineHandle {
         Ok(Self {
             command_tx: tx,
             retired_adoption_tx: spawned.retired_adoption_tx,
-            _audio_thread: spawned.handle,
+            audio_thread: spawned.handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             effect_registrations: 0,
             // The zero baseline is exact: the diagnostics pair this handle
@@ -271,37 +291,20 @@ impl EngineHandle {
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
+            master_meter: master_meter_reader,
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
-            bridge_round_trip_frames: spawned.bridge_round_trip_frames,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
+            rendering: spawned.liveness.rendering,
+            output_stream_fault: spawned.output_stream_fault,
         })
     }
 
     /// The sample rate the running stream renders at.
     pub const fn sample_rate(&self) -> f32 {
         self.sample_rate
-    }
-
-    /// Frames of latency the worklet↔plugin audio bridge adds, as the render
-    /// callback last measured its own device period.
-    ///
-    /// The bridge's depth is decided by that period and nothing else, so this
-    /// is the only place the number is known; a host compensating a bridged
-    /// plugin adds it to the latency the plugin reports for itself. Seeded from
-    /// the negotiated period until the first callback runs, because a handle is
-    /// usable before the device has called back and a plugin loaded in that
-    /// window would otherwise be compensated at zero for as long as it lives.
-    ///
-    /// Published every callback, but read once — at load — and never revised.
-    /// A device or period change mid-session therefore leaves an already-loaded
-    /// instance compensating the old period. No revision machinery is being
-    /// built for it: jcosta33/sourdaw#2230 replaces the relay with the native
-    /// graph, and the whole round trip this reports goes with it.
-    pub fn bridge_round_trip_frames(&self) -> usize {
-        self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
     /// Frames of latency the capture path is currently adding — the block the
@@ -325,6 +328,49 @@ impl EngineHandle {
     /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
+    /// Whether the output stream's render callback is still being called.
+    ///
+    /// This is the watchdog's verdict (`audio_thread::RenderLiveness`), not
+    /// an inference from the *kind* of error the stream last reported: a
+    /// `DeviceChanged` reroute or a recovered WASAPI invalidation both leave
+    /// this `true`, because the callback kept running through them. `false`
+    /// means no render callback has advanced its counter for the watchdog's
+    /// stall window: nothing pushed onto this engine's command ring will be
+    /// heard until it renders again. This is state, not a drained event, so
+    /// it is a plain `load` — every read after a stall keeps seeing it,
+    /// unlike `drain_engine_events`'s one-shot reports.
+    pub fn is_rendering(&self) -> bool {
+        self.rendering.load(Ordering::Relaxed)
+    }
+
+    /// The kind of the last non-xrun error the output stream reported, if
+    /// any.
+    ///
+    /// Detail beside [`Self::is_rendering`], not a substitute for it: a
+    /// fault can be `Some` while the stream still renders, so a caller that
+    /// wants to know whether the engine hears anything reads
+    /// `is_rendering`, and reads this only to explain a stall it already
+    /// found.
+    pub fn output_stream_fault(&self) -> Option<StreamErrorKind> {
+        StreamErrorKind::from_slot(self.output_stream_fault.load(Ordering::Relaxed))
+    }
+
+    /// Force the render-liveness verdict without a device, for a fixture
+    /// that needs to drive the code that reads [`Self::is_rendering`] and
+    /// [`Self::output_stream_fault`].
+    ///
+    /// `fault` is stored beside the stall rather than implied by it: a
+    /// caller can simulate a stall with no error to report, or attach the
+    /// kind the stream last reported before it stalled.
+    #[cfg(any(test, feature = "command-capture-fixture"))]
+    pub fn mark_render_stalled(&self, fault: Option<StreamErrorKind>) {
+        self.rendering.store(false, Ordering::Relaxed);
+        if let Some(kind) = fault {
+            self.output_stream_fault
+                .store(kind.to_slot(), Ordering::Relaxed);
+        }
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -547,6 +593,20 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
+    /// Read what the engine's master output measured, outside the callback.
+    ///
+    /// Its own channel rather than a field on the transport snapshot, for the
+    /// reason [`MasterMeterSnapshot`] gives: a level makes none of the
+    /// happens-before claims the position's fields make, and pairing it with
+    /// them would say it did.
+    ///
+    /// The peak is already held at the engine, so a poll at UI rate reads the
+    /// loudest thing the device was handed inside the hold window rather than
+    /// whichever callback the poll happened to land after.
+    pub fn master_meter_snapshot(&mut self) -> MasterMeterSnapshot {
+        self.master_meter.snapshot()
+    }
+
     /// Take every engine event published since the last drain, output-side
     /// ring events, then input-side ring events, then a capture refusal if
     /// one is waiting.
@@ -556,7 +616,7 @@ impl EngineHandle {
     /// `Vec` here — and draining two rings into it — is safe. Two rings
     /// because the output and input backends run their error callbacks on
     /// different threads and `EngineEvent`'s ring is SPSC (see
-    /// `audio_thread::capture_beside`).
+    /// `audio_thread::PendingCapture`).
     ///
     /// A capture refusal is not on either ring: it is read from
     /// `capture_refusal`, the slot `audio_thread::capture_side` stores into
@@ -599,9 +659,14 @@ impl EngineHandle {
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
             .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
+        // A built-in that sounds notes is scheduled against like any hosted
+        // instrument, so it is registered holding a store wherever it is
+        // registered from — built here, because the callback may not.
+        let notes = plugin_type.sounds_notes().then(MidiNoteStore::new);
         self.push(GraphCommand::AddEffect(
             id,
             PluginCore::builtin(plugin_type, self.sample_rate),
+            notes,
         ))
     }
 
@@ -618,9 +683,9 @@ impl EngineHandle {
     ///
     /// A bypassed entry keeps its instance and its state — the professional
     /// convention, so re-enabling it does not reload the plugin — but stops
-    /// processing: bridged audio is returned untouched, and MIDI queued while
-    /// bypassed is discarded rather than banked into a burst of stale note-ons
-    /// at the moment it is re-enabled.
+    /// processing: the signal passes through the device's own latency, and
+    /// MIDI queued while bypassed is discarded rather than banked into a burst
+    /// of stale note-ons at the moment it is re-enabled.
     pub fn set_bypass(&mut self, id: usize, bypassed: bool) -> Result<(), String> {
         self.push(GraphCommand::SetBypass(id, bypassed))
     }
@@ -641,27 +706,61 @@ impl EngineHandle {
     }
 
     /// Add a native plugin with an already reserved plugin ID.
+    ///
+    /// No note store: this route registers a device that transforms a signal
+    /// rather than one that plays notes. An instrument arrives through
+    /// [`Self::add_hosted_plugin`], or over a batch that ships its own store.
     pub fn add_plugin_with_id(
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AddPlugin(id, plugin))
+        self.push(GraphCommand::AddPlugin(id, plugin, None))
     }
 
-    /// Add a native plugin and its audio bridge with one scheduler command.
-    pub fn add_plugin_with_bridge(
+    /// Register a hosted plugin instance, homed detached.
+    ///
+    /// A hosted instance belongs to the load that created it, not to the
+    /// master insert chain: homed there it would render the whole mix through
+    /// the instance the moment a user took it off a strip. Homing it detached
+    /// means releasing it from a chain returns it to a placement that runs
+    /// nowhere.
+    ///
+    /// The note store travels with the registration, built here because the
+    /// audio thread may not allocate one: a hosted instrument that arrived
+    /// without one could never be scheduled against.
+    pub fn add_hosted_plugin(
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
-        bridge: audio_bridge::PluginAudioBridge,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AddPluginWithBridge(id, plugin, bridge))
+        self.push(GraphCommand::AddHostedPlugin(
+            id,
+            plugin,
+            MidiNoteStore::new(),
+        ))
     }
 
     /// Remove a native plugin from the audio thread.
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
-        self.push(GraphCommand::RemovePluginWithBridge(id))
+        self.push(GraphCommand::RemovePlugin(id))
+    }
+
+    /// State how many frames a registered device delays its own output by, so
+    /// the graph compensates every route that device sits on.
+    ///
+    /// The dry line the device runs while bypassed is built here, against the
+    /// declared figure, because the audio thread may not allocate one.
+    pub fn set_effect_latency(
+        &mut self,
+        effect_id: usize,
+        latency_frames: usize,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        })
     }
 
     /// Feed a native plugin the audio the input device captures, block by
@@ -702,12 +801,83 @@ impl EngineHandle {
     }
 
     /// Send a MIDI note event to a specific plugin (lock-free).
+    ///
+    /// The live path: the note reaches the plugin at the head of the next
+    /// block it is handed. A note that has a timeline position of its own goes
+    /// through [`Self::schedule_midi_notes`], which delivers it on the sample
+    /// that renders that position.
     pub fn send_midi_note(
         &mut self,
         plugin_id: usize,
         event: plugin_slot::MidiNoteEvent,
     ) -> Result<(), String> {
         self.push(GraphCommand::SendMidiNote(plugin_id, event))
+    }
+
+    /// Write timeline-addressed notes into an instrument's note store.
+    ///
+    /// The batch is boxed here, on the control thread, because the audio
+    /// thread that copies it into the store may neither allocate nor free
+    /// (ADR 0020). It lands whole or not at all: a plugin registered without a
+    /// store, or a batch past that store's free capacity, is refused on the
+    /// callback and counted in
+    /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`], because
+    /// only the callback knows what the store is already holding.
+    ///
+    /// The batch is put in frame order here, and stably, so two notes a
+    /// producer wrote for the same sample keep the order it wrote them in. A
+    /// plugin must be handed a block's events in non-decreasing time, and the
+    /// sort allocates its scratch half — so it belongs on this side of the
+    /// ring, and the store refuses a batch that arrives unordered.
+    ///
+    /// A rewrite is a [`Self::clear_midi_notes`] and this call together. One
+    /// [`Self::send_graph_batch`] makes the pair visible to the callback
+    /// together, which is what keeps the clear from settling against a store
+    /// the replacement has not reached yet: pushed one at a time the two can
+    /// land in different drains, and the clear then settles too early —
+    /// releasing a note the rewrite only meant to move.
+    ///
+    /// Visible together is not the same as succeeding together. The clear
+    /// cannot fail, but this call still can — refused by the store on the
+    /// same terms as any other batch: over capacity, unordered, or naming a
+    /// note the store cannot address — and counted in
+    /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`]. A
+    /// refusal leaves the clear applied and the window empty regardless: the
+    /// sounding note it stripped a note-off from is released at the head of
+    /// whatever renders next, exactly as an unreplaced clear would release
+    /// it.
+    pub fn schedule_midi_notes(
+        &mut self,
+        plugin_id: usize,
+        mut notes: Box<[TimedMidiNote]>,
+    ) -> Result<(), String> {
+        notes.sort_by_key(|note| note.at_frame);
+        self.push(GraphCommand::ScheduleMidiNotes { plugin_id, notes })
+    }
+
+    /// Drop an instrument's scheduled notes in the half-open frame window
+    /// `from_frame..to_frame`; `0..u64::MAX` clears the store.
+    ///
+    /// A sounding note whose note-off this window takes away is not released
+    /// here. The callback records it and settles it once the whole drain has
+    /// applied, against the store that drain left — so a rewrite that moves
+    /// the note-off keeps the note sounding, and one that deletes it releases
+    /// the note at the head of whatever renders next. That settlement reads
+    /// the store the drain ends with, so a clear and its replacement batch
+    /// arrive together only when they travel in one
+    /// [`Self::send_graph_batch`] — see [`Self::schedule_midi_notes`] for what
+    /// a refused replacement leaves behind.
+    pub fn clear_midi_notes(
+        &mut self,
+        plugin_id: usize,
+        from_frame: u64,
+        to_frame: u64,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::ClearMidiNotes {
+            plugin_id,
+            from_frame,
+            to_frame,
+        })
     }
 
     /// Add a timeline track.
@@ -747,6 +917,10 @@ impl EngineHandle {
     }
 
     /// Splice an already registered effect into a track's device chain.
+    ///
+    /// The line that holds a generator to the depth of the strip's input is
+    /// built here, on the control thread, because the audio thread may not
+    /// allocate one.
     pub fn insert_track_device(
         &mut self,
         track_id: usize,
@@ -757,6 +931,7 @@ impl EngineHandle {
             track_id,
             entry,
             index,
+            hold: entry.input_hold(),
         })
     }
 
@@ -770,7 +945,8 @@ impl EngineHandle {
     }
 
     /// Splice an already registered effect into a bus's device chain — the
-    /// reverb or delay a send bus exists to host.
+    /// reverb or delay a send bus exists to host, or the instrument a bus
+    /// holds on the same terms a track does, input hold included.
     pub fn insert_bus_device(
         &mut self,
         bus_id: usize,
@@ -781,6 +957,7 @@ impl EngineHandle {
             bus_id,
             entry,
             index,
+            hold: entry.input_hold(),
         })
     }
 
@@ -789,6 +966,9 @@ impl EngineHandle {
     }
 
     /// Add a send from a track to a bus at the given tap.
+    ///
+    /// The send's compensation delay is built here, on the control thread,
+    /// because the audio thread may not allocate one.
     pub fn add_send(
         &mut self,
         track_id: usize,
@@ -801,6 +981,7 @@ impl EngineHandle {
             bus_id,
             tap,
             level,
+            delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
         })
     }
 
@@ -905,8 +1086,8 @@ impl EngineHandle {
     ) -> Result<(), String> {
         self.push(GraphCommand::AutomateDeviceParam {
             effect_id,
-            param,
-            value,
+            param: DeviceParamTarget::Builtin(param),
+            value: f64::from(value),
             at_frame,
         })
     }
@@ -922,7 +1103,7 @@ impl EngineHandle {
     /// more registrations.
     ///
     /// A producer that has other state to set up — a plugin instance to keep
-    /// in a side map, an audio bridge to publish — calls this *before* it
+    /// in a side map — calls this *before* it
     /// registers any of it, so a full table is reported as an `Err` the user
     /// sees rather than as a registration that appears to succeed and then
     /// dies on the callback. [`EngineHandle::push`] enforces the same ceiling
@@ -1022,13 +1203,12 @@ impl EngineHandle {
     /// anything, so a batch that would overflow either one is refused whole
     /// rather than reported as [`GraphBatchError::Partial`] after part of it
     /// already crossed the ring. The effect-table pre-check belongs to the
-    /// caller that builds other state before it pushes — a plugin instance,
-    /// a bridge — not to the typed method:
-    /// [`Self::ensure_effect_table_headroom`] has to run before that id and
-    /// that bridge exist, so `commands/plugins.rs` is the route that calls
-    /// it today, ahead of [`Self::reserve_plugin_id`] and the bridge it
-    /// builds from the id. [`Self::add_plugin_with_id`] and
-    /// [`Self::add_plugin_with_bridge`] push straight through with no check
+    /// caller that builds other state before it pushes — a plugin instance —
+    /// not to the typed method: [`Self::ensure_effect_table_headroom`] has to
+    /// run before that id and that instance exist, so `commands/plugins.rs` is
+    /// the route that calls it today, ahead of [`Self::reserve_plugin_id`].
+    /// [`Self::add_plugin_with_id`] and
+    /// [`Self::add_hosted_plugin`] push straight through with no check
     /// of their own, exactly as [`Self::register_capture_consumer`] does;
     /// all three rely on this push as the ceiling, regardless of whether a
     /// caller checked first.
@@ -1057,7 +1237,16 @@ impl EngineHandle {
             // The refusals above proved the id absent and the reserve unspent,
             // so this never duplicates an entry nor grows past the capacity
             // the vector was built with.
-            Some(CaptureLedgerEffect::Register(id)) => self.capture_consumers.push(id),
+            Some(CaptureLedgerEffect::Register(id)) => {
+                self.capture_consumers.push(id);
+                // Every route onto the ring passes here, so this is the one
+                // place a consumer's arrival is known, and a registration
+                // that was refused above never reaches it. The owner thread
+                // opens at most one input per engine however many requests
+                // it is sent, so asking on every registration costs nothing
+                // and needs no record on this side.
+                self.audio_thread.request_capture_open();
+            }
             Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
             None => {}
         }
@@ -1101,11 +1290,9 @@ fn effect_table_full_error() -> String {
 /// the callback would have taken.
 fn final_dropped_effect_id(command: &GraphCommand) -> Option<usize> {
     match command {
-        GraphCommand::RemovePluginWithBridge(id) => Some(*id),
+        GraphCommand::RemovePlugin(id) => Some(*id),
         GraphCommand::RemoveTrackDeviceRetired { effect_id, .. }
         | GraphCommand::RemoveBusDeviceRetired { effect_id, .. } => Some(*effect_id),
-        #[cfg(test)]
-        GraphCommand::RemovePlugin(id) => Some(*id),
         _ => None,
     }
 }
@@ -1163,6 +1350,7 @@ fn capture_consumer_registered_error(plugin_id: usize) -> String {
 /// rather than built internally: a caller driving `drain_engine_events`
 /// against a preset refusal needs to hold the same slot this handle reads.
 #[cfg(any(test, feature = "command-capture-fixture"))]
+#[allow(clippy::too_many_arguments)]
 fn engine_handle_fixture(
     command_tx: Producer<GraphCommand>,
     retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
@@ -1170,14 +1358,17 @@ fn engine_handle_fixture(
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
+    master_meter: MasterMeterReader,
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
     capture_refusal: Arc<AtomicU8>,
+    rendering: Arc<AtomicBool>,
+    output_stream_fault: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
         command_tx,
         retired_adoption_tx,
-        _audio_thread: audio_thread::detached_audio_thread_handle(),
+        audio_thread: audio_thread::detached_audio_thread_handle(),
         next_plugin_id: 1000,
         effect_registrations: 0,
         reconciled_effect_id_collisions: 0,
@@ -1186,13 +1377,14 @@ fn engine_handle_fixture(
         timeline_rt_diagnostics,
         graph_progress,
         transport_position,
+        master_meter,
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
-        // Seeded exactly as a real stream is before its first callback.
-        bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
+        rendering,
+        output_stream_fault,
     }
 }
 
@@ -1215,6 +1407,7 @@ pub fn engine_handle_for_command_capture(
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+    let (_master_meter_tx, master_meter_reader) = master_meter_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
     let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
@@ -1227,9 +1420,12 @@ pub fn engine_handle_for_command_capture(
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
+            master_meter_reader,
             engine_event_rx,
             capture_event_rx,
             audio_thread::new_capture_refusal_slot(),
+            audio_thread::new_render_liveness().rendering,
+            audio_thread::new_output_stream_fault_slot(),
         ),
         command_rx,
         retired_adoption_rx,
@@ -1242,15 +1438,15 @@ mod tests {
         engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
         GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
-    use crate::audio_bridge::create_audio_bridge;
+    use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
     };
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{
-        graph_progress_channel, transport_position_channel, AudioScheduler, BuiltinEffectType,
-        GraphCommand, PluginCore,
+        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        BuiltinEffectType, GraphCommand, PluginCore,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
@@ -1265,22 +1461,6 @@ mod tests {
     /// its own — the rate below is the one the capture handle reports.
     fn knead_instance() -> PluginCore {
         PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
-    }
-
-    /// A handle exists and takes plugin loads before its device has called back
-    /// once. Reporting zero there would compensate every instance loaded in
-    /// that window at zero for as long as it lives, because the load reads this
-    /// number once and never revisits it.
-    #[test]
-    fn a_handle_whose_stream_has_not_called_back_still_reports_a_round_trip() {
-        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
-
-        assert_eq!(
-            engine.bridge_round_trip_frames(),
-            crate::audio_bridge::settled_round_trip_frames(
-                crate::audio_thread::PREFERRED_BUFFER_FRAMES as usize
-            )
-        );
     }
 
     /// Overwrites whatever it is handed, so a block it never touched is
@@ -1312,26 +1492,24 @@ mod tests {
     /// audio thread to mean anything: the whole point is that the plugin keeps
     /// its instance and its state while its audio passes it by.
     #[test]
-    fn set_bypass_reaches_the_scheduler_and_returns_bridged_audio_untouched() {
+    fn set_bypass_reaches_the_scheduler_and_leaves_the_block_untouched() {
         let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
         let (retired_tx, _retired_rx) = RingBuffer::new(16);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
-        let (bridge, mut bridge_handle) = create_audio_bridge(42);
 
         engine
-            .add_plugin_with_bridge(42, Box::new(OverwritingPlugin), bridge)
+            .add_plugin_with_id(42, Box::new(OverwritingPlugin))
             .expect("the plugin should reach the graph");
         engine
             .set_bypass(42, true)
             .expect("the bypass should reach the graph");
         scheduler.update_graph();
 
-        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
-        scheduler.process_audio_bridges(512);
-        let bypassed = bridge_handle.pop_output().expect("the bypassed block");
+        let mut left = [0.5f32; 4];
+        let mut right = [0.5f32; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(
-            &bypassed.left[..4],
-            &[0.5; 4],
+            &left, &[0.5; 4],
             "a bypassed plugin must not process the block"
         );
 
@@ -1342,10 +1520,10 @@ mod tests {
             .expect("the bypass release should reach the graph");
         scheduler.update_graph();
 
-        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
-        scheduler.process_audio_bridges(512);
-        let processed = bridge_handle.pop_output().expect("the processed block");
-        assert_eq!(&processed.left[..4], &[0.25; 4]);
+        let mut left = [0.5f32; 4];
+        let mut right = [0.5f32; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(&left, &[0.25; 4]);
     }
 
     /// A full-project sync can exceed any fixed ring, and splitting it would
@@ -1453,7 +1631,7 @@ mod tests {
             .expect("shift_semitones is a knead parameter");
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_))) if id == 7
+            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_), None)) if id == 7
         ));
         assert!(matches!(
             command_rx.pop(),
@@ -1555,12 +1733,100 @@ mod tests {
         ));
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::RemovePluginWithBridge(7))
+            Ok(GraphCommand::RemovePlugin(7))
         ));
         assert!(matches!(
             command_rx.pop(),
             Ok(GraphCommand::RegisterCaptureConsumer(7))
         ));
+    }
+
+    /// A consumer registering is what opens the input device, so the arrival
+    /// of one has to reach the owner thread. A registration this handle
+    /// refuses must not: the callback will never feed that consumer, and an
+    /// engine that opened a microphone for it would raise the macOS
+    /// permission prompt — and renegotiate a Bluetooth headset's profile —
+    /// on behalf of a consumer that does not exist. Leaving the bus asks for
+    /// nothing either: closing the input when the last consumer goes is a
+    /// later change.
+    #[test]
+    fn registering_a_capture_consumer_requests_the_capture_open() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+
+        assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "one registration asks exactly once"
+        );
+
+        engine
+            .unregister_capture_consumer(7)
+            .expect("the consumer comes off the bus");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "leaving the bus asks the owner thread for nothing"
+        );
+
+        engine
+            .register_capture_consumer(7)
+            .expect("the release freed the id");
+        assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
+
+        engine
+            .register_capture_consumer(7)
+            .expect_err("an id already on the bus is refused");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "a refused registration asks for no input device"
+        );
+    }
+
+    /// The owner thread hears about a registration only once the command has
+    /// actually crossed the ring. A refused push leaves the callback with no
+    /// consumer to feed, so an engine that asked anyway would raise the macOS
+    /// permission prompt — and renegotiate a Bluetooth headset's profile —
+    /// on behalf of a consumer that does not exist, and the ledger would hold
+    /// an id the callback was never handed. Mutation: move
+    /// `request_capture_open` ahead of the `command_tx.push` in
+    /// [`EngineHandle::push`] — the owner receiver below then carries an
+    /// `OpenCapture`.
+    #[test]
+    fn a_register_the_ring_refuses_asks_the_owner_thread_for_nothing() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(4);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        // Ordinary commands, so the ring is the only ceiling this reaches:
+        // `AddTrack` spends no effect-table slot and touches no capture
+        // ledger.
+        let mut filled = 0usize;
+        while engine
+            .push(GraphCommand::AddTrack(TimelineTrack::new(filled)))
+            .is_ok()
+        {
+            filled += 1;
+        }
+
+        engine
+            .register_capture_consumer(7)
+            .expect_err("a full command ring refuses the registration");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "a registration the ring refused asks for no input device"
+        );
+        assert!(
+            !engine.capture_consumers.contains(&7),
+            "a registration the ring refused leaves the ledger holding nothing"
+        );
     }
 
     /// The reserve is a running capacity, not a lifetime budget: a session
@@ -1771,7 +2037,7 @@ mod tests {
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
 
         // The pre-check a producer with state to unwind consults *before* it
-        // reserves an id or publishes a bridge.
+        // reserves an id.
         let refused = engine
             .ensure_effect_table_headroom(1)
             .expect_err("a table filled by devices must refuse the next plugin");
@@ -1782,9 +2048,8 @@ mod tests {
 
         // And the ledger refuses the registration itself, so a producer that
         // never calls the pre-check still cannot get past the ceiling.
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         let registration = engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect_err("the registration itself must be refused, not just the pre-check");
         assert_eq!(registration, refused);
 
@@ -1807,9 +2072,8 @@ mod tests {
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect("the last slot takes the plugin");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
         assert!(engine.ensure_effect_table_headroom(1).is_err());
@@ -1819,9 +2083,8 @@ mod tests {
             .expect("a retirement is never refused for capacity");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY - 1);
 
-        let (replacement, _replacement_handle) = create_audio_bridge(9_001);
         engine
-            .add_plugin_with_bridge(9_001, Box::new(OverwritingPlugin), replacement)
+            .add_hosted_plugin(9_001, Box::new(OverwritingPlugin))
             .expect("the retired slot must be available again");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
         drained(&mut command_rx);
@@ -1837,9 +2100,8 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        // The unbridged fill is the cheap one and exercises the same ledger:
-        // what matters is that the table is full, not which population filled
-        // it — a bridged fill would also cost ~288 KiB of rings per slot.
+        // What matters is that the table is full, not which population
+        // filled it.
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY);
 
@@ -1847,6 +2109,7 @@ mod tests {
             .send_graph_batch(vec![GraphCommand::AddDetachedEffect(
                 2_000_000,
                 knead_instance(),
+                None,
             )])
             .expect_err("a batch that cannot fit the shared table must be refused");
         assert!(
@@ -1897,7 +2160,7 @@ mod tests {
 
         engine
             .send_graph_batch(vec![
-                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance(), None),
                 GraphCommand::RemoveTrackDeviceRetired {
                     track_id: 1,
                     effect_id: 0,
@@ -1912,7 +2175,7 @@ mod tests {
                     track_id: 1,
                     effect_id: 0,
                 },
-                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance(), None),
             ])
             .expect("retiring first frees the slot the registration needs");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
@@ -1972,14 +2235,13 @@ mod tests {
         engine.add_track(2).expect("the track registers");
         engine.add_bus(51).expect("the bus registers");
 
-        // Seven registrations: six built-in devices and one bridged plugin,
+        // Seven registrations: six built-in devices and one hosted plugin,
         // which take their slots from the same table.
         for id in 7..=12 {
             engine.add_effect(id, "knead").expect("device registers");
         }
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect("the plugin registers");
 
         // Placements. A splice moves an effect between chains; it registers
@@ -2173,18 +2435,11 @@ mod tests {
 
         // Two plugins that will leave through a strip retirement, and one that
         // leaves by name. The reserve is smaller than that, so they cycle.
-        // The bridge handles stay alive for the whole stream: dropping one
-        // would tear its plugin down for a reason the classification under
-        // test has nothing to do with.
-        let _bridge_handles: Vec<_> = (7..=9usize)
-            .map(|id| {
-                let (bridge, bridge_handle) = create_audio_bridge(id);
-                engine
-                    .add_plugin_with_bridge(id, Box::new(OverwritingPlugin), bridge)
-                    .expect("the plugin registers");
-                bridge_handle
-            })
-            .collect();
+        for id in 7..=9usize {
+            engine
+                .add_hosted_plugin(id, Box::new(OverwritingPlugin))
+                .expect("the plugin registers");
+        }
         engine
             .insert_track_device(
                 1,
@@ -2302,6 +2557,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2314,9 +2570,12 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
+                master_meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
+                crate::audio_thread::new_render_liveness().rendering,
+                crate::audio_thread::new_output_stream_fault_slot(),
             ),
             command_rx,
             diagnostics_tx,
@@ -2484,6 +2743,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2496,9 +2756,12 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
+                master_meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
+                crate::audio_thread::new_render_liveness().rendering,
+                crate::audio_thread::new_output_stream_fault_slot(),
             ),
             engine_event_tx,
             capture_event_tx,
@@ -2508,7 +2771,7 @@ mod tests {
     /// [`EngineHandle::drain_engine_events`] merges two rings — output and
     /// input each run their error callback on a different backend thread, so
     /// one `Producer<EngineEvent>` cannot serve both (see
-    /// `audio_thread::capture_beside`). An output-side event pushed first
+    /// `audio_thread::PendingCapture`). An output-side event pushed first
     /// must still come back before an input-side one pushed after it: the
     /// merge is output-then-input, not push order across the two rings.
     #[test]
@@ -2564,12 +2827,13 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
         let capture_refusal = crate::audio_thread::new_capture_refusal_slot();
         capture_refusal.store(
-            StreamErrorKind::DeviceNotAvailable as u8 + 1,
+            StreamErrorKind::DeviceNotAvailable.to_slot(),
             std::sync::atomic::Ordering::Relaxed,
         );
 
@@ -2580,9 +2844,12 @@ mod tests {
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
+            master_meter_reader,
             engine_event_rx,
             capture_event_rx,
             capture_refusal,
+            crate::audio_thread::new_render_liveness().rendering,
+            crate::audio_thread::new_output_stream_fault_slot(),
         );
 
         assert_eq!(
@@ -2596,6 +2863,28 @@ mod tests {
         assert!(
             engine.drain_engine_events().is_empty(),
             "the slot swaps back to zero, so a second drain reports nothing further"
+        );
+    }
+
+    /// A fresh fixture starts rendering with no fault recorded — the same
+    /// baseline a freshly opened stream has — and `mark_render_stalled`
+    /// clears both, proving [`EngineHandle::is_rendering`] and
+    /// [`EngineHandle::output_stream_fault`] read the fixture's own slots
+    /// rather than some independent default. Mutation: have
+    /// `mark_render_stalled` skip storing the fault when one is given, and
+    /// this goes red on the second assertion.
+    #[test]
+    fn is_rendering_reads_the_flag_the_fixture_clears() {
+        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        assert!(engine.is_rendering());
+        assert_eq!(engine.output_stream_fault(), None);
+
+        engine.mark_render_stalled(Some(StreamErrorKind::DeviceChanged));
+
+        assert!(!engine.is_rendering());
+        assert_eq!(
+            engine.output_stream_fault(),
+            Some(StreamErrorKind::DeviceChanged)
         );
     }
 }

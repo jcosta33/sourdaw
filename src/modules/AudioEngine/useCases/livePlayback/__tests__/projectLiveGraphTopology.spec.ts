@@ -28,7 +28,11 @@ import { projectLiveGraphTopology, type LiveGraphTopologyInput } from '../projec
  * agreement with the export is proven by rendering both
  * (`projectLiveGraphProgrammeParity.spec.ts`).
  */
-function programmeFor(stripIds: readonly string[], bakedStripIds: readonly string[] = []): LiveGraphProgramme {
+function programmeFor(
+    stripIds: readonly string[],
+    bakedStripIds: readonly string[] = [],
+    webVoicedStripIds: readonly string[] = []
+): LiveGraphProgramme {
     return {
         playbacksByStripId: new Map(
             stripIds.map((stripId): [string, readonly AudioGraphClipPlayback[]] => [
@@ -48,6 +52,7 @@ function programmeFor(stripIds: readonly string[], bakedStripIds: readonly strin
             ])
         ),
         bakedStripIds: new Set(bakedStripIds),
+        webVoicedStripIds: new Set(webVoicedStripIds),
         exclusions: [],
     };
 }
@@ -55,6 +60,7 @@ function programmeFor(stripIds: readonly string[], bakedStripIds: readonly strin
 const NO_PROGRAMME: LiveGraphProgramme = {
     playbacksByStripId: new Map(),
     bakedStripIds: new Set(),
+    webVoicedStripIds: new Set(),
     exclusions: [],
 };
 
@@ -114,6 +120,7 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         attachedInstanceIds: new Set(),
         transport: { playing: true, positionSeconds: 0 },
         monitor: 'shadowed',
+        masterGain: 0.8,
         programme: NO_PROGRAMME,
         inputMonitoredTrackIds: new Set(),
         ...overrides,
@@ -163,6 +170,24 @@ describe('projectLiveGraphTopology', () => {
             'device-a',
             'device-b',
         ]);
+    });
+
+    // The engine resolves a built-in's parameter keys against the instrument's
+    // own vocabulary and refuses the whole batch over one it cannot name, so a
+    // chain carried in the ids a panel authors takes every other strip in the
+    // batch down with it.
+    it('carries a built-in chain in the names the engine answers to, not the ids the project stores', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [createDevice({ id: 'device-a', type: 'fermenter', parameterValues: { oscEngine: 2 } })],
+                }),
+            ],
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.devices[0]?.parameterValues).toEqual({ engine: 2 });
     });
 
     it('carries a bus device chain, which is the whole point of a send bus', () => {
@@ -379,6 +404,60 @@ describe('projectLiveGraphTopology', () => {
                     : 'no creation command'
             ).toBe(false);
         }
+    });
+
+    it('builds a clip-less strip whose hosted plugin the engine holds as contributing audio', () => {
+        // The plugin has a native body and no other kind: Web Audio builds
+        // nothing for it, and the engine splices an instrument in as a
+        // generator. A strip left off the native side here has no clip to play
+        // and no carrier to sound its plugin either, so it is silent outright.
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        createDevice({
+                            id: 'dev-1',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:harness-tone',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+    });
+
+    it('leaves a strip whose clips Web Audio voices out of the native contribution', () => {
+        // The strip's plugin is attached, but its material — a MIDI clip the
+        // programme never admitted — is playing on the Web Audio path.
+        // Contributing it here gates that strip out of Web Audio, and the notes
+        // stop for the whole take.
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [
+                        createDevice({
+                            id: 'dev-1',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:harness-tone',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([], [], ['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
     });
 
     it('builds a playing strip whose whole chain is native as contributing audio', () => {
@@ -666,7 +745,33 @@ describe('projectLiveGraphTopology', () => {
         expect(commands).toEqual([
             { kind: 'set-monitor-shadow', shadowed: true },
             { kind: 'set-transport', playing: false, positionSeconds: 3 },
+            { kind: 'set-master-gain', gain: 0.8 },
         ]);
+    });
+
+    it('carries the master level the fader is standing at', () => {
+        const commands = project({ masterGain: 0.35 });
+
+        expect(commands).toContainEqual({ kind: 'set-master-gain', gain: 0.35 });
+    });
+
+    it('states the master level before any strip it governs can sound', () => {
+        // The level every strip in this batch is heard through, so it belongs
+        // in the opening group with the monitor gate rather than after the
+        // strips. It cannot be stated ahead of the gate itself: the gate is
+        // what decides whether this engine reaches the speakers at all.
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            transport: { playing: true, positionSeconds: 0 },
+            masterGain: 0.35,
+        });
+
+        const monitorAt = commands.findIndex((command) => command.kind === 'set-monitor-shadow');
+        const masterAt = commands.findIndex((command) => command.kind === 'set-master-gain');
+        const firstStripAt = commands.findIndex((command) => command.kind === 'create-track-strip');
+        expect(monitorAt).toBe(0);
+        expect(masterAt).toBeGreaterThan(monitorAt);
+        expect(masterAt).toBeLessThan(firstStripAt);
     });
 
     it('opens the batch with the monitor mode, ahead of anything that could be audible', () => {

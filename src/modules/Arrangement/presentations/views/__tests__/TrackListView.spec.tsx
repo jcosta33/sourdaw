@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent, createEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -124,7 +124,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     clearUndoHistory: vi.fn(),
     isAppActionCommittedError: vi.fn(() => false),
@@ -395,9 +395,24 @@ describe('TrackListView', () => {
         expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
     });
 
+    it('claims Enter so the window-level shortcut layer never sees the keydown', async () => {
+        // #3620 — Enter there is bound to transport.stopPlayback; one
+        // keystroke must switch mode without also stopping playback.
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Enter' });
+
+        expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+    });
+
     it('removes the selected track on Delete after user confirmation', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(true);
         renderWithTooltip(<TrackListView />);
@@ -408,13 +423,13 @@ describe('TrackListView', () => {
         // The Delete key takes the undoable `removeTrack` action, not the bare
         // use case, which captures no inverse (audit M-015). The end-to-end
         // undo is asserted in `trackDeleteUndo.integration.spec.tsx`.
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
         expect(removeTrack).not.toHaveBeenCalled();
     });
 
     it('keeps the track when the user cancels deletion', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(false);
         renderWithTooltip(<TrackListView />);
@@ -422,7 +437,7 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(removeTrack).not.toHaveBeenCalled();
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('stops the Delete keydown from reaching window before the confirmation resolves (#3602)', async () => {
@@ -648,6 +663,29 @@ describe('TrackListView', () => {
         renderWithTooltip(<TrackListView />);
         fireEvent.click(screen.getByLabelText('Add folder'));
         expect(createFolder).toHaveBeenCalledWith('Folder 1');
+    });
+
+    it('adds an audio track through the registered addTrack action on the add-track menu click', async () => {
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
+        const { addTrack } = await import('../../../useCases/addTrack');
+        renderWithTooltip(<TrackListView />);
+        // Radix DropdownMenu triggers open on pointerdown (see the
+        // components/ui dropdown-menu spec for the canonical jsdom probe).
+        fireEvent.pointerDown(screen.getByRole('button', { name: 'Add track' }), { pointerId: 1 });
+        await waitFor(() => {
+            expect(screen.getByTestId('add-track-audio')).toBeInTheDocument();
+        });
+        fireEvent.click(screen.getByTestId('add-track-audio'));
+        // The undoable `addTrack` action, not the bare use case: the use case
+        // captures no inverse, so a menu-created track left no history
+        // (issue #3696). `trackCreateUndo.integration.spec.tsx` asserts the
+        // resulting undo/redo end-to-end.
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: { name: 'Audio 3', kind: 'audio' },
+        });
+        expect(addTrack).not.toHaveBeenCalled();
     });
 
     it('seeds the canonical prompt draft without submitting the request', async () => {

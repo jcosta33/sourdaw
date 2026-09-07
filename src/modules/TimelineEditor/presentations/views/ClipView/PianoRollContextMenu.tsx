@@ -10,14 +10,14 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
-    addMidiNote,
     removeMidiNote,
     moveMidiNote,
     setNoteVelocity,
     humanizeNotes,
     getNotesForClip,
+    setNotesForClip,
     strumNotes,
     restoreStrumOriginals,
     snapClipToScale,
@@ -31,6 +31,15 @@ import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
+
+/**
+ * Whole-clip note snapshot for undo closures: complete note objects — id and
+ * every optional performance field — detached from the store array. Undo must
+ * restore the exact prior notes, and `addMidiNote` can only rebuild a stripped
+ * pitch/start/duration/velocity copy under a fresh id.
+ */
+const snapshotClipNotes = (clipId: string): ReturnType<typeof getNotesForClip> =>
+    getNotesForClip(clipId).map((node) => ({ ...node }));
 
 type PianoRollContextMenuProps = {
     menu: NonNullable<PianoRollMenu>;
@@ -62,7 +71,7 @@ export const PianoRollContextMenu = ({
 
     const handleAIGenerate = async (): Promise<void> => {
         try {
-            await executeAppAction(
+            await executeUserAppAction(
                 { type: 'completeMidi', payload: { clipId, direction: 'forward', bars: 4 } },
                 { source: 'ai' }
             );
@@ -73,7 +82,7 @@ export const PianoRollContextMenu = ({
 
     const handleExtractGroove = async (): Promise<void> => {
         const templateId = `groove-${clipId}-v1`;
-        await executeAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
+        await executeUserAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
         const extractedTemplateId = getGrooveTemplate(templateId)?.id ?? getStraightGrooveTemplateId();
         setGrooveTemplateId(extractedTemplateId);
     };
@@ -82,14 +91,14 @@ export const PianoRollContextMenu = ({
         if (!grooveTemplateId) {
             return;
         }
-        await executeAppAction({
+        await executeUserAppAction({
             type: 'applyGroove',
             payload: { clipId, grooveId: grooveTemplateId, amount: 0.5 },
         });
     };
 
     return (
-        <DawContextMenuSurface ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
+        <DawContextMenuSurface onClose={onClose} ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
             {/* Select/Clipboard */}
             <DawMenuButton role="menuitem" shortcut="⌘A" onClick={act(onSelectAll)}>
                 Select All
@@ -109,23 +118,17 @@ export const PianoRollContextMenu = ({
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
                     const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
+                    const notesBefore = snapshotClipNotes(clipId);
                     copySelectedNotes(clipId, [...selectedNoteIds]);
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }
+                    const notesAfter = snapshotClipNotes(clipId);
                     if (cutNotes.length > 0) {
                         pushUndoEntry(
                             `Cut ${cutNotes.length} note${cutNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of cutNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
-                                }
-                            },
-                            () => {
-                                for (const node of cutNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
+                            () => setNotesForClip(clipId, notesBefore),
+                            () => setNotesForClip(clipId, notesAfter)
                         );
                     }
                     onClearSelection();
@@ -150,7 +153,7 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'quantizeNotes',
                                 payload: { clipId, gridSize: g },
                             }).catch(() => logger.warn('Could not quantize notes'));
@@ -172,7 +175,7 @@ export const PianoRollContextMenu = ({
                         key={`len-${g}`}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'quantizeNoteLengths',
                                 payload: { clipId, gridSize: g },
                             }).catch(() => logger.warn('Could not quantize note lengths'));
@@ -196,7 +199,7 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'transposeNotes',
                                 payload: { clipId, semitones: semi },
                             }).catch(() => logger.warn('Could not transpose notes'));
@@ -243,7 +246,7 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'invertNotes',
                         payload: { clipId },
                     }).catch(() => logger.warn('Could not invert notes'));
@@ -255,7 +258,7 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'retrogradeNotes',
                         payload: { clipId },
                     }).catch(() => logger.warn('Could not retrograde notes'));
@@ -276,7 +279,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 0.8 },
                         }).catch(() => logger.warn('Could not scale velocities'));
@@ -291,7 +294,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 1.2 },
                         }).catch(() => logger.warn('Could not scale velocities'));
@@ -306,7 +309,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 100 },
                         }).catch(() => logger.warn('Could not set velocities'));
@@ -321,7 +324,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 64 },
                         }).catch(() => logger.warn('Could not set velocities'));
@@ -464,22 +467,16 @@ export const PianoRollContextMenu = ({
                     const deletedNotes = notes
                         .filter((node) => selectedNoteIds.has(node.id))
                         .map((node) => ({ ...node }));
+                    const notesBefore = snapshotClipNotes(clipId);
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }
+                    const notesAfter = snapshotClipNotes(clipId);
                     if (deletedNotes.length > 0) {
                         pushUndoEntry(
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of deletedNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
-                                }
-                            },
-                            () => {
-                                for (const node of deletedNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
+                            () => setNotesForClip(clipId, notesBefore),
+                            () => setNotesForClip(clipId, notesAfter)
                         );
                     }
                     onClearSelection();

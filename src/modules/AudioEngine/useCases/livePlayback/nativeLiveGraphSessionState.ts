@@ -19,16 +19,40 @@ import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
     /**
+     * The handle of a session the renderer abandoned on a stall, retained
+     * until the engine is seen rendering again so the transport it left
+     * rolling can be parked.
+     *
+     * A stall abandon (`abandonNativeLiveGraphSession.ts`) is renderer-side
+     * only: the engine keeps the abandoned topology and its `playing` flag,
+     * because nothing tells it otherwise. A stream that resumes callbacks
+     * would then render those strips again from the frozen position, right
+     * beside whatever Web Audio is already sounding — doubled, out-of-phase
+     * audio with no route back, because the watch this session started keeps
+     * running for exactly this reason (`watchNativeEngineLiveness.ts`), and
+     * `parkOrphanedNativeEngine.ts` is what it calls once a reading says the
+     * engine is rendering again.
+     *
+     * At most one of {@link backend} and this field is ever set: an abandon
+     * moves the handle from `backend` to here, and installing a rolled
+     * session (`installRolledSession` in `startNativeLiveGraphSession.ts`)
+     * nulls this field before it adopts a new one into `backend`.
+     */
+    orphanedBackend: AudioGraphBackend | null;
+    /**
      * Whether this session's engine is the one a musician is actually hearing.
      *
-     * Two independent conditions, and both have to hold: the topology has to
-     * schedule something (an engine with no clips has nothing to sound), and
-     * the monitor has to be open (a shadowed engine writes true zeros at the
-     * device however full its timeline is). Naming it for the conclusion
-     * rather than for either half is deliberate — the earlier `carriesAudio`
-     * asked only whether clips were scheduled, and the day a shadowed session
-     * schedules a real programme that reading is wrong in the direction that
-     * moves the playback cursor onto an engine nobody can hear.
+     * Two independent conditions, and both have to hold: the batch has to
+     * carry at least one strip the engine was told to contribute (a strip Web
+     * Audio has been gated out of is one only this engine can voice, whether a
+     * clip plays on it or a hosted plugin generates into it, and a batch that
+     * carries none leaves every strip where it was), and the monitor has to be
+     * open (a shadowed engine writes true zeros at the device however full its
+     * timeline is). Naming it for the conclusion rather than for either half is
+     * deliberate — the earlier `carriesAudio` asked only whether clips were
+     * scheduled, and the day a shadowed session schedules a real programme that
+     * reading is wrong in the direction that moves the playback cursor onto an
+     * engine nobody can hear.
      *
      * Anything that must follow the audible transport — the playback cursor
      * above all — reads this rather than assuming a running engine is the one
@@ -89,12 +113,71 @@ export type NativeLiveGraphSession = {
      * engine's attach state does.
      */
     lastSilentPluginNotice: string | null;
+    /**
+     * The deferred-chain-change notice this session last showed, under the same
+     * rule as the two above.
+     */
+    lastDeferredChainNotice: string | null;
+    /**
+     * The running liveness poll this session started, or `null` when none is
+     * running.
+     *
+     * Held so `startNativeEngineLivenessWatch` can stay idempotent, and so the
+     * watch's own `pollOnce` can find and clear the interval when it retires
+     * itself — the only production caller of `stopNativeEngineLivenessWatch`.
+     */
+    livenessWatch: ReturnType<typeof setInterval> | null;
+    /**
+     * What the engine's chain holds, per strip this session built, in graph
+     * order.
+     *
+     * The engine's own observation rather than the project's chain: a device
+     * the mapper degraded is absent here, and every index a chain edit
+     * addresses is an index into *this* list. Written from the `reports` of
+     * every applied batch the session sends, because that is the only readback
+     * of the realized chain there is.
+     *
+     * A strip missing from this map is a strip this session never built — a
+     * track added mid-roll — and a chain edit on one has nothing to mirror
+     * into.
+     */
+    nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
+    /**
+     * Whether this play has already spent its one automatic re-arm (#3960).
+     *
+     * A lost engine is retired and offered back to the transport, which starts
+     * a fresh session on the current default device. That start can itself be
+     * lost — a headset that keeps dropping out re-dies on the rebuilt stream —
+     * so the offer needs a guard, or the renderer cycles retire, re-arm, lose,
+     * retire for as long as the device misbehaves.
+     *
+     * Set by `claimNativeSessionRearm`, cleared only by
+     * `stopNativeLiveGraphSession`: a musician's stop or pause is what ends a
+     * play, and the next play boots its own engine anyway. A start must never
+     * clear it, because the re-armed start is itself a start — clearing there
+     * would hand the guard back to the very session it exists to bound.
+     */
+    rearmClaimed: boolean;
+    /** The epoch names the play a claim belongs to; the stop bumps it so a claim taken before the stop can never start a session for the play after it. */
+    rearmEpoch: number;
+    /**
+     * The strips this session is sounding, as it last claimed them.
+     *
+     * The same set `setNativeCarriedTracks` shuts the Web Audio gates for, held
+     * here because the split has a second reader: the tick path has to know
+     * whether a device's parameters are being stamped by the engine before it
+     * writes them over IPC itself, and asking Web Audio's own gate state would
+     * be asking the consumer of the split what the split is (#3568). Written
+     * only by `claimCarriedStrips`, which is what keeps the two in step.
+     */
+    carriedStripIds: ReadonlySet<string>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
+    orphanedBackend: null,
     audibleCarrier: false,
     // Shadowed until a session says otherwise. This is the initial state, not
     // the default a session starts in — the safe reading before any session has
@@ -106,6 +189,12 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     loopEnabled: false,
     lastDeclineNotice: null,
     lastSilentPluginNotice: null,
+    lastDeferredChainNotice: null,
+    livenessWatch: null,
+    nativeChainByStripId: new Map(),
+    rearmClaimed: false,
+    rearmEpoch: 0,
+    carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };
 

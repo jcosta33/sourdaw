@@ -44,6 +44,7 @@ import { setSoundLock } from '../../useCases/soundLocks/setSoundLock';
 import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
 import { setStepCondition } from '../../useCases/stepModifications/setStepCondition';
+import { setStepMicroTiming } from '../../useCases/stepModifications/setStepMicroTiming';
 import { setStepProbability } from '../../useCases/stepModifications/setStepProbability';
 import { setStepRetrigger } from '../../useCases/stepModifications/setStepRetrigger';
 import { stopNoteRepeat } from '../../useCases/stopNoteRepeat';
@@ -66,7 +67,7 @@ const SectionCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="toaster-window"
+        className="toaster-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-peach)]/70"
@@ -676,6 +677,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onSetProbability={(trackId, stepIndex, prob) =>
                                     setStepProbability(deviceId, trackId, stepIndex, prob)
                                 }
+                                onSetMicroTiming={(trackId, stepIndex, mt) =>
+                                    setStepMicroTiming(deviceId, trackId, stepIndex, mt)
+                                }
                             />
                         ) : null}
                     </div>
@@ -797,6 +801,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onPointerCancel={() => setGrooveAmountPreview(null)}
                                 onKeyUp={commitGrooveAmount}
                                 onBlur={commitGrooveAmount}
+                                className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[var(--color-accent-peach)]"
                             />
                         </Stack>
                         <Grid cols={2} gapX={2} gapY={3}>

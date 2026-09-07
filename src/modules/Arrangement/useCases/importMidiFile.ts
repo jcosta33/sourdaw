@@ -22,7 +22,7 @@ type ImportedTrackIdentities = {
 };
 
 type ImportMidiFileOptions = {
-    shouldContinue?: () => boolean;
+    shouldContinue: () => boolean;
 };
 
 type ImportMidiFileOutput = 'completed' | 'superseded';
@@ -90,16 +90,19 @@ function removeImportedTracks(identities: ImportedTrackIdentities): void {
 
 export async function importMidiFile(
     file: File,
-    { shouldContinue }: ImportMidiFileOptions = {}
+    { shouldContinue }: ImportMidiFileOptions
 ): Promise<ImportMidiFileOutput> {
     let parsedTracks: Awaited<ReturnType<typeof readMidiFile>>;
     try {
         parsedTracks = await readMidiFile(file);
     } catch {
+        if (!shouldContinue()) {
+            return 'superseded';
+        }
         notifyUser(`Failed to import "${file.name}" - invalid or corrupt MIDI file`, 'error');
         return 'completed';
     }
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         return 'superseded';
     }
     if (parsedTracks.length === 0) {
@@ -112,6 +115,7 @@ export async function importMidiFile(
     }
 
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
+    const newCCData: Record<string, (typeof parsedTracks)[number]['ccs']> = {};
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
         const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
@@ -138,6 +142,7 @@ export async function importMidiFile(
             muted: false,
         };
         newMidiData[clip.id] = parsedTrack.notes;
+        newCCData[clip.id] = parsedTrack.ccs;
         return { ...track, clips: [clip] };
     });
 
@@ -146,7 +151,7 @@ export async function importMidiFile(
         notifyUser(`Failed to import "${file.name}" - generated track or clip IDs conflict with the project`, 'error');
         return 'completed';
     }
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         return 'superseded';
     }
 
@@ -155,6 +160,7 @@ export async function importMidiFile(
         midiChange = batchStoreUpdates(() => {
             const change = mergeImportedMidiClipNotes({
                 notesByClipId: newMidiData,
+                ccByClipId: newCCData,
             });
             try {
                 if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
@@ -176,7 +182,7 @@ export async function importMidiFile(
         return 'completed';
     }
 
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         batchStoreUpdates(() => {
             removeImportedTracks(identities);
             midiChange.undo();

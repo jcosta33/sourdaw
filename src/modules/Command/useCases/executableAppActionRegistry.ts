@@ -530,6 +530,96 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'slipClipContent',
+        risk: 'bounded-reversible',
+        description:
+            "Slip an existing clip's content by setting its content offset in beats without moving the clip's boundaries.",
+        intentPhrases: ['slip clip', 'slip clip content'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'offset', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string' },
+                clipType: { type: 'string', enum: ['audio', 'midi'], description: 'Which content offset to slide' },
+                offset: { type: 'number', description: 'New content offset in beats' },
+            },
+            required: ['clipId', 'clipType', 'offset'],
+        },
+    },
+    {
+        actionType: 'drawClip',
+        risk: 'bounded-reversible',
+        description: 'Create one new empty clip with an explicit type and beat range on an existing clip-host track.',
+        intentPhrases: ['draw clip', 'draw a clip', 'create clip', 'create a clip'],
+        targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'container' }],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+                terminators: ['on', 'to', 'into', 'from'],
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing clip-host track ID' },
+                startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+                endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
+                name: { type: 'string', description: 'Clip display name' },
+                type: { type: 'string', enum: ['audio', 'midi'], description: 'Clip type matching the track kind' },
+            },
+            required: ['trackId', 'startBeat', 'endBeat', 'name', 'type'],
+        },
+    },
+    {
+        actionType: 'duplicateClipAt',
+        risk: 'bounded-reversible',
+        description: 'Duplicate an existing clip to an explicit destination track and absolute start beat.',
+        intentPhrases: ['duplicate clip to', 'copy clip to'],
+        targetRules: [
+            { argument: 'clipId', capability: 'editable-clip', promptRole: 'source' },
+            { argument: 'destinationTrackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+        ],
+        valueRules: [{ argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing clip ID' },
+                destinationTrackId: { type: 'string', description: 'Destination track ID' },
+                startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+            },
+            required: ['clipId', 'destinationTrackId', 'startBeat'],
+        },
+    },
+    {
+        actionType: 'moveClips',
+        risk: 'bounded-reversible',
+        description: 'Move several existing clips to explicit tracks and absolute start beats in one step.',
+        intentPhrases: ['move clips', 'move the clips', 'move selected clips'],
+        targetRules: [{ argument: 'moves', capability: 'editable-clip', cardinality: 'many' }],
+        valueRules: [],
+        parameters: {
+            properties: {
+                moves: {
+                    type: 'array',
+                    description: 'One target placement per clip',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            clipId: { type: 'string', description: 'Existing clip ID' },
+                            trackId: { type: 'string', description: 'Destination track ID' },
+                            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+                        },
+                        required: ['clipId', 'trackId', 'startBeat'],
+                    },
+                },
+            },
+            required: ['moves'],
+        },
+    },
+    {
         actionType: 'setClipGain',
         risk: 'bounded-reversible',
         description: 'Set an existing clip gain from 0.0 through 2.0.',
@@ -2508,6 +2598,10 @@ const MIDI_ARTICULATION_COPY_MUTATION_IDENTITY = [
     },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
+const MANY_CLIP_PLACEMENTS_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'moves', cardinality: 'many' }], resourceFamily: 'clip' },
+    ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
 const DEVICE_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'deviceId' }], resourceFamily: 'device' },
     ...DEVICE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
@@ -2590,6 +2684,10 @@ export const executableAppActionMutationIdentityRulesByType = {
     trimClipStart: CLIP_MUTATION_IDENTITY,
     trimClipEnd: CLIP_MUTATION_IDENTITY,
     nudgeClip: CLIP_MUTATION_IDENTITY,
+    slipClipContent: CLIP_MUTATION_IDENTITY,
+    drawClip: TRACK_RESOURCE_REFERENCE_IDENTITY,
+    duplicateClipAt: CLIP_MUTATION_IDENTITY,
+    moveClips: MANY_CLIP_PLACEMENTS_MUTATION_IDENTITY,
     setClipGain: CLIP_MUTATION_IDENTITY,
     muteClip: CLIP_MUTATION_IDENTITY,
     setClipColor: CLIP_MUTATION_IDENTITY,
@@ -2691,6 +2789,10 @@ export const executableAppActionMutationIdempotenceByType = {
     trimClipStart: false,
     trimClipEnd: false,
     nudgeClip: false,
+    slipClipContent: false,
+    drawClip: false,
+    duplicateClipAt: false,
+    moveClips: false,
     setClipGain: true,
     muteClip: true,
     setClipColor: true,

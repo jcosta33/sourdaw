@@ -51,6 +51,7 @@ function validateStoredVersion(value: unknown): VersionControlState['versions'][
         (value.parentId !== null && typeof value.parentId !== 'string') ||
         typeof value.description !== 'string' ||
         !isRecord(value.snapshot) ||
+        typeof value.snapshot.ownerProjectId !== 'string' ||
         typeof value.snapshot.data !== 'string' ||
         !isFiniteNonNegativeNumber(value.snapshot.size) ||
         !isStringArray(value.tags)
@@ -64,7 +65,7 @@ function validateStoredVersion(value: unknown): VersionControlState['versions'][
         createdAt: value.createdAt,
         parentId: value.parentId,
         description: value.description,
-        snapshot: { data: '', size: 0 },
+        snapshot: { ownerProjectId: value.snapshot.ownerProjectId, data: '', size: 0 },
         tags: value.tags,
     };
 }
@@ -153,7 +154,7 @@ function createLightweightVersionControlState(value: VersionControlState): Versi
         ...value,
         versions: value.versions.map((version) => ({
             ...version,
-            snapshot: { data: '', size: 0 },
+            snapshot: { ownerProjectId: version.snapshot.ownerProjectId, data: '', size: 0 },
         })),
     };
 }

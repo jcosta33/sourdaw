@@ -42,6 +42,7 @@ import { type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
+import { carryQueuedStamps } from './carryQueuedStamps';
 import {
     nativeLiveAutomationWriter,
     writeStartSeconds,
@@ -67,6 +68,11 @@ export type ArmNativeLiveAutomationWriterInput = Readonly<{
      * {@link LiveAutomationWriterPass.provenAfterBatch}.
      */
     provenAfterBatch: number | null;
+    /**
+     * Whether this arm was preceded by a locate command that pruned stamps at or past
+     * this position in the engine ledger (`QueueBudgets::apply_seek`).
+     */
+    seek?: boolean;
 }>;
 
 /** One stretch of the engine clock a pass sends writes for. */
@@ -177,7 +183,17 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     const loop = spans.loop ? readSpan(input, spans.loop) : null;
     reportExclusions(entry.exclusions);
 
+    const previousPass = nativeLiveAutomationWriter.pass;
+    if (previousPass !== null) {
+        const seekFrame = input.seek ? secondsToFrames(input.positionSeconds, input.sampleRate) : null;
+        carryQueuedStamps(previousPass.targets, entry.targets, seekFrame);
+    }
+
     nativeLiveAutomationWriter.epoch += 1;
+    // Any arm answers a re-read the outgoing pass owed: this one re-projects
+    // the whole world, so a request still standing would make the next feed
+    // reading re-arm again for a device this pass already carries.
+    nativeLiveAutomationWriter.pendingRearm = null;
     nativeLiveAutomationWriter.pass = {
         stripTracks: input.stripTracks,
         sampleRate: input.sampleRate,
@@ -192,7 +208,8 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         // end frame, which `advance_playhead`'s `next >= end` bounds it below
         // by. `null` when nothing wraps, which silences the seam half.
         wrapFloorFrame: spans.loop ? secondsToFrames(spans.loop.endSeconds, input.sampleRate) : null,
-        queueFullReported: false,
+        standingRefusalReported: false,
+        saturatedGroups: new Set(),
     };
 
     void pumpNativeLiveAutomationWriter({

@@ -3,13 +3,16 @@ import { versionControlStore } from '../../stores/versionControlStore';
 
 import { captureSnapshot } from './snapshotHelpers/captureSnapshot';
 
-export function createProjectVersion(label: string, description: string = '', tags: string[] = []): void {
+export function createProjectVersion(label: string, description: string = '', tags: string[] = []): boolean {
     const state = versionControlStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const snapshot = captureSnapshot();
+    if (!snapshot) {
+        return false;
+    }
     const version = createVersion(label, description, snapshot, state.currentVersionId, tags);
 
     const branches = state.branches.map((b) =>
@@ -22,4 +25,6 @@ export function createProjectVersion(label: string, description: string = '', ta
         branches,
         currentVersionId: version.id,
     });
+
+    return true;
 }

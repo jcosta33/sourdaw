@@ -6,7 +6,7 @@ import { completeMidiLearn } from '../completeMidiLearn';
 const dispatched: { type: string; payload: unknown }[] = [];
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: (action: { type: string; payload: unknown }) => {
+    executeUserAppAction: (action: { type: string; payload: unknown }) => {
         dispatched.push(action);
         return Promise.resolve();
     },

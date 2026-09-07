@@ -12,6 +12,7 @@
     "scripts": {
         "dev": "vite",
         "guard": "node scripts/resourceGuard.ts",
+        "guard:recover": "node scripts/resourceGuard.ts --recover",
         "dev:no-hmr": "NO_HMR=1 vite",
         "build": "vite build",
         "preview": "vite preview",
@@ -19,7 +20,6 @@
         "test:health-gates": "pnpm test:run scripts/__tests__/healthGatesWorkflow.spec.ts && sh scripts/test-health-gate-scripts.sh",
         "test:health-gates:record": "node scripts/recordHealthGateWorkflowSnapshot.ts",
         "harness:plugin:install": "node scripts/installHarnessPlugin.ts",
-        "health:web:full": "sh scripts/health-gates-web.sh",
         "health:server:full": "sh scripts/health-gates-server.sh",
         "test:run": "node scripts/runVitestZeroTestGuard.ts",
         "test:collection-scope": "node scripts/checkVitestCollectionScope.ts",
@@ -153,6 +153,7 @@
         "eslint-plugin-prettier": "^5.5.6",
         "eslint-plugin-promise": "^7.3.0",
         "eslint-plugin-react-hooks": "^7.1.1",
+        "fake-indexeddb": "6.2.5",
         "globals": "^17.11.0",
         "jsdom": "^30.0.1",
         "knip": "^6.32.2",

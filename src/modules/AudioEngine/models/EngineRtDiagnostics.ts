@@ -38,19 +38,6 @@ export type EngineRtDiagnostics = {
     effectIdCollisions: number;
     unsupportedEffectAdditions: number;
     unmappedSetParamCalls: number;
-    bridgeOutputBlocksDropped: number;
-    unmatchedBridgeBlocks: number;
-    bridgeBacklogBlocksShed: number;
-    /**
-     * Blocks a bridge returned unprocessed because the plugin it names is on a
-     * track or bus device chain and the monitor is audible: that chain runs the
-     * instance over the strip's own signal, so the bridge's blocks are drained
-     * rather than processed. Expected to climb whenever a plugin is spliced into
-     * a chain and audible, and to stay flat while the monitor is shadowed.
-     */
-    bridgeBlocksPassedChainBound: number;
-    callbackFramesOverBridgeReach: number;
-    bridgeInputBlocksRefused: number;
     captureConsumerRefusals: number;
     captureBlocksDropped: number;
     captureInputUnderruns: number;
@@ -62,6 +49,18 @@ export type EngineRtDiagnostics = {
      * `audio_thread::new_input_latency_slot` (`crates/daw-engine`).
      */
     inputLatencyFrames: number;
+    /**
+     * The kind of the last non-xrun error the output stream reported, or
+     * `null` if it has not reported one. Detail beside `running`, not a
+     * substitute for it: a `deviceChanged` reroute or a recovered WASAPI
+     * invalidation can leave this non-null while `running` is still `true`,
+     * because the render callback kept being called through it.
+     * `running: false` with this non-null is a different condition than
+     * `running: false` with no engine ever started: an engine object exists
+     * and its other counters are real readings, but no render callback is
+     * running and nothing renders until the engine is restarted.
+     */
+    outputStreamFault: EngineStreamErrorKind | null;
     /**
      * Events drained by this read. The engine hands each event out exactly
      * once, so a reader that discards them loses them.
@@ -77,15 +76,10 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     effectIdCollisions: 0,
     unsupportedEffectAdditions: 0,
     unmappedSetParamCalls: 0,
-    bridgeOutputBlocksDropped: 0,
-    unmatchedBridgeBlocks: 0,
-    bridgeBacklogBlocksShed: 0,
-    bridgeBlocksPassedChainBound: 0,
-    callbackFramesOverBridgeReach: 0,
-    bridgeInputBlocksRefused: 0,
     captureConsumerRefusals: 0,
     captureBlocksDropped: 0,
     captureInputUnderruns: 0,
     inputLatencyFrames: 0,
+    outputStreamFault: null,
     events: [],
 };

@@ -2,7 +2,8 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -59,7 +60,7 @@ vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
@@ -84,6 +85,33 @@ vi.mock('../../../useCases/setTrackGainPan/setTrackColor', () => ({
 
 vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
+}));
+
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
@@ -114,6 +142,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectEpoch.reset();
     });
 
     it('should render without crashing', () => {
@@ -265,7 +294,7 @@ describe('TrackContextMenu', () => {
         expect(vi.mocked(saveTrackAsTemplate)).toHaveBeenCalledWith('track1', 'Test Track');
     });
 
-    it('adds a midi clip when the track kind is midi', () => {
+    it('adds a midi clip through the registered addClip action when the track kind is midi', () => {
         const midiTrack = TrackDummy.create({ id: 'midi1', kind: 'midi' });
         renderWithTooltip(
             <TrackContextMenu track={midiTrack}>
@@ -274,10 +303,44 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Add Clip'));
-        expect(vi.mocked(addClip)).toHaveBeenCalledTimes(1);
-        const arg = vi.mocked(addClip).mock.calls[0]![0];
-        expect(arg.type).toBe('midi');
-        expect(arg.trackId).toBe('midi1');
+        // The undoable `addClip` action, not the bare use case: the use case
+        // captures no inverse, so a menu-created clip left no history
+        // (issue #3696). `addClipUndo.integration.spec.tsx` asserts the
+        // resulting undo/redo end-to-end.
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'addClip',
+            payload: expect.objectContaining({
+                trackId: 'midi1',
+                startBeat: 0,
+                endBeat: 16,
+                name: expect.stringMatching(/^Clip \d+$/),
+                type: 'midi',
+            }),
+        });
+        expect(vi.mocked(addClip)).not.toHaveBeenCalled();
+    });
+
+    it('adds an audio clip through the registered addClip action when the track kind is audio', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Add Clip'));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'addClip',
+            payload: expect.objectContaining({
+                trackId: 'track1',
+                startBeat: 0,
+                endBeat: 16,
+                name: expect.stringMatching(/^Clip \d+$/),
+                type: 'audio',
+            }),
+        });
+        expect(vi.mocked(addClip)).not.toHaveBeenCalled();
     });
 
     it('unfreezes a frozen track and offers Flatten Track', () => {
@@ -343,7 +406,7 @@ describe('TrackContextMenu', () => {
         // (audit M-015). `trackDeleteUndo.integration.spec.tsx` asserts the
         // resulting undo end-to-end.
         await vi.waitFor(() => {
-            expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+            expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
                 type: 'removeTrack',
                 payload: { trackId: 'track1' },
             });
@@ -364,7 +427,9 @@ describe('TrackContextMenu', () => {
             expect(vi.mocked(confirmUser)).toHaveBeenCalled();
         });
         expect(vi.mocked(removeTrack)).not.toHaveBeenCalled();
-        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'removeTrack' })
+        );
     });
 
     it('commits a rename with the trimmed name', () => {
@@ -408,8 +473,13 @@ describe('TrackContextMenu', () => {
         expect(vi.mocked(setInputMonitoring)).toHaveBeenCalledWith('track1', 'on');
     });
 
-    it('imports a selected audio file into the track', async () => {
-        vi.mocked(importAudioClipToTrack).mockResolvedValue(undefined);
+    it('keeps a forwarded audio continuation bound to its picker epoch', async () => {
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importAudioClipToTrack).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -423,11 +493,36 @@ describe('TrackContextMenu', () => {
         Object.defineProperty(audioInput, 'files', { value: [file], configurable: true });
         fireEvent.change(audioInput);
         await vi.waitFor(() => {
-            expect(vi.mocked(importAudioClipToTrack)).toHaveBeenCalledWith('track1', file);
+            expect(vi.mocked(importAudioClipToTrack)).toHaveBeenCalledWith('track1', file, {
+                shouldContinue: expect.any(Function),
+            });
         });
+        const originalOptions = vi.mocked(importAudioClipToTrack).mock.calls[0]?.[2];
+        expect(originalOptions?.shouldContinue()).toBe(true);
+
+        projectEpoch.advance();
+        expect(originalOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+        await Promise.resolve();
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        const successorFile = new File(['data'], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(audioInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(audioInput);
+
+        await vi.waitFor(() => expect(importAudioClipToTrack).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importAudioClipToTrack).mock.calls[1]?.[2];
+        expect(successorOptions?.shouldContinue()).toBe(true);
     });
 
-    it('imports a selected MIDI file', async () => {
+    it('keeps a forwarded MIDI continuation bound to its picker epoch', async () => {
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importMidiFile).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -441,8 +536,61 @@ describe('TrackContextMenu', () => {
         Object.defineProperty(midiInput, 'files', { value: [file], configurable: true });
         fireEvent.change(midiInput);
         await vi.waitFor(() => {
-            expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file);
+            expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
         });
+        const originalOptions = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        expect(originalOptions?.shouldContinue()).toBe(true);
+
+        projectEpoch.advance();
+        expect(originalOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import MIDI...'));
+        const successorFile = new File(['data'], 'successor.mid', { type: 'audio/midi' });
+        Object.defineProperty(midiInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(midiInput);
+
+        await vi.waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
+    });
+
+    it('keeps a stale picker out of the successor track while a new picker remains current', async () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        const audioInput = Array.from(document.querySelectorAll('input[type=file]')).find(
+            (input) => (input as HTMLInputElement).accept === 'audio/*'
+        ) as HTMLInputElement;
+        Object.defineProperty(audioInput, 'files', {
+            value: [new File(['data'], 'stale.wav', { type: 'audio/wav' })],
+            configurable: true,
+        });
+
+        fireEvent.change(audioInput);
+
+        expect(importAudioClipToTrack).not.toHaveBeenCalled();
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        const successorFile = new File(['data'], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(audioInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(audioInput);
+
+        await vi.waitFor(() => {
+            expect(importAudioClipToTrack).toHaveBeenCalledWith('track1', successorFile, {
+                shouldContinue: expect.any(Function),
+            });
+        });
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('applies a color from the color picker', () => {
@@ -467,7 +615,7 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Disarm'));
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'arm1', armed: false },
         });

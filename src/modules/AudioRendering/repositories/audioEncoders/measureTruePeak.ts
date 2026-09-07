@@ -94,10 +94,11 @@ export function measureTruePeak({ channels, length }: { channels: readonly Float
     for (const channel of channels) {
         // Sliding window of the last TAPS input samples, zero-padded at the start.
         const history = new Float64Array(TAPS);
+        const framesToMeasure = length > 0 ? length + TAPS - 1 : 0;
 
-        for (let index = 0; index < length; index++) {
+        for (let index = 0; index < framesToMeasure; index++) {
             history.copyWithin(0, 1);
-            const sample = channel[index] ?? 0;
+            const sample = index < length ? (channel[index] ?? 0) : 0;
             history[TAPS - 1] = Number.isFinite(sample) ? sample : 0;
 
             for (let phase = 0; phase < PHASES; phase++) {

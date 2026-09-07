@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
-import { preserveBranchStateForSession } from '#/modules/CrdtDocument/useCases';
 
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { leaveSession } from '../leaveSession';
 import { sessionRuntimePrimitives } from '../sessionManagement';
@@ -12,6 +10,43 @@ const notifyUserMock = vi.hoisted(() =>
     vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>()
 );
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
+
+const runtimeIoMock = vi.hoisted(() => ({
+    peerManagers: [] as Array<{
+        closeAll: ReturnType<typeof vi.fn>;
+        getConnectedPeerIds: ReturnType<typeof vi.fn>;
+        sendCrdtSyncBuffered: ReturnType<typeof vi.fn>;
+    }>,
+}));
+
+vi.mock('../../../repositories/peerConnection', () => ({
+    PeerConnectionManager: vi.fn().mockImplementation(function () {
+        const manager = {
+            closeAll: vi.fn(),
+            getConnectedPeerIds: vi.fn().mockReturnValue([]),
+            sendCrdtSyncBuffered: vi.fn().mockResolvedValue(undefined),
+        };
+        runtimeIoMock.peerManagers.push(manager);
+        return manager;
+    }),
+}));
+
+vi.mock('../../automergeSync', () => ({
+    AutomergeSync: vi.fn().mockImplementation(function () {
+        return {
+            start: vi.fn(),
+            stop: vi.fn(),
+        };
+    }),
+}));
+
+vi.mock('../../assetTransfer', () => ({
+    AssetTransfer: vi.fn().mockImplementation(function () {
+        return {
+            dispose: vi.fn(),
+        };
+    }),
+}));
 
 /**
  * Collaboration teardown runs `restoreBranchStateAfterSession` inside a
@@ -48,19 +83,14 @@ function blockEveryDurableWrite(): void {
     });
 }
 
-function createClosablePeerManager(): { manager: PeerConnectionManager; closeAll: ReturnType<typeof vi.fn> } {
-    const closeAll = vi.fn();
-    const manager = {
-        closeAll,
-        getConnectedPeerIds: vi.fn(() => []),
-        sendCrdtSyncBuffered: vi.fn(() => Promise.resolve()),
-    };
-    return { manager: manager as unknown as PeerConnectionManager, closeAll };
+function latestPeerManager(): (typeof runtimeIoMock.peerManagers)[number] {
+    return runtimeIoMock.peerManagers.at(-1)!;
 }
 
 describe('collaboration teardown when localStorage refuses the write', () => {
     beforeEach(() => {
         notifyUserMock.mockReset();
+        runtimeIoMock.peerManagers.length = 0;
         window.localStorage.clear();
         collaborationStore.set({
             isEnabled: true,
@@ -76,23 +106,24 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
         branchStore.set({ branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID });
 
-        // What `startBranchSync` does: stash the local list, then let the host's
-        // projected list replace it for the duration of the session.
-        preserveBranchStateForSession();
-        sessionRuntimePrimitives.state.hasBranchStateBackup = true;
+        sessionRuntimePrimitives.initialize('project-owner-1');
+        sessionRuntimePrimitives.startBranchSync(false);
         branchStore.set({ branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID });
     });
 
     afterEach(() => {
+        try {
+            sessionRuntimePrimitives.cleanup();
+        } catch {
+            // The reporting-throws case deliberately makes cleanup throw after
+            // all runtime resources have already been removed.
+        }
         vi.restoreAllMocks();
-        sessionRuntimePrimitives.state.hasBranchStateBackup = false;
-        sessionRuntimePrimitives.state.peerManager = null;
         window.localStorage.clear();
     });
 
     it('closes every peer even when the pre-session branch list cannot be persisted', () => {
-        const { manager, closeAll } = createClosablePeerManager();
-        sessionRuntimePrimitives.state.peerManager = manager;
+        const { closeAll } = latestPeerManager();
         blockEveryDurableWrite();
 
         sessionRuntimePrimitives.cleanup();
@@ -102,7 +133,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
     });
 
     it('restores the local branch list into the session even when it cannot be persisted', () => {
-        sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
         blockEveryDurableWrite();
 
         sessionRuntimePrimitives.cleanup();
@@ -125,7 +155,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
      */
     describe('through the path the Leave button actually takes', () => {
         it('tells the user the branch list was not saved, and the message survives teardown', async () => {
-            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
             blockEveryDurableWrite();
 
             await leaveSession();
@@ -140,7 +169,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
 
         it('tells the user a leftover backup survived, with its own message', async () => {
-            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
             vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
                 throw new DOMException('The operation is insecure.', 'SecurityError');
             });
@@ -151,8 +179,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
 
         it('says nothing when the restore lands', async () => {
-            sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
-
             await leaveSession();
 
             expect(notifyUserMock).not.toHaveBeenCalled();
@@ -169,8 +195,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
          * last thing teardown does and the peers are already closed.
          */
         it('closes the peers even if reporting itself throws', async () => {
-            const { manager, closeAll } = createClosablePeerManager();
-            sessionRuntimePrimitives.state.peerManager = manager;
+            const { closeAll } = latestPeerManager();
             blockEveryDurableWrite();
             notifyUserMock.mockImplementation(() => {
                 throw new TypeError('eventBus.emit is not a function');
@@ -186,8 +211,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
     });
 
     it('reports no error and consumes the backup when the write lands', () => {
-        sessionRuntimePrimitives.state.peerManager = createClosablePeerManager().manager;
-
         sessionRuntimePrimitives.cleanup();
 
         expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([

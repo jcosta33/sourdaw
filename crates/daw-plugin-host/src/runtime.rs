@@ -14,8 +14,8 @@ use crate::clap_wrapper::ClapWrapper;
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, PluginHostRequestNotifier, ProcessingGate,
+    AudioPlugin, EditorWindowResizer, HostMidiEvent, HostParameterUpdate, HostTransport,
+    HostedPluginRuntime, LatencyChangeNotifier, PluginHostRequestNotifier, ProcessingGate,
 };
 use crate::vst3_wrapper::Vst3Wrapper;
 use std::ffi::c_void;
@@ -174,7 +174,7 @@ impl HostedPluginRuntime for HostedRuntime {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)],
+        midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
         delegate!(self, backend => backend.process_with_midi_and_parameters(

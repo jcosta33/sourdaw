@@ -29,6 +29,21 @@ function readCounter(payload: Record<string, unknown>, key: keyof EngineRtDiagno
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function readOutputStreamFault(value: unknown): EngineStreamErrorKind | null {
+    if (value === null || typeof value !== 'string') {
+        return null;
+    }
+
+    // An unrecognized kind still means the stream reported something — the
+    // same fallback `toEngineEvent` uses for an event kind this build does
+    // not know, and for the same reason: reporting the fault as
+    // backend-specific is honest, dropping it silently recreates the defect
+    // this surface exists to fix.
+    return streamErrorKinds.includes(value as EngineStreamErrorKind)
+        ? (value as EngineStreamErrorKind)
+        : 'backendSpecific';
+}
+
 function toEngineEvent(value: unknown): EngineEvent | null {
     if (typeof value !== 'object' || value === null) {
         return null;
@@ -76,16 +91,11 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         effectIdCollisions: readCounter(payload, 'effectIdCollisions'),
         unsupportedEffectAdditions: readCounter(payload, 'unsupportedEffectAdditions'),
         unmappedSetParamCalls: readCounter(payload, 'unmappedSetParamCalls'),
-        bridgeOutputBlocksDropped: readCounter(payload, 'bridgeOutputBlocksDropped'),
-        unmatchedBridgeBlocks: readCounter(payload, 'unmatchedBridgeBlocks'),
-        bridgeBacklogBlocksShed: readCounter(payload, 'bridgeBacklogBlocksShed'),
-        bridgeBlocksPassedChainBound: readCounter(payload, 'bridgeBlocksPassedChainBound'),
-        callbackFramesOverBridgeReach: readCounter(payload, 'callbackFramesOverBridgeReach'),
-        bridgeInputBlocksRefused: readCounter(payload, 'bridgeInputBlocksRefused'),
         captureConsumerRefusals: readCounter(payload, 'captureConsumerRefusals'),
         captureBlocksDropped: readCounter(payload, 'captureBlocksDropped'),
         captureInputUnderruns: readCounter(payload, 'captureInputUnderruns'),
         inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
+        outputStreamFault: readOutputStreamFault(payload.outputStreamFault),
         events,
     };
 }

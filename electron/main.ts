@@ -98,6 +98,14 @@ process.stderr.on('error', () => undefined);
 // and a scheme registered then is silently an ordinary opaque scheme.
 registerAppScheme();
 
+// Browser Web Locks coordinate renderer contexts only after Chromium has
+// admitted them. The persistent Electron profile needs this earlier native
+// admission so a second main process cannot start another renderer/session.
+const isPrimaryApplicationInstance = app.requestSingleInstanceLock();
+if (!isPrimaryApplicationInstance) {
+    app.exit(0);
+}
+
 // No `--enable-features=WebAudioConfigurableRenderQuantum`. Nothing in the
 // renderer passes `renderSizeHint`, so the flag changes no behaviour today, and
 // the Chromium implementation carries an open renderer-memory-safety bug
@@ -134,6 +142,7 @@ let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
 let destroyMainWindowAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined;
 let closeSessionQuiescedWindow: BrowserWindow | undefined;
+let rendererStartupComplete = false;
 const rendererSessionLifecycle = createRendererSessionLifecycle();
 const rendererSessionQuiescer = createRendererSessionQuiescer(
     RENDERER_SESSION_QUIESCE_CHANNEL,
@@ -155,6 +164,34 @@ const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
     getWindow: () => mainWindow,
     createWindow: createAndActivateWindow,
 });
+
+const activateMainWindow = (): void => {
+    activateRendererWindow({
+        hasLiveWindow: () => mainWindow !== undefined && !mainWindow.isDestroyed(),
+        clearPending: () => nativeMenuActionDispatcher.clearPending(),
+        createWindow: createAndActivateWindow,
+    });
+};
+
+if (isPrimaryApplicationInstance) {
+    app.on('second-instance', () => {
+        // A second process can reach us while the initial process is still waiting
+        // for Electron's ready event. That startup owns the first renderer.
+        if (!rendererStartupComplete) {
+            return;
+        }
+        const window = mainWindow;
+        if (window === undefined || window.isDestroyed()) {
+            activateMainWindow();
+            return;
+        }
+        if (window.isMinimized()) {
+            window.restore();
+        }
+        window.show();
+        window.focus();
+    });
+}
 
 let shellComposition: ReturnType<typeof createProductionShellComposition<ReturnType<typeof Menu.buildFromTemplate>>>;
 
@@ -712,82 +749,85 @@ const startNativeSurface = (): void => {
     }
 };
 
-void app.whenReady().then(() => {
-    handleAppProtocol(resolveContentRoots());
-    applyPermissionPolicy(session.defaultSession, { allowedOrigins: allowedOrigins() });
+if (isPrimaryApplicationInstance) {
+    void app.whenReady().then(() => {
+        handleAppProtocol(resolveContentRoots());
+        applyPermissionPolicy(session.defaultSession, { allowedOrigins: allowedOrigins() });
 
-    // The frameless Linux chrome draws its own controls; the default
-    // application menu would sit above them as a second, boilerplate title
-    // bar. Only Linux is frameless: macOS keeps its menu because editing
-    // shortcuts there come from the menu bar, and Windows keeps its native
-    // chrome, menu included.
-    if (process.platform === 'linux') {
-        Menu.setApplicationMenu(null);
-    } else if (process.platform === 'darwin') {
-        rebuildMacApplicationMenu();
-    }
+        // The frameless Linux chrome draws its own controls; the default
+        // application menu would sit above them as a second, boilerplate title
+        // bar. Only Linux is frameless: macOS keeps its menu because editing
+        // shortcuts there come from the menu bar, and Windows keeps its native
+        // chrome, menu included.
+        if (process.platform === 'linux') {
+            Menu.setApplicationMenu(null);
+        } else if (process.platform === 'darwin') {
+            rebuildMacApplicationMenu();
+        }
 
-    registerDialogChannels({
-        ipcMain,
-        isTrustedFrameUrl: isAllowedFrameUrl,
-        dialogs: dialog,
-        native: () => nativeHost,
-    });
-    registerPathChannels({
-        ipcMain,
-        isTrustedFrameUrl: isAllowedFrameUrl,
-        // The same root-absolute path the web build uses, made absolute so it
-        // also resolves from worker and worklet contexts.
-        samplesBaseUrl: `${APP_ORIGIN}/samples`,
-        join,
-    });
-    registerWindowControlChannels({
-        ipcMain,
-        isTrustedFrameUrl: isAllowedFrameUrl,
-        // The router keeps IPC events structurally untyped so it stays
-        // Electron-free; an invoke event's sender is always a WebContents.
-        // Anything else has no window to drive.
-        windowForSender: (sender) =>
-            typeof sender === 'object' && sender !== null && 'id' in sender
-                ? BrowserWindow.fromWebContents(sender as WebContents)
-                : null,
-    });
-    registerNativeMenuChannels({
-        ipcMain,
-        isTrustedFrameUrl: isAllowedFrameUrl,
-        onProjectState: (state, sender) => {
-            const senderWindow =
-                typeof sender === 'object' && sender !== null
+        registerDialogChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            dialogs: dialog,
+            native: () => nativeHost,
+        });
+        registerPathChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            // The same root-absolute path the web build uses, made absolute so it
+            // also resolves from worker and worklet contexts.
+            samplesBaseUrl: `${APP_ORIGIN}/samples`,
+            join,
+        });
+        registerWindowControlChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            // The router keeps IPC events structurally untyped so it stays
+            // Electron-free; an invoke event's sender is always a WebContents.
+            // Anything else has no window to drive.
+            windowForSender: (sender) =>
+                typeof sender === 'object' && sender !== null && 'id' in sender
                     ? BrowserWindow.fromWebContents(sender as WebContents)
-                    : null;
-            if (senderWindow !== mainWindow) {
-                return;
-            }
-            nativeMenuProjectStateController.apply(state);
-            nativeMenuActionDispatcher.rendererReady(senderWindow, state.rendererReady === true);
-        },
-        onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
-        onSessionQuiesced: (result, sender) => {
-            const senderWindow =
-                typeof sender === 'object' && sender !== null
-                    ? BrowserWindow.fromWebContents(sender as WebContents)
-                    : null;
-            if (senderWindow !== null) {
-                rendererSessionQuiescer.resolve(senderWindow, result);
-            }
-        },
-        onSessionQuiesceStarted: (requestId, sender) => {
-            const senderWindow =
-                typeof sender === 'object' && sender !== null
-                    ? BrowserWindow.fromWebContents(sender as WebContents)
-                    : null;
-            return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
-        },
-    });
-    startNativeSurface();
+                    : null,
+        });
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl: isAllowedFrameUrl,
+            onProjectState: (state, sender) => {
+                const senderWindow =
+                    typeof sender === 'object' && sender !== null
+                        ? BrowserWindow.fromWebContents(sender as WebContents)
+                        : null;
+                if (senderWindow !== mainWindow) {
+                    return;
+                }
+                nativeMenuProjectStateController.apply(state);
+                nativeMenuActionDispatcher.rendererReady(senderWindow, state.rendererReady === true);
+            },
+            onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
+            onSessionQuiesced: (result, sender) => {
+                const senderWindow =
+                    typeof sender === 'object' && sender !== null
+                        ? BrowserWindow.fromWebContents(sender as WebContents)
+                        : null;
+                if (senderWindow !== null) {
+                    rendererSessionQuiescer.resolve(senderWindow, result);
+                }
+            },
+            onSessionQuiesceStarted: (requestId, sender) => {
+                const senderWindow =
+                    typeof sender === 'object' && sender !== null
+                        ? BrowserWindow.fromWebContents(sender as WebContents)
+                        : null;
+                return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
+            },
+        });
+        startNativeSurface();
 
-    createAndActivateWindow();
-});
+        createAndActivateWindow();
+        rendererStartupComplete = true;
+    });
+}
 
 /**
  * Quit is explicit (REQ-012).
@@ -883,9 +923,5 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-    activateRendererWindow({
-        hasLiveWindow: () => mainWindow !== undefined && !mainWindow.isDestroyed(),
-        clearPending: () => nativeMenuActionDispatcher.clearPending(),
-        createWindow: createAndActivateWindow,
-    });
+    activateMainWindow();
 });

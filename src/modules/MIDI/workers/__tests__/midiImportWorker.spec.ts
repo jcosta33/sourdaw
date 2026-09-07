@@ -151,8 +151,16 @@ function lastPosted(): { type: string } & Record<string, unknown> {
     return last as { type: string } & Record<string, unknown>;
 }
 
-type ParsedNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
-type ParsedTrack = { name: string; notes: ParsedNote[]; endTick: number };
+type ParsedNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    channel: number;
+};
+type ParsedCC = { id: string; controller: number; value: number; beat: number; channel: number };
+type ParsedTrack = { name: string; notes: ParsedNote[]; ccs: ParsedCC[]; endTick: number };
 
 /** Assert the last posted message is a 'parsed' result and return its tracks. */
 function parsedTracks(): ParsedTrack[] {
@@ -180,6 +188,11 @@ function firstNote(): ParsedNote {
         throw new Error('expected at least one note');
     }
     return note;
+}
+
+/** Return the control-change events of the first track. */
+function firstTrackCCs(): ParsedCC[] {
+    return firstTrack().ccs;
 }
 
 describe('midiImportWorker', () => {
@@ -376,6 +389,125 @@ describe('midiImportWorker', () => {
                     .notes.map((n) => n.pitch)
                     .sort()
             ).toEqual([60, 64]);
+        });
+    });
+
+    describe('channel and control-change preservation', () => {
+        it('carries channel 10 (index 9) of the channel-10 drum fixture note through pairing', () => {
+            // The issue #3666 reproduction fixture, byte for byte: format 0,
+            // 480 PPQN, ~90 BPM tempo meta; sustain CC64=127 at tick 0 on
+            // channel index 9 (human channel 10, the GM drum channel); note 60
+            // velocity 100 at tick 0 on the same channel; note-off at tick 480.
+            // Channel 10 is used to pair the note-on/off, so the parser holds
+            // it — but dropping it from the note sends a drum hit to a melodic
+            // instrument on playback.
+            const events = [
+                0, 255, 81, 3, 10, 44, 43, 0, 185, 64, 127, 0, 153, 60, 100, 131, 96, 137, 60, 0, 0, 255, 47, 0,
+            ];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(events)]));
+
+            const note = firstNote();
+            expect(note.channel).toBe(9);
+            expect(note.pitch).toBe(60);
+            expect(note.velocity).toBe(100);
+            expect(note.startBeat).toBe(0);
+            expect(note.duration).toBe(1);
+        });
+
+        it('carries each note its own channel in a multi-channel track', () => {
+            // Three channels share one format-0 track; each note must report
+            // the channel its note-on named, not a merged default.
+            const track = mTrk([
+                { status: 0x90, data1: 60, data2: 90, delta: 0 }, // ch 0 (human 1)
+                { status: 0x95, data1: 62, data2: 80, delta: 0 }, // ch 5 (human 6)
+                { status: 0x99, data1: 64, data2: 70, delta: 0 }, // ch 9 (human 10)
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+                { status: 0x85, data1: 62, data2: 0, delta: 0 },
+                { status: 0x89, data1: 64, data2: 0, delta: 0 },
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
+
+            const channelByPitch = new Map(firstTrack().notes.map((note) => [note.pitch, note.channel]));
+            expect(channelByPitch.get(60)).toBe(0);
+            expect(channelByPitch.get(62)).toBe(5);
+            expect(channelByPitch.get(64)).toBe(9);
+        });
+
+        it('carries the adopted running-status channel when the status byte is omitted', () => {
+            // A data-byte-only event adopts the previous status byte — and with
+            // it its channel. The omission must not fall back to channel 0.
+            const body = [
+                ...varlen(0),
+                0x94,
+                60,
+                100, // ch 4 note-on
+                ...varlen(0),
+                62,
+                90, // running status: ch 4 note-on
+                ...varlen(480),
+                60,
+                0, // running status: ch 4 note-off
+                ...varlen(0),
+                62,
+                0,
+                ...endOfTrack(0),
+            ];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            const channelByPitch = new Map(firstTrack().notes.map((note) => [note.pitch, note.channel]));
+            expect(channelByPitch.get(60)).toBe(4);
+            expect(channelByPitch.get(62)).toBe(4);
+        });
+
+        it('carries the channel on a note-on closed at end of track without a note-off', () => {
+            // The hanging-note closure recovers the channel from the active-note
+            // key, the same place the pairing used it.
+            const track = mTrkRaw([...varlen(0), 0x9a, 42, 100, ...endOfTrack(960)]); // ch 10 (human 11)
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
+
+            const note = firstNote();
+            expect(note.channel).toBe(10);
+            expect(note.pitch).toBe(42);
+            expect(note.duration).toBe(2);
+        });
+
+        it('preserves control-change events with controller, value, beat, and channel', () => {
+            // Sustain pedal (CC64) down at tick 0 and up half a beat later on
+            // channel 9. CC data bytes were already read to keep the stream in
+            // sync — the musical ones must also reach the parsed CC lane.
+            const track = mTrk([
+                { status: 0xb9, data1: 64, data2: 127, delta: 0 }, // sustain down @0
+                { status: 0x90, data1: 60, data2: 100, delta: 0 }, // note-on @0
+                { status: 0xb9, data1: 64, data2: 0, delta: 240 }, // sustain up @240 (0.5 beats)
+                { status: 0x80, data1: 60, data2: 0, delta: 240 }, // note-off @480
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
+
+            const ccs = firstTrackCCs();
+            expect(ccs).toHaveLength(2);
+            const [down, up] = ccs;
+            expect(down).toMatchObject({ controller: 64, value: 127, beat: 0, channel: 9 });
+            expect(up).toMatchObject({ controller: 64, value: 0, beat: 0.5, channel: 9 });
+            const ids = ccs.map((cc) => cc.id);
+            expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+            expect(new Set(ids).size).toBe(ids.length);
+        });
+
+        it('does not let control-change handling desync the notes around it', () => {
+            // A CC carries two data bytes; miscounting them shifts every
+            // following event's delta and corrupts note timing.
+            const track = mTrk([
+                { status: 0xb0, data1: 7, data2: 100, delta: 0 }, // channel volume, ch 0
+                { status: 0x90, data1: 60, data2: 100, delta: 480 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...track]));
+
+            const note = firstNote();
+            expect(note.pitch).toBe(60);
+            expect(note.startBeat).toBe(1);
+            expect(note.duration).toBe(1);
+            expect(firstTrackCCs()).toMatchObject([{ controller: 7, value: 100, beat: 0, channel: 0 }]);
         });
     });
 

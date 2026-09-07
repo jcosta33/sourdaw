@@ -20,6 +20,7 @@ const setPadParam = vi.fn();
 const scheduleHit = vi.fn();
 const allNotesOff = vi.fn();
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     getAudioTime: vi.fn(() => 0),
     getAudioSampleRate: vi.fn(() => 48_000),
     getToasterDeviceControls: vi.fn(() => ({
@@ -36,6 +37,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 // findDeviceRef walks getAllTracks(); return a track owning DEVICE so the

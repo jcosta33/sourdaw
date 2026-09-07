@@ -185,4 +185,16 @@ describe('ScratchPadView', () => {
         fireEvent.mouseDown(document.body);
         expect(screen.queryByText('Delete')).not.toBeInTheDocument();
     });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618). The menu's buttons are tab-focusable,
+    // so without a menu-role ancestor a Delete from inside would fall through
+    // and delete the arrangement clips behind the open menu.
+    it('context menu items sit inside a [role="menu"] surface', () => {
+        mockScratchPadState = { sections: [sectionA] };
+        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        fireEvent.contextMenu(screen.getByText('Verse'));
+
+        expect(screen.getByText('Delete').closest('[role="menu"]')).not.toBeNull();
+    });
 });

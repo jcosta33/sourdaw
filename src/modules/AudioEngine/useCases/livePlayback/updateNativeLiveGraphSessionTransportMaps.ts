@@ -41,10 +41,10 @@
 import { type EngineLoopRegion, type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 
-import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
-import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 
 export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
     /**
@@ -92,23 +92,23 @@ export function updateNativeLiveGraphSessionTransportMaps(
         nativeLiveGraphSession.loopRegion = region;
         nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
 
-        const pass = nativeLiveAutomationWriter.pass;
-        if (pass && regionChanged) {
+        if (regionChanged) {
             // The pass was written for the region that just went away — its
             // seam re-arm would return the playhead to a loop start the engine
-            // no longer has. Re-armed from where the engine actually stands,
-            // falling back to the old region's start when no snapshot has
-            // landed yet: a position behind the playhead only re-sends writes
-            // the engine resolves to their end state, while one ahead of it
-            // would skip the curve the musician is listening to.
-            armNativeLiveAutomationWriter({
-                stripTracks: pass.stripTracks,
-                sampleRate: pass.sampleRate,
-                programmeEndSeconds: pass.programmeEndSeconds,
-                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds ?? pass.entrySeconds,
-                // The install's own fence: the region this pass is written
-                // into is not the engine's until that batch has drained.
+            // no longer has. The install's own fence dates the new pass: the
+            // region it is written into is not the engine's until that batch
+            // has drained.
+            rearmNativeLiveAutomationWriterInPlace({
                 provenAfterBatch: maps.applied.admittedBatch,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
+            });
+            // The note pass turns on the region too, and in the opposite
+            // direction from either side of the change: a pass that was looping
+            // holds the whole region and is never pumped, while one that is not
+            // holds a window and is. So a region arriving or leaving decides
+            // which of those a pass is, and only a re-read can change it.
+            await rearmNativeLiveMidiWriterInPlace({
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
         }
         return { outcome: 'updated' };

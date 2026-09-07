@@ -59,6 +59,8 @@ const mocks = vi.hoisted(() => {
         getTransportState: vi.fn(),
         setLoopRegion: vi.fn(),
         pushUndoEntry: vi.fn(),
+        executeUserAppAction: vi.fn(),
+        generateGroupId: vi.fn((label: string) => ({ groupId: 'group-cancel', groupLabel: label })),
         shiftClipAutomation: vi.fn(),
         duplicateClipAutomation: vi.fn(),
         duplicateClipNotes: vi.fn(),
@@ -104,6 +106,8 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: mocks.executeUserAppAction,
+    generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -450,7 +454,7 @@ describe('useTimelineInteractions — gesture cancellation', () => {
         act(() => {
             result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
         });
-        expect(mocks.trimClipStart).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips[0]?.startBeat).toBe(0);
     });
@@ -463,13 +467,22 @@ describe('useTimelineInteractions — gesture cancellation', () => {
             result.current.handleMouseUp({ clientX: 200, clientY: 120 } as any);
         });
 
-        expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(1);
+        // The single-clip move commits through the registered moveClip action
+        // (#3641); at this layer the dispatch is mocked, so the commit is
+        // exactly one dispatch and the store stays as the gesture left it.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClip',
+            payload: { clipId: 'c1', trackId: 't2', startBeat: 2 },
+        });
 
         let cancelled = true;
         act(() => {
             cancelled = cancelActiveTimelineGesture();
         });
         expect(cancelled).toBe(false);
-        expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(1);
+        // The later cancel neither re-dispatches the committed move nor rewinds.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(0);
     });
 });

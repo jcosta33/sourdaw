@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -129,7 +131,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
@@ -141,7 +143,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
             { skipUndo: true }
         );
@@ -152,7 +154,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSolo(true);
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
             { skipUndo: true }
         );
@@ -167,7 +169,7 @@ describe('useChannelStripActions', () => {
         result.current.toggleSolo(false);
 
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('toggleArm routes the inverse armed flag through the canonical AppAction write path', () => {
@@ -175,7 +177,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleArm();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'track-1', armed: false },
         });
@@ -194,7 +196,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSoloSafeFlag();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'toggleSoloSafe', payload: { trackId: 'track-1' } },
             { skipUndo: true }
         );
@@ -223,7 +225,7 @@ describe('useChannelStripActions', () => {
         );
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
 
-        act(() => {
+        await act(async () => {
             result.current.setGain(0.42, true);
             result.current.setGain(0.31, false);
         });
@@ -384,7 +386,7 @@ describe('useChannelStripActions', () => {
         );
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', pan: 0 })));
 
-        act(() => {
+        await act(async () => {
             result.current.setPan(-25, true);
             result.current.setPan(-30, false);
         });
@@ -405,6 +407,202 @@ describe('useChannelStripActions', () => {
         expect(result.current.displayPan).toBe(0);
     });
 
+    it('scopes gain commit continuation to the owning gesture and serialises overlapping settles', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.8 });
+        let resolveCommit1: (() => void) | undefined;
+        let resolveCommit2: (() => void) | undefined;
+        mocks.executeAppAction
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveCommit1 = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveCommit2 = resolve;
+                    })
+            );
+
+        const { result, rerender } = renderHook((track: Track) => useChannelStripActions(track), {
+            initialProps: makeTrack({ id: 'track-1', gain: 0.8 }),
+        });
+
+        // Drag to 0.42 (transient), release at 0.65 (settle).
+        await act(async () => {
+            result.current.setGain(0.42, true);
+            result.current.setGain(0.65, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.65, expectedGain: 0.8 },
+        });
+        expect(result.current.displayGain).toBe(0.65);
+
+        // While commit 1 is in flight, drag to 0.20 (transient), release at 0.30 (settle).
+        await act(async () => {
+            result.current.setGain(0.2, true);
+            result.current.setGain(0.3, false);
+        });
+
+        expect(result.current.displayGain).toBe(0.3);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // Resolve commit 1, update store to 0.65.
+        seedProjectTruth({ id: 'track-1', gain: 0.65 });
+        rerender(makeTrack({ id: 'track-1', gain: 0.65 }));
+
+        await act(async () => {
+            resolveCommit1?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayGain).toBe(0.3);
+        expect(mocks.setTrackGain).toHaveBeenLastCalledWith('track-1', 0.3, true);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.3, expectedGain: 0.65 },
+        });
+
+        // Resolve commit 2, update store to 0.30.
+        seedProjectTruth({ id: 'track-1', gain: 0.3 });
+        rerender(makeTrack({ id: 'track-1', gain: 0.3 }));
+
+        await act(async () => {
+            resolveCommit2?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayGain).toBe(0.3);
+    });
+
+    it('scopes pan commit continuation to the owning gesture and serialises overlapping settles', async () => {
+        seedProjectTruth({ id: 'track-1', pan: 0 });
+        let resolveCommit1: (() => void) | undefined;
+        let resolveCommit2: (() => void) | undefined;
+        mocks.executeAppAction
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveCommit1 = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveCommit2 = resolve;
+                    })
+            );
+
+        const { result, rerender } = renderHook((track: Track) => useChannelStripActions(track), {
+            initialProps: makeTrack({ id: 'track-1', pan: 0 }),
+        });
+
+        // Drag to 10 (transient), release at 15 (settle).
+        await act(async () => {
+            result.current.setPan(10, true);
+            result.current.setPan(15, false);
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackPan',
+            payload: { trackId: 'track-1', pan: 15, expectedPan: 0 },
+        });
+        expect(result.current.displayPan).toBe(15);
+
+        // While commit 1 is in flight, drag to -20 (transient), release at -25 (settle).
+        await act(async () => {
+            result.current.setPan(-20, true);
+            result.current.setPan(-25, false);
+        });
+
+        expect(result.current.displayPan).toBe(-25);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // Resolve commit 1, update store to 15.
+        seedProjectTruth({ id: 'track-1', pan: 15 });
+        rerender(makeTrack({ id: 'track-1', pan: 15 }));
+
+        await act(async () => {
+            resolveCommit1?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayPan).toBe(-25);
+        expect(mocks.setTrackPan).toHaveBeenLastCalledWith('track-1', -25, true);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackPan',
+            payload: { trackId: 'track-1', pan: -25, expectedPan: 15 },
+        });
+
+        // Resolve commit 2, update store to -25.
+        seedProjectTruth({ id: 'track-1', pan: -25 });
+        rerender(makeTrack({ id: 'track-1', pan: -25 }));
+
+        await act(async () => {
+            resolveCommit2?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(result.current.displayPan).toBe(-25);
+    });
+
+    it('does not restore engine to pre-gesture truth if an earlier commit rejects while a newer gesture is live', async () => {
+        seedProjectTruth({ id: 'track-1', gain: 0.8 });
+        let rejectCommit1: ((error: Error) => void) | undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectCommit1 = reject;
+                })
+        );
+
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        // Gesture 1: drag to 0.65, release.
+        await act(async () => {
+            result.current.setGain(0.65, true);
+            result.current.setGain(0.65, false);
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // Gesture 2: drag to 0.30 (transient).
+        act(() => {
+            result.current.setGain(0.3, true);
+        });
+        expect(result.current.displayGain).toBe(0.3);
+
+        mocks.setTrackGain.mockClear();
+
+        // Commit 1 rejects with error.
+        const commitError = new Error('commit 1 failed');
+        await act(async () => {
+            rejectCommit1?.(commitError);
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // displayGain remains 0.30.
+        expect(result.current.displayGain).toBe(0.3);
+        // Engine is NOT restored to pre-gesture 0.8.
+        expect(mocks.setTrackGain).not.toHaveBeenCalledWith('track-1', 0.8, true);
+        // And mocks.logger.error logs the failure.
+        expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+        const logged = mocks.logger.error.mock.calls[0]![0] as Error;
+        expect(logged.message).toBe('Channel strip commit failed for action: setTrackGain');
+        expect(logged.cause).toBe(commitError);
+    });
+
     it('releases touch automation after the commit rather than before it', async () => {
         let settleCommit = (): void => undefined;
         mocks.executeAppAction.mockReturnValueOnce(
@@ -416,7 +614,7 @@ describe('useChannelStripActions', () => {
             useChannelStripActions(makeTrack({ id: 'track-1', automationMode: 'touch' }))
         );
 
-        act(() => {
+        await act(async () => {
             result.current.setGain(0.31, false);
         });
 
@@ -451,7 +649,7 @@ describe('useChannelStripActions', () => {
 
         result.current.setColor('#00ff00');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setTrackColor',
             payload: { trackId: 'track-1', color: '#00ff00' },
         });
@@ -463,7 +661,7 @@ describe('useChannelStripActions', () => {
 
         result.current.rename('New Name');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'renameTrack',
             payload: { trackId: 'track-1', name: 'New Name' },
         });
@@ -547,7 +745,7 @@ describe('useChannelStripActions', () => {
             variant: 'danger',
         });
         await waitFor(() => {
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'removeTrack',
                 payload: { trackId: 'track-1' },
             });
@@ -564,7 +762,7 @@ describe('useChannelStripActions', () => {
         await waitFor(() => {
             expect(mocks.confirmUser).toHaveBeenCalledTimes(1);
         });
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 });

@@ -187,6 +187,10 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelExport: vi.fn(),
     exportStems: mocks.exportStems,
     getAudioContext: mocks.getAudioContext,
@@ -223,7 +227,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -241,6 +244,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 vi.mock('../../../useCases/audioBufferToWav', () => ({

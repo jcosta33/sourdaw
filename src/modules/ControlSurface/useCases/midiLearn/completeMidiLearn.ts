@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { midiLearnStore } from '../../stores/midiLearnStore';
 
@@ -7,7 +7,7 @@ import { midiLearnStore } from '../../stores/midiLearnStore';
  * Complete an armed MIDI Learn by binding the next incoming CC to the target
  * that `startMidiLearn` armed.
  *
- * Dispatches `completeMidiLearn` through `executeAppAction` (audit A-1): a
+ * Dispatches `completeMidiLearn` through `executeUserAppAction` (audit A-1): a
  * learned mapping references a `trackId`/`deviceId`/`paramId` — project
  * entities — so it belongs in the Automerge document like every other
  * track/device binding, inside a transaction, on the undo stack. The actual
@@ -23,15 +23,15 @@ import { midiLearnStore } from '../../stores/midiLearnStore';
  * this only avoids dispatching a no-op action when called directly (e.g.
  * from a test) without that upstream guard.
  */
-export const completeMidiLearn = inject({ executeAppAction })(
-    ({ executeAppAction }) =>
+export const completeMidiLearn = inject({ executeUserAppAction })(
+    ({ executeUserAppAction }) =>
         function completeMidiLearn(channel: number, cc: number): void {
             const state = midiLearnStore.value;
             if (!state || !state.isLearning || !state.learningTarget) {
                 return;
             }
 
-            void executeAppAction({
+            void executeUserAppAction({
                 type: 'completeMidiLearn',
                 payload: { channel, cc, mappingId: `midi-map-${crypto.randomUUID()}` },
             });

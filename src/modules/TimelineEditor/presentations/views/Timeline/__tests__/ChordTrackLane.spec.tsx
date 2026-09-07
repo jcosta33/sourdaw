@@ -18,6 +18,7 @@ const { executeAppAction } = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', async () => ({
     ...(await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases')),
     executeAppAction: (action: Parameters<typeof executeAppAction>[0]) => executeAppAction(action),
+    executeUserAppAction: vi.fn(),
 }));
 
 const oneEvent = { id: 'c1', beat: 4, duration: 4, root: 0, quality: 'major' };
@@ -92,14 +93,14 @@ describe('ChordTrackLane', () => {
     it('reflects the enabled flag on the power toggle', () => {
         mockChordState = { enabled: true, events: [] };
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
-        const power = screen.getByLabelText('Disable harmonic following');
+        const power = screen.getByLabelText('Harmonic following');
         expect(power).toHaveAttribute('aria-pressed', 'true');
-        expect(power).toHaveAttribute('title', 'Harmonic following ON');
+        expect(power).not.toHaveAttribute('title');
     });
 
     it('dispatches toggle and clear actions through Command', () => {
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
-        fireEvent.click(screen.getByLabelText('Enable harmonic following'));
+        fireEvent.click(screen.getByLabelText('Harmonic following'));
         expect(executeAppAction).toHaveBeenCalledWith({ type: 'toggleChordTrack', payload: { enabled: true } });
 
         renderChordLane();
@@ -434,7 +435,7 @@ describe('ChordTrackLane', () => {
         expect(document.activeElement).toBe(document.body);
         fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
         fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab', shiftKey: true });
-        expect(screen.getByLabelText('Enable harmonic following')).toHaveFocus();
+        expect(screen.getByLabelText('Harmonic following')).toHaveFocus();
 
         addButton.focus();
         fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
@@ -448,7 +449,7 @@ describe('ChordTrackLane', () => {
         addButton.focus();
         fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
         fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab', shiftKey: true });
-        expect(screen.getByLabelText('Enable harmonic following')).toHaveFocus();
+        expect(screen.getByLabelText('Harmonic following')).toHaveFocus();
     });
 
     it('labels root and quality as checked radio groups', () => {
@@ -559,5 +560,15 @@ describe('ChordTrackLane', () => {
 
         fireEvent.mouseDown(document.body);
         expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
+    });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open popover deletes the arrangement clips behind it.
+    it('chord picker options sit inside a [role="menu"] surface', () => {
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
+        fireEvent.click(screen.getByLabelText('Add chord event'));
+
+        expect(screen.getByRole('button', { name: 'C' }).closest('[role="menu"]')).not.toBeNull();
     });
 });

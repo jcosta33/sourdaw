@@ -68,11 +68,16 @@ describe('startAudioRecording', () => {
 
 describe('startAudioRecording', () => {
     let media_track_stop: ReturnType<typeof vi.fn>;
+    let worklet_nodes: Array<{
+        port: { postMessage: ReturnType<typeof vi.fn>; onmessage: ((event: { data: unknown }) => void) | null };
+        emit: (data: unknown) => void;
+    }>;
 
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         media_track_stop = vi.fn();
+        worklet_nodes = [];
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockResolvedValue({
@@ -99,9 +104,18 @@ describe('startAudioRecording', () => {
         vi.stubGlobal(
             'AudioWorkletNode',
             class {
-                port = { postMessage: vi.fn() };
+                port: {
+                    postMessage: ReturnType<typeof vi.fn>;
+                    onmessage: ((event: { data: unknown }) => void) | null;
+                } = { postMessage: vi.fn(), onmessage: null };
                 connect = vi.fn();
                 disconnect = vi.fn();
+                constructor() {
+                    worklet_nodes.push(this);
+                }
+                emit(data: unknown): void {
+                    this.port.onmessage?.({ data });
+                }
             }
         );
         vi.stubGlobal('URL', class {});
@@ -175,6 +189,63 @@ describe('startAudioRecording', () => {
         await stopping;
 
         await expect(restarting).resolves.toBe(true);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    });
+
+    it('shares one pending microphone request across two concurrent starts', async () => {
+        let grantMicrophone: ((stream: MediaStream) => void) | undefined;
+        vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+            () =>
+                new Promise<MediaStream>((resolve) => {
+                    grantMicrophone = resolve;
+                })
+        );
+        const sharedStream = { getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream;
+
+        const first = startAudioRecording('track-share-a', vi.fn());
+        const second = startAudioRecording('track-share-b', vi.fn());
+
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+        const grant = grantMicrophone;
+        if (!grant) {
+            throw new Error('Expected a pending microphone request');
+        }
+        grant(sharedStream);
+
+        await expect(first).resolves.toBe(true);
+        await expect(second).resolves.toBe(true);
+        expect(vi.mocked(audioEngine.context.createMediaStreamSource)).toHaveBeenNthCalledWith(1, sharedStream);
+        expect(vi.mocked(audioEngine.context.createMediaStreamSource)).toHaveBeenNthCalledWith(2, sharedStream);
+    });
+
+    it('stops the acquired stream exactly once and reacquires fresh when both concurrent sessions end', async () => {
+        let grantMicrophone: ((stream: MediaStream) => void) | undefined;
+        vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+            () =>
+                new Promise<MediaStream>((resolve) => {
+                    grantMicrophone = resolve;
+                })
+        );
+        const sharedStream = { getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream;
+
+        const first = startAudioRecording('track-both-a', vi.fn());
+        const second = startAudioRecording('track-both-b', vi.fn());
+        const grant = grantMicrophone;
+        if (!grant) {
+            throw new Error('Expected a pending microphone request');
+        }
+        grant(sharedStream);
+
+        await expect(first).resolves.toBe(true);
+        await expect(second).resolves.toBe(true);
+
+        stopAudioRecording();
+        for (const worklet of worklet_nodes) {
+            worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
+        }
+        expect(media_track_stop).toHaveBeenCalledTimes(1);
+
+        await expect(startAudioRecording('track-both-c', vi.fn())).resolves.toBe(true);
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     });
 });

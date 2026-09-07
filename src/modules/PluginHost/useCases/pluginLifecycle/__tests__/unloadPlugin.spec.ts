@@ -6,20 +6,29 @@ import {
 } from '../../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../../stores/pluginGuiStore';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { registerReleasedStripReportSink } from '../registerReleasedStripReportSink';
 import * as subject from '../unloadPlugin';
 
+type ReleasedStripReport = { kind: 'track' | 'bus'; id: string; deviceIds: readonly string[] };
+type UnloadReply = { unloadedInstanceIds: string[]; errors: string[]; reports: ReleasedStripReport[] };
+
+/** An unload reply naming no released strip, for tests unconcerned with reports. */
+function reply(unloadedInstanceIds: string[], errors: string[]): UnloadReply {
+    return { unloadedInstanceIds, errors, reports: [] };
+}
+
 const mocks = vi.hoisted(() => ({
-    unloadRepo: vi.fn<(instanceId?: string) => Promise<[string[], string[]]>>(),
+    unloadRepo: vi.fn<(instanceId?: string) => Promise<UnloadReply>>(),
 }));
 
 /**
  * A repository call the test settles by hand, so the store can be read while
  * the unload is still in flight.
  */
-function deferUnload(): { resolve: (result: [string[], string[]]) => void; reject: (error: Error) => void } {
-    let settle = {} as { resolve: (result: [string[], string[]]) => void; reject: (error: Error) => void };
+function deferUnload(): { resolve: (result: UnloadReply) => void; reject: (error: Error) => void } {
+    let settle = {} as { resolve: (result: UnloadReply) => void; reject: (error: Error) => void };
     mocks.unloadRepo.mockReturnValue(
-        new Promise<[string[], string[]]>((resolve, reject) => {
+        new Promise<UnloadReply>((resolve, reject) => {
             settle = { resolve, reject };
         })
     );
@@ -73,7 +82,7 @@ describe('unloadPlugin', () => {
         pluginGuiStore.set({
             byInstanceId: { 'inst-1': { isOpen: true }, 'inst-2': { isOpen: true } },
         });
-        mocks.unloadRepo.mockResolvedValue([['inst-1'], []]);
+        mocks.unloadRepo.mockResolvedValue(reply(['inst-1'], []));
 
         await subject.unloadPlugin();
 
@@ -99,8 +108,8 @@ describe('unloadPlugin', () => {
         loadedExternalInstances.add('inst-1');
         let settle = (): void => undefined;
         mocks.unloadRepo.mockReturnValue(
-            new Promise<[string[], string[]]>((resolve) => {
-                settle = () => resolve([['inst-1'], []]);
+            new Promise<UnloadReply>((resolve) => {
+                settle = () => resolve(reply(['inst-1'], []));
             })
         );
 
@@ -136,8 +145,8 @@ describe('unloadPlugin', () => {
         });
         let settle = (): void => undefined;
         mocks.unloadRepo.mockReturnValue(
-            new Promise<[string[], string[]]>((resolve) => {
-                settle = () => resolve([[], []]);
+            new Promise<UnloadReply>((resolve) => {
+                settle = () => resolve(reply([], []));
             })
         );
 
@@ -171,7 +180,7 @@ describe('unloadPlugin', () => {
         const unload = deferUnload();
 
         const unloading = subject.unloadPlugin('inst-1');
-        unload.resolve([[], ['inst-1: still processing']]);
+        unload.resolve(reply([], ['inst-1: still processing']));
 
         await expect(unloading).rejects.toThrow('inst-1: still processing');
         // The instance is still loaded, so its snapshot stands and says so.
@@ -226,7 +235,7 @@ describe('unloadPlugin', () => {
         const unload = deferUnload();
 
         const unloading = subject.unloadPlugin();
-        unload.resolve([['inst-1'], ['inst-2: still processing']]);
+        unload.resolve(reply(['inst-1'], ['inst-2: still processing']));
 
         await expect(unloading).rejects.toThrow('inst-2: still processing');
         // The taken instance is gone outright, so the restore passes over it;
@@ -254,5 +263,68 @@ describe('unloadPlugin', () => {
 
         await expect(unloading).rejects.toThrow('desktop bridge unavailable');
         expect(attachmentOf('inst-1', 'inst-2')).toEqual([true, false]);
+    });
+
+    /**
+     * No test before this one in the file ever registers a sink, so the
+     * module's slot is still the unset default it starts with — the one case
+     * that actually exercises "no sink registered" rather than a stand-in for
+     * it. Declared ahead of the next test so that one's registration cannot
+     * leak backward into this one.
+     */
+    it('does not throw when a reply carrying reports has no sink registered', async () => {
+        loadedExternalInstances.add('inst-1');
+        mocks.unloadRepo.mockResolvedValue({
+            unloadedInstanceIds: ['inst-1'],
+            errors: [],
+            reports: [{ kind: 'track', id: 'lead', deviceIds: ['comp'] }],
+        });
+
+        await expect(subject.unloadPlugin('inst-1')).resolves.toBeUndefined();
+    });
+
+    /**
+     * The released-strip reports the native reply carries are this unload's
+     * only route back to a foreign mirror of native chain state — there is no
+     * batch of their own for a caller to read instead. Forwarding them once,
+     * to whatever the composition root wired up, is what keeps that mirror
+     * from going stale the moment an unload releases a chain entry.
+     */
+    it('forwards released strip reports to the registered sink', async () => {
+        loadedExternalInstances.add('inst-1');
+        const sink = vi.fn<(reports: readonly ReleasedStripReport[]) => void>();
+        registerReleasedStripReportSink(sink);
+        const reports: ReleasedStripReport[] = [{ kind: 'track', id: 'lead', deviceIds: ['comp', 'limiter'] }];
+        mocks.unloadRepo.mockResolvedValue({ unloadedInstanceIds: ['inst-1'], errors: [], reports });
+
+        await subject.unloadPlugin('inst-1');
+
+        expect(sink).toHaveBeenCalledTimes(1);
+        expect(sink).toHaveBeenCalledWith(reports);
+    });
+
+    /**
+     * `unloadWithRetractedMirror` forwards `unloaded.reports` ahead of
+     * `reconcileUnloadResult`, which is what throws on a non-empty `errors`
+     * list. A reply naming both proves the ordering: the reports describe
+     * native state that already committed regardless of what else in the
+     * same cascade failed, so the sink must see them even though the same
+     * call rejects.
+     */
+    it('forwards released strip reports before the errors check rejects the unload', async () => {
+        loadedExternalInstances.add('inst-1');
+        const sink = vi.fn<(reports: readonly ReleasedStripReport[]) => void>();
+        registerReleasedStripReportSink(sink);
+        const reports: ReleasedStripReport[] = [{ kind: 'track', id: 'lead', deviceIds: [] }];
+        mocks.unloadRepo.mockResolvedValue({
+            unloadedInstanceIds: ['inst-1'],
+            errors: ['inst-2: teardown failed'],
+            reports,
+        });
+
+        await expect(subject.unloadPlugin('inst-1')).rejects.toThrow('inst-2: teardown failed');
+
+        expect(sink).toHaveBeenCalledTimes(1);
+        expect(sink).toHaveBeenCalledWith(reports);
     });
 });

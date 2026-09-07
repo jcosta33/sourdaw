@@ -780,7 +780,7 @@ describe('package scripts and gitignore', () => {
             headCheckRuns: () => [],
             requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
-            dependents: (baseBranch) => (baseBranch === initial.headRefName ? [dependentBefore] : []),
+            dependents: (baseBranch) => (dependentAfter.baseRefName === baseBranch ? [dependentAfter] : []),
             repositoryDeletesMergedBranches: () => false,
             merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
             retarget: (number, baseBranch) => {

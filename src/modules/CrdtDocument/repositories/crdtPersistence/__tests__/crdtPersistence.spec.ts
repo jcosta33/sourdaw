@@ -196,13 +196,29 @@ describe('crdtPersistence repository', () => {
     });
 
     describe('saveAllToIdb', () => {
-        it('should return early with the requested authority transition if DB fails to open', async () => {
+        it('rejects an empty replacement when IndexedDB is unavailable', async () => {
             vi.mocked(openDatabase).mockResolvedValue(null);
-            await expect(saveAllToIdb(new Map(), { nextRootLineage: 'feature' })).resolves.toEqual({
-                status: 'committed',
-                authority: { epoch: '', revision: 1, rootLineage: 'feature' },
-            });
+
+            await expect(saveAllToIdb(new Map(), { nextRootLineage: 'feature' })).rejects.toThrow(
+                'CRDT persistence is unavailable'
+            );
             expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
+        it('rejects a nonempty replacement when IndexedDB is unavailable', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(null);
+
+            await expect(saveAllToIdb(new Map([['root', new Uint8Array([1])]]))).rejects.toThrow(
+                'CRDT persistence is unavailable'
+            );
+            expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
+        it('preserves the database-open rejection identity', async () => {
+            const failure = new Error('IndexedDB permission denied');
+            vi.mocked(openDatabase).mockRejectedValue(failure);
+
+            await expect(saveAllToIdb(new Map([['root', new Uint8Array([1])]]))).rejects.toBe(failure);
         });
 
         it('should clear store and put all documents', async () => {
@@ -221,6 +237,19 @@ describe('crdtPersistence repository', () => {
             expect(mockStore.clear).toHaveBeenCalled();
             expect(mockStore.put).toHaveBeenCalledWith(new Uint8Array([1]), 'doc1');
             expect(mockStore.put).toHaveBeenCalledWith(new Uint8Array([2]), 'doc2');
+        });
+
+        it('preserves the transaction error object identity', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            const failure = new Error('distinctive save-all transaction failure');
+
+            const promise = saveAllToIdb(new Map([['root', new Uint8Array([1])]]));
+            await Promise.resolve();
+            await Promise.resolve();
+            mockTx.error = failure;
+            mockTx.onerror();
+
+            await expect(promise).rejects.toBe(failure);
         });
 
         it('rejects an abort-only transaction and allows a later retry to write once', async () => {

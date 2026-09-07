@@ -8,6 +8,7 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
+import { isJsonEntityEqual } from '../isJsonEntityEqual';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
@@ -19,7 +20,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         }
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track && guard.midiByClipIdJson === '{}') {
-            return JSON.stringify(projectTrackThroughPriorBatchActions(track, context)) === guard.entityJson;
+            return isJsonEntityEqual(projectTrackThroughPriorBatchActions(track, context), guard.entityJson);
         }
         return isGeneratedMidiStateCurrent({
             entityId: action.payload.trackId,

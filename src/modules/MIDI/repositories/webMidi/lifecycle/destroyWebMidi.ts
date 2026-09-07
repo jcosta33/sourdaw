@@ -14,7 +14,7 @@ import { midiLearn } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 
-import type { GetWebMidiTrackStrip } from '../engineStripAccess';
+import type { GetWebMidiTrackStrip, ReleaseNativeLiveNote } from '../engineStripAccess';
 
 /**
  * Full teardown of the live MIDI input: detach, close the native handle, release
@@ -26,7 +26,10 @@ import type { GetWebMidiTrackStrip } from '../engineStripAccess';
  * path that releases the native device. Wiring it to a real teardown lifecycle
  * (app shutdown, or a MIDI-disable toggle) is an open decision.
  */
-export function destroyWebMidi(getTrackStrip: GetWebMidiTrackStrip): void {
+export function destroyWebMidi(input: {
+    getTrackStrip: GetWebMidiTrackStrip;
+    releaseNativeNote: ReleaseNativeLiveNote;
+}): void {
     detachActiveInput();
 
     if (getNativeMode()) {
@@ -42,7 +45,7 @@ export function destroyWebMidi(getTrackStrip: GetWebMidiTrackStrip): void {
     // Same release core as reset and panic (audit MD-6). Teardown used to stop
     // Toaster pads and raw oscillators only, so a Fermenter / Grand Boule /
     // Levain voice held at teardown kept sounding.
-    releaseAllActiveNotes({ getTrackStrip });
+    releaseAllActiveNotes(input);
     resetChannelControllerState();
 
     const access = getMidiAccess();

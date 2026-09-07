@@ -646,5 +646,18 @@ describe('YeastPanel', () => {
             expect(faceplate?.className).toContain('min-h-[440px]');
             expect(faceplate?.className).not.toContain('overflow-hidden');
         });
+
+        it('prevents side cards from collapsing when faceplate is compressed', () => {
+            const { container } = render(<YeastPanel />);
+            const cards = container.querySelectorAll('.yeast-window.shrink-0');
+            expect(cards.length).toBeGreaterThanOrEqual(3);
+            for (const title of ['Rack frame', 'Sprout', 'Rack read']) {
+                const heading = screen.getByText(title, { selector: 'div' });
+                const section = heading.closest('section');
+                expect(section).not.toBeNull();
+                expect(section?.className).toContain('shrink-0');
+                expect(section?.className).toContain('yeast-window');
+            }
+        });
     });
 });

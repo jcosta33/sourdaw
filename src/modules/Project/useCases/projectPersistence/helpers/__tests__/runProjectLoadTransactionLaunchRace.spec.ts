@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({ cancelPendingAudioBufferImport: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn(), executeUserAppAction: vi.fn() }));
 
 // Deterministic reproduction of the wave-1 e2e launch race (#716).
 //

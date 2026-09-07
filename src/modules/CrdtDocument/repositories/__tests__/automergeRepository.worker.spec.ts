@@ -1,4 +1,4 @@
-import { change, load, save } from '@automerge/automerge';
+import { change, init, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -22,6 +22,95 @@ describe('AutomergeRepository worker lifecycle', () => {
         vi.doUnmock('../crdtPersistence/helpers');
         vi.unstubAllGlobals();
         vi.resetModules();
+    });
+
+    it('changes the public root identity only when worker-backed merge installs a missing root', async () => {
+        ControlledWorker.onPostMessage = (worker, request) => {
+            queueMicrotask(() => {
+                if (request.type === 'loadBundle') {
+                    respondToLoad(worker, request);
+                } else if (request.type === 'mergeBundle') {
+                    respondToMerge(worker, request);
+                }
+            });
+        };
+        const { automergeRepository } = await import('../automergeRepository');
+        const { captureProjectRootIdentity } = await import('../../useCases/captureProjectRootIdentity');
+        automergeRepository.createProject('project');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected root bytes');
+        }
+        let peerRoot = load<Record<string, unknown>>(rootBytes);
+        peerRoot = change(peerRoot, (document) => {
+            document.workerPeer = true;
+        });
+        let rootIdentity = captureProjectRootIdentity();
+
+        await automergeRepository.mergeBundle(new Map([['root', save(peerRoot)]]));
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+
+        automergeRepository.removeDoc('root');
+        rootIdentity = captureProjectRootIdentity();
+        await automergeRepository.mergeBundle(new Map([['root', save(peerRoot)]]));
+        expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
+    });
+
+    it('advances root identity when a worker result installs root before a later decode failure', async () => {
+        let resolveMergeRequest!: (value: {
+            worker: ControlledWorker;
+            request: Parameters<typeof respondToMerge>[1];
+        }) => void;
+        const mergeRequest = new Promise<{
+            worker: ControlledWorker;
+            request: Parameters<typeof respondToMerge>[1];
+        }>((resolve) => {
+            resolveMergeRequest = resolve;
+        });
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                queueMicrotask(() => respondToLoad(worker, request));
+            } else if (request.type === 'mergeBundle') {
+                resolveMergeRequest({ worker, request });
+            }
+        };
+        const { automergeRepository } = await import('../automergeRepository');
+        const { captureProjectRootIdentity } = await import('../../useCases/captureProjectRootIdentity');
+        automergeRepository.createProject('project');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected root bytes');
+        }
+        automergeRepository.removeDoc('root');
+        const rootIdentity = captureProjectRootIdentity();
+        const mergeOperation = automergeRepository.mergeBundle(
+            new Map([
+                ['root', rootBytes],
+                [
+                    'branch_bad',
+                    save(
+                        change(init<Record<string, unknown>>(), (document) => {
+                            document.ok = true;
+                        })
+                    ),
+                ],
+            ])
+        );
+        const pending = await mergeRequest;
+        pending.worker.emitMessage({
+            id: pending.request.id,
+            type: 'merged',
+            compacted: [
+                ['root', rootBytes],
+                ['branch_bad', new Uint8Array([1, 2, 3])],
+            ],
+            mergedDocIds: [],
+            newDocIds: ['root', 'branch_bad'],
+        });
+
+        await expect(mergeOperation).rejects.toThrow();
+        expect(automergeRepository.hasDoc('root')).toBe(true);
+        expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
     });
 
     it('retries a worker merge from fresh documents after an in-flight local mutation', async () => {

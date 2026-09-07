@@ -9,6 +9,16 @@ pub struct MidiNoteEvent {
     pub velocity: u8,
     pub channel: i16,
     pub is_note_on: bool,
+    /// The sample, inside the buffer handed to
+    /// [`NativePlugin::process_with_events`], at which this event applies.
+    ///
+    /// Zero for an event delivered at the head of a block, which is the
+    /// immediate path's only answer: a note played live has no timeline
+    /// position to stamp it against. A scheduled note carries the distance
+    /// from the block's first frame to the timeline frame it was written on,
+    /// so the instrument sounds it on that sample rather than on whichever
+    /// block boundary happened to reach it first.
+    pub frame_offset: u32,
     /// Fixed acceptance cutoff in the inclusive range 0..=2^32.
     pub probability_cutoff: u64,
     pub project_probability_seed: u32,
@@ -98,39 +108,36 @@ pub trait NativePlugin: Any + Send {
         self.process_audio(left, right, num_samples);
     }
 
-    /// Process a block that arrived over an audio bridge — the only path
-    /// whose buffers carry real input audio from the app. Default delegates
-    /// to process_audio, so existing plugins keep exactly one behaviour;
-    /// plugins that consume their input (e.g. recording) override this to
-    /// run input-side work only for real bridge audio, never for the
-    /// standalone native chain (whose scratch carries no app input).
-    fn process_bridged_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
-        self.process_audio(left, right, num_samples);
-    }
-
-    /// Bridged counterpart of process_with_events (see process_bridged_audio).
-    fn process_bridged_with_events(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        num_samples: usize,
-        midi_events: &[MidiNoteEvent],
-        transport: &TransportState,
-    ) {
-        self.process_with_events(left, right, num_samples, midi_events, transport);
-    }
-
     /// Receive one chunk of the engine's native input tap — real audio from
     /// the input device, deinterleaved, delivered only to a plugin that
     /// registered for it.
     ///
-    /// Distinct from [`Self::process_bridged_audio`], which carries app-side
-    /// audio over a bridge: this is the device's own capture stream, and it is
-    /// an input rather than an in-place process, so nothing a plugin does here
-    /// reaches the output. A plugin that records overrides it; the default
-    /// ignores the block, so a plugin registered by mistake is inert rather
-    /// than wrong.
+    /// Distinct from [`Self::process_audio`], which renders the signal a chain
+    /// carries: this is the device's own capture stream, and it is an input
+    /// rather than an in-place process, so nothing a plugin does here reaches
+    /// the output. A plugin that records overrides it; the default ignores the
+    /// block, so a plugin registered by mistake is inert rather than wrong.
     fn process_capture_input(&mut self, _block: CaptureInputBlock<'_>) {}
+
+    /// Queue one of this plugin's own parameters for its next process call.
+    ///
+    /// Audio-thread only, and bound by the audio thread's law: it must not
+    /// allocate, lock, or block. The scheduler calls it from
+    /// `apply_due_device_params`, which runs before the chain renders the span
+    /// that reached the stamp, so the write is drained by the next process call
+    /// this plugin actually receives — normally this same block's. A hosted
+    /// plugin's process path takes the access seam it shares with the control
+    /// path and skips the block outright rather than waiting when the control
+    /// path holds it, so a control operation landing on this block pushes the
+    /// drain to a later one.
+    ///
+    /// `true` means the write is queued. `false` refuses it, and the caller
+    /// counts the refusal as an unmapped parameter call — the default, because
+    /// a plugin body with no addressable parameters (a built-in wrapper, a
+    /// fixture) has nothing to queue the write against.
+    fn apply_parameter_on_audio_thread(&mut self, _id: u32, _value: f64) -> bool {
+        false
+    }
 
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;

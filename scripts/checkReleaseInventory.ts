@@ -789,10 +789,7 @@ function trackedSetSha256(
     return trackedFilesSha256(root, files, readFile, budget);
 }
 
-export const AUDIO_WORKLET_SOURCES = [
-    'public/audio/worklets/native-plugin-bridge-processor.js',
-    'public/audio/worklets/sidechain-compressor-processor.js',
-] as const;
+export const AUDIO_WORKLET_SOURCES = ['public/audio/worklets/sidechain-compressor-processor.js'] as const;
 
 const PUBLIC_WASM_ROOT = 'public/wasm';
 const WASM_MANIFEST_PATH = `${PUBLIC_WASM_ROOT}/manifest.json`;
@@ -1343,7 +1340,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
         sourceRevision?: string;
         sourceDigests?: Record<string, string>;
-        machine?: { gitSha?: string; workingTree?: string };
+        machine?: { gitSha?: string; workingTree?: string; takenAt?: string };
         options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
@@ -1374,6 +1371,20 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     } catch {
         throw new Error(
             `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_FILES[0]}`
+        );
+    }
+    const commitDate = execFileSync('git', ['show', '-s', '--format=%cI', revision], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
+    const takenAt = data.machine?.takenAt;
+    if (!takenAt || Number.isNaN(Date.parse(takenAt))) {
+        throw new Error('Grand Boule measurement must carry a parseable takenAt timestamp');
+    }
+    if (Date.parse(takenAt) < Date.parse(commitDate)) {
+        throw new Error(
+            `Grand Boule measurement takenAt ${takenAt} predates its source revision ${revision} (${commitDate}) — ` +
+                'the measurement was re-stamped without re-measuring'
         );
     }
     for (const path of censusPaths) {

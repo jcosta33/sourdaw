@@ -26,16 +26,11 @@ const nativePayload = {
     effectIdCollisions: 3,
     unsupportedEffectAdditions: 4,
     unmappedSetParamCalls: 5,
-    bridgeOutputBlocksDropped: 6,
-    unmatchedBridgeBlocks: 7,
-    bridgeBacklogBlocksShed: 8,
-    bridgeBlocksPassedChainBound: 15,
-    callbackFramesOverBridgeReach: 9,
-    bridgeInputBlocksRefused: 10,
     captureConsumerRefusals: 11,
     captureBlocksDropped: 12,
     captureInputUnderruns: 13,
     inputLatencyFrames: 14,
+    outputStreamFault: 'deviceChanged',
     events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };
 
@@ -62,7 +57,7 @@ describe('getEngineRtDiagnostics', () => {
         expect(desktopInvoke).not.toHaveBeenCalled();
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.events).toEqual([]);
-        expect(diagnostics.bridgeInputBlocksRefused).toBe(0);
+        expect(diagnostics.captureConsumerRefusals).toBe(0);
     });
 
     it('reads a stopped engine as not running rather than as an absent reading', async () => {
@@ -77,6 +72,50 @@ describe('getEngineRtDiagnostics', () => {
 
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.unmappedSetParamCalls).toBe(5);
+        // A stalled output stream is exactly this shape: `running: false` on
+        // an engine that still has a real fault to report, not the all-zeros
+        // not-running default.
+        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
+    });
+
+    it('reads a recognized output-stream-fault kind', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: 'deviceChanged' });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
+    });
+
+    it('reads a null output-stream-fault as no fault', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: null });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamFault).toBeNull();
+    });
+
+    it('reads a missing output-stream-fault as no fault', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        const { outputStreamFault: _omitted, ...payloadWithoutFault } = nativePayload;
+        vi.mocked(desktopInvoke).mockResolvedValue(payloadWithoutFault);
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamFault).toBeNull();
+    });
+
+    it('keeps an output-stream-fault kind it does not recognize', async () => {
+        // The same honesty the event-kind fallback exists for: an unmapped
+        // kind still means the stream reported something, so it must not be
+        // reported as no fault at all.
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: 'somethingNew' });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamFault).toBe('backendSpecific');
     });
 
     it('keeps a stream error whose kind it does not recognize', async () => {
@@ -133,7 +172,7 @@ describe('getEngineRtDiagnostics', () => {
 
         expect(diagnostics.running).toBe(true);
         expect(diagnostics.unmappedSetParamCalls).toBe(0);
-        expect(diagnostics.bridgeInputBlocksRefused).toBe(0);
+        expect(diagnostics.captureConsumerRefusals).toBe(0);
         expect(diagnostics.events).toEqual([]);
     });
 });

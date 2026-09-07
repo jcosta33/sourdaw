@@ -480,4 +480,12 @@ describe('TunerPanel', () => {
             vi.useRealTimers();
         }
     });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<TunerPanel deviceId="device-123" />);
+        const faceplate = container.querySelector<HTMLElement>('.scoring-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
+    });
 });

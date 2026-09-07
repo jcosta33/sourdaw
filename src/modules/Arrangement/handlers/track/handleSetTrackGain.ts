@@ -25,6 +25,10 @@ function writtenGain(action: { payload: { trackId: string; gain: number } }): nu
 
 export const handleSetTrackGain = createHandler<'setTrackGain'>({
     canReapplyAfterDivergence: () => true,
+    // Conflicts when `expectedGain` no longer matches the live track gain.
+    // Proven by the `canReportConflict` registry honesty spec; undo step-over
+    // (#2881) relies on it.
+    canReportConflict: true,
     validate: (action, context) => {
         const currentGain = getPlannedTrackState(context, action.payload.trackId)?.gain;
         return currentGain === action.payload.expectedGain;

@@ -11,8 +11,10 @@ import { createSession } from '../createSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     state: { sessionSecret: null as string | null },
-    cleanup: vi.fn<() => void>(),
+    cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
     initialize: vi.fn<(assetOwnerId: string) => void>(),
+    captureOwner: vi.fn<() => object | null>(),
+    retire: vi.fn<(owner: object | null) => void>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -20,13 +22,17 @@ const mockRuntime = vi.hoisted(() => ({
     generateSessionSecret: vi.fn<() => string>(),
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
 }));
+const loggerMock = vi.hoisted(() => ({ warn: vi.fn() }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerMock.warn } }));
 vi.mock('../getCollaborationAssetOwnerId', () => ({
     collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
 }));
 
 describe('createSession', () => {
+    const owner = {};
+
     beforeEach(() => {
         vi.clearAllMocks();
         collaborationStore.set(null);
@@ -35,6 +41,8 @@ describe('createSession', () => {
         mockRuntime.generateSessionId.mockReturnValue('sess-1');
         mockRuntime.generateSessionSecret.mockReturnValue('secret-1');
         mockRuntime.pickPeerColor.mockReturnValue('#3b82f6');
+        mockRuntime.captureOwner.mockReturnValue(owner);
+        mockRuntime.cleanup.mockReturnValue(true);
     });
 
     it('mints a fresh room secret onto the session runtime', () => {
@@ -80,5 +88,41 @@ describe('createSession', () => {
             error: null,
             quarantinedPeerIds: [],
         });
+    });
+
+    it('cleans only its partial runtime when host setup fails', () => {
+        mockRuntime.startBranchSync.mockImplementationOnce(() => {
+            throw new Error('branch setup failed');
+        });
+
+        expect(() => createSession('Host')).toThrow('branch setup failed');
+
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
+        expect(mockRuntime.cleanup).toHaveBeenLastCalledWith(owner);
+    });
+
+    it('preserves the host setup error when cleaning its partial runtime also fails', () => {
+        const setupError = new Error('branch setup failed');
+        const cleanupError = new Error('cleanup failed');
+        mockRuntime.startBranchSync.mockImplementationOnce(() => {
+            throw setupError;
+        });
+        mockRuntime.cleanup.mockReturnValueOnce(true).mockImplementationOnce(() => {
+            throw cleanupError;
+        });
+
+        let thrown: unknown;
+        try {
+            createSession('Host');
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBe(setupError);
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+            '[Collaboration] Failed to clean up host session setup:',
+            cleanupError
+        );
     });
 });

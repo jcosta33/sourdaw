@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectAllClips, zoomTimelineBy } from '#/modules/Arrangement/useCases';
-import { executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
 import { dispatchCanvasEditorCommand, isNativeTextEditableTarget } from '#/modules/CommandInterface/useCases';
 import { captureProjectRevision, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
@@ -144,10 +144,10 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             }
             return;
         case 'project:import-audio':
-            await executeAppAction({ type: 'importAudioFile' });
+            await executeUserAppAction({ type: 'importAudioFile' });
             return;
         case 'project:import-midi':
-            await executeAppAction({ type: 'importMidiFile' });
+            await executeUserAppAction({ type: 'importMidiFile' });
             return;
         case 'project:export-audio':
             openExportDialog();
@@ -192,13 +192,13 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             void redo();
             return;
         case 'edit:cut':
-            await executeAppAction({ type: 'cutClip' });
+            await executeUserAppAction({ type: 'cutClip' });
             return;
         case 'edit:copy':
-            await executeAppAction({ type: 'copyClip' });
+            await executeUserAppAction({ type: 'copyClip' });
             return;
         case 'edit:paste':
-            await executeAppAction({ type: 'pasteClip' });
+            await executeUserAppAction({ type: 'pasteClip' });
             return;
         case 'edit:select-all':
             selectAllClips(allClipIds);

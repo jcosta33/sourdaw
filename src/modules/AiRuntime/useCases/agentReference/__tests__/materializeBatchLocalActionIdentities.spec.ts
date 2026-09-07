@@ -5,6 +5,7 @@ import { materializeBatchLocalActionIdentities } from '../materializeBatchLocalA
 const busId = 'bus-ai-12345678-1234-4123-8123-123456789abc';
 const deviceId = 'device-ai-12345678-1234-4123-8123-123456789abc';
 const trackId = 'track-ai-12345678-1234-4123-8123-123456789abc';
+const initialDeviceId = 'device-command-12345678-1234-4123-8123-123456789abc';
 const secondTrackId = 'track-ai-87654321-4321-4321-8321-cba987654321';
 const clipId = 'clip-ai-12345678-1234-4123-8123-123456789abc';
 
@@ -87,7 +88,7 @@ describe('materializeBatchLocalActionIdentities', () => {
             ],
             [
                 { actionType: 'addTrack', actionOrdinal: 1, trackId: secondTrackId },
-                { actionType: 'addTrack', actionOrdinal: 0, trackId },
+                { actionType: 'addTrack', actionOrdinal: 0, initialDeviceId, trackId },
                 { actionType: 'addClip', actionOrdinal: 0, clipId },
             ]
         );
@@ -95,7 +96,10 @@ describe('materializeBatchLocalActionIdentities', () => {
         expect(result).toEqual({
             status: 'accepted',
             actions: [
-                { type: 'addTrack', payload: { name: 'Piano', kind: 'midi', id: trackId } },
+                {
+                    type: 'addTrack',
+                    payload: { name: 'Piano', kind: 'midi', id: trackId, initialDeviceId },
+                },
                 { type: 'addTrack', payload: { name: 'Strings', kind: 'midi', id: secondTrackId } },
                 { type: 'addClip', payload: { trackId, startBeat: 0, endBeat: 4, name: 'Melody', id: clipId } },
             ],
@@ -114,6 +118,10 @@ describe('materializeBatchLocalActionIdentities', () => {
         {
             identity: { actionType: 'addClip' as const, actionOrdinal: 0, clipId },
             reason: 'Batch-local action identity has no validated addClip action',
+        },
+        {
+            identity: { actionType: 'addTrack' as const, actionOrdinal: 0, trackId, initialDeviceId: deviceId },
+            reason: 'Invalid or duplicate batch-local action identity',
         },
     ])('refuses a creation identity whose shape does not match its own action type', ({ identity, reason }) => {
         const result = materializeBatchLocalActionIdentities(

@@ -1,20 +1,29 @@
 import { versionControlStore } from '../../../stores/versionControlStore';
 import { restoreSnapshot } from '../snapshotHelpers/restoreSnapshot';
 
-export function switchBranch(branchId: string): void {
+export function switchBranch(branchId: string): boolean {
     const state = versionControlStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const branch = state.branches.find((b) => b.id === branchId);
     if (!branch) {
-        return;
+        return false;
+    }
+
+    if (!branch.headVersionId) {
+        versionControlStore.set({
+            ...state,
+            currentBranchId: branchId,
+            currentVersionId: null,
+        });
+        return true;
     }
 
     const headVersion = state.versions.find((value) => value.id === branch.headVersionId);
-    if (headVersion?.snapshot.data) {
-        restoreSnapshot(headVersion.snapshot);
+    if (!headVersion || !restoreSnapshot(headVersion.snapshot)) {
+        return false;
     }
 
     versionControlStore.set({
@@ -22,4 +31,6 @@ export function switchBranch(branchId: string): void {
         currentBranchId: branchId,
         currentVersionId: branch.headVersionId || null,
     });
+
+    return true;
 }

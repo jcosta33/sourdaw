@@ -12,11 +12,14 @@
  * whole topology, and the strip it rebuilds names no effect for the unloaded
  * device, so nothing survives the fence.
  *
- * Rolling, nothing here reaches the graph. The engine's registry goes on naming
- * the freed effect until some later batch replaces the topology, and the
- * scheduler passes it through and counts it in the meantime. Releasing an
- * instance from a rolling graph needs a command that does not tear the topology
- * down, which is #3575's work; this module deliberately has no route to one.
+ * Rolling, no topology batch is coming, so the release is the native unload's
+ * own: it takes every chain entry naming the instance out of the graph, in a
+ * fenced batch of its own, before it retires the instance. The order is the
+ * point. A chain entry naming a retired effect is a silent passthrough — the
+ * scheduler's `run_device` returns on a failed effect-table lookup and counts
+ * nothing — so an entry left standing would go unnoticed for the rest of the
+ * session. Nothing dangles because nothing is retired while a chain still names
+ * it.
  *
  * ── The mirror is retracted first, reconciled after ───────────────────────
  *
@@ -43,65 +46,47 @@
  * whole captured set rather than reasoning about which leg failed: an instance
  * the unload *did* take has no snapshot left, and the restore skips an absent
  * one, so the same call is right whether nothing landed or only part of it did.
+ *
+ * ── Released strips report back through the sink ──────────────────────────
+ *
+ * The native reply also names every strip its own release touched, with that
+ * strip's final chain — the release itself changed native state with no batch
+ * of its own for a foreign mirror to read. This use case forwards those
+ * reports to whatever `registerReleasedStripReportSink` wired up as soon as
+ * the bridge reply carries any, ahead of the errors check below: the reports
+ * describe native state that already committed, so their being forwarded does
+ * not depend on whether some other instance in the same cascade also errored.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
 import {
-    defaultExternalPluginActivationState,
-    externalPluginActivationStore,
-} from '../../stores/externalPluginActivationStore';
-import {
-    dropExternalPluginParameterSnapshot,
     externalPluginParameterStore,
     markEveryExternalPluginParameterSnapshotDetached,
     markExternalPluginParameterSnapshotDetached,
     markExternalPluginParameterSnapshotsAttached,
 } from '../../stores/externalPluginParameterStore';
-import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
-import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
-import { externalLatencyReporters } from './externalLatencyReporters';
-import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
+import { forgetPluginInstance } from './forgetPluginInstance';
+import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
-
-function forgetPluginInstance(instanceId: string): void {
-    loadedExternalInstances.delete(instanceId);
-    externalLatencyReporters.delete(instanceId);
-    externalBridgeFramesReporters.delete(instanceId);
-    externalPluginActivationTasks.delete(instanceId);
-    externalPluginActivationOutcomes.delete(instanceId);
-    // The parameters described an instance that no longer exists; leaving them
-    // would keep offering automation targets for a destroyed plugin.
-    dropExternalPluginParameterSnapshot(instanceId);
-    externalPluginActivationStore.update((state) => {
-        const byInstanceId = { ...(state ?? defaultExternalPluginActivationState).byInstanceId };
-        delete byInstanceId[instanceId];
-        return { ...(state ?? defaultExternalPluginActivationState), byInstanceId };
-    });
-    // Unloading destroys the editor window without the OS reporting a close, so
-    // nothing else will ever retract an `isOpen` left standing here.
-    pluginGuiStore.update((state) => {
-        const byInstanceId = { ...(state ?? defaultPluginGuiState).byInstanceId };
-        delete byInstanceId[instanceId];
-        return { ...(state ?? defaultPluginGuiState), byInstanceId };
-    });
-}
 
 function reconcileUnloadResult(
     result: Awaited<ReturnType<typeof unloadPluginRepo>>,
     expectedInstanceId?: string
 ): void {
-    const mismatchedSuccess = expectedInstanceId !== undefined && result[0].some((id) => id !== expectedInstanceId);
-    const missingOutcome = expectedInstanceId !== undefined && result[0].length === 0 && result[1].length === 0;
+    const mismatchedSuccess =
+        expectedInstanceId !== undefined && result.unloadedInstanceIds.some((id) => id !== expectedInstanceId);
+    const missingOutcome =
+        expectedInstanceId !== undefined && result.unloadedInstanceIds.length === 0 && result.errors.length === 0;
     if (mismatchedSuccess || missingOutcome) {
         throw new Error('Invalid keyed unload_plugin response');
     }
-    for (const instanceId of result[0]) {
+    for (const instanceId of result.unloadedInstanceIds) {
         forgetPluginInstance(instanceId);
     }
-    if (result[1].length > 0) {
-        throw new Error(result[1].join('; '));
+    if (result.errors.length > 0) {
+        throw new Error(result.errors.join('; '));
     }
 }
 
@@ -135,6 +120,9 @@ async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
     }
     try {
         const unloaded = await unloadPluginRepo(instanceId);
+        if (unloaded.reports.length > 0) {
+            forwardReleasedStripReports(unloaded.reports);
+        }
         reconcileUnloadResult(unloaded, instanceId);
     } catch (error) {
         markExternalPluginParameterSnapshotsAttached(attached);

@@ -85,7 +85,57 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 
 **Why:** convergence without semantics yields a technically-consistent document nobody can explain.
 
+### 7. Review identity-scoped undo against peer edits
+
+For project-integrity review, apply peer edits after the original operation and again after undo, then exercise real undo/redo through Command and inspect both the authoritative CRDT document and its store projection. Reject whole-aggregate snapshot restoration for an identity-scoped edit even when an isolated round trip passes. When a divergence guard captures serialized project entities, prove that CRDT serialization field order alone cannot become a conflict while changed values, array order, missing fields, and malformed captures still fail closed.
+
+**Why:** issue #3757 escaped in commit `9b8166687867a4e1eb2ffb39ca4f2f69795d349e` because whole-track snapshots passed ordinary undo/redo coverage while erasing later peer work.
+
 ## Anti-patterns
+
+### Checkpoint isolation escape
+
+Commit `3d0ca035df506e27e9cd868e71c17b411911ba47` introduced the singleton checkpoint catalog and both
+ownerless restoration routes without an associated pull request; later extraction in PR 376 only preserved the defect.
+When a project-scoped handle can survive a real create/load lifecycle, test every restoration route against the active
+project identity, complete canonical document contents, and catalog selection so a private bypass cannot overwrite the
+incoming project or advance its cursor.
+
+### Branch recovery must bind undo to recovered document truth
+
+PR #3338 commit `961b35ef` restored the outgoing undo snapshot unconditionally after a failed branch switch. Its
+fourth-round approving review explicitly noticed that durable lineage recovery could select a third branch, then dismissed
+that state as existing behavior instead of handing off the defect. A branch-recovery review must exercise both a
+durable recovery whose branch or complete document membership/heads diverge from the outgoing capture and an exact
+snapshot rollback as the positive control. Assert that the final active document reference and undo history agree;
+checking only whether a restore callback ran cannot prove that its entries belong to the recovered project truth.
+
+### Session teardown and callbacks must remain bound to their installed runtime
+
+Commit `78060bccd0bcc3d8f41637c7403443826f9de355` introduced the buffered leave-message drain followed
+by global session cleanup after an await. GitHub reports no pull request associated with that commit. PR #279 commit
+`38d981302e115ffab908a087c146dd7f321c539e` later extracted the behavior unchanged, and commit
+`a1a0739473f06e44bd482761603f2615c711791d` invalidated stale join continuations without binding cleanup to the
+runtime that began it. Collaboration lifecycle review must pause an outgoing leave at its transport await, install a
+successor session, then prove the outgoing cleanup cannot close or reset the successor. Retain old manager, sync,
+asset, timer, branch-transition, and decode callbacks and invoke or settle them after replacement; they must neither
+read successor state nor write project, runtime, or panel state, while current-owner callbacks remain effective.
+
+### Receive-side sync progress must be real, fenced transport work
+
+Commit `78060bccd0bcc3d8f41637c7403443826f9de355` suppressed repository change notifications while applying a remote
+document, but left no protocol reply or fan-out at the accepted receive boundary. PR #2256 commit
+`3ea24786531a602a6ff4a57f7d597266f9d7ed57` masked that product defect by having `setupLiveExchange` fabricate a
+local change notification after every receive; PR #3897 commit `703c7c497` later hid empty rounds behind three
+deliveries. Treat the first change as the defect and the later fixtures as masking, not as compatibility behavior.
+
+Collaboration review must use isolated production endpoints, actual transport messages, and one shared initialized
+genesis before separate offline edits. Settle each send before delivering its response so the sender records the
+generated SyncState first. Prove a sanitizer sees an edit-bearing payload before asserting rollback. Fixed delivery
+counts are never convergence proof. After a successful accepted receive, schedule the reply to its connected source
+and changed-content fan-out through the existing per-peer queue; defer only behind completed owner/persistence work,
+and fence both scheduling and queued execution against stop or source disconnect. A stopped or disconnected runtime
+must never revive a queue, while a live host still relays accepted content to its other connected peers.
 
 ### CRITICAL — Direct store write against a CRDT-backed store
 

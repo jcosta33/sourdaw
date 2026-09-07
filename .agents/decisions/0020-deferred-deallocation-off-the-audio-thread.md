@@ -6,7 +6,7 @@ status: accepted
 date: 2026-08-12
 owner: The Sourdaw team
 sources:
-  - .agents/artifacts/sourdaw/SPEC-session-launcher-engine.md
+    - .agents/artifacts/sourdaw/SPEC-session-launcher-engine.md
 ---
 
 # 0020 — Retired allocations leave the audio thread over a return channel
@@ -27,7 +27,7 @@ The same question already has a live answer in this repository, and a live viola
   contended locks and mutexes, I/O, waiting, and so forth."
 - VST3, Audio Processor Call Sequence: "may be called from real-time Audio Thread (must be lock-free
   and without memory allocation!)".
-- Ross Bencina, *Real-time audio programming 101*: "Don't allocate or deallocate memory"; "Only
+- Ross Bencina, _Real-time audio programming 101_: "Don't allocate or deallocate memory"; "Only
   perform dynamic allocation in a non-real-time thread where it isn't time-critical"; and on the
   mechanism, "best practice is to use lock-free FIFO queues to communicate commands and data".
 - `AGENTS.md` already says the same thing for this project.
@@ -40,7 +40,7 @@ does.
 **The idiom exists and is proven under test.** `src-tauri/src/commands/crumbs.rs:103` does
 `let _ = instance.recycle_tx.push((left, right));` over an `rtrb` SPSC producer, handing the retired
 buffer back to a non-RT owner that performs the drop; `crumbs.rs:828` asserts the recycle. The same
-`rtrb` channel pattern appears in `audio_bridge.rs` and `midi/rt_contract.rs`, and `triple_buffer`
+`rtrb` channel pattern appears in `scheduler.rs` and `midi/rt_contract.rs`, and `triple_buffer`
 carries RT-read snapshots in `midi/diagnostics.rs` and `daw-core/src/tuning.rs`.
 
 `daw-engine` and `src-tauri` already depend on both crates. `daw-core` depends on `triple_buffer` but
@@ -63,7 +63,7 @@ today. The decision below is therefore a statement of what already ships, not an
 **Publish immutable generations by pointer swap; return retired generations to a non-RT owner over an
 `rtrb` channel, which performs the drop.** No new dependency.
 
-Size the return ring so that a full ring degrades to *keeping the current generation* rather than
+Size the return ring so that a full ring degrades to _keeping the current generation_ rather than
 dropping on the callback. A full ring must never become a reason to allocate or free in the audio
 thread.
 
@@ -79,7 +79,7 @@ bug.
 a genuine point in its favour. Against it: it would be a second lifetime model beside the recycle
 channels already shipping, it does not by itself fix `scheduler.rs`, and its release history is thin —
 0.1.0 through 0.1.2 across 2021, then nothing until 0.1.3 on 2025-10-29. Revisit if the launcher
-turns out to need genuinely *shared* multi-reader clip data, which `triple_buffer`'s single-consumer
+turns out to need genuinely _shared_ multi-reader clip data, which `triple_buffer`'s single-consumer
 contract cannot express.
 
 **`crossbeam-epoch`.** Provides the same capability generically — "you can defer the execution of an
@@ -101,5 +101,5 @@ callback allocation-free, and it is unmaintained — last release 1.1.2 on 2021-
 
 - CLAP `thread-check.h`: https://github.com/free-audio/clap/blob/main/include/clap/ext/thread-check.h
 - VST3 Audio Processor Call Sequence: https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Workflow+Diagrams/Audio+Processor+Call+Sequence.html
-- Ross Bencina, *Real-time audio programming 101*: http://www.rossbencina.com/code/real-time-audio-programming-101-time-waits-for-nothing
+- Ross Bencina, _Real-time audio programming 101_: http://www.rossbencina.com/code/real-time-audio-programming-101-time-waits-for-nothing
 - `basedrop`: https://docs.rs/basedrop/latest/basedrop/ · `crossbeam-epoch`, `rtrb`, `triple_buffer` docs.rs

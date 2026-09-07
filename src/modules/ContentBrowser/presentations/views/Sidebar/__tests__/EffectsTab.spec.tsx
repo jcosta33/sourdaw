@@ -16,7 +16,7 @@ const arrangementMocks = vi.hoisted(() => ({
 }));
 
 const commandMocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
 }));
 
@@ -51,7 +51,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: commandMocks.executeAppAction,
+    executeUserAppAction: commandMocks.executeUserAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
 }));
 
@@ -125,7 +125,7 @@ describe('EffectsTab', () => {
             },
         ]);
         arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-77' });
-        commandMocks.executeAppAction.mockResolvedValue(undefined);
+        commandMocks.executeUserAppAction.mockResolvedValue(undefined);
     });
 
     it('loads an FX preset through the compiled action instead of directly mutating the selected track', () => {
@@ -147,7 +147,7 @@ describe('EffectsTab', () => {
             presetId: 'fx-chain-1',
             trackId: 'track-1',
         });
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it('logs the rejection before notifying when the FX preset load fails', async () => {
@@ -158,7 +158,7 @@ describe('EffectsTab', () => {
             groupLabel: 'Load preset',
             trackId: 'track-1',
         });
-        commandMocks.executeAppAction.mockRejectedValue(new Error('repair required'));
+        commandMocks.executeUserAppAction.mockRejectedValue(new Error('repair required'));
 
         renderWithTooltip(
             <EffectsTab {...defaultProps} currentRoute={{ id: 'effects-fxpresets', title: 'FX Chain Presets' }} />

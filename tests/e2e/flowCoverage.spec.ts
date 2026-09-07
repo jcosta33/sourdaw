@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -63,7 +64,7 @@ test.describe('Chord track with template', () => {
         const chord_track = page.getByRole('region', { name: 'Chord track' });
         await expect(chord_track).toBeVisible();
 
-        const follow = chord_track.getByRole('button', { name: /Enable harmonic following|Disable harmonic following/i });
+        const follow = chord_track.getByRole('button', { name: /harmonic following/i });
         const before = await follow.getAttribute('aria-pressed');
         await follow.click();
         await expect(follow).not.toHaveAttribute('aria-pressed', before ?? '');
@@ -86,7 +87,9 @@ test.describe('Arrangement sections', () => {
         await expect(sections.getByText('Right-click to add arrangement sections')).toBeVisible();
 
         const box = await sections.boundingBox();
-        if (!box) throw new Error('sections region missing');
+        if (!box) {
+            throw new Error('sections region missing');
+        }
         await sections.click({ button: 'right', position: { x: 50, y: box.height * 0.5 } });
 
         // The context menu is a floating surface (not role=menu); click by text.

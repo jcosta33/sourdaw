@@ -1,7 +1,7 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 export async function renameYeastGrooveTemplate(templateId: string, name: string): Promise<void> {
-    await executeAppAction({
+    await executeUserAppAction({
         type: 'renameGrooveTemplate',
         payload: { templateId, name },
     });

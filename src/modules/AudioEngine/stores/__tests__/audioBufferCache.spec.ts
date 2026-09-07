@@ -332,6 +332,7 @@ describe('audioBufferCache conversions', () => {
     });
 
     it('stages valid PCM until publish and rejects malformed or canceled candidates', async () => {
+        installFakeIndexedDb();
         const context = createTestContext(
             vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
                 expect(numberOfChannels).toBe(1);
@@ -369,7 +370,7 @@ describe('audioBufferCache conversions', () => {
             cacheIds: ['shared'],
         });
         unavailableNonresidentCandidate?.publish();
-        await expect(unavailableNonresidentCandidate?.persist()).resolves.toBe(false);
+        await expect(unavailableNonresidentCandidate?.persist()).resolves.toBe(true);
 
         const secondCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: second } });
         secondCandidate?.publish();
@@ -838,6 +839,7 @@ describe('audioBufferCache conversions', () => {
     });
 
     it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {
+        installFakeIndexedDb();
         const exported = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const ids = Array.from({ length: 65 }, (_, index) => `active-${index}`);
         const buffers = Object.fromEntries(ids.map((id) => [id, exported]));

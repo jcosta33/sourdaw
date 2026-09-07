@@ -14,6 +14,7 @@ import {
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { supersessionReplacement } from './prContract.ts';
+import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
 export type Worktree = {
     path: string;
@@ -61,11 +62,13 @@ export type LaneRemovalPort = {
     operation: (path: string) => string | undefined;
     remoteHead: (branch: string) => string | undefined;
     pullRequests: (branch: string) => PullRequest[];
+    commitPullRequests?: (head: string) => PullRequest[];
     comments: (number: number) => IssueComment[];
     replacement: (number: number) => ReplacementPullRequest;
     lock: (path: string, reason?: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
+    clearGuardFailure: (laneName: string) => void;
 };
 
 export type ShellRunner = {
@@ -96,6 +99,34 @@ function matchingWorktrees(target: string, worktrees: Worktree[]): Worktree[] {
     return worktrees.filter((worktree) => canonicalPath(worktree.path) === canonicalTarget);
 }
 
+export function isExpectedReviewLaneName(name: string): boolean {
+    return /^(?:review(?:[-_].*)?|.*[-_]review)$/i.test(name);
+}
+
+export function isExpectedReviewLanePath(target: string, primaryRoot: string): boolean {
+    const canonicalPrimaryRoot = canonicalPath(primaryRoot);
+    const canonicalTarget = canonicalPath(target);
+    const agentWorktreesRoot = canonicalPath(join(canonicalPrimaryRoot, '.agents', 'worktrees'));
+    if (canonicalTarget === agentWorktreesRoot || !inside(agentWorktreesRoot, canonicalTarget)) {
+        return false;
+    }
+    const rel = relative(agentWorktreesRoot, canonicalTarget).replaceAll('\\', '/');
+    const segments = rel.split('/').filter(Boolean);
+    if (segments.length === 1) {
+        return isExpectedReviewLaneName(segments[0]!);
+    }
+    return segments.length === 2 && segments[0]?.toLowerCase() === 'review';
+}
+
+export function parseReviewLanePrNumber(name: string): number | undefined {
+    const match = /(?:^|[-_])(\d+)(?:[-_]|$)/.exec(name);
+    if (match === null || match[1] === undefined) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 /**
  * Regenerable output rooted at a specific worktree path rather than named anywhere in the tree —
  * `release/` itself, and files like `release/desktop-runtime-material.json`, are tracked and must
@@ -120,6 +151,7 @@ export function disposableIgnored(path: string): boolean {
         /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
         /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
         /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
+        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized) ||
         underDisposableRootPath(normalized)
     );
 }
@@ -207,7 +239,12 @@ function admitLaneLock(target: string, lane: Worktree, port: LaneRemovalPort, re
 
 function identifyLane(target: string, port: LaneRemovalPort): Worktree {
     const lane = locateAgentWorktree(target, 'remove', port);
-    if (lane.bare || lane.detached || lane.branch === undefined || lane.prunable) {
+    const root = port.worktrees()[0];
+    if (root === undefined) {
+        fail('repository has no worktree state');
+    }
+    const isReviewLane = lane.detached && lane.branch === undefined && isExpectedReviewLanePath(lane.path, root.path);
+    if (lane.bare || lane.prunable || (!isReviewLane && (lane.detached || lane.branch === undefined))) {
         fail('worktree ownership is unknown');
     }
     return admitLaneLock(target, lane, port, () => identifyLane(target, port));
@@ -227,7 +264,7 @@ function identifyStrandLane(target: string, port: LaneRemovalPort): Worktree {
 
 type OwnershipSnapshot = {
     head: string;
-    branch: string;
+    branch: string | null;
     ignored: string[];
     pullRequest: number;
     supersededBy?: number;
@@ -286,7 +323,7 @@ function validateOwnership(
         current.head !== expected.head ||
         current.branch !== expected.branch ||
         current.bare ||
-        current.detached ||
+        current.detached !== expected.detached ||
         current.prunable ||
         !current.locked
     ) {
@@ -306,6 +343,52 @@ function validateOwnership(
     const operation = port.operation(target);
     if (operation !== undefined) {
         fail(`worktree has an active ${operation}`);
+    }
+
+    if (expected.detached) {
+        const root = port.worktrees()[0];
+        if (root === undefined || !isExpectedReviewLanePath(target, root.path)) {
+            fail('worktree ownership is unknown');
+        }
+        const queryPullRequests = port.commitPullRequests ?? port.pullRequests;
+        let candidates = queryPullRequests(expected.head).filter((pr) => pr.headRefOid === expected.head);
+        if (candidates.length === 0) {
+            fail('detached review lane head ownership is unproven');
+        }
+        const lanePr = parseReviewLanePrNumber(basename(target));
+        if (lanePr !== undefined) {
+            candidates = candidates.filter((pr) => pr.number === lanePr);
+            if (candidates.length === 0) {
+                fail(`PR head ${expected.head} does not match lane PR #${lanePr}`);
+            }
+        }
+        if (candidates.length !== 1) {
+            fail(`detached review lane head ${expected.head} does not identify one pull request`);
+        }
+        const [pullRequest] = candidates;
+        if (pullRequest === undefined) {
+            fail(`detached review lane head ${expected.head} does not identify one pull request`);
+        }
+        if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
+            fail(`PR #${pullRequest.number} is foreign`);
+        }
+        const merged = pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null;
+        if (!merged) {
+            fail(
+                pullRequest.state === 'OPEN'
+                    ? `PR #${pullRequest.number} is still active`
+                    : `PR #${pullRequest.number} is not merged`
+            );
+        }
+        if (port.dirty(target) || port.active(target)) {
+            fail('worktree changed during removal');
+        }
+        return {
+            head: current.head,
+            branch: null,
+            ignored: [...ignored].sort(),
+            pullRequest: pullRequest.number,
+        };
     }
 
     const branch = expected.branch;
@@ -359,6 +442,7 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
+    const laneName = basename(target);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
     if (!authorLocked) {
         port.lock(target);
@@ -373,6 +457,7 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
         port.unlock(target);
         releaseOnFailure = false;
         port.remove(target);
+        port.clearGuardFailure(laneName);
     } finally {
         if (releaseOnFailure) {
             port.unlock(target);
@@ -554,6 +639,7 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
         if (final.branch !== null) {
             port.deleteBranch(final.branch);
         }
+        port.clearGuardFailure(laneName);
         port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json`);
     } finally {
         if (releaseOnFailure) {
@@ -597,6 +683,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
         return cachedRepository;
     };
+    const primaryRoot = resolvePrimaryRoot();
     return {
         fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
         repository,
@@ -695,6 +782,45 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                 mergedAt: pullRequest.merged_at,
             }));
         },
+        commitPullRequests: (sha) => {
+            const nameWithOwner = repository();
+            try {
+                const pages = parseJson<
+                    Array<
+                        Array<{
+                            number: number;
+                            state: string;
+                            draft: boolean;
+                            head: { ref: string; sha: string; repo: { full_name: string } | null };
+                            merged_at: string | null;
+                        }>
+                    >
+                >(
+                    shell.capture('gh', [
+                        'api',
+                        '--paginate',
+                        '--slurp',
+                        `repos/${nameWithOwner}/commits/${sha}/pulls?per_page=100`,
+                    ]),
+                    'commit pull-request query'
+                );
+                return pages.flat().map((pullRequest) => ({
+                    number: pullRequest.number,
+                    state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : 'MERGED',
+                    isDraft: pullRequest.draft,
+                    headRefName: pullRequest.head.ref,
+                    headRefOid: pullRequest.head.sha,
+                    headRepository: pullRequest.head.repo?.full_name ?? null,
+                    mergedAt: pullRequest.merged_at,
+                }));
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                if (message.includes('No commit found for SHA') || message.includes('422') || message.includes('404')) {
+                    return [];
+                }
+                throw error;
+            }
+        },
         comments: (number) => {
             const pages = parseJson<
                 Array<Array<{ body: string; user: { node_id: string; login: string; type: string } | null }>>
@@ -730,15 +856,16 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
         readReceipt: (laneName) => {
-            const path = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR, `${laneName}.json`);
+            const path = join(primaryRoot, STRAND_RECEIPTS_DIR, `${laneName}.json`);
             return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
         },
         writeReceipt: (laneName, body) => {
-            const directory = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR);
+            const directory = join(primaryRoot, STRAND_RECEIPTS_DIR);
             mkdirSync(directory, { recursive: true });
             writeFileSync(join(directory, `${laneName}.json`), body);
         },
         deleteBranch: (branch) => shell.run('git', ['branch', '-D', branch]),
+        clearGuardFailure: (laneName) => clearGuardFailureReceipt(primaryRoot, laneName),
         log: (message) => {
             console.log(message);
         },

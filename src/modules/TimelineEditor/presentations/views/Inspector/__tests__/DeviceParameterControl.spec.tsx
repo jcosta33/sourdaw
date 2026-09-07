@@ -414,7 +414,9 @@ describe('DeviceParameterControl', () => {
     it('should call removeAutomationLane when automation button is clicked with active lane', () => {
         useAutomationLanes([{ id: 'lane-1', trackId: 'track-1', parameterId: 'device-1:gain' }]);
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
-        fireEvent.click(screen.getByLabelText(/Automate Gain/i));
+        const button = screen.getByLabelText(/Remove automation for Gain/i);
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(button);
         expect(mockRemoveAutomationLane).toHaveBeenCalledWith('lane-1');
     });
 

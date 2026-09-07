@@ -1117,6 +1117,10 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         }
     );
     const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const revisionCommitDate = execFileSync('git', ['show', '-s', '--format=%cI', revision], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
     const sourceDigests = Object.fromEntries(
         grandBouleMeasurementSourcePaths(root).map((path) => [
             path,
@@ -1139,7 +1143,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
             workingTree: 'clean',
             logicalCores: 4,
             gitSha: revision,
-            takenAt: '2026-08-23T00:00:00.000Z',
+            takenAt: new Date(Date.parse(revisionCommitDate) + 60_000).toISOString(),
         },
         sourceRevision: revision,
         sourceDigests,
@@ -3088,6 +3092,68 @@ describe('release inventory', () => {
         }
     });
 
+    it('rejects a takenAt that predates its source revision as a re-stamp', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-restamp-'));
+        try {
+            const { jsonPath, revision } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const revisionCommitDate = execFileSync('git', ['show', '-s', '--format=%cI', revision], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as { machine: { takenAt: string } };
+            data.machine.takenAt = new Date(Date.parse(revisionCommitDate) - 3_600_000).toISOString();
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('predates its source revision');
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow('re-stamped without re-measuring');
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement without a parseable takenAt timestamp', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-takenat-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const original = readFileSync(jsonPath, 'utf8');
+            const missing = JSON.parse(original) as { machine: { takenAt?: string } };
+            delete missing.machine.takenAt;
+            writeFileSync(jsonPath, JSON.stringify(missing));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement must carry a parseable takenAt timestamp'
+            );
+
+            const unparseable = JSON.parse(original) as { machine: { takenAt?: string } };
+            unparseable.machine.takenAt = 'not-a-timestamp';
+            writeFileSync(jsonPath, JSON.stringify(unparseable));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement must carry a parseable takenAt timestamp'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('admits a takenAt exactly equal to its source revision commit date', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-takenat-boundary-'));
+        try {
+            const { jsonPath, revision } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const revisionCommitDate = execFileSync('git', ['show', '-s', '--format=%cI', revision], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as { machine: { takenAt: string } };
+            data.machine.takenAt = revisionCommitDate;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
     it('scopes the measurement census to the compile-time closure', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-census-scope-'));
         try {
@@ -4133,7 +4199,6 @@ describe('release inventory', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-worklet-provenance-'));
         const worklets = join(root, 'public/audio/worklets');
         mkdirSync(worklets, { recursive: true });
-        writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'native');
         writeFileSync(join(worklets, 'sidechain-compressor-processor.js'), 'sidechain');
 
         try {
@@ -4141,7 +4206,7 @@ describe('release inventory', () => {
             expect(before.kind).toBe('project-source');
             expect(before.revisions).toEqual(['not-applicable:direct-project-source']);
 
-            writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'changed');
+            writeFileSync(join(worklets, 'sidechain-compressor-processor.js'), 'changed');
             expect(audioWorkletReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
         } finally {
             removeTemporaryDirectory(root);

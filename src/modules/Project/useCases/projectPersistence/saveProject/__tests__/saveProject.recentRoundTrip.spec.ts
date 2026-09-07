@@ -28,6 +28,9 @@ const mocks = vi.hoisted(() => ({
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     captureProjectRevision: vi.fn<() => string>(),
     buildProjectData: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(() =>
+        Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+    ),
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -64,6 +67,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -76,8 +80,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
+    ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -172,7 +180,12 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         mocks.projectStoreValue.value = makeProjectState();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
-        mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
+        mocks.buildProjectData.mockResolvedValue({
+            data: makeProjectData(),
+            missingBufferCount: 0,
+            requiredAudioBufferIds: [],
+            snapshotRevision: 'saved-revision',
+        });
     });
 
     afterEach(() => {

@@ -259,23 +259,26 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
+async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator, scale: number): Promise<void> {
     const canvas = app.getByLabel('Timeline editor surface');
     const canvasBox = requireBox(await canvas.boundingBox(), 'timeline canvas');
-    // boundingBox() and click({ position }) are host/main-frame pixels.
-    // Iframe getBoundingClientRect CSS pixels overshoot the canvas at 50%
-    // scale and miss the right edge at 125%/200%, so the fit-vs-clamp
-    // branch is judged on the wrong x. Stay inland of the labeled box: 4px
-    // from its right edge is inspector, scrollbar, or chrome.
+    // boundingBox() and page.mouse are host/main-frame pixels. Iframe
+    // getBoundingClientRect CSS pixels overshoot the canvas at 50% scale and
+    // miss the right edge at 125%/200%, so the fit-vs-clamp branch is judged
+    // on the wrong x. Stay inland of the labeled box: 4px from its right edge
+    // is inspector, scrollbar, or chrome.
     const inland = 16;
     const clickPoint = {
         x: canvasBox.x + canvasBox.width - inland,
         y: canvasBox.y + canvasBox.height / 2,
     };
-    await canvas.click({
-        button: 'right',
-        position: { x: canvasBox.width - inland, y: canvasBox.height / 2 },
-    });
+    // Drive the pointer instead of click({ position }): click() re-reads the
+    // element box after its own scrollIntoViewIfNeeded, and at 200% scale that
+    // scroll moves `#main-content` by one app pixel, so the pointer lands two
+    // host pixels left of the box read here and the anchor is then judged
+    // against a stale `clickPoint`. page.mouse never scrolls, so the pointer
+    // is exactly where this arithmetic says it is.
+    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -429,7 +432,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(app, scale);
+        await expectRightEdgeContextMenuClamped(page, app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }

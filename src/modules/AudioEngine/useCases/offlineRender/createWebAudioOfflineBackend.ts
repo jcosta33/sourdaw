@@ -87,6 +87,7 @@ const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], str
     'remove-device': 'an offline render builds each device chain once, at strip creation',
     'set-transport': "an offline render's transport is fixed by the region it was created for",
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
+    'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
 
 /**
@@ -341,13 +342,30 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'write-device-parameter':
                 writeDeviceParameter(command.target, command.write);
                 return null;
+            case 'set-device-parameters':
+                // An immediate patch load addresses a native built-in, and only
+                // a strip the native engine carries holds one — so a producer
+                // never aims one here.
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
+                return null;
+            case 'schedule-midi':
+            case 'clear-midi':
+                // This carrier voices MIDI through its own device scheduler, and
+                // only a strip the native engine carries stores notes on an
+                // engine instrument — so a producer never aims one here.
+                return null;
+            case 'send-midi-note':
+                // An offline render has no live keys: there is no player, and a
+                // note with no timeline position has no frame this carrier
+                // could place it on.
                 return null;
             case 'insert-device':
             case 'remove-device':
             case 'set-transport':
             case 'set-monitor-shadow':
+            case 'set-master-gain':
                 // Refused ahead of application; unreachable here.
                 return null;
         }

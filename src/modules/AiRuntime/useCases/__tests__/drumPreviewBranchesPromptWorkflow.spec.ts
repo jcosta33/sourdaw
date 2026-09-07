@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
 import { markerStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
 import {
@@ -536,6 +540,8 @@ function setCollaborationAuthority({ isEnabled, isHost }: { isEnabled: boolean; 
 }
 
 describe('EX-05 drum preview-branch prompt workflow', () => {
+    let indexedDb: TransactionalIndexedDbInstallation | null = null;
+
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
@@ -552,6 +558,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             base_url: 'http://localhost:1234/v1',
         });
         configureAutomergeStoragePort(null);
+        indexedDb = installTransactionalIndexedDb();
         resetCrdtProjectAuthority('EX-05 drum preview workflow test');
         removeCrdtDoc('root');
         createCrdtDoc('root');
@@ -642,6 +649,8 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('EX-05 drum preview workflow cleanup');
         await cloudSession.clear();
+        await indexedDb?.dispose();
+        indexedDb = null;
         vi.unstubAllGlobals();
     });
 

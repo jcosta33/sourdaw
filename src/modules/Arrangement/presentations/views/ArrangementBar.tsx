@@ -397,6 +397,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         left: contextMenu.x,
                         top: contextMenu.y,
                     }}
+                    role="menu"
                 >
                     {contextMenu.kind === 'empty' ? (
                         <DawMenuButton onClick={handleAddSection}>Add Section</DawMenuButton>

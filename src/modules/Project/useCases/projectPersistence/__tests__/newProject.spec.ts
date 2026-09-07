@@ -47,6 +47,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 // newProject imports clearRuntimeCachedAudioBuffers and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
@@ -117,6 +118,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 // newProject imports clearUndoHistory.
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    executeUserAppAction: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({

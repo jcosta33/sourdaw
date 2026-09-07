@@ -6,7 +6,6 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
-import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -14,6 +13,7 @@ import {
     externalPluginActivationTasks,
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
@@ -51,16 +51,17 @@ type ActivateExternalPluginInput = {
      * latency-change event, which carries no rate for a caller to divide by.
      */
     onLatencyMs?: (latencyMs: number) => void;
-    /**
-     * Sink for what the native audio bridge costs this instance, in frames of
-     * `engineSampleRate`. Reported once at activation, alongside the plugin's
-     * own latency, because the two are compensated together.
-     *
-     * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet
-     * relay with the native graph, and this sink goes with it.
-     */
-    onBridgeRoundTripFrames?: (frames: number) => void;
 };
+
+/**
+ * The failed-restore episode is over — the saved chunk is in the plugin again.
+ * The warned-set entry goes with the marker, so a NEW failure warns again
+ * instead of staying silent behind an already-issued warning.
+ */
+function resolveRestoreFailure(instanceId: string): void {
+    externalPluginRestoreFailures.delete(instanceId);
+    warnedExternalPluginRestoreFailures.delete(instanceId);
+}
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
     externalPluginActivationStore.update((state) => {
@@ -87,7 +88,7 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
  * The restore is queued immediately after instantiation on the same lifecycle
  * tail — it is NOT synchronized with the first audio block. A running native
  * engine can process a few default-state blocks before the restore IPC lands
- * (`add_plugin_with_bridge` enqueues to the RT ring before the restore command
+ * (`add_hosted_plugin` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
 export function activateExternalPlugin({
@@ -96,7 +97,6 @@ export function activateExternalPlugin({
     stateChunk,
     engineSampleRate,
     onLatencyMs,
-    onBridgeRoundTripFrames,
 }: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
     const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
     if (rebuildCompletion) {
@@ -107,7 +107,6 @@ export function activateExternalPlugin({
                 stateChunk,
                 engineSampleRate,
                 onLatencyMs,
-                onBridgeRoundTripFrames,
             })
         );
     }
@@ -129,11 +128,18 @@ export function activateExternalPlugin({
                         };
                     }
                     setActivationStatus(instanceId, 'active');
+                    // The saved chunk is in the plugin again, so what it reports
+                    // over get-state is authoritative state.
+                    resolveRestoreFailure(instanceId);
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
                     const reason = String(error);
                     setActivationStatus(instanceId, 'error', reason);
+                    // The plugin rejected the chunk and holds its defaults; its
+                    // runtime state must not reach a save until real state
+                    // exists again.
+                    externalPluginRestoreFailures.add(instanceId);
                     logger.warn(
                         `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${reason}`
                     );
@@ -171,14 +177,6 @@ export function activateExternalPlugin({
         // push subscription is running.
         externalLatencyReporters.set(instanceId, onLatencyMs);
         watchExternalPluginLatency();
-    }
-
-    if (onBridgeRoundTripFrames) {
-        // Registered the same way and for a longer reach: if no engine is
-        // running, the real bridge cost is not known until one starts and takes
-        // this instance over, which happens long after this call resolves.
-        // `markExternalPluginEngineAttached` reports it through this sink.
-        externalBridgeFramesReporters.set(instanceId, onBridgeRoundTripFrames);
     }
 
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
@@ -221,16 +219,11 @@ export function activateExternalPlugin({
             // browser stub), so no runtime guard is needed. Later changes arrive
             // through the plugin-latency-changed subscription instead.
             onLatencyMs?.(instance.latency_ms);
-            // What the bridge costs on top of that. Reported here and only
-            // here: the latency-change event carries the plugin's own figure,
-            // and the bridge's depth does not change with it.
-            onBridgeRoundTripFrames?.(instance.bridge_round_trip_frames);
         } catch (error) {
             // Instantiation failed: drop the guard so a later rebuild can retry,
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
-            externalBridgeFramesReporters.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return { status: 'failed', stage: 'load', reason: String(error) };
@@ -241,14 +234,20 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            // The saved chunk is in the plugin again, so what it reports over
+            // get-state is authoritative state.
+            resolveRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
+            setActivationStatus(instanceId, 'error', String(error));
+            // The plugin rejected the chunk and holds its defaults; its runtime
+            // state must not reach a save until real state exists again.
+            externalPluginRestoreFailures.add(instanceId);
             logger.warn(
                 `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${String(error)}`
             );
-            setActivationStatus(instanceId, 'error', String(error));
             return { status: 'failed', stage: 'restore', reason: String(error) };
         }
     })().then((outcome) => {

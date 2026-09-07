@@ -1,6 +1,6 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { A4_REFERENCE_PARAM_ID } from '../models/A4Reference';
 
@@ -55,7 +55,7 @@ export function setA4Reference(deviceId: string, hz: number, isTransient = false
         return;
     }
 
-    void executeAppAction({
+    void executeUserAppAction({
         type: 'setDeviceParameter',
         payload: { deviceId, paramId: A4_REFERENCE_PARAM_ID, value: hz },
     });

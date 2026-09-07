@@ -5,8 +5,17 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function leaveSession(): Promise<void> {
-    joinAttemptAuthority.invalidate();
+    const owner = runtime.captureOwner();
+    const state = collaborationStore.value;
+    if (!owner && !state?.isEnabled) {
+        return;
+    }
+    if (!owner || runtime.canWrite(owner)) {
+        joinAttemptAuthority.invalidate();
+    }
+    const requestWitness = joinAttemptAuthority.capture();
     const peerManager = runtime.state.peerManager;
+    runtime.retire(owner);
     if (peerManager) {
         const leaveMessage: PeerMessage = {
             type: 'peer-leave',
@@ -24,7 +33,10 @@ export async function leaveSession(): Promise<void> {
         );
     }
 
-    runtime.cleanup();
+    const removedCurrentRuntime = runtime.cleanup(owner, requestWitness);
+    if (!removedCurrentRuntime) {
+        return;
+    }
 
     collaborationStore.set({
         isEnabled: false,

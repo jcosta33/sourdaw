@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { undo, redo } from '#/modules/Command/useCases';
-import { saveProject, newProject } from '#/modules/Project/useCases';
+import { captureProjectTransitionAuthority, saveProject, newProject } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { onCommandRedo } from '../../useCases/appEventSubscribers/onCommandRedo';
@@ -53,7 +53,8 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
             }),
             onMidiImport((payload) => {
                 if (payload.file) {
-                    void importMidiFile(payload.file);
+                    const authority = captureProjectTransitionAuthority();
+                    void importMidiFile(payload.file, { shouldContinue: authority.isCurrent });
                 }
             }),
         ];

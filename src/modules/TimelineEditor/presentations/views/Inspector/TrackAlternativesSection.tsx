@@ -6,7 +6,8 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
@@ -23,21 +24,25 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                 className="mb-2 rounded-sm"
                 title="Alternatives"
                 actions={
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => {
-                            const name = `Alt ${track.alternatives.length + 1}`;
-                            void executeAppAction({
-                                type: 'createTrackAlternative',
-                                payload: { trackId: track.id, name, duplicateActive: false },
-                            });
-                        }}
-                        aria-label="Create new alternative"
-                        title="New empty alternative"
-                    >
-                        <Plus className="size-3" />
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => {
+                                    const name = `Alt ${track.alternatives.length + 1}`;
+                                    void executeUserAppAction({
+                                        type: 'createTrackAlternative',
+                                        payload: { trackId: track.id, name, duplicateActive: false },
+                                    });
+                                }}
+                                aria-label="Create new alternative"
+                            >
+                                <Plus className="size-3" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">New empty alternative</TooltipContent>
+                    </Tooltip>
                 }
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
@@ -48,7 +53,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         selected={alt.id === track.activeAlternativeId}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
-                                void executeAppAction({
+                                void executeUserAppAction({
                                     type: 'switchTrackAlternative',
                                     payload: { trackId: track.id, alternativeId: alt.id },
                                 });
@@ -66,7 +71,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         className="h-6 w-6"
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            void executeAppAction({
+                                            void executeUserAppAction({
                                                 type: 'deleteTrackAlternative',
                                                 payload: { trackId: track.id, alternativeId: alt.id },
                                             });

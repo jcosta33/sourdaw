@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renameClip } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
 import { type CallableCommandEntry } from '../../searchCommandRegistry';
@@ -10,7 +10,6 @@ import { trackCommands } from '../TrackCommands';
 
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -43,7 +42,7 @@ function runAction(command: CallableCommandEntry | undefined): void {
 describe('rename commands use the themed promptUser dialog (not window.prompt)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(executeAppAction).mockResolvedValue(undefined);
+        vi.mocked(executeUserAppAction).mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -59,7 +58,7 @@ describe('rename commands use the themed promptUser dialog (not window.prompt)',
         expect(promptUser).toHaveBeenCalledWith(
             expect.objectContaining({ title: 'Rename Track', initialValue: 'Old Track' })
         );
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'renameTrack',
             payload: { trackId: 't1', name: 'New Track' },
         });
@@ -71,7 +70,7 @@ describe('rename commands use the themed promptUser dialog (not window.prompt)',
         runAction(trackCommands.find((command) => command.id === 'rename-track'));
         await flush();
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('rename-clip prompts with the current name and renames the clip with the entered value', async () => {

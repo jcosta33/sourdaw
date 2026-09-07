@@ -124,6 +124,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     setCommandEventBus: mocks.setCommandEventBus,
 }));
 

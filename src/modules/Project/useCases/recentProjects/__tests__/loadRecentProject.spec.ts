@@ -34,6 +34,7 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
@@ -45,8 +46,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -209,7 +213,7 @@ describe('loadRecentProject', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
-    it('aborts and restores the previous graph when reset fails before state publication', async () => {
+    it('fails and restores the previous graph when reset fails before state publication', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         const order: string[] = [];
         const persistEmbedded = vi.fn(() => {
@@ -229,7 +233,7 @@ describe('loadRecentProject', () => {
             throw new Error('graph reset failed');
         });
 
-        await expect(loadRecentProject('reset-failure')).resolves.toBe('aborted');
+        await expect(loadRecentProject('reset-failure')).resolves.toBe('failed');
 
         expect(order).toEqual(['reset']);
         expect(publishEmbedded).not.toHaveBeenCalled();
@@ -242,6 +246,51 @@ describe('loadRecentProject', () => {
         // aborted load claimed on entry and never gave back, which left the
         // loading overlay up and `markDirty` permanently short-circuited.
         expect(projectStore.value).toMatchObject({ loading: false, initialized: true });
+    });
+
+    it('returns aborted when replacement is superseded by shouldProceed returning false mid-flight', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
+                })
+        );
+
+        let allowProceed = true;
+        const loading = loadRecentProject('superseded-by-should-proceed', {
+            shouldProceed: () => allowProceed,
+        });
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+
+        allowProceed = false;
+        completeRestore?.();
+
+        await expect(loading).resolves.toBe('aborted');
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
+    it('returns aborted when another transition claims revocable authority during replacement', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<{ cancel: () => void; publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ cancel: () => undefined, publish: () => 0 });
+                })
+        );
+
+        const loading = loadRecentProject('superseded-by-authority');
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+
+        const newerLoad = runProjectLoadTransaction();
+        await newerLoad.prepare();
+
+        completeRestore?.();
+
+        await expect(loading).resolves.toBe('aborted');
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {

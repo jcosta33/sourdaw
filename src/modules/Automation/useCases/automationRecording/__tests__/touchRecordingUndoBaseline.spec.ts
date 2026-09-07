@@ -33,7 +33,7 @@ const { mocks } = vi.hoisted(() => {
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 vi.mock('#/modules/Transport/stores', () => ({ transportStore: mocks.transportStore }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry }));
+vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry, executeUserAppAction: vi.fn() }));
 
 type SubjectModules = {
     automationStore: typeof import('../../../stores/automationStore').automationStore;

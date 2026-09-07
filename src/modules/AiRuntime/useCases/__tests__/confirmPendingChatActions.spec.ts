@@ -1,5 +1,5 @@
 import { parse as parsePersistedValue } from 'superjson';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
@@ -3425,7 +3425,27 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         const firstAction = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
         const secondAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+        const scheduledAnimationFrames = new Map<number, FrameRequestCallback>();
+        let nextAnimationFrameId = 1;
+        const requestAnimationFrameSpy = vi
+            .spyOn(globalThis, 'requestAnimationFrame')
+            .mockImplementation((callback) => {
+                const frameId = nextAnimationFrameId++;
+                scheduledAnimationFrames.set(frameId, callback);
+                return frameId;
+            });
+        const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frameId) => {
+            scheduledAnimationFrames.delete(frameId);
+        });
+        onTestFinished(() => {
+            stopReacting();
+            requestAnimationFrameSpy.mockRestore();
+            cancelAnimationFrameSpy.mockRestore();
+            scheduledAnimationFrames.clear();
+        });
+
         bufferedStore.set({ touched: 1 });
+        expect(scheduledAnimationFrames.size).toBe(1);
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('buffered');
         const projectRevision = captureProjectRevision();
         const unownedMutationBaseline = captureUnownedProjectMutations();
@@ -3461,20 +3481,18 @@ describe('confirmPendingChatActions transaction admission', () => {
             projectRevision,
         });
 
-        try {
-            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })).resolves.toEqual({
-                status: 'invalidated',
-                reason: 'The project changed after this proposal was created. Review and submit the command again.',
-            });
-        } finally {
-            stopReacting();
-        }
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
 
         expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
+        expect(executedBpms).toContain(128);
         expect(executedBpms).not.toContain(132);
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ buffered: { touched: 1 } });
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
         expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
+        expect(scheduledAnimationFrames.size).toBe(0);
     });
 
     it('keeps callback evidence bound to the checkpoint before a later foreign app action', async () => {

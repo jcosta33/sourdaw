@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { type Device, type Track } from '#/modules/Arrangement/stores';
 
 import {
     type MapGraphBatchInput,
@@ -206,5 +206,68 @@ describe('renderOfflineWithNativeEngine — routing', () => {
 
         expect(busStrip?.state.soloGated).toBe(true);
         expect(sourceStrip?.state.soloGated).toBe(false);
+    });
+});
+
+describe('renderOfflineWithNativeEngine — device projection', () => {
+    beforeEach(() => {
+        vi.stubGlobal('AudioBuffer', StubAudioBuffer);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    // Project truth spells a Fermenter's parameters as the ids a panel authors;
+    // the native mapper resolves `parameterValues` against the engine's own
+    // names and refuses the whole batch, by strip, over one it cannot name
+    // (#3893). The strip command this producer sends must already carry the
+    // projected names.
+    it('projects a fermenter device on a scheduled track onto the engine parameter names', async () => {
+        const frames = 8;
+        const { transport, commands } = capturingTransport(frames);
+        const fermenter: Device = {
+            id: 'ferm',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: { oscEngine: 2 },
+        };
+        const audio = createTrack({ id: 'audio-1', devices: [fermenter] });
+
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: frames,
+            durationSeconds: frames / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => {
+                const startSeconds = startPpq * 0.5;
+                const endSeconds = endPpq * 0.5;
+                return {
+                    startSamples: startSeconds * sampleRate,
+                    endSamples: endSeconds * sampleRate,
+                    durationSamples: (endSeconds - startSeconds) * sampleRate,
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks: [audio],
+            scheduledTracks: [audio],
+            scheduledTrackIds: new Set(['audio-1']),
+            soloGatedByTrackId: new Map(),
+            vcaMultiplierByTrackId: new Map(),
+        });
+
+        expect(result.outcome).toBe('rendered');
+        const trackStrip = commands.find(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'create-track-strip' }> =>
+                command.kind === 'create-track-strip' && command.trackId === 'audio-1'
+        );
+        expect(trackStrip?.devices.find((device) => device.id === 'ferm')?.parameterValues).toEqual({ engine: 2 });
     });
 });

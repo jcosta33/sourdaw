@@ -4,16 +4,8 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { markExternalPluginParameterSnapshotAttached } from '../../stores/externalPluginParameterStore';
 
-import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
-
 type MarkExternalPluginEngineAttachedInput = {
     instanceId: string;
-    /**
-     * What the engine that took this instance reports its audio bridge costs,
-     * in frames of the rate the instance was activated with. The activation
-     * reported zero because there was no bridge then; this is the real figure.
-     */
-    bridgeRoundTripFrames: number;
 };
 
 /**
@@ -32,10 +24,7 @@ type MarkExternalPluginEngineAttachedInput = {
  * write patches what is already there rather than creating it. Calling it for an
  * instance that was already attached leaves the stores untouched.
  */
-export function markExternalPluginEngineAttached({
-    instanceId,
-    bridgeRoundTripFrames,
-}: MarkExternalPluginEngineAttachedInput): void {
+export function markExternalPluginEngineAttached({ instanceId }: MarkExternalPluginEngineAttachedInput): void {
     markExternalPluginParameterSnapshotAttached(instanceId);
 
     externalPluginActivationStore.update((state) => {
@@ -52,9 +41,4 @@ export function markExternalPluginEngineAttached({
             byInstanceId: { ...current.byInstanceId, [instanceId]: { status: 'active' } },
         };
     });
-
-    // The caller's latency compensation was given zero at activation, because
-    // an unattached instance crosses no bridge. This is the first moment the
-    // real depth exists.
-    externalBridgeFramesReporters.get(instanceId)?.(bridgeRoundTripFrames);
 }

@@ -30,6 +30,7 @@ vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppActionBatch: mocks.executeProjectBatch,
+    executeUserAppAction: vi.fn(),
 }));
 
 const jobs: RenderProjectSectionJobSnapshot[] = [

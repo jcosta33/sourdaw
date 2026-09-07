@@ -5,7 +5,7 @@ import {
     resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 
@@ -26,14 +26,14 @@ export type BridgeDeps = {
     updateDeviceParam: typeof updateDeviceParam;
     persistDeviceParam: typeof persistDeviceParam;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
-    executeAppAction: typeof executeAppAction;
+    executeUserAppAction: typeof executeUserAppAction;
 };
 
 export const bridgeDeps: BridgeDeps = {
     updateDeviceParam,
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
-    executeAppAction,
+    executeUserAppAction,
 };
 export const findDeviceRefGluten = createFindDeviceRef(getAllTracks);
 

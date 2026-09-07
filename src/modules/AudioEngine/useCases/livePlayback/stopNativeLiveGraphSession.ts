@@ -20,9 +20,13 @@
  * for good.
  */
 
-import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
-
+import { abandonNativeLiveGraphSession } from './abandonNativeLiveGraphSession';
+import { claimCarriedStrips } from './claimCarriedStrips';
+import { clearNativeChains } from './clearNativeChains';
+import { describeEngineNotRenderingRefusal } from './describeEngineNotRenderingRefusal';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
+import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
+import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
@@ -40,7 +44,13 @@ export function stopNativeLiveGraphSession(
 ): Promise<StopNativeLiveGraphSessionResult> {
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
         // First, and unconditionally — see the header.
-        setNativeCarriedTracks(new Set());
+        claimCarriedStrips(new Set());
+        // The stop is what ends a play, so the next one gets its own automatic
+        // re-arm (#3960); a start must never hand this guard back. The epoch
+        // bump is what invalidates a claim taken before this stop, so a reload
+        // still in flight can never start a session for the play that follows.
+        nativeLiveGraphSession.rearmClaimed = false;
+        nativeLiveGraphSession.rearmEpoch += 1;
         // Stopped before the command, and whatever the command answers: the
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.
@@ -51,6 +61,11 @@ export function stopNativeLiveGraphSession(
         // `hold_automation`, which freezes every mixer parameter where it
         // stands rather than letting a ramp keep gliding past the stop.
         disarmNativeLiveAutomationWriter();
+        // And the note pass with it. Nothing is sent to empty the stores: the
+        // engine releases every sounding note on the stop itself
+        // (`release_sounding_notes`), and the next play's arm clears each store
+        // whole before it fills it.
+        disarmNativeLiveMidiWriter();
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };
@@ -64,13 +79,25 @@ export function stopNativeLiveGraphSession(
             // The session stays: a refused stop means the engine did not take
             // the command, not that the graph it holds went away, and dropping
             // the handle would strand a still-playing engine with no way to
-            // reach it.
+            // reach it. A refusal saying the engine no longer renders is the
+            // one exception — the graph a kept handle would strand is one
+            // nothing renders any more, so dropping it strands nothing.
+            if (isEngineNotRenderingRefusal(result.reason)) {
+                // Described, not raw: the notice this puts in front of a
+                // musician has no business showing the machine prefix
+                // `isEngineNotRenderingRefusal` matched on.
+                abandonNativeLiveGraphSession(describeEngineNotRenderingRefusal(result.reason));
+            }
             return { outcome: 'declined', reason: result.reason };
         }
         // Cleared only once the park actually applied. A refused stop leaves a
         // still-rolling engine, and recording it as parked would be a claim
         // about the engine that the engine never made.
         nativeLiveGraphSession.rolling = false;
+        // Forgotten with the roll it described. Nothing edits a parked chain —
+        // the next play replaces the whole topology and records its own reports
+        // — so a record kept past the stop could only outlive its truth.
+        clearNativeChains();
         return { outcome: 'stopped' };
     });
 }

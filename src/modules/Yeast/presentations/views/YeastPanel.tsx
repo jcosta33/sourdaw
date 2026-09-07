@@ -81,7 +81,7 @@ const SideCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="yeast-window"
+        className="yeast-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-rose)]/70"

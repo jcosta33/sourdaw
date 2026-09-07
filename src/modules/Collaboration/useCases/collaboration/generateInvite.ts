@@ -3,8 +3,15 @@ import { type SignalingMessage } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { recordCollaborationFailure } from './recordCollaborationFailure';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
+
+function createSupersededOperationError(): Error {
+    return createCollaborationError('Invite generation was superseded by a newer session');
+}
+
+let currentInviteRequest = 0;
 
 /**
  * Mint an invite string for one joiner slot.
@@ -29,6 +36,16 @@ import { sessionRuntimePrimitives as runtime } from './sessionManagement';
  * WebSocket relay.
  */
 export async function generateInvite(): Promise<string> {
+    const owner = runtime.captureOwner();
+    const requestWitness = joinAttemptAuthority.capture();
+    currentInviteRequest += 1;
+    const inviteRequest = currentInviteRequest;
+    const isCurrentSession = () =>
+        joinAttemptAuthority.isCurrent(requestWitness) &&
+        (owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner));
+    let ownsPendingSlot = () => false;
+    let cleanupPendingSlot: () => void = () => undefined;
+    let pendingSlotCreated = false;
     clearCollaborationFailure();
     try {
         const peerManager = runtime.state.peerManager;
@@ -45,8 +62,32 @@ export async function generateInvite(): Promise<string> {
 
         const joinerPeerId = runtime.generatePeerId();
         runtime.state.pendingInviteId = joinerPeerId;
+        pendingSlotCreated = true;
+        ownsPendingSlot = () =>
+            runtime.state.peerManager === peerManager && runtime.state.pendingInviteId === joinerPeerId;
+        cleanupPendingSlot = () => {
+            if (ownsPendingSlot()) {
+                runtime.state.pendingInviteId = null;
+            }
+        };
         const peer = peerManager.createPeer(joinerPeerId);
+        ownsPendingSlot = () =>
+            runtime.state.peerManager === peerManager &&
+            runtime.state.pendingInviteId === joinerPeerId &&
+            peerManager.getPeer(joinerPeerId) === peer;
+        cleanupPendingSlot = () => {
+            if (peerManager.getPeer(joinerPeerId) === peer) {
+                peerManager.removePeer(joinerPeerId);
+            }
+            if (runtime.state.peerManager === peerManager && runtime.state.pendingInviteId === joinerPeerId) {
+                runtime.state.pendingInviteId = null;
+            }
+        };
+        const isCurrentInvite = () => isCurrentSession() && currentInviteRequest === inviteRequest && ownsPendingSlot();
         const sdp = await peer.createOffer();
+        if (!isCurrentInvite()) {
+            throw createSupersededOperationError();
+        }
 
         const state = collaborationStore.value!;
         const invite: SignalingMessage = {
@@ -59,8 +100,20 @@ export async function generateInvite(): Promise<string> {
             sessionSecret,
         };
 
-        return await runtime.compressInvite(JSON.stringify(invite));
+        const compressedInvite = await runtime.compressInvite(JSON.stringify(invite));
+        if (!isCurrentInvite()) {
+            throw createSupersededOperationError();
+        }
+        return compressedInvite;
     } catch (error) {
+        if (
+            !isCurrentSession() ||
+            currentInviteRequest !== inviteRequest ||
+            (pendingSlotCreated && !ownsPendingSlot())
+        ) {
+            throw createSupersededOperationError();
+        }
+        cleanupPendingSlot();
         recordCollaborationFailure(error);
         throw error;
     }

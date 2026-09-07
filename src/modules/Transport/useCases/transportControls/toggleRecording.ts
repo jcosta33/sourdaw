@@ -35,7 +35,11 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
         const trackLatencySec = getCompensationDelay(track.id);
         const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
 
-        return startAudioRecording(track.id, (buffer) => {
+        return startAudioRecording(track.id, (result) => {
+            if (result.kind === 'failed') {
+                return;
+            }
+            const { buffer } = result;
             const recClip = clips.find((context) => context.trackId === track.id);
             if (recClip) {
                 const bufferId = `rec-${crypto.randomUUID()}`;

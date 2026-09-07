@@ -3,24 +3,27 @@
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use crate::audio_bridge::{self, PluginAudioBridge, RENDER_QUANTUM_FRAMES};
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
+use crate::midi::note_store::{MidiNoteStore, NoteAddressSet, TimedMidiNote};
 use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
 };
+use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
-    RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
-    MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
+    ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
+    DeviceParamEvent, DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget,
+    SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
+    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
+use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
+use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -143,6 +146,46 @@ pub(crate) fn transport_position_channel(
     (input, TransportPositionReader { output })
 }
 
+/// What the engine's master output measured, for a meter drawn from it.
+///
+/// Its own channel rather than a field on [`TransportPositionSnapshot`]: that
+/// one answers "where is the transport", and the batch count riding on it is
+/// paired with the playhead beside it on purpose. A level is not part of that
+/// pairing — nothing dates a meter reading against a command — so carrying it
+/// there would widen a contract to hold a number that makes no claim under it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MasterMeterSnapshot {
+    /// The loudest sample the device was handed, linear and non-negative,
+    /// held for [`AudioScheduler::publish_master_meter`]'s hold window so a
+    /// UI-rate poll landing between callbacks cannot under-read a transient.
+    ///
+    /// It measures what reached the device, not what the graph rendered: a
+    /// shadowed monitor writes zeros, and a meter that reported the silenced
+    /// render would show a level nobody can hear.
+    pub peak: f32,
+}
+
+pub struct MasterMeterReader {
+    output: Output<MasterMeterSnapshot>,
+}
+
+impl MasterMeterReader {
+    pub fn snapshot(&mut self) -> MasterMeterSnapshot {
+        *self.output.read()
+    }
+}
+
+pub(crate) fn master_meter_channel() -> (Input<MasterMeterSnapshot>, MasterMeterReader) {
+    let (input, output) = triple_buffer::triple_buffer(&MasterMeterSnapshot::default());
+    (input, MasterMeterReader { output })
+}
+
+/// How many times a second the held peak may fall on its own — 50, so a
+/// transient stands for ~20 ms. Fast enough that a meter still reads as a
+/// meter, slow enough that a 60 Hz poll landing between callbacks sees the
+/// peak that happened rather than the block that followed it.
+pub(crate) const PEAK_HOLD_RELEASES_PER_SECOND: f32 = 50.0;
+
 /// Timeline spans one callback can be split into.
 ///
 /// A callback renders at most [`MAX_CALLBACK_FRAMES`] frames and the engine
@@ -198,6 +241,8 @@ fn knead_instance() -> PluginCore {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuiltinEffectType {
     Knead,
+    Fermenter,
+    GrandBoule,
 }
 
 impl BuiltinEffectType {
@@ -207,6 +252,8 @@ impl BuiltinEffectType {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Knead => "knead",
+            Self::Fermenter => "fermenter",
+            Self::GrandBoule => "grand-boule",
         }
     }
 
@@ -216,7 +263,24 @@ impl BuiltinEffectType {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "knead" => Some(Self::Knead),
+            "fermenter" => Some(Self::Fermenter),
+            "grand-boule" => Some(Self::GrandBoule),
             _ => None,
+        }
+    }
+
+    /// Whether this built-in turns notes into audio, and so is a body a note
+    /// store belongs on.
+    ///
+    /// The enum is the registry for it, so every route that registers a
+    /// built-in — the engine handle's own, and the graph mapper's — decides
+    /// the store from the type alone and cannot disagree with the other about
+    /// what an instrument is.
+    pub const fn sounds_notes(self) -> bool {
+        match self {
+            Self::Knead => false,
+            Self::Fermenter => true,
+            Self::GrandBoule => true,
         }
     }
 }
@@ -226,13 +290,17 @@ pub enum GraphCommand {
     // Built-in effects
     /// Register a built-in effect, already built control-side
     /// ([`PluginCore::builtin`]), on the master insert chain — the crate's
-    /// original chain, and where the plugin-bridge path still runs a built-in
-    /// it registers standalone.
+    /// original chain.
     ///
     /// The command owns the instance from the push to the apply, on the same
     /// contract as [`GraphCommand::AddPlugin`]: the audio thread installs it
     /// or retires it, and never constructs or frees one (ADR 0020).
-    AddEffect(usize, PluginCore),
+    ///
+    /// The note store travels with it, `Some` exactly for a built-in that
+    /// sounds notes ([`BuiltinEffectType::sounds_notes`]). A built-in
+    /// instrument is scheduled against like any hosted one, and a store built
+    /// anywhere but the control thread would be an allocation on the callback.
+    AddEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     /// Register a built-in effect, already built control-side, detached from
     /// every chain.
     ///
@@ -242,26 +310,97 @@ pub enum GraphCommand {
     /// the two. An effect registered onto the master chain in that window
     /// would render one block of the *entire mix* through a device the user
     /// put on one strip; a detached one renders nowhere until it is placed.
-    AddDetachedEffect(usize, PluginCore),
+    ///
+    /// Its note store travels with it on the same terms as
+    /// [`GraphCommand::AddEffect`]'s.
+    AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
+    /// State how many frames a device delays its own output by, so the graph
+    /// can hold everything that arrives at a summing point beside it back to
+    /// the same depth.
+    ///
+    /// `latency_frames` is the device's own claim, uncorrected: it is what the
+    /// arrivals are computed from and what the diagnostics report, and the
+    /// compensation ceiling is applied where a delay is aimed rather than here.
+    /// `dry_delay` is the line that runs in the device's place while it is
+    /// bypassed — `Some` exactly when the device declares latency — built on
+    /// the control thread by [`crate::pdc::CompensationDelay::for_latency`],
+    /// because the audio thread may neither build one nor free one (ADR 0020).
+    /// The line this command replaces leaves over the retirement channel.
+    SetEffectLatency {
+        effect_id: usize,
+        latency_frames: usize,
+        dry_delay: Option<Box<CompensationDelay>>,
+    },
 
     // External plugins (CLAP/VST3/AU)
-    AddPlugin(usize, Box<dyn NativePlugin>),
-    AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
-    /// Remove a plugin without retiring its audio bridge.
+    /// Register a plugin instance on the master insert chain, with the note
+    /// store it plays from.
     ///
-    /// Production removes a plugin only through `RemovePluginWithBridge`, so
-    /// this variant would strand the bridge if anything reached for it. The
-    /// saturation test still needs the shape: it fills the command queue with
-    /// removals to prove that every retirement, live or at shutdown, is handed
-    /// off the callback thread rather than dropped on it.
-    #[cfg(test)]
+    /// The store is `Some` for an instrument and `None` for everything else.
+    /// A device with no store refuses [`GraphCommand::ScheduleMidiNotes`] and
+    /// counts the refusal, which is the honest answer for a body that has
+    /// nothing to sound a note with; building one on the audio thread instead
+    /// is the allocation ADR 0020 forbids.
+    AddPlugin(usize, Box<dyn NativePlugin>, Option<Box<MidiNoteStore>>),
+    /// Register a hosted plugin instance, homed detached rather than on the
+    /// master insert chain.
+    ///
+    /// A hosted instance belongs to the load that created it. Homed on the
+    /// master chain it would render the whole mix through that instance the
+    /// moment a user took it off a strip; homed detached, releasing it from a
+    /// chain returns it to a placement that runs nowhere.
+    ///
+    /// Its note store travels with it, unconditionally: a hosted instance is
+    /// the route every external instrument arrives on, and one registered
+    /// without a store could never be scheduled against.
+    AddHostedPlugin(usize, Box<dyn NativePlugin>, Box<MidiNoteStore>),
+    /// Retire a registered plugin, handing the instance off the callback
+    /// thread.
     RemovePlugin(usize),
-    RemovePluginWithBridge(usize),
 
     // MIDI events (routed to a specific plugin by ID)
+    /// Play one note at the head of the next block this plugin is handed.
+    ///
+    /// The live path: a note struck on a keyboard has no timeline position to
+    /// stamp it against, so it is delivered as soon as the plugin renders and
+    /// its `frame_offset` is zero. A note that does have a position is written
+    /// with [`GraphCommand::ScheduleMidiNotes`] instead.
+    ///
+    /// The note joins the device's live sounding set, and a stop or a locate
+    /// releases it exactly as it releases a stored note, rather than leaving
+    /// the key down for the rest of the session. A loop wrap does not: the
+    /// seam strands a scheduled note-off and strands nothing a player's hands
+    /// are on, and no DAW cuts live input where a region starts again.
+    ///
+    /// A device nothing hands a block to keeps the release it owes instead of
+    /// spending it on a buffer discarded unread, and pays it at the head of
+    /// the first block it is handed once it runs again.
+    ///
+    /// The channel and note are still not checked against the addresses that
+    /// set refuses. An unaddressable one is sounded and simply not tracked,
+    /// which is the law `ActiveEffect::enqueue_midi` states: such a note-on
+    /// reaches the base member channel, and only a note-off naming that
+    /// channel lifts it.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Write a batch of timeline-addressed notes into a plugin's note store.
+    ///
+    /// The batch is built control-side and lands whole or not at all: a plugin
+    /// with no store, or a batch past the store's free capacity, is refused
+    /// and counted rather than stored in part. The box leaves over the
+    /// retirement channel, because the audio thread may not free one.
+    ScheduleMidiNotes {
+        plugin_id: usize,
+        notes: Box<[TimedMidiNote]>,
+    },
+    /// Drop every stored note in the half-open frame window
+    /// `from_frame..to_frame`. `0..u64::MAX` clears the plugin's store.
+    ClearMidiNotes {
+        plugin_id: usize,
+        from_frame: u64,
+        to_frame: u64,
+    },
 
     // MIDI FX
     /// Add a user MIDI FX, already built control-side
@@ -398,10 +537,19 @@ pub enum GraphCommand {
     /// Splice an effect into a track's device chain at `index`, clamped to the
     /// chain's length. The effect itself is added by `AddEffect`/`AddPlugin`;
     /// this is the ordering and the splice point.
+    ///
+    /// `hold` is the line that holds a generator back to the depth of the
+    /// strip's input — `Some` exactly for a `Generator` entry, built on the
+    /// control thread by [`ChainEntry::input_hold`] because the audio thread
+    /// may neither build one nor free one (ADR 0020). The entry and its line
+    /// travel together, so no caller can splice an instrument onto a group
+    /// without the line that aligns it. A line this splice displaces, and one
+    /// a refused splice never installs, leave over the retirement channel.
     InsertTrackDevice {
         track_id: usize,
         entry: ChainEntry,
         index: usize,
+        hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
     /// returns to its home placement — the master insert chain for everything
@@ -421,19 +569,20 @@ pub enum GraphCommand {
     /// deleted strip device over the whole mix. This variant removes and
     /// retires atomically, so a graph-owned effect is never observable on the
     /// master chain. The retirement crosses the retirement channel exactly as
-    /// `RemovePluginWithBridge`'s does — the final drop stays off the
-    /// callback thread.
+    /// `RemovePlugin`'s does — the final drop stays off the callback thread.
     RemoveTrackDeviceRetired {
         track_id: usize,
         effect_id: usize,
     },
     /// Splice an effect into a *bus's* device chain, on the same contract as
-    /// [`GraphCommand::InsertTrackDevice`]. A send bus that cannot host a
-    /// reverb is not a send bus.
+    /// [`GraphCommand::InsertTrackDevice`], `hold` included: a bus hosts an
+    /// instrument on the same terms a track does. A send bus that cannot host
+    /// a reverb is not a send bus.
     InsertBusDevice {
         bus_id: usize,
         entry: ChainEntry,
         index: usize,
+        hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a bus's chain, on the same contract as
     /// [`GraphCommand::RemoveTrackDevice`]: the effect stays registered and
@@ -452,11 +601,16 @@ pub enum GraphCommand {
     /// Add a send from a track to a bus at the given tap. A pre-fader send
     /// taps ahead of the fader and the mute; a post-fader send taps after the
     /// panner.
+    ///
+    /// `delay` is the send's own plugin delay compensation, built on the
+    /// control thread on the same contract as every other owning payload here.
+    /// A refused send hands it straight back to the retirement channel.
     AddSend {
         track_id: usize,
         bus_id: usize,
         tap: SendTap,
         level: f32,
+        delay: Box<CompensationDelay>,
     },
     RemoveSend {
         track_id: usize,
@@ -498,16 +652,40 @@ pub enum GraphCommand {
         target: AutomationTarget,
         write: AutomationWrite,
     },
-    /// A time-stamped change to a built-in device parameter, addressed without
-    /// a name so consuming the command frees nothing on the audio thread.
+    /// Aim the master fader at `value`, approaching it by `smoothing` of the
+    /// distance left per sample.
+    ///
+    /// A fader gesture carries no timeline coordinate, which is why this is a
+    /// command of its own rather than an [`GraphCommand::AutomateParam`] on
+    /// [`AutomationTarget::MasterGain`]. That lane holds what the arrangement
+    /// does to the master at a named frame, and every write in it answers to
+    /// seek, hold and the loop wrap; the fader answers to none of them, because
+    /// where the hand left it is true at every position. Sending it as a
+    /// stamped ramp put it under those laws: a wrap re-renders frames below the
+    /// ramp's start, and a ramp asked for a value there gives the level it
+    /// started from, so the seam clicked and the next pass played at the
+    /// pre-gesture level.
+    ///
+    /// A drag is a stream of these, and each one re-aims the same smoother from
+    /// the level it has reached. Nothing queues, so no gesture rate can overrun
+    /// the engine.
+    SetMasterGain {
+        value: f32,
+        smoothing: f32,
+    },
+    /// A time-stamped change to a device parameter — a built-in's, addressed
+    /// without a name, or a hosted plugin's, addressed by the plugin's own id
+    /// ([`DeviceParamTarget`]) — so consuming the command frees nothing on the
+    /// audio thread.
     ///
     /// Unlike [`GraphCommand::AutomateParam`] this applies at the block
     /// boundary rather than at a sample offset: a device owns its own
-    /// parameter smoothing, and no built-in exposes a sample-addressed set.
+    /// parameter smoothing, and neither a built-in nor a hosted plugin's
+    /// queue exposes a sample-addressed set.
     AutomateDeviceParam {
         effect_id: usize,
-        param: DeviceParam,
-        value: f32,
+        param: DeviceParamTarget,
+        value: f64,
         at_frame: u64,
     },
 
@@ -525,17 +703,6 @@ pub enum GraphCommand {
     /// no-op, so an unregister that races the plugin's own removal is not an
     /// error.
     UnregisterCaptureConsumer(usize),
-
-    /// Register an audio bridge that no plugin answers for.
-    ///
-    /// Production registers and retires a bridge only alongside its plugin
-    /// (`AddPluginWithBridge` / `RemovePluginWithBridge`), so this state is
-    /// unreachable there. The real-time drain still has to survive it — a
-    /// bridge nobody processes must return its blocks and keep its ring
-    /// moving, or the app is left on permanent dry fallback — and this is how
-    /// a test puts the scheduler in that state.
-    #[cfg(test)]
-    RegisterAudioBridge(PluginAudioBridge),
 }
 
 impl GraphCommand {
@@ -556,8 +723,8 @@ impl GraphCommand {
     /// count of whichever producers someone remembered.
     ///
     /// Every retirement is classified `-1`, and every retirement is
-    /// conditional on the callback finding its target:
-    /// `RemovePluginWithBridge` frees nothing for an id the table does not
+    /// conditional on the callback finding its target: `RemovePlugin` frees
+    /// nothing for an id the table does not
     /// hold, and the two `*Retired` variants free nothing when the strip they
     /// name does not hold the effect they name. The classification is exact
     /// under two control-side preconditions, one per direction of drift.
@@ -590,10 +757,8 @@ impl GraphCommand {
             Self::AddEffect(..)
             | Self::AddDetachedEffect(..)
             | Self::AddPlugin(..)
-            | Self::AddPluginWithBridge(..) => 1,
-            #[cfg(test)]
-            Self::RemovePlugin(..) => -1,
-            Self::RemovePluginWithBridge(..)
+            | Self::AddHostedPlugin(..) => 1,
+            Self::RemovePlugin(..)
             | Self::RemoveTrackDeviceRetired { .. }
             | Self::RemoveBusDeviceRetired { .. } => -1,
             // `RemoveTrack`, `RemoveBus`, `RemoveTrackDevice` and
@@ -601,7 +766,10 @@ impl GraphCommand {
             // back on the master chain — so none of them frees a slot.
             Self::SetParam(..)
             | Self::SetBypass(..)
+            | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
             | Self::SetMidiFxParam(..)
@@ -634,13 +802,88 @@ impl GraphCommand {
             | Self::SetClipPlayback(..)
             | Self::SeekFrames(..)
             | Self::AutomateParam { .. }
+            | Self::SetMasterGain { .. }
             | Self::AutomateDeviceParam { .. }
             // The input bus addresses effects the table already holds; it
             // takes no slot of its own.
             | Self::RegisterCaptureConsumer(..)
             | Self::UnregisterCaptureConsumer(..) => 0,
-            #[cfg(test)]
-            Self::RegisterAudioBridge(..) => 0,
+        }
+    }
+
+    /// Whether applying this command changes what the graph's plugin delay
+    /// compensation is computed from: a declared latency, a chain's contents,
+    /// a strip's existence, or a route.
+    ///
+    /// The match carries no wildcard for the same reason
+    /// [`Self::effect_table_delta`] carries none: a command that moves the
+    /// graph's alignment and does not say so leaves every summing point aimed
+    /// at the previous topology, and the mix is early or late until some
+    /// unrelated command happens to dirty it.
+    ///
+    /// Bypass is deliberately absent. A bypassed device keeps its latency and
+    /// runs its dry line in its place, so the alignment is unchanged — and
+    /// re-aiming every delay on an A/B would put a discontinuity in the mix
+    /// exactly where an engineer is listening for one.
+    pub(crate) const fn dirties_compensation(&self) -> bool {
+        match self {
+            // The declared figure itself, and the chain memberships and routes
+            // the arrivals are summed along.
+            Self::SetEffectLatency { .. }
+            | Self::AddTrack(..)
+            | Self::RemoveTrack(..)
+            | Self::SetTrackOutput(..)
+            | Self::InsertTrackDevice { .. }
+            | Self::RemoveTrackDevice { .. }
+            | Self::RemoveTrackDeviceRetired { .. }
+            | Self::InsertBusDevice { .. }
+            | Self::RemoveBusDevice { .. }
+            | Self::RemoveBusDeviceRetired { .. }
+            | Self::AddSend { .. }
+            | Self::RemoveSend { .. }
+            | Self::AddBus(..)
+            | Self::RemoveBus(..)
+            | Self::SetBusOutput(..) => true,
+            // An effect leaving the table stops contributing its latency to
+            // whatever chain still lists it, so its departure moves arrivals
+            // exactly as taking it out of the chain would.
+            Self::RemovePlugin(..) => true,
+            // A registration always arrives at zero declared latency — the
+            // latency is stated afterwards, by `SetEffectLatency` — so no
+            // arrival can move on the block that installs one.
+            Self::AddEffect(..)
+            | Self::AddDetachedEffect(..)
+            | Self::AddPlugin(..)
+            | Self::AddHostedPlugin(..)
+            | Self::SetParam(..)
+            | Self::SetBypass(..)
+            | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
+            | Self::AddMidiFx(..)
+            | Self::RemoveMidiFx(..)
+            | Self::SetMidiFxParam(..)
+            | Self::SetTransport(..)
+            | Self::SetTransportPlayback { .. }
+            | Self::SetTransportMaps(..)
+            | Self::SetLoopRegion(..)
+            | Self::SetMonitorShadow(..)
+            | Self::BeginBatch { .. }
+            | Self::SwapCommandChannel { .. }
+            | Self::SetTrackMute(..)
+            | Self::SetTrackSoloGate(..)
+            | Self::SetBusMute(..)
+            | Self::SetBusSoloGate(..)
+            | Self::AddClip(..)
+            | Self::RemoveClip(..)
+            | Self::SetClipPlacement(..)
+            | Self::SetClipPlayback(..)
+            | Self::SeekFrames(..)
+            | Self::AutomateParam { .. }
+            | Self::SetMasterGain { .. }
+            | Self::AutomateDeviceParam { .. }
+            | Self::RegisterCaptureConsumer(..)
+            | Self::UnregisterCaptureConsumer(..) => false,
         }
     }
 }
@@ -658,6 +901,8 @@ impl GraphCommand {
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
     Knead(KneadEngine),
+    Fermenter(Box<FermenterBody>),
+    GrandBoule(Box<GrandBouleBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -671,21 +916,529 @@ impl PluginCore {
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
         match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+            BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
+            BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
+        }
+    }
+
+    /// Build a Fermenter carrying `patch`, on the control thread.
+    ///
+    /// A patch is dozens of the instrument's own parameters per strip and the
+    /// command ring is finite, so the initial patch is written into the
+    /// instance before it crosses the ring rather than sent as that many
+    /// commands behind the registration.
+    pub fn fermenter_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = FermenterBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Fermenter(Box::new(body))
+    }
+
+    /// Build a Grand Boule carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a piano's patch is dozens of
+    /// the instrument's own parameters per strip and the command ring is
+    /// finite. There is no ordering law over the writes — the instrument has
+    /// no layer selection routing later writes, so every entry addresses the
+    /// one instrument whatever order the record is read in.
+    pub fn grand_boule_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GrandBouleBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::GrandBoule(Box::new(body))
+    }
+}
+
+/// Note-voices one hosted Fermenter can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`fermenterProcessor.ts`), so a strip that moves between the two runtimes
+/// steals voices at the same point rather than sounding different under load.
+const FERMENTER_MAX_VOICES: u32 = 32;
+
+/// MIDI channels a note can sound on — the sixteen addresses
+/// [`NoteAddressSet`] holds a bit per.
+const MIDI_CHANNELS: i16 = 16;
+
+/// The Fermenter synthesizer, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] because a `GraphCommand` is moved through a
+/// fixed-size ring: inline, this body's voice pool would set the size of every
+/// command the engine sends.
+///
+/// [`FERMENTER_BLOCK_FRAMES`] is [`FermenterInstance`]'s own constant, imported
+/// from `daw-dsp` rather than redeclared here so the two crates cannot drift:
+/// its channel buffers are exactly this long and `process` clamps its argument
+/// to them without saying so, so a longer ask renders this many frames and
+/// leaves the rest of the block silent. The host — [`FermenterBody::process`]
+/// below — is what splits a callback into runs this size; the number is the
+/// instrument's, not a choice made here.
+pub struct FermenterBody {
+    instance: FermenterInstance,
+}
+
+impl FermenterBody {
+    /// Build the instrument on the control thread — it allocates its voice
+    /// pool and its channel buffers, neither of which the audio thread may do
+    /// (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: FermenterInstance::new(sample_rate, FERMENTER_MAX_VOICES),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, delivering each queued note on the sample it was stamped for.
+    ///
+    /// Summed rather than written because an instrument is a generator: what
+    /// it produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`FERMENTER_BLOCK_FRAMES`],
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. A single call for a longer block would render one
+    /// run's worth and leave the remainder of the callback silent, and every
+    /// event stamped past that run would sound at the wrong time or not at
+    /// all.
+    ///
+    /// A run shorter than a full [`FERMENTER_BLOCK_FRAMES`] is still a whole
+    /// block to the instrument, which advances its per-block smoothers —
+    /// cutoff, resonance, LFO rate, the effect smoothers — one exponential
+    /// step per call, at a coefficient that assumes a full run. So a callback
+    /// the run size does not divide, and a loop seam splitting one callback at
+    /// a frame that is not a multiple of the run, each cost one extra step: a
+    /// smoothed parameter settles slightly faster across a seam, or on a
+    /// device buffer that is not a multiple of 128, than it does under the
+    /// worklet's fixed quantum. Note timing is unaffected — every scheduled
+    /// note lands on the sample it was stamped for either way — and parity
+    /// with the worklet is exact for a callback of whole runs with no seam in
+    /// it.
+    ///
+    /// Holding a short run's frames back to fill the next call would buy that
+    /// parity at a price a DAW does not pay: those frames would render ahead
+    /// of the events belonging to them, which moves a note off the sample it
+    /// was written for to save a parameter a few milliseconds of settling.
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and the events are pushed into its fixed block list.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run = (frames - rendered).min(FERMENTER_BLOCK_FRAMES);
+            let run_end = rendered + run;
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                // Non-decreasing by the block's own contract; saturating so a
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
+                self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(frames as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `FermenterInstance::new`
+        // sizes at daw-dsp's own `FERMENTER_BLOCK_FRAMES` (imported above) and
+        // no method resizes; `frames` is bounded by that same constant in
+        // `process` above, so each slice is inside the allocation it names.
+        // The two buffers are separate heap allocations, so the pair of
+        // slices aliases nothing. Nothing mutates the instrument between the
+        // render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, frames),
+                std::slice::from_raw_parts(rendered_right, frames),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Queue one note on the instrument at `offset` samples into the next run.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same
+    /// pitch on another channel. A channel MIDI has no address for narrows to
+    /// nothing, and the note-off then releases every voice at that pitch: the
+    /// live path deliberately does not check the channel it is handed
+    /// ([`GraphCommand::SendMidiNote`]), and a key nothing can ever lift is
+    /// the one outcome worse than releasing more than was asked.
+    fn push_event(
+        &mut self,
+        event: &MidiNoteEvent,
+        offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        let channel = member_channel(event.channel);
+        let queued = match (event.is_note_on, channel) {
+            // An unaddressable channel still sounds: the key went down, and
+            // the base member channel is where a note with no channel of its
+            // own belongs.
+            (true, channel) => {
+                self.instance
+                    .push_note_on(event.note, event.velocity, channel.unwrap_or(0), offset)
+            }
+            (false, Some(channel)) => self
+                .instance
+                .push_note_off_on_channel(event.note, channel, offset),
+            (false, None) => self.instance.push_note_off(event.note, offset),
+        };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
+        if !queued {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
+        }
+    }
+
+    /// Write one of the instrument's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the instrument resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`LAYER_ROUTING_KEY`] is applied before the writes it routes: a patch
+    /// is an unordered record, so applied anywhere else it could send an
+    /// arbitrary later write to a layer the author never aimed it at. It
+    /// goes first rather than last because the selection outlives the patch
+    /// — the instance keeps it, and every later live `SetParam` is routed by
+    /// it, so a patch written to one layer while the instance selects
+    /// another would put patch-time and live-time writes on different
+    /// layers with the producer believing both landed together.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in layer_routing_first(patch, BuiltinParamName::as_str) {
+            self.set_param(name.as_str(), value);
         }
     }
 }
 
-/// Map an addressed device parameter onto the matching `KneadEngine` setter.
+/// The patch key that aims every per-layer parameter write: `active_layer`
+/// selects the layer, so a patch applies it before the writes it routes and
+/// every later live write then addresses the same layer.
 ///
-/// The mapping is total: the parameter arrives as a [`DeviceParam`] address,
-/// and the name-to-address resolution happened control-side
-/// ([`DeviceParam::from_name`]), where an unmapped name is refused rather
-/// than counted on the audio thread after the fact.
-fn apply_knead_param(engine: &mut KneadEngine, param: DeviceParam, value: f32) {
-    match param {
-        DeviceParam::ShiftSemitones => engine.set_shift_semitones(value),
-        DeviceParam::RetuneSpeedMs => engine.set_retune_speed_ms(value),
-        DeviceParam::FormantPreserve => engine.set_formant_preserve(value != 0.0),
+/// The instrument bounds the selection by its own layer capacity, not by
+/// `num_layers` — the two never read each other — so a selection past the
+/// count is a patch defect that the render leaves inaudible, not something
+/// this ordering can repair.
+///
+/// Named here because [`layer_routing_first`] is what orders a patch around
+/// it; the instrument's own `set_param` is the only other place the word means
+/// anything.
+const LAYER_ROUTING_KEY: &str = "active_layer";
+
+/// `patch` with its layer-routing entry (if any) brought to the front;
+/// everything else follows in patch order.
+///
+/// Public and generic over how an entry spells its name, because the law is
+/// the ordering rather than the shape of one caller's patch. A second caller
+/// sends the same instrument the same writes from an unordered record — the
+/// graph-command mapper's immediate parameter batch — and a copy of this
+/// reordering there would be a second place for the law to drift from
+/// [`FermenterBody::load_patch`]. `name` is a function pointer so both filters
+/// below can hold it.
+pub fn layer_routing_first<T: Copy>(
+    patch: &[(T, f32)],
+    name: fn(&T) -> &str,
+) -> impl Iterator<Item = (T, f32)> + '_ {
+    let routing = patch
+        .iter()
+        .filter(move |(entry, _)| name(entry) == LAYER_ROUTING_KEY);
+    let rest = patch
+        .iter()
+        .filter(move |(entry, _)| name(entry) != LAYER_ROUTING_KEY);
+    routing.chain(rest).copied()
+}
+
+/// The Fermenter member channel a note's `i16` channel names, or `None` for a
+/// channel MIDI itself has no address for — the same addresses
+/// [`NoteAddressSet`] refuses, and the same ones the note store will not take.
+fn member_channel(channel: i16) -> Option<u8> {
+    if !(0..MIDI_CHANNELS).contains(&channel) {
+        return None;
+    }
+    Some(channel as u8)
+}
+
+/// Frames one hosted Grand Boule run renders.
+///
+/// The web runtime's render quantum: the offline processor drives the
+/// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
+/// framed message as soon as the block about to render is the one holding its
+/// frame — so a scheduled note sounds there from the start of the 128-frame
+/// block that holds it, counted from the timeline's absolute frame 0. The
+/// instrument takes no per-note sample offset, so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a note on the same run the worklet lands it on.
+///
+/// That parity holds exactly only when the span being split itself starts on
+/// the absolute 128-frame grid the worklet grids from — the host counts its
+/// own runs from the span's own frame 0, not from that absolute origin. A
+/// span starting off it, after a loop seam or under a device callback whose
+/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
+/// it), voices a note up to
+/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
+/// because the instrument has no offset-aware note API to close the gap.
+/// Tracked as #3997.
+///
+/// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
+/// channel buffers impose: the run is the finer of the two figures, and the
+/// only one note timing depends on.
+const GRAND_BOULE_RUN_FRAMES: usize = 128;
+
+/// The bound `GrandBouleBody::render_run` reads the instrument's channel
+/// buffers under, refused at compile time rather than asserted at render time.
+/// A run longer than the buffers would read past both of them through the raw
+/// pointers `process` returns, so the figure above may never be raised past the
+/// instrument's own ceiling.
+const _: () = assert!(GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES);
+
+/// Note-voices one hosted Grand Boule can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`GRAND_BOULE_VOICE_COUNT` in `grandBouleEngineCore.ts`), so a strip that
+/// moves between the two runtimes steals voices at the same point rather than
+/// sounding different under load.
+const GRAND_BOULE_MAX_VOICES: u32 = 64;
+
+/// The full-scale 7-bit MIDI velocity, which is the divisor that turns the
+/// figure a producer wrote into the `0..1` fraction the instrument takes.
+///
+/// The same divisor the web runtime applies on the way in
+/// (`velocityTransform` in `scheduleMidiNotes.ts`), so one performance sounds
+/// at one dynamic on both runtimes.
+const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
+
+/// The Grand Boule piano, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's voice
+/// pool and its two channel buffers would set the size of every command the
+/// engine sends.
+///
+/// This hosts the model alone. The instrument's attack clips
+/// (`GrandBouleInstance::load_attack_clip`) are optional, and with none loaded
+/// it renders from the modal engine unaided; clip transport and the three
+/// pedals (`set_sustain`, `set_una_corda`, `set_sostenuto`, reached over
+/// CC64/66/67) are follow-ups on the native-body work rather than part of this
+/// body, so a hosted piano sustains nothing a pedal was meant to hold.
+pub struct GrandBouleBody {
+    instance: GrandBouleInstance,
+}
+
+impl GrandBouleBody {
+    /// Build the instrument on the control thread — it allocates its voice
+    /// pool and its channel buffers, neither of which the audio thread may do
+    /// (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: GrandBouleInstance::new(sample_rate, GRAND_BOULE_MAX_VOICES),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, sounding each queued note in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what
+    /// it produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`GRAND_BOULE_RUN_FRAMES`],
+    /// each one a whole `process` call, and every event whose frame falls
+    /// inside a run is delivered before that run renders. The instrument has
+    /// no note API carrying a sample offset, so the run boundary is the whole
+    /// of the timing resolution available — and it is exactly the resolution
+    /// the web runtime has, which is why the run is that runtime's quantum
+    /// rather than the far longer block the instrument's buffers would allow.
+    ///
+    /// This block is one span, and the runs above are counted from that
+    /// span's own frame 0 — not from the timeline's absolute frame 0 the
+    /// worklet grids its own runs from. Parity with the worklet is exact only
+    /// when the span itself starts on the absolute 128-frame grid; a span
+    /// starting off it, after a loop seam or under a device callback whose
+    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
+    /// divide it), sounds a note up to
+    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
+    /// it, because the instrument has no offset-aware note API to close the
+    /// gap (#3997).
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a note is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GRAND_BOULE_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Sound one note on the instrument, at the head of the run about to
+    /// render.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same
+    /// pitch on another channel. A channel MIDI has no address for narrows to
+    /// nothing, and the note-off then releases every voice at that pitch, for
+    /// the reason given on [`FermenterBody::push_event`]: a key nothing can
+    /// ever lift is the one outcome worse than releasing more than was asked.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let channel = member_channel(event.channel);
+        match (event.is_note_on, channel) {
+            // An unaddressable channel still sounds: the key went down, and
+            // the base member channel is where a note with no channel of its
+            // own belongs.
+            (true, channel) => self.instance.note_on_with_channel(
+                event.note,
+                f32::from(event.velocity) / MIDI_VELOCITY_FULL_SCALE,
+                channel.unwrap_or(0),
+            ),
+            (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
+            (false, None) => self.instance.note_off(event.note),
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(frames as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `GrandBouleInstance::new`
+        // sizes at `daw_dsp::grand_boule::GRAND_BOULE_BLOCK_FRAMES` and no
+        // method resizes. `frames` is one run's length, so
+        // `frames <= GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES` and
+        // each slice lies inside the allocation it names. The two buffers are
+        // separate heap allocations, so the pair of slices aliases nothing.
+        // Nothing mutates the instrument between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, frames),
+                std::slice::from_raw_parts(rendered_right, frames),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the instrument's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the instrument resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// Applied in the order the record was collected, with no key brought
+    /// forward: the instrument has no selection that routes the writes behind
+    /// it, so every entry addresses the one instrument whichever order they
+    /// arrive in — the ordering law [`FermenterBody::load_patch`] obeys has no
+    /// counterpart here to obey.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in patch {
+            self.set_param(name.as_str(), *value);
+        }
+    }
+}
+
+/// Apply an addressed device parameter to the built-in body it names,
+/// answering whether the address and the body agreed.
+///
+/// The name-to-address resolution happened control-side — [`DeviceParam`] for
+/// knead's closed vocabulary, a shape check for an instrument's own — so
+/// `false` here is not an unknown parameter but a producer that lost track of
+/// what an effect id holds. The caller counts it rather than the engine
+/// guessing which body the value was meant for.
+fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32) -> bool {
+    match (instance, param) {
+        (PluginCore::Knead(engine), DeviceParam::ShiftSemitones) => {
+            engine.set_shift_semitones(value);
+            true
+        }
+        (PluginCore::Knead(engine), DeviceParam::RetuneSpeedMs) => {
+            engine.set_retune_speed_ms(value);
+            true
+        }
+        (PluginCore::Knead(engine), DeviceParam::FormantPreserve) => {
+            engine.set_formant_preserve(value != 0.0);
+            true
+        }
+        (PluginCore::Fermenter(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        _ => false,
     }
 }
 
@@ -716,6 +1469,20 @@ enum EffectPlacement {
     Detached,
 }
 
+/// Which of a device's held keys a release lifts.
+///
+/// A stop and a locate leave every frame the graph was sounding over behind,
+/// so both sets go: the stored note-off nothing will render, and the live key
+/// that never had one. A loop wrap leaves only the arrangement's own frames
+/// behind, so it lifts the stored keys alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReleaseScope {
+    /// The notes this device's store sounded.
+    Stored,
+    /// Those, and the keys a player is holding live.
+    All,
+}
+
 struct ActiveEffect {
     id: usize,
     instance: PluginCore,
@@ -730,6 +1497,67 @@ struct ActiveEffect {
     midi_fx: MidiFxChain,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
+    /// The timeline-addressed notes this instrument plays from, or `None` for
+    /// a device that is not one.
+    ///
+    /// Built control-side and carried in by the command that registered the
+    /// device ([`GraphCommand::AddHostedPlugin`],
+    /// [`GraphCommand::AddPlugin`]), because the audio thread may neither
+    /// allocate one nor free one (ADR 0020). Unlike `pending_midi`, which is
+    /// this block's delivery and is emptied by it, the store outlives every
+    /// block: delivery reads from it and leaves it alone, so a loop pass
+    /// sounds the same note again and a locate away from it sounds nothing.
+    midi_notes: Option<Box<MidiNoteStore>>,
+    /// Which of the store's notes this device is currently holding down.
+    ///
+    /// Written by delivery and emptied by [`Self::release_sounding_notes`].
+    /// Empty for every device that carries no store, because only delivery
+    /// from one ever sets a bit.
+    sounding: NoteAddressSet,
+    /// Which keys a player is holding down live on this device.
+    ///
+    /// Written by [`Self::enqueue_midi`] and emptied by the same release, but
+    /// kept apart from `sounding` because the triggers differ: a live note has
+    /// no scheduled note-off for a loop seam to strand, so the wrap leaves it
+    /// down and only a stop, a locate or the player's own release lifts it. A
+    /// device carrying no store can hold a bit here, because the live path
+    /// addresses any registered device rather than only the ones a store was
+    /// registered for.
+    live_sounding: NoteAddressSet,
+    /// Sounding notes whose scheduled note-off a clear took out of the store
+    /// during the drain now applying, awaiting settlement.
+    ///
+    /// A candidate, not a decision. A producer rewriting a bar clears it and
+    /// schedules the replacement in one drain, so the clear alone cannot tell
+    /// a release that was deleted from one that only moved — see
+    /// [`Self::settle_stripped_note_offs`], which answers that against the
+    /// store the whole drain left behind.
+    stripped: NoteAddressSet,
+    /// Frames of latency this device declares, as its host last read them.
+    ///
+    /// The figure the graph's compensation is computed from, kept exactly as
+    /// declared: a device reporting more than the compensation ceiling is
+    /// clamped where a delay is aimed, never where the claim is recorded, so
+    /// the claim stays visible to whoever has to act on it.
+    latency_frames: usize,
+    /// This device's own dry delay, run in its place while it is bypassed.
+    ///
+    /// Bypass keeps latency (Cubase and Reaper both do this), so A/B-ing a
+    /// bypass never shifts the strip's alignment against the rest of the mix.
+    /// `None` for a device declaring no latency, which is every built-in the
+    /// engine owns. Built on the control thread and carried in by
+    /// [`GraphCommand::SetEffectLatency`].
+    dry_delay: Option<Box<CompensationDelay>>,
+    /// This device's hold on the depth of its strip's input, run over its
+    /// output before that output joins the chain signal.
+    ///
+    /// `None` for an effect, which transforms a signal that reached it already
+    /// aligned. A generator produces its material on the strip instead, at
+    /// zero, so it meets what is routed in exactly the way the strip's own
+    /// clips do — held back by that input's depth. Built on the control thread
+    /// and carried in by the splice that placed the device
+    /// ([`ChainEntry::input_hold`]).
+    input_hold: Option<Box<CompensationDelay>>,
     placement: EffectPlacement,
     /// Where a strip returns this effect when it releases it.
     ///
@@ -757,23 +1585,21 @@ pub const TIMELINE_CHAIN_SLOT_BUDGET: usize =
     MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES;
 
 /// The session's reserve for engine-owned hosted plugin instances: the
-/// `AddPlugin`/`AddPluginWithBridge` registrations `load_plugin` makes, one
-/// per external-plugin device in the project.
+/// `AddHostedPlugin` registrations `load_plugin` makes, one per
+/// external-plugin device in the project.
 ///
 /// No ceiling on them is enumerable from this crate: the host holds them in an
 /// unbounded map keyed by instance id, and an external-plugin device list has
 /// no per-strip cap of its own. So the engine states the limit itself: 128
-/// instances at once, the number the bridge table has enforced since bridges
-/// existed, now named here and checked control-side by `load_plugin`
+/// instances at once, named here and checked control-side by `load_plugin`
 /// (`sourdaw-native`) where the refusal reaches the user instead of dying as
 /// a counter on the callback. A session past 128 hosted plugins is past any
-/// professional session's scale — each instance is a native plugin library
-/// plus roughly 288 KiB of bridge rings — and the refusal names the limit.
+/// professional session's scale — each instance is a native plugin library —
+/// and the refusal names the limit.
 pub const HOSTED_PLUGIN_RESERVE: usize = 128;
 
-/// The session's reserve for Crumbs input-capture slots: the
-/// `AddPluginWithBridge` registration `create_crumbs` makes for the panel's
-/// record feed, one per live instance.
+/// The session's reserve for Crumbs input-capture slots: the registration
+/// `create_crumbs` makes for the panel's record feed, one per live instance.
 ///
 /// The app renders exactly one Crumbs panel, and re-pointing it at another
 /// device tears the old instance down asynchronously while the new one is
@@ -821,30 +1647,6 @@ pub const CRUMBS_CAPTURE_RESERVE: usize = 2;
 /// public.
 pub const EFFECT_TABLE_CAPACITY: usize =
     TIMELINE_CHAIN_SLOT_BUDGET + HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
-
-/// The fixed capacity of the bridge table. Bridges exist only for the two
-/// registrations that carry one — hosted plugin instances and Crumbs capture
-/// slots — so the table is sized to exactly their reserves; timeline chain
-/// devices never take a bridge.
-///
-/// The reserves are enforced by map-gated control-side checks, and the maps
-/// count entries, not live bridges. Bridges sit outside those gates in the
-/// teardown conditions the reserve docs disclose: a destroy removes its map
-/// entry before the removal is pushed, and between that push and its
-/// application on the callback the bridge is draining but uncounted — a
-/// gate-admitted create's registration can already be in the ring beside its
-/// removal; and a removal whose push failed leaks the engine slot and its
-/// bridge-table entry past the gate permanently. In those states the table
-/// holds checks-admitted bridges plus ones the gates can no longer see, and a
-/// registration both gates admitted can still reach this capacity arm on the
-/// callback, where its refusal is a counter nothing hands back — the exact
-/// failure the effect-table ledger exists to remove, binding here at the
-/// reserves' sum, 6144 slots sooner than the effect table's own last line.
-/// That callback-time bridge-table refusal is the last line for this table,
-/// named as such, exactly as the effect table's docs name theirs; the gates
-/// above are what keep it out of ordinary sessions.
-pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
-    HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
 /// One node of [`IdSlotIndex`]'s fixed-depth binary radix trie. Child and slot
 /// handles are one-based, keeping zero available as the empty sentinel.
@@ -1157,7 +1959,6 @@ impl MasterWorkList {
 /// constructors stay crate-private.
 pub struct RetiredGraphObjects {
     effect: Option<ActiveEffect>,
-    audio_bridge: Option<PluginAudioBridge>,
     midi_fx: Option<Box<dyn MidiFx>>,
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
     /// dropping one on the callback is exactly the free ADR 0020 forbids.
@@ -1165,27 +1966,25 @@ pub struct RetiredGraphObjects {
     /// The tempo and meter maps a newer pair replaced. They own segment
     /// vectors, so they leave on the same contract as everything else here.
     transport_maps: Option<Box<TransportMaps>>,
+    /// A scheduled-note batch whose entries have been copied into their
+    /// store. The box is heap the control thread built, so freeing it here
+    /// would be a free on the callback.
+    midi_notes: Option<Box<[TimedMidiNote]>>,
     remaining_effects: Vec<ActiveEffect>,
-    remaining_audio_bridges: Vec<PluginAudioBridge>,
     remaining_timeline: Option<TimelineGraph>,
     queued_commands: Vec<GraphCommand>,
     command_rx: Option<Consumer<GraphCommand>>,
 }
 
 impl RetiredGraphObjects {
-    fn removed(
-        effect: Option<ActiveEffect>,
-        audio_bridge: Option<PluginAudioBridge>,
-        midi_fx: Option<Box<dyn MidiFx>>,
-    ) -> Self {
+    fn removed(effect: Option<ActiveEffect>, midi_fx: Option<Box<dyn MidiFx>>) -> Self {
         Self {
             effect,
-            audio_bridge,
             midi_fx,
             timeline_object: None,
             transport_maps: None,
+            midi_notes: None,
             remaining_effects: Vec::new(),
-            remaining_audio_bridges: Vec::new(),
             remaining_timeline: None,
             queued_commands: Vec::new(),
             command_rx: None,
@@ -1193,33 +1992,28 @@ impl RetiredGraphObjects {
     }
 
     fn timeline(object: RetiredTimelineObject) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.timeline_object = Some(object);
         retired
     }
 
     fn effect(effect: ActiveEffect) -> Self {
-        Self::removed(Some(effect), None, None)
-    }
-
-    fn effect_with_bridge(
-        effect: Option<ActiveEffect>,
-        audio_bridge: Option<PluginAudioBridge>,
-    ) -> Option<Self> {
-        if effect.is_none() && audio_bridge.is_none() {
-            return None;
-        }
-
-        Some(Self::removed(effect, audio_bridge, None))
+        Self::removed(Some(effect), None)
     }
 
     fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
-        Self::removed(None, None, Some(midi_fx))
+        Self::removed(None, Some(midi_fx))
     }
 
     fn transport_maps(maps: Box<TransportMaps>) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.transport_maps = Some(maps);
+        retired
+    }
+
+    fn midi_notes(notes: Box<[TimedMidiNote]>) -> Self {
+        let mut retired = Self::removed(None, None);
+        retired.midi_notes = Some(notes);
         retired
     }
 
@@ -1227,7 +2021,7 @@ impl RetiredGraphObjects {
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
     fn swapped_consumer(command_rx: Consumer<GraphCommand>) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.command_rx = Some(command_rx);
         retired
     }
@@ -1235,21 +2029,19 @@ impl RetiredGraphObjects {
     fn shutdown(
         pending: Option<Self>,
         remaining_effects: Vec<ActiveEffect>,
-        remaining_audio_bridges: Vec<PluginAudioBridge>,
         remaining_timeline: TimelineGraph,
         queued_commands: Vec<GraphCommand>,
         command_rx: Option<Consumer<GraphCommand>>,
     ) -> Self {
-        let mut pending = pending.unwrap_or_else(|| Self::removed(None, None, None));
+        let mut pending = pending.unwrap_or_else(|| Self::removed(None, None));
 
         Self {
             effect: pending.effect.take(),
-            audio_bridge: pending.audio_bridge.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
             transport_maps: pending.transport_maps.take(),
+            midi_notes: pending.midi_notes.take(),
             remaining_effects,
-            remaining_audio_bridges,
             remaining_timeline: Some(remaining_timeline),
             queued_commands,
             command_rx,
@@ -1268,7 +2060,6 @@ impl Drop for RetiredGraphObjects {
         for effect in self.remaining_effects.drain(..) {
             effect.reclaim();
         }
-        self.remaining_audio_bridges.clear();
         if let Some(timeline) = self.remaining_timeline.take() {
             drop_safely(timeline);
         }
@@ -1334,21 +2125,449 @@ impl ActiveEffect {
             id,
             instance,
             bypassed: false,
+            latency_frames: 0,
+            dry_delay: None,
+            input_hold: None,
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
+            midi_notes: None,
+            sounding: NoteAddressSet::default(),
+            live_sounding: NoteAddressSet::default(),
+            stripped: NoteAddressSet::default(),
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
         }
     }
 
+    /// Install the note store the registering command shipped.
+    ///
+    /// Taken as a step of its own so every refusal path can build the effect
+    /// holding the store and hand the whole of it to the retirement channel:
+    /// a store dropped where the registration was refused would be a free on
+    /// the callback.
+    fn holding_midi_notes(mut self, store: Option<Box<MidiNoteStore>>) -> Self {
+        self.midi_notes = store;
+        self
+    }
+
+    /// Take a newly declared latency and the line the control thread built
+    /// for it, and hand back the line left over for retirement.
+    ///
+    /// The line a device already runs is re-aimed rather than replaced. Every
+    /// dry line is built at the ceiling, so the ring the device is running
+    /// holds any figure this command can name, and it holds the audio the
+    /// chain has been feeding it: re-aiming is a read-offset jump like the one
+    /// every route line takes at a recompensation. Installing the fresh ring
+    /// instead would hand the next bypassed pass a hold's worth of silence,
+    /// every time a plugin moved its reported latency.
+    ///
+    /// A hold reaching back past the line's history is the exception, and the
+    /// line itself owns it: a detachment restarts the ring, so the slots
+    /// further back than that restart still hold the audio of the strip the
+    /// device left, and deepening the hold onto them would replay exactly that
+    /// difference on the first bypassed pass after some chain takes the device
+    /// again. What decides it is the history fed since the last restart, not
+    /// where the device sits when the figure arrives: a device re-placed and
+    /// then deepened before its new chain has fed it that far owes the same
+    /// silence a still-detached one does.
+    ///
+    /// The control thread cannot see which of the two cases it is in, so it
+    /// ships a line whenever the figure is non-zero and the spare leaves over
+    /// the retirement route. Nothing here allocates or frees (ADR 0020), and a
+    /// restart costs the newly declared latency rather than the ring.
+    fn aim_dry_line(
+        &mut self,
+        latency_frames: usize,
+        shipped: Option<Box<CompensationDelay>>,
+    ) -> Option<Box<CompensationDelay>> {
+        self.latency_frames = latency_frames;
+        match self.dry_delay.as_mut() {
+            Some(line) if latency_frames > 0 => {
+                line.set_delay(latency_frames);
+                shipped
+            }
+            // A device that declares nothing runs no line at all, and one that
+            // has none takes the line it was shipped. Either way what the slot
+            // held leaves rather than being dropped here.
+            _ => std::mem::replace(&mut self.dry_delay, shipped),
+        }
+    }
+
+    /// Take the input hold the splice that placed this device shipped, and
+    /// hand back the line left over for retirement.
+    ///
+    /// The shipped line is installed rather than re-aimed, which is the
+    /// opposite of what [`Self::aim_dry_line`] does with a dry line, because
+    /// the two lines are current at different moments. A dry line is fed on
+    /// every block the chain visits its device, so the ring the device runs
+    /// holds audio worth keeping. An input hold is written only while a chain
+    /// holds the device: a splice is a device arriving on a strip, with
+    /// nothing behind it but whatever some earlier strip put there, so the
+    /// fresh silent ring is the one that owes no replay. An effect ships no
+    /// line, so splicing a device back in as one retires the hold it ran as a
+    /// generator instead of leaving a line nothing feeds.
+    fn take_input_hold(
+        &mut self,
+        shipped: Option<Box<CompensationDelay>>,
+    ) -> Option<Box<CompensationDelay>> {
+        std::mem::replace(&mut self.input_hold, shipped)
+    }
+
+    /// Whether no path in this callback runs this effect at all.
+    ///
+    /// A detached effect is skipped by the master chain and reached by no
+    /// strip chain, so no path hands it a block.
+    #[inline]
+    fn runs_nowhere(&self) -> bool {
+        self.placement == EffectPlacement::Detached
+    }
+
+    /// Whether nothing will hand this effect a block on this callback.
+    ///
+    /// Either it runs nowhere, or it is bypassed — every chain skips a
+    /// bypassed device rather than processing it. Work queued for a body no
+    /// block reaches has no drain, so it is discarded rather than banked.
+    #[inline]
+    fn receives_no_block(&self) -> bool {
+        self.bypassed || self.runs_nowhere()
+    }
+
+    /// Queue one live note at the head of whatever this device renders next.
+    ///
+    /// The note is tracked in this device's live set, apart from the stored
+    /// notes: a stop and a locate release both, and a loop wrap releases the
+    /// stored ones alone. A live note carries no scheduled note-off, so those
+    /// triggers are the only thing besides the player's own release that ever
+    /// lifts the key.
+    ///
+    /// An event addressed to a device that [`Self::receives_no_block`] is
+    /// dropped at the door: nothing is pushed and nothing is tracked. That is
+    /// not an overflow, so it is not counted as one — it is the discard law a
+    /// bypassed or detached device is held to everywhere else. Deciding both
+    /// on the same gate is what keeps them paired: a bypass or placement
+    /// change landing between a live note-on and its note-off can never leave
+    /// a queued event with no bit behind it, or a bit held for an event that
+    /// was never queued. What is queued is exactly what is tracked, and
+    /// [`Self::release_sounding_notes`] states the same contract the other
+    /// way: a release is only ever spent on a device that will be handed the
+    /// buffer it is pushed into.
     #[inline]
     fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
+        if self.receives_no_block() {
+            return;
+        }
         // Drop the newest event when the fixed block-local buffer is full.
         if !self.pending_midi.try_push(event) {
             diagnostics.record_scheduler_event_buffer_overflow(1);
+            return;
         }
+        if event.is_note_on {
+            self.live_sounding.hold(event.channel, event.note);
+        } else {
+            self.live_sounding.release(event.channel, event.note);
+        }
+    }
+
+    /// Queue every stored note the span `block_start..block_start + frames`
+    /// renders, each stamped at the sample that carries its timeline frame.
+    ///
+    /// `span_offset` is where the span begins inside the callback's buffers.
+    /// A chain device is handed that span on its own, so its stamps are
+    /// measured from the span's first frame; a master insert drains once per
+    /// callback over the whole buffer, so its stamps are measured from the
+    /// callback's. Stamping a master insert from the span would put every
+    /// delivery after a loop seam a seam's worth early.
+    ///
+    /// Returns whether the span reached any of them, so the caller can mark
+    /// the slot as holding block-local MIDI exactly as the immediate path
+    /// does. The store itself is only read: what a pass delivers stays
+    /// scheduled, which is what makes a note inside a loop region sound on
+    /// every pass over it.
+    ///
+    /// Nothing is queued or tracked while the device [`Self::receives_no_block`]:
+    /// a stored note falling due against a bypassed or detached device is
+    /// neither pushed into `pending_midi` nor held or released in `sounding`,
+    /// the same discard law [`Self::enqueue_midi`] states for a live note and
+    /// [`Self::release_sounding_notes`] states for a release. A note-on that
+    /// falls due here is simply dropped rather than banked — this device will
+    /// never be handed the buffer it would have landed in — so a bit already
+    /// held for an earlier delivery stays held, and its note-off stays owed to
+    /// [`AudioScheduler::release_notes_owed_on_resume`] rather than being spent
+    /// on a device that will never read it.
+    #[inline]
+    fn enqueue_due_midi_notes(
+        &mut self,
+        block_start: u64,
+        frames: usize,
+        span_offset: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        if self.receives_no_block() {
+            return false;
+        }
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            placement,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let stamp_base = match *placement {
+            EffectPlacement::MasterChain => span_offset as u32,
+            _ => 0,
+        };
+        let span_end = block_start.saturating_add(frames as u64);
+        let entries = store.entries();
+        // The store is frame-ordered, so the span's own run is a slice of it:
+        // where the frames reach `block_start`, up to where they leave the
+        // span. Delivering in that order is what keeps the pending buffer
+        // non-decreasing in time, which is what a plugin is owed.
+        let first_due = entries.partition_point(|entry| entry.at_frame < block_start);
+        let mut delivered = false;
+        for entry in &entries[first_due..] {
+            if entry.at_frame >= span_end {
+                break;
+            }
+            delivered = true;
+            let mut event = entry.event;
+            event.frame_offset = stamp_base + (entry.at_frame - block_start) as u32;
+            // A stored release passes the probability gate whatever its
+            // producer wrote on it, exactly as the release a stop, a locate or
+            // a clear supplies does. The gate decides whether a note sounds,
+            // and it decides that on the note-on: a note-on the gate rolls
+            // away still marked the note sounding here, so the release it
+            // earns is a note-off an instrument that never heard the note-on
+            // ignores — while a release rolled away leaves a key that did go
+            // down held for good.
+            if !event.is_note_on {
+                event.probability_cutoff = crate::midi_fx::PROBABILITY_CUTOFF_RANGE;
+            }
+            if !pending_midi.try_push(event) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                continue;
+            }
+            // Only what reached the buffer is tracked: a note-on the overflow
+            // dropped never sounds, so a release owed for it would be a
+            // note-off the instrument never asked for.
+            if event.is_note_on {
+                sounding.hold(event.channel, event.note);
+            } else {
+                sounding.release(event.channel, event.note);
+            }
+        }
+        delivered
+    }
+
+    /// Queue a note-off for every note this device has sounded and not
+    /// released — the store's own always, the player's live keys when `scope`
+    /// is [`ReleaseScope::All`] — at `frame_offset` inside whatever renders
+    /// next.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    ///
+    /// The store's own note-offs stay where the producer wrote them. This is
+    /// for the frames that are never going to be rendered — a stop, a locate,
+    /// or a loop wrap past a scheduled note-off — after which the instrument
+    /// would hold that key until something else happened to release it. A live
+    /// note has no written note-off at all, so this is the only thing besides
+    /// the player's own release that ever lifts one.
+    ///
+    /// Nothing is released while the device receives no block, and the bits
+    /// stay exactly as they were: a release is only ever spent on a device
+    /// that will be handed the buffer it is pushed into. A bypassed or
+    /// detached device has `pending_midi` discarded unread, so draining here
+    /// would spend a live key's only release on nobody and leave the key down
+    /// for good. The release stays owed, and
+    /// [`AudioScheduler::release_notes_owed_on_resume`] pays it at the head of
+    /// the first block the device is handed again.
+    ///
+    /// A note-off the full buffer refuses leaves its note held, so the next
+    /// trigger owes it again. Counting the overflow and forgetting the note
+    /// would turn one dropped event into a key held for the rest of the
+    /// session, which is the one outcome worse than releasing it late.
+    #[inline]
+    fn release_sounding_notes(
+        &mut self,
+        frame_offset: u32,
+        scope: ReleaseScope,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        if self.receives_no_block() {
+            return false;
+        }
+        let Self {
+            sounding,
+            live_sounding,
+            pending_midi,
+            ..
+        } = self;
+        let mut released = false;
+        let mut queue_release = |channel: i16, note: u8| {
+            if !pending_midi.try_push(release_note(channel, note, frame_offset)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
+            }
+            released = true;
+            true
+        };
+        sounding.drain(&mut queue_release);
+        if scope == ReleaseScope::All {
+            live_sounding.drain(&mut queue_release);
+        }
+        released
+    }
+
+    /// Clear a window of this device's store, recording every sounding note
+    /// whose scheduled note-off the window takes away.
+    ///
+    /// Returns whether any candidate was recorded, so the caller can flag the
+    /// slot for the drain's settlement.
+    ///
+    /// Nothing is released here. A producer rewrites a bar by clearing it and
+    /// scheduling its replacement in the same drain, so a note-off the window
+    /// takes out is as likely to be moving as to be going away, and releasing
+    /// at the clear cuts short a note the rewrite only meant to lengthen. What
+    /// the store holds once the whole drain has applied is what decides it —
+    /// see [`Self::settle_stripped_note_offs`]. A note-on the window removes
+    /// owes nothing either way; either it never sounded, or it did and its own
+    /// note-off is still where the producer wrote it.
+    #[inline]
+    fn clear_midi_notes(&mut self, from_frame: u64, to_frame: u64) -> bool {
+        let Self {
+            midi_notes,
+            sounding,
+            stripped,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_mut() else {
+            return false;
+        };
+
+        let mut recorded = false;
+        store.clear_window(from_frame, to_frame, |entry| {
+            let event = &entry.event;
+            if event.is_note_on || !sounding.is_held(event.channel, event.note) {
+                return;
+            }
+            stripped.hold(event.channel, event.note);
+            recorded = true;
+        });
+        recorded
+    }
+
+    /// Answer the candidates a clear recorded, against the store the whole
+    /// drain left behind.
+    ///
+    /// A candidate the store still holds a note-off for ahead of the playhead,
+    /// before any note-on of the same key, is released by that note-off on the
+    /// frame the rewrite put it on, so nothing is owed here and the candidate
+    /// is simply dropped. A note-off past a later note-on belongs to that
+    /// later note and covers nothing. A candidate with no such note-off is
+    /// owed a release: the frames that carried it are out of the arrangement,
+    /// and the instrument would hold the key — the same position a stop, a
+    /// locate and a loop wrap leave a sounding note in, and it gets the same
+    /// answer, a note-off at the head of whatever renders next.
+    ///
+    /// A release the full buffer refuses leaves the note both sounding and a
+    /// candidate, so it is owed again rather than lost.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    #[inline]
+    fn settle_stripped_note_offs(
+        &mut self,
+        playhead_frames: u64,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            stripped,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let rewritten = scheduled_note_offs_from(store, playhead_frames);
+        let mut released = false;
+        stripped.drain(|channel, note| {
+            if rewritten.is_held(channel, note) || !sounding.is_held(channel, note) {
+                return true;
+            }
+            if !pending_midi.try_push(release_note(channel, note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
+            }
+            sounding.release(channel, note);
+            released = true;
+            true
+        });
+        released
+    }
+}
+
+/// Every note a note-off the store still holds would release, were the
+/// playhead to run on from `from_frame`.
+///
+/// The first entry a note has from that frame on is the one that decides it: a
+/// note-off covers the note, and a note-on does not. A note-on standing
+/// between the playhead and the next note-off of that key means the note-off
+/// belongs to the later note the store presses there, not to the one sounding
+/// now — so the sounding note is owed its release, and the later pair is left
+/// whole to sound as its producer wrote it.
+///
+/// One pass over the entries from that frame on, into two sets the same shape
+/// as the sounding bits: sixteen channels of a hundred and twenty-eight bits,
+/// stack-local and fixed, so building them allocates nothing on the callback.
+/// The store is frame-ordered, so the entries at or past a frame are its tail
+/// in the order the playhead would meet them.
+fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> NoteAddressSet {
+    let entries = store.entries();
+    let first = entries.partition_point(|entry| entry.at_frame < from_frame);
+    let mut decided = NoteAddressSet::default();
+    let mut covered = NoteAddressSet::default();
+    for entry in &entries[first..] {
+        let event = &entry.event;
+        if decided.is_held(event.channel, event.note) {
+            continue;
+        }
+        decided.hold(event.channel, event.note);
+        if !event.is_note_on {
+            covered.hold(event.channel, event.note);
+        }
+    }
+    covered
+}
+
+/// The note-off that ends a note a store sounded, supplied by the engine
+/// rather than read from the store.
+///
+/// Velocity zero is the release a MIDI source sends for a key let go without
+/// pressure. The probability cutoff passes: the gate decides whether a note
+/// sounds, and a release owed for a note that already did must never be rolled
+/// away, or the instrument holds that key for good. Delivery hands a stored
+/// note-off over on those same terms, for that same reason.
+fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
+    MidiNoteEvent {
+        note,
+        velocity: 0,
+        channel,
+        is_note_on: false,
+        frame_offset,
+        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+        project_probability_seed: 0,
+        clip_id_hash: 0,
+        event_id_hash: 0,
+        absolute_occurrence_index: 0,
     }
 }
 
@@ -1362,12 +2581,12 @@ pub struct AudioScheduler {
     parameter_work: SlotWorkSet,
     /// Slots that may need detached-MIDI cleanup without walking the table.
     pending_midi_work: SlotWorkSet,
+    /// Slots holding note-off candidates a clear recorded during the drain
+    /// now applying, emptied by [`Self::settle_stripped_note_offs`] once that
+    /// drain finishes.
+    stripped_note_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
-    audio_bridges: Vec<PluginAudioBridge>,
-    /// Plugin id → slot into `audio_bridges`, on the same contract as
-    /// `effect_index`.
-    bridge_index: IdSlotIndex,
     /// Effect ids the render callback hands captured device audio to.
     ///
     /// Reserved once at [`CRUMBS_CAPTURE_RESERVE`] and never grown: it is
@@ -1377,6 +2596,12 @@ pub struct AudioScheduler {
     /// delivery walks the whole of it every chunk and the reserve is a
     /// handful of entries — a trie would cost a walk per id to save nothing.
     capture_consumers: Vec<usize>,
+    /// Whether the drain changed something the graph's plugin delay
+    /// compensation is computed from — a declared latency, a chain's contents,
+    /// a strip's existence, or a route. Cleared by the recompute at the end of
+    /// the drain, so a batch that touches a hundred strips re-aims the delays
+    /// once rather than once per command.
+    pdc_dirty: bool,
     timeline: TimelineGraph,
     /// Absolute frame of the next block's first sample. It advances only while
     /// the transport is playing, so a clip start and a parameter stamp mean
@@ -1421,6 +2646,15 @@ pub struct AudioScheduler {
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
+    /// The master peak currently being held, for [`MasterMeterSnapshot`].
+    held_peak: f32,
+    /// Frames rendered since `held_peak` was last taken, against
+    /// `peak_hold_frames`.
+    held_frames: u64,
+    /// How long a peak stands before a quieter callback may replace it, in
+    /// frames on this engine's own clock.
+    peak_hold_frames: u64,
+    master_meter_tx: Input<MasterMeterSnapshot>,
     #[cfg(test)]
     rt_work: RtWorkCounters,
 }
@@ -1454,6 +2688,7 @@ impl AudioScheduler {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, _transport_position_reader) = transport_position_channel();
+        let (master_meter_tx, _master_meter_reader) = master_meter_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -1462,9 +2697,11 @@ impl AudioScheduler {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
+            master_meter_tx,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn with_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,
@@ -1473,6 +2710,7 @@ impl AudioScheduler {
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
         graph_progress_tx: Input<GraphProgressSnapshot>,
         transport_position_tx: Input<TransportPositionSnapshot>,
+        master_meter_tx: Input<MasterMeterSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -1480,10 +2718,10 @@ impl AudioScheduler {
             effect_index: IdSlotIndex::reserved(EFFECT_TABLE_CAPACITY),
             parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            stripped_note_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
-            audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
-            bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+            pdc_dirty: false,
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
             command_rx: Some(command_rx),
@@ -1513,6 +2751,13 @@ impl AudioScheduler {
             batches_applied: 0,
             graph_progress_tx,
             transport_position_tx,
+            held_peak: 0.0,
+            held_frames: 0,
+            // Derived from the rate the stream actually opened at, so the hold
+            // lasts the same wall-clock span on a 44.1 kHz device as on a
+            // 96 kHz one.
+            peak_hold_frames: (sample_rate / PEAK_HOLD_RELEASES_PER_SECOND) as u64,
+            master_meter_tx,
             #[cfg(test)]
             rt_work: RtWorkCounters::default(),
         }
@@ -1577,6 +2822,29 @@ impl AudioScheduler {
         self.transport_position_tx.write(snapshot);
     }
 
+    /// Hold this callback's device peak and publish what is being held.
+    ///
+    /// A meter is polled at UI rate and fed at callback rate, so most peaks
+    /// are never seen by the reader that samples between them. The hold is
+    /// what makes the published number the loudest thing that actually
+    /// happened rather than whichever block the poll happened to land on: a
+    /// peak stands until something louder arrives or the window expires, and a
+    /// quieter callback inside the window advances the window rather than the
+    /// level. `>=` rather than `>` restarts the window on a repeated peak, so
+    /// steady material holds at its own level instead of decaying under it.
+    #[inline]
+    pub(crate) fn publish_master_meter(&mut self, callback_peak: f32, frames: u64) {
+        if callback_peak >= self.held_peak || self.held_frames >= self.peak_hold_frames {
+            self.held_peak = callback_peak;
+            self.held_frames = 0;
+        } else {
+            self.held_frames += frames;
+        }
+        self.master_meter_tx.write(MasterMeterSnapshot {
+            peak: self.held_peak,
+        });
+    }
+
     /// The routed graph, for callers proving what a command did to it.
     pub fn timeline(&self) -> &TimelineGraph {
         &self.timeline
@@ -1632,6 +2900,25 @@ impl AudioScheduler {
     ///   never inside one.
     #[inline]
     pub fn update_graph(&mut self) {
+        self.drain_commands();
+        // After the drain rather than inside it, and before anything renders:
+        // a clear and the batch that rewrites what it took out arrive
+        // together, so only the store the whole drain leaves behind can tell a
+        // release that was deleted from one that merely moved.
+        self.settle_stripped_note_offs();
+        // After the drain rather than inside it: a batch that adds a bus, its
+        // devices and every send into it passes through states no mix should
+        // ever be aligned against, and re-aiming per command would also make a
+        // project-sized batch quadratic.
+        if self.pdc_dirty {
+            self.pdc_dirty = false;
+            self.recompute_compensation();
+        }
+    }
+
+    /// Apply everything the command ring is holding, up to the first refusal
+    /// the retirement ring forces.
+    fn drain_commands(&mut self) {
         if !self.flush_pending_retirement() {
             return;
         }
@@ -1699,6 +2986,7 @@ impl AudioScheduler {
     /// Returns `false` when the retirement ring could not take it; the caller
     /// stops draining and the held retirement flushes first next callback.
     fn apply_and_retire(&mut self, cmd: GraphCommand) -> bool {
+        self.pdc_dirty |= cmd.dirties_compensation();
         match self.apply_command(cmd) {
             Some(retired) => self.retire(retired),
             None => true,
@@ -1710,93 +2998,95 @@ impl AudioScheduler {
     fn apply_command(&mut self, cmd: GraphCommand) -> Option<RetiredGraphObjects> {
         {
             let retired = match cmd {
-                GraphCommand::AddEffect(id, instance) => {
-                    self.add_builtin_effect(id, instance, EffectPlacement::MasterChain)
+                GraphCommand::AddEffect(id, instance, notes) => {
+                    self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
                 }
-                GraphCommand::AddDetachedEffect(id, instance) => {
-                    self.add_builtin_effect(id, instance, EffectPlacement::Detached)
+                GraphCommand::AddDetachedEffect(id, instance, notes) => {
+                    self.add_builtin_effect(id, instance, notes, EffectPlacement::Detached)
                 }
-                #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
-                }
-                GraphCommand::RemovePluginWithBridge(id) => {
-                    RetiredGraphObjects::effect_with_bridge(
-                        self.remove_effect(id),
-                        self.remove_audio_bridge(id),
-                    )
                 }
                 GraphCommand::SetParam(id, param, value) => {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
-                            match &mut effect.instance {
-                                PluginCore::Knead(engine) => {
-                                    apply_knead_param(engine, param, value)
-                                }
-                                PluginCore::Native(_) => {
-                                    // `SetParam` only has a mapped target for
-                                    // the built-in Knead effect today; a
-                                    // native plugin's parameters are not
-                                    // routed here.
-                                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
-                                }
+                            // `SetParam` addresses a built-in body only. A
+                            // native plugin's parameters are its own and
+                            // travel on its control path, and a built-in
+                            // address aimed at the other built-in is a
+                            // producer that lost track of what this id holds.
+                            if !apply_builtin_param(&mut effect.instance, param, value) {
+                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                             }
                         }
                     }
                     None
                 }
+                // Bypass deliberately does not dirty the compensation: a
+                // bypassed device keeps its latency and runs its dry delay in
+                // place of itself, so nothing about the graph's alignment
+                // changes and re-aiming every delay here would glitch the mix
+                // on every A/B.
                 GraphCommand::SetBypass(id, bypassed) => {
-                    if let Some(effect) = self.effect_mut(id) {
-                        effect.bypassed = bypassed;
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        let was_bypassed = self.effects[slot].bypassed;
+                        self.effects[slot].bypassed = bypassed;
+                        // Un-bypassing is where the device starts reading its
+                        // queued MIDI again, so it is where the releases it
+                        // banked while nothing handed it a block are paid.
+                        if was_bypassed && !bypassed {
+                            self.release_notes_owed_on_resume(slot);
+                        }
                     }
                     None
                 }
-                GraphCommand::AddPlugin(id, plugin) => {
+                GraphCommand::SetEffectLatency {
+                    effect_id,
+                    latency_frames,
+                    dry_delay,
+                } => match self.effect_mut(effect_id) {
+                    Some(effect) => effect.aim_dry_line(latency_frames, dry_delay).map(|delay| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                    }),
+                    None => {
+                        // Refused like every other command naming an effect the
+                        // table does not hold; the line it carried leaves over
+                        // the retirement channel rather than being freed here.
+                        self.timeline.record_unknown_target();
+                        dry_delay.map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
+                    }
+                },
+                GraphCommand::AddPlugin(id, plugin, store) => {
+                    let effect =
+                        ActiveEffect::new(id, PluginCore::Native(plugin)).holding_midi_notes(store);
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(effect);
                         None
                     }
                 }
-                // The registration is detached and homed detached. A hosted
-                // plugin belongs to the load that created it, not to the master
-                // insert chain: placed there it would render the whole mix
-                // through an instance the app is also driving over its bridge,
-                // and released there it would do the same the moment a user
-                // took it off a strip.
-                GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
+                // The registration is homed detached. A hosted plugin
+                // belongs to the load that created it, not to the master
+                // insert chain: homed there it would render the whole mix
+                // through the instance the moment a user took it off a strip.
+                GraphCommand::AddHostedPlugin(id, plugin, store) => {
+                    let effect = ActiveEffect::detached(id, PluginCore::Native(plugin))
+                        .holding_midi_notes(Some(store));
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
-                            Some(bridge),
-                        )
-                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY
-                        || self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY
-                    {
-                        // Both tables must have room, or neither takes the
-                        // registration: the plugin without its bridge is a
-                        // dry-fallback instance, the bridge without its plugin
-                        // returns blocks nothing processes.
+                        Some(RetiredGraphObjects::effect(effect))
+                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
-                            Some(bridge),
-                        )
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
-                        self.push_bridge(bridge);
+                        self.push_effect(effect);
                         None
                     }
                 }
@@ -1843,6 +3133,21 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::ScheduleMidiNotes { plugin_id, notes } => {
+                    self.schedule_midi_notes(plugin_id, &notes);
+                    // The batch was copied into the store; the box itself is a
+                    // control-side allocation and leaves the way every other
+                    // one does.
+                    Some(RetiredGraphObjects::midi_notes(notes))
+                }
+                GraphCommand::ClearMidiNotes {
+                    plugin_id,
+                    from_frame,
+                    to_frame,
+                } => {
+                    self.clear_midi_notes(plugin_id, from_frame, to_frame);
+                    None
+                }
                 GraphCommand::SetTransport(state) => {
                     // Stopping holds every mixer parameter where it stands and
                     // drops what it had queued. A ramp is stamped in timeline
@@ -1851,6 +3156,12 @@ impl AudioScheduler {
                     // playback ends.
                     if self.transport.is_playing && !state.is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        // A stopped playhead never reaches the frame a
+                        // sounding note's note-off was written for, so the
+                        // note is released here or it is held for good. A live
+                        // key goes with it: a stop is where a player expects
+                        // the instrument to fall silent.
+                        self.release_sounding_notes(0, ReleaseScope::All);
                     }
                     self.transport = state;
                     None
@@ -1869,6 +3180,7 @@ impl AudioScheduler {
                     // (seconds, beats) pair.
                     if self.transport.is_playing && !is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        self.release_sounding_notes(0, ReleaseScope::All);
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -1940,16 +3252,25 @@ impl AudioScheduler {
                     track_id,
                     entry,
                     index,
+                    hold,
                 } => {
                     // Only claim the effect when the chain actually took it: a
                     // refused splice must leave the effect where it was rather
-                    // than silence it.
-                    if !self.effect_id_exists(entry.effect_id) {
+                    // than silence it — and must hand its line back rather than
+                    // free it here.
+                    let spliced = if !self.effect_id_exists(entry.effect_id) {
                         self.timeline.record_unknown_target();
+                        false
                     } else if self.timeline.insert_track_device(track_id, entry, index) {
                         self.place_effect(entry.effect_id, EffectPlacement::Track(track_id));
-                    }
-                    None
+                        true
+                    } else {
+                        false
+                    };
+                    self.spare_input_hold(entry.effect_id, spliced, hold)
+                        .map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
                 }
                 GraphCommand::RemoveTrackDevice {
                     track_id,
@@ -1971,10 +3292,8 @@ impl AudioScheduler {
                     // refused removal could final-drop an effect another chain
                     // is running.
                     if self.timeline.remove_track_device(track_id, effect_id) {
-                        RetiredGraphObjects::effect_with_bridge(
-                            self.remove_effect(effect_id),
-                            self.remove_audio_bridge(effect_id),
-                        )
+                        self.remove_effect(effect_id)
+                            .map(RetiredGraphObjects::effect)
                     } else {
                         None
                     }
@@ -1983,13 +3302,21 @@ impl AudioScheduler {
                     bus_id,
                     entry,
                     index,
+                    hold,
                 } => {
-                    if !self.effect_id_exists(entry.effect_id) {
+                    let spliced = if !self.effect_id_exists(entry.effect_id) {
                         self.timeline.record_unknown_target();
+                        false
                     } else if self.timeline.insert_bus_device(bus_id, entry, index) {
                         self.place_effect(entry.effect_id, EffectPlacement::Bus(bus_id));
-                    }
-                    None
+                        true
+                    } else {
+                        false
+                    };
+                    self.spare_input_hold(entry.effect_id, spliced, hold)
+                        .map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
                 }
                 GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
                     if self.timeline.remove_bus_device(bus_id, effect_id) {
@@ -1999,10 +3326,8 @@ impl AudioScheduler {
                 }
                 GraphCommand::RemoveBusDeviceRetired { bus_id, effect_id } => {
                     if self.timeline.remove_bus_device(bus_id, effect_id) {
-                        RetiredGraphObjects::effect_with_bridge(
-                            self.remove_effect(effect_id),
-                            self.remove_audio_bridge(effect_id),
-                        )
+                        self.remove_effect(effect_id)
+                            .map(RetiredGraphObjects::effect)
                     } else {
                         None
                     }
@@ -2012,13 +3337,17 @@ impl AudioScheduler {
                     bus_id,
                     tap,
                     level,
-                } => {
-                    self.timeline.add_send(track_id, bus_id, tap, level);
-                    None
-                }
+                    delay,
+                } => self
+                    .timeline
+                    .add_send(track_id, bus_id, tap, level, delay)
+                    .map(|refused| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                    }),
                 GraphCommand::RemoveSend { track_id, bus_id } => {
-                    self.timeline.remove_send(track_id, bus_id);
-                    None
+                    self.timeline.remove_send(track_id, bus_id).map(|removed| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                    })
                 }
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
@@ -2070,12 +3399,28 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SeekFrames(frame) => {
+                    // The locate takes the playhead off the frames a sounding
+                    // note's note-off was written for. Nothing will render
+                    // them, so the note is released at the head of what plays
+                    // from the new position, and a live key with it: the
+                    // player's own frames are behind the playhead too. A
+                    // stopped transport sounded nothing to release.
+                    if self.transport.is_playing {
+                        self.release_sounding_notes(0, ReleaseScope::All);
+                    }
                     self.timeline.seek(frame);
                     self.playhead_frames = frame;
                     None
                 }
                 GraphCommand::AutomateParam { target, write } => {
                     self.timeline.automate(target, write);
+                    None
+                }
+                // No frame: the smoother continues from the level it holds
+                // whatever the playhead does, so the seek, hold and wrap laws
+                // that govern the automation lane have nothing to reach.
+                GraphCommand::SetMasterGain { value, smoothing } => {
+                    self.timeline.set_master_fader_target(value, smoothing);
                     None
                 }
                 GraphCommand::AutomateDeviceParam {
@@ -2110,16 +3455,6 @@ impl AudioScheduler {
                     self.unregister_capture_consumer(id);
                     None
                 }
-                #[cfg(test)]
-                GraphCommand::RegisterAudioBridge(bridge) => {
-                    if self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY {
-                        self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::removed(None, Some(bridge), None))
-                    } else {
-                        self.push_bridge(bridge);
-                        None
-                    }
-                }
                 GraphCommand::BeginBatch { .. } => {
                     // A loose fence is consumed by `update_graph` before it
                     // reaches here; a fence inside a batch body is a producer
@@ -2149,6 +3484,66 @@ impl AudioScheduler {
                 }
             };
             retired
+        }
+    }
+
+    /// Re-aim every route's compensation delay at the graph as it now stands.
+    ///
+    /// The topology walk belongs to the graph while the declared latencies and
+    /// the generators' input holds belong to this table, so the graph is handed
+    /// a borrow of the table rather than a copy of it. Bypassed devices count:
+    /// bypass keeps latency, so an A/B never moves the mix.
+    ///
+    /// The declared figures are also what says whether the ceiling cut a dry
+    /// line short, and the graph never sees them — it sees what a chain sums
+    /// to. A strip carrying one device past the ceiling clamps no route line
+    /// at all, so the count is started here, from the table that holds the
+    /// declarations, and recounted on every pass so it falls again with them.
+    /// Only a placed device runs a line the ceiling can cut short: a detached
+    /// one is fed and read by no chain and adds nothing to any summing point's
+    /// depth, so its declaration is a claim about a line nothing is running.
+    fn recompute_compensation(&mut self) {
+        let Self {
+            effects,
+            effect_index,
+            timeline,
+            ..
+        } = self;
+
+        let clamped_devices = effects
+            .iter()
+            .filter(|effect| effect.placement != EffectPlacement::Detached)
+            .filter(|effect| effect.latency_frames > MAX_COMPENSATION_FRAMES)
+            .count();
+
+        timeline.compensate(
+            clamped_devices,
+            &mut CompensationTable {
+                effects,
+                effect_index,
+            },
+        );
+    }
+
+    /// Install the input hold a splice shipped on the device that splice
+    /// placed, and answer with whichever line is now spare.
+    ///
+    /// A splice that was refused, or that named an effect the table does not
+    /// hold, installs nothing: its line is spare on arrival. Either way the
+    /// spare leaves over the retirement channel rather than being freed on the
+    /// callback (ADR 0020).
+    fn spare_input_hold(
+        &mut self,
+        effect_id: usize,
+        spliced: bool,
+        hold: Option<Box<CompensationDelay>>,
+    ) -> Option<Box<CompensationDelay>> {
+        if !spliced {
+            return hold;
+        }
+        match self.effect_mut(effect_id) {
+            Some(effect) => effect.take_input_hold(hold),
+            None => hold,
         }
     }
 
@@ -2188,20 +3583,6 @@ impl AudioScheduler {
         }
     }
 
-    /// Append a bridge and map its plugin id at the slot it took, on the same
-    /// precondition and the same unconditional-insert law as
-    /// [`Self::push_effect`].
-    fn push_bridge(&mut self, bridge: PluginAudioBridge) {
-        let slot = self.audio_bridges.len();
-        let plugin_id = bridge.plugin_id;
-        self.audio_bridges.push(bridge);
-        let inserted = self.bridge_index.insert(plugin_id, slot);
-        debug_assert!(
-            inserted,
-            "push_bridge is only reached after the collision check refused the id"
-        );
-    }
-
     /// Register a built-in effect — whose instance the command carried
     /// already built, constructed control-side — at the given placement,
     /// counting a refusal instead when the id already names a live effect or
@@ -2218,38 +3599,71 @@ impl AudioScheduler {
         &mut self,
         id: usize,
         instance: PluginCore,
+        notes: Option<Box<MidiNoteStore>>,
         placement: EffectPlacement,
     ) -> Option<RetiredGraphObjects> {
+        // Built holding the store on every path, refusals included, so a
+        // refused registration retires the whole effect rather than freeing
+        // the box the command carried.
+        let effect =
+            ActiveEffect::with_placement(id, instance, placement).holding_midi_notes(notes);
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return Some(RetiredGraphObjects::effect(effect));
         }
         if self.effects.len() == EFFECT_TABLE_CAPACITY {
             self.timeline.record_capacity_refusal();
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return Some(RetiredGraphObjects::effect(effect));
         }
-        self.push_effect(ActiveEffect::with_placement(id, instance, placement));
+        self.push_effect(effect);
         None
     }
 
-    /// Record where an effect now runs, after a chain has accepted it.
+    /// Record where an effect now runs, after a chain has accepted it — or
+    /// that no chain holds it any more.
+    ///
+    /// A detached effect is in no strip chain and not on the master walk, so
+    /// nothing feeds its dry line and nothing reads it for as long as it waits.
+    /// That is the one break in the rule that every line is written on every
+    /// block it renders, and so the one place a line still owes silence: left
+    /// standing, it would hand the audio of the strip it left back over the
+    /// first `latency` frames after some chain takes the device again. It stays
+    /// silent until that placement starts feeding it.
+    ///
+    /// Every route into `Detached` restarts it, because every route leaves the
+    /// device in the same state: a strip torn down under it, and a hosted
+    /// plugin released by the strip that borrowed it, both come to rest here.
+    ///
+    /// The input hold a generator runs owes nothing here, because it never
+    /// survives a detachment to owe anything: every splice ships a fresh silent
+    /// line and [`ActiveEffect::take_input_hold`] installs it unconditionally,
+    /// so the line a re-placed generator runs is the one that arrived with it.
+    ///
+    /// Every route *out* of `Detached` pays what the device banked while it ran
+    /// nowhere, because leaving is where it starts reading its queued MIDI
+    /// again — see [`Self::release_notes_owed_on_resume`].
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
-        if let Some(slot) = self.effect_index.lookup(effect_id) {
-            let prior = self.effects[slot].placement;
-            if prior == placement {
-                return;
+        let Some(slot) = self.effect_index.lookup(effect_id) else {
+            return;
+        };
+        let prior = self.effects[slot].placement;
+        if prior == placement {
+            return;
+        }
+        if prior == EffectPlacement::MasterChain {
+            self.master_work.remove(slot);
+        }
+        self.effects[slot].placement = placement;
+        if placement == EffectPlacement::MasterChain {
+            self.master_work.append(slot);
+        }
+        if placement == EffectPlacement::Detached {
+            if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
+                delay.restart_from_silence();
             }
-            if prior == EffectPlacement::MasterChain {
-                self.master_work.remove(slot);
-            }
-            self.effects[slot].placement = placement;
-            if placement == EffectPlacement::MasterChain {
-                self.master_work.append(slot);
-            }
+        }
+        if prior == EffectPlacement::Detached {
+            self.release_notes_owed_on_resume(slot);
         }
     }
 
@@ -2296,6 +3710,7 @@ impl AudioScheduler {
         let old_tail = self.effects.len() - 1;
         self.parameter_work.remove(slot);
         self.pending_midi_work.remove(slot);
+        self.stripped_note_work.remove(slot);
         self.master_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
@@ -2305,17 +3720,8 @@ impl AudioScheduler {
             self.effect_index.set_slot(moved.id, slot);
             self.parameter_work.move_slot(old_tail, slot);
             self.pending_midi_work.move_slot(old_tail, slot);
+            self.stripped_note_work.move_slot(old_tail, slot);
             self.master_work.move_slot(old_tail, slot);
-        }
-        Some(removed)
-    }
-
-    /// Remove a bridge on the same swap-remove law as [`Self::remove_effect`].
-    fn remove_audio_bridge(&mut self, plugin_id: usize) -> Option<PluginAudioBridge> {
-        let slot = self.bridge_index.delete(plugin_id)?;
-        let removed = self.audio_bridges.swap_remove(slot);
-        if let Some(moved) = self.audio_bridges.get(slot) {
-            self.bridge_index.set_slot(moved.plugin_id, slot);
         }
         Some(removed)
     }
@@ -2423,198 +3829,6 @@ impl AudioScheduler {
         }
     }
 
-    /// Process ring-buffer audio bridges — reads input blocks from main thread,
-    /// processes through plugins, writes output back for main thread to return to worklet.
-    ///
-    /// `callback_frames` is what the device asked for this period. Each bridge
-    /// may spend that plus one render quantum of catch-up, so a backlog left
-    /// by a main-thread stall is worked off over successive callbacks rather
-    /// than rendered in one spike on the thread with the deadline.
-    #[inline]
-    pub fn process_audio_bridges(&mut self, callback_frames: usize) {
-        // A device period the bridge cannot carry would starve every plugin
-        // permanently rather than intermittently, so it is counted rather than
-        // left to look like ordinary jitter.
-        if callback_frames > MAX_CALLBACK_FRAMES {
-            self.midi_rt_diagnostics
-                .record_callback_frames_over_bridge_reach(1);
-        }
-        let callback_frames = callback_frames.min(MAX_CALLBACK_FRAMES);
-        let frame_budget = callback_frames.saturating_add(RENDER_QUANTUM_FRAMES);
-        // One derivation, shared with the host side that has to compensate for
-        // the depth it settles at — see `audio_bridge::target_depth_blocks`.
-        let target_depth_blocks = audio_bridge::target_depth_blocks(callback_frames);
-
-        // The bridge table holds at most `AUDIO_BRIDGE_TABLE_CAPACITY`
-        // entries, so walking it in order is bounded and may stay linear;
-        // what must not be linear is the per-bridge effect resolution, which
-        // goes through the id index.
-        for bridge in &mut self.audio_bridges {
-            let plugin_id = bridge.plugin_id;
-
-            let effect = self
-                .effect_index
-                .lookup(plugin_id)
-                .and_then(|slot| self.effects.get_mut(slot));
-
-            // A bridge with no plugin able to process its audio — no effect
-            // under that id at all (registered on its own through
-            // `RegisterAudioBridge`, or outliving its plugin), or an effect
-            // with no bridged path, such as a built-in Knead — used to be left
-            // untouched. Its input ring then filled and stayed full, so every
-            // later push was refused and the app was left on permanent dry
-            // fallback with nothing recorded. Return the blocks untouched
-            // instead: the app keeps its audio, the ring keeps moving, and the
-            // count says no plugin took them.
-            let unprocessable = match effect {
-                None => true,
-                Some(ref effect) => !matches!(effect.instance, PluginCore::Native(_)),
-            };
-
-            if unprocessable {
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_unmatched_bridge_blocks(drain.blocks_processed as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                if let Some(effect) = effect {
-                    effect.pending_midi.clear();
-                }
-                continue;
-            }
-
-            let Some(effect) = effect else {
-                continue;
-            };
-
-            // While the monitor is audible, a plugin a track or bus chain holds
-            // is processed inline by that chain over the strip's own signal
-            // (`TrackDeviceChain::run_device`). Its bridge still has to move —
-            // an input ring left to fill refuses every later push for good — so
-            // the blocks are returned exactly as they arrived. `pending_midi` is
-            // deliberately left alone: the chain is what consumes it this
-            // callback, and clearing it here would take the events away from the
-            // path that is going to deliver them.
-            if !self.monitor_shadowed
-                && matches!(
-                    effect.placement,
-                    EffectPlacement::Track(_) | EffectPlacement::Bus(_)
-                )
-            {
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_bridge_blocks_passed_chain_bound(drain.blocks_processed as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                continue;
-            }
-
-            if effect.bypassed {
-                // Drain input without processing (passthrough)
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        // output = input (already in the block)
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                // A bypassed effect discards incoming MIDI rather than
-                // banking it: without this, notes queued via SendMidiNote
-                // while bypassed would accumulate toward the fixed
-                // 128-slot ceiling and then flush as one stale burst —
-                // old note-ons with no note-offs behind them — the
-                // instant the effect is un-bypassed.
-                effect.pending_midi.clear();
-                continue;
-            }
-
-            let PluginCore::Native(ref mut plugin) = effect.instance else {
-                continue;
-            };
-
-            let probability_evaluator = &mut effect.probability_evaluator;
-            let midi_fx = &mut effect.midi_fx;
-            let pending_midi = &mut effect.pending_midi;
-            let transport = self.transport;
-            let sample_rate = self.sample_rate;
-
-            let diagnostics = &mut self.midi_rt_diagnostics;
-            // The MIDI chain belongs to the callback, not to the block.
-            // Several blocks are normally waiting, and running the chain
-            // once per block would re-evaluate authored probability and
-            // re-emit every queued note once per block — the same note-on
-            // delivered to the plugin two, three, four times. It runs on
-            // the first block of the pass, the earliest audio in the
-            // callback.
-            let mut events_delivered = false;
-
-            let drain = bridge.drain_process(
-                frame_budget,
-                target_depth_blocks,
-                |left, right, num_samples| {
-                    if events_delivered {
-                        plugin.process_bridged_audio(left, right, num_samples);
-                        return;
-                    }
-
-                    probability_evaluator.process_midi_with_diagnostics(
-                        pending_midi,
-                        &transport,
-                        sample_rate,
-                        num_samples,
-                        diagnostics,
-                    );
-                    for fx in midi_fx.iter_mut() {
-                        fx.process_midi_with_diagnostics(
-                            pending_midi,
-                            &transport,
-                            sample_rate,
-                            num_samples,
-                            diagnostics,
-                        );
-                    }
-                    events_delivered = true;
-
-                    if pending_midi.is_empty() {
-                        plugin.process_bridged_audio(left, right, num_samples);
-                    } else {
-                        plugin.process_bridged_with_events(
-                            left,
-                            right,
-                            num_samples,
-                            pending_midi.as_slice(),
-                            &transport,
-                        );
-                    }
-                },
-            );
-
-            // Only clear pending MIDI when the closure actually ran and
-            // consumed it. When the input ring was empty this cycle (the
-            // render callback beating the worklet's push, guaranteed at
-            // bridge startup and on any cadence jitter), the events must
-            // survive to the next cycle rather than being dropped.
-            if drain.blocks_processed > 0 {
-                pending_midi.clear();
-            }
-            diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-            diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-        }
-        self.remove_empty_pending_midi_work();
-    }
-
     fn remove_empty_pending_midi_work(&mut self) {
         let mut index = 0;
         while index < self.pending_midi_work.slots.len() {
@@ -2628,6 +3842,169 @@ impl AudioScheduler {
             } else {
                 index += 1;
             }
+        }
+    }
+
+    /// Copy a scheduled batch into the store of the device it names.
+    ///
+    /// Whole or nothing: a device with no store, and a batch past the store's
+    /// free capacity, are both refused and counted. A note behind the playhead
+    /// is stored and counted late rather than fired — firing it here would put
+    /// a note-on at a position nobody wrote it at, and the frame it names is
+    /// still ahead of a later locate or loop pass.
+    fn schedule_midi_notes(&mut self, plugin_id: usize, notes: &[TimedMidiNote]) {
+        let stored = self
+            .effect_index
+            .lookup(plugin_id)
+            .and_then(|slot| self.effects.get_mut(slot))
+            .and_then(|effect| effect.midi_notes.as_mut())
+            .is_some_and(|store| store.try_extend(notes));
+
+        if !stored {
+            self.midi_rt_diagnostics.record_midi_note_batch_refusal(1);
+            return;
+        }
+
+        let playhead = self.playhead_frames;
+        let late = notes.iter().filter(|note| note.at_frame < playhead).count();
+        self.midi_rt_diagnostics.record_late_midi_notes(late as u64);
+    }
+
+    /// Take a window out of one device's store, recording every note it is
+    /// sounding whose scheduled note-off stood inside that window.
+    ///
+    /// The release those notes may be owed is decided after the drain, by
+    /// [`Self::settle_stripped_note_offs`], because the same drain may carry
+    /// the batch that writes their note-offs back somewhere else. A device
+    /// with no store has nothing to clear, which is every device but an
+    /// instrument.
+    fn clear_midi_notes(&mut self, plugin_id: usize, from_frame: u64, to_frame: u64) {
+        let Some(slot) = self.effect_index.lookup(plugin_id) else {
+            return;
+        };
+        if slot >= self.effects.len() {
+            return;
+        }
+        if self.effects[slot].clear_midi_notes(from_frame, to_frame) {
+            self.stripped_note_work.insert(slot);
+        }
+    }
+
+    /// Answer every note-off candidate this drain's clears recorded.
+    ///
+    /// Runs once per flagged device, after the whole drain and before anything
+    /// renders. A clear on its own cannot tell a deleted release from a moved
+    /// one — a producer rewriting a bar clears it and schedules the
+    /// replacement in a single drain — so the store as the drain left it is
+    /// what decides, and the work set keeps the cost to the devices a clear
+    /// actually touched.
+    fn settle_stripped_note_offs(&mut self) {
+        while let Some(slot) = self.stripped_note_work.slots.last().copied() {
+            self.stripped_note_work.remove(slot);
+            if self.effects[slot]
+                .settle_stripped_note_offs(self.playhead_frames, &mut self.midi_rt_diagnostics)
+            {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Deliver every scheduled note the span reaches, stamped at its sample.
+    ///
+    /// Sited beside [`Self::apply_due_device_params`] and for the same reason:
+    /// both are addressed in timeline frames, so both have to run against the
+    /// span that actually renders those frames rather than against the
+    /// callback's first one. A device with no store is skipped, which is every
+    /// device but an instrument.
+    ///
+    /// Nothing is delivered while the transport is stopped. The playhead
+    /// stands still then, so every callback renders the same span and a note
+    /// under it would retrigger at the block rate — the same reason clips are
+    /// held back on a stopped transport, and a scheduled note is arrangement
+    /// material exactly as a clip is. The live path
+    /// ([`GraphCommand::SendMidiNote`]) still sounds a stopped transport,
+    /// because a note played on a keyboard is not addressed to the timeline at
+    /// all.
+    fn apply_due_midi_notes(&mut self, block_start: u64, frames: usize, span_offset: usize) {
+        if frames == 0 || !self.transport.is_playing {
+            return;
+        }
+
+        for slot in 0..self.effects.len() {
+            if self.effects[slot].enqueue_due_midi_notes(
+                block_start,
+                frames,
+                span_offset,
+                &mut self.midi_rt_diagnostics,
+            ) {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Release the notes `scope` names across the graph, at the head of
+    /// whatever renders next.
+    ///
+    /// A stop, a locate and a loop wrap all leave the frame a stored note's
+    /// note-off was written for behind: nothing is going to render it, so the
+    /// instrument would hold that key. A stop and a locate leave the player's
+    /// own frames behind too and pass [`ReleaseScope::All`], because a live
+    /// note never had a written note-off and they are the only thing besides
+    /// the player's hands that lifts one. The loop wrap passes
+    /// [`ReleaseScope::Stored`]: the seam strands a scheduled note-off and
+    /// strands nothing a player is holding, and interrupting live input where
+    /// a region starts again is what no DAW does. Every trigger runs on the
+    /// audio thread and ahead of the next delivery, so the release reaches the
+    /// instrument before anything the new position schedules.
+    ///
+    /// A device nothing will hand a block to keeps what it holds and stays
+    /// owed the release — see [`ActiveEffect::release_sounding_notes`].
+    ///
+    /// `seam_offset` is where that "next" begins inside the callback's
+    /// buffers, which is what a master insert's stamps are measured from; a
+    /// chain device is handed the span itself, so its release sits at the
+    /// span's own head.
+    fn release_sounding_notes(&mut self, seam_offset: usize, scope: ReleaseScope) {
+        for slot in 0..self.effects.len() {
+            let frame_offset = match self.effects[slot].placement {
+                EffectPlacement::MasterChain => seam_offset as u32,
+                _ => 0,
+            };
+            if self.effects[slot].release_sounding_notes(
+                frame_offset,
+                scope,
+                &mut self.midi_rt_diagnostics,
+            ) {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Pay the releases one device banked while nothing handed it a block, at
+    /// the head of the first block it is handed again.
+    ///
+    /// A bypassed or detached device has its queued MIDI discarded unread, so
+    /// every trigger that ran while it stood there left its keys down rather
+    /// than spending their releases on a buffer nobody reads. Un-bypassing it,
+    /// or placing it back on a chain, is where it starts reading again — and
+    /// so where those note-offs are finally handed over. Without this a
+    /// resumed instrument goes on holding a key the player let go of, with no
+    /// written note-off anywhere that could ever lift it.
+    ///
+    /// Both sets, because both were kept. A note-off for a key the instance
+    /// never heard pressed is a message it ignores; a key left down is one
+    /// nothing can lift.
+    ///
+    /// The releases go into the same fixed-capacity buffer every other
+    /// delivery uses, on the same audio thread and in the same command drain,
+    /// so an overflow is counted here exactly as it is there.
+    fn release_notes_owed_on_resume(&mut self, slot: usize) {
+        if self.effects[slot].release_sounding_notes(
+            0,
+            ReleaseScope::All,
+            &mut self.midi_rt_diagnostics,
+        ) {
+            self.pending_midi_work.insert(slot);
         }
     }
 
@@ -2655,14 +4032,48 @@ impl AudioScheduler {
                 visits += 1;
             }
             let effect = &mut self.effects[slot];
+            let receives_no_block = effect.receives_no_block();
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
-                match &mut effect.instance {
-                    PluginCore::Knead(engine) => {
-                        apply_knead_param(engine, event.param, event.value);
+                match (&mut effect.instance, event.param) {
+                    // A hosted plugin only ever receives a write through a
+                    // process call, so a stamp queued on one no block reaches
+                    // is never drained: it holds the plugin's
+                    // pending-parameter queue non-empty, and a non-empty queue
+                    // refuses the plugin's state read (so a project save skips
+                    // its chunk) and every parameter poll (so its cache
+                    // freezes). Neither condition has to end on its own — a
+                    // detached effect stays detached until some chain claims it
+                    // again, which may be never — so the write can freeze the
+                    // instance for the rest of its life. The stamp is therefore
+                    // popped and dropped, on the same contract a bypassed or
+                    // detached device's `pending_midi` follows in the chain
+                    // arms and in the detached sweep: queued where nothing
+                    // consumes it is discarded, never banked.
+                    //
+                    // A `Builtin` stamp is deliberately not dropped. A built-in
+                    // holds its parameters in its own body, written here and
+                    // needing no process call to receive them, so the value has
+                    // to be current the moment the effect is un-bypassed or
+                    // placed on a chain again. A hosted plugin cannot be
+                    // written to at all until it is handed a block — that is
+                    // the whole of the asymmetry.
+                    (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
+                        if receives_no_block => {}
+                    (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
+                        if !plugin.apply_parameter_on_audio_thread(id, event.value) {
+                            self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                        }
                     }
-                    // Addressed device parameters have a mapped target only on
-                    // the built-in effect, exactly as `SetParam` does.
-                    PluginCore::Native(_) => {
+                    (instance, DeviceParamTarget::Builtin(param)) => {
+                        if !apply_builtin_param(instance, param, event.value as f32) {
+                            self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                        }
+                    }
+                    // A stamp addressed at the other kind of body: the mapper
+                    // resolves the address from the device it is written at, so
+                    // this is a producer that lost track of what the effect id
+                    // holds, not a value the engine may guess at.
+                    _ => {
                         self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                     }
                 }
@@ -2705,23 +4116,17 @@ impl AudioScheduler {
             timeline,
             effects,
             effect_index,
-            audio_bridges,
-            bridge_index,
             midi_rt_diagnostics,
             transport,
             sample_rate,
-            monitor_shadowed,
             ..
         } = self;
         let mut devices = TrackDeviceChain {
             effects,
             effect_index,
-            audio_bridges,
-            bridge_index,
             midi_rt_diagnostics,
             transport: *transport,
             sample_rate: *sample_rate,
-            monitor_shadowed: *monitor_shadowed,
         };
 
         timeline.render(
@@ -2798,7 +4203,7 @@ impl AudioScheduler {
     /// recover afterwards: the span just rendered walked every frame below it,
     /// while the published playhead is already back at the loop start by the
     /// time any snapshot is read.
-    fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
+    fn advance_playhead(&mut self, block_start: u64, span_frames: usize, seam_offset: usize) {
         if !self.transport.is_playing {
             return;
         }
@@ -2808,6 +4213,13 @@ impl AudioScheduler {
                 self.playhead_frames = self.loop_region.start_frame;
                 self.loop_wraps = self.loop_wraps.wrapping_add(1);
                 self.last_wrap_frame = next;
+                // The wrap takes the playhead back over the loop, so a
+                // stored note whose note-off lies past the seam never gets
+                // one. Releasing on the seam is where a musician hears the
+                // loop close. A live key is not the arrangement's to close: no
+                // DAW takes a player's hands off the keyboard at a loop
+                // boundary, so the live set is left alone.
+                self.release_sounding_notes(seam_offset, ReleaseScope::Stored);
             }
             _ => self.playhead_frames = next,
         }
@@ -2845,6 +4257,7 @@ impl AudioScheduler {
 
             self.refresh_transport_at(block_start);
             self.apply_due_device_params(block_start, span_frames);
+            self.apply_due_midi_notes(block_start, span_frames, offset);
             self.render_timeline(
                 block_start,
                 span_frames,
@@ -2859,7 +4272,13 @@ impl AudioScheduler {
             };
             count += 1;
             offset += span_frames;
-            self.advance_playhead(block_start, span_frames);
+            // Where the next span begins inside this callback, which is where
+            // a loop wrap's releases are stamped for a master insert. A wrap
+            // on the callback's last span puts that one frame past the buffer,
+            // so it lands on the buffer's final sample instead — the nearest
+            // frame that exists, and the only one a plugin may be handed.
+            let seam_offset = offset.min(frames - 1);
+            self.advance_playhead(block_start, span_frames, seam_offset);
         }
 
         (spans, count)
@@ -2883,6 +4302,10 @@ impl AudioScheduler {
     /// unchanged across a stopped transport.
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // The caller's ask is a request; the pair it handed is the truth. Every
+        // stage below indexes that pair by the count it is given, so the
+        // clamped figure is what all of them are handed — an unclamped ask
+        // would slice past the buffers.
         let frames = num_samples
             .min(left.len())
             .min(right.len())
@@ -2904,97 +4327,39 @@ impl AudioScheduler {
                 master_visits += 1;
             }
             let effect = &mut self.effects[slot];
-            // A bridged plugin is driven by `process_audio_bridges` above, from
-            // real worklet audio. This standalone chain runs over zeroed
-            // scratch, so processing a bridged plugin here would push phantom
-            // silence through a stateful plugin (corrupting its tails, envelope
-            // followers and delay lines) and emit its output on a second,
-            // uncontrolled path straight into the device's output buffer.
-            //
-            // `pending_midi` is deliberately left untouched here: ownership of
-            // clearing it belongs entirely to `process_audio_bridges`, which
-            // already ran earlier in this same callback and already decided
-            // whether to clear (a block was processed) or not (the input ring
-            // was empty this cycle, or the effect is bypassed). Clearing again
-            // here would wipe out exactly the events `process_audio_bridges`
-            // just chose to keep for the next cycle, undoing that fix within
-            // the same callback. Accumulation while bypassed or unfed is
-            // bounded by the fixed 128-slot buffer itself — `try_push` refuses
-            // once full and records `scheduler_event_buffer_overflows` — so
-            // leaving it alone is a deliberate, observable tradeoff, not an
-            // unbounded leak.
-            if self.bridge_index.lookup(effect.id).is_some() {
-                continue;
-            }
-
-            // A detached effect runs nowhere: no chain will consume the MIDI
-            // addressed to it, so it is discarded each block on the same
-            // contract as the bypass arm below. Banking it instead would empty
-            // as a burst of stale note-ons — note-ons with no note-offs behind
-            // them — the moment the effect is placed on a chain again.
-            if effect.placement == EffectPlacement::Detached {
-                effect.pending_midi.clear();
-                continue;
-            }
-
             // Only an effect no track claims belongs on the master insert
             // chain. One on a track chain already ran over that track's signal
-            // in `render_timeline`, which owns clearing its MIDI exactly as
-            // this loop does.
+            // in `render_timeline`, which owns feeding its dry line and
+            // clearing its MIDI exactly as this loop does — so it is decided
+            // ahead of the dry line, which would otherwise be fed twice on one
+            // block and run at half speed.
             if effect.placement != EffectPlacement::MasterChain {
                 continue;
             }
 
             if effect.bypassed {
+                run_dry_delay(effect, left, right, frames);
                 effect.pending_midi.clear();
                 continue;
             }
 
-            effect.probability_evaluator.process_midi_with_diagnostics(
-                &mut effect.pending_midi,
+            feed_dry_delay(effect, left, right, frames);
+
+            process_device(
+                effect,
                 &self.transport,
                 self.sample_rate,
-                num_samples,
                 &mut self.midi_rt_diagnostics,
+                left,
+                right,
+                frames,
             );
-
-            // Apply the mutable user MIDI FX chain only after authored probability.
-            for fx in effect.midi_fx.iter_mut() {
-                fx.process_midi_with_diagnostics(
-                    &mut effect.pending_midi,
-                    &self.transport,
-                    self.sample_rate,
-                    num_samples,
-                    &mut self.midi_rt_diagnostics,
-                );
-            }
-
-            match &mut effect.instance {
-                PluginCore::Knead(engine) => {
-                    engine.process_block(left, right);
-                }
-                PluginCore::Native(plugin) => {
-                    if effect.pending_midi.is_empty() {
-                        plugin.process_audio(left, right, num_samples);
-                    } else {
-                        plugin.process_with_events(
-                            left,
-                            right,
-                            num_samples,
-                            effect.pending_midi.as_slice(),
-                            &self.transport,
-                        );
-                        effect.pending_midi.clear();
-                    }
-                }
-            }
         }
 
         // The master list intentionally contains only master members. Detached
-        // effects still need their unbridged MIDI discarded, but following the
-        // compact pending set keeps that cleanup proportional to queued events
-        // rather than the table's capacity. Bridged effects stay untouched:
-        // their bridge owns the unfed/bypassed retention decision.
+        // effects still need their MIDI discarded, but following the compact
+        // pending set keeps that cleanup proportional to queued events rather
+        // than the table's capacity.
         self.remove_empty_pending_midi_work();
         let mut pending_index = 0;
         while pending_index < self.pending_midi_work.slots.len() {
@@ -3004,8 +4369,7 @@ impl AudioScheduler {
                 self.rt_work.pending_midi_work_visits += 1;
             }
             let effect = &mut self.effects[slot];
-            let bridged = self.bridge_index.lookup(effect.id).is_some();
-            if !bridged && effect.placement == EffectPlacement::Detached {
+            if effect.runs_nowhere() {
                 effect.pending_midi.clear();
                 self.pending_midi_work.remove(slot);
             } else {
@@ -3032,89 +4396,262 @@ impl AudioScheduler {
     }
 }
 
+/// Run a device's dry delay over the signal passing through its place.
+///
+/// `run_device` takes this pass only while its effect is bypassed, in place
+/// of processing. `run_generator` takes it every block regardless of bypass,
+/// over the chain signal the instrument never sees, because a latent
+/// instrument delays what passes through it exactly as a latent effect does.
+/// Either way a device keeps its latency, the convention Cubase and Reaper
+/// both follow, so switching a latent plugin in and out never shifts the
+/// strip against the rest of the mix or clicks at the switch. A device
+/// declaring no latency owns no line and passes through untouched, as it
+/// always did.
+#[inline]
+fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32], frames: usize) {
+    if let Some(delay) = effect.dry_delay.as_mut() {
+        delay.process(left, right, frames);
+    }
+}
+
+/// Keep a running device's dry line holding the signal that device is handed.
+///
+/// The line is what the next bypass reads back, so it has to be current on
+/// every block the chain visits the device. Left standing while the device
+/// runs, it would hand back the audio that was passing through it when the
+/// device was last bypassed — the whole of the first `latency` frames after
+/// the switch — and a line cleared at the switch instead would hand back a
+/// hole of silence. Fed, the switch moves nothing at all.
+///
+/// Exactly one of this and [`run_dry_delay`] runs per device per block: the
+/// bypassed pass reads the line and writes it in the same walk, so a feed
+/// beside it would advance the ring twice and halve the delay.
+#[inline]
+fn feed_dry_delay(effect: &mut ActiveEffect, left: &[f32], right: &[f32], frames: usize) {
+    if let Some(delay) = effect.dry_delay.as_mut() {
+        delay.feed(left, right, frames);
+    }
+}
+
+/// Answers one compensation pass over the scheduler's device table.
+///
+/// The pass reads a declared latency and re-aims a generator's input hold, so
+/// it borrows the table once rather than through two closures that would need
+/// the shared and the exclusive borrow of it at the same time.
+struct CompensationTable<'a> {
+    effects: &'a mut Vec<ActiveEffect>,
+    effect_index: &'a IdSlotIndex,
+}
+
+impl CompensationTable<'_> {
+    fn effect_mut(&mut self, effect_id: usize) -> Option<&mut ActiveEffect> {
+        let slot = self.effect_index.lookup(effect_id)?;
+        self.effects.get_mut(slot)
+    }
+}
+
+impl CompensationDevices for CompensationTable<'_> {
+    fn device_latency(&self, effect_id: usize) -> usize {
+        self.effect_index
+            .lookup(effect_id)
+            .and_then(|slot| self.effects.get(slot))
+            .map_or(0, |effect| effect.latency_frames)
+    }
+
+    fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool {
+        self.effect_mut(effect_id)
+            .and_then(|effect| effect.input_hold.as_mut())
+            .is_some_and(|hold| hold.set_delay(depth))
+    }
+}
+
 /// Runs one track's device chain over that track's signal.
 ///
-/// The effects stay in the scheduler's id-indexed table alongside their
-/// bridges and their MIDI state, so the graph borrows them for the length of
-/// one render rather than owning them — and resolves each chain entry by id
-/// in O(1), because this runs once per device per callback and a table scan
-/// per entry was the cost the derived capacity made deadline-fatal.
+/// The effects stay in the scheduler's id-indexed table alongside their MIDI
+/// state, so the graph borrows them for the length of one render rather than
+/// owning them — and resolves each chain entry by id in O(1), because this
+/// runs once per device per callback and a table scan per entry was the cost
+/// the derived capacity made deadline-fatal.
 struct TrackDeviceChain<'a> {
     effects: &'a mut Vec<ActiveEffect>,
     effect_index: &'a IdSlotIndex,
-    audio_bridges: &'a [PluginAudioBridge],
-    bridge_index: &'a IdSlotIndex,
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
-    /// Whether the app is still monitoring its own Web Audio graph, read as a
-    /// plain flag rather than looked up: it decides which of the two paths owns
-    /// a bridged plugin this block, once per device per callback.
-    monitor_shadowed: bool,
+}
+
+/// Run a device's own pass: the MIDI it is holding, then its audio.
+///
+/// The dry line is not touched here. What a device's line holds is decided by
+/// the kind of device it is — an effect's line follows the signal it was
+/// handed, a generator's holds the chain signal the generator never sees — so
+/// each caller takes that line's one pass for the block itself.
+#[inline]
+fn process_device(
+    effect: &mut ActiveEffect,
+    transport: &TransportState,
+    sample_rate: f32,
+    midi_rt_diagnostics: &mut ActiveMidiRtDiagnostics,
+    left: &mut [f32],
+    right: &mut [f32],
+    frames: usize,
+) {
+    effect.probability_evaluator.process_midi_with_diagnostics(
+        &mut effect.pending_midi,
+        transport,
+        sample_rate,
+        frames,
+        midi_rt_diagnostics,
+    );
+    for fx in effect.midi_fx.iter_mut() {
+        fx.process_midi_with_diagnostics(
+            &mut effect.pending_midi,
+            transport,
+            sample_rate,
+            frames,
+            midi_rt_diagnostics,
+        );
+    }
+
+    match &mut effect.instance {
+        PluginCore::Knead(engine) => {
+            engine.process_block(left, right);
+        }
+        // Always processed, and its MIDI always cleared: an instrument sounds
+        // the tail of what it was already holding on a block that queues
+        // nothing new, and events left queued would sound again next block.
+        PluginCore::Fermenter(body) => {
+            body.process(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                midi_rt_diagnostics,
+            );
+            effect.pending_midi.clear();
+        }
+        // On the same law as the Fermenter above: always processed, and its
+        // MIDI always cleared.
+        PluginCore::GrandBoule(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
+            effect.pending_midi.clear();
+        }
+        PluginCore::Native(plugin) => {
+            if effect.pending_midi.is_empty() {
+                plugin.process_audio(left, right, frames);
+            } else {
+                plugin.process_with_events(
+                    left,
+                    right,
+                    frames,
+                    effect.pending_midi.as_slice(),
+                    transport,
+                );
+                effect.pending_midi.clear();
+            }
+        }
+    }
+}
+
+/// Resolve one chain entry to the device it names.
+///
+/// The lookup is taken ahead of every early-out, because a device a chain
+/// skips still owns a dry line the next bypass will read. It borrows the table
+/// rather than `self` so a caller can hold the diagnostics field at the same
+/// time.
+#[inline]
+fn resolve_effect<'a>(
+    effects: &'a mut [ActiveEffect],
+    effect_index: &IdSlotIndex,
+    effect_id: usize,
+) -> Option<&'a mut ActiveEffect> {
+    let slot = effect_index.lookup(effect_id)?;
+    effects.get_mut(slot)
 }
 
 impl DeviceChain for TrackDeviceChain<'_> {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // While the monitor is shadowed the app is what the user hears, and a
-        // bridged plugin is driven from the app's own audio in
-        // `process_audio_bridges`. Running it here as well would push the
-        // strip's signal through the same stateful instance on a second path.
-        // Once the monitor is audible this chain owns the instance instead, and
-        // the bridge returns its blocks untouched.
-        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
-            return;
-        }
-
-        let Some(slot) = self.effect_index.lookup(effect_id) else {
-            return;
-        };
-        let Some(effect) = self.effects.get_mut(slot) else {
+        let Some(effect) = resolve_effect(self.effects, self.effect_index, effect_id) else {
             return;
         };
 
         if effect.bypassed {
             // Same contract as the master chain: a bypassed device passes its
-            // signal through untouched and discards MIDI queued while bypassed
-            // rather than banking it into a burst of stale note-ons.
+            // signal through its own latency and discards MIDI queued while
+            // bypassed rather than banking it into a burst of stale note-ons.
+            run_dry_delay(effect, left, right, frames);
             effect.pending_midi.clear();
             return;
         }
 
-        effect.probability_evaluator.process_midi_with_diagnostics(
-            &mut effect.pending_midi,
+        // The running pass keeps the line current with the signal the effect
+        // was handed, so the next bypass reads back audio rather than the
+        // block the device was last bypassed on. One pass per block either
+        // way: the bypassed branch above read and wrote the same ring.
+        feed_dry_delay(effect, left, right, frames);
+        process_device(
+            effect,
             &self.transport,
             self.sample_rate,
-            frames,
             self.midi_rt_diagnostics,
+            left,
+            right,
+            frames,
         );
-        for fx in effect.midi_fx.iter_mut() {
-            fx.process_midi_with_diagnostics(
-                &mut effect.pending_midi,
+    }
+
+    fn run_generator(
+        &mut self,
+        effect_id: usize,
+        scratch_left: &mut [f32],
+        scratch_right: &mut [f32],
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+    ) {
+        let Some(effect) = resolve_effect(self.effects, self.effect_index, effect_id) else {
+            return;
+        };
+
+        // An instrument declaring latency emits its events that many frames
+        // after it was asked for them, so everything else on the strip leaves
+        // the device that late too — otherwise the strip's clips would sound
+        // ahead of the arrival the chain declares, and ahead of every sibling
+        // held to meet it. The dry line is aimed at the declared figure and
+        // takes its one pass for the block here, over the chain signal and
+        // never over the scratch: bypassed or not, because a bypassed device
+        // keeps its latency.
+        run_dry_delay(effect, left, right, frames);
+
+        if effect.bypassed {
+            // The scratch stays as the chain cleared it, so the instrument
+            // contributes silence. MIDI queued while bypassed is discarded
+            // rather than banked into a burst of stale note-ons.
+            effect.pending_midi.clear();
+        } else {
+            process_device(
+                effect,
                 &self.transport,
                 self.sample_rate,
-                frames,
                 self.midi_rt_diagnostics,
+                scratch_left,
+                scratch_right,
+                frames,
             );
         }
 
-        match &mut effect.instance {
-            PluginCore::Knead(engine) => {
-                engine.process_block(left, right);
-            }
-            PluginCore::Native(plugin) => {
-                if effect.pending_midi.is_empty() {
-                    plugin.process_audio(left, right, frames);
-                } else {
-                    plugin.process_with_events(
-                        left,
-                        right,
-                        frames,
-                        effect.pending_midi.as_slice(),
-                        &self.transport,
-                    );
-                    effect.pending_midi.clear();
-                }
-            }
+        // Last, over whatever the pass above left in the scratch: a
+        // generator's material starts at zero on a strip whose input has
+        // already waited, so it is held back to meet what landed there before
+        // it joins the chain signal.
+        //
+        // Whichever pass ran, bypass included: the chain clears the pair it
+        // hands an instrument, so a bypassed generator feeds its line silence
+        // and the tail it was holding drains out on schedule. Skipped over the
+        // bypassed blocks, the line would stand still and hand back the
+        // material from before the switch when the device came back.
+        if let Some(hold) = effect.input_hold.as_mut() {
+            hold.run(scratch_left, scratch_right, frames);
         }
     }
 }
@@ -3140,7 +4677,6 @@ impl Drop for AudioScheduler {
         let retired = RetiredGraphObjects::shutdown(
             self.pending_retirement.take(),
             std::mem::take(&mut self.effects),
-            std::mem::take(&mut self.audio_bridges),
             std::mem::replace(&mut self.timeline, TimelineGraph::vacated()),
             std::mem::take(&mut self.shutdown_commands),
             command_rx,
@@ -3201,7 +4737,9 @@ mod tests {
         panic_on_drop: bool,
     ) {
         let plugin = drop_tracking_plugin(dropped_tx, panic_on_drop);
-        assert!(command_tx.push(GraphCommand::AddPlugin(id, plugin)).is_ok());
+        assert!(command_tx
+            .push(GraphCommand::AddPlugin(id, plugin, None))
+            .is_ok());
     }
 
     impl Drop for DropTrackingPlugin {
@@ -3427,6 +4965,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3454,13 +4993,14 @@ mod tests {
         let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         command_tx
-            .push(GraphCommand::AddEffect(0, knead_instance()))
+            .push(GraphCommand::AddEffect(0, knead_instance(), None))
             .unwrap();
         for id in 1..population {
             command_tx
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3471,7 +5011,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AutomateDeviceParam {
                 effect_id: 0,
-                param: DeviceParam::ShiftSemitones,
+                param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                 value: 7.0,
                 at_frame: 0,
             })
@@ -3515,6 +5055,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3535,6 +5076,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -3548,19 +5090,21 @@ mod tests {
         assert_eq!(
             scheduler.rt_work_counters(),
             RtWorkCounters {
-                pending_midi_work_visits: 2,
+                pending_midi_work_visits: 1,
                 ..RtWorkCounters::default()
             },
-            "one pending detached event needs one empty check and one cleanup visit, never a table walk"
+            "the event addressed to a detached device was dropped at the door rather than queued, \
+             so the compact work set only ever needed the one empty check to notice and remove it \
+             — never a table walk, and never a second cleanup visit for an event that was never \
+             banked"
         );
         assert!(scheduler.effects[population - 1].pending_midi.is_empty());
         assert_eq!(scheduler.pending_midi_work.positions[population - 1], 0);
     }
 
     #[test]
-    fn master_work_preserves_explicit_order_across_place_release_bridge_remove_and_slot_move() {
+    fn master_work_preserves_explicit_order_across_place_release_remove_and_slot_move() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(20);
         for (id, plugin) in [
             (
                 10,
@@ -3578,17 +5122,17 @@ mod tests {
             ),
         ] {
             command_tx
-                .push(GraphCommand::AddPlugin(id, plugin))
+                .push(GraphCommand::AddPlugin(id, plugin, None))
                 .unwrap();
         }
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 20,
                 Box::new(AffinePlugin {
                     factor: 11.0,
                     offset: 7.0,
                 }),
-                bridge,
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3609,9 +5153,7 @@ mod tests {
             "release appends after existing master members"
         );
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(30))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(30)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -3622,9 +5164,7 @@ mod tests {
             "swap-moving id 10 must preserve its list position"
         );
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(20))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(20)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -3632,7 +5172,7 @@ mod tests {
         assert_eq!(
             left,
             [3.0],
-            "removing a bridged member must not disturb id 10"
+            "removing a hosted member must not disturb id 10"
         );
         assert_eq!(
             scheduler.master_work.head, 1,
@@ -3646,6 +5186,7 @@ mod tests {
                     factor: 7.0,
                     offset: 4.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3657,9 +5198,7 @@ mod tests {
         // Remove the tail itself, then render the complete surviving chain.
         // Adding another effect must reuse that vacated table and link slot
         // without leaving a stale tail endpoint behind.
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(40))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(40)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -3676,6 +5215,7 @@ mod tests {
                     factor: 4.0,
                     offset: 2.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3704,28 +5244,25 @@ mod tests {
     }
 
     #[test]
-    fn add_plugin_with_bridge_registers_plugin_and_bridge_atomically() {
+    fn add_hosted_plugin_registers_the_instance_detached() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         assert!(command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
+                MidiNoteStore::new(),
             ))
             .is_ok());
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 1);
-        assert_eq!(scheduler.audio_bridges.len(), 1);
         assert_eq!(scheduler.effects[0].id, 42);
-        assert_eq!(scheduler.audio_bridges[0].plugin_id, 42);
+        assert_eq!(scheduler.effects[0].placement, EffectPlacement::Detached);
+        assert_eq!(scheduler.effects[0].home, EffectPlacement::Detached);
 
-        // The standalone chain must leave a bridged plugin alone. It runs over
-        // zeroed scratch, so processing the plugin here would both corrupt its
-        // internal state with phantom silence and write its output into the
-        // device's output buffer on a path nothing controls.
+        // The master insert chain runs over zeroed scratch and is the whole
+        // mix, so a hosted instance no strip claims must not be reached there.
         let mut left = [0.0; 4];
         let mut right = [0.0; 4];
         scheduler.process_block(&mut left, &mut right, 4);
@@ -3734,320 +5271,24 @@ mod tests {
     }
 
     #[test]
-    fn a_bridged_plugin_processes_only_the_audio_that_arrived_over_its_bridge() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        // Real worklet audio arrives over the bridge and is processed.
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        let processed = handle.pop_output().expect("the bridged block");
-        assert_eq!(processed.frames, 4);
-        assert_eq!(&processed.left[..4], &[0.25; 4]);
-
-        // A standalone callback in the same cycle must not run the plugin a
-        // second time over its silent scratch.
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(left, [0.0; 4]);
-
-        // And an unbridged plugin still runs on the standalone chain, so the
-        // guard is scoped to bridged instances rather than disabling the path.
-        command_tx
-            .push(GraphCommand::AddPlugin(
-                7,
-                Box::new(FakeNativePlugin { value: 0.5 }),
-            ))
-            .unwrap();
-        scheduler.update_graph();
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(left, [0.5; 4]);
-    }
-
-    #[test]
-    fn bridged_plugin_midi_survives_a_callback_that_finds_the_input_ring_empty() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx
-            .push(GraphCommand::SendMidiNote(
-                42,
-                MidiNoteEvent {
-                    note: 60,
-                    velocity: 100,
-                    channel: 0,
-                    is_note_on: true,
-                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                    project_probability_seed: 0,
-                    clip_id_hash: 0,
-                    event_id_hash: 0,
-                    absolute_occurrence_index: 0,
-                },
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-
-        // Drive both calls in sequence, the way audio_thread.rs's render
-        // callback does every cycle: process_audio_bridges() first, then
-        // process_block() over the standalone chain's zeroed scratch. The
-        // render callback beats the worklet's input push here — the bridge's
-        // input ring is empty, so drain_process's closure never runs this
-        // cycle — and process_block must not wipe the note that
-        // process_audio_bridges deliberately left queued for next cycle.
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
-
-        // A later callback: the worklet's audio has now arrived. The note
-        // queued on the earlier, empty-ring cycle must still be delivered —
-        // an unconditional clear in either process_audio_bridges or
-        // process_block would have discarded it forever on the first cycle.
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn a_bypassed_bridged_effect_discards_midi_queued_while_bypassed() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx.push(GraphCommand::SetBypass(42, true)).unwrap();
-        scheduler.update_graph();
-
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-
-        // Queue MIDI across several callbacks while bypassed. A bypassed
-        // effect should discard incoming MIDI, not accumulate it toward the
-        // 128-slot ceiling and flush it all the instant it is un-bypassed.
-        for note in 60..=65 {
-            command_tx
-                .push(GraphCommand::SendMidiNote(
-                    42,
-                    MidiNoteEvent {
-                        note,
-                        velocity: 100,
-                        channel: 0,
-                        is_note_on: true,
-                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                        project_probability_seed: 0,
-                        clip_id_hash: 0,
-                        event_id_hash: 0,
-                        absolute_occurrence_index: 0,
-                    },
-                ))
-                .unwrap();
-            scheduler.update_graph();
-            assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-            scheduler.process_audio_bridges(512);
-            scheduler.process_block(&mut left, &mut right, 4);
-        }
-
-        // Un-bypass and drive a fresh callback: no stale burst of the notes
-        // queued during bypass should reach the plugin.
-        command_tx.push(GraphCommand::SetBypass(42, false)).unwrap();
-        scheduler.update_graph();
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn one_callback_processes_every_block_the_app_queued_since_the_last_one() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        // The device buffer spans several render quanta — a 512-frame render
-        // callback at 48 kHz covers four 128-frame worklet quanta — so four
-        // blocks are already waiting when the callback runs. Taking one per
-        // callback leaves the rest to fill the ring, after which the app's
-        // pushes are refused for good and the plugin hears a fraction of its
-        // input.
-        for _ in 0..4 {
-            assert!(handle.push_input(&[0.1; 128], &[0.1; 128]));
-        }
-
-        scheduler.process_audio_bridges(512);
-
-        let mut returned = 0;
-        while let Some(block) = handle.pop_output() {
-            assert_eq!(block.frames, 128);
-            assert_eq!(block.left[0], 0.25);
-            returned += 1;
-        }
-        assert_eq!(returned, 4, "a block left in the ring is lost audio");
-    }
-
-    #[test]
-    fn a_burst_of_blocks_delivers_each_queued_note_to_the_plugin_once() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx
-            .push(GraphCommand::SendMidiNote(
-                42,
-                MidiNoteEvent {
-                    note: 60,
-                    velocity: 100,
-                    channel: 0,
-                    is_note_on: true,
-                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                    project_probability_seed: 0,
-                    clip_id_hash: 0,
-                    event_id_hash: 0,
-                    absolute_occurrence_index: 0,
-                },
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        for _ in 0..3 {
-            assert!(handle.push_input(&[0.0; 128], &[0.0; 128]));
-        }
-        scheduler.process_audio_bridges(512);
-
-        // The MIDI queue belongs to the callback, not to the block. Running
-        // the chain once per drained block would hand the plugin the same
-        // note-on three times — three stacked voices from one key press.
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn blocks_on_a_bridge_with_no_plugin_are_returned_and_counted() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(77);
-
-        command_tx
-            .push(GraphCommand::RegisterAudioBridge(bridge))
-            .unwrap();
-        scheduler.update_graph();
-        assert!(scheduler.effects.is_empty());
-
-        // Fill the input ring the way a running worklet does.
-        let mut pushed = 0;
-        while handle.push_input(&[0.4; 64], &[0.4; 64]) {
-            pushed += 1;
-        }
-        assert!(pushed > 0);
-
-        // Successive callbacks, each spending its own budget.
-        let mut returned = 0;
-        for _ in 0..pushed {
-            scheduler.process_audio_bridges(512);
-            while let Some(block) = handle.pop_output() {
-                assert_eq!(block.left[0], 0.4, "an unprocessed block must be intact");
-                returned += 1;
-            }
-        }
-
-        // A ring filled to capacity is deeper than the device period needs, so
-        // the oldest blocks are shed to bring the round trip back to its
-        // target. Every block is accounted for: returned or shed, none left
-        // sitting in a ring that never drains again.
-        let snapshot = scheduler.midi_rt_diagnostics.snapshot();
-        assert_eq!(
-            returned as u64 + snapshot.bridge_backlog_blocks_shed,
-            pushed as u64
-        );
-        assert_eq!(snapshot.unmatched_bridge_blocks, pushed as u64);
-
-        // The ring keeps moving. Skipping the bridge left it full forever, so
-        // every later push was refused and the app never processed again.
-        assert!(handle.push_input(&[0.4; 64], &[0.4; 64]));
-    }
-
-    #[test]
-    fn remove_plugin_with_bridge_removes_plugin_and_bridge_atomically() {
+    fn remove_plugin_retires_the_instance_off_the_callback_thread() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(42))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(42)).unwrap();
         scheduler.update_graph();
 
         assert!(scheduler.effects.is_empty());
-        assert!(scheduler.audio_bridges.is_empty());
-        let retired = retired_rx.pop().expect("plugin and bridge retirement");
+        let retired = retired_rx.pop().expect("the plugin retirement");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
     }
 
     #[test]
@@ -4091,7 +5332,7 @@ mod tests {
     fn add_plugin_with_a_colliding_id_is_rejected_and_does_not_duplicate_the_effect() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
@@ -4106,7 +5347,7 @@ mod tests {
         assert_eq!(scheduler.effects.len(), 1);
         match &scheduler.effects[0].instance {
             PluginCore::Knead(_) => {}
-            PluginCore::Native(_) => panic!("existing effect must not be displaced"),
+            _ => panic!("existing effect must not be displaced"),
         }
         assert_eq!(
             scheduler
@@ -4118,25 +5359,23 @@ mod tests {
     }
 
     #[test]
-    fn add_plugin_with_bridge_with_a_colliding_id_retires_both_without_inserting() {
+    fn add_hosted_plugin_with_a_colliding_id_retires_the_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(7);
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 7,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 1);
-        assert!(scheduler.audio_bridges.is_empty());
         assert_eq!(
             scheduler
                 .midi_rt_diagnostics
@@ -4144,16 +5383,15 @@ mod tests {
                 .effect_id_collisions,
             1
         );
-        let retired = retired_rx.pop().expect("the rejected plugin and bridge");
+        let retired = retired_rx.pop().expect("the rejected plugin");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
     }
 
     #[test]
     fn set_param_maps_addresses_onto_the_knead_engine_and_counts_unrouted_native_targets() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
@@ -4164,7 +5402,7 @@ mod tests {
 
         match &scheduler.effects[0].instance {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 3.0),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
 
         // A name with no address is refused control-side now, so the one
@@ -4174,6 +5412,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 8,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4205,6 +5444,7 @@ mod tests {
                 Box::new(VelocityRecordingPlugin {
                     received_velocity_sum: Arc::clone(&received_velocity_sum),
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4234,6 +5474,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4254,7 +5495,7 @@ mod tests {
     /// fails this test at compile time rather than leaving a `Copy` bound on
     /// some other type still satisfied.
     ///
-    /// `AddEffect`, `AddDetachedEffect`, `AddPlugin`, `AddPluginWithBridge`
+    /// `AddEffect`, `AddDetachedEffect`, `AddPlugin`, `AddHostedPlugin`
     /// and `AddMidiFx` used to share this pin as `Copy` type addresses or
     /// kind tags; they now carry the built instance itself, pre-built
     /// control-side, and their contract — the drain installs it into a
@@ -4348,15 +5589,6 @@ mod tests {
                 + HOSTED_PLUGIN_RESERVE
                 + CRUMBS_CAPTURE_RESERVE
         );
-        // Bridges exist only for the two non-timeline registrations, so the
-        // bridge table covers exactly their reserves: no less, or the ledger
-        // would admit registrations the bridge table silently refuses on the
-        // callback; no more, or the bridge table would stop mirroring the
-        // populations it actually holds.
-        assert_eq!(
-            AUDIO_BRIDGE_TABLE_CAPACITY,
-            HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE
-        );
     }
 
     /// The id index and the table must agree through a swap-remove: the entry
@@ -4373,6 +5605,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4382,9 +5615,7 @@ mod tests {
         assert_eq!(scheduler.effect_index.lookup(12), Some(2));
 
         // Remove the middle entry: the tail swaps into slot 1.
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(11))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(11)).unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 2);
@@ -4407,45 +5638,12 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 11,
                 Box::new(FakeNativePlugin { value: 0.0 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effect_index.lookup(11), Some(2));
         assert_eq!(scheduler.effects[2].id, 11);
-    }
-
-    /// The bridge index follows the same swap-remove law for the bridge
-    /// table, and a bridged registration removes both of its entries
-    /// together: a removed plugin id resolves in neither table, and the
-    /// bridge that swapped into the vacated slot resolves at that slot.
-    #[test]
-    fn the_bridge_index_resolves_the_swapped_bridge_at_its_new_slot() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        for id in [30, 31] {
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
-            command_tx
-                .push(GraphCommand::AddPluginWithBridge(
-                    id,
-                    Box::new(FakeNativePlugin { value: 0.0 }),
-                    bridge,
-                ))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        assert_eq!(scheduler.bridge_index.lookup(30), Some(0));
-        assert_eq!(scheduler.bridge_index.lookup(31), Some(1));
-
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(30))
-            .unwrap();
-        scheduler.update_graph();
-
-        assert_eq!(scheduler.audio_bridges.len(), 1);
-        assert_eq!(scheduler.audio_bridges[0].plugin_id, 31);
-        assert_eq!(scheduler.bridge_index.lookup(31), Some(0));
-        assert_eq!(scheduler.bridge_index.lookup(30), None);
-        assert_eq!(scheduler.effect_index.lookup(30), None);
-        assert_eq!(scheduler.effect_index.lookup(31), Some(0));
     }
 
     #[test]
@@ -4487,6 +5685,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4502,7 +5701,7 @@ mod tests {
         // drain and the command ring fills.
         for id in (0..512).step_by(2) {
             command_tx
-                .push(GraphCommand::RemovePluginWithBridge(id + 5_000))
+                .push(GraphCommand::RemovePlugin(id + 5_000))
                 .unwrap();
             scheduler.update_graph();
             while retired_rx.pop().is_ok() {}
@@ -4567,6 +5766,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4579,6 +5779,7 @@ mod tests {
             .push(GraphCommand::AddEffect(
                 EFFECT_TABLE_CAPACITY,
                 knead_instance(),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4599,6 +5800,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 EFFECT_TABLE_CAPACITY + 1,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4620,13 +5822,13 @@ mod tests {
     fn a_colliding_builtin_add_retires_its_carried_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
 
         command_tx
-            .push(GraphCommand::AddDetachedEffect(7, knead_instance()))
+            .push(GraphCommand::AddDetachedEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
@@ -4650,13 +5852,11 @@ mod tests {
             .is_some());
     }
 
-    /// A full effect table refuses `AddPluginWithBridge` on its own, with the
-    /// bridge table empty — the ordinary state, since `AddEffect`/`AddPlugin`
-    /// fill `effects` without touching `audio_bridges`. Without the effect
-    /// disjunct of that guard the push reallocates the effect table on the
-    /// callback, moving every live `ActiveEffect` with it.
+    /// A full effect table refuses `AddHostedPlugin`. Without that guard the
+    /// push reallocates the effect table on the callback, moving every live
+    /// `ActiveEffect` with it.
     #[test]
-    fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
+    fn a_hosted_plugin_is_refused_when_the_effect_table_is_full() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         // Cheap fill, as above: the arm under test sees only a full table.
         for id in 0..EFFECT_TABLE_CAPACITY {
@@ -4664,86 +5864,29 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
         }
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
-        assert!(scheduler.audio_bridges.is_empty());
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(EFFECT_TABLE_CAPACITY);
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 EFFECT_TABLE_CAPACITY,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
-        assert!(scheduler.audio_bridges.is_empty());
         assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
         let retired = retired_rx
             .pop()
-            .expect("the refused plugin and its bridge must be handed off");
+            .expect("the refused plugin must be handed off");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
-    }
-
-    #[test]
-    fn a_bridge_past_the_tables_capacity_refuses_the_whole_registration() {
-        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-        for id in 0..AUDIO_BRIDGE_TABLE_CAPACITY {
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
-            command_tx
-                .push(GraphCommand::RegisterAudioBridge(bridge))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-
-        // A full bridge table refuses the plugin with its bridge: installing
-        // the plugin alone would leave a dry-fallback instance nothing drives,
-        // and growing the vector would allocate inside the audio deadline.
-        let (bridge, _handle) =
-            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY);
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                AUDIO_BRIDGE_TABLE_CAPACITY,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-        assert!(scheduler.effects.is_empty());
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-        assert_eq!(
-            scheduler.audio_bridges.capacity(),
-            AUDIO_BRIDGE_TABLE_CAPACITY
-        );
-        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
-        let retired = retired_rx
-            .pop()
-            .expect("the refused plugin and bridge must be handed off");
-        assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
-
-        // A standalone bridge past the same ceiling is refused on its own arm.
-        let (bridge, _handle) =
-            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY + 1);
-        command_tx
-            .push(GraphCommand::RegisterAudioBridge(bridge))
-            .unwrap();
-        scheduler.update_graph();
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 2);
-        assert!(retired_rx
-            .pop()
-            .expect("the refused bridge must be handed off")
-            .audio_bridge
-            .is_some());
     }
 
     #[test]
@@ -4759,6 +5902,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum,
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4785,6 +5929,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4832,6 +5977,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum: Arc::clone(&received_channel_sum),
                 }),
+                None,
             ))
             .unwrap();
 
@@ -4849,6 +5995,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -5048,6 +6195,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -5086,6 +6234,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5112,7 +6261,7 @@ mod tests {
         // One id the graph does not hold, one held by a built-in device: a
         // built-in has no input tap, so neither takes the block.
         command_tx
-            .push(GraphCommand::AddEffect(2, knead_instance()))
+            .push(GraphCommand::AddEffect(2, knead_instance(), None))
             .unwrap();
         command_tx
             .push(GraphCommand::RegisterCaptureConsumer(1))
@@ -5157,6 +6306,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5200,14 +6350,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn removing_a_plugin_with_its_bridge_takes_it_off_the_capture_bus() {
-        assert_removal_prunes_the_capture_bus(
-            Vec::new(),
-            GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID),
-        );
-    }
-
     /// The bus admits an id before the graph holds it, so a registration whose
     /// `AddPlugin` never arrived is an ordinary state — and the removal that
     /// abandons it is the only thing that will ever clear it. Pruning behind
@@ -5223,7 +6365,7 @@ mod tests {
         assert!(scheduler.capture_consumers.contains(&TAP_CONSUMER_ID));
 
         command_tx
-            .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+            .push(GraphCommand::RemovePlugin(TAP_CONSUMER_ID))
             .unwrap();
         scheduler.update_graph();
 
@@ -5245,6 +6387,7 @@ mod tests {
                         kind: DeviceKind::Effect,
                     },
                     index: 0,
+                    hold: None,
                 },
             ],
             GraphCommand::RemoveTrackDeviceRetired {
@@ -5266,6 +6409,7 @@ mod tests {
                         kind: DeviceKind::Effect,
                     },
                     index: 0,
+                    hold: None,
                 },
             ],
             GraphCommand::RemoveBusDeviceRetired {
@@ -5294,7 +6438,7 @@ mod tests {
     ///
     /// The guards cover the built-in add arms (issue #2547: the apply used to
     /// construct `KneadEngine` — some twenty zero-filled heap allocations —
-    /// on the callback), the already-repaired `AddPlugin`/`AddPluginWithBridge`
+    /// on the callback), the already-repaired `AddPlugin`/`AddHostedPlugin`
     /// arms, and the MIDI FX arms on the same law (issue #2548: `AddMidiFx`
     /// used to box the arpeggiator into a zero-capacity `Vec` on the callback
     /// and grow it there, and `SetMidiFxParam` used to drop a `String` name
@@ -5321,6 +6465,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     TAP_CONSUMER_ID,
                     capture_tap_plugin(&tap),
+                    None,
                 ))
                 .unwrap();
             command_tx
@@ -5344,7 +6489,7 @@ mod tests {
             });
 
             command_tx
-                .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+                .push(GraphCommand::RemovePlugin(TAP_CONSUMER_ID))
                 .unwrap();
             assert_no_alloc(|| {
                 scheduler.update_graph();
@@ -5365,7 +6510,7 @@ mod tests {
             let received_event_count = Arc::new(AtomicUsize::new(0));
             let received_channel_sum = Arc::new(AtomicUsize::new(0));
             command_tx
-                .push(GraphCommand::AddEffect(1, knead_instance()))
+                .push(GraphCommand::AddEffect(1, knead_instance(), None))
                 .unwrap();
             command_tx
                 .push(GraphCommand::AddPlugin(
@@ -5374,13 +6519,14 @@ mod tests {
                         received_event_count: Arc::clone(&received_event_count),
                         received_channel_sum: Arc::clone(&received_channel_sum),
                     }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
             command_tx
                 .push(GraphCommand::AutomateDeviceParam {
                     effect_id: 2,
-                    param: DeviceParam::ShiftSemitones,
+                    param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                     value: 3.0,
                     at_frame: 0,
                 })
@@ -5398,6 +6544,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -5442,10 +6589,10 @@ mod tests {
             // Built and pushed control-side: these allocations are the ones
             // the issue moved off the callback.
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
             command_tx
-                .push(GraphCommand::AddDetachedEffect(8, knead_instance()))
+                .push(GraphCommand::AddDetachedEffect(8, knead_instance(), None))
                 .unwrap();
 
             assert_no_alloc(|| {
@@ -5476,11 +6623,11 @@ mod tests {
             // free the engine's buffers inside the deadline.
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
             scheduler.update_graph();
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
 
             assert_no_alloc(|| {
@@ -5517,6 +6664,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5526,6 +6674,7 @@ mod tests {
                 .push(GraphCommand::AddEffect(
                     EFFECT_TABLE_CAPACITY,
                     knead_instance(),
+                    None,
                 ))
                 .unwrap();
 
@@ -5562,6 +6711,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5573,9 +6723,7 @@ mod tests {
                 .push(GraphCommand::BeginBatch { commands: removals })
                 .unwrap();
             for id in 0..removals {
-                command_tx
-                    .push(GraphCommand::RemovePluginWithBridge(id))
-                    .unwrap();
+                command_tx.push(GraphCommand::RemovePlugin(id)).unwrap();
             }
 
             assert_no_alloc(|| {
@@ -5679,20 +6827,20 @@ mod tests {
         }
 
         #[test]
-        fn add_plugin_and_add_plugin_with_bridge_apply_without_allocating() {
+        fn add_plugin_and_add_hosted_plugin_apply_without_allocating() {
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
             command_tx
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             command_tx
-                .push(GraphCommand::AddPluginWithBridge(
+                .push(GraphCommand::AddHostedPlugin(
                     42,
                     Box::new(FakeNativePlugin { value: 0.25 }),
-                    bridge,
+                    MidiNoteStore::new(),
                 ))
                 .unwrap();
 
@@ -5701,7 +6849,7 @@ mod tests {
             });
 
             assert_eq!(scheduler.effects.len(), 2);
-            assert_eq!(scheduler.audio_bridges.len(), 1);
+            assert_eq!(scheduler.effects[1].placement, EffectPlacement::Detached);
 
             // The already-repaired arms stay guarded: a collision refusal
             // hands its carried plugin off allocation-free.
@@ -5709,6 +6857,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             assert_no_alloc(|| {
@@ -5747,6 +6896,7 @@ mod tests {
                         received_event_count: Arc::new(AtomicUsize::new(0)),
                         received_channel_sum: Arc::new(AtomicUsize::new(0)),
                     }),
+                    None,
                 ))
                 .unwrap();
             // Built control-side: these boxes are the allocations the issue
@@ -5812,6 +6962,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     7,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             for _ in 0..MIDI_FX_CHAIN_CAPACITY {
@@ -5838,6 +6989,129 @@ mod tests {
                 .expect("the refused instance must be handed off");
             assert!(retired.midi_fx.is_some());
         }
+
+        /// A generator's splice carries the line that holds it to the depth of
+        /// its strip's input, and a ceiling-sized ring is the whole of that
+        /// line's heap. Building one on the callback is the allocation ADR
+        /// 0020 forbids, and a refused splice freeing one is the matching
+        /// free — so both arms run under the guard.
+        #[test]
+        fn a_generator_insert_applies_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Generator,
+            };
+            // Built control-side: the strip, the instrument and the two lines
+            // are the allocations this guard exists to keep off the callback.
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddHostedPlugin(
+                    7,
+                    Box::new(FakeNativePlugin { value: 0.25 }),
+                    MidiNoteStore::new(),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            // A second splice naming a strip the graph does not hold: refused,
+            // and its line has to leave rather than be dropped here.
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 2,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // The guarded drain did real work: the accepted splice installed
+            // its line on the placed device, and the refused one handed its
+            // own back.
+            assert_eq!(scheduler.effects[0].placement, EffectPlacement::Track(1));
+            assert!(scheduler.effects[0].input_hold.is_some());
+            let retired = retired_rx
+                .pop()
+                .expect("the refused splice must hand its line off");
+            assert!(matches!(
+                &retired.timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+        }
+
+        /// A hosted Grand Boule sounds a note and renders without allocating.
+        ///
+        /// The body is built outside the guard, where its voice pool and its
+        /// two channel buffers are legitimately allocated (ADR 0020); inside
+        /// it, only the note delivery and the render runs may run, and neither
+        /// may touch the heap. The render reaches the instrument's whole voice
+        /// bank, its sympathetic strings, its soundboard and its noise
+        /// generators, so an allocation under any of them aborts here rather
+        /// than on a musician's callback.
+        ///
+        /// Both a note-on and a note-off run inside the guard, because the two
+        /// take different routes through the engine — a note-on allocates a
+        /// voice and arms the attack, a note-off applies damping and triggers
+        /// the damper-lift transient — and either could allocate without the
+        /// other doing so.
+        #[test]
+        fn a_grand_boule_note_on_and_render_allocate_nothing() {
+            const FRAMES: usize = 512;
+
+            let mut body = GrandBouleBody::new(48_000.0);
+            let mut sounding_left = vec![0.0_f32; FRAMES];
+            let mut sounding_right = vec![0.0_f32; FRAMES];
+            let mut released_left = vec![0.0_f32; FRAMES];
+            let mut released_right = vec![0.0_f32; FRAMES];
+            let note = MidiNoteEvent {
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+            };
+            let release = MidiNoteEvent {
+                is_note_on: false,
+                ..note
+            };
+
+            assert_no_alloc(|| {
+                body.process(
+                    &mut sounding_left,
+                    &mut sounding_right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                );
+                body.process(
+                    &mut released_left,
+                    &mut released_right,
+                    FRAMES,
+                    std::slice::from_ref(&release),
+                );
+            });
+
+            assert!(
+                sounding_left.iter().any(|sample| *sample != 0.0),
+                "the instrument never sounded, so the guard covered a silent path"
+            );
+        }
     }
 }
 
@@ -5850,12 +7124,58 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
+    use crate::offline::OfflineRenderer;
     use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
     use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    /// Stands in for a hosted plugin's parameter queue: it records every write
+    /// the audio thread hands it, and answers the way the test needs — a plugin
+    /// that took the write, or one that refused it.
+    struct ParameterRecordingPlugin {
+        queued: Arc<Mutex<Vec<(u32, f64)>>>,
+        accepts: bool,
+    }
+
+    impl NativePlugin for ParameterRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
+            self.queued
+                .lock()
+                .expect("the parameter log")
+                .push((id, value));
+            self.accepts
+        }
+
+        fn name(&self) -> &str {
+            "parameter-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn parameter_recording_plugin(
+        accepts: bool,
+    ) -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<(u32, f64)>>>) {
+        let queued = Arc::new(Mutex::new(Vec::new()));
+        (
+            Box::new(ParameterRecordingPlugin {
+                queued: Arc::clone(&queued),
+                accepts,
+            }),
+            queued,
+        )
+    }
 
     /// Scales whatever it is handed, so a chain's position in the graph is
     /// visible in the mix rather than only in the graph's own bookkeeping.
@@ -5900,6 +7220,259 @@ mod timeline_tests {
 
         fn name(&self) -> &str {
             "tail-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// An instrument: it emits material of its own and overwrites whatever
+    /// buffer it is handed, which is why a chain sums a generator's output in
+    /// rather than running it in place.
+    struct ConstantGenerator {
+        value: f32,
+    }
+
+    impl NativePlugin for ConstantGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                left[index] = self.value;
+                right[index] = self.value;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "constant-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// How many notes one [`FrameRecordingInstrument`] can log.
+    ///
+    /// The log is reserved to it up front because this fixture also runs
+    /// inside the render allocation guard, where a growing `Vec` would be the
+    /// allocation the guard exists to catch.
+    const RECORDED_NOTE_CAPACITY: usize = 64;
+
+    /// One note as an instrument received it: the absolute frame it landed
+    /// on, which note it named, and whether it pressed or released.
+    type RecordedNote = (u64, u8, bool);
+
+    /// The same note with the channel it was addressed to, which is what a
+    /// release has to name to lift the key its note-on pressed.
+    type AddressedNote = (u64, u8, i16, bool);
+
+    /// An instrument that records every note it receives: the frames it has
+    /// already been asked to render, plus the event's own offset inside the
+    /// block it arrived in, with the note and its direction.
+    ///
+    /// A chain device is called once per rendered span, in the order the spans
+    /// render; a master insert is called once per callback. Either way the
+    /// frames this fixture has already processed are where the call it is in
+    /// begins in the stream the harness drove, so a block-local stamp reads
+    /// back as a position a test can name — which is the only vantage a plugin
+    /// has on one.
+    struct FrameRecordingInstrument {
+        processed: u64,
+        received: Arc<Mutex<Vec<AddressedNote>>>,
+    }
+
+    impl FrameRecordingInstrument {
+        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
+            let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
+            let instrument = Box::new(Self {
+                processed: 0,
+                received: Arc::clone(&received),
+            });
+            (instrument, received)
+        }
+    }
+
+    impl NativePlugin for FrameRecordingInstrument {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.processed += num_samples as u64;
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let mut received = self.received.lock().expect("the received note log");
+            for event in midi_events {
+                received.push((
+                    self.processed + u64::from(event.frame_offset),
+                    event.note,
+                    event.channel,
+                    event.is_note_on,
+                ));
+            }
+            drop(received);
+            self.processed += num_samples as u64;
+        }
+
+        fn name(&self) -> &str {
+            "frame-recording-instrument"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// An instrument that declares latency: its material comes out `declared`
+    /// frames after the frame it was asked for, counting from the first frame
+    /// it processed.
+    ///
+    /// A real latent instrument is late in exactly this way, and it is the
+    /// only fixture that can show whether the chain holds the strip's own
+    /// material to meet it: a generator that emits on the frame it is called
+    /// looks identical whether the pass-through was held or not.
+    struct LatentGenerator {
+        declared: usize,
+        processed: usize,
+    }
+
+    impl LatentGenerator {
+        const fn new(declared: usize) -> Self {
+            Self {
+                declared,
+                processed: 0,
+            }
+        }
+    }
+
+    impl NativePlugin for LatentGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                let value = if self.processed < self.declared {
+                    0.0
+                } else {
+                    1.0
+                };
+                left[index] = value;
+                right[index] = value;
+                self.processed += 1;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "latent-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// An instrument whose sample names the frame it was produced on, counting
+    /// from the first frame it processed.
+    ///
+    /// A constant emits the same number for ever, so it can show when a hold
+    /// opened but not which frame came out of it. Two constants on one strip
+    /// look identical to two lines sharing one; a ramp does not.
+    #[derive(Default)]
+    struct RampGenerator {
+        next_frame: usize,
+    }
+
+    impl NativePlugin for RampGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                let value = self.next_frame as f32;
+                left[index] = value;
+                right[index] = value;
+                self.next_frame += 1;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "ramp-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// Really runs late: hands back what it was given `latency` frames ago,
+    /// filling the opening gap with silence, the way a lookahead limiter or an
+    /// FFT-window device does.
+    ///
+    /// Compensation is only observable against a device that genuinely delays.
+    /// A stub that declared a latency it did not take would leave every
+    /// alignment assertion below passing on silence it never had to earn.
+    ///
+    /// The declared figure is shared so a test can move it, which is what a
+    /// plugin flagging a latency change mid-session does. A change jumps the
+    /// read offset without clearing the ring, exactly as the graph's own line
+    /// does, so the two stay comparable across the change.
+    struct LatentPlugin {
+        left_history: Vec<f32>,
+        right_history: Vec<f32>,
+        write: usize,
+        latency: Arc<AtomicUsize>,
+    }
+
+    impl LatentPlugin {
+        fn new(latency: Arc<AtomicUsize>, capacity: usize) -> Self {
+            Self {
+                left_history: vec![0.0; capacity + 1],
+                right_history: vec![0.0; capacity + 1],
+                write: 0,
+                latency,
+            }
+        }
+    }
+
+    impl NativePlugin for LatentPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            let slots = self.left_history.len();
+            let latency = self.latency.load(Ordering::Relaxed).min(slots - 1);
+            let mut write = self.write;
+            // At zero latency the read lands on the slot just written, so the
+            // plugin is an identity rather than a special case.
+            let mut read = (write + slots - latency) % slots;
+            for index in 0..num_samples {
+                self.left_history[write] = left[index];
+                self.right_history[write] = right[index];
+                left[index] = self.left_history[read];
+                right[index] = self.right_history[read];
+                write = (write + 1) % slots;
+                read = (read + 1) % slots;
+            }
+            self.write = write;
+        }
+
+        fn name(&self) -> &str {
+            "latent-plugin"
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -5989,18 +7562,17 @@ mod timeline_tests {
         }
     }
 
-    /// One engine-owned hosted plugin, its bridge, and its call counters,
-    /// spliced onto a track that plays a constant.
+    /// One engine-owned hosted plugin and its call counters, spliced onto a
+    /// track that plays a constant.
     struct ChainBoundPlugin {
-        handle: crate::audio_bridge::PluginAudioBridgeHandle,
         calls: Arc<AtomicUsize>,
         midi_events: Arc<AtomicUsize>,
     }
 
     /// A track playing a constant `1.0`, carrying an engine-owned plugin
     /// registered exactly as `register_runtime_with_engine` registers one:
-    /// `AddPluginWithBridge`, then a chain splice.
-    fn track_carrying_a_bridged_plugin(
+    /// `AddHostedPlugin`, then a chain splice.
+    fn track_carrying_a_hosted_plugin(
         harness: &mut Harness,
         track_id: usize,
         effect_id: usize,
@@ -6008,47 +7580,48 @@ mod timeline_tests {
     ) -> ChainBoundPlugin {
         let calls = Arc::new(AtomicUsize::new(0));
         let midi_events = Arc::new(AtomicUsize::new(0));
-        let (bridge, handle) = crate::audio_bridge::create_audio_bridge(effect_id);
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             effect_id,
             Box::new(CountingOffsetPlugin {
                 offset,
                 calls: Arc::clone(&calls),
                 midi_events: Arc::clone(&midi_events),
             }),
-            bridge,
+            MidiNoteStore::new(),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
+
+        ChainBoundPlugin { calls, midi_events }
+    }
+
+    /// The same fixture as [`track_carrying_a_hosted_plugin`], spliced as a
+    /// generator instead of an effect: `AddHostedPlugin`, then the chain
+    /// splice `insert_track_generator` ships, hold included.
+    fn track_carrying_a_hosted_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        insert_track_generator(
+            harness,
             track_id,
-            entry: effect(effect_id),
-            index: 0,
-        });
-
-        ChainBoundPlugin {
-            handle,
-            calls,
-            midi_events,
-        }
-    }
-
-    fn bridge_blocks_passed_chain_bound(harness: &Harness) -> u64 {
-        harness
-            .scheduler
-            .midi_rt_diagnostics
-            .snapshot()
-            .bridge_blocks_passed_chain_bound
-    }
-
-    /// Push one block of `value` over the bridge and let the callback's bridge
-    /// pass run, the way a render callback does before it renders the graph.
-    fn relay_one_block(plugin: &mut ChainBoundPlugin, harness: &mut Harness, value: f32) {
-        assert!(
-            plugin.handle.push_input(&[value; 4], &[value; 4]),
-            "the bridge input ring should have room"
+            effect_id,
+            Box::new(CountingOffsetPlugin {
+                offset,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            0,
         );
-        harness.scheduler.process_audio_bridges(512);
+
+        ChainBoundPlugin { calls, midi_events }
     }
 
     fn note_on(note: u8) -> MidiNoteEvent {
@@ -6062,6 +7635,7 @@ mod timeline_tests {
             clip_id_hash: 0,
             event_id_hash: 0,
             absolute_occurrence_index: 0,
+            frame_offset: 0,
         }
     }
 
@@ -6088,6 +7662,38 @@ mod timeline_tests {
                 self.command_tx.push(command).is_ok(),
                 "the command ring should have room"
             );
+            self.scheduler.update_graph();
+            self
+        }
+
+        /// Push several commands and apply them in one drain, which is how a
+        /// producer's rewrite of a bar reaches the callback: the clear and the
+        /// batch replacing what it took out are one publication, never two the
+        /// graph could act on separately. The fence marks what makes it one
+        /// publication, matching `EngineHandle::send_graph_batch`.
+        fn send_in_one_drain(
+            &mut self,
+            commands: impl IntoIterator<Item = GraphCommand>,
+        ) -> &mut Self {
+            let commands_vec: Vec<GraphCommand> = commands.into_iter().collect();
+            let command_count = commands_vec.len();
+
+            assert!(
+                self.command_tx
+                    .push(GraphCommand::BeginBatch {
+                        commands: command_count
+                    })
+                    .is_ok(),
+                "the command ring should have room"
+            );
+
+            for command in commands_vec {
+                assert!(
+                    self.command_tx.push(command).is_ok(),
+                    "the command ring should have room"
+                );
+            }
+
             self.scheduler.update_graph();
             self
         }
@@ -6128,8 +7734,183 @@ mod timeline_tests {
         }
     }
 
+    /// An instrument's entry: it produces material of its own, so it is summed
+    /// into the chain rather than transforming what reached it.
+    fn generator(effect_id: usize) -> ChainEntry {
+        ChainEntry {
+            effect_id,
+            kind: DeviceKind::Generator,
+        }
+    }
+
+    /// The splice the control thread builds for a track chain: the entry and
+    /// the input hold a generator waits on travel together, so no test can
+    /// place an instrument on a group without the line that aligns it.
+    fn insert_track_device(track_id: usize, entry: ChainEntry, index: usize) -> GraphCommand {
+        GraphCommand::InsertTrackDevice {
+            track_id,
+            entry,
+            index,
+            hold: entry.input_hold(),
+        }
+    }
+
+    /// The same splice for a bus chain, on the same contract.
+    fn insert_bus_device(bus_id: usize, entry: ChainEntry, index: usize) -> GraphCommand {
+        GraphCommand::InsertBusDevice {
+            bus_id,
+            entry,
+            index,
+            hold: entry.input_hold(),
+        }
+    }
+
     fn chain_ids(chain: &[ChainEntry]) -> Vec<usize> {
         chain.iter().map(|entry| entry.effect_id).collect()
+    }
+
+    /// The line every send is built with control-side, before any pass has
+    /// aimed it. At rest it holds nothing, so a send built with one taps its
+    /// source on the frame it is taken.
+    fn uncompensated() -> Box<CompensationDelay> {
+        Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
+    }
+
+    /// The command the control thread builds for a declared latency: the figure
+    /// and the dry line that holds a bypassed pass at it travel together, so no
+    /// caller can publish one without the other.
+    fn set_latency(effect_id: usize, latency_frames: usize) -> GraphCommand {
+        GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        }
+    }
+
+    /// The capacity every [`LatentPlugin`] in these tests carries — larger than
+    /// any latency they declare, so the plugin's own ring never clamps and an
+    /// assertion that fails is about compensation rather than about the fixture.
+    const LATENT_PLUGIN_CAPACITY: usize = 4096;
+
+    /// Put a genuinely late device at the head of a track's chain and declare
+    /// its latency, the way an activation does. Returns the declared figure so
+    /// a test can move it mid-session.
+    fn insert_latent_device(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+    ) -> Arc<AtomicUsize> {
+        insert_latent_device_at(harness, track_id, effect_id, latency, 0)
+    }
+
+    /// The same device at a named splice point, for a chain whose order is
+    /// what the assertion is about.
+    fn insert_latent_device_at(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+        index: usize,
+    ) -> Arc<AtomicUsize> {
+        let declared = Arc::new(AtomicUsize::new(latency));
+        harness.send(GraphCommand::AddPlugin(
+            effect_id,
+            Box::new(LatentPlugin::new(
+                Arc::clone(&declared),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+            None,
+        ));
+        harness.send(insert_track_device(track_id, effect(effect_id), index));
+        harness.send(set_latency(effect_id, latency));
+        declared
+    }
+
+    /// Register an instrument and splice it onto a track, the way a hosted
+    /// instrument arrives: homed detached, so releasing it from the chain
+    /// returns it to a placement that runs nowhere rather than putting an
+    /// instrument the user took off one strip onto the whole mix.
+    fn insert_track_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        instrument: Box<dyn NativePlugin>,
+        index: usize,
+    ) {
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_track_device(track_id, generator(effect_id), index));
+    }
+
+    /// Splice an instrument that declares latency onto a track, the way an
+    /// activation does: the figure and the dry line that holds a pass at it
+    /// travel together, exactly as they do for a latent effect.
+    fn insert_latent_track_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+        index: usize,
+    ) {
+        insert_track_generator(
+            harness,
+            track_id,
+            effect_id,
+            Box::new(LatentGenerator::new(latency)),
+            index,
+        );
+        harness.send(set_latency(effect_id, latency));
+    }
+
+    /// The same instrument on a bus, which hosts one on the same terms.
+    fn insert_bus_generator(
+        harness: &mut Harness,
+        bus_id: usize,
+        effect_id: usize,
+        instrument: Box<dyn NativePlugin>,
+        index: usize,
+    ) {
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_bus_device(bus_id, generator(effect_id), index));
+    }
+
+    /// A track carrying one mono clip whose sample at frame `t` is `t + 1`.
+    ///
+    /// A constant clip cannot show a delay past its own onset — every frame of
+    /// it looks like every other — so any assertion about an alignment that
+    /// changes mid-render needs material that names its own frame.
+    fn track_with_ramp_clip(harness: &mut Harness, track_id: usize, clip_id: usize, frames: usize) {
+        let ramp: Vec<f32> = (0..frames).map(|frame| frame as f32 + 1.0).collect();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                ramp.into(),
+                [].into(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// What a ramp track delayed by `latency` frames reads over `frames` frames
+    /// starting at `start`, silent until the delay has filled.
+    fn delayed_ramp(start: usize, frames: usize, latency: usize) -> Vec<f32> {
+        (start..start + frames)
+            .map(|frame| match frame.checked_sub(latency) {
+                Some(source) => source as f32 + 1.0,
+                None => 0.0,
+            })
+            .collect()
     }
 
     /// A track carrying one mono clip of a constant value, routed to the
@@ -6149,6 +7930,31 @@ mod timeline_tests {
                 vec![value; frames].into(),
                 [].into(),
                 placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// A track carrying one mono clip of `1.0` that starts at `onset`.
+    ///
+    /// The silence ahead of the onset and the material after it are different
+    /// numbers, so a line replaying what it held during an earlier passage
+    /// shows up in the mix instead of hiding inside a constant.
+    fn track_with_onset_clip(
+        harness: &mut Harness,
+        track_id: usize,
+        clip_id: usize,
+        onset: u64,
+        frames: u64,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                vec![1.0; frames as usize].into(),
+                [].into(),
+                placement(onset, 0, frames),
                 ClipPlayback::at_gain(1.0),
             ),
         ));
@@ -6348,6 +8154,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
@@ -6373,6 +8180,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
@@ -6392,12 +8200,14 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::AddSend {
             track_id: 2,
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         for track_id in [1, 2] {
             harness.send(GraphCommand::AutomateParam {
@@ -6451,12 +8261,9 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
         harness.send(GraphCommand::SetTrackMute(2, true));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
@@ -6465,6 +8272,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
 
@@ -6502,6 +8310,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
 
         assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
@@ -6519,12 +8328,9 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(2, effect(7), 0));
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(2)));
 
         // Both clips reach track 2's input, so the whole sum is halved by the
@@ -6562,12 +8368,9 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
 
         // One track halved plus one untouched. The same device left on the
         // master insert chain would have halved the sum instead, giving 1.0.
@@ -6602,12 +8405,9 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
         harness.send(GraphCommand::SeekFrames(0));
 
@@ -6795,10 +8595,10 @@ mod timeline_tests {
     fn a_stamped_device_parameter_lands_on_the_block_that_reaches_it() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(7, knead_instance()));
+        harness.send(GraphCommand::AddEffect(7, knead_instance(), None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 5.0,
             at_frame: 6,
         });
@@ -6809,14 +8609,297 @@ mod timeline_tests {
                 engine.shift_semitones, 0.0,
                 "a change stamped ahead of the playhead must not land early"
             ),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
 
         harness.render(4);
         match &harness.scheduler.effects[0].instance {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 5.0),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
+    }
+
+    /// A hosted plugin's parameters are the plugin's own, so a stamp aimed at
+    /// one is queued on the plugin rather than resolved here. It must land on
+    /// the block whose span reaches the stamp and on no other: applied early it
+    /// moves the parameter before the music does, applied every block it would
+    /// fight the plugin's own smoothing.
+    ///
+    /// One stamp sits mid-block and one on a block's own first frame. The
+    /// boundary stamp is what pins the span's inclusive last frame: a span
+    /// reaching `block_start + frames` instead of `block_start + frames - 1`
+    /// carries a mid-block stamp identically but pulls the boundary one a whole
+    /// block early.
+    #[test]
+    fn a_hosted_stamp_lands_on_the_block_that_reaches_it() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 4 },
+            value: 0.5,
+            at_frame: 4,
+        });
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "the block spanning frames 0..=3 reaches neither stamp: a stamp on \
+             the next block's first frame belongs to that block, not to this one"
+        );
+
+        harness.render(4);
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(4, 0.5), (7, 0.25)],
+            "the block starting on frame 4 lands the stamp on its own first \
+             frame and the one inside its span, in stamp order"
+        );
+
+        harness.render(4);
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(4, 0.5), (7, 0.25)],
+            "a landed stamp leaves the queue rather than reapplying every block"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a write the plugin queued is not an unmapped call"
+        );
+    }
+
+    /// Only the plugin knows whether it can take the write — its queue may be
+    /// full, or the id may name nothing it exposes. A refusal is the one thing
+    /// the engine can do about it: count it, so the shortfall is visible rather
+    /// than silently absent from the mix.
+    #[test]
+    fn a_hosted_stamp_the_plugin_refuses_is_counted_unmapped() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(false);
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 0,
+        });
+
+        harness.render(4);
+
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(7, 0.25)],
+            "the stamp reached the plugin, which refused it"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            1
+        );
+    }
+
+    /// The address and the body must agree. A built-in address carries a name
+    /// no hosted plugin answers to, and a hosted id is a number no built-in
+    /// parameter has — so a stamp that reaches the wrong kind of body is a
+    /// producer that lost track of what an effect id holds, and applying it
+    /// either way would move some other parameter.
+    #[test]
+    fn a_stamp_addressed_at_the_wrong_body_is_counted_unmapped() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::AddEffect(1, knead_instance(), None));
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(2, plugin, None));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 1,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 0,
+        });
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 2,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
+            value: 5.0,
+            at_frame: 0,
+        });
+
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a built-in address must not reach a hosted plugin's queue"
+        );
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 0.0,
+                "a hosted id must not move a built-in parameter"
+            ),
+            _ => panic!("expected the knead effect"),
+        }
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            2
+        );
+    }
+
+    /// A bypassed hosted plugin never gets a block, so nothing would drain a
+    /// write from its queue: the write would sit there until un-bypass, and
+    /// while it sits the plugin refuses its own state read and every parameter
+    /// poll. So the stamp is discarded outright, exactly as MIDI queued at a
+    /// bypassed device is — and discarding is not a refusal, so it is not
+    /// counted unmapped either.
+    #[test]
+    fn a_hosted_stamp_on_a_bypassed_effect_is_discarded() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
+        harness.send(GraphCommand::SetBypass(3, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp due while the effect is bypassed must never reach the plugin"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_params.is_empty(),
+            "the discarded stamp leaves the queue rather than banking until un-bypass"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    /// A detached effect is handed no block either: no chain claims it, so no
+    /// path reaches it at all. A stamp queued on the plugin
+    /// there would never drain — and unlike bypass, nothing has to end that
+    /// state, so the plugin's state read and its parameter polls would stay
+    /// refused for the rest of the instance's life.
+    #[test]
+    fn a_hosted_stamp_on_a_detached_effect_is_discarded() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
+        harness.send(insert_track_device(1, effect(3), 0));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+
+        harness.render(4);
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp due while the effect runs nowhere must never reach the plugin"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_params.is_empty(),
+            "the discarded stamp leaves the queue rather than banking until the \
+             effect is placed again"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    /// The other side of the asymmetry, and the reason the discard is matched
+    /// on the target rather than taken before the match: a knead engine holds
+    /// its parameters in its own struct, written straight through here, so a
+    /// bypassed one still takes the stamp and is already current when the user
+    /// un-bypasses it. Gate this arm on the same condition the hosted arm uses
+    /// and the parameter silently keeps its old value instead.
+    #[test]
+    fn a_builtin_stamp_still_applies_while_the_effect_is_bypassed() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::AddEffect(7, knead_instance(), None));
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
+            value: 5.0,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 0.0,
+                "a change stamped ahead of the playhead must not land early, \
+                 bypassed or not"
+            ),
+            _ => panic!("expected the knead effect"),
+        }
+
+        harness.render(4);
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 5.0,
+                "a built-in takes its stamp while bypassed: the value must be \
+                 current the moment the effect is un-bypassed"
+            ),
+            _ => panic!("expected the knead effect"),
+        }
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the built-in applied is not an unmapped call"
+        );
     }
 
     #[test]
@@ -6827,6 +8910,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::MasterGain,
@@ -6843,6 +8927,219 @@ mod timeline_tests {
         // the engineer expects to be last on the strip.
         let (left, _) = harness.render(4);
         assert_eq!(left, vec![0.25; 4]);
+    }
+
+    /// The coefficient the master fader command carries at 48 kHz.
+    ///
+    /// `commands/graph.rs` maps a gesture to `1 - exp(-1 / (T * sample_rate))`
+    /// with `T` the 10 ms time constant the Web Audio fader smooths on, so this
+    /// is the same number the desktop app sends.
+    fn master_smoothing() -> f32 {
+        1.0 - (-1.0f32 / (0.010 * 48_000.0)).exp()
+    }
+
+    /// One time constant at 48 kHz, in frames: the point a one-pole approach
+    /// has covered `1 - 1/e` of the distance by.
+    const MASTER_TIME_CONSTANT_FRAMES: usize = 480;
+
+    /// The fader glides on its own law, from the level it is holding.
+    ///
+    /// A step from unity to silence is the loudest click a mix can make, so the
+    /// first sample after the gesture has to still carry the level the sample
+    /// before it did, and the descent has to be the exponential approach the
+    /// Web Audio fader beside it makes rather than a straight line.
+    #[test]
+    fn master_fader_approaches_its_target_by_the_one_pole_law_without_a_step() {
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 8_192);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+
+        let (first, _) = harness.render(4_096);
+        let (second, _) = harness.render(4_096);
+
+        assert_eq!(
+            first[0], 1.0,
+            "the first sample must carry the level the fader was holding"
+        );
+        let one_time_constant = first[MASTER_TIME_CONSTANT_FRAMES];
+        assert!(
+            (one_time_constant - 1.0 / std::f32::consts::E).abs() < 1e-3,
+            "one time constant in, the fader stands at 1/e of the way it started from, got {one_time_constant}"
+        );
+        let mut previous = 1.0;
+        for (index, sample) in first.iter().enumerate() {
+            let step = previous - sample;
+            assert!(
+                (0.0..=smoothing).contains(&step),
+                "the descent must be monotone and cover at most one coefficient's worth of what is left, stepped by {step} at {index}"
+            );
+            previous = *sample;
+        }
+        assert_eq!(
+            *second.last().expect("the second block rendered"),
+            0.0,
+            "a fader pulled to silence has to reach true zero rather than approach it forever"
+        );
+    }
+
+    /// A drag is a stream of gestures, and each one re-aims the same fader.
+    ///
+    /// The new approach starts from the level the fader has actually reached,
+    /// so the mix never jumps to where a superseded gesture was heading, and it
+    /// travels on the one-pole law from there rather than on a straight line to
+    /// the new target.
+    #[test]
+    fn master_fader_re_anchors_from_the_level_it_has_reached() {
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+        harness.render(MASTER_TIME_CONSTANT_FRAMES);
+
+        harness.send(GraphCommand::SetMasterGain {
+            value: 1.0,
+            smoothing,
+        });
+        let (rising, _) = harness.render(MASTER_TIME_CONSTANT_FRAMES);
+
+        let anchor = 1.0 / std::f32::consts::E;
+        assert!(
+            (rising[0] - anchor).abs() < 1e-3,
+            "the second gesture must continue from where the first had reached, got {}",
+            rising[0]
+        );
+        let last = *rising.last().expect("the rising block rendered");
+        assert!(
+            rising[0] > 0.0 && last > 0.0,
+            "the span this samples must sound at both ends, got {} and {last}",
+            rising[0]
+        );
+        // Sampled strictly inside that span, against the approach's own
+        // formula: a straight line between the same endpoints stands well over
+        // a tenth away from it here.
+        let interior = MASTER_TIME_CONSTANT_FRAMES / 2;
+        let expected = 1.0 - (1.0 - anchor) * (1.0 - smoothing).powi(interior as i32);
+        assert!(
+            (rising[interior] - expected).abs() < 1e-3,
+            "the rise must follow the one-pole law from its anchor: sample {interior} is {}, the law says {expected}",
+            rising[interior]
+        );
+    }
+
+    /// The fader arrives at its target rather than parking beside it.
+    ///
+    /// A one-pole approach covers a fraction of what is left, so the step
+    /// shrinks with the distance and underflows `f32` before the distance
+    /// reaches zero: the fader stops moving a hair off its target, and a fader
+    /// that never settles walks every block sample by sample and holds a level
+    /// that is not the one the gesture asked for, for the rest of the session.
+    /// The residue is inaudible; being permanently unsettled is not.
+    #[test]
+    fn master_fader_settles_exactly_on_a_target_it_cannot_reach_by_halving() {
+        const BLOCK: usize = 4_096;
+        const BLOCKS: usize = 4;
+
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        // The clip must be exactly unity: the master automation lane's unity
+        // fast path leaves the signal untouched, so a rendered sample equal
+        // to 0.8 proves the fader's own value is bit-equal to its target
+        // rather than merely close to it.
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, BLOCK * BLOCKS);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.8,
+            smoothing,
+        });
+
+        // Well past six time constants, by which an approach has covered all
+        // but a quarter percent of the distance and long since stopped moving.
+        let mut last = Vec::new();
+        for _ in 0..BLOCKS {
+            let (block, _) = harness.render(BLOCK);
+            last = block;
+        }
+
+        assert!(
+            last.iter().all(|sample| *sample == 0.8),
+            "the fader must land on the level the gesture named, not beside it: the last block ends at {}",
+            last.last().expect("the last block rendered")
+        );
+    }
+
+    /// A loop wrap is not a fader move.
+    ///
+    /// The wrap sends the playhead back below the frame the gesture arrived on,
+    /// and anything stamped in timeline frames answers there with the value it
+    /// started from — a step at the seam, and a whole pass at the pre-gesture
+    /// level. The fader holds no frame, so the seam is not a coordinate it can
+    /// be read at.
+    #[test]
+    fn master_fader_crosses_a_loop_seam_without_a_step() {
+        const LOOP_END: u64 = 1_024;
+        const BEFORE_SEAM: usize = 1_020;
+        const ACROSS_SEAM: usize = 480;
+        /// Where the first frame of the second pass lands in the block below.
+        const SEAM_AT: usize = (LOOP_END - BEFORE_SEAM as u64) as usize;
+
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        let (approaching, _) = harness.render(BEFORE_SEAM);
+        // Sent before the wrap, and the case has power only that way round: a
+        // fader still travelling when the seam arrives is what distinguishes an
+        // approach from a stamped ramp, which would resolve back to its start.
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+        let (across, _) = harness.render(ACROSS_SEAM);
+
+        assert_eq!(
+            harness.scheduler.transport_position().loop_wraps,
+            1,
+            "this block has to hold the seam for the case to say anything"
+        );
+        for (index, sample) in across.iter().enumerate() {
+            let expected = (1.0 - smoothing).powi(index as i32);
+            assert!(
+                (sample - expected).abs() < 1e-3,
+                "the approach must not notice the wrap: sample {index} is {sample}, the law says {expected}"
+            );
+        }
+        let mut previous = *approaching.last().expect("the first pass sounded");
+        for (index, sample) in across.iter().enumerate() {
+            let step = previous - sample;
+            assert!(
+                (0.0..=smoothing).contains(&step),
+                "no sample may step by more than one coefficient's worth of what is left, stepped by {step} at {index}"
+            );
+            previous = *sample;
+        }
+        assert!(
+            across[SEAM_AT] > 0.0 && *across.last().expect("the block rendered") > 0.0,
+            "the span this samples must sound at both ends"
+        );
+        assert!(
+            *across.last().expect("the block rendered") < across[SEAM_AT],
+            "the fader must keep travelling after the wrap rather than parking where the seam found it"
+        );
     }
 
     #[test]
@@ -6862,12 +9159,9 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(TailPlugin { value: 0.25 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
 
         // The playhead stands still while the transport is stopped, so a clip
         // rendered anyway would repeat the same span every callback — a
@@ -6897,17 +9191,10 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.send(insert_track_device(2, effect(7), 0));
 
         // One instance spliced into two chains would run its state over two
         // unrelated streams interleaved, and its single-valued placement could
@@ -6947,7 +9234,7 @@ mod timeline_tests {
         // master chain, the knead engine would run over the whole mix here
         // (its latency alone replaces the 0.5 constant); detached, it runs
         // nowhere.
-        harness.send(GraphCommand::AddDetachedEffect(7, knead_instance()));
+        harness.send(GraphCommand::AddDetachedEffect(7, knead_instance(), None));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Detached
@@ -6959,11 +9246,7 @@ mod timeline_tests {
             "an effect whose splice has not landed must not touch the master output"
         );
 
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Track(1)
@@ -7004,12 +9287,9 @@ mod timeline_tests {
             Box::new(MidiCountingPlugin {
                 received: Arc::clone(&received),
             }),
+            None,
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
         assert_eq!(
             harness.scheduler.effects[0].placement,
@@ -7027,11 +9307,7 @@ mod timeline_tests {
         // Placing it back on a chain must not fire the note queued while it
         // ran nowhere: a banked note-on has no note-off behind it.
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(2, effect(7), 0));
         harness.render(4);
         assert_eq!(received.load(Ordering::Relaxed), 0);
 
@@ -7042,143 +9318,56 @@ mod timeline_tests {
         assert_eq!(received.load(Ordering::Relaxed), 1);
     }
 
-    /// The shadowed default: the app is what the user hears, the relay drives
-    /// the plugin from the app's own audio, and the strip chain must leave the
-    /// instance alone. Anything else runs one stateful plugin twice a block and
-    /// emits its output on a path the app is not monitoring.
+    /// A hosted plugin a strip holds is run by that strip's chain, and the
+    /// monitor shadow says nothing about it: the shadow decides only what the
+    /// device is handed, and a chain that skipped its device under it would
+    /// drop the plugin out of the strip's own signal.
     #[test]
-    fn a_shadowed_monitor_leaves_a_chain_bound_plugin_to_its_bridge() {
+    fn a_chain_bound_hosted_plugin_runs_inline_whether_or_not_the_monitor_is_shadowed() {
         let mut harness = Harness::new(32);
         harness.playing();
         harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
 
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        let bridged = plugin
-            .handle
-            .pop_output()
-            .expect("the bridge returns a block");
+        let (shadowed, right) = harness.render(4);
         assert_eq!(
-            &bridged.left[..4],
-            &[0.75; 4],
-            "the relay path must still process the app's audio while shadowed"
-        );
-        let after_the_bridge = plugin.calls.load(Ordering::Relaxed);
-        assert_eq!(after_the_bridge, 1);
-
-        let (left, right) = harness.render(4);
-        assert_eq!(
-            left,
-            vec![1.0; 4],
-            "a shadowed monitor must leave the track's own output untouched"
-        );
-        assert_eq!(right, left);
-        assert_eq!(
-            plugin.calls.load(Ordering::Relaxed),
-            after_the_bridge,
-            "the chain must make no inline call while the monitor is shadowed"
-        );
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 0);
-    }
-
-    /// The audible side of the same session: the chain owns the instance, the
-    /// bridge keeps moving but returns its blocks exactly as they arrived, and
-    /// the plugin is driven once — not once per path.
-    #[test]
-    fn an_audible_monitor_runs_a_chain_bound_plugin_inline_and_passes_its_bridge_through() {
-        let mut harness = Harness::new(32);
-        harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
-
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        assert_eq!(
-            plugin.calls.load(Ordering::Relaxed),
-            0,
-            "the relay must not process a plugin the chain is going to run"
-        );
-        let passed = plugin
-            .handle
-            .pop_output()
-            .expect("the bridge returns a block");
-        assert_eq!(
-            &passed.left[..4],
-            &[0.25; 4],
-            "a passed-through block is the app's own audio, unprocessed"
-        );
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 1);
-
-        let (left, right) = harness.render(4);
-        assert_eq!(
-            left,
+            shadowed,
             vec![1.5; 4],
-            "an audible monitor renders the plugin over the track's own signal"
+            "a shadowed monitor must not take the plugin out of the strip's chain"
         );
-        assert_eq!(right, left);
+        assert_eq!(right, shadowed);
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 1);
+
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (audible, _) = harness.render(4);
+        assert_eq!(
+            audible,
+            vec![1.5; 4],
+            "the audible side renders the same chain, once"
+        );
         assert_eq!(
             plugin.calls.load(Ordering::Relaxed),
-            1,
-            "exactly one process call for the block that was rendered"
+            2,
+            "exactly one process call per rendered block, on one path"
         );
-    }
-
-    /// The switch itself. A plugin driven twice in the block the gate moves —
-    /// or not at all — is a click on the cutover, so the count is checked per
-    /// block on both sides of the toggle rather than only at the ends.
-    #[test]
-    fn toggling_the_monitor_shadow_hands_a_bridged_plugin_over_one_block_at_a_time() {
-        let mut harness = Harness::new(32);
-        harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
-
-        let mut expected_calls = 0;
-        for block in 0..6 {
-            if block == 3 {
-                harness.send(GraphCommand::SetMonitorShadow(false));
-            }
-            let shadowed = block < 3;
-
-            relay_one_block(&mut plugin, &mut harness, 0.25);
-            harness.send(GraphCommand::SeekFrames(0));
-            let (left, _) = harness.render(4);
-
-            expected_calls += 1;
-            assert_eq!(
-                plugin.calls.load(Ordering::Relaxed),
-                expected_calls,
-                "block {block} must drive the plugin exactly once, on one path"
-            );
-            let expected_output = if shadowed { 1.0 } else { 1.5 };
-            assert_eq!(
-                left,
-                vec![expected_output; 4],
-                "block {block} must be rendered by the path the gate names"
-            );
-            let returned = plugin
-                .handle
-                .pop_output()
-                .expect("the bridge returns a block");
-            let expected_return = if shadowed { 0.75 } else { 0.25 };
-            assert_eq!(
-                &returned.left[..4],
-                &[expected_return; 4],
-                "block {block} must return the app's audio from the path the gate names"
-            );
-        }
-
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 3);
     }
 
     /// A hosted plugin taken off a strip goes back to running nowhere, not onto
     /// the master insert chain: its lifetime belongs to the load that created
     /// it, and the master chain is the whole mix.
     #[test]
-    fn a_bridged_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
+    fn a_hosted_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
         let mut harness = Harness::new(32);
         harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
+
+        // The strip runs it while it is spliced, so the silence below is a
+        // released instance rather than one that never processed at all.
+        harness.send(GraphCommand::SeekFrames(0));
+        let (spliced, _) = harness.render(4);
+        assert_eq!(spliced, vec![1.5; 4]);
+        let calls_on_the_chain = plugin.calls.load(Ordering::Relaxed);
 
         harness.send(GraphCommand::RemoveTrackDevice {
             track_id: 1,
@@ -7194,27 +9383,19 @@ mod timeline_tests {
             EffectPlacement::Detached
         );
 
-        // The mix is guarded twice over, and the placement above is the guard
-        // this test owns: the master walk also skips a bridged effect, so these
-        // two renders hold the same law from the other side — the whole mix
-        // stays the track's own signal on either side of the gate.
         harness.send(GraphCommand::SeekFrames(0));
-        let (shadowed, _) = harness.render(4);
-        assert_eq!(shadowed, vec![1.0; 4]);
-
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        harness.send(GraphCommand::SeekFrames(0));
-        let (audible, _) = harness.render(4);
+        let (released, right) = harness.render(4);
         assert_eq!(
-            audible,
+            released,
             vec![1.0; 4],
             "a released hosted plugin must not process the master mix"
         );
-
-        // Its bridge still drains, so the app keeps its audio and the ring
-        // keeps moving for a plugin no chain holds.
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        assert!(plugin.handle.pop_output().is_some());
+        assert_eq!(right, released);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            calls_on_the_chain,
+            "no path may hand a released hosted plugin a block"
+        );
     }
 
     /// Bypass is the professional convention on the inline path too: the
@@ -7222,11 +9403,10 @@ mod timeline_tests {
     /// and discards MIDI queued while it was bypassed rather than banking a
     /// burst of stale note-ons for the moment it is enabled.
     #[test]
-    fn a_bypassed_chain_bound_plugin_passes_the_strip_through_and_discards_queued_midi() {
+    fn a_bypassed_hosted_effect_discards_midi_queued_while_bypassed() {
         let mut harness = Harness::new(32);
         harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        let plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
         harness.send(GraphCommand::SetBypass(7, true));
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
 
@@ -7251,9 +9431,54 @@ mod timeline_tests {
         );
 
         // A note sent while it is enabled still reaches it, so the silence
-        // above is the discard and not a device nothing addresses.
-        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        // above is the discard and not a device nothing addresses. The locate
+        // that rewinds the clip goes first: it releases a live note, so a note
+        // sent ahead of it would be counted twice — once pressed, once lifted.
         harness.send(GraphCommand::SeekFrames(0));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.render(4);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
+    }
+
+    /// `run_generator`'s bypass branch clears `pending_midi` on the same
+    /// contract as `run_device`'s: a bypassed instrument's own material is
+    /// withheld, but the strip's pass-through keeps sounding, and MIDI queued
+    /// while it was bypassed is discarded rather than banked for the note-on
+    /// burst that arriving un-bypassed would otherwise deliver.
+    #[test]
+    fn a_bypassed_generator_discards_midi_queued_while_bypassed() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_hosted_generator(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, _) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed generator contributes none of its own material; only the strip's clip sounds"
+        );
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 0);
+
+        // Un-bypassed, the note queued while bypassed must not arrive late.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (enabled, _) = harness.render(4);
+        assert_eq!(enabled, vec![1.5; 4]);
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            0,
+            "MIDI queued while bypassed is discarded, never banked"
+        );
+
+        // A note sent while it is enabled still reaches it, so the silence
+        // above is the discard and not a device nothing addresses. The locate
+        // that rewinds the clip goes first: it releases a live note, so a note
+        // sent ahead of it would be counted twice — once pressed, once lifted.
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
     }
@@ -7269,6 +9494,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         // Muted, so the bus hears the send alone and nothing of the track's
         // own output.
@@ -7296,18 +9522,16 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 50,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_bus_device(50, effect(7), 0));
 
         // The effect runs on the bus, not on the master chain: the track's own
         // output reaches the sum untouched and only the send is halved. A bus
@@ -7714,6 +9938,7 @@ mod timeline_tests {
                 Box::new(NoteOnCountingPlugin {
                     note_ons: Arc::clone(&note_ons),
                 }),
+                None,
             ));
             harness.send(GraphCommand::AddMidiFx(1, MidiFxKind::Arpeggiator.build()));
             harness.send(GraphCommand::SetTransportMaps(tempo_maps(segments)));
@@ -8044,6 +10269,4307 @@ mod timeline_tests {
                 harness.scheduler.transport.time_sig_denom
             ),
             (4, 4)
+        );
+    }
+
+    /// A latent device on one track alone would pull that track late against
+    /// every sibling — the classic "one plugin and the whole mix flams".
+    #[test]
+    fn a_latent_track_and_its_sibling_reach_the_master_on_the_same_frame() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the compensated sibling stays silent for exactly as long as the \
+             latent track takes to sound"
+        );
+        assert_eq!(right, left);
+
+        let (later, _) = harness.render(16);
+        assert_eq!(
+            later,
+            vec![2.0; 16],
+            "past the onset every frame carries both tracks"
+        );
+    }
+
+    /// A plugin may re-declare its latency mid-session — a mode switch, an
+    /// oversampling change. Every route that meets it has to be re-aimed, or
+    /// the mix stays flammed for the rest of the session.
+    #[test]
+    fn a_latency_change_realigns_the_mix_within_one_block() {
+        const FIRST: usize = 7;
+        const SECOND: usize = 11;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+        let declared = insert_latent_device(&mut harness, 1, 900, FIRST);
+
+        harness.render(16);
+
+        // The plugin's own delay and the figure it declares move together, as
+        // they do when a plugin flags a change and the host re-queries it.
+        declared.store(SECOND, Ordering::Relaxed);
+        harness.send(set_latency(900, SECOND));
+
+        let (left, _) = harness.render(16);
+        let aligned: Vec<f32> = delayed_ramp(16, 16, SECOND)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            left, aligned,
+            "both tracks arrive at the new latency from the first block after the change"
+        );
+    }
+
+    /// Bypass is not a latency change. Cubase and Reaper both keep a bypassed
+    /// device's delay in the mix, because dropping it would jump every other
+    /// route in the project each time a user auditions one plugin.
+    #[test]
+    fn a_bypassed_latent_device_keeps_holding_its_track_back() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        harness.render(16);
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        // The device ran on the block before, and its dry line was fed the
+        // signal it was handed, so the line already holds the last LATENCY
+        // frames of the ramp. The switch reads straight on from where the
+        // device left off: no hole and no jump on the block it happens.
+        let (across_the_switch, _) = harness.render(16);
+        let aligned_across: Vec<f32> = delayed_ramp(16, 16, LATENCY)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            across_the_switch, aligned_across,
+            "the block the bypass lands on continues the ramp rather than costing a block of fill"
+        );
+
+        let (left, _) = harness.render(32);
+        let aligned: Vec<f32> = delayed_ramp(32, 32, LATENCY)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            left, aligned,
+            "a bypassed latent device runs its dry line, so the mix does not move"
+        );
+    }
+
+    /// A dry line only reads while its device is bypassed, but it has to be
+    /// written on every block the chain visits the device: left standing while
+    /// the device runs, it replays the audio that was passing through it when
+    /// the device was last bypassed. Auditioning a plugin over a passage and
+    /// switching it back out would burst the start of that passage into the
+    /// mix.
+    #[test]
+    fn a_device_bypassed_again_after_running_reads_current_audio_rather_than_the_last_bypass() {
+        const LATENCY: usize = 7;
+        const ONSET: u64 = 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        // Silent until ONSET, so the audio standing in the line during the
+        // first bypass and the audio passing through it later are different
+        // numbers rather than the same constant.
+        harness.send(GraphCommand::AddClip(
+            1,
+            TimelineClip::new(
+                101,
+                vec![1.0; 192].into(),
+                [].into(),
+                placement(ONSET, 0, 192),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Bypassed over the silent passage: the line fills with silence.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.render(16);
+        harness.render(16);
+
+        // Then the device runs, across the onset and for two blocks past it.
+        harness.send(GraphCommand::SetBypass(900, false));
+        for _ in 0..4 {
+            harness.render(16);
+        }
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, right) = harness.render(16);
+
+        assert_eq!(
+            left,
+            vec![1.0; 16],
+            "the line hands back the material the device was being fed, not the silence \
+             it last held while bypassed"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// The master insert chain runs its own active feed, over the whole mix
+    /// rather than one strip's signal. A line left standing there replays the
+    /// last bypass exactly as one on a track chain does.
+    #[test]
+    fn a_master_insert_bypassed_again_after_running_reads_current_audio_rather_than_the_last_bypass(
+    ) {
+        const LATENCY: usize = 7;
+        const ONSET: u64 = 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_onset_clip(&mut harness, 1, 101, ONSET, 192);
+
+        let declared = Arc::new(AtomicUsize::new(LATENCY));
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(LatentPlugin::new(
+                declared,
+                LATENT_PLUGIN_CAPACITY,
+            ))),
+            None,
+        ));
+        harness.send(set_latency(900, LATENCY));
+
+        // Bypassed over the silent passage: the line fills with silence.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.render(16);
+        harness.render(16);
+
+        // Then the device runs on the mix, across the onset and past it.
+        harness.send(GraphCommand::SetBypass(900, false));
+        for _ in 0..4 {
+            harness.render(16);
+        }
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, right) = harness.render(16);
+
+        assert_eq!(
+            left,
+            vec![1.0; 16],
+            "the master chain's line hands back the mix it was being fed, not the silence \
+             it last held while bypassed"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A route line holding nothing is written all the same. Skipped, it
+    /// freezes with the audio it held when its hold was dropped, and the next
+    /// hold the graph aims it at bursts that era into every sibling route.
+    #[test]
+    fn a_route_line_at_zero_hold_is_written_so_a_later_hold_never_replays_it() {
+        const FIRST: usize = 8;
+        const SECOND: usize = 4;
+        const THIRD: usize = 8;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        // Carries latency and nothing else, so the master reads track 1's
+        // contribution alone and every assertion is about its hold.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        insert_latent_device(&mut harness, 2, 900, FIRST);
+
+        let (held, _) = harness.render(16);
+        assert_eq!(
+            held,
+            delayed_ramp(0, 16, FIRST),
+            "the sibling waits the latent track's depth"
+        );
+
+        // The latent track goes, taking its device out of every chain: the
+        // hold drops to zero, and the graph runs on for two blocks with the
+        // line writing but reading nothing back.
+        harness.send(GraphCommand::RemoveTrack(2));
+        let (unheld, _) = harness.render(32);
+        assert_eq!(
+            unheld,
+            delayed_ramp(16, 32, 0),
+            "with nothing left to wait for the sibling plays where it stands"
+        );
+
+        // A new latent track, at a shallower figure than the first: the line
+        // reads the frames just behind its write head, which are the ones it
+        // took while it was holding nothing.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        let declared = insert_latent_device(&mut harness, 2, 901, SECOND);
+        let (re_aimed, _) = harness.render(16);
+        assert_eq!(
+            re_aimed,
+            delayed_ramp(48, 16, SECOND),
+            "the re-aimed line reads on from the passage it was just written with"
+        );
+
+        // Deeper, across a line that never stopped: still a read-offset jump.
+        declared.store(THIRD, Ordering::Relaxed);
+        harness.send(set_latency(901, THIRD));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(64, 16, THIRD),
+            "deepening the hold reads further back into current audio, never into the \
+             era the line spent at zero"
+        );
+    }
+
+    /// A device whose track was torn down under it is in no chain at all:
+    /// nothing feeds its dry line and nothing reads it. Left standing, the
+    /// line hands the removed track's audio back the moment a chain takes the
+    /// device again.
+    #[test]
+    fn a_device_detached_by_a_removed_track_restarts_its_dry_line_from_silence() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 256);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Runs, so the line fills with the track's material.
+        harness.render(16);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.send(GraphCommand::RemoveTrack(1));
+        harness.render(16);
+
+        // The same device on a new track, still bypassed, so the line is what
+        // hands the strip's signal on.
+        track_with_constant_clip(&mut harness, 1, 102, 1.0, 256);
+        harness.send(insert_track_device(1, effect(900), 0));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the re-placed device's line owes silence for its own hold rather than \
+             replaying the audio it held when its track was removed"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A hosted plugin is homed detached, so taking it off a strip returns it
+    /// to the same nowhere a torn-down strip leaves it in: no chain feeds its
+    /// dry line and no pass reads it. The release route owes the restart
+    /// exactly as the teardown route does.
+    #[test]
+    fn a_hosted_device_taken_off_a_track_restarts_its_dry_line_from_silence() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 256);
+
+        let declared = Arc::new(AtomicUsize::new(LATENCY));
+        harness.send(GraphCommand::AddHostedPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, LATENCY));
+
+        // Runs, so the line fills with the track's material.
+        harness.render(16);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+
+        // Back on the same strip, still bypassed, so the line is what hands
+        // the strip's signal on.
+        harness.send(insert_track_device(1, effect(900), 0));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the re-placed plugin's line owes silence for its own hold rather than \
+             replaying the audio it held when the strip let it go"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A device goes on declaring while it waits detached, and a host's
+    /// latency watcher goes on addressing it: the strip lets a plugin go, and
+    /// the plugin then reports a deeper figure. Nothing feeds the line over
+    /// that span, so the slots between the old hold and the new one still
+    /// carry the strip's audio, and the first bypassed pass after some chain
+    /// takes the device again replays exactly that difference.
+    ///
+    /// The line is run right round to its last slots first, because a ring
+    /// that has never been written that far holds its own zeroes there and
+    /// would answer this either way.
+    #[test]
+    fn a_line_deepened_while_detached_owes_silence_for_its_whole_new_hold() {
+        const DETACHED_AT: usize = 7;
+        const DEEPENED_TO: usize = 11;
+        const FILL_BLOCKS: usize = MAX_COMPENSATION_FRAMES / MAX_CALLBACK_FRAMES;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, MAX_COMPENSATION_FRAMES + 128);
+
+        let declared = Arc::new(AtomicUsize::new(DETACHED_AT));
+        harness.send(GraphCommand::AddHostedPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, DETACHED_AT));
+
+        // Feed the whole ring, so the region a deeper hold reads back holds
+        // the strip's material rather than the ring's own initial silence.
+        for _ in 0..FILL_BLOCKS {
+            harness.render(MAX_CALLBACK_FRAMES);
+        }
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+
+        // The watcher still addresses the registered instance, and the figure
+        // it publishes is deeper than the one the detachment cleared.
+        harness.send(set_latency(900, DEEPENED_TO));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..DEEPENED_TO].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the deepened line owes silence for the hold it is now aimed at, not \
+             only for the one it was detached with"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// The same exposure, reached with the device already back on a strip: the
+    /// host's latency watcher reports the deeper figure a block after the
+    /// re-placement rather than a block before it, so the line is placed when
+    /// the figure lands but has been fed nothing since its detachment cleared
+    /// it. What it owes is decided by the history behind its write head, not
+    /// by where its device sits, so it owes the whole of the new hold here
+    /// exactly as it does while detached.
+    #[test]
+    fn a_line_deepened_right_after_re_placement_owes_silence_for_its_whole_new_hold() {
+        const DETACHED_AT: usize = 7;
+        const DEEPENED_TO: usize = 11;
+        const FILL_BLOCKS: usize = MAX_COMPENSATION_FRAMES / MAX_CALLBACK_FRAMES;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, MAX_COMPENSATION_FRAMES + 128);
+
+        let declared = Arc::new(AtomicUsize::new(DETACHED_AT));
+        harness.send(GraphCommand::AddHostedPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, DETACHED_AT));
+
+        // Feed the whole ring, so the region a deeper hold reads back holds
+        // the strip's material rather than the ring's own initial silence.
+        for _ in 0..FILL_BLOCKS {
+            harness.render(MAX_CALLBACK_FRAMES);
+        }
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+
+        // Placed first, deepened second: nothing has fed the line in between.
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, DEEPENED_TO));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..DEEPENED_TO].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "a line deepened before its new chain has fed it that far owes silence \
+             for the whole hold, not only for the one it was detached with"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A bus is torn down under its inserts exactly as a track is, and the
+    /// devices it held stop processing rather than falling back onto the
+    /// master mix. Their lines owe the same silence.
+    #[test]
+    fn a_device_detached_by_a_removed_bus_restarts_its_dry_line_from_silence() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 256);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+
+        let declared = Arc::new(AtomicUsize::new(LATENCY));
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(50, effect(900), 0));
+        harness.send(set_latency(900, LATENCY));
+
+        // Runs, so the line fills with what the bus is carrying.
+        harness.render(16);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.send(GraphCommand::RemoveBus(50));
+        harness.render(16);
+
+        // A new bus under the same id, taking the same device back while it
+        // is still bypassed.
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(insert_bus_device(50, effect(900), 0));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the re-placed device's line owes silence for its own hold rather than \
+             replaying the audio it held when its bus was removed"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A latency change re-aims the line a bypassed device is running instead
+    /// of swapping a fresh one in. The ring has been written on every block
+    /// the chain visited the device, so the deeper hold reads further back
+    /// into audio that is already current — one bounded repeat of the
+    /// difference — where a fresh ring would hand back the whole new hold as
+    /// silence.
+    #[test]
+    fn a_latency_change_re_aims_the_dry_line_a_bypassed_device_is_running() {
+        const FIRST: usize = 7;
+        const SECOND: usize = 11;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        let declared = insert_latent_device(&mut harness, 1, 900, FIRST);
+
+        assert_eq!(
+            harness.render(16).0,
+            delayed_ramp(0, 16, FIRST),
+            "the running device answers a block late, and its line is fed what it was handed"
+        );
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        assert_eq!(
+            harness.render(16).0,
+            delayed_ramp(16, 16, FIRST),
+            "the bypassed pass reads the material the running device was being fed"
+        );
+
+        declared.store(SECOND, Ordering::Relaxed);
+        harness.send(set_latency(900, SECOND));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(32, 16, SECOND),
+            "the deeper hold reads four frames further back into the ring the device is \
+             already running, never into a fresh one holding nothing"
+        );
+        assert!(
+            !deeper.contains(&0.0),
+            "no frame of silence appears at the change"
+        );
+    }
+
+    /// The running pass feeds the dry line exactly once per block
+    /// (`run_device`'s own `feed_dry_delay` call). A second feed from
+    /// anywhere else would advance the ring's write head twice as fast as
+    /// real time, so a later bypassed read — reaching back far enough to
+    /// span a block boundary — would land somewhere other than the content
+    /// that block actually carried.
+    #[test]
+    fn an_effects_dry_line_is_fed_exactly_once_per_running_block() {
+        // Past one 32-frame block, so the bypassed read below reaches back
+        // across the boundary between the two running blocks rather than
+        // landing entirely inside the last one.
+        const LATENCY: usize = 40;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Two full blocks of running, each carrying ramp content distinct
+        // from the other, so a doubled feed's repeated writes cannot pass
+        // for the genuine signal.
+        harness.render(32);
+        harness.render(32);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, _) = harness.render(32);
+        assert_eq!(
+            left,
+            delayed_ramp(64, 32, LATENCY),
+            "the bypassed pass reads exactly the dry signal each running block fed, not \
+             audio a doubled feed raced the write head ahead of"
+        );
+    }
+
+    /// A group's source line holds nothing while the track feeding it is gone,
+    /// and is written all the same. Skipped, it would freeze with the group's
+    /// own clip as it stood at the removal and burst that back the moment
+    /// something is routed in again.
+    #[test]
+    fn a_source_line_at_zero_hold_is_written_so_a_later_hold_never_replays_it() {
+        const FIRST: usize = 8;
+        const SECOND: usize = 4;
+        const THIRD: usize = 8;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        // The group carries the ramp; what is routed into it carries latency
+        // and nothing else, so the master reads the group's own clip alone and
+        // every assertion is about its source line.
+        track_with_ramp_clip(&mut harness, 3, 103, 256);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, FIRST);
+
+        let (held, _) = harness.render(16);
+        assert_eq!(
+            held,
+            delayed_ramp(0, 16, FIRST),
+            "the group's own clip waits for the latent track routed into it"
+        );
+
+        harness.send(GraphCommand::RemoveTrack(1));
+        let (unheld, _) = harness.render(32);
+        assert_eq!(
+            unheld,
+            delayed_ramp(16, 32, 0),
+            "with nothing feeding the group its clip plays where it stands"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        let declared = insert_latent_device(&mut harness, 1, 901, SECOND);
+        let (re_aimed, _) = harness.render(16);
+        assert_eq!(
+            re_aimed,
+            delayed_ramp(48, 16, SECOND),
+            "the re-aimed source line reads on from the passage it was just written with"
+        );
+
+        declared.store(THIRD, Ordering::Relaxed);
+        harness.send(set_latency(901, THIRD));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(64, 16, THIRD),
+            "deepening the hold reads further back into current audio, never into the \
+             era the line spent at zero"
+        );
+    }
+
+    /// A bus's output line holds nothing while the latent strip beside it is
+    /// gone. Skipped, the next hold the graph aims it at bursts the passage it
+    /// froze in into the master.
+    #[test]
+    fn a_bus_output_line_at_zero_hold_is_written_so_a_later_hold_never_replays_it() {
+        const FIRST: usize = 8;
+        const SECOND: usize = 4;
+        const THIRD: usize = 8;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        // The sibling at the master carries latency and nothing else, so the
+        // bus's own output line is the only thing holding the ramp back.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        insert_latent_device(&mut harness, 3, 900, FIRST);
+
+        let (held, _) = harness.render(16);
+        assert_eq!(
+            held,
+            delayed_ramp(0, 16, FIRST),
+            "the bus waits for the latent track it sums beside"
+        );
+
+        harness.send(GraphCommand::RemoveTrack(3));
+        let (unheld, _) = harness.render(32);
+        assert_eq!(
+            unheld,
+            delayed_ramp(16, 32, 0),
+            "with nothing left to wait for the bus plays where it stands"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        let declared = insert_latent_device(&mut harness, 3, 901, SECOND);
+        let (re_aimed, _) = harness.render(16);
+        assert_eq!(
+            re_aimed,
+            delayed_ramp(48, 16, SECOND),
+            "the re-aimed bus line reads on from the passage it was just written with"
+        );
+
+        declared.store(THIRD, Ordering::Relaxed);
+        harness.send(set_latency(901, THIRD));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(64, 16, THIRD),
+            "deepening the hold reads further back into current audio, never into the \
+             era the line spent at zero"
+        );
+    }
+
+    /// A send's line holds nothing while the latent strip feeding the same bus
+    /// is gone. Skipped, it freezes with the tap as it stood at the removal,
+    /// and the next hold bursts that era into the bus.
+    #[test]
+    fn a_send_line_at_zero_hold_is_written_so_a_later_hold_never_replays_it() {
+        const FIRST: usize = 8;
+        const SECOND: usize = 4;
+        const THIRD: usize = 8;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+            delay: uncompensated(),
+        });
+        // Muted, so the master reads the bus alone and every assertion is
+        // about the send's own line rather than the strip's output.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        insert_latent_device(&mut harness, 2, 900, FIRST);
+        harness.send(GraphCommand::AddSend {
+            track_id: 2,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+            delay: uncompensated(),
+        });
+        harness.send(GraphCommand::SetTrackMute(2, true));
+
+        let (held, _) = harness.render(16);
+        assert_eq!(
+            held,
+            delayed_ramp(0, 16, FIRST),
+            "the send off the dry track waits for the send off the latent one"
+        );
+
+        harness.send(GraphCommand::RemoveTrack(2));
+        let (unheld, _) = harness.render(32);
+        assert_eq!(
+            unheld,
+            delayed_ramp(16, 32, 0),
+            "with nothing left to wait for the send lands where it is taken"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        let declared = insert_latent_device(&mut harness, 2, 901, SECOND);
+        harness.send(GraphCommand::AddSend {
+            track_id: 2,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+            delay: uncompensated(),
+        });
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        let (re_aimed, _) = harness.render(16);
+        assert_eq!(
+            re_aimed,
+            delayed_ramp(48, 16, SECOND),
+            "the re-aimed send line reads on from the passage it was just written with"
+        );
+
+        declared.store(THIRD, Ordering::Relaxed);
+        harness.send(set_latency(901, THIRD));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(64, 16, THIRD),
+            "deepening the hold reads further back into current audio, never into the \
+             era the line spent at zero"
+        );
+    }
+
+    /// A send is a second route out of a track, and it sums somewhere else. It
+    /// carries its own compensation because the bus it lands on has an arrival
+    /// time of its own, unrelated to the master's.
+    #[test]
+    fn two_sends_meeting_on_one_bus_arrive_on_the_same_frame() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+        for track_id in [1, 2] {
+            harness.send(GraphCommand::AddSend {
+                track_id,
+                bus_id: 50,
+                tap: SendTap::PreFader,
+                level: 0.5,
+                delay: uncompensated(),
+            });
+        }
+        // Muted so the only thing reaching the master is the bus, and the
+        // assertion is about the sends rather than the direct outputs.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::SetTrackMute(2, true));
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the send off the dry track waits for the send off the latent one"
+        );
+    }
+
+    /// A bus's own devices delay everything routed through it, so a track that
+    /// goes straight to the master would otherwise lead the whole bus by the
+    /// bus's latency.
+    #[test]
+    fn a_track_direct_to_the_master_waits_for_a_latent_bus_beside_it() {
+        const BUS_LATENCY: usize = 5;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+
+        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(50, effect(900), 0));
+        harness.send(set_latency(900, BUS_LATENCY));
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            BUS_LATENCY,
+            "the direct track holds for the bus it sums beside"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..BUS_LATENCY].fill(0.0);
+        assert_eq!(left, expected);
+    }
+
+    /// Latency has a ceiling — Cubase constrains past a threshold, Pro Tools
+    /// fixes a maximum. Past it the graph aligns as far as it can and says so,
+    /// rather than sizing a delay line off a figure a plugin invented.
+    #[test]
+    fn a_latency_past_the_ceiling_clamps_its_routes_and_counts_them() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(ScalingPlugin { factor: 1.0 }),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, declared));
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            MAX_COMPENSATION_FRAMES,
+            "the sibling holds as far as the ceiling allows"
+        );
+        let diagnostics = harness.diagnostics();
+        assert_eq!(
+            diagnostics.pdc_clamped_routes, 2,
+            "the route that could not be aligned and the dry line the ceiling cut \
+             short are both counted"
+        );
+        assert_eq!(
+            diagnostics.pdc_max_arrival_frames, declared as u64,
+            "the reported arrival is the figure declared, not the one the graph could hold"
+        );
+
+        // Two more passes over the same clamped graph. Both commands re-aim
+        // routes that are already where they point, so nothing about the
+        // alignment moves; a running total would read six here and name four
+        // misaligned lines that do not exist.
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Master));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Master));
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            2,
+            "the count states what the latest pass clamped, not what every pass ever clamped"
+        );
+
+        harness.send(set_latency(900, 0));
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "a graph the ceiling no longer cuts short reports nothing"
+        );
+    }
+
+    /// One strip, one plugin declaring past the ceiling, no sibling to hold
+    /// back: every route line in the graph is aimed at zero and clamps
+    /// nothing, so the route lines alone report a perfectly aligned project.
+    /// The dry line is cut short all the same, and every bypass toggle on that
+    /// device shifts the strip by the difference.
+    #[test]
+    fn a_single_strip_declaring_past_the_ceiling_counts_its_dry_line_as_clamped() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(declared)),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.send(set_latency(900, declared));
+        harness.render(16);
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(1)
+                .expect("track 1 is in the graph")
+                .output_delay_frames(),
+            0,
+            "the lone strip holds nothing: no sibling arrives ahead of it"
+        );
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            1,
+            "the dry line the ceiling cut short is counted where no route line is"
+        );
+
+        // Pulled back to the ceiling itself, nothing is cut short any more —
+        // and a figure latched rather than recounted would still read one.
+        harness.send(set_latency(900, MAX_COMPENSATION_FRAMES));
+        harness.render(16);
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "a declaration the ceiling holds exactly is not clamped"
+        );
+    }
+
+    /// A registered but unplaced device declares like any other, and a host's
+    /// latency watcher goes on addressing it. No chain feeds or reads its dry
+    /// line and it adds nothing to any summing point's depth, so the ceiling
+    /// cuts nothing short until a strip takes it — and counting it meanwhile
+    /// would report a misaligned line the mix does not contain.
+    #[test]
+    fn a_detached_device_declaring_past_the_ceiling_is_not_counted_until_a_strip_takes_it() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+
+        // A hosted registration is homed detached, so it is registered
+        // without any chain holding it.
+        harness.send(GraphCommand::AddHostedPlugin(
+            900,
+            Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(declared)),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+            MidiNoteStore::new(),
+        ));
+        harness.send(set_latency(900, declared));
+        harness.render(16);
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "a device no chain holds runs no line the ceiling can cut short"
+        );
+
+        harness.send(insert_track_device(1, effect(900), 0));
+        harness.render(16);
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            1,
+            "the strip taking it puts the clamped dry line into the mix, and the count says so"
+        );
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "and the strip letting it go takes it back out"
+        );
+    }
+
+    /// A track routed into another track is a group, and the destination's
+    /// input sums exactly as a bus's does. An arrival discarded at that hop
+    /// leaves the whole group early against everything beside it.
+    #[test]
+    fn a_latent_track_inside_a_group_still_meets_its_sibling_at_the_master() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        assert_eq!(
+            harness.diagnostics().pdc_max_arrival_frames,
+            LATENCY as u64,
+            "the depth reported carries the group hop, not only what sums at the master"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the sibling at the master waits for the latent track inside the group"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![2.0; 16],
+            "past the onset every frame carries both routes"
+        );
+    }
+
+    /// A group carrying its own material is two sources at one point: what is
+    /// routed in, which has already waited, and its own clips, which have not.
+    ///
+    /// The group carries a latent device of its own, so the depth of its input
+    /// and that depth plus its own chain are different numbers. Aiming the
+    /// source line at the latter would delay the group's clips past the track
+    /// feeding them and then delay both again through the chain.
+    #[test]
+    fn a_groups_own_clip_waits_for_the_latent_track_routed_into_it() {
+        const LATENCY: usize = 7;
+        const GROUP_LATENCY: usize = 2;
+        const ARRIVAL: usize = LATENCY + GROUP_LATENCY;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 3, 103, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+        insert_latent_device(&mut harness, 3, 901, GROUP_LATENCY);
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(3)
+                .expect("track 3 is in the graph")
+                .source_delay_frames(),
+            LATENCY,
+            "the group's own clips are aimed at the depth of its input, not at that depth plus its own chain"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..ARRIVAL].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the group's clip does not sound ahead of the track feeding it, and the pair leaves the group's own device together"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![2.0; 16],
+            "past the onset the group carries both sources"
+        );
+    }
+
+    /// The depth every generator fixture below waits on: the latency of the
+    /// device on the track routed into the strip under test, and so the depth
+    /// of that strip's input.
+    const INPUT_DEPTH: usize = 64;
+
+    /// A track carrying a constant behind a genuinely late device, routed into
+    /// `into` — the material an instrument on that strip has to meet.
+    fn latent_track_routed_into(harness: &mut Harness, into: RouteTarget) {
+        track_with_constant_clip(harness, 1, 101, 1.0, 512);
+        harness.send(GraphCommand::SetTrackOutput(1, into));
+        insert_latent_device(harness, 1, 900, INPUT_DEPTH);
+    }
+
+    /// A group's own clips wait for what is routed into it, and an instrument
+    /// on that group is the same kind of source: it produces at zero where the
+    /// route has already waited. Unheld, a synth on a drum group would sound a
+    /// device's latency ahead of the drums feeding it — the alignment the
+    /// group exists to make.
+    #[test]
+    fn a_generator_on_a_group_waits_for_the_latent_track_routed_into_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the group sounds on the frame the track routed into it does, not before"
+        );
+    }
+
+    /// A bus hosts an instrument on the same terms a track does, and its input
+    /// is a summing point of exactly the same kind. Aiming only the tracks
+    /// would leave a synth on a bus early by the depth of everything routed
+    /// into it.
+    #[test]
+    fn a_generator_on_a_bus_waits_for_the_latent_track_routed_into_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        latent_track_routed_into(&mut harness, RouteTarget::Bus(50));
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the bus sounds on the frame the track routed into it does, not before"
+        );
+    }
+
+    /// One strip can carry several instruments — the fan-in the app's chain
+    /// builds — and each holds its own material. A line shared between two of
+    /// them would take both signals in and hand back an interleaving of the
+    /// two, which a ramp shows and a pair of constants would hide.
+    #[test]
+    fn two_generators_on_one_strip_each_wait_their_own_hold() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(&mut harness, 3, 901, Box::<RampGenerator>::default(), 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(128);
+        let expected: Vec<f32> = (0..128usize)
+            .map(|frame| match frame.checked_sub(INPUT_DEPTH) {
+                // The routed-in constant, the second instrument's constant,
+                // and the first instrument's own frame number.
+                Some(produced) => produced as f32 + 2.0,
+                None => 0.0,
+            })
+            .collect();
+        assert_eq!(
+            left, expected,
+            "each instrument's own material comes back out of its own line, in order"
+        );
+    }
+
+    /// The hold is the depth of what arrives at the strip's input, and nothing
+    /// else. A strip's own chain latency is behind the instrument, not ahead of
+    /// it: counting it would hold the instrument by that latency twice and put
+    /// it late against the very route it is meeting.
+    #[test]
+    fn a_generator_hold_is_aimed_by_input_depth_not_the_strips_own_latency() {
+        const OWN_LATENCY: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+        insert_latent_device_at(&mut harness, 3, 902, OWN_LATENCY, 1);
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + OWN_LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument leaves the group's own device on the frame the routed-in material does"
+        );
+    }
+
+    /// The chain sums an instrument's material at that instrument's own index,
+    /// where the signal has already taken the latency of everything ahead of
+    /// it. So the hold is the input's depth plus that declared prefix: aimed at
+    /// the depth alone, a synth spliced behind the group's own lookahead
+    /// limiter would lead the drums feeding the group by the limiter's latency
+    /// — the group aligning every source except the one it hosts itself.
+    #[test]
+    fn a_generator_after_a_latent_device_waits_for_that_device_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_device_at(&mut harness, 3, 902, AHEAD, 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument joins the chain on the frame the routed-in material reaches that same point, not the frame it reached the strip's input"
+        );
+    }
+
+    /// A bus sums its chain exactly as a track does, so an instrument behind a
+    /// latent device on a bus owes the same prefix. Aiming the bus generators
+    /// by the input's depth alone would leave a synth on a send bus early by
+    /// the latency of the reverb the bus exists to host.
+    #[test]
+    fn a_generator_after_a_latent_device_on_a_bus_waits_for_that_device_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        latent_track_routed_into(&mut harness, RouteTarget::Bus(50));
+
+        harness.send(GraphCommand::AddPlugin(
+            902,
+            Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(AHEAD)),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+            None,
+        ));
+        harness.send(insert_bus_device(50, effect(902), 0));
+        harness.send(set_latency(902, AHEAD));
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the bus joins the chain on the frame the routed-in material reaches that same point"
+        );
+    }
+
+    /// A device released from a chain runs nowhere, so nothing feeds or reads
+    /// the hold it was running: kept across the release it would hand the
+    /// material it produced on the old strip back over the first held frames
+    /// after some chain takes it again. The splice that takes it ships a fresh
+    /// silent line and the device installs that one instead.
+    #[test]
+    fn a_reinserted_generator_takes_a_fresh_silent_hold() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        // Long enough that the hold is full of the instrument's own material
+        // rather than of the silence it was built with.
+        harness.render(128);
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 3,
+            effect_id: 901,
+        });
+        harness.send(insert_track_device(3, generator(901), 0));
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(1.0);
+        assert_eq!(
+            left, expected,
+            "the re-spliced instrument owes silence for its hold, and only the routed-in track sounds meanwhile"
+        );
+    }
+
+    /// A bypassed instrument is a device the chain still visits, so its hold
+    /// takes its pass like every other line: over the silence the chain clears
+    /// for the instrument, which drains the tail the hold was carrying and
+    /// fills it with the silence the un-bypass then hands back. Skipped
+    /// through the bypass, the line would stand still and replay the material
+    /// from before the switch — the burst of stale audio the rule that every
+    /// line is written on every block it renders exists to prevent.
+    #[test]
+    fn a_bypassed_generator_keeps_its_hold_flowing() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        // Past the onset both sources are up, so what the switch does is a
+        // change in a steady mix rather than a difference from silence.
+        let (settled, _) = harness.render(128);
+        assert_eq!(
+            settled[INPUT_DEPTH..],
+            vec![2.0; 128 - INPUT_DEPTH][..],
+            "the instrument and the track routed into it are both sounding before the switch"
+        );
+
+        harness.send(GraphCommand::SetBypass(901, true));
+        let (bypassed, _) = harness.render(128);
+        let mut expected = vec![1.0; 128];
+        expected[..INPUT_DEPTH].fill(2.0);
+        assert_eq!(
+            bypassed, expected,
+            "the material the instrument produced before the bypass drains out of its hold on schedule, and only the routed-in track sounds after it"
+        );
+
+        harness.send(GraphCommand::SetBypass(901, false));
+        let (restored, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(1.0);
+        assert_eq!(
+            restored, expected,
+            "the silence the hold was fed while the instrument was bypassed comes back out before the instrument does"
+        );
+    }
+
+    /// The latency an instrument declares is the frames between asking it for
+    /// material and getting that material back, so everything else on the
+    /// strip has to leave the device that late as well. Unheld, a track's clip
+    /// would sound the instrument's latency ahead of the arrival the chain
+    /// declares for it — and ahead of every sibling the graph then holds to
+    /// meet that arrival.
+    #[test]
+    fn a_latent_generator_holds_the_strip_material_it_joins() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the clip leaves the instrument on the frame the instrument's own material does"
+        );
+    }
+
+    /// The test above shows the hold's onset but not its content: a constant
+    /// clip reads identically whether the pass-through was genuinely delayed
+    /// or merely zeroed for the same number of frames. A ramp clip names its
+    /// own frame, so a dry line fed a second time somewhere — racing its
+    /// write head ahead and reading back the wrong slots — shows up as wrong
+    /// numbers here rather than the same on/off transition landing right by
+    /// coincidence.
+    #[test]
+    fn a_latent_generator_holds_the_ramp_content_the_strip_carries() {
+        const DECLARED: usize = 32;
+        const BLOCK: usize = 32;
+        const CALLBACKS: usize = 4;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, BLOCK * CALLBACKS);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+
+        // Rendered as separate callbacks rather than one call for the whole
+        // span: a dry line fed a second time somewhere writes an extra
+        // block's worth into the ring between callbacks, so only a read that
+        // actually crosses a callback boundary can catch it — a single call
+        // covering the whole span never gives the ring a chance to be read
+        // back before that second write lands.
+        let mut left = Vec::with_capacity(BLOCK * CALLBACKS);
+        for _ in 0..CALLBACKS {
+            left.extend(harness.render(BLOCK).0);
+        }
+
+        // The clip's own content, held back to the instrument's declared
+        // latency, plus the instrument's material once its own latency has
+        // passed.
+        let mut expected = delayed_ramp(0, BLOCK * CALLBACKS, DECLARED);
+        for sample in &mut expected[DECLARED..] {
+            *sample += 1.0;
+        }
+        assert_eq!(
+            left, expected,
+            "the clip's exact ramp content arrives held to the instrument's declared latency, \
+             summed with the instrument's own material"
+        );
+    }
+
+    /// A strip's arrival is the latency its whole chain declares, generators
+    /// included, and the graph holds every sibling back to that figure. If the
+    /// instrument's latency counted at the summing point but delayed nothing
+    /// on the strip, the sibling would be held for a latency the strip never
+    /// actually took and would sound late against it.
+    #[test]
+    fn a_sibling_waits_for_a_strip_carrying_a_latent_generator() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 512);
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![3.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the sibling track and the strip carrying the instrument reach the master together"
+        );
+    }
+
+    /// Bypass keeps latency, so a bypassed instrument goes on holding what
+    /// passes through it. Dropping the hold with the processing would shift
+    /// the strip against the rest of the mix on the switch — the very thing
+    /// keeping a bypassed device's latency exists to prevent.
+    #[test]
+    fn a_bypassed_latent_generator_still_holds_the_strip_material() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+        harness.send(GraphCommand::SetBypass(901, true));
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![1.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "only the clip sounds, and it still leaves the bypassed instrument at that instrument's declared latency"
+        );
+    }
+
+    /// What is routed into a group passes through the group's chain like the
+    /// group's own material, so a latent instrument on the group holds it too.
+    /// Unheld, the routed-in track would leave the group ahead of the arrival
+    /// the group declares and reach the master early.
+    #[test]
+    fn a_latent_generator_on_a_group_holds_the_routed_in_material_too() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_track_generator(&mut harness, 3, 901, DECLARED, 0);
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the routed-in track leaves the group's instrument on the frame that instrument's own material does"
+        );
+    }
+
+    /// An instrument behind a latent instrument joins the chain where the
+    /// signal has already taken that latency, so its hold owes the prefix a
+    /// latent effect there would owe. Counting only effects in that prefix
+    /// would leave the second instrument early by the first one's latency,
+    /// against the very route the group exists to meet.
+    #[test]
+    fn a_generator_behind_a_latent_generator_waits_for_that_latency_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_track_generator(&mut harness, 3, 901, AHEAD, 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![3.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the second instrument joins the chain on the frame the material already on it reaches that same point"
+        );
+    }
+
+    /// A splice the graph refuses still arrived carrying a line, and the line
+    /// is heap: freeing it on the callback is exactly the drop ADR 0020
+    /// forbids, so it leaves over the retirement channel like every other
+    /// buffer the graph gives up.
+    #[test]
+    fn a_refused_generator_insert_retires_the_shipped_hold() {
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddHostedPlugin(
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            MidiNoteStore::new(),
+        ));
+
+        // No track 7 in the graph, so the splice is refused with its line
+        // still on it.
+        harness.send(insert_track_device(7, generator(901), 0));
+
+        let retired = harness
+            .retired_rx
+            .pop()
+            .expect("the refused splice must hand its line off, never free it on the callback");
+        assert!(
+            matches!(
+                &retired.timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ),
+            "the refused splice's own line is what leaves"
+        );
+    }
+
+    /// An instrument on a group waits on the same input its clips do, so the
+    /// ceiling cutting both short is one summing point the graph could not
+    /// align — not two. Counting each line would report a project with more
+    /// misaligned routes than it has.
+    #[test]
+    fn a_clamped_generator_hold_counts_once_with_its_strips_source_line() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 3, 103, 1.0, 64);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, declared);
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            2,
+            "the group's source line and the device's own dry line are what the ceiling cut short"
+        );
+
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            2,
+            "the instrument waits on the input its strip's clips wait on, so the strip still counts once"
+        );
+    }
+
+    /// A bus's input is one summing point too, and it carries no clips — so the
+    /// generators on it are the whole of what the ceiling can cut short there.
+    /// The bus counts once whatever it hosts: counting each instrument would
+    /// report a project with more misaligned routes than it has summing points.
+    #[test]
+    fn a_clamped_generator_hold_on_a_bus_counts_the_bus_once() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        insert_latent_device(&mut harness, 1, 900, declared);
+
+        let base = harness.diagnostics().pdc_clamped_routes;
+        assert_eq!(
+            base, 1,
+            "with no instrument on it the bus contributes nothing to the count, and the device's own dry line is what the ceiling cut short"
+        );
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            base + 1,
+            "the bus's input is a summing point the ceiling could not align, and the count says so"
+        );
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            base + 1,
+            "a second instrument waits on the same input, so the bus still counts once"
+        );
+    }
+
+    /// A group aligns the strips meeting on its input against each other, and
+    /// what it then sums at is a further point again: a track going straight
+    /// to the master waits for the whole hop.
+    #[test]
+    fn a_group_aligns_its_contributors_and_carries_their_depth_onward() {
+        const DEEP: usize = 7;
+        const SHALLOW: usize = 3;
+        let mut harness = Harness::new(48);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        track_with_constant_clip(&mut harness, 4, 104, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, DEEP);
+        insert_latent_device(&mut harness, 2, 901, SHALLOW);
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            DEEP - SHALLOW,
+            "the shallower strip waits for the deeper one at the group's input"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(4)
+                .expect("track 4 is in the graph")
+                .output_delay_frames(),
+            DEEP,
+            "the track straight to the master waits for the whole group hop"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![3.0; 16];
+        expected[..DEEP].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the group's two strips and the direct track land on one frame"
+        );
+    }
+
+    /// Compensation is recursive: a bus that feeds another bus contributes its
+    /// own arrival to the next summing point, so the delays along a chain of
+    /// hops add up.
+    #[test]
+    fn delays_along_two_bus_hops_sum_at_the_master() {
+        const FIRST_HOP: usize = 3;
+        const SECOND_HOP: usize = 5;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Bus(51)));
+
+        for (effect_id, bus_id, latency) in [(900, 50, FIRST_HOP), (901, 51, SECOND_HOP)] {
+            let declared = Arc::new(AtomicUsize::new(latency));
+            harness.send(GraphCommand::AddPlugin(
+                effect_id,
+                Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+                None,
+            ));
+            harness.send(insert_bus_device(bus_id, effect(effect_id), 0));
+            harness.send(set_latency(effect_id, latency));
+        }
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            FIRST_HOP + SECOND_HOP,
+            "the direct track holds for both hops, not just the last one"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..FIRST_HOP + SECOND_HOP].fill(0.0);
+        assert_eq!(left, expected);
+    }
+
+    /// A send lands on a bus's input, and that bus's own arrival carries on to
+    /// whatever it feeds. A send aimed at a bus that is itself a contributor
+    /// rather than the last stop is two hops from the master, and every hop
+    /// has to be on the path the graph compensates.
+    ///
+    /// The second hop carries latency of its own, so the send's hold at the
+    /// bus it lands on and the master's depth are different figures: a send
+    /// aimed at anything but its own summing point arrives late here rather
+    /// than passing by coincidence.
+    #[test]
+    fn a_send_into_a_bus_feeding_another_bus_lands_with_the_track_beside_it() {
+        const LATENCY: usize = 7;
+        const SECOND_HOP: usize = 5;
+        const MASTER_ONSET: usize = LATENCY + SECOND_HOP;
+        const SEND_LEVEL: f32 = 0.5;
+        const ALIGNED: f32 = 2.0 + SEND_LEVEL;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Bus(51)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+        let declared = Arc::new(AtomicUsize::new(SECOND_HOP));
+        harness.send(GraphCommand::AddPlugin(
+            901,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
+        ));
+        harness.send(insert_bus_device(51, effect(901), 0));
+        harness.send(set_latency(901, SECOND_HOP));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: SEND_LEVEL,
+            delay: uncompensated(),
+        });
+
+        let track_one = harness
+            .scheduler
+            .timeline()
+            .track(1)
+            .expect("track 1 is in the graph");
+        assert_eq!(
+            track_one.send_delay_frames(50),
+            Some(0),
+            "the send is aimed at the depth of the bus it lands on, which its own \
+             arrival already matches"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            MASTER_ONSET,
+            "the direct track waits the whole path the send takes to the master"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![ALIGNED; 16];
+        expected[..MASTER_ONSET].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the send arrives at the master over both bus hops on the frame the direct \
+             track and the latent track's own output arrive"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![ALIGNED; 16],
+            "past the onset every frame carries all three routes"
+        );
+    }
+
+    /// A note the control thread stamps for one timeline frame.
+    fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
+        TimedMidiNote {
+            at_frame,
+            event: note_on(note),
+        }
+    }
+
+    /// The command a control thread ships for a run of notes: one note-on per
+    /// frame named, in the order they are named.
+    fn schedule_notes(plugin_id: usize, frames: &[u64]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = frames.iter().map(|frame| timed_note(*frame, 60)).collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// The same command for a phrase that names its own notes and releases:
+    /// `(frame, note, is_note_on)`, already in the frame order the store keeps.
+    fn schedule_phrase(plugin_id: usize, events: &[(u64, u8, bool)]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note, is_note_on)| {
+                let mut timed = timed_note(*frame, *note);
+                timed.event.is_note_on = *is_note_on;
+                timed
+            })
+            .collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// The batch as a producer authored it, put in order by the same
+    /// control-side step [`crate::EngineHandle::schedule_midi_notes`] takes —
+    /// which is what a scheduler test drives when the authoring order is the
+    /// thing under test.
+    fn schedule_authored(plugin_id: usize, events: &[(u64, u8)]) -> GraphCommand {
+        let mut notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note)| timed_note(*frame, *note))
+            .collect();
+        notes.sort_by_key(|note| note.at_frame);
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// What an instrument received, without the channel each note was
+    /// addressed to — the reading nearly every assertion here wants.
+    fn received_notes(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<RecordedNote> {
+        received_addressed_notes(received)
+            .into_iter()
+            .map(|(frame, note, _, is_note_on)| (frame, note, is_note_on))
+            .collect()
+    }
+
+    /// The same log with the channel kept, for the assertions that turn on the
+    /// address a release names.
+    fn received_addressed_notes(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<AddressedNote> {
+        received.lock().expect("the received note log").clone()
+    }
+
+    fn received_frames(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<u64> {
+        received_notes(received)
+            .iter()
+            .map(|(frame, _, _)| *frame)
+            .collect()
+    }
+
+    fn midi_diagnostics(harness: &Harness) -> ActiveMidiRtDiagnosticsSnapshot {
+        harness.scheduler.midi_rt_diagnostics.snapshot()
+    }
+
+    /// How many notes the graph is holding for one plugin, read from the
+    /// effect table itself.
+    ///
+    /// A refusal that kept a prefix is invisible from outside the engine until
+    /// some later block renders the frames it kept, which may be never.
+    fn stored_note_count(harness: &Harness, plugin_id: usize) -> usize {
+        harness
+            .scheduler
+            .effects
+            .iter()
+            .find(|effect| effect.id == plugin_id)
+            .and_then(|effect| effect.midi_notes.as_ref())
+            .map_or(0, |store| store.entries().len())
+    }
+
+    /// A playing track carrying a [`FrameRecordingInstrument`], spliced the
+    /// way a hosted instrument arrives.
+    fn track_with_recording_instrument(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+    ) -> Arc<Mutex<Vec<AddressedNote>>> {
+        const CLIP_FRAMES: usize = 8_192;
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        insert_track_generator(harness, track_id, effect_id, instrument, 0);
+        received
+    }
+
+    /// A scheduled note reaches the instrument on the sample that renders its
+    /// timeline frame, in the block that renders it.
+    ///
+    /// The frames named straddle a block boundary, so a delivery that shipped
+    /// no offset and one that measured the offset from the wrong block both
+    /// land somewhere the assertion names.
+    #[test]
+    fn a_scheduled_note_reaches_the_instrument_on_its_timeline_frame_across_a_block_boundary() {
+        const BLOCK: usize = 32;
+        const SCHEDULED: [u64; 4] = [5, 31, 32, 63];
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+
+        harness.render(BLOCK);
+        harness.render(BLOCK);
+
+        assert_eq!(received_frames(&received), SCHEDULED.to_vec());
+    }
+
+    /// A scheduled note belongs to its frame, not to a pass over it: every
+    /// loop pass that renders that frame delivers the note again. The entry
+    /// persists, so the second time round the region sounds like the first.
+    #[test]
+    fn a_scheduled_note_fires_on_every_loop_pass_that_renders_its_frame() {
+        const LOOP_START: u64 = 512;
+        const LOOP_END: u64 = 1_536;
+        const NOTE_FRAME: u64 = 600;
+        const PASS: u64 = LOOP_END - LOOP_START;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: LOOP_START,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SeekFrames(LOOP_START));
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+
+        // One callback long enough to hold both passes, so the seam splits it
+        // and the assertion is about the spans the seam yields rather than
+        // about two separate callbacks.
+        harness.render(2 * PASS as usize);
+
+        let into_region = NOTE_FRAME - LOOP_START;
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (into_region, 60, true),
+                // The seam closes the note the first pass left sounding, on
+                // the frame the region restarts at.
+                (PASS, 60, false),
+                (PASS + into_region, 60, true),
+            ],
+            "the second pass delivers the note again, one region later in the render stream"
+        );
+    }
+
+    /// A locate past a scheduled note leaves it where it is. No block rendered
+    /// its frame, so nothing fires — and nothing is counted late, because
+    /// lateness is about where the playhead stood when the note was scheduled,
+    /// not about where it has been since.
+    #[test]
+    fn a_locate_past_a_scheduled_note_does_not_fire_it() {
+        const NOTE_FRAME: u64 = 100;
+        const LOCATE_TO: u64 = 512;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+
+        harness.render(64);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a note the playhead skipped over is not fired at the head of the block after it"
+        );
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 0);
+    }
+
+    /// Clearing a window takes out exactly the notes inside it. The bounds are
+    /// half-open, so a clear aimed between two notes leaves both of them.
+    #[test]
+    fn clearing_a_window_removes_only_the_notes_inside_it() {
+        const SCHEDULED: [u64; 3] = [10, 40, 70];
+        const WINDOW_FROM: u64 = 32;
+        const WINDOW_TO: u64 = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: WINDOW_FROM,
+            to_frame: WINDOW_TO,
+        });
+
+        harness.render(96);
+
+        assert_eq!(received_frames(&received), vec![10, 70]);
+    }
+
+    /// A batch past the store's free capacity is refused whole and counted.
+    /// Keeping the prefix that fits would silence an arbitrary tail of a
+    /// phrase and leave the caller nothing to notice it by.
+    #[test]
+    fn an_over_capacity_batch_is_refused_whole_and_counted() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let over_capacity: Vec<u64> =
+            (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64 + 1).collect();
+        harness.send(schedule_notes(7, &over_capacity));
+
+        assert_eq!(stored_note_count(&harness, 7), 0);
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![5],
+            "a refusal is about the batch, so the next batch that fits still applies"
+        );
+    }
+
+    /// A note scheduled behind the playhead is stored and counted late, never
+    /// fired. Firing it would put it out of order against everything already
+    /// sounding, and dropping it would lose it for the next pass over its
+    /// frame.
+    #[test]
+    fn a_note_behind_the_playhead_is_stored_and_counted_late() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.render(BLOCK);
+
+        harness.send(schedule_notes(7, &[0]));
+
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 1);
+
+        harness.render(BLOCK);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a late note is not fired at the head of the next block"
+        );
+
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![2 * BLOCK as u64],
+            "the stored note sounds on frame 0 of the pass that renders it, two blocks into \
+             the render stream"
+        );
+    }
+
+    /// An effect ships no note store, so a batch aimed at one is refused whole
+    /// and counted rather than reaching a device with nowhere to keep it.
+    #[test]
+    fn an_effect_without_a_store_refuses_scheduled_notes() {
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(7, instrument, None));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.playing();
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+        assert!(received_frames(&received).is_empty());
+    }
+
+    /// A stopped transport sounds no scheduled note. The playhead stands still,
+    /// so every callback renders the same span: a note under it would retrigger
+    /// at the block rate for as long as the transport stayed stopped. Notes
+    /// written against the timeline are arrangement material exactly as a clip
+    /// is, and a stopped transport plays neither.
+    #[test]
+    fn a_stopped_transport_does_not_re_fire_a_scheduled_note_every_callback() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(schedule_notes(7, &[5]));
+
+        for _ in 0..3 {
+            harness.render(32);
+        }
+
+        assert!(received_frames(&received).is_empty());
+    }
+
+    /// Two batches written against overlapping frames reach the instrument in
+    /// one non-decreasing run, whatever order their producers authored them
+    /// in. A plugin is owed a block's events in time order — CLAP requires it
+    /// — and two notes sharing a frame keep the order they were stored in,
+    /// which is the only order a producer can express for them.
+    #[test]
+    fn notes_scheduled_in_two_interleaving_batches_reach_the_instrument_in_frame_order() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(schedule_authored(7, &[(40, 63), (10, 60)]));
+        harness.send(schedule_authored(7, &[(25, 62), (10, 61)]));
+
+        harness.render(64);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (10, 61, true),
+                (25, 62, true),
+                (40, 63, true),
+            ],
+            "the two batches merge into one run in frame order, the pair on frame 10 in the \
+             order the batches carrying them arrived"
+        );
+    }
+
+    /// Stopping the transport releases every note the store has sounded. The
+    /// playhead stands still, so the frame each note's note-off was written
+    /// for is never rendered, and the instrument would hold those keys for as
+    /// long as the transport stayed stopped.
+    ///
+    /// A note the store already released is not released twice: its note-off
+    /// was delivered where the producer wrote it, and a second one is a
+    /// message the instrument never asked for.
+    #[test]
+    fn stopping_the_transport_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(10, 60, true), (20, 61, true), (30, 61, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (20, 61, true),
+                (30, 61, false),
+                (BLOCK as u64, 60, false),
+            ],
+            "only the note still sounding is released, at the head of what renders next"
+        );
+    }
+
+    /// A locate while playing releases every note the store has sounded. The
+    /// playhead leaves the frames those notes' note-offs were written for
+    /// behind, so nothing is going to render them.
+    ///
+    /// A note scheduled past the locate target sounds on its own frame in the
+    /// same block. Without it the release alone would read the same whether
+    /// the locate resumed playback or silenced the instrument for good.
+    #[test]
+    fn a_locate_while_playing_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+        const LOCATE_TO: u64 = 4_096;
+        const AFTER_LOCATE: u64 = 10;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (10, 60, true),
+                (700, 60, false),
+                (LOCATE_TO + AFTER_LOCATE, 62, true),
+            ],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (BLOCK as u64, 60, false),
+                (BLOCK as u64 + AFTER_LOCATE, 62, true),
+            ],
+            "the note sounding when the playhead moved is released at the head of what plays \
+             from the new position, and the new position goes on playing"
+        );
+    }
+
+    /// The channel the live notes below sound on. Not the default, so a
+    /// release that lost the address its note-on was held under is visible
+    /// rather than landing on channel zero by luck.
+    const LIVE_CHANNEL: i16 = 5;
+
+    /// One note as a keyboard hands it over: no timeline position, and a
+    /// channel of its own.
+    fn live_note_on(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            channel: LIVE_CHANNEL,
+            ..note_on(note)
+        }
+    }
+
+    /// The player letting that key go.
+    fn live_note_off(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            is_note_on: false,
+            ..live_note_on(note)
+        }
+    }
+
+    /// Stopping the transport releases a note played live, exactly as it
+    /// releases a stored one. A key struck on a keyboard carries no scheduled
+    /// note-off behind it, so nothing else would ever lift it: the instrument
+    /// would hold that key for the rest of the session.
+    #[test]
+    fn a_live_note_on_is_released_when_the_transport_stops() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true)],
+            "the live note sounds at the head of the next block and nothing releases it yet"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the stop releases the live note on the channel it sounded on, at the head of what \
+             renders next"
+        );
+    }
+
+    /// A live note the player already released leaves the stop nothing to do.
+    /// The note-off lifted the key where the player lifted it, and a second one
+    /// is a message the instrument never asked for.
+    #[test]
+    fn a_live_note_off_leaves_nothing_for_the_stop_to_release() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::SendMidiNote(7, live_note_off(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true), (0, 60, LIVE_CHANNEL, false),],
+            "the player's own release is the only note-off the instrument receives"
+        );
+    }
+
+    /// A locate while playing releases a live note on the same terms a stop
+    /// does. The playhead leaves the frames the player was sounding over, and
+    /// nothing behind it will ever lift the key.
+    #[test]
+    fn a_locate_while_playing_releases_a_live_note() {
+        const BLOCK: usize = 64;
+        const LOCATE_TO: u64 = 4_096;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the locate releases the live note at the head of what plays from the new position"
+        );
+    }
+
+    /// A loop wrap leaves a key the player is holding down. The seam strands a
+    /// scheduled note-off, which is the whole reason a stored note is released
+    /// there; a live note never had one, and the player's hands are exactly
+    /// where they were. No established DAW interrupts live input at a loop
+    /// boundary, and the Web Audio carrier does not either.
+    #[test]
+    fn a_live_note_held_across_a_loop_wrap_is_not_released() {
+        const LOOP_END: u64 = 512;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+
+        // One callback holding both passes, so the seam falls inside it and a
+        // release taken there would be recorded against this same stream.
+        harness.render(2 * LOOP_END as usize);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true)],
+            "the wrap leaves the key down, because the player is still holding it"
+        );
+    }
+
+    /// A device nothing hands a block to keeps the release it owes until it
+    /// runs again. Bypassed, its queued MIDI is discarded unread, so a release
+    /// drained into that buffer is spent on nobody — and a live note has no
+    /// written note-off anywhere, so that would be the only release the key
+    /// ever got. Un-bypassing is where the device starts reading again, and
+    /// where the note-off is finally handed over.
+    #[test]
+    fn a_bypassed_device_keeps_the_live_note_release_it_owes_until_it_runs_again() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        // The key goes down while the device runs and is let go while nothing
+        // hands it a block, which is the sequence that strands the release.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, live_note_off(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true)],
+            "nothing reaches a device no chain hands a block to, the stop's release included"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the release owed since the player let go lands at the head of the first block the \
+             device is handed again, exactly once"
+        );
+    }
+
+    /// A device placed back on a chain releases the live keys it was holding
+    /// when it left one. While it ran nowhere its queued MIDI was discarded
+    /// unread, so the release could not be spent there; the splice that puts
+    /// it back on a strip is where it starts reading again.
+    #[test]
+    fn a_device_placed_back_on_a_chain_releases_the_live_notes_it_held() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true)],
+            "a device no chain runs is handed nothing, so the key stays down and owed"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(insert_track_device(2, generator(7), 0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the splice hands over the release the key has been owed since the strip went"
+        );
+    }
+
+    /// A note struck while bypassed is dropped at the door: `enqueue_midi`
+    /// gates on [`ActiveEffect::receives_no_block`] before it pushes, so
+    /// nothing is queued and nothing is held in `live_sounding`. Banking the
+    /// event first and gating only the tracking would leave a queued note-on
+    /// with no bit behind it, so the render the un-bypass exposes it to would
+    /// still hand the instrument a key nothing was ever holding down, and no
+    /// release would ever be owed to lift it.
+    #[test]
+    fn a_live_note_struck_while_bypassed_is_dropped_at_the_door() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        // All three land in the same drain, ahead of any render: the window
+        // a push-before-gate order would have let the queued note-on cross.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "the note-on struck behind the bypass is dropped at the door, not delivered once the \
+             device un-bypasses"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "nothing was ever tracked for the dropped note-on, so the stop owes no phantom release"
+        );
+    }
+
+    /// The same discard law holds for the detached path. This differs from
+    /// [`a_device_placed_back_on_a_chain_releases_the_live_notes_it_held`],
+    /// where the note-on is struck while the device still runs a chain and
+    /// only then detaches: here the strike happens after the device is
+    /// already detached, and nothing renders in between to drain the queue
+    /// before the splice re-places it — the exact window a push-before-gate
+    /// order would have let a banked note-on cross into the instrument.
+    #[test]
+    fn a_live_note_struck_while_detached_is_dropped_at_the_door() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(insert_track_device(2, generator(7), 0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "the note-on struck while detached is dropped at the door, not delivered once the \
+             splice re-places the device"
+        );
+    }
+
+    /// A loop wrap releases a note whose note-off lies past the seam. The pass
+    /// never reaches that frame, so without the release the note is held while
+    /// the region starts again — and every further pass presses the same key
+    /// once more.
+    #[test]
+    fn a_loop_wrap_releases_a_note_whose_note_off_lies_past_the_seam() {
+        const LOOP_END: u64 = 512;
+        const NOTE_ON: u64 = 10;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true), (700, 60, false)]));
+
+        // One callback holding both passes, so the seam falls inside it and
+        // the release is measured against the same render stream as the notes.
+        harness.render(2 * LOOP_END as usize);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the release lands on the seam, before the second pass presses the note again"
+        );
+    }
+
+    /// A stored note's release is owed exactly as a live note's is while its
+    /// device [`ActiveEffect::receives_no_block`]: a bypassed device is handed
+    /// no buffer, so a note-off falling due against it cannot be spent there
+    /// without lifting a key on nobody. `enqueue_due_midi_notes` gates on the
+    /// same check `enqueue_midi` and `release_sounding_notes` already state,
+    /// so the note-off is neither delivered nor cleared from `sounding` — the
+    /// bit stays held, and the release stays owed to
+    /// [`AudioScheduler::release_notes_owed_on_resume`], which pays it at the
+    /// head of the first block the device runs again.
+    #[test]
+    fn a_bypassed_device_keeps_the_stored_note_release_it_owes_until_it_runs_again() {
+        const BLOCK: u64 = 64;
+        // Inside the second block, so the block that renders it is the one
+        // bypass is already in effect for.
+        const NOTE_OFF: u64 = BLOCK + 6;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true), (NOTE_OFF, 60, false)]));
+
+        // The note-on lands while the device still runs.
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the note-on is delivered while the device runs"
+        );
+
+        // Bypassed before the block that would have delivered the note-off.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the note-off falling due while bypassed is dropped at the door, not delivered"
+        );
+
+        // Un-bypassing pays the release still owed, at the head of the first
+        // block the device is handed again.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK, 60, false)],
+            "the owed release lands at the head of the first block the device runs again, exactly \
+             once — the bypassed block was never processed, so the recording instrument's own \
+             frame counter never advanced past it"
+        );
+    }
+
+    /// A release the pending buffer has no room for leaves its note held, and
+    /// the next trigger owes it again.
+    ///
+    /// The key is down either way. Counting the overflow and dropping the bit
+    /// that records the note turns one refused event into a key nothing can
+    /// ever lift, because every later trigger walks a set that no longer knows
+    /// the note is sounding.
+    #[test]
+    fn a_release_the_pending_buffer_refuses_is_retried_on_the_next_trigger() {
+        const LOOP_END: u64 = 512;
+        const LEAD_IN: usize = 64;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 5;
+        /// One scheduled note-on per frame below the seam, which is what fills
+        /// the master insert's pending buffer to its capacity before the wrap
+        /// asks for a release. They all press the note already sounding, so the
+        /// sounding set still holds exactly one note when the wrap arrives.
+        const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        let phrase: Vec<(u64, u8, bool)> = std::iter::once((NOTE_ON, 60, true))
+            .chain((FILL_FROM..LOOP_END).map(|frame| (frame, 60, true)))
+            .collect();
+        harness.send(schedule_phrase(7, &phrase));
+
+        harness.render(LEAD_IN);
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true)],
+            "the note is sounding when the callback under test begins"
+        );
+        let overflows_before = midi_diagnostics(&harness).scheduler_event_buffer_overflows;
+
+        // One callback holding the rest of the pass, the seam, and the start of
+        // the next pass — so the wrap's release is asked for against a buffer
+        // the span before it has already filled.
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).scheduler_event_buffer_overflows - overflows_before,
+            2,
+            "the full buffer refused two events: the wrap's release, and the note-on the pass \
+             after the seam renders again"
+        );
+        assert!(
+            received_notes(&received)
+                .iter()
+                .all(|(_, _, is_note_on)| *is_note_on),
+            "no note-off reached the instrument in the callback that refused the release"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(LEAD_IN);
+
+        assert_eq!(
+            received_notes(&received).last().copied(),
+            Some(((LEAD_IN + CALLBACK) as u64, 60, false)),
+            "the stop still knows the note is sounding and releases it at the head of what \
+             renders next"
+        );
+    }
+
+    /// Clearing the note-off of a sounding note releases it at the head of
+    /// whatever renders next. The clear takes that frame out of the
+    /// arrangement, so nothing is ever going to render the note-off, and the
+    /// instrument would hold the key until something unrelated lifted it.
+    #[test]
+    fn clearing_the_note_off_of_a_sounding_note_releases_it_at_the_next_block_head() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(100, 60, true), (300, 60, false)]));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (BLOCK as u64, 60, false)],
+            "the release lands at the head of the block after the clear, and the frame the \
+             note-off was written for renders nothing"
+        );
+    }
+
+    /// Deleting a sounding note releases it even when the same pitch is
+    /// scheduled again later in the arrangement.
+    ///
+    /// The later pair leaves a note-off for that key ahead of the playhead,
+    /// but a note-on stands in front of it, so it is the release of the later
+    /// note and nothing is going to end the one sounding now. Reading the tail
+    /// for any note-off of the key would find that one and hold the deleted
+    /// note down until the later note-on pressed the key again.
+    #[test]
+    fn deleting_a_sounding_note_releases_it_even_when_the_pitch_repeats_later() {
+        const BLOCK: usize = 128;
+        /// Half the run to the later pair: one callback renders at most
+        /// [`crate::audio_thread::MAX_CALLBACK_FRAMES`], so reaching frame
+        /// 5,200 from the head of the second block takes two of them.
+        const TAIL: usize = 2_700;
+        const LATER_ON: u64 = 5_000;
+        const LATER_OFF: u64 = 5_200;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (100, 60, true),
+                (300, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(TAIL);
+        harness.render(TAIL);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (100, 60, true),
+                (BLOCK as u64, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+            "the deleted note is released at the head of the block after the clear, and the \
+             later note keeps both of its own events"
+        );
+    }
+
+    /// A stored note-off reaches the instrument whatever probability its
+    /// producer wrote on it.
+    ///
+    /// The gate decides whether a note sounds, and it decides that on the
+    /// note-on. A note-on the gate rolls away has already marked the note
+    /// sounding here, so the release it earns is a note-off an instrument that
+    /// never heard the note-on ignores — harmless. A release the gate rolls
+    /// away instead leaves a key that did go down held for good, which is why
+    /// delivery hands a stored note-off over on the same terms
+    /// `release_note` states for the ones a stop, a locate or a clear supplies.
+    #[test]
+    fn a_stored_note_off_reaches_the_instrument_whatever_its_probability_cutoff() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        phrase[1].event.is_note_on = false;
+        // The one cutoff the gate always rolls away.
+        phrase[1].event.probability_cutoff = 0;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+            "the release reaches the instrument on the frame its producer wrote it for"
+        );
+    }
+
+    /// A stored note-on keeps the probability its producer wrote on it, so a
+    /// cutoff of zero rolls the note away.
+    ///
+    /// This is the other half of the rule above: delivery lifts the cutoff off
+    /// a stored note-off and must leave it on a stored note-on, because the
+    /// gate is what makes a probabilistic note probabilistic. Lifting it off
+    /// both would make every stored note certain and delete the feature.
+    #[test]
+    fn a_stored_note_on_with_a_zero_cutoff_is_rolled_away() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        // The one cutoff the gate always rolls away.
+        phrase[0].event.probability_cutoff = 0;
+        phrase[1].event.is_note_on = false;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_OFF, 60, false)],
+            "the note-on never reaches the instrument, and the note-off it would have earned \
+             is the harmless release of a key that never went down"
+        );
+    }
+
+    /// Lengthening a sounding note is a clear and a fresh batch in one drain,
+    /// and it moves the note's release rather than deleting it.
+    ///
+    /// The clear takes the note-off out of the store while the note is down,
+    /// which is exactly the shape of a deleted release; only the store the
+    /// whole drain leaves behind tells the two apart. Releasing at the clear
+    /// would cut the note short at the head of the next block — the one thing
+    /// a producer asking for a longer note cannot be handed.
+    #[test]
+    fn lengthening_a_sounding_note_in_one_drain_moves_its_release() {
+        const BLOCK: usize = 128;
+        const REST: usize = 512;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 500;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (MOVED_OFF, 60, false)],
+            "no release lands at the head of the block after the clear, and the note ends on \
+             the frame the rewrite moved its note-off to"
+        );
+    }
+
+    /// One drain makes a clear and its replacement visible to the callback
+    /// together, but visible together is not the same as succeeding
+    /// together: the clear cannot fail, and the schedule that follows it
+    /// still can. The clear leaves the window empty regardless of what
+    /// happens to the schedule that follows it, so the sounding note it
+    /// stripped a note-off from is released at the head of whatever renders
+    /// next, exactly as an unreplaced clear would release it.
+    #[test]
+    fn a_refused_replacement_in_one_batch_leaves_the_clear_applied() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+
+        let over_capacity: Vec<u64> = (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64
+            + 1)
+            .map(|offset| 1_000 + offset)
+            .collect();
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: 0,
+                to_frame: u64::MAX,
+            },
+            schedule_notes(7, &over_capacity),
+        ]);
+
+        assert_eq!(
+            stored_note_count(&harness, 7),
+            0,
+            "the clear applied even though the replacement that followed it was refused"
+        );
+        assert_eq!(
+            midi_diagnostics(&harness).midi_note_batches_refused,
+            1,
+            "the over-capacity replacement is counted a refusal, not silently dropped"
+        );
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "the clear's release lands once at the head of the next block, and none of the \
+             refused batch's note-ons ever sounds"
+        );
+    }
+
+    /// Shortening a sounding note behind the playhead releases it now.
+    ///
+    /// The rewrite puts the note-off on a frame the playhead has already
+    /// passed, so it is stored and counted late like any other note behind the
+    /// playhead and no frame ahead is going to render it. The note is down, so
+    /// it is owed a release at the head of whatever renders next — the same
+    /// answer a deleted note-off gets, reached by asking where the store's
+    /// remaining note-off stands rather than whether one exists.
+    #[test]
+    fn shortening_a_sounding_note_behind_the_playhead_releases_it_now() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 10;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 50;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(BLOCK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).late_midi_notes,
+            1,
+            "the moved note-off is behind the playhead, so it is stored and counted late"
+        );
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "a release the rewrite left behind the playhead is owed at the head of what \
+             renders next"
+        );
+    }
+
+    /// A clear beside a sounding note leaves it sounding. The note-off the
+    /// producer wrote is still in the store, so the note ends where it was
+    /// written to end rather than at the clear.
+    #[test]
+    fn clearing_a_window_beside_a_sounding_note_leaves_it_sounding() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(100, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 400,
+            to_frame: 600,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (NOTE_OFF, 60, false)],
+            "the stored note-off still fires on its own frame, and the clear released nothing"
+        );
+    }
+
+    /// A master insert's stamps are measured from the callback's first frame,
+    /// not from the span's.
+    ///
+    /// The master insert chain drains once per callback over the whole buffer,
+    /// so a device there is handed one block covering every span. Stamping it
+    /// from the span would put every delivery after a loop seam a seam's worth
+    /// early — and out of order behind the deliveries before it, which is a
+    /// block no plugin is allowed to be handed.
+    ///
+    /// [`GraphCommand::AddPlugin`] with a store is the registration Crumbs
+    /// takes, and it places the device on the master chain.
+    #[test]
+    fn a_master_chain_instrument_is_stamped_from_the_callback_start_across_a_loop_seam() {
+        const LOOP_END: u64 = 512;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 8;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_ON]));
+
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the second pass is stamped from the callback's start, past the seam, and the \
+             whole block reads in non-decreasing time"
+        );
+    }
+
+    /// The rate every Fermenter spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate renders a different signal and the parity spec below
+    /// would be comparing two different synthesisers.
+    const FERMENTER_RATE: f32 = 48_000.0;
+
+    /// Send [`fermenter_strip_commands`] with no patch.
+    ///
+    /// The track holds no clip, so every non-zero sample the master carries
+    /// came out of the instrument.
+    fn track_with_fermenter(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        track_with_patched_fermenter(harness, track_id, effect_id, &[]);
+    }
+
+    /// The commands that place a Fermenter generator on a track, the way
+    /// `commands/graph.rs` places a built-in instrument: registered detached
+    /// with its own note store, then spliced at the head of the chain.
+    fn fermenter_strip_commands(
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> Vec<GraphCommand> {
+        vec![
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::fermenter_with_patch(FERMENTER_RATE, patch),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ]
+    }
+
+    /// The same strip, with `patch` written into the instrument before its
+    /// body crosses the command ring — the shape the mapper builds a fermenter
+    /// device in.
+    fn track_with_patched_fermenter(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        for command in fermenter_strip_commands(track_id, effect_id, patch) {
+            harness.send(command);
+        }
+    }
+
+    /// One of the instrument's own parameter names, as the mapper resolves it.
+    fn fermenter_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// The address a `SetParam` carries for one of the instrument's own
+    /// parameters.
+    fn fermenter_param(name: &str) -> DeviceParam {
+        DeviceParam::BuiltinNamed(fermenter_name(name))
+    }
+
+    /// Render `callbacks` blocks of `frames` and return the master pair
+    /// concatenated, so a spec can read across a block boundary.
+    fn render_master(
+        harness: &mut Harness,
+        frames: usize,
+        callbacks: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = Vec::with_capacity(frames * callbacks);
+        let mut right = Vec::with_capacity(frames * callbacks);
+        for _ in 0..callbacks {
+            let (block_left, block_right) = harness.render(frames);
+            left.extend(block_left);
+            right.extend(block_right);
+        }
+        (left, right)
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        let sum: f32 = samples.iter().map(|sample| sample * sample).sum();
+        (sum / samples.len() as f32).sqrt()
+    }
+
+    /// A [`FermenterInstance`] buffers exactly [`FERMENTER_BLOCK_FRAMES`], the
+    /// size `render_run`'s `from_raw_parts` slices trust without checking.
+    ///
+    /// `FermenterInstance::new` and this file's `FERMENTER_BLOCK_FRAMES`
+    /// import both live in daw-dsp now, but nothing stops a future edit to
+    /// daw-dsp's constructor from sizing the buffers off a separate literal
+    /// again; this test is what would catch that.
+    #[test]
+    fn a_fermenter_instance_buffers_exactly_the_frames_a_run_reads() {
+        let instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        assert_eq!(
+            instance.channel_buffer_frames(),
+            (FERMENTER_BLOCK_FRAMES, FERMENTER_BLOCK_FRAMES),
+            "FermenterInstance's left and right channel buffers must both be \
+             exactly FERMENTER_BLOCK_FRAMES long, or render_run's from_raw_parts \
+             slices read past the allocation"
+        );
+    }
+
+    /// A note scheduled for a Fermenter sounds from the frame it was written
+    /// for, and the master is silent ahead of it.
+    ///
+    /// The onset sits mid-block, three block boundaries into the render, so a
+    /// body that quantised the note to the head of the block it arrived in —
+    /// or to the head of the callback — would put the first non-zero sample
+    /// where the leading assertion reads silence.
+    #[test]
+    fn a_fermenter_note_on_sounds_from_the_frame_it_was_scheduled_for() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 300;
+        const ONSET: usize = NOTE_ON as usize;
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
+
+        let (left, _right) = render_master(&mut harness, BLOCK, 4);
+
+        assert!(
+            left[..ONSET].iter().all(|sample| *sample == 0.0),
+            "the master carried signal before the note was written for"
+        );
+        assert!(
+            left[ONSET..ONSET + BLOCK]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the note never sounded in the block that renders its frame"
+        );
+    }
+
+    /// The command batch for a track carrying a Fermenter generator playing
+    /// `events`, in the order both [`Harness`] and [`OfflineRenderer`] apply
+    /// commands: the strip from [`fermenter_strip_commands`], then start the
+    /// transport, then schedule the phrase.
+    fn fermenter_phrase_commands(
+        track_id: usize,
+        effect_id: usize,
+        events: &[(u64, u8, bool)],
+    ) -> Vec<GraphCommand> {
+        let mut commands = fermenter_strip_commands(track_id, effect_id, &[]);
+        commands.extend([
+            GraphCommand::SetTransport(TransportState {
+                is_playing: true,
+                ..TransportState::default()
+            }),
+            schedule_phrase(effect_id, events),
+        ]);
+        commands
+    }
+
+    /// The same phrase runs through the live harness at 128-frame blocks and
+    /// through [`OfflineRenderer`] at
+    /// [`crate::offline::OFFLINE_BLOCK_FRAMES`] (512-frame) blocks. The
+    /// note-on (frame 300: live block starts 256, offline block starts 0)
+    /// and the note-off (frame 900: live block starts 896, offline block
+    /// starts 512) each land in blocks that start at a different frame on
+    /// the two sides, so a delivery that depended on block phase would
+    /// diverge here.
+    ///
+    /// The body's own samples agree because both grids are whole multiples of
+    /// [`FERMENTER_BLOCK_FRAMES`] aligned at frame 0, so the instrument sees
+    /// one and the same run sequence on both sides. A live period that is not
+    /// a multiple of 128, or a loop seam inside a callback, advances the block
+    /// smoothers one extra step by the body's own contract and is outside what
+    /// this pins; see
+    /// [`a_partial_fermenter_run_advances_the_block_smoothers_one_extra_step`].
+    #[test]
+    fn a_fermenter_note_renders_the_same_samples_live_and_offline() {
+        const TRACK_ID: usize = 1;
+        const EFFECT_ID: usize = 7;
+        const NOTE_ON: u64 = 300;
+        const NOTE_OFF: u64 = 900;
+        const EVENTS: [(u64, u8, bool); 2] = [(NOTE_ON, 60, true), (NOTE_OFF, 60, false)];
+        const LIVE_BLOCK: usize = 128;
+        const LIVE_CALLBACKS: usize = 12;
+        const RENDERED: usize = LIVE_BLOCK * LIVE_CALLBACKS;
+        let onset = NOTE_ON as usize;
+
+        let mut harness = Harness::new(32);
+        for command in fermenter_phrase_commands(TRACK_ID, EFFECT_ID, &EVENTS) {
+            harness.send(command);
+        }
+        let (live_left, live_right) = render_master(&mut harness, LIVE_BLOCK, LIVE_CALLBACKS);
+
+        let mut offline = OfflineRenderer::new(FERMENTER_RATE, 32);
+        for command in fermenter_phrase_commands(TRACK_ID, EFFECT_ID, &EVENTS) {
+            offline.push(command).expect("the batch should fit");
+        }
+        let (offline_left, offline_right) = offline.render(RENDERED);
+
+        assert!(
+            live_left[..onset].iter().all(|sample| *sample == 0.0),
+            "the live left channel carried signal before the note-on frame"
+        );
+        assert!(
+            live_right[..onset].iter().all(|sample| *sample == 0.0),
+            "the live right channel carried signal before the note-on frame"
+        );
+        assert!(
+            offline_left[..onset].iter().all(|sample| *sample == 0.0),
+            "the offline left channel carried signal before the note-on frame"
+        );
+        assert!(
+            offline_right[..onset].iter().all(|sample| *sample == 0.0),
+            "the offline right channel carried signal before the note-on frame"
+        );
+        assert!(
+            rms(&live_left[onset..NOTE_OFF as usize]) > 0.0,
+            "the live render never sounded the note, so parity with silence would be vacuous"
+        );
+        assert_eq!(
+            live_left, offline_left,
+            "the live and offline left channels diverged for the same Fermenter phrase"
+        );
+        assert_eq!(
+            live_right, offline_right,
+            "the live and offline right channels diverged for the same Fermenter phrase"
+        );
+    }
+
+    /// A note-off reaches the Fermenter and its voice decays: the tail is
+    /// quieter than the held note, and nothing in the render is NaN.
+    ///
+    /// A release that never reached the instrument leaves the key down, so the
+    /// tail would read at the held note's level rather than under it.
+    #[test]
+    fn a_fermenter_note_off_lets_the_voice_decay_below_the_held_level() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 300;
+        const NOTE_OFF: u64 = 700;
+        const RENDERED: usize = 2_000;
+
+        /// A one-millisecond amplitude attack and a five-millisecond release,
+        /// so the note is at full level across the held window and its release
+        /// has run out well inside the tail window. At the shipped envelope
+        /// both windows sit on the attack ramp, where a release that arrived
+        /// and one that never did read the same.
+        const FAST_ENVELOPE: [(&str, f32); 2] = [("amp_attack", 0.001), ("amp_release", 0.005)];
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        for (name, value) in FAST_ENVELOPE {
+            harness.send(GraphCommand::SetParam(7, fermenter_param(name), value));
+        }
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        let (left, _right) = render_master(&mut harness, BLOCK, RENDERED.div_ceil(BLOCK));
+
+        let held = rms(&left[NOTE_ON as usize..NOTE_OFF as usize]);
+        let tail = rms(&left[1_500..RENDERED]);
+        assert!(
+            held > 0.0,
+            "the held note never sounded, so the tail proves nothing"
+        );
+        assert!(
+            tail < held,
+            "the tail ({tail}) is not quieter than the held note ({held}): the release \
+             never reached the instrument"
+        );
+        assert!(
+            left.iter().all(|sample| sample.is_finite()),
+            "the render carried a non-finite sample"
+        );
+    }
+
+    /// A note-off releases the voice on its own MIDI channel and leaves a
+    /// note holding the same pitch on another channel sounding.
+    ///
+    /// Two keys at one pitch on two channels is what an MPE part or two
+    /// layered parts on one instrument produce, and the store addresses them
+    /// separately — one bit per (channel, note). A release that dropped the
+    /// channel would silence both, cutting a note the producer never asked to
+    /// end. The two renders here differ only in whether the second channel's
+    /// note is released too, so a body that ignores the channel makes them the
+    /// same signal.
+    #[test]
+    fn a_fermenter_note_off_releases_only_the_channel_its_note_sounded_on() {
+        const BLOCK: usize = 128;
+        const CALLBACKS: usize = 16;
+        const NOTE: u8 = 60;
+        const RELEASE: u64 = 400;
+        const TAIL: usize = 1_200;
+        /// A one-millisecond attack and a five-millisecond release, so a voice
+        /// that was released is gone well inside the tail window and one that
+        /// was not is still at full level there.
+        const FAST_ENVELOPE: [(&str, f32); 2] = [("amp_attack", 0.001), ("amp_release", 0.005)];
+
+        fn render_releasing(channels: &[i16]) -> Vec<f32> {
+            let mut harness = Harness::new(32);
+            track_with_fermenter(&mut harness, 1, 7);
+            harness.playing();
+            for (name, value) in FAST_ENVELOPE {
+                harness.send(GraphCommand::SetParam(7, fermenter_param(name), value));
+            }
+            let mut notes = vec![
+                channel_note(0, NOTE, 0, true),
+                channel_note(0, NOTE, 1, true),
+            ];
+            notes.extend(
+                channels
+                    .iter()
+                    .map(|channel| channel_note(RELEASE, NOTE, *channel, false)),
+            );
+            harness.send(GraphCommand::ScheduleMidiNotes {
+                plugin_id: 7,
+                notes: notes.into(),
+            });
+            render_master(&mut harness, BLOCK, CALLBACKS).0
+        }
+
+        let one_released = render_releasing(&[0]);
+        let both_released = render_releasing(&[0, 1]);
+
+        assert!(
+            rms(&one_released[TAIL..]) > 0.0,
+            "releasing one channel silenced the note held on the other"
+        );
+        assert!(
+            rms(&both_released[TAIL..]) < rms(&one_released[TAIL..]),
+            "releasing both channels left as much sound as releasing one, so neither \
+             release narrowed to a channel"
+        );
+    }
+
+    /// One note stamped for a frame, a pitch and a MIDI channel — the shape a
+    /// producer writes for a part that is not on the base channel.
+    fn channel_note(at_frame: u64, note: u8, channel: i16, is_note_on: bool) -> TimedMidiNote {
+        let mut timed = timed_note(at_frame, note);
+        timed.event.channel = channel;
+        timed.event.is_note_on = is_note_on;
+        timed
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`FermenterInstance`] renders for the same programme.
+    ///
+    /// The worklet hands the instance 128 frames at a time with each event's
+    /// offset measured inside that 128, because the instance's buffers are 128
+    /// frames long and `process` silently clamps anything larger. The scheduler
+    /// hands the body a 256-frame callback, so a body that passed the callback
+    /// straight through would render the first 128 frames of every pair and
+    /// leave the rest as it found them.
+    #[test]
+    fn a_hosted_fermenter_renders_the_worklet_samples_for_the_same_programme() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// `(frame, note, is_note_on)`, two of them off a block boundary.
+        const PROGRAMME: [(u64, u8, bool); 4] = [
+            (0, 48, true),
+            (37, 60, true),
+            (141, 67, true),
+            (300, 60, false),
+        ];
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &PROGRAMME));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / FERMENTER_BLOCK_FRAMES {
+            let start = (block * FERMENTER_BLOCK_FRAMES) as u64;
+            let end = start + FERMENTER_BLOCK_FRAMES as u64;
+            for (frame, note, is_note_on) in PROGRAMME {
+                if !(start..end).contains(&frame) {
+                    continue;
+                }
+                let offset = (frame - start) as u32;
+                let queued = if is_note_on {
+                    instance.push_note_on(note, 100, 0, offset)
+                } else {
+                    instance.push_note_off_on_channel(note, 0, offset)
+                };
+                assert!(queued, "the reference instance refused an event");
+            }
+            let rendered_left = instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
+            // frames into the instance's own pair of buffers, which are exactly
+            // that long and are never resized.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            worklet_left.iter().any(|sample| *sample != 0.0),
+            "the reference render is silent, so an equality against it proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders"
+        );
+    }
+
+    /// A master-chain Fermenter renders no further than the pair it was
+    /// handed, whatever frame count the caller asks for.
+    ///
+    /// `process_block` is public, and its frame count is the caller's ask
+    /// while the buffers are the truth — which is why it clamps the two
+    /// together at its head. Every stage the master chain runs indexes the
+    /// pair by the count it is given, so an ask past the buffers slices past
+    /// them and panics on the callback unless that clamped count is what
+    /// reaches all of them. The declared latency below puts the dry line's
+    /// own pass over the pair on that same path, ahead of the body.
+    #[test]
+    fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
+        /// Shorter than the ask and not a whole number of runs, so the second
+        /// run is the one that would reach past the buffer.
+        const BUFFER: usize = 192;
+        const OVER_ASK: usize = 512;
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddEffect(
+            7,
+            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(set_latency(7, 64));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let mut left = vec![0.0_f32; BUFFER];
+        let mut right = vec![0.0_f32; BUFFER];
+        harness
+            .scheduler
+            .process_block(&mut left, &mut right, OVER_ASK);
+
+        assert!(
+            left.iter().any(|sample| *sample != 0.0),
+            "the instrument never sounded, so the over-ask reached nothing to bound"
+        );
+        assert!(
+            left[FERMENTER_BLOCK_FRAMES..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the render stopped at the first run: the ask was clamped to one run rather \
+             than to the buffer"
+        );
+    }
+
+    /// A partial run costs the instrument one extra step of its per-block
+    /// smoothers, and costs the note nothing.
+    ///
+    /// The body hands the instrument whole blocks of at most
+    /// [`FERMENTER_BLOCK_FRAMES`], and the instrument advances cutoff,
+    /// resonance, LFO rate and its effect smoothers one exponential step per
+    /// call whatever the run length. A 512-frame callback cut at frame 300 —
+    /// what a loop seam does to one — therefore runs 128, 128, 44, 128, 84
+    /// where the worklet's fixed quantum runs four 128s, and that fifth step
+    /// is what this reads.
+    ///
+    /// The split is driven straight at the body rather than through a loop
+    /// region on the harness because a region also re-fires the programme at
+    /// the seam: the divergence below would then be a re-triggered note rather
+    /// than the smoother, and the spec would pass with the contract broken.
+    ///
+    /// The filter cutoff is set far from its default so the smoother is still
+    /// travelling across the whole render. Frames ahead of
+    /// the seam sit under the same step in both renders; only frames past it
+    /// may differ.
+    #[test]
+    fn a_partial_fermenter_run_advances_the_block_smoothers_one_extra_step() {
+        const CALLBACK: usize = 512;
+        const SEAM: usize = 300;
+        const NOTE_ON: u32 = 40;
+        const CUTOFF: &str = "cutoff";
+        const CUTOFF_HZ: f32 = 400.0;
+        /// The measured ceiling on the per-frame difference ahead of the seam.
+        /// Every frame before it renders under the same block-parameter step
+        /// in both, and the per-sample state either side of a run boundary is
+        /// the same state, so the widest difference measured there is 0.0
+        /// exactly: the bound is an equality with a name, not a tolerance this
+        /// render needs.
+        const AHEAD_OF_SEAM: f32 = 0.0;
+
+        let mut body = FermenterBody::new(FERMENTER_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
+        body.set_param(CUTOFF, CUTOFF_HZ);
+        let mut event = note_on(60);
+        event.frame_offset = NOTE_ON;
+
+        let mut hosted_left = vec![0.0_f32; CALLBACK];
+        let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let (head_left, tail_left) = hosted_left.split_at_mut(SEAM);
+        let (head_right, tail_right) = hosted_right.split_at_mut(SEAM);
+        body.process(head_left, head_right, SEAM, &[event], &mut diagnostics);
+        body.process(
+            tail_left,
+            tail_right,
+            CALLBACK - SEAM,
+            &[],
+            &mut diagnostics,
+        );
+
+        let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        instance.set_param(CUTOFF, CUTOFF_HZ);
+        let mut worklet_left = Vec::with_capacity(CALLBACK);
+        for block in 0..CALLBACK / FERMENTER_BLOCK_FRAMES {
+            if block == 0 {
+                assert!(
+                    instance.push_note_on(60, 100, 0, NOTE_ON),
+                    "the reference instance refused the note"
+                );
+            }
+            let rendered = instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
+            // frames into the instance's own left buffer, which is exactly
+            // that long and is never resized.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+            }
+        }
+
+        let first_sounding = |samples: &[f32]| samples.iter().position(|sample| *sample != 0.0);
+        assert_eq!(
+            first_sounding(&worklet_left),
+            Some(NOTE_ON as usize),
+            "the reference never sounded on the frame the note was stamped for, so the \
+             comparison below proves nothing"
+        );
+        assert_eq!(
+            first_sounding(&hosted_left),
+            first_sounding(&worklet_left),
+            "the split runs moved the note off the frame it was stamped for"
+        );
+
+        let widest_difference = |range: std::ops::Range<usize>| {
+            range
+                .map(|frame| (hosted_left[frame] - worklet_left[frame]).abs())
+                .fold(0.0_f32, f32::max)
+        };
+        let ahead_of_seam = widest_difference(0..SEAM);
+        let past_seam = widest_difference(SEAM..CALLBACK);
+
+        assert!(
+            ahead_of_seam <= AHEAD_OF_SEAM,
+            "the runs ahead of the seam diverged by {ahead_of_seam}: every frame before it \
+             renders under the same block-parameter step in both, so a note or a run \
+             boundary moved"
+        );
+        assert!(
+            worklet_left[SEAM..].iter().any(|sample| *sample != 0.0),
+            "the reference is silent past the seam, so the divergence below would read \
+             equality it never earned"
+        );
+        assert!(
+            past_seam > 0.0,
+            "the renders agree past the seam: the partial run cost no extra smoother \
+             step, so this spec no longer observes the contract it names"
+        );
+    }
+
+    /// A sounding Fermenter, optionally written to first, and the master it
+    /// renders beside the diagnostics that count the write.
+    fn render_fermenter_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 0;
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
+        let (left, _right) = render_master(&mut harness, BLOCK, 4);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` carrying one of the Fermenter's own parameter names
+    /// reaches the instrument, and one carrying a Knead name aimed at a
+    /// Fermenter is counted unrouted rather than guessed at.
+    ///
+    /// `cutoff` is the filter cutoff, so a write that reached nothing renders
+    /// the same samples as the untouched instance.
+    #[test]
+    fn a_fermenter_named_write_changes_the_render_and_a_knead_name_counts_unrouted() {
+        let (untouched, untouched_diagnostics) = render_fermenter_write(None);
+        let (with_cutoff, cutoff_diagnostics) =
+            render_fermenter_write(Some((fermenter_param("cutoff"), 0.2)));
+        let (_, knead_name_diagnostics) =
+            render_fermenter_write(Some((DeviceParam::ShiftSemitones, 3.0)));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_cutoff, untouched,
+            "the named write never reached the instrument"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                cutoff_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+        assert_eq!(
+            knead_name_diagnostics.unmapped_set_param_calls, 1,
+            "a knead parameter name aimed at a Fermenter must be counted, not guessed at"
+        );
+    }
+
+    /// A well-shaped name the instrument has no parameter for changes nothing
+    /// and is still routed.
+    ///
+    /// The engine keeps no copy of the instrument's table, so this is the
+    /// instrument's own silent no-op — the same answer the web worklet gives
+    /// the same key. Counting it unrouted would claim the address reached the
+    /// wrong body, which is a different fault with a different repair.
+    #[test]
+    fn a_fermenter_write_naming_no_parameter_of_the_instrument_is_a_silent_no_op() {
+        let (untouched, untouched_diagnostics) = render_fermenter_write(None);
+        let (unknown, unknown_diagnostics) =
+            render_fermenter_write(Some((fermenter_param("no_such_param"), 0.2)));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so an agreement with it proves nothing"
+        );
+        assert_eq!(
+            unknown, untouched,
+            "a name the instrument has no parameter for moved the render"
+        );
+        assert_eq!(
+            unknown_diagnostics.unmapped_set_param_calls,
+            untouched_diagnostics.unmapped_set_param_calls,
+            "a write the body accepted was counted as aimed at the wrong body"
+        );
+    }
+
+    /// A cutoff far from the instrument's own default, so a write that landed
+    /// on the wrong layer is a different signal rather than a rounding of the
+    /// same one.
+    const PATCHED_CUTOFF: f32 = 200.0;
+
+    /// The layer count the patches below widen the instrument to, and the
+    /// layer they then select — which is the first one *past* that count.
+    ///
+    /// The selection has to sit outside the rendered set for a spec to
+    /// observe which layer a write reached at all: the instrument builds
+    /// every layer identically, so while two layers both render, writing the
+    /// cutoff to one or to the other sums to the very same signal and no
+    /// ordering could be told apart. Selected outside it, the write is
+    /// inaudible when it is routed and audible when it lands on layer 0
+    /// instead — and the count itself stays observable, because widening to
+    /// two layers is what tells these renders from the unpatched one.
+    const RENDERED_LAYERS: f32 = 2.0;
+    const SELECTED_LAYER: f32 = 2.0;
+
+    /// Render a Fermenter built with `patch`, sounding one note from the top
+    /// of the render.
+    fn render_fermenter_patch(patch: &[(BuiltinParamName, f32)]) -> Vec<f32> {
+        render_fermenter_patch_then_write(patch, None)
+    }
+
+    /// The same render, with `write` sent to the instance through the ordinary
+    /// `SetParam` path after the patch and before anything is rendered.
+    fn render_fermenter_patch_then_write(
+        patch: &[(BuiltinParamName, f32)],
+        write: Option<(DeviceParam, f32)>,
+    ) -> Vec<f32> {
+        let mut harness = Harness::new(32);
+        track_with_patched_fermenter(&mut harness, 1, 7, patch);
+        harness.playing();
+        if let Some((param, value)) = write {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    const FERMENTER_PATCH_BLOCK: usize = 128;
+
+    /// The same render over an instance the spec wrote itself, one
+    /// `set_param` at a time in the order given — the instrument's own path,
+    /// and so an oracle independent of how a patch is ordered.
+    fn render_fermenter_writes(writes: &[(&str, f32)]) -> Vec<f32> {
+        let mut core = PluginCore::fermenter_with_patch(FERMENTER_RATE, &[]);
+        if let PluginCore::Fermenter(body) = &mut core {
+            for (name, value) in writes {
+                body.set_param(name, *value);
+            }
+        }
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            core,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(insert_track_device(1, generator(7), 0));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    /// A patch routes its own writes to the layer it selects, whatever order
+    /// its entries arrive in.
+    ///
+    /// A patch is an unordered record control-side, so the mapper cannot
+    /// choose where the layer-management keys sit in it — here they sit after
+    /// the write they route. The oracle is the instrument's own `set_param`,
+    /// called in routing-first order; the old order is rendered beside it, so
+    /// a spec that agreed with both would be observing nothing.
+    #[test]
+    fn a_fermenter_patch_routes_its_writes_to_the_layer_it_selects() {
+        let cutoff = fermenter_name("cutoff");
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
+
+        let patched = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
+            (active_layer, SELECTED_LAYER),
+            (num_layers, RENDERED_LAYERS),
+        ]);
+        let routing_first = render_fermenter_writes(&[
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+            ("cutoff", PATCHED_CUTOFF),
+        ]);
+        let writes_first = render_fermenter_writes(&[
+            ("cutoff", PATCHED_CUTOFF),
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+        ]);
+
+        assert!(
+            routing_first.iter().any(|sample| *sample != 0.0),
+            "the reference render is silent, so an agreement with it proves nothing"
+        );
+        assert_ne!(
+            routing_first, writes_first,
+            "the two orders render the same signal, so this spec cannot tell them apart"
+        );
+        assert_eq!(
+            patched, routing_first,
+            "the patch wrote the cutoff to a different layer from the one it selects"
+        );
+    }
+
+    /// A live `SetParam` after a patch lands on the layer the patch selected.
+    ///
+    /// The instance keeps that selection, and every later write is routed by
+    /// it. A patch that selected its layer after writing would therefore
+    /// leave its own writes on one layer and every live write on another,
+    /// with the producer believing both landed together.
+    #[test]
+    fn a_live_write_after_a_patch_lands_on_the_layer_the_patch_selected() {
+        let cutoff = fermenter_name("cutoff");
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
+        let selection = [
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+        ];
+
+        let carried_by_the_patch = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+        ]);
+        let written_live = render_fermenter_patch_then_write(
+            &selection,
+            Some((fermenter_param("cutoff"), PATCHED_CUTOFF)),
+        );
+
+        assert!(
+            carried_by_the_patch.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so an agreement with it proves nothing"
+        );
+        assert_eq!(
+            written_live, carried_by_the_patch,
+            "the live write reached a different layer from the one the patch wrote to"
+        );
+    }
+
+    // ── Grand Boule ────────────────────────────────────────────────────────
+
+    /// The rate every Grand Boule spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate renders a different piano, and the parity spec below
+    /// would be comparing two instruments.
+    const GRAND_BOULE_RATE: f32 = 48_000.0;
+
+    /// The MIDI velocity [`note_on`] stamps, which is what the hosted body
+    /// divides by [`MIDI_VELOCITY_FULL_SCALE`] before the instrument sees it.
+    const GRAND_BOULE_VELOCITY: u8 = 100;
+
+    /// The velocity fraction the instrument is handed for a note the fixtures
+    /// stamp.
+    ///
+    /// The divisor is the MIDI 7-bit full-scale literal, spelled independently
+    /// of [`MIDI_VELOCITY_FULL_SCALE`] rather than reusing it: reusing the
+    /// production constant would make this oracle agree with the body by
+    /// construction and pass even if the body's own divisor drifted.
+    fn grand_boule_velocity() -> f32 {
+        f32::from(GRAND_BOULE_VELOCITY) / 127.0
+    }
+
+    /// Place a Grand Boule generator on a track, the way `commands/graph.rs`
+    /// places a built-in instrument: registered detached with its own note
+    /// store, then spliced at the head of the chain.
+    ///
+    /// The track holds no clip, so every non-zero sample the master carries
+    /// came out of the instrument.
+    fn track_with_grand_boule(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::grand_boule_with_patch(GRAND_BOULE_RATE, &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// Render `runs` runs of a reference instance, calling `deliver` with the
+    /// run index before each one — the worklet's own driving of the
+    /// instrument, which hands it [`GRAND_BOULE_RUN_FRAMES`] at a time and
+    /// voices a framed message as soon as the block about to render holds its
+    /// frame.
+    fn render_grand_boule_reference(
+        runs: usize,
+        mut deliver: impl FnMut(usize, &mut GrandBouleInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut left = Vec::with_capacity(runs * GRAND_BOULE_RUN_FRAMES);
+        let mut right = Vec::with_capacity(runs * GRAND_BOULE_RUN_FRAMES);
+        for run in 0..runs {
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `GRAND_BOULE_RUN_FRAMES`
+            // frames into the instance's own pair of buffers, which are
+            // `GRAND_BOULE_BLOCK_FRAMES` long — never shorter, as the spec
+            // below pins — and are never resized.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+                right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+            }
+        }
+        (left, right)
+    }
+
+    /// The instance buffers exactly the frames the host's slices are bounded
+    /// by.
+    ///
+    /// [`GrandBouleBody::render_run`] reads `frames` samples out of the
+    /// pointers `process` returns, and that is sound because
+    /// `frames <= GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES` while
+    /// the instance's buffers are exactly `GRAND_BOULE_BLOCK_FRAMES` long.
+    /// The middle link is a relation between two constants and is refused at
+    /// compile time beside `GRAND_BOULE_RUN_FRAMES`; the outer one is what
+    /// this reads, off a real instance, because only the instance can say how
+    /// long its buffers were actually built.
+    ///
+    /// Sizing the `daw-dsp` buffers at half `GRAND_BOULE_BLOCK_FRAMES` fails
+    /// the equality here instead of reading past an allocation at run time.
+    #[test]
+    fn a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts() {
+        let instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+
+        assert_eq!(
+            instance.block_frames(),
+            GRAND_BOULE_BLOCK_FRAMES,
+            "the instance's buffers are not the length the host's slices are bounded by"
+        );
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`GrandBouleInstance`] renders for the same programme.
+    ///
+    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time and
+    /// voices a note as soon as the block about to render holds its frame,
+    /// because the instrument takes no per-note sample offset. The scheduler
+    /// hands the body a longer callback, so the run split is the whole of what
+    /// makes the two agree.
+    ///
+    /// Two mutations red this: dividing the velocity by 100 rather than by
+    /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
+    /// dynamic, and delivering every event at the head of the callback rather
+    /// than at its own run moves the release off run nine.
+    #[test]
+    fn a_hosted_grand_boule_renders_the_worklet_samples_for_the_same_programme() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 8;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        /// The run the release is stamped inside, chosen off a callback
+        /// boundary so a body that only split at callbacks would miss it.
+        const RELEASE_RUN: usize = 9;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let (worklet_left, worklet_right) =
+            render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            });
+
+        assert!(
+            worklet_left[..RELEASE_FRAME as usize]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent before the release, so an equality against it proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders"
+        );
+    }
+
+    /// A note sounds from the run that holds the frame it was stamped for, and
+    /// the runs ahead of it are silent.
+    ///
+    /// The instrument has no note API carrying a sample offset, so the run is
+    /// the whole of the timing resolution — and it is the resolution the web
+    /// runtime has too, which is why the note is expected at the head of its
+    /// run rather than on its own frame. A body that delivered every event at
+    /// the head of the callback would sound this note in the first run, where
+    /// the leading assertion reads silence.
+    #[test]
+    fn a_grand_boule_note_on_sounds_from_the_run_that_holds_its_frame() {
+        const CALLBACK: usize = 512;
+        const STAMPED_FRAME: u32 = 200;
+        /// The run holding frame 200, which is where the note is expected.
+        const SOUNDING_RUN: usize = 1;
+        const ONSET: usize = SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES;
+
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut event = note_on(60);
+        event.velocity = GRAND_BOULE_VELOCITY;
+        event.frame_offset = STAMPED_FRAME;
+        let mut hosted_left = vec![0.0_f32; CALLBACK];
+        let mut hosted_right = vec![0.0_f32; CALLBACK];
+        body.process(
+            &mut hosted_left,
+            &mut hosted_right,
+            CALLBACK,
+            std::slice::from_ref(&event),
+        );
+
+        let (reference_left, reference_right) =
+            render_grand_boule_reference(CALLBACK / GRAND_BOULE_RUN_FRAMES, |run, instance| {
+                if run == SOUNDING_RUN {
+                    instance.note_on_with_channel(event.note, grand_boule_velocity(), 0);
+                }
+            });
+
+        assert!(
+            hosted_left[..ONSET].iter().all(|sample| *sample == 0.0),
+            "the body sounded before the run that holds the note's frame"
+        );
+        assert!(
+            reference_left[ONSET..].iter().any(|sample| *sample != 0.0),
+            "the reference is silent past the onset, so the equality below proves nothing"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal the worklet renders for this note"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal the worklet renders for this note"
+        );
+    }
+
+    /// A span the run size does not divide still renders its partial final
+    /// run, rather than stopping at the last whole one.
+    ///
+    /// [`GrandBouleBody::process`] computes
+    /// `run_end = rendered + (frames - rendered).min(GRAND_BOULE_RUN_FRAMES)`,
+    /// so 300 frames — two whole runs and a 44-frame remainder — walks a
+    /// third, shorter run rather than leaving `[256..300)` untouched. A body
+    /// whose outer loop instead required a full `GRAND_BOULE_RUN_FRAMES` to
+    /// start a run would render the first two runs identically and only go
+    /// silent on that tail, so the tail assertion below is what catches it —
+    /// without it, a silent tail would match a silent reference by accident.
+    #[test]
+    fn a_grand_boule_span_that_the_run_does_not_divide_renders_its_partial_tail() {
+        const FRAMES: usize = 300;
+        const NOTE: u8 = 60;
+        const STAMPED_FRAME: u32 = 200;
+        const TAIL_FRAMES: usize = FRAMES - 2 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut event = note_on(NOTE);
+        event.velocity = GRAND_BOULE_VELOCITY;
+        event.frame_offset = STAMPED_FRAME;
+        let mut hosted_left = vec![0.0_f32; FRAMES];
+        let mut hosted_right = vec![0.0_f32; FRAMES];
+        body.process(
+            &mut hosted_left,
+            &mut hosted_right,
+            FRAMES,
+            std::slice::from_ref(&event),
+        );
+
+        // The reference drives the instance the way the worklet would: two
+        // whole runs, with the stamped note (frame 200, inside the second
+        // run) delivered before that run renders, then the 44-frame tail.
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(FRAMES);
+        let mut reference_right = Vec::with_capacity(FRAMES);
+        for (run, run_frames) in [GRAND_BOULE_RUN_FRAMES, GRAND_BOULE_RUN_FRAMES, TAIL_FRAMES]
+            .into_iter()
+            .enumerate()
+        {
+            if run == 1 {
+                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+            }
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `run_frames` frames into the
+            // instance's own pair of buffers, which are
+            // `GRAND_BOULE_BLOCK_FRAMES` long — as
+            // `a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts`
+            // pins — and `run_frames` never exceeds that. Both pointers are
+            // read and copied here, before the instance is mutated again.
+            unsafe {
+                reference_left
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                reference_right
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+        }
+
+        assert!(
+            hosted_left[(2 * GRAND_BOULE_RUN_FRAMES)..]
+                .iter()
+                .any(|sample| sample.abs() > 0.0),
+            "the partial tail is silent, so a body that skipped it would match a silent \
+             reference by accident"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+    }
+
+    /// A note-off narrowed to one member channel on delivery releases only
+    /// that channel's voice, leaving a note held on another channel sounding.
+    ///
+    /// [`GrandBouleBody::deliver`] passes `channel.unwrap_or(0)` to
+    /// `note_on_with_channel`, so two notes stamped on different wire
+    /// channels must still sound as two separate voices rather than both
+    /// folding onto member channel 0 — a body that dropped the channel would
+    /// voice both notes on channel 0, so the channel-2 note-off would find no
+    /// channel-2 voice to narrow onto and release neither, leaving both
+    /// notes ringing where the reference render lets only one continue.
+    #[test]
+    fn a_grand_boule_note_off_on_a_channel_releases_only_that_channels_voice() {
+        const NOTE: u8 = 60;
+        const SPAN: usize = 4 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut hosted_left = vec![0.0_f32; SPAN];
+        let mut hosted_right = vec![0.0_f32; SPAN];
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+
+        let mut note_on_channel_1 = note_on(NOTE);
+        note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_1.channel = 1;
+        let mut note_on_channel_2 = note_on(NOTE);
+        note_on_channel_2.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[..GRAND_BOULE_RUN_FRAMES],
+            &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
+            GRAND_BOULE_RUN_FRAMES,
+            &[note_on_channel_1, note_on_channel_2],
+        );
+
+        let mut note_off_channel_2 = note_on(NOTE);
+        note_off_channel_2.is_note_on = false;
+        note_off_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[GRAND_BOULE_RUN_FRAMES..],
+            &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
+            SPAN - GRAND_BOULE_RUN_FRAMES,
+            std::slice::from_ref(&note_off_channel_2),
+        );
+
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(SPAN);
+        let mut reference_right = Vec::with_capacity(SPAN);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        for run in 0..4 {
+            if run == 1 {
+                instance.note_off_on_channel(NOTE, 2);
+            }
+            let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: as in the partial-tail spec above — the pointers name
+            // this run's fixed-length render into the instance's own
+            // buffers, copied before the instance is mutated again.
+            unsafe {
+                reference_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+                reference_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            reference_left[..GRAND_BOULE_RUN_FRAMES]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "both notes must be audible before the channel-2 release, or the comparison below \
+             is against silence"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal a channel-narrowed release produces"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal a channel-narrowed release produces"
+        );
+    }
+
+    /// A note-off carrying no addressable channel releases every voice at its
+    /// pitch, and one carrying a channel releases only that channel's.
+    ///
+    /// Two keys at one pitch on two member channels is what an MPE part
+    /// produces, and the instrument keeps them as separate voices. The two
+    /// renders here differ only in whether the second channel's voice is
+    /// released as well, so a body that dropped the note-off altogether — or
+    /// narrowed the channel-less one to a single member — leaves them the same
+    /// signal.
+    #[test]
+    fn a_grand_boule_note_off_without_a_channel_releases_every_voice_at_the_pitch() {
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        const RELEASE_FRAME: u32 = 1_024;
+        /// Far enough past the release that the damper-lift transient a
+        /// channel-less note-off triggers has died away, so what the window
+        /// reads is the strings still ringing rather than the thud.
+        const TAIL: usize = 3_072;
+        /// The channel MIDI has no address for: `member_channel` narrows it to
+        /// `None`, which is the route under test.
+        const UNADDRESSABLE_CHANNEL: i16 = -1;
+
+        fn render_releasing(release_channel: i16) -> Vec<f32> {
+            let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+            let mut left = vec![0.0_f32; RENDERED];
+            let mut right = vec![0.0_f32; RENDERED];
+
+            let mut held = [note_on(NOTE), note_on(NOTE)];
+            held[0].channel = 1;
+            held[1].channel = 2;
+            let mut release = note_on(NOTE);
+            release.is_note_on = false;
+            release.channel = release_channel;
+            release.frame_offset = RELEASE_FRAME;
+
+            let mut events = held.to_vec();
+            events.push(release);
+            body.process(&mut left, &mut right, RENDERED, &events);
+            left
+        }
+
+        let one_released = render_releasing(1);
+        let both_released = render_releasing(UNADDRESSABLE_CHANNEL);
+
+        assert!(
+            rms(&one_released[TAIL..]) > 0.0,
+            "releasing one channel silenced everything, so the comparison proves nothing"
+        );
+        assert!(
+            rms(&both_released[TAIL..]) < rms(&one_released[TAIL..]),
+            "the channel-less release ({}) left as much sound as the one narrowed to a \
+             single channel ({}), so it reached at most one of the two voices",
+            rms(&both_released[TAIL..]),
+            rms(&one_released[TAIL..])
         );
     }
 }

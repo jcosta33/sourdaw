@@ -41,7 +41,10 @@ type TestRecordingClip = {
 
 type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
 
-type StartAudioRecordingMock = (trackId: string, onComplete: (buffer: AudioBuffer) => void) => Promise<boolean>;
+type StartAudioRecordingMock = (
+    trackId: string,
+    onTerminal: (result: { kind: 'completed'; buffer: AudioBuffer } | { kind: 'failed'; reason: string }) => void
+) => Promise<boolean>;
 
 type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
 
@@ -90,6 +93,9 @@ vi.mock('../../models/TempoMap', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
+    // The loop-wrap take path reads which clips are actively recording; no test
+    // here records, so the ref stays empty.
+    activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTakeLane: vi.fn(),
@@ -550,7 +556,7 @@ describe('playhead scheduler tick', () => {
 
             const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
             const buffer = create_test_audio_buffer();
-            complete_recording(buffer);
+            complete_recording({ kind: 'completed', buffer });
 
             expect(harness.cache_audio_buffer).toHaveBeenCalledWith({
                 buffer,

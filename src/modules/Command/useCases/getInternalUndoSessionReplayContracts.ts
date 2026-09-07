@@ -5,7 +5,13 @@ import { validateVersionedCommandArguments } from './versionedCommandArgumentKey
 import type { SessionActionContract } from '../stores/undoSessionMirror';
 
 function createInternalReplayContract(
-    actionType: 'discardCreatedTrack' | 'discardDuplicatedClip' | 'restoreMidiClipNotes',
+    actionType:
+        | 'discardCreatedTrack'
+        | 'discardDuplicatedClip'
+        | 'discardDrawnClip'
+        | 'restoreClipMoves'
+        | 'restoreDrawnClip'
+        | 'restoreMidiClipNotes',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -34,6 +40,9 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
     return [
         createInternalReplayContract('discardCreatedTrack', 1, 'optional'),
         createInternalReplayContract('discardDuplicatedClip', 1, 'optional'),
+        createInternalReplayContract('discardDrawnClip', 1, 'optional'),
+        createInternalReplayContract('restoreClipMoves', 1, 'optional'),
+        createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
     ];
 }

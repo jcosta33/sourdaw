@@ -19,6 +19,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
         context: { currentTime: 2, sampleRate: 48000 },
         getTrackStrip: get_track_strip,
@@ -28,6 +29,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: apply_note_expression,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');

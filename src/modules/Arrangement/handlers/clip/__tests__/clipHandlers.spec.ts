@@ -28,6 +28,12 @@ describe('clipHandlers', () => {
     it('contains all expected clip handlers', () => {
         const expectedKeys = [
             'addClip',
+            'drawClip',
+            'discardDrawnClip',
+            'restoreDrawnClip',
+            'duplicateClipAt',
+            'moveClips',
+            'restoreClipMoves',
             'moveClip',
             'restoreClipPlacement',
             'discardDuplicatedClip',
@@ -49,6 +55,7 @@ describe('clipHandlers', () => {
             'glueClips',
             'restoreClipGlueState',
             'nudgeClip',
+            'slipClipContent',
             'crossfadeClips',
             'restoreCrossfadeClips',
             'setClipGain',

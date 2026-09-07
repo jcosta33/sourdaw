@@ -14,7 +14,9 @@ const mocks = vi.hoisted(() => ({
     hasDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
+    replaceRootContentPreservingIdentity: vi.fn(),
     removeDoc: vi.fn(),
+    rootIdentityEpoch: 1,
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -45,9 +47,12 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) =
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getDoc: mocks.getDoc,
+        getRootId: () => 'root',
+        getRootIdentityEpoch: () => mocks.rootIdentityEpoch,
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
+        replaceRootContentPreservingIdentity: mocks.replaceRootContentPreservingIdentity,
         removeDoc: mocks.removeDoc,
     },
 }));
@@ -76,6 +81,12 @@ describe('mergeBranch', () => {
         });
         mocks.replaceDoc.mockImplementation((id: string, doc: unknown) => {
             docs[id] = doc;
+            if (id === 'root') {
+                mocks.rootIdentityEpoch++;
+            }
+        });
+        mocks.replaceRootContentPreservingIdentity.mockImplementation((doc: unknown) => {
+            docs.root = doc;
         });
         mocks.removeDoc.mockImplementation((id: string) => {
             delete docs[id];
@@ -83,21 +94,24 @@ describe('mergeBranch', () => {
         mocks.merge.mockReturnValue(MERGED_DOC);
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.storeValue.activeBranchId = 'feat';
+        mocks.rootIdentityEpoch = 1;
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
     });
 
     it('merges the source into the active branch (root slot) and refreshes its snapshot', async () => {
+        const rootIdentity = mocks.rootIdentityEpoch;
         await mergeBranch('src');
 
         // Regression: merge resolves the active branch (feat) and merges source
         // into the root slot, then mirrors the result back to branch_feat so the
         // merge survives a later switch away.
         expect(mocks.merge).toHaveBeenCalledWith(TARGET_DOC, SOURCE_DOC);
-        expect(mocks.replaceDoc).toHaveBeenCalledWith('root', MERGED_DOC);
+        expect(mocks.replaceRootContentPreservingIdentity).toHaveBeenCalledWith(MERGED_DOC);
         const snapshot = mocks.replaceDoc.mock.calls.find((c) => c[0] === 'branch_feat');
         expect(snapshot).toBeDefined();
         expect(mocks.compactProject).toHaveBeenCalledOnce();
+        expect(mocks.rootIdentityEpoch).toBe(rootIdentity);
     });
 
     it('flushes deferred root writes before reading the active branch', async () => {
@@ -114,12 +128,29 @@ describe('mergeBranch', () => {
     it('rejects and restores the active branch when persistence fails', async () => {
         const error = new Error('persist failed');
         mocks.compactProject.mockRejectedValueOnce(error);
+        mocks.loadCrdtProject.mockResolvedValueOnce(false);
+        const rootIdentity = mocks.rootIdentityEpoch;
 
         await expect(mergeBranch('src')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
         expect(docs.root).toEqual(TARGET_DOC);
         expect(docs.branch_feat).toEqual(ACTIVE_SNAPSHOT);
+        expect(mocks.rootIdentityEpoch).toBe(rootIdentity);
+    });
+
+    it('adopts a new root identity when rollback commits a recovery load', async () => {
+        const error = new Error('persist failed');
+        mocks.compactProject.mockRejectedValueOnce(error);
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            mocks.rootIdentityEpoch++;
+            return Promise.resolve(true);
+        });
+        const rootIdentity = mocks.rootIdentityEpoch;
+
+        await expect(mergeBranch('src')).rejects.toBe(error);
+
+        expect(mocks.rootIdentityEpoch).toBeGreaterThan(rootIdentity);
     });
 
     it('rejects merging a branch into itself', async () => {

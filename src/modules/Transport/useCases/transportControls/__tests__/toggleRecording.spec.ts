@@ -29,7 +29,9 @@ type TestTrackState = {
     tracks: TestTrack[];
 };
 
-type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<boolean>;
+type TestRecordingResult = { kind: 'completed'; buffer: TestRecordingBuffer } | { kind: 'failed'; reason: string };
+
+type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
 const mocks = vi.hoisted(() => {
     const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
@@ -328,7 +330,7 @@ describe('toggleRecording', () => {
             throw new Error('Expected recording callback to be registered');
         }
 
-        recording_callback(recorded_buffer);
+        recording_callback({ kind: 'completed', buffer: recorded_buffer });
 
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: recorded_buffer,
@@ -353,6 +355,34 @@ describe('toggleRecording', () => {
             startBeat: 10,
             endBeat: 14,
         });
+    });
+
+    it('does not cache or update a clip for a failed recording result', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([
+            { id: 'clip-recording', trackId: 'track-audio', startBeat: 10, endBeat: 10 },
+        ]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+        const recordingCallback = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!recordingCallback) {
+            throw new Error('Expected recording callback to be registered');
+        }
+
+        recordingCallback({ kind: 'failed', reason: 'worker-error' });
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
     });
 
     it('does not create recording state when an audio recorder cannot start', async () => {
@@ -535,7 +565,7 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ duration: 2 });
+        captured({ kind: 'completed', buffer: { duration: 2 } });
 
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
@@ -576,7 +606,7 @@ describe('toggleRecording', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ duration: 2 });
+        captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
         const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];

@@ -150,6 +150,50 @@ describe('RotaryKnob', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
+    it('emits a settled sample when a drag moves away and returns to its start value', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = getRoot(container);
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 8, clientY: 100 });
+        // Move away
+        fireEvent.pointerMove(root, { pointerId: 8, clientY: 80 });
+        expect(onChange).toHaveBeenCalledWith(expect.any(Number), true);
+        const awayValue = onChange.mock.calls.at(-1)?.[0];
+        expect(awayValue).not.toBe(50);
+
+        // Move back to start value
+        fireEvent.pointerMove(root, { pointerId: 8, clientY: 100 });
+        expect(onChange).toHaveBeenLastCalledWith(50, true);
+
+        // Release pointer
+        fireEvent.pointerUp(root, { pointerId: 8 });
+
+        // Must emit settled sample with isTransient = false
+        expect(onChange).toHaveBeenLastCalledWith(50, false);
+    });
+
+    it('does not commit a subsequent bare click following a completed drag', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = getRoot(container);
+
+        // First gesture: drag away and release
+        fireEvent.pointerDown(root, { button: 0, pointerId: 1, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 1, clientY: 80 });
+        fireEvent.pointerUp(root, { pointerId: 1 });
+        expect(onChange).toHaveBeenCalledWith(expect.any(Number), false);
+
+        onChange.mockClear();
+
+        // Second gesture: bare click (press and release with no movement)
+        fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientY: 100 });
+        fireEvent.pointerUp(root, { pointerId: 2 });
+
+        // Must remain completely silent
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('commits the latest transient value when a drag is cancelled', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

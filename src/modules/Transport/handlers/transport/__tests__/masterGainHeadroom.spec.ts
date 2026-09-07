@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     const state: { value: TransportState | null } = { value: null };
     return {
         state,
-        engineSetMasterGain: vi.fn(),
+        setMasterGainValue: vi.fn(),
         store: {
             get value() {
                 return state.value;
@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGain: mocks.engineSetMasterGain }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGainValue: mocks.setMasterGainValue }));
 
 vi.mock('../../../stores/transportStore', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../stores/transportStore')>();

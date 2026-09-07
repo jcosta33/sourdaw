@@ -30,6 +30,9 @@ target/
 # Strand receipts produced by `pnpm lane:strand`; they outlive the worktrees they record
 .agents/lane-strands/
 
+# Guard failure receipts produced on resource-guard failures
+.agents/guard-failures/
+
 # Agent campaign artifacts live in the global workspace (~/.agents/artifacts/<project>/),
 # never in the repo. Promotion to repo-owned docs happens deliberately via the promote flow.
 .agents/artifacts/

@@ -45,6 +45,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
     takeLaneStore: { value: { lanes: [] } },
+    // The loop-wrap take path reads which clips are actively recording; no test
+    // here records, so the ref stays empty.
+    activeRecordingRef: { current: [] },
     // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
     // dependency bundle destructures these off this barrel at module scope. A
     // factory that omits them fails the whole file at import, not at a test.
@@ -109,6 +112,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     getAudioContext: () => audioContextStub,
     getCurrentTime: () => ctxTime.now,
     scheduleClick: scheduleClickSpy,
@@ -132,6 +136,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // No native engine here: the cursor these seams are about follows the
     // scheduler's own integration.
     readNativeEnginePlayheadSeconds: (): number | null => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 /**
  * The observation point. Typed to the four arguments the assertions read, so

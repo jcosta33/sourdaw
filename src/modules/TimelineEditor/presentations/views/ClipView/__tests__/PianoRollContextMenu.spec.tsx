@@ -3,15 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
-    addMidiNote,
     getNotesForClip,
     humanizeNotes,
     moveMidiNote,
     removeMidiNote,
     restoreStrumOriginals,
     setNoteVelocity,
+    setNotesForClip,
     snapClipToScale,
     strumNotes,
 } from '#/modules/MIDI/useCases';
@@ -66,8 +66,10 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: vi.fn(),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppActionBatch: vi.fn(),
+    pushUndoEntry: vi.fn(),
+    executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     resetActionReplayAuthority: vi.fn(),
@@ -76,11 +78,11 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    addMidiNote: vi.fn(),
     removeMidiNote: vi.fn(),
     moveMidiNote: vi.fn(),
     setNoteVelocity: vi.fn(),
     getNotesForClip: vi.fn(() => []),
+    setNotesForClip: vi.fn(),
     humanizeNotes: vi.fn(),
     restoreStrumOriginals: vi.fn(),
     strumNotes: vi.fn(),
@@ -211,6 +213,10 @@ describe('PianoRollContextMenu', () => {
             { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
             { id: 'n2', pitch: 64, startBeat: 1, duration: 0.5, velocity: 90 },
         ];
+        // The undo/redo snapshots read the clip's notes from the store before
+        // and after the cut, so the store mock reports the pre-cut list and
+        // then the post-cut list with n1 gone.
+        vi.mocked(getNotesForClip).mockReturnValueOnce(notes).mockReturnValueOnce([notes[1]!]);
         renderWithTooltip(
             <PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1', 'n2'])} />
         );
@@ -222,22 +228,20 @@ describe('PianoRollContextMenu', () => {
         expect(defaultProps.onClearSelection).toHaveBeenCalled();
         expect(pushUndoEntry).toHaveBeenCalledWith('Cut 2 notes', expect.any(Function), expect.any(Function));
 
+        // Undo restores the captured pre-cut snapshot — complete note objects
+        // with their original ids — and redo restores the post-cut one (#3664).
         const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
         undo();
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 64, 1, 0.5, 90);
-
-        vi.mocked(removeMidiNote).mockClear();
+        expect(setNotesForClip).toHaveBeenCalledWith('clip-1', notes);
         redo();
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n2');
+        expect(setNotesForClip).toHaveBeenLastCalledWith('clip-1', [notes[1]]);
     });
 
     it('should quantize notes through the AppAction boundary', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getAllByText('1/4')[0]!);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
             payload: { clipId: 'clip-1', gridSize: 0.25 },
         });
@@ -248,7 +252,7 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getByText('+Oct'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: 12 },
         });
@@ -319,7 +323,7 @@ describe('PianoRollContextMenu', () => {
 
         expect(defaultProps.onClose).toHaveBeenCalled();
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith(
+            expect(executeUserAppAction).toHaveBeenCalledWith(
                 { type: 'completeMidi', payload: { clipId: 'clip-1', direction: 'forward', bars: 4 } },
                 { source: 'ai' }
             )
@@ -333,7 +337,7 @@ describe('PianoRollContextMenu', () => {
 
         fireEvent.click(screen.getByText('Extract Groove'));
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'extractGroove',
                 payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v1' },
             })
@@ -342,7 +346,7 @@ describe('PianoRollContextMenu', () => {
 
         fireEvent.click(applyButton);
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'applyGroove',
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
             })
@@ -351,6 +355,10 @@ describe('PianoRollContextMenu', () => {
 
     it('should delete the selected notes and restore them on undo', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        // The undo/redo snapshots read the clip's notes from the store before
+        // and after the delete, so the store mock reports the pre-delete list
+        // and then the emptied post-delete list.
+        vi.mocked(getNotesForClip).mockReturnValueOnce(notes).mockReturnValueOnce([]);
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1'])} />);
         fireEvent.click(screen.getByText('Delete Selected'));
 
@@ -358,13 +366,13 @@ describe('PianoRollContextMenu', () => {
         expect(defaultProps.onClearSelection).toHaveBeenCalled();
         expect(pushUndoEntry).toHaveBeenCalledWith('Delete 1 note', expect.any(Function), expect.any(Function));
 
+        // Undo restores the captured pre-delete snapshot — the complete note
+        // object with its original id — and redo restores the emptied list (#3664).
         const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
         undo();
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
-
-        vi.mocked(removeMidiNote).mockClear();
+        expect(setNotesForClip).toHaveBeenCalledWith('clip-1', notes);
         redo();
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
+        expect(setNotesForClip).toHaveBeenLastCalledWith('clip-1', []);
     });
 
     it('should disable Invert Pitch and Reverse (Retrograde) when notes is empty', () => {
@@ -373,28 +381,28 @@ describe('PianoRollContextMenu', () => {
         expect(screen.getByText('Reverse (Retrograde)')).toBeDisabled();
     });
 
-    it('should call executeAppAction with invertNotes and close menu when Invert Pitch is clicked', () => {
+    it('should call executeUserAppAction with invertNotes and close menu when Invert Pitch is clicked', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
         const button = screen.getByText('Invert Pitch');
         expect(button).not.toBeDisabled();
         fireEvent.click(button);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'invertNotes',
             payload: { clipId: 'clip-1' },
         });
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
-    it('should call executeAppAction with retrogradeNotes and close menu when Reverse (Retrograde) is clicked', () => {
+    it('should call executeUserAppAction with retrogradeNotes and close menu when Reverse (Retrograde) is clicked', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
         const button = screen.getByText('Reverse (Retrograde)');
         expect(button).not.toBeDisabled();
         fireEvent.click(button);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'retrogradeNotes',
             payload: { clipId: 'clip-1' },
         });
@@ -409,7 +417,7 @@ describe('PianoRollContextMenu', () => {
         expect(quarterButtons).toHaveLength(2);
         fireEvent.click(quarterButtons[1]!);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip-1', gridSize: 0.25 },
         });
@@ -426,13 +434,13 @@ describe('PianoRollContextMenu', () => {
         expect(plus20).not.toBeDisabled();
 
         fireEvent.click(minus20);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip-1', factor: 0.8 },
         });
 
         fireEvent.click(plus20);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip-1', factor: 1.2 },
         });
@@ -448,13 +456,13 @@ describe('PianoRollContextMenu', () => {
         expect(set64).not.toBeDisabled();
 
         fireEvent.click(set100);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setAllVelocities',
             payload: { clipId: 'clip-1', velocity: 100 },
         });
 
         fireEvent.click(set64);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setAllVelocities',
             payload: { clipId: 'clip-1', velocity: 64 },
         });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -13,7 +13,7 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -123,6 +123,16 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     const [gestureGain, setGestureGain] = useState<number | null>(null);
     const [gesturePan, setGesturePan] = useState<number | null>(null);
 
+    const gainGestureToken = useRef(0);
+    const gainGestureOpen = useRef(false);
+    const displayedGain = useRef<number | null>(null);
+    const pendingGainCommit = useRef<Promise<void>>(Promise.resolve());
+
+    const panGestureToken = useRef(0);
+    const panGestureOpen = useRef(false);
+    const displayedPan = useRef<number | null>(null);
+    const pendingPanCommit = useRef<Promise<void>>(Promise.resolve());
+
     let displayGain = track.gain;
     if (gestureGain !== null) {
         displayGain = gestureGain;
@@ -181,46 +191,84 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     };
 
     /**
-     * Commit a settled gesture and hold its value on screen until the write has
-     * landed.
-     *
-     * Handing the display straight back to `track.gain` at dispatch time showed
-     * the *pre-gesture* value for as long as the action took to commit, so the
-     * fader visibly snapped back to where the move started on every release.
-     * Clearing in `finally` rather than on success means a rejected action also
-     * returns the control to project truth instead of stranding it on a value
-     * the project never took — and it is clamping-proof, which comparing the
-     * committed value against `track.gain` would not be.
+     * Runs once a settle's dispatch has landed, whichever token it was
+     * issued under. If no newer gesture has opened and no newer settle has
+     * landed since, this settle is still the display and engine's owner and
+     * reconciles both from project truth as before. Otherwise something
+     * newer has already taken over — restoring here would clobber it with
+     * this stale commit's outcome, so this instead re-asserts whatever
+     * `displayedGain`/`displayedPan` currently holds on the engine, and leaves
+     * the display state untouched; its own eventual settle reconciles the rest.
      */
-    const commitGesture = (
-        action: Parameters<typeof executeAppAction>[0],
-        parameterId: 'gain' | 'pan',
-        clearGesture: () => void
-    ): void => {
-        void (async () => {
-            try {
-                await executeAppAction(action);
-            } catch (error) {
-                // `void` on a rejecting promise is an unhandled rejection, not a
-                // handled one — the `finally` below runs but nothing consumes
-                // the failure, so a commit that throws took down the page's
-                // rejection handler while every test around it still passed.
-                logger.error(new Error(`Channel strip commit failed for action: ${action.type}`, { cause: error }));
-                // Before the `finally` hands the display back: the display and
-                // the engine have to arrive at project truth together, or the
-                // user is looking at one value and hearing another.
-                restoreEngineFromProjectTruth(parameterId);
-            } finally {
-                clearGesture();
-                releaseTouch(parameterId);
+    const settleContinuation = (parameterId: 'gain' | 'pan', token: number): void => {
+        if (parameterId === 'gain') {
+            if (gainGestureToken.current === token) {
+                setGestureGain(null);
+                displayedGain.current = null;
+                return;
             }
-        })();
+            if (displayedGain.current !== null) {
+                setTrackGain(track.id, displayedGain.current, true);
+            }
+            return;
+        }
+
+        if (panGestureToken.current === token) {
+            setGesturePan(null);
+            displayedPan.current = null;
+            return;
+        }
+        if (displayedPan.current !== null) {
+            setTrackPan(track.id, displayedPan.current, true);
+        }
+    };
+
+    const commitGain = async (value: number, token: number): Promise<void> => {
+        try {
+            const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+            const expectedGain = currentTrack?.gain ?? track.gain;
+            await executeAppAction({
+                type: 'setTrackGain',
+                payload: { trackId: track.id, gain: value, expectedGain },
+            });
+        } catch (error) {
+            logger.error(new Error('Channel strip commit failed for action: setTrackGain', { cause: error }));
+            if (gainGestureToken.current === token) {
+                restoreEngineFromProjectTruth('gain');
+            }
+        } finally {
+            settleContinuation('gain', token);
+            if (gainGestureToken.current === token) {
+                releaseTouch('gain');
+            }
+        }
+    };
+
+    const commitPan = async (value: number, token: number): Promise<void> => {
+        try {
+            const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+            const expectedPan = currentTrack?.pan ?? track.pan;
+            await executeAppAction({
+                type: 'setTrackPan',
+                payload: { trackId: track.id, pan: value, expectedPan },
+            });
+        } catch (error) {
+            logger.error(new Error('Channel strip commit failed for action: setTrackPan', { cause: error }));
+            if (panGestureToken.current === token) {
+                restoreEngineFromProjectTruth('pan');
+            }
+        } finally {
+            settleContinuation('pan', token);
+            if (panGestureToken.current === token) {
+                releaseTouch('pan');
+            }
+        }
     };
 
     return {
         select: () => selectTrack(track.id),
         toggleMute: () => {
-            void executeAppAction(
+            void executeUserAppAction(
                 {
                     type: 'muteTrack',
                     payload: { trackId: track.id, muted: !track.muted, expectedMuted: track.muted },
@@ -230,7 +278,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         },
         toggleSolo: (additive) => {
             if (additive) {
-                void executeAppAction(
+                void executeUserAppAction(
                     { type: 'soloTrack', payload: { trackId: track.id, soloed: !track.soloed } },
                     PERFORMATIVE_TOGGLE
                 );
@@ -246,50 +294,68 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             soloTrackExclusive(track.id);
         },
         toggleArm: () => {
-            void executeAppAction({
+            void executeUserAppAction({
                 type: 'armTrack',
                 payload: { trackId: track.id, armed: !track.armed },
             });
         },
         toggleMonitoring: () => toggleInputMonitoring(track.id),
         toggleSoloSafeFlag: () => {
-            void executeAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } }, PERFORMATIVE_TOGGLE);
+            void executeUserAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } }, PERFORMATIVE_TOGGLE);
         },
         setGain: (value, isTransient = false) => {
-            setGestureGain(value);
             if (isTransient) {
+                if (!gainGestureOpen.current) {
+                    gainGestureToken.current += 1;
+                }
+                gainGestureOpen.current = true;
+                displayedGain.current = value;
+                setGestureGain(value);
                 setTrackGain(track.id, value, true);
                 return;
             }
-            commitGesture(
-                {
-                    type: 'setTrackGain',
-                    payload: { trackId: track.id, gain: value, expectedGain: track.gain },
-                },
-                'gain',
-                () => setGestureGain(null)
-            );
+            const wasOpen = gainGestureOpen.current;
+            gainGestureOpen.current = false;
+            gainGestureToken.current += 1;
+            const token = gainGestureToken.current;
+            displayedGain.current = value;
+            setGestureGain(value);
+            if (!wasOpen) {
+                setTrackGain(track.id, value, true);
+            }
+            pendingGainCommit.current = pendingGainCommit.current
+                .catch(() => undefined)
+                .then(() => commitGain(value, token));
         },
         setPan: (value, isTransient = false) => {
-            setGesturePan(value);
             if (isTransient) {
+                if (!panGestureOpen.current) {
+                    panGestureToken.current += 1;
+                }
+                panGestureOpen.current = true;
+                displayedPan.current = value;
+                setGesturePan(value);
                 setTrackPan(track.id, value, true);
                 return;
             }
-            commitGesture(
-                {
-                    type: 'setTrackPan',
-                    payload: { trackId: track.id, pan: value, expectedPan: track.pan },
-                },
-                'pan',
-                () => setGesturePan(null)
-            );
+            const wasOpen = panGestureOpen.current;
+            panGestureOpen.current = false;
+            panGestureToken.current += 1;
+            const token = panGestureToken.current;
+            displayedPan.current = value;
+            setGesturePan(value);
+            if (!wasOpen) {
+                setTrackPan(track.id, value, true);
+            }
+            pendingPanCommit.current = pendingPanCommit.current
+                .catch(() => undefined)
+                .then(() => commitPan(value, token));
         },
         setColor: (color) => {
-            void executeAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
+            void executeUserAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
         },
         rename: (name) => {
-            void executeAppAction({ type: 'renameTrack', payload: { trackId: track.id, name } });
+            void executeUserAppAction({ type: 'renameTrack', payload: { trackId: track.id, name } });
         },
         removeWithConfirm: () => {
             void (async () => {
@@ -303,7 +369,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                     variant: 'danger',
                 });
                 if (ok) {
-                    void executeAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
+                    void executeUserAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
                 }
             })();
         },

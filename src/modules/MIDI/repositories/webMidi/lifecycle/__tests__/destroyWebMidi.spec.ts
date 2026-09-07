@@ -88,7 +88,7 @@ describe('destroyWebMidi', () => {
         webMidiRuntime.midiMessageListener = activeListener;
         getActiveInputMock.mockReturnValue(activeInput);
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(activeInput.removeEventListener).toHaveBeenCalledWith('midimessage', activeListener);
         expect(webMidiRuntime.midiMessageListener).toBeNull();
@@ -100,7 +100,7 @@ describe('destroyWebMidi', () => {
         getNativeModeMock.mockReturnValue(true);
         getNativeEventUnlistenMock.mockReturnValue(unlisten);
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(unlisten).toHaveBeenCalledOnce();
         expect(setNativeEventUnlistenMock).toHaveBeenCalledWith(null);
@@ -112,7 +112,7 @@ describe('destroyWebMidi', () => {
         getNativeModeMock.mockReturnValue(true);
         getNativeEventUnlistenMock.mockReturnValue(null);
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(setNativeEventUnlistenMock).not.toHaveBeenCalled();
         expect(setNativeModeMock).toHaveBeenCalledWith(false);
@@ -135,7 +135,7 @@ describe('destroyWebMidi', () => {
             deviceNodes: [{ deviceId: 'toaster-1', toasterControls: { noteOff } }],
         });
 
-        destroyWebMidi(getTrackStrip);
+        destroyWebMidi({ getTrackStrip, releaseNativeNote: () => {} });
 
         expect(noteOff).toHaveBeenCalledWith(3);
         expect(oscStop).toHaveBeenCalledOnce();
@@ -153,7 +153,7 @@ describe('destroyWebMidi', () => {
             instrumentTrackId: 'inst-2',
         });
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(activeNotes.size).toBe(0);
     });
@@ -162,7 +162,7 @@ describe('destroyWebMidi', () => {
         const access = { onstatechange: (() => undefined) as MIDIAccess['onstatechange'] };
         getMidiAccessMock.mockReturnValue(access as unknown as MIDIAccess);
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(access.onstatechange).toBeNull();
         expect(setMidiAccessMock).toHaveBeenCalledWith(null);
@@ -173,7 +173,7 @@ describe('destroyWebMidi', () => {
         midiLearn.callback = vi.fn();
         getNativeModeMock.mockReturnValue(false);
 
-        destroyWebMidi(() => undefined);
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(midiLearn.active).toBe(false);
         expect(midiLearn.callback).toBeNull();

@@ -27,6 +27,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     return { ...actual, persistCrdtProject: mocks.persistCrdtProject };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     audioEngine: {},
@@ -41,6 +42,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setSend: vi.fn(),
     unwireSidechainRoute: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 /** A version-1 document's `projectMeta`: durable meta with no identity slot. */

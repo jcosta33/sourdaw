@@ -15,8 +15,9 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { Slider } from '#/components/ui/slider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import {
@@ -226,7 +227,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'moveAdjustmentRegion',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -302,7 +303,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'setLayerFades',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -326,7 +327,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     // dispatch is fire-and-forget — no rejection to await at the call site.
     const createLayer = (effectType: AdjustmentEffectType) => {
         const label = `${effectType.charAt(0).toUpperCase()}${effectType.slice(1)} Layer`;
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'createAdjustmentLayer',
             payload: { name: label, effectType },
         });
@@ -334,32 +335,32 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     };
 
     const toggleLayer = (layerId: string) => {
-        void executeAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
+        void executeUserAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
     };
 
     const removeLayer = (layerId: string) => {
-        void executeAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
+        void executeUserAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
     };
 
     const removeRegion = (layerId: string, regionId: string) => {
-        void executeAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
+        void executeUserAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
     };
 
     const setLayerMix = (layerId: string, mix: number) => {
-        void executeAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
+        void executeUserAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
     };
 
     const setLayerParameter = (layerId: string, paramName: string, value: number) => {
-        void executeAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
+        void executeUserAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
     };
 
     const setAffectedTracks = (layerId: string, trackIds: string[]) => {
-        void executeAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
+        void executeUserAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
     };
 
     const addRegionAtBeat = (layerId: string, beat: number) => {
         const start = Math.max(0, Math.floor(beat));
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'addAdjustmentRegion',
             payload: { layerId, startBeat: start, endBeat: start + 4, blend: 1 },
         });
@@ -453,6 +454,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 <div
                     ref={addMenuRef}
                     className="daw-floating-surface absolute right-2 top-5 z-50 min-w-[200px] rounded-md p-1"
+                    role="menu"
                 >
                     <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
                     {ALL_EFFECT_TYPES.map((effectType) => (
@@ -466,8 +468,10 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
+                    data-testid="adjustment-layer-context-menu"
                     className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    role="menu"
                 >
                     {contextMenu.kind === 'layer' ? (
                         <>
@@ -638,19 +642,24 @@ const AdjustmentLayerRow = ({
                 className="absolute left-0 top-0 z-10 border-r border-border/40 px-1 py-0.5"
                 style={{ height: ROW_HEIGHT, backgroundColor: 'var(--color-surface-base)' }}
             >
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title={layer.enabled ? 'Disable' : 'Enable'}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleEnabled();
-                    }}
-                >
-                    <Power className="size-2.5" style={{ color: layer.color }} />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label={layer.enabled ? 'Disable layer' : 'Enable layer'}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleEnabled();
+                            }}
+                        >
+                            <Power className="size-2.5" style={{ color: layer.color }} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{layer.enabled ? 'Disable layer' : 'Enable layer'}</TooltipContent>
+                </Tooltip>
                 <span
                     className="max-w-[80px] truncate text-[9px] font-medium"
                     style={{ color: layer.color }}
@@ -658,32 +667,42 @@ const AdjustmentLayerRow = ({
                 >
                     {layer.name}
                 </span>
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title="Affected tracks"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenAffectedTracks();
-                    }}
-                >
-                    <Settings2 className="size-2.5" />
-                </Button>
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title="Remove layer"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onRemoveLayer();
-                    }}
-                >
-                    <X className="size-2.5" />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label="Affected tracks"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenAffectedTracks();
+                            }}
+                        >
+                            <Settings2 className="size-2.5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Affected tracks</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label="Remove layer"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveLayer();
+                            }}
+                        >
+                            <X className="size-2.5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Remove layer</TooltipContent>
+                </Tooltip>
             </Row>
             {regions.map((region) => {
                 const liveRegion =

@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { commandTrackDefaultsPort, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -11,6 +14,7 @@ import {
 } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { buildLlmActionSystemPrompt } from '../../transformers/llmActionBridge';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -42,6 +46,52 @@ const emptyProject: ProjectContext = {
     selectedClipIds: [],
     activeView: 'arrange',
     playheadPosition: 0,
+};
+
+const selectedClipProject: ProjectContext = {
+    ...emptyProject,
+    loopEnd: 16,
+    selectedTrackId: 'track-bass',
+    selectedClipId: 'clip-bass',
+    selectedClipIds: ['clip-bass'],
+    tracks: [
+        {
+            id: 'track-bass',
+            name: 'Bass',
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            frozen: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read',
+            outputId: 'master',
+            clipCount: 2,
+            deviceCount: 0,
+            clips: [
+                {
+                    id: 'clip-bass',
+                    name: 'Bass Verse',
+                    type: 'audio',
+                    startBeat: 0,
+                    endBeat: 8,
+                    noteCount: 0,
+                },
+                {
+                    id: 'clip-lead',
+                    name: 'Lead',
+                    type: 'audio',
+                    startBeat: 8,
+                    endBeat: 16,
+                    noteCount: 0,
+                },
+            ],
+            devices: [],
+            sends: [],
+        },
+    ],
 };
 
 /**
@@ -98,6 +148,50 @@ const discoverTempoTurn = {
     ],
 };
 
+const namedTracksSearchTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'search-tracks',
+            name: 'agent.command-index.search',
+            arguments: { intent: 'create two named audio tracks' },
+        },
+    ],
+};
+
+const namedTracksDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-tracks',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addTrack'] },
+        },
+    ],
+};
+
+const renameSearchTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'search-rename',
+            name: 'agent.command-index.search',
+            arguments: { intent: 'rename the selected clip' },
+        },
+    ],
+};
+
+const renameDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-rename',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['renameClip'] },
+        },
+    ],
+};
+
 const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
     toolCalls: [
@@ -105,6 +199,27 @@ const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
             id: 'propose-1',
             name: 'command.batch.propose',
             arguments: { plan, list: { schemaVersion: 1, items } },
+        },
+    ],
+});
+
+const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) => ({
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-commands',
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    ...plan,
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective: 'Execute the grounded command batch.',
+                    capabilityIds: commands.map((command) => String(command.name)),
+                    validationStrategy: ['Validate the grounded command batch.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
         },
     ],
 });
@@ -137,9 +252,1310 @@ const bluesItems = [
     },
 ];
 
+const namedTrackItems = [
+    {
+        id: 'make-lead-vocals',
+        name: 'addTrack',
+        arguments: { name: 'Lead Vocals', kind: 'audio', binding: 'lead-vocals' },
+    },
+    {
+        id: 'make-backing-vocals',
+        name: 'addTrack',
+        arguments: { name: 'Backing Vocals', kind: 'audio', binding: 'backing-vocals' },
+    },
+];
+
+const renameClipItems = [
+    {
+        name: 'renameClip',
+        arguments: { clipId: 'clip-bass', name: 'Bridge Solo' },
+    },
+];
+
+const renameLeadClipItems = [
+    {
+        id: 'rename-lead',
+        name: 'renameClip',
+        arguments: { name: 'Bridge Solo' },
+        selector: {
+            targetArgument: 'clipId',
+            entity: 'clip',
+            where: { name: 'Lead' },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    },
+];
+
+function renameClipListItem(selectorName: string, name = 'Bridge Solo') {
+    return {
+        id: `rename-${selectorName.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/gu, '-')}`,
+        name: 'renameClip',
+        arguments: { name },
+        selector: {
+            targetArgument: 'clipId',
+            entity: 'clip' as const,
+            where: { name: selectorName },
+            quantity: { unit: 'targets' as const, exactly: 1 },
+        },
+    };
+}
+
+function withLiteralSelectedClip(context: ProjectContext): ProjectContext {
+    return {
+        ...context,
+        tracks: context.tracks.map((track) => ({
+            ...track,
+            clipCount: track.clipCount + 1,
+            clips: [
+                ...track.clips,
+                {
+                    id: 'clip-literal-selected',
+                    name: 'Selected Clip',
+                    type: 'audio' as const,
+                    startBeat: 16,
+                    endBeat: 24,
+                    noteCount: 0,
+                },
+            ],
+        })),
+    };
+}
+
+function withLiteralClipName(context: ProjectContext, id: string, name: string): ProjectContext {
+    const track = context.tracks[0]!;
+    return {
+        ...context,
+        tracks: [
+            {
+                ...track,
+                clipCount: track.clipCount + 1,
+                clips: [
+                    ...track.clips,
+                    {
+                        id,
+                        name,
+                        type: 'audio' as const,
+                        startBeat: 16,
+                        endBeat: 24,
+                        noteCount: 0,
+                    },
+                ],
+            },
+        ],
+    };
+}
+
+function withSelectedMidiClip(context: ProjectContext): ProjectContext {
+    const baseTrack = context.tracks[0]!;
+    const midiClip = {
+        id: 'clip-selected-midi',
+        name: 'MIDI Take',
+        type: 'midi' as const,
+        startBeat: 0,
+        endBeat: 8,
+        noteCount: 4,
+    };
+    const midiTrack = {
+        ...baseTrack,
+        id: 'track-midi',
+        name: 'MIDI',
+        kind: 'midi' as const,
+        clipCount: 1,
+        clips: [midiClip],
+    };
+    return {
+        ...context,
+        tracks: [...context.tracks, midiTrack],
+        selectedTrackId: midiTrack.id,
+        selectedClipId: midiClip.id,
+        selectedClipIds: [midiClip.id],
+    };
+}
+
+function withCurlyApostropheClip(context: ProjectContext): ProjectContext {
+    const track = context.tracks[0]!;
+    return {
+        ...context,
+        tracks: [
+            {
+                ...track,
+                clipCount: track.clipCount + 1,
+                clips: [
+                    ...track.clips,
+                    {
+                        id: 'clip-curly-selected',
+                        name: 'Drummer’s Selected Clip',
+                        type: 'audio' as const,
+                        startBeat: 16,
+                        endBeat: 24,
+                        noteCount: 0,
+                    },
+                ],
+            },
+        ],
+    };
+}
+
 describe('high-level intent compilation', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.mocked(generateToolPlanningOutcome)
+            .mockReset()
+            .mockResolvedValue(
+                declineTurn({
+                    kind: 'clarify',
+                    reason: 'The scripted provider has no additional proposal turn.',
+                    questions: ['What should happen next?'],
+                })
+            );
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
+        vi.restoreAllMocks();
+    });
+
+    it('semantically preserves unquoted multiword track names through canonical command compilation', async () => {
+        const prompt = 'create 2 audio tracks named Lead Vocals, Backing Vocals';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(namedTracksSearchTurn)
+            .mockResolvedValueOnce(namedTracksDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(namedTrackItems));
+
+        const result = await parsePromptToActions(prompt, emptyProject, undefined, 'revision-named-tracks');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.planningOutcome).toEqual({ kind: 'proposal' });
+        expect(result.actions).toMatchObject([
+            { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
+            { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
+        ]);
+
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: result.actions.map((action) => action.type),
+            autoCommit: false,
+            context: emptyProject,
+            group: { groupId: 'named-tracks', groupLabel: 'Named tracks' },
+            intent: prompt,
+            projectRevision: 'revision-named-tracks',
+            runId: 'run-named-tracks',
+        });
+        const parsed = compiled.commandEnvelopes.map((serialized) => parseVersionedCommandEnvelope(serialized));
+
+        expect(parsed).toEqual([
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'addTrack',
+                    normalizedProjectRevision: 'revision-named-tracks',
+                    arguments: expect.objectContaining({ name: 'Lead Vocals', kind: 'audio' }),
+                }),
+            }),
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'addTrack',
+                    normalizedProjectRevision: 'revision-named-tracks',
+                    arguments: expect.objectContaining({ name: 'Backing Vocals', kind: 'audio' }),
+                }),
+            }),
+        ]);
+    });
+
+    it('semantically preserves an unquoted multiword clip name through canonical command compilation', async () => {
+        const prompt = 'rename clip to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.planningOutcome).toEqual({ kind: 'proposal' });
+        expect(result.actions).toMatchObject([
+            { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } },
+        ]);
+
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: result.actions.map((action) => action.type),
+            autoCommit: false,
+            context: selectedClipProject,
+            group: { groupId: 'rename-clip', groupLabel: 'Rename clip' },
+            intent: prompt,
+            projectRevision: 'revision-rename',
+            runId: 'run-rename',
+        });
+        const parsed = compiled.commandEnvelopes.map((serialized) => parseVersionedCommandEnvelope(serialized));
+
+        expect(parsed).toEqual([
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'renameClip',
+                    normalizedProjectRevision: 'revision-rename',
+                    arguments: expect.objectContaining({ clipId: 'clip-bass', name: 'Bridge Solo' }),
+                }),
+            }),
+        ]);
+    });
+
+    it('keeps an explicit clip source ahead of the selected clip through real routing', async () => {
+        const prompt = 'rename Lead to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(
+                proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }])
+            );
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-lead');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toMatchObject([
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } },
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } },
+            ]),
+        },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Lead')]) },
+    ])('keeps an explicit source independent of multi-selection for a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename Lead to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            undefined,
+            'revision-explicit-multi-selection'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } },
+            ]),
+        },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Lead')]) },
+    ])('keeps a source after the clip carrier authoritative for a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip Lead to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-clip-carrier-source'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]),
+        },
+    ])('grounds the complete known connector-bearing source through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip Road to Nowhere to Ending';
+        const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-known-connector-source');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Nowhere to Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Nowhere to Ending')]),
+        },
+    ])(
+        'rejects a wrong destination after grounding the complete source through a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Road to Nowhere to Ending';
+            const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-wrong-connector-value');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('value name');
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct with an unquoted destination',
+            prompt: 'rename clip Lead to Road to Nowhere',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed with an unquoted destination',
+            prompt: 'rename clip Lead to Road to Nowhere',
+            proposal: proposeTurn([renameClipListItem('Lead', 'Road to Nowhere')]),
+        },
+        {
+            label: 'direct with a quoted destination',
+            prompt: 'rename clip Lead to "Road to Nowhere"',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed with a quoted destination',
+            prompt: 'rename clip Lead to "Road to Nowhere"',
+            proposal: proposeTurn([renameClipListItem('Lead', 'Road to Nowhere')]),
+        },
+    ])('diagnoses a connector-bearing destination through $label', async ({ prompt, proposal }) => {
+        expect(
+            selectedClipProject.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Lead to Road')
+        ).toBe(false);
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-destination-connector'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-short', name: 'Nowhere to Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road', 'Nowhere to Ending')]),
+        },
+    ])(
+        'rejects a truncated source when connector-bearing names overlap for a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Road to Nowhere to Ending';
+            const context = withLiteralClipName(
+                withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+                'clip-road-short',
+                'Road'
+            );
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-connector-source');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it('rejects a full-name compiler proposal when two complete source interpretations compete', async () => {
+        const prompt = 'rename clip Road to Nowhere to Ending';
+        const context = withLiteralClipName(
+            withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]));
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-full-source');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('not grounded or ambiguous');
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]),
+        },
+    ])('keeps a quoted connector-bearing source opaque through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip "Road to Nowhere" to Ending';
+        const context = withLiteralClipName(
+            withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-quoted-connector-source');
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Intro-to-Outro' } },
+            ]),
+        },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Bass Verse', 'Intro-to-Outro')]) },
+    ])('keeps a hyphenated bare destination opaque through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip Intro-to-Outro; leave Lead unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-hyphenated-name');
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Intro-to-Outro' } },
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Lead to Bridge Solo' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Lead to Bridge Solo')]),
+        },
+    ])(
+        'rejects selected-target fallback for an explicit clip-carrier source on a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Lead to Bridge Solo';
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(
+                prompt,
+                selectedClipProject,
+                undefined,
+                'revision-clip-carrier-wrong-source'
+            );
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('does not match');
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Missing to Bridge Solo' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Missing to Bridge Solo')]),
+        },
+    ])(
+        'does not use selection when the explicit clip-carrier source is unknown for a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Missing to Bridge Solo';
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(
+                prompt,
+                selectedClipProject,
+                undefined,
+                'revision-unknown-source'
+            );
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('not grounded');
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Opening' } },
+                { name: 'renameClip', arguments: { clipId: 'clip-literal-clip', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Lead', 'Opening'), renameClipListItem('clip', 'Ending')]),
+        },
+    ])('does not remask synthesized clip placeholders across $label rename clauses', async ({ proposal }) => {
+        const prompt = 'rename Lead to Opening, then rename clip "clip" to Ending';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralClipName(selectedClipProject, 'clip-literal-clip', 'clip'),
+            undefined,
+            'revision-multiple-carriers'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Opening' } },
+            { type: 'renameClip', payload: { clipId: 'clip-literal-clip', name: 'Ending' } },
+        ]);
+    });
+
+    it('keeps rename syntax inside a quoted destination inert', async () => {
+        const prompt = 'rename Lead to "rename clip"';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(
+                proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'rename clip' } }])
+            );
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralClipName(selectedClipProject, 'clip-literal-command', 'rename clip'),
+            undefined,
+            'revision-quoted-carrier-inert'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'rename clip' } }]);
+    });
+
+    it('uses the optional-to bare rename carrier on the semantic route', async () => {
+        const prompt = 'rename clip Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-no-to');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected midi clip to Ending',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } },
+            ]),
+            expectedClipId: 'clip-selected-midi',
+            expectedType: 'midi',
+        },
+        {
+            label: 'compiler-backed selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected midi clip to Ending',
+            proposal: proposeTurn([renameClipListItem('MIDI Take', 'Ending')]),
+            expectedClipId: 'clip-selected-midi',
+            expectedType: 'midi',
+        },
+        {
+            label: 'direct selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected audio clip to Ending',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+            expectedClipId: 'clip-bass',
+            expectedType: 'audio',
+        },
+        {
+            label: 'compiler-backed selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected audio clip to Ending',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+            expectedClipId: 'clip-bass',
+            expectedType: 'audio',
+        },
+    ])(
+        'accepts a complete media-qualified selection through $label',
+        async ({ context, expectedClipId, expectedType, prompt, proposal }) => {
+            const selectedClip = context.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === expectedClipId);
+            expect(context.selectedClipId).toBe(expectedClipId);
+            expect(context.selectedClipIds).toEqual([expectedClipId]);
+            expect(selectedClip?.type).toBe(expectedType);
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-selected-media-qualifier');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions).toEqual([
+                { type: 'renameClip', payload: { clipId: expectedClipId, name: 'Ending' } },
+            ]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+        },
+    ])('rejects a quoted suffix after a selected source through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip selected clip "Lead" to Ending';
+        expect(selectedClipProject.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Lead')).toBe(
+            true
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-quoted-source-suffix'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        {
+            label: 'direct MIDI wording with selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected midi clip to Ending',
+            selectedId: 'clip-bass',
+            selectedType: 'audio',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+        },
+        {
+            label: 'compiler MIDI wording with selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected midi clip to Ending',
+            selectedId: 'clip-bass',
+            selectedType: 'audio',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+        },
+        {
+            label: 'direct audio wording with selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected audio clip to Ending',
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler audio wording with selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected audio clip to Ending',
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+            proposal: proposeTurn([renameClipListItem('MIDI Take', 'Ending')]),
+        },
+    ])(
+        'rejects mismatched media selection through $label',
+        async ({ context, prompt, selectedId, selectedType, proposal }) => {
+            const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+            expect(context.selectedClipId).toBe(selectedId);
+            expect(context.selectedClipIds).toEqual([selectedId]);
+            expect(selectedClip?.type).toBe(selectedType);
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(
+                prompt,
+                context,
+                undefined,
+                'revision-mismatched-media-selection'
+            );
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-literal-midi', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('selected midi clip', 'Ending')]),
+        },
+    ])('preserves a quoted media-selection phrase as an exact name through $label', async ({ proposal }) => {
+        const context = withLiteralClipName(selectedClipProject, 'clip-literal-midi', 'selected midi clip');
+        const literalClip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((clip) => clip.id === 'clip-literal-midi');
+        expect(literalClip?.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-bass']);
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            'rename clip "selected midi clip" to Ending',
+            context,
+            undefined,
+            'revision-literal-media-selection-name'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-literal-midi', name: 'Ending' } },
+        ]);
+    });
+
+    it.each([
+        { label: 'direct', proposal: proposeCommandsTurn(renameClipItems) },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Bass Verse')]) },
+    ])('rejects an ambiguous bare source on the $label optional-to route', async ({ proposal }) => {
+        const prompt = 'rename clip Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            undefined,
+            'revision-rename-no-to-ambiguous'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('not grounded');
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-curly-selected', name: 'Bridge Solo' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Drummer’s Selected Clip')]),
+        },
+    ])('keeps a curly-apostrophe quoted source literal for a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            withCurlyApostropheClip(selectedClipProject),
+            undefined,
+            'revision-curly-apostrophe-source'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-curly-selected', name: 'Bridge Solo' } },
+        ]);
+    });
+
+    it('rejects the selected clip for a quoted curly-apostrophe source', async () => {
+        const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(
+            prompt,
+            withCurlyApostropheClip(selectedClipProject),
+            undefined,
+            'revision-curly-apostrophe-wrong-source'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('does not match');
+    });
+
+    it.each([
+        {
+            prompt: 'rename Lead to Bridge Solo',
+            selectorName: 'Lead',
+            expectedClipId: 'clip-lead',
+        },
+        {
+            prompt: 'rename "Lead" to Bridge Solo',
+            selectorName: 'Lead',
+            expectedClipId: 'clip-lead',
+        },
+        {
+            prompt: 'rename clip to Bridge Solo',
+            selectorName: 'Bass Verse',
+            expectedClipId: 'clip-bass',
+        },
+    ])(
+        'keeps source authority on a matching compiler selector for $prompt',
+        async ({ prompt, selectorName, expectedClipId }) => {
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
+
+            const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-list');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions).toEqual([
+                { type: 'renameClip', payload: { clipId: expectedClipId, name: 'Bridge Solo' } },
+            ]);
+            expect(result.providerProposal?.scope.targetIds).toEqual([expectedClipId]);
+        }
+    );
+
+    it.each([
+        {
+            prompt: 'rename Lead to Bridge Solo',
+            selectorName: 'Bass Verse',
+        },
+        {
+            prompt: 'rename clip to Bridge Solo',
+            selectorName: 'Lead',
+        },
+    ])(
+        'rejects a compiler selector that contradicts source authority for $prompt',
+        async ({ prompt, selectorName }) => {
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
+
+            const result = await parsePromptToActions(
+                prompt,
+                selectedClipProject,
+                undefined,
+                'revision-rename-list-wrong'
+            );
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('does not match');
+        }
+    );
+
+    it('preserves source order across multiple ordinary rename commands', async () => {
+        const prompt = 'rename Bass Verse to Bridge Solo, then rename Lead to Melody';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(
+                proposeCommandsTurn([
+                    { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Bridge Solo' } },
+                    { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Melody' } },
+                ])
+            );
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-sequence');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } },
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Melody' } },
+        ]);
+    });
+
+    it('rejects a provider attempt to replace an explicit clip source with the selection', async () => {
+        const prompt = 'rename Lead to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename-wrong');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('does not match');
+    });
+
+    it('rejects a direct rename proposal for a clip protected by the whole request', async () => {
+        const prompt = 'rename clip to Bridge Solo; leave Bass Verse unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Opening' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Opening')]),
+        },
+    ])('rejects a $label rename protected by a multiline selection reference', async ({ proposal }) => {
+        const prompt = 'rename Bass Verse to Opening; leave selected\nclips unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-multiline-protection'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } },
+            ]),
+        },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Lead')]) },
+    ])('retains multiline unrelated protections for a $label proposal', async ({ label, proposal }) => {
+        const prompt = 'rename Lead to Bridge Solo; leave Bass Verse,\n"Selected Clip" unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralSelectedClip(selectedClipProject),
+            undefined,
+            'revision-multiline-protected-scope'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
+        if (label === 'compiler-backed') {
+            expect(result.providerProposal?.scope.protectedTargetIds).toEqual(
+                expect.arrayContaining(['clip-bass', 'clip-literal-selected'])
+            );
+        }
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-dotted-name', name: 'Opening' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Verse.1', 'Opening')]),
+        },
+    ])('rejects a $label rename of an unquoted dotted protected name', async ({ proposal }) => {
+        const prompt = 'rename Verse.1 to Opening; leave Verse.1 unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralClipName(selectedClipProject, 'clip-dotted-name', 'Verse.1'),
+            undefined,
+            'revision-dotted-protection'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it('retains an unrelated dotted protection in compiler scope', async () => {
+        const prompt = 'rename Lead to Bridge Solo; leave Verse.alt unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralClipName(selectedClipProject, 'clip-dotted-word-name', 'Verse.alt'),
+            undefined,
+            'revision-dotted-protected-scope'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
+        expect(result.providerProposal?.scope.protectedTargetIds).toContain('clip-dotted-word-name');
+    });
+
+    it('retains an unrelated protected clip in compiler-backed proposal scope', async () => {
+        const prompt = 'rename Lead to Bridge Solo; leave Bass Verse unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected-scope');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toMatchObject([
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } },
+        ]);
+        expect(result.providerProposal?.scope.targetIds).toEqual(['clip-lead']);
+        expect(result.providerProposal?.scope.protectedTargetIds).toEqual(expect.arrayContaining(['clip-bass']));
+    });
+
+    it('rejects a compiler-backed rename when its resolved target is protected', async () => {
+        const prompt = 'rename Lead to Bridge Solo; leave Lead unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-protected-list');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it('rejects an explicitly named rename target inside a protected clip selection', async () => {
+        const prompt = 'rename Lead to Bridge Solo; leave selected clips unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(
+                proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }])
+            );
+
+        const result = await parsePromptToActions(
+            prompt,
+            { ...selectedClipProject, selectedClipIds: ['clip-bass', 'clip-lead'] },
+            undefined,
+            'revision-protected-selection'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Opening' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Opening')]),
+        },
+    ])('rejects a $label rename protected by a combined selected and named list', async ({ proposal }) => {
+        const prompt = 'rename Bass Verse to Opening; leave selected clips and Lead unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            { ...selectedClipProject, selectedClipIds: ['clip-bass'] },
+            undefined,
+            'revision-combined-protection'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
+    });
+
+    it.each([
+        'rename Lead to Opening; leave unchanged',
+        'rename Lead to Opening; leave Bass Verse, , Lead unchanged',
+        'rename Lead to Opening; leave "Bass Verse unchanged',
+    ])('rejects malformed protection syntax before admitting %s', async (prompt) => {
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(
+                proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Opening' } }])
+            );
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-malformed-protection'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('incomplete or malformed');
+    });
+
+    it('retains every combined protection in accepted compiler scope', async () => {
+        const prompt = 'rename Lead to Bridge Solo; leave selected clips and "Selected Clip" unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralSelectedClip(selectedClipProject),
+            undefined,
+            'revision-combined-protected-scope'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
+        expect(result.providerProposal?.scope.protectedTargetIds).toEqual(
+            expect.arrayContaining(['clip-bass', 'clip-literal-selected'])
+        );
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Selected Clip')]),
+        },
+    ])('rejects a $label rename of a quoted literal protected clip', async ({ proposal }) => {
+        const prompt = 'rename clip-literal-selected to Bridge Solo; leave "Selected Clip" unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            withLiteralSelectedClip(selectedClipProject),
+            undefined,
+            'revision-protected-literal-selection'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('protected');
     });
 
     it('compiles a track, clip and notes request on an empty project into one batch of canonical commands', async () => {

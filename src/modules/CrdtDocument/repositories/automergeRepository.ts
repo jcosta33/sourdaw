@@ -64,6 +64,7 @@ type WorkerResponse =
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
     | { id: number; type: 'compactStale'; reason: string }
+    | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] }
     | { id: number; type: 'error'; message: string };
 
 type PendingWorkerRequest = {
@@ -244,6 +245,7 @@ class AutomergeRepository {
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
     private documentIdentityEpoch = 0;
+    private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
     private changeListeners = new Set<ChangeListener>();
@@ -300,6 +302,11 @@ class AutomergeRepository {
         return this.documentIdentityEpoch;
     }
 
+    /** Runtime-only identity of the installed active root document. */
+    getRootIdentityEpoch(): number {
+        return this.rootIdentityEpoch;
+    }
+
     /** Monotonic epoch for any local project mutation, including exact-state restore. */
     getMutationEpoch(): number {
         return this.mutationEpoch;
@@ -333,13 +340,20 @@ class AutomergeRepository {
 
     /** Create a new empty project with a root document. */
     createProject(_name: string): DocId {
+        const removedInstalledRoot = this.docs.has(this.rootId);
         this.docs.clear();
+        if (removedInstalledRoot) {
+            this.markRootIdentityMutation();
+        }
         // The worker replica is deliberately NOT dropped here. saveAllOffThread's
         // ancestry check already reseeds the new root, which keeps the next full
         // save off-thread; nulling would force it back onto the main thread at
         // exactly the moment compaction is most likely to run.
         this.rootId = DOC_PREFIX_ROOT;
         this.docs.set(this.rootId, init<AnyDoc>());
+        if (!removedInstalledRoot) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
 
         return this.rootId;
@@ -353,6 +367,9 @@ class AutomergeRepository {
         this.captureBeforeMutation(docId, snapshotTransaction);
         const doc = init<AnyDoc>();
         this.docs.set(docId, doc);
+        if (docId === this.rootId) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
         return docId;
     }
@@ -361,6 +378,9 @@ class AutomergeRepository {
     insertDoc(docId: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
         this.captureBeforeMutation(docId, snapshotTransaction);
         this.docs.set(docId, doc);
+        if (docId === this.rootId) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
     }
 
@@ -410,8 +430,26 @@ class AutomergeRepository {
     replaceDoc(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
         this.captureBeforeMutation(id, snapshotTransaction);
         this.docs.set(id, doc);
+        if (id === this.rootId) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
         this.notifyListeners(id);
+    }
+
+    /**
+     * Replace active-root content without changing which root installation is active.
+     * Same-target branch merge and its exact rollback use this narrow repository path.
+     */
+    replaceRootContentPreservingIdentity(doc: Doc<unknown>, snapshotTransaction?: object): void {
+        if (!this.docs.has(this.rootId)) {
+            throw new Error(`Document not found: ${this.rootId}`);
+        }
+
+        this.captureBeforeMutation(this.rootId, snapshotTransaction);
+        this.docs.set(this.rootId, doc);
+        this.markDocumentIdentityMutation();
+        this.notifyListeners(this.rootId);
     }
 
     /**
@@ -447,6 +485,9 @@ class AutomergeRepository {
         }
 
         if (isNewDocument) {
+            if (id === this.rootId) {
+                this.markRootIdentityMutation();
+            }
             this.markDocumentIdentityMutation();
         } else {
             this.markMutation();
@@ -479,6 +520,21 @@ class AutomergeRepository {
             bundle.set(id, save(doc));
         }
         return bundle;
+    }
+
+    /** Inspect one captured root document without installing it as live or worker-shadow state. */
+    async inspectCheckpointRootMedia({
+        rootBytes,
+    }: {
+        rootBytes: Uint8Array;
+    }): Promise<{ audioBufferIds: readonly string[] }> {
+        const response = await invokeWorker({ type: 'inspectCheckpointRootMedia', rootBytes });
+        if (response.type !== 'checkpointRootMediaInspected') {
+            throw new Error(
+                `[AutomergeRepository] Unexpected worker response for inspectCheckpointRootMedia: ${response.type}`
+            );
+        }
+        return { audioBufferIds: response.audioBufferIds };
     }
 
     /** Record the worker replica's per-document heads after installing its output. */
@@ -695,10 +751,12 @@ class AutomergeRepository {
 
         let changesMembership = false;
         let changesContent = false;
+        let changesRootIdentity = false;
         for (const [id, entry] of snapshot) {
             if (entry.state === 'absent') {
                 if (this.docs.delete(id)) {
                     changesMembership = true;
+                    changesRootIdentity ||= id === this.rootId;
                 }
                 continue;
             }
@@ -706,8 +764,12 @@ class AutomergeRepository {
             changesMembership ||= !this.docs.has(id);
             this.docs.set(id, decoded.get(id)!);
             changesContent = true;
+            changesRootIdentity ||= id === this.rootId;
         }
         if (changesMembership || changesContent) {
+            if (changesRootIdentity) {
+                this.markRootIdentityMutation();
+            }
             if (changesMembership) {
                 this.markDocumentIdentityMutation();
             } else {
@@ -775,6 +837,7 @@ class AutomergeRepository {
 
         this.docs = documents;
         this.rootId = rootId;
+        this.markRootIdentityMutation();
         if (decoded.decodedByWorker) {
             // The worker materialised exactly these documents and kept them as
             // its replica, so its heads are ours.
@@ -951,8 +1014,14 @@ class AutomergeRepository {
             if (this.mutationEpoch !== capturedMutationEpoch) {
                 continue;
             }
+            const installsRoot = newDocIds.includes(this.rootId);
+            let installedRoot = false;
             for (const [id, bytes] of compacted) {
                 this.docs.set(id, load<AnyDoc>(bytes));
+                if (!installedRoot && installsRoot && id === this.rootId) {
+                    this.markRootIdentityMutation();
+                    installedRoot = true;
+                }
             }
             // The worker's `mergeBundle` kept the merged documents as its
             // replica, and those are exactly the documents just installed.
@@ -991,6 +1060,9 @@ class AutomergeRepository {
             } else {
                 this.docs.set(id, incoming);
                 result.newDocIds.push(id);
+                if (id === this.rootId) {
+                    this.markRootIdentityMutation();
+                }
             }
         }
 
@@ -1012,6 +1084,9 @@ class AutomergeRepository {
         }
         this.captureBeforeMutation(id, snapshotTransaction);
         this.docs.delete(id);
+        if (id === this.rootId) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
     }
 
@@ -1023,6 +1098,7 @@ class AutomergeRepository {
         // that produced them.
         crdtWorkerState.shadowHeads = null;
         this.rootId = DOC_PREFIX_ROOT;
+        this.markRootIdentityMutation();
         this.markDocumentIdentityMutation();
         // Drop change listeners too: otherwise projection-bridge subscriptions
         // from a previous session keep firing on the next session's edits.
@@ -1042,6 +1118,10 @@ class AutomergeRepository {
     private markDocumentIdentityMutation(): void {
         this.documentIdentityEpoch += 1;
         this.markMutation();
+    }
+
+    private markRootIdentityMutation(): void {
+        this.rootIdentityEpoch += 1;
     }
 
     /** Get the incremental changes since a given set of heads. */

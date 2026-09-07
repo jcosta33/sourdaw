@@ -162,8 +162,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:26445882e8cd29fd9d1851a5da2a88fc5d8a86fee49b476bc2bbeaf1daae8eb6:release/dependency-license-proofs.json"
+                "sha256:ecd14c8008c16acf0774259aeb2e91edc7ec3b39815e3634e4d86a486fba02e9:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4b9471d74e59988d10e733b6a0035e50fb59265758ca0fa246e9106703bd17ee:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -273,7 +273,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d",
+                "sha256:e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -796,7 +796,7 @@
                 "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
-                "sha256:0767b7a7072eac7e5463e97e88ae8ca9d358e3f56757e140c7084046239a74af:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "sha256:ff966a7faa3d3dd4869be77f717af0f0b237a442b6d992af386eb5f69b3baf0e:src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
                 "sha256:abbe466881490518b4665e3937e63cfe8b00866720f36af51e0af7423dc4f2da:src/modules/BrowserAi/useCases/downloadModel.ts",
                 "sha256:f59b8857e8986c66e485394a293eddb66b422589f181ee990fac15cdd3bad45f:src/modules/BrowserAi/useCases/initBrowserAi.ts",
@@ -1190,14 +1190,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
+                "tracked-set-sha256:0f8dc0394c50a1ef88370d90b797a89c3f860218c3c2755b4ac5f1f2723b958d:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
-                "tracked-set-sha256:b72f9d64ad9eb8e52202b1f93002a84967069362d995876ed55d627fedf7bbb8:grand-boule-project-state",
+                "tracked-set-sha256:043648af851c27f9535875b5cc1274b3e46305d6c9a95c1f9ddc1ad4b1985c21:grand-boule-live-runtime",
+                "tracked-set-sha256:74d2e8f57ac453b162238591a3d47382c6ccc49c7a2321ec3bf77138a040df22:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:caf5312f14d452331b13fcae0905df20f3b932cd8ed95dafe03a99f5408ffbaf:grand-boule-release-proof"
+                "tracked-set-sha256:4e3b7cbb2f2058c3d9efbe5be596bcda8b1a811b5e9129abee5e58f7d1730c5f:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1328,13 +1328,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:b7a95e79d80e25a6828977daf130c1df5b068919e5ac3d324ba795f0b370ea7d",
+                "daw-dsp sha256:4132abbc6f49fcb573aaa3436dbc37a8e93c62e5d668488075b539e47d183ef8",
                 "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
                 "proof-chamber sha256:c8a0a57b6d31aad8ecba8cf17c93fa38be14326cb47ad2bad3a88ab0632711b4",
                 "scoring sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36"
             ],
             "digests": [
-                "sha256:210abf2ac8da389c68f8236a6e684c40dc3a9ea6de52c79e307d98c0cd444a95:public/wasm/manifest.json"
+                "sha256:b11b4a8bfd3e4a1781bdac235c58769d5ea6ea483b2029b35dfdff539675400d:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1362,18 +1362,15 @@
                 "desktop"
             ],
             "paths": [
-                "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "sources": [
-                "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "revisions": [
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:7dc1d7ec14134e94b8ba7fe997da78e990021ae73a3fefa93dcf3e4af17762c9:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "licenses": [
@@ -1384,7 +1381,7 @@
                 "desktop webview audio worklets"
             ],
             "evidence": [
-                "Both shipped processors are direct project source; no generator or second source tree exists."
+                "Every shipped processor is direct project source; no generator or second source tree exists."
             ],
             "obligations": [
                 "Ship the project LICENSE and NOTICE with every distribution."
@@ -1690,7 +1687,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "b045a7ab2920f4af8169463e4bf91d34f95d8d289cb149d4f114ed80d2b261b2"
+            "sha256": "e7dbf1e11709be55608d2028996d902bf2d12790b0bb1656725652ddd11be049"
         },
         {
             "path": "server/package.json",
@@ -1702,7 +1699,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d"
+            "sha256": "e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424"
         },
         {
             "path": "Cargo.toml",
@@ -1718,7 +1715,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "210abf2ac8da389c68f8236a6e684c40dc3a9ea6de52c79e307d98c0cd444a95"
+            "sha256": "b11b4a8bfd3e4a1781bdac235c58769d5ea6ea483b2029b35dfdff539675400d"
         }
     ],
     "externalReferences": [

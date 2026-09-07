@@ -15,9 +15,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
-import { supersessionCommentBody } from '../prContract.ts';
+import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     disposableIgnored,
+    isExpectedReviewLaneName,
+    isExpectedReviewLanePath,
+    parseReviewLanePrNumber,
     parseStrandArgs,
     parseWorktrees,
     removeLane,
@@ -33,9 +36,11 @@ import {
     type ShellRunner,
     type Worktree,
 } from '../removeLane';
+import { clearGuardFailureReceipt, writeGuardFailureReceipt } from '../resourceGuard.ts';
 
 const root = '/repo';
 const target = '/repo/.agents/worktrees/feature';
+const reviewTarget = '/repo/.agents/worktrees/review-1976';
 
 function worktree(overrides: Partial<Worktree> = {}): Worktree {
     return {
@@ -88,6 +93,7 @@ type FakeInput = {
     operation?: string;
     remoteHead?: string | null;
     pullRequests?: PullRequest[];
+    commitPullRequests?: PullRequest[];
     comments?: IssueComment[];
     replacement?: Partial<ReplacementPullRequest>;
 };
@@ -108,6 +114,7 @@ function fakePort(input: FakeInput = {}) {
         operation: () => input.operation,
         remoteHead: () => (input.remoteHead === null ? undefined : (input.remoteHead ?? 'head')),
         pullRequests: () => input.pullRequests ?? [pullRequest()],
+        commitPullRequests: () => input.commitPullRequests ?? input.pullRequests ?? [pullRequest()],
         comments: (number) => {
             calls.push(`comments:${number}`);
             return input.comments ?? [];
@@ -130,6 +137,10 @@ function fakePort(input: FakeInput = {}) {
             locked = false;
         },
         remove: (path) => calls.push(`remove:${path}`),
+        clearGuardFailure: (laneName) => {
+            calls.push(`clearGuardFailure:${laneName}`);
+            clearGuardFailureReceipt(input.root ?? root, laneName);
+        },
     };
     return { port, calls };
 }
@@ -158,6 +169,22 @@ function fakeStrandPort(input: FakeInput = {}) {
     return { port, calls: base.calls, receipts, receiptFiles };
 }
 
+function withGitFixture(fn: (context: { repository: string; git: (args: string[], cwd?: string) => string }) => void) {
+    const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-fixture-'));
+    const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    try {
+        git(['init', '-b', 'main']);
+        git(['config', 'user.name', 'Fixture']);
+        git(['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+        git(['add', '.']);
+        git(['commit', '-m', 'fixture']);
+        fn({ repository, git });
+    } finally {
+        rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    }
+}
+
 describe('disposableIgnored', () => {
     it.each([
         ['node_modules/', true],
@@ -167,17 +194,79 @@ describe('disposableIgnored', () => {
         ['release/desktop/', true],
         ['release/desktop/mac-arm64/Sourdaw.app', true],
         ['crates/sourdaw-native/sourdaw-native.node', true],
+        ['crates/sourdaw-native/sourdaw-plugin-scan-helper', true],
+        ['crates/sourdaw-native/sourdaw-plugin-scan-helper.exe', true],
         ['release/', false],
         ['release', false],
         ['release/open-source-inventory.json', false],
         ['release/desktop-runtime-material.json', false],
         ['crates/sourdaw-native/src/lib.rs', false],
+        ['crates/sourdaw-native/src/bin/sourdaw-plugin-scan-helper.rs', false],
         ['crates/sourdaw-native/nested/x.node', false],
+        ['crates/sourdaw-native/nested/sourdaw-plugin-scan-helper', false],
         ['crates/other/x.node', false],
         ['packages/electron/out/x', false],
         ['.env', false],
     ])('treats %s as disposable: %s', (path, expected) => {
         expect(disposableIgnored(path)).toBe(expected);
+    });
+});
+
+describe('isExpectedReviewLaneName', () => {
+    it.each([
+        ['review', true],
+        ['review-1976', true],
+        ['review_1976', true],
+        ['review-1976-slug', true],
+        ['review-provider-stream', true],
+        ['agent-1976-review', true],
+        ['agent_1976_review', true],
+        ['REVIEW-1976', true],
+        ['feature', false],
+        ['agent-1976', false],
+        ['review1976', false],
+        ['1976review', false],
+        ['', false],
+    ])('evaluates %s as expected review lane name: %s', (name, expected) => {
+        expect(isExpectedReviewLaneName(name)).toBe(expected);
+    });
+});
+
+describe('isExpectedReviewLanePath', () => {
+    it.each([
+        ['/repo/.agents/worktrees/review', true],
+        ['/repo/.agents/worktrees/review-1976', true],
+        ['/repo/.agents/worktrees/review_1976', true],
+        ['/repo/.agents/worktrees/review-1976-slug', true],
+        ['/repo/.agents/worktrees/review-provider-stream', true],
+        ['/repo/.agents/worktrees/agent-1976-review', true],
+        ['/repo/.agents/worktrees/review/1976', true],
+        ['/repo/.agents/worktrees/review/provider-stream', true],
+        ['/repo/.agents/worktrees/feature', false],
+        ['/repo/.agents/worktrees/agent-1976', false],
+        ['/repo/.agents/worktrees', false],
+        ['/repo', false],
+        ['/tmp/review-1976', false],
+        ['/repo/.agents/worktrees/other/1976', false],
+        ['/repo/.agents/worktrees/review/1976/nested', false],
+    ])('evaluates %s as expected review lane path under /repo: %s', (path, expected) => {
+        expect(isExpectedReviewLanePath(path, '/repo')).toBe(expected);
+    });
+});
+
+describe('parseReviewLanePrNumber', () => {
+    it.each([
+        ['review-1976', 1976],
+        ['review_1976', 1976],
+        ['review-1976-slug', 1976],
+        ['agent-1976-review', 1976],
+        ['1976', 1976],
+        ['review', undefined],
+        ['review-provider-stream', undefined],
+        ['feature', undefined],
+        ['', undefined],
+    ])('parses PR number from %s: %s', (name, expected) => {
+        expect(parseReviewLanePrNumber(name)).toBe(expected);
     });
 });
 
@@ -402,7 +491,13 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
@@ -454,6 +549,113 @@ describe('lane removal', () => {
                 comments: [supersessionReceipt(99)],
             },
             /ownership is unproven/,
+        ],
+        [
+            'open PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'OPEN', mergedAt: null })],
+            },
+            /still active/,
+        ],
+        [
+            'unmerged closed PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'CLOSED', mergedAt: null })],
+            },
+            /not merged/,
+        ],
+        [
+            'foreign repository PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, headRepository: 'jcosta33/fork' })],
+            },
+            /foreign/,
+        ],
+        [
+            'head mismatch on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, headRefOid: 'ahead' })],
+            },
+            /head ownership is unproven/,
+        ],
+        [
+            'lane PR number mismatch on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 9999, headRefOid: 'head' })],
+            },
+            /does not match lane PR/,
+        ],
+        [
+            'dirty detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                dirty: true,
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /dirty/,
+        ],
+        [
+            'active detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                active: true,
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /active in another process/,
+        ],
+        [
+            'unsafe ignored data in detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                ignored: ['.env'],
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /ignored data/,
+        ],
+        [
+            'active operation in detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                operation: 'rebase',
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /active/,
+        ],
+        [
+            'ambiguous commit PRs on detached review',
+            `${root}/.agents/worktrees/review-provider-stream`,
+            {
+                lane: worktree({
+                    path: `${root}/.agents/worktrees/review-provider-stream`,
+                    branch: undefined,
+                    detached: true,
+                }),
+                commitPullRequests: [pullRequest({ number: 100 }), pullRequest({ number: 101 })],
+            },
+            /does not identify one pull request/,
+        ],
+        [
+            'unrecorded merge timestamp on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'MERGED', mergedAt: null })],
+            },
+            /not merged/,
         ],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
@@ -664,7 +866,14 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `unlock:${target}`,
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('removes an author-locked lane without dropping the lock on failure', () => {
@@ -686,7 +895,89 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`, 'clearGuardFailure:feature']);
+    });
+
+    it.each([
+        ['review-1976', 1976],
+        ['review-1976-slug', 1976],
+        ['review-provider-stream', 100],
+        ['agent-1976-review', 1976],
+    ])('removes a clean detached review worktree %s with matching merged PR', (laneName, prNumber) => {
+        const lanePath = `${root}/.agents/worktrees/${laneName}`;
+        const { port, calls } = fakePort({
+            lane: worktree({
+                path: lanePath,
+                branch: undefined,
+                detached: true,
+            }),
+            commitPullRequests: [pullRequest({ number: prNumber, headRefOid: 'head' })],
+        });
+
+        removeLane(lanePath, port);
+
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${lanePath}`,
+            `unlock:${lanePath}`,
+            `remove:${lanePath}`,
+            `clearGuardFailure:${laneName}`,
+        ]);
+    });
+
+    it('removes a real detached review worktree with matching merged PR', () => {
+        withGitFixture(({ repository, git }) => {
+            const reviewLane = join(repository, '.agents/worktrees/review-1976');
+            mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
+            const head = git(['rev-parse', 'HEAD']);
+            git(['worktree', 'add', '--detach', reviewLane, head]);
+            const resolvedLane = realpathSync(reviewLane);
+            const port: LaneRemovalPort = {
+                fetch: () => undefined,
+                repository: () => 'jcosta33/sourdaw',
+                currentDirectory: () => repository,
+                worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                active: () => false,
+                processAlive: () => true,
+                dirty: (path) => git(['status', '--porcelain=v1', '--untracked-files=all'], path) !== '',
+                ignored: () => [],
+                operation: () => undefined,
+                remoteHead: () => undefined,
+                commitPullRequests: () => [
+                    pullRequest({
+                        number: 1976,
+                        headRefOid: head,
+                        state: 'MERGED',
+                        mergedAt: '2026-08-20T00:00:00Z',
+                    }),
+                ],
+                pullRequests: () => [
+                    pullRequest({
+                        number: 1976,
+                        headRefOid: head,
+                        state: 'MERGED',
+                        mergedAt: '2026-08-20T00:00:00Z',
+                    }),
+                ],
+                comments: () => [],
+                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                lock: (path) => {
+                    git(['worktree', 'lock', '--reason', 'test', path]);
+                },
+                unlock: (path) => {
+                    git(['worktree', 'unlock', path]);
+                },
+                remove: (path) => {
+                    git(['worktree', 'remove', path]);
+                },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
+            };
+
+            removeLane(resolvedLane, port);
+
+            expect(existsSync(reviewLane)).toBe(false);
+            expect(git(['worktree', 'list', '--porcelain', '-z'])).not.toContain(resolvedLane);
+        });
     });
 });
 
@@ -738,6 +1029,7 @@ describe('lane stranding', () => {
             `unlock:${target}`,
             `remove:${target}`,
             'branch:-D:feat/work',
+            'clearGuardFailure:feature',
             'log:stranded feature; receipt in .agents/lane-strands/feature.json',
         ]);
         const receipt = JSON.parse(receipts[0]?.body ?? '{}') as {
@@ -944,6 +1236,7 @@ describe('lane stranding', () => {
                 deleteBranch: (branch) => {
                     git(['branch', '-D', branch]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
                 log: () => undefined,
             };
 
@@ -1127,6 +1420,55 @@ describe('lane-removal shell boundary', () => {
         ).toBe(true);
     });
 
+    it('queries commit pull requests and handles SHA not found', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        let shouldFail = false;
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                if (args.includes('nameWithOwner')) {
+                    return 'jcosta33/sourdaw';
+                }
+                if (shouldFail) {
+                    throw new Error('gh: No commit found for SHA: missing (HTTP 422)');
+                }
+                if (args.includes('--slurp')) {
+                    return JSON.stringify([
+                        [
+                            {
+                                number: 1976,
+                                state: 'closed',
+                                draft: false,
+                                head: {
+                                    ref: 'feat/1976',
+                                    sha: 'head-sha',
+                                    repo: { full_name: 'jcosta33/sourdaw' },
+                                },
+                                merged_at: '2026-08-12T00:00:00Z',
+                            },
+                        ],
+                    ]);
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort(shell);
+
+        expect(port.commitPullRequests?.('head-sha')).toEqual([
+            pullRequest({
+                number: 1976,
+                state: 'MERGED',
+                headRefName: 'feat/1976',
+                headRefOid: 'head-sha',
+                mergedAt: '2026-08-12T00:00:00Z',
+            }),
+        ]);
+
+        shouldFail = true;
+        expect(port.commitPullRequests?.('missing')).toEqual([]);
+    });
+
     it('preserves ignored data and removes disposable output in a real worktree', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-remove-'));
         const lane = join(repository, '.agents/worktrees/feature');
@@ -1177,6 +1519,7 @@ describe('lane-removal shell boundary', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
             };
 
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
@@ -1193,7 +1536,87 @@ describe('lane-removal shell boundary', () => {
             removeLane(resolvedLane, port);
             expect(existsSync(lane)).toBe(false);
         } finally {
-            rmSync(repository, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         }
+    });
+
+    describe('guard failure receipt cleanup', () => {
+        it('clears guard failure receipt when removing a lane', () => {
+            const repo = mkdtempSync(join(tmpdir(), 'sourdaw-remove-guard-'));
+            const laneName = 'feature';
+            const targetPath = join(repo, '.agents', 'worktrees', laneName);
+            mkdirSync(targetPath, { recursive: true });
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: 'feat/work',
+                headSha: '1111111111111111111111111111111111111111',
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'test.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 500,
+            };
+            writeGuardFailureReceipt(repo, receipt);
+            const receiptFile = guardFailureReceiptPath(repo, laneName);
+            expect(existsSync(receiptFile)).toBe(true);
+
+            const { port, calls } = fakePort({
+                root: repo,
+                lane: worktree({ path: targetPath }),
+            });
+
+            try {
+                removeLane(targetPath, port);
+                expect(calls).toContain(`remove:${targetPath}`);
+                expect(calls).toContain('clearGuardFailure:feature');
+                expect(existsSync(receiptFile)).toBe(false);
+            } finally {
+                rmSync(repo, { recursive: true, force: true });
+            }
+        });
+
+        it('clears guard failure receipt when stranding a lane', () => {
+            const repo = mkdtempSync(join(tmpdir(), 'sourdaw-strand-guard-'));
+            const laneName = 'feature';
+            const targetPath = join(repo, '.agents', 'worktrees', laneName);
+            mkdirSync(targetPath, { recursive: true });
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: 'feat/work',
+                headSha: '1111111111111111111111111111111111111111',
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'timeout',
+                command: 'pnpm',
+                args: ['test:run', 'test.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 2 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 600_000,
+            };
+            writeGuardFailureReceipt(repo, receipt);
+            const receiptFile = guardFailureReceiptPath(repo, laneName);
+            expect(existsSync(receiptFile)).toBe(true);
+
+            const strand = fakeStrandPort({
+                root: repo,
+                lane: worktree({ path: targetPath, head: '1111111111111111111111111111111111111111' }),
+            });
+
+            try {
+                strandLane(targetPath, 'abandoned due to architectural pivot', strand.port);
+                expect(strand.calls).toContain(`remove:${targetPath}`);
+                expect(strand.calls).toContain('clearGuardFailure:feature');
+                expect(existsSync(receiptFile)).toBe(false);
+            } finally {
+                rmSync(repo, { recursive: true, force: true });
+            }
+        });
     });
 });

@@ -20,7 +20,7 @@ import {
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import {
     newProject,
@@ -290,7 +290,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     const handleExportDawProject = (): void => {
-        void executeAppAction({ type: 'exportDawProject' });
+        void executeUserAppAction({ type: 'exportDawProject' });
     };
 
     const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {

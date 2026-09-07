@@ -611,9 +611,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(added).toBe(true);
             expect(workletInstances).toHaveLength(meterWorkletCount);
-            expect(workletInstances.some((node) => node.processorName === 'native-plugin-bridge-processor')).toBe(
-                false
-            );
             // No pending load registered, so nothing has to settle first.
             expect(track.getDeviceLoadState('ext-1')).toBe('ready');
             const device = track.strip.deviceNodes.find((candidate) => candidate.deviceId === 'ext-1');
@@ -1245,7 +1242,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'levain');
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
 
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
             expect(pendingDevicePromises.size).toBe(0);
@@ -1262,13 +1259,14 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('aborts a timed-out content load after publishing its node', async () => {
             const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
             await Promise.resolve();
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
             await Promise.resolve();
 
             expect(deferred.signal?.aborted).toBe(true);
@@ -1281,14 +1279,109 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             });
         });
 
+        it('keeps a same-id replacement installed by the rollback mutation callback', async () => {
+            const generationA = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            let track: TrackNode;
+            let generationB: ReturnType<typeof installDeferredWasmDevice> | undefined;
+            const onAsyncRuntimeGraphMutation: NonNullable<TrackNodeDeps['onAsyncRuntimeGraphMutation']> = (
+                mutation
+            ) => {
+                if (mutation.application !== 'needs-reconcile' || generationB) {
+                    return;
+                }
+                track.removeDevice('wasm-1');
+                generationB = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
+                track.addDevice('wasm-1', 'builtin-crumbs');
+            };
+            track = new TrackNode(
+                't1',
+                makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics, onAsyncRuntimeGraphMutation })
+            );
+            track.addDevice('wasm-1', 'builtin-crumbs');
+            const loadedA = createLoadedDevice();
+            generationA.resolve(loadedA.device);
+            await Promise.resolve();
+            const capturedPromises = new Set(pendingDevicePromises);
+
+            track.timeoutPendingDeviceLoads(capturedPromises);
+
+            if (!generationB) {
+                throw new Error('Expected the rollback mutation callback to install generation B');
+            }
+            expect(generationA.signal?.aborted).toBe(true);
+            expect(loadedA.controller.destroy).toHaveBeenCalledOnce();
+            expect(loadedA.dispose).not.toHaveBeenCalled();
+            expect(generationB.signal?.aborted).toBe(false);
+            expect(track.strip.deviceNodes).toEqual([generationB.placeholder]);
+            expect(readinessDiagnostics.snapshot().devices).toMatchObject([
+                { deviceId: 'wasm-1', status: 'node-pending' },
+            ]);
+
+            const loadedB = createLoadedDevice();
+            generationB.resolve(loadedB.device);
+            generationB.settleContent('ready');
+            generationB.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(generationB.signal?.aborted).toBe(false);
+            expect(loadedB.controller.destroy).not.toHaveBeenCalled();
+            expect(track.strip.deviceNodes).toEqual([loadedB.device]);
+            expect(readinessDiagnostics.snapshot().devices).toMatchObject([
+                { deviceId: 'wasm-1', status: 'ready', failureStage: null },
+            ]);
+        });
+
+        it('finds the captured node again when the rollback mutation callback shifts its slot', async () => {
+            const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            let track: TrackNode;
+            let inserted = false;
+            const onAsyncRuntimeGraphMutation: NonNullable<TrackNodeDeps['onAsyncRuntimeGraphMutation']> = (
+                mutation
+            ) => {
+                if (mutation.application !== 'needs-reconcile' || inserted) {
+                    return;
+                }
+                inserted = true;
+                track.addDevice('prefix', 'builtin-gain', undefined, []);
+            };
+            track = new TrackNode(
+                't1',
+                makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics, onAsyncRuntimeGraphMutation })
+            );
+            track.addDevice('wasm-1', 'builtin-crumbs');
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            await Promise.resolve();
+            const capturedPromises = new Set(pendingDevicePromises);
+
+            track.timeoutPendingDeviceLoads(capturedPromises);
+            await Promise.resolve();
+
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(loaded.controller.destroy).toHaveBeenCalledOnce();
+            expect(loaded.dispose).not.toHaveBeenCalled();
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['prefix', 'wasm-1']);
+            expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
+            expect(readinessDiagnostics.snapshot().devices).toMatchObject([
+                { deviceId: 'prefix', status: 'ready', failureStage: null },
+                { deviceId: 'wasm-1', status: 'failed', failureStage: 'content' },
+            ]);
+        });
+
         it('classifies a timeout before the published node joins the graph', () => {
             const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
             deferred.resolve(createLoadedDevice().device);
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
 
             expect(deferred.signal?.aborted).toBe(true);
             expect(readinessDiagnostics.snapshot()).toMatchObject({

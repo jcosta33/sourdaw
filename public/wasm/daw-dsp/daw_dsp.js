@@ -575,8 +575,8 @@ export class FermenterInstance {
         wasm.fermenterinstance_note_on_with_channel(this.__wbg_ptr, note, velocity, channel);
     }
     /**
-     * Process a block of 128 samples. Returns pointer to left channel.
-     * Caller reads left + right from WASM memory.
+     * Process a block of [`FERMENTER_BLOCK_FRAMES`] samples. Returns pointer
+     * to left channel. Caller reads left + right from WASM memory.
      *
      * Consumes every event queued since the last call, splitting the render at
      * each event's sample offset, and empties the list.

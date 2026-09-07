@@ -15,7 +15,10 @@ const mockRuntime = vi.hoisted(() => ({
     state: {
         peerManager: null as PeerConnectionManager | null,
     },
-    cleanup: vi.fn<() => void>(),
+    captureOwner: vi.fn<() => object | null>(),
+    canWrite: vi.fn<(owner: object | null) => boolean>(),
+    retire: vi.fn<(owner: object | null) => void>(),
+    cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -33,7 +36,7 @@ const baseState: CollaborationState = {
     quarantinedPeerIds: [],
 };
 
-const resetStoreShape = {
+const resetStoreShape: CollaborationState = {
     isEnabled: false,
     sessionId: null,
     localPeerId: null,
@@ -47,17 +50,47 @@ const resetStoreShape = {
 };
 
 describe('leaveSession', () => {
+    const owner = {};
+
     beforeEach(() => {
         vi.clearAllMocks();
         mockRuntime.state.peerManager = null;
+        mockRuntime.captureOwner.mockReturnValue(owner);
+        mockRuntime.canWrite.mockReturnValue(true);
+        mockRuntime.cleanup.mockReturnValue(true);
         collaborationStore.set({ ...baseState });
     });
 
     it('tears down runtime and resets the store even without an active peer manager', async () => {
+        mockRuntime.captureOwner.mockReturnValue(null);
         await leaveSession();
 
-        expect(mockRuntime.cleanup).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null, expect.any(Number));
         expect(collaborationStore.value).toEqual(resetStoreShape);
+    });
+
+    it('leaves a completed teardown alone when there is no runtime or pending join', async () => {
+        mockRuntime.captureOwner.mockReturnValue(null);
+        collaborationStore.set({ ...resetStoreShape, error: 'cleanup failed' });
+
+        await leaveSession();
+
+        expect(mockRuntime.retire).not.toHaveBeenCalled();
+        expect(mockRuntime.cleanup).not.toHaveBeenCalled();
+        expect(collaborationStore.value).toEqual({ ...resetStoreShape, error: 'cleanup failed' });
+    });
+
+    it('reuses the active teardown witness when the installed owner is already retired', async () => {
+        mockRuntime.canWrite.mockReturnValue(false);
+        mockRuntime.cleanup.mockReturnValue(false);
+
+        await leaveSession();
+        await leaveSession();
+
+        const firstWitness = mockRuntime.cleanup.mock.calls[0]?.[1];
+        expect(firstWitness).toEqual(expect.any(Number));
+        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(1, owner, firstWitness);
+        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(2, owner, firstWitness);
     });
 
     it('broadcasts a peer-leave message to every connected peer before tearing down', async () => {
@@ -70,6 +103,7 @@ describe('leaveSession', () => {
 
         await leaveSession();
 
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
         expect(sendCrdtSyncBuffered).toHaveBeenCalledWith({
             peerId: 'p1',
             message: { type: 'peer-leave', peerId: 'me' },
@@ -112,5 +146,13 @@ describe('leaveSession', () => {
 
         expect(sendCrdtSyncBuffered).toHaveBeenCalledTimes(2);
         expect(collaborationStore.value).toEqual(resetStoreShape);
+    });
+
+    it('does not reset the store when its captured runtime has already been replaced', async () => {
+        mockRuntime.cleanup.mockReturnValue(false);
+
+        await leaveSession();
+
+        expect(collaborationStore.value).toEqual(baseState);
     });
 });

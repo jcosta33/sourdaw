@@ -86,8 +86,9 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 }
                 if (command === 'unload_plugin') {
                     // Project activation clears plugin state; nothing is
-                    // loaded here, so report zero unloads and zero errors.
-                    return Promise.resolve([[], []]);
+                    // loaded here, so report zero unloads, zero errors, and
+                    // no released-strip reports.
+                    return Promise.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
                 }
                 if (command === 'engine_rt_diagnostics') {
                     // The diagnostics poll reads this every second; the

@@ -34,6 +34,7 @@ export type PrepareReviewPort = {
     primaryRoot: () => string;
     pullRequest: (number: number) => ReviewPullRequest;
     fetchShas: (baseSha: string, headSha: string) => void;
+    mergeBase: (baseSha: string, headSha: string) => string;
     diff: (baseSha: string, headSha: string) => string;
     showFile: (sha: string, path: string) => string;
     listDecisionFiles: (sha: string) => string[];
@@ -62,17 +63,18 @@ export function reviewBundlePath(primaryRoot: string, pr: number, headSha: strin
 export function prepareReview(number: number, port: PrepareReviewPort): string {
     const pullRequest = port.pullRequest(number);
     port.fetchShas(pullRequest.baseRefOid, pullRequest.headRefOid);
-    const agents = port.showFile(pullRequest.baseRefOid, 'AGENTS.md');
-    const claude = port.showFile(pullRequest.baseRefOid, 'CLAUDE.md');
-    const decisionFiles = port.listDecisionFiles(pullRequest.baseRefOid);
+    const baseSha = port.mergeBase(pullRequest.baseRefOid, pullRequest.headRefOid);
+    const agents = port.showFile(baseSha, 'AGENTS.md');
+    const claude = port.showFile(baseSha, 'CLAUDE.md');
+    const decisionFiles = port.listDecisionFiles(baseSha);
     const files: Record<string, string> = {
-        'diff.patch': port.diff(pullRequest.baseRefOid, pullRequest.headRefOid),
+        'diff.patch': port.diff(baseSha, pullRequest.headRefOid),
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
         'contracts/AGENTS.md': agents,
         'contracts/CLAUDE.md': claude,
     };
     for (const path of decisionFiles) {
-        files[`contracts/${path}`] = port.showFile(pullRequest.baseRefOid, path);
+        files[`contracts/${path}`] = port.showFile(baseSha, path);
     }
     // The manifest's own `generated` field is derived from the files assembled above, plus itself,
     // so the recorded list always matches what this run actually writes.
@@ -80,7 +82,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     files['manifest.json'] = `${JSON.stringify(
         {
             pr: pullRequest.number,
-            baseSha: pullRequest.baseRefOid,
+            baseSha,
             headSha: pullRequest.headRefOid,
             generated,
         },
@@ -265,6 +267,11 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
         fetchShas: (baseSha, headSha) => {
             git(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, baseSha, headSha]);
         },
+        mergeBase: (baseSha, headSha) =>
+            spawnCapture('git', ['merge-base', baseSha, headSha], {
+                cwd: primaryRoot,
+                env: session.env,
+            }),
         diff: (baseSha, headSha) =>
             spawnCapture('git', ['diff', `${baseSha}...${headSha}`], {
                 cwd: primaryRoot,

@@ -62,6 +62,7 @@ vi.mock('#/modules/AiRuntime/useCases/aiHistoryActions', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearActionHistory: module_mocks.clear_action_history,
+    executeUserAppAction: vi.fn(),
     getActionReplayStatus: module_mocks.get_action_replay_status,
     revertAction: module_mocks.revert_action,
 }));

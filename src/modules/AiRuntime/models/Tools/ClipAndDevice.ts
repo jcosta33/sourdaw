@@ -36,6 +36,48 @@ export const clipTools: readonly ToolSchema[] = [
         'clipId',
     ]),
     tool(
+        'duplicateClipAt',
+        'Duplicate a clip onto an explicit destination track at an absolute start beat.',
+        {
+            clipId: { type: 'string' },
+            destinationTrackId: { type: 'string', description: 'Destination track ID' },
+            startBeat: { type: 'number', description: 'New start position in beats' },
+        },
+        ['clipId', 'destinationTrackId', 'startBeat']
+    ),
+    tool(
+        'drawClip',
+        'Create a new empty clip on a track with an explicit type.',
+        {
+            trackId: { type: 'string' },
+            startBeat: { type: 'number', description: 'Start position in beats' },
+            endBeat: { type: 'number', description: 'End position in beats' },
+            name: { type: 'string', description: 'Clip display name' },
+            type: { type: 'string', description: "'audio' or 'midi' — must match the track kind" },
+        },
+        ['trackId', 'startBeat', 'endBeat', 'name', 'type']
+    ),
+    tool(
+        'moveClips',
+        'Move several clips to explicit tracks and start beats in one undoable step.',
+        {
+            moves: {
+                type: 'array',
+                description: 'One target placement per clip',
+                items: {
+                    type: 'object',
+                    properties: {
+                        clipId: { type: 'string' },
+                        trackId: { type: 'string', description: 'Destination track ID' },
+                        startBeat: { type: 'number', description: 'New start position in beats' },
+                    },
+                    required: ['clipId', 'trackId', 'startBeat'],
+                },
+            },
+        },
+        ['moves']
+    ),
+    tool(
         'moveClip',
         'Move a clip to a different position or track.',
         {
@@ -100,6 +142,16 @@ export const clipTools: readonly ToolSchema[] = [
             beats: { type: 'number', description: 'Positive=forward, negative=backward' },
         },
         ['clipId', 'beats']
+    ),
+    tool(
+        'slipClipContent',
+        "Slide a clip's internal content by setting its content offset in beats without moving the clip.",
+        {
+            clipId: { type: 'string' },
+            clipType: { type: 'string', description: "'audio' or 'midi' — which content offset to slide" },
+            offset: { type: 'number', description: 'New content offset in beats' },
+        },
+        ['clipId', 'clipType', 'offset']
     ),
     tool(
         'setClipGain',

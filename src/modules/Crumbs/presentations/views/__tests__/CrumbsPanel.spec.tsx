@@ -329,4 +329,30 @@ describe('CrumbsPanel', () => {
         };
         expect(screen.getAllByText(isThreeVoices).length).toBeGreaterThan(0);
     });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<CrumbsPanel deviceId={DEVICE} />);
+        const faceplate = container.querySelector<HTMLElement>('.crumbs-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
+
+        const grid = faceplate?.querySelector<HTMLElement>('.grid');
+        expect(grid).not.toBeNull();
+        expect(grid?.className).toContain('min-h-[440px]');
+    });
+
+    it('prevents section cards from collapsing when faceplate is compressed', () => {
+        setMode(DEVICE, 'drum');
+        const { container } = render(<CrumbsPanel deviceId={DEVICE} />);
+        const cards = container.querySelectorAll('.crumbs-window.shrink-0');
+        expect(cards.length).toBeGreaterThanOrEqual(5);
+        for (const title of ['Sample', 'Pad bay', 'Status', 'Waveform', 'Controls']) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section?.className).toContain('shrink-0');
+            expect(section?.className).toContain('crumbs-window');
+        }
+    });
 });

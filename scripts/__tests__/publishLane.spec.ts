@@ -22,7 +22,7 @@ import {
     resolvePrimaryRoot,
     type GhSession,
 } from '../githubAppIdentity.ts';
-import { composePublishBody } from '../prContract.ts';
+import { composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     existingOpenPullRequestArgs,
     updatePullRequestArgs,
@@ -119,6 +119,8 @@ type FakeInput = {
     existingBody?: unknown;
     existingTitle?: unknown;
     issueExists?: boolean;
+    guardFailureReceipt?: GuardFailureReceipt;
+    guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
 };
 
 function fakePort(input: FakeInput = {}) {
@@ -178,6 +180,10 @@ function fakePort(input: FakeInput = {}) {
         log: (message) => {
             calls.push(`log:${message}`);
             logs.push(message);
+        },
+        guardFailure: (laneName) => {
+            calls.push(`guardFailure:${laneName}`);
+            return input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt;
         },
     };
     return { port, calls, logs, bodies };
@@ -1580,6 +1586,42 @@ describe('lane publish', () => {
 
             expect(() => publishLane(undefined, port)).toThrow(/no longer has an open pull request/);
             expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+        });
+    });
+
+    describe('guard failure receipt check', () => {
+        const failureReceipt: GuardFailureReceipt = {
+            version: 1,
+            lane: 'agent-12-work',
+            branch: 'agent/12/work',
+            headSha: '1234567890abcdef1234567890abcdef12345678',
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'memory',
+            command: 'pnpm',
+            args: ['test:run', 'src/app.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 5 * 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 1500,
+        };
+
+        it('refuses publish when an unresolved guard-failure receipt exists for the lane', () => {
+            const { port, calls } = fakePort({ guardFailureReceipt: failureReceipt });
+
+            expect(() => publishLane(12, port)).toThrow(
+                "refusing publish: lane agent/12/work has an unresolved guard-failure receipt (memory at 123456789 during 'pnpm test:run src/app.spec.ts'): prove it resolved under pnpm guard or run 'pnpm guard --recover' before publishing"
+            );
+            expect(calls).toContain('guardFailure:agent-12-work');
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        });
+
+        it('proceeds with publish when guardFailure returns undefined', () => {
+            const { port, calls } = fakePort({ guardFailureReceipt: undefined });
+
+            const pr = publishLane(12, port, 'closes', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+            expect(pr).toBe(88);
+            expect(calls).toContain('guardFailure:agent-12-work');
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(true);
         });
     });
 });

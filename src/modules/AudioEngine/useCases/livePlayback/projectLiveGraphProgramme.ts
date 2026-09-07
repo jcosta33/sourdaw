@@ -52,8 +52,15 @@
  * ceiling applied on one side only is a clip that plays in the bounce and is
  * silent here.
  *
- * MIDI is out of this slice (#3122): an instrument renders on the Web Audio
- * path, so a MIDI clip is skipped here rather than turned into a rest.
+ * A MIDI clip is never a `schedule-clip`: an instrument renders notes, not a
+ * sample, so a MIDI clip is skipped here rather than turned into a rest. Which
+ * carrier renders it is the question `nativeMidiNoteSink` answers — the
+ * engine when it already holds the instrument the notes address (#3892), Web
+ * Audio otherwise (#3122). Skipped is not silent either way, and the producer
+ * names every strip left to Web Audio in `webVoicedStripIds`: an empty native
+ * entry means "nothing native to play" rather than "nothing to play", and a
+ * reader that cannot tell the two apart gates the Web Audio strip that was
+ * voicing the material out of the mix.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -69,13 +76,9 @@ import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
 
-/**
- * A live session plays the arrangement from its head, so every time in this
- * producer is an absolute timeline second. The export's region offset is the
- * only reason `projectOfflineAudioClipPlaybacks` takes a region at all, and a
- * live session has none.
- */
-const LIVE_REGION_START_BEAT = 0;
+import { frozenBake } from './frozenBake';
+import { isLiveClip, LIVE_REGION_START_BEAT } from './isLiveClip';
+import { nativeMidiNoteSink } from './nativeMidiNoteSink';
 
 export type LiveGraphProgrammeExclusion = Readonly<{
     stripId: string;
@@ -87,6 +90,14 @@ export type LiveGraphProgrammeExclusion = Readonly<{
 export type LiveGraphProgrammeInput = Readonly<{
     /** Every track and bus the session builds a strip for, in project order. */
     stripTracks: readonly Track[];
+    /**
+     * The external plugin instances the native engine currently owns.
+     *
+     * What decides whether a MIDI strip's notes are still Web Audio's: the
+     * engine takes them only when it already holds the instrument they address
+     * ({@link nativeMidiNoteSink}).
+     */
+    attachedInstanceIds: ReadonlySet<string>;
     sampleRate: number;
     defaultTempo: number;
     changes: Parameters<OfflinePpqEndpointProjector>[0]['changes'];
@@ -103,6 +114,22 @@ export type LiveGraphProgramme = Readonly<{
     playbacksByStripId: ReadonlyMap<string, readonly AudioGraphClipPlayback[]>;
     /** Strips whose device chain the programme replaces — the frozen ones. */
     bakedStripIds: ReadonlySet<string>;
+    /**
+     * Strips holding at least one live clip this producer did not admit as a
+     * native playback: a MIDI clip whose instrument the engine does not hold,
+     * which is voiced on the Web Audio path; an audio clip with no decoded
+     * material or no buffer id; a clip refused by the expansion ceiling; or a
+     * frozen track whose bake is not loaded. Such a strip has material only Web
+     * Audio voices, so the carrier law must not read its empty native entry as
+     * nothing to sound.
+     *
+     * A MIDI clip on a strip the engine *does* voice is absent from this set
+     * even though it is absent from `playbacksByStripId` too: the native
+     * carrier plays it through `schedule-midi` rather than `schedule-clip`
+     * (#3892), so naming it here would gate that strip onto Web Audio and
+     * silence the plugin.
+     */
+    webVoicedStripIds: ReadonlySet<string>;
     /** Everything this projection could not carry, and why. */
     exclusions: readonly LiveGraphProgrammeExclusion[];
 }>;
@@ -135,33 +162,10 @@ function programmeHorizonSeconds(input: {
     return horizon;
 }
 
-/** The baked buffer a frozen track plays instead of its clips, if it has one. */
-function frozenBake(input: {
-    track: Track;
-    readBuffer: (bufferId: string) => AudioBuffer | undefined;
-}): Readonly<{ bufferId: string; buffer: AudioBuffer; startBeat: number }> | null {
-    const { track, readBuffer } = input;
-    const { freezeState } = track;
-    if (freezeState.status !== 'frozen' || !freezeState.frozenBufferId) {
-        return null;
-    }
-    const buffer = readBuffer(freezeState.frozenBufferId);
-    if (!buffer) {
-        return null;
-    }
-    return {
-        bufferId: freezeState.frozenBufferId,
-        buffer,
-        // `scheduleFrozenTrack` bakes from the track's earliest clip start, so
-        // that is where the bake is anchored on replay. A track with no clips
-        // has nothing earlier than the timeline head.
-        startBeat: track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0,
-    };
-}
-
 export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveGraphProgramme {
     const {
         stripTracks,
+        attachedInstanceIds,
         sampleRate,
         defaultTempo,
         changes,
@@ -185,6 +189,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
 
     const playbacksByStripId = new Map<string, AudioGraphClipPlayback[]>();
     const bakedStripIds = new Set<string>();
+    const webVoicedStripIds = new Set<string>();
     const exclusions: LiveGraphProgrammeExclusion[] = [];
 
     function admit(stripId: string, playback: AudioGraphClipPlayback): void {
@@ -226,6 +231,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             continue;
         }
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
+            webVoicedStripIds.add(track.id);
             exclusions.push({
                 stripId: track.id,
                 subjectId: track.freezeState.frozenBufferId,
@@ -234,25 +240,39 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             continue;
         }
 
+        // Reaching here means no bake replaced this strip, so the qualification
+        // is asked against the set as it stands: this track is not in it.
+        const nativeVoicedMidi = nativeMidiNoteSink({ track, attachedInstanceIds, bakedStripIds }).outcome === 'voiced';
+
         // What the native strip has left to hold. Counted down across the
         // track's clips, because the engine's ceiling is the strip's and one
         // clip's expansion is what spends it.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
         for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
-            if (clip.muted || clip.endBeat <= LIVE_REGION_START_BEAT || clip.endBeat - clip.startBeat <= 0) {
+            if (!isLiveClip(clip)) {
                 continue;
             }
             if (clip.type !== 'audio') {
-                // Instrument programme stays on the Web Audio path (#3122).
+                // An instrument the engine holds takes its notes through
+                // `schedule-midi` (#3892); every other instrument programme
+                // stays on the Web Audio path (#3122).
+                if (!nativeVoicedMidi) {
+                    webVoicedStripIds.add(track.id);
+                }
                 continue;
             }
             const bufferId = clip.audioBufferId;
             if (!bufferId) {
+                webVoicedStripIds.add(track.id);
                 continue;
             }
             const clipLabel = clip.name || clip.id;
+            // Dropping a clip names its strip web-voiced as well as naming the
+            // clip: the material is still in the project, and Web Audio is the
+            // only carrier left that plays it.
             const excludeClip = (reason: string): void => {
+                webVoicedStripIds.add(track.id);
                 exclusions.push({ stripId: track.id, subjectId: clip.id, reason });
             };
 
@@ -297,5 +317,5 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         }
     }
 
-    return { playbacksByStripId, bakedStripIds, exclusions };
+    return { playbacksByStripId, bakedStripIds, webVoicedStripIds, exclusions };
 }

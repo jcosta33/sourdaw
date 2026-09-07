@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { miscCommands } from '../MiscCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openPreferencesDialog: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 
@@ -170,13 +170,13 @@ describe('miscCommands', () => {
     it('quantize-to-grid-elastic dispatches detectTransients for the selected clip', () => {
         runAction('quantize-to-grid-elastic');
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'detectTransients', payload: { clipId: 'clip-1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'detectTransients', payload: { clipId: 'clip-1' } });
     });
 
     it('enable-warping dispatches enableWarping for the selected clip', () => {
         runAction('enable-warping');
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'enableWarping', payload: { clipId: 'clip-1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'enableWarping', payload: { clipId: 'clip-1' } });
     });
 
     it('does not dispatch clip-scoped actions when no clip is selected', async () => {
@@ -186,6 +186,6 @@ describe('miscCommands', () => {
         runAction('quantize-to-grid-elastic');
         runAction('enable-warping');
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 });

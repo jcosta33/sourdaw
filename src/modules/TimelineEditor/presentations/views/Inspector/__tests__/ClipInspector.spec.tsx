@@ -190,11 +190,13 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 const commandMocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: commandMocks.executeAppAction,
+    executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
+    executeUserAppAction: commandMocks.executeUserAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
@@ -306,11 +308,11 @@ describe('ClipInspector', () => {
         fireEvent.change(slider, { target: { value: '-12' } });
         fireEvent.change(slider, { target: { value: '-6' } });
         // Mid-gesture ticks never reach the command layer.
-        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
         fireEvent.blur(slider, { target: { value: '-6' } });
 
-        expect(commandMocks.executeAppAction).toHaveBeenCalledTimes(1);
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setClipGain',
             payload: { clipId: 'clip-1', gain: dbToGain(-6), expectedGain: 1 },
         });
@@ -323,7 +325,7 @@ describe('ClipInspector', () => {
         fireEvent.change(slider, { target: { value: '0' } });
         fireEvent.blur(slider, { target: { value: '0' } });
 
-        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('treats the bottom of the slider travel as silence', () => {
@@ -333,7 +335,7 @@ describe('ClipInspector', () => {
         fireEvent.change(slider, { target: { value: '-60' } });
         fireEvent.blur(slider, { target: { value: '-60' } });
 
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setClipGain',
             payload: { clipId: 'clip-1', gain: 0, expectedGain: 1 },
         });
@@ -346,8 +348,8 @@ describe('ClipInspector', () => {
         fireEvent.change(input, { target: { value: '-3' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(commandMocks.executeAppAction).toHaveBeenCalledTimes(1);
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setClipGain',
             payload: { clipId: 'clip-1', gain: dbToGain(-3), expectedGain: 1 },
         });
@@ -360,7 +362,7 @@ describe('ClipInspector', () => {
         fireEvent.change(input, { target: { value: '-inf' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith({
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setClipGain',
             payload: { clipId: 'clip-1', gain: 0, expectedGain: 1 },
         });
@@ -373,6 +375,6 @@ describe('ClipInspector', () => {
         fireEvent.change(input, { target: { value: 'loud' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(commandMocks.executeAppAction).not.toHaveBeenCalled();
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 });

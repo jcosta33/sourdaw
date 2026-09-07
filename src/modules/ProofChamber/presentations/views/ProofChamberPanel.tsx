@@ -17,8 +17,9 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
@@ -30,11 +31,14 @@ import {
 import {
     type ProofChamberAlgorithm,
     ALGORITHM_MAP,
+    BOOLEAN_ENGINE_FIELDS,
     DEFAULT_PARAMS,
+    NUMERIC_ENGINE_FIELDS,
     PARAM_MAP,
     type ProofChamberEngineState,
     PROOF_CHAMBER_ALGORITHMS,
     PROOF_CHAMBER_DECAY_EQ_BANDS,
+    proofChamberAlgorithmFromWireValue,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
@@ -185,7 +189,7 @@ function SectionCard({
 }): ReactElement {
     return (
         <DawPluginSectionCard
-            className="proof-chamber-window"
+            className="proof-chamber-window shrink-0"
             title={title}
             detail={detail ? <ChamberLed>{detail}</ChamberLed> : undefined}
             detailMode="badge"
@@ -298,6 +302,54 @@ function KnobCell({
     );
 }
 
+/**
+ * The engine state project truth describes, overlaid on `base`.
+ *
+ * The space-load rollback must not snapshot the live engine store: an earlier
+ * optimistic click may still own it, and a snapshot read back from there would
+ * restore that click's preset as if it were the pre-click state. Project truth
+ * never moves on an optimistic write, so every persisted field is read from
+ * `parameterValues` — the same projection `hydrateChamberStateFromProject`
+ * applies on project open — while the fields truth does not hold (the
+ * session-only `space`) stay as `base` has them. `base` is the updater's own
+ * pre-write state, so a device with nothing stored yet still rolls back to
+ * what the click actually replaced.
+ */
+function engineStateFromProjectParameters(
+    parameterValues: Record<string, number> | undefined,
+    base: ProofChamberEngineState
+): ProofChamberEngineState {
+    if (parameterValues === undefined) {
+        return base;
+    }
+    const restored: ProofChamberEngineState = { ...base };
+    for (const field of NUMERIC_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored;
+        }
+    }
+    for (const field of BOOLEAN_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored > 0.5;
+        }
+    }
+    const storedAlgorithm = parameterValues.algorithm;
+    if (typeof storedAlgorithm === 'number' && Number.isFinite(storedAlgorithm)) {
+        restored.algorithm = proofChamberAlgorithmFromWireValue(storedAlgorithm);
+    }
+    return restored;
+}
+
 export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
     const trackState = useStore(trackStore, defaultTrackState);
@@ -332,7 +384,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         } else {
             numericValue = value;
         }
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
         });
@@ -391,10 +443,30 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * and the engine losing its state is not a change in truth, so it has to be
      * resynced where the loss happens.
      */
-    function selectSpace(space: SpaceType): void {
+    async function selectSpace(space: SpaceType): Promise<void> {
         const nextParams = expandSpacePreset(space);
 
-        updateChamberEngine(deviceId, () => nextParams);
+        // The optimistic preset must not survive a refused load (issue #3860):
+        // project truth never moved, so the panel would keep showing the new
+        // space and its preset while the refusal below says nothing changed.
+        // The snapshot is derived through `engineStateFromProjectParameters`
+        // rather than read back from the live store, because an earlier
+        // unresolved optimistic click may already own that store — its preset
+        // must never become this click's "previous" state. `ambiguous` is the
+        // one outcome that may have landed, so instead of restoring a snapshot
+        // over a landed write it re-hydrates from project truth below.
+        let previousEngineState: ProofChamberEngineState | null = null;
+        updateChamberEngine(deviceId, (current) => {
+            previousEngineState = engineStateFromProjectParameters(projectParameterValues, current);
+            return nextParams;
+        });
+        const restorePreviousEngineState = (): void => {
+            const engineState = previousEngineState;
+            if (engineState === null) {
+                return;
+            }
+            updateChamberEngine(deviceId, () => engineState);
+        };
 
         const actions: AppAction[] = [
             {
@@ -426,7 +498,52 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         }
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
-        void executeAppActionBatch(actions, { groupId, groupLabel });
+        const result = await executeAppActionBatch(actions, { groupId, groupLabel });
+        if (result.status === 'committed-with-warning') {
+            // The project write landed, but post-commit history work failed, so
+            // the grouped one-history-step undo entry this gesture promises is
+            // missing or partial — the next undo may step past the whole load.
+            // Every sibling batch consumer surfaces this status; silence here
+            // would keep promising one-step undo the history no longer holds.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.warning}`);
+            notifyUser(
+                `The "${space}" space loaded with degraded undo history — the next undo may step past it.`,
+                'warning'
+            );
+            return;
+        }
+        if (result.status === 'ambiguous') {
+            // The write may or may not have persisted — the storage transaction's
+            // commit state is unknown — so the toast hedges instead of naming an
+            // outcome the batch never reported. The store is re-hydrated from
+            // project truth, but which truth that is depends on the unknown
+            // commit, so the hedge still points at reloading the project as the
+            // one way to confirm what the engine is actually running.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            hydrateChamberStateFromProject(deviceId);
+            notifyUser(
+                `The "${space}" space load may not have persisted — reload the project to confirm before retrying.`,
+                'warning'
+            );
+            return;
+        }
+        if (result.status === 'failed') {
+            restorePreviousEngineState();
+            // A handler or storage throw, not a project refusal: the refusal
+            // message here would name a false cause, so the toast stays
+            // cause-neutral and the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space — see logs for details.`, 'error');
+            return;
+        }
+        if (result.status === 'rejected' || result.status === 'conflicted') {
+            restorePreviousEngineState();
+            // The batch resolves rather than rejecting when it is turned away,
+            // so the click used to leave no trace at all. The toast names the
+            // outcome; the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space: the project can't be changed right now.`, 'warning');
+        }
     }
 
     /**
@@ -473,7 +590,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     function selectAlgorithm(next: ProofChamberAlgorithm): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));
 
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
         });
@@ -509,7 +626,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     }
 
     return (
-        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-0 overflow-hidden p-3">
+        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-[440px] p-3">
             <DawPluginRail className="h-full w-[248px] shrink-0">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>

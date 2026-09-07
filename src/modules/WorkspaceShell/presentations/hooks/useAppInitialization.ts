@@ -20,7 +20,12 @@ import {
 } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
-import { ensureTrackStrips, getTransportState, syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
+import {
+    ensureTrackStrips,
+    getTransportState,
+    rearmNativeSessionAfterEngineRetire,
+    syncTransportMapsToNativeSession,
+} from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
@@ -28,15 +33,16 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        // syncKneadToEngine, syncTransportMapsToNativeSession and
-        // syncNativeTimelineSamples each subscribe to a store and return an
-        // unsubscribe. All are created inside the async boot sequence, so we
-        // hold them in a closure and tear them down on cleanup. `disposed`
-        // covers the race where the effect unmounts before the async work
-        // registers the subscriptions — in that case we unsubscribe as soon as
-        // they land.
+        // syncKneadToEngine, syncTransportMapsToNativeSession,
+        // rearmNativeSessionAfterEngineRetire and syncNativeTimelineSamples
+        // each subscribe to a store and return an unsubscribe. All are created
+        // inside the async boot sequence, so we hold them in a closure and tear
+        // them down on cleanup. `disposed` covers the race where the effect
+        // unmounts before the async work registers the subscriptions — in that
+        // case we unsubscribe as soon as they land.
         let unsubscribeKnead: (() => void) | null = null;
         let unsubscribeTransportMaps: (() => void) | null = null;
+        let unsubscribeNativeRearm: (() => void) | null = null;
         let unsubscribeTimelineSamples: (() => void) | null = null;
         let disposed = false;
 
@@ -45,6 +51,7 @@ export const useAppInitialization = (): void => {
                 await initializeAudioEngine();
                 unsubscribeKnead = syncKneadToEngine();
                 unsubscribeTransportMaps = syncTransportMapsToNativeSession();
+                unsubscribeNativeRearm = rearmNativeSessionAfterEngineRetire();
                 // Subscribed before `loadProject`, so the project's material
                 // reaches the native sample pool as it lands rather than at
                 // the first play gesture (#3068).
@@ -54,6 +61,8 @@ export const useAppInitialization = (): void => {
                     unsubscribeKnead = null;
                     unsubscribeTransportMaps();
                     unsubscribeTransportMaps = null;
+                    unsubscribeNativeRearm();
+                    unsubscribeNativeRearm = null;
                     unsubscribeTimelineSamples();
                     unsubscribeTimelineSamples = null;
                 }
@@ -90,6 +99,10 @@ export const useAppInitialization = (): void => {
             if (unsubscribeTransportMaps) {
                 unsubscribeTransportMaps();
                 unsubscribeTransportMaps = null;
+            }
+            if (unsubscribeNativeRearm) {
+                unsubscribeNativeRearm();
+                unsubscribeNativeRearm = null;
             }
             if (unsubscribeTimelineSamples) {
                 unsubscribeTimelineSamples();

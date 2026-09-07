@@ -374,25 +374,30 @@ describe('byte payloads', () => {
         await expect(bridge.invokeBinaryResponse('read_file_bytes', ['/tmp/x'])).resolves.toBe(bytes);
     });
 
-    it('carries bytes both ways in one call, for the render-quantum shape', async () => {
-        // `process_plugin_audio(instance_id, audio_bytes) -> Buffer` runs once
-        // per quantum. A bridge that discarded the answer here would hand the
-        // call site `undefined`, which it reads as the legitimate "no output
-        // yet" case — every external plugin rendering silence, with nothing
-        // logged anywhere. The round trip has to be byte-identical, so a
+    it('carries bytes out and hands back the answer in one call', async () => {
+        // `register_timeline_sample(sample_id, sample_rate, channels, pcm)`
+        // takes a buffer and answers with a result the caller reads. A bridge
+        // that discarded the answer here would hand the call site `undefined`,
+        // indistinguishable from a command that answers nothing, with nothing
+        // logged anywhere. The byte payload has to arrive whole, so a
         // truncation or a re-encode fails as well as a dropped result.
         const rendered = new Uint8Array([9, 8, 7, 6]);
         const fake = fakeIpc((_channel, args) => (Array.isArray(args[0]) ? rendered : undefined));
         const bridge = createSourdawBridge(fake.ipc);
-        const block = new Uint8Array([1, 2, 3, 4]);
+        const pcm = new Uint8Array([1, 2, 3, 4]);
 
-        const answer = await bridge.invokeBinary('process_plugin_audio', ['instance-1'], block);
+        const answer = await bridge.invokeBinary('register_timeline_sample', ['sample-1', 48000, 2], pcm);
 
-        expect(fake.invoke).toHaveBeenCalledWith(commandChannel('process_plugin_audio'), ['instance-1', block]);
-        expect(answer).toBe(rendered);
-        expect([...(await bridge.invokeBinaryResponse('process_plugin_audio', ['instance-1', block]))]).toEqual([
-            9, 8, 7, 6,
+        expect(fake.invoke).toHaveBeenCalledWith(commandChannel('register_timeline_sample'), [
+            'sample-1',
+            48000,
+            2,
+            pcm,
         ]);
+        expect(answer).toBe(rendered);
+        expect([
+            ...(await bridge.invokeBinaryResponse('register_timeline_sample', ['sample-1', 48000, 2, pcm])),
+        ]).toEqual([9, 8, 7, 6]);
     });
 
     it('wraps a bare ArrayBuffer rather than refusing it', async () => {

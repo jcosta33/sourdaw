@@ -1,4 +1,4 @@
-import { executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 type PresetLoadPlan = Readonly<{
@@ -16,7 +16,7 @@ type PresetLoadPlan = Readonly<{
 export async function executePresetLoad(plan: PresetLoadPlan): Promise<void> {
     const [singleAction] = plan.actions;
     if (plan.actions.length === 1 && singleAction) {
-        await executeAppAction(singleAction);
+        await executeUserAppAction(singleAction);
         return;
     }
 

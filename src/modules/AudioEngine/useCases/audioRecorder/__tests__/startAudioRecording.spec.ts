@@ -20,38 +20,38 @@ describe('startAudioRecording', () => {
     });
 
     it('should preserve an explicit input id', async () => {
-        const on_complete = vi.fn();
+        const on_terminal = vi.fn();
 
-        await startAudioRecording('track-1', on_complete, 'explicit-input');
+        await startAudioRecording('track-1', on_terminal, 'explicit-input');
 
         expect(getSelectedInputId).not.toHaveBeenCalled();
-        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_complete, 'explicit-input');
+        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_terminal, 'explicit-input');
     });
 
     it('should preserve null as the default-device input id', async () => {
-        const on_complete = vi.fn();
+        const on_terminal = vi.fn();
 
-        await startAudioRecording('track-1', on_complete, null);
+        await startAudioRecording('track-1', on_terminal, null);
 
         expect(getSelectedInputId).not.toHaveBeenCalled();
-        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_complete, null);
+        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_terminal, null);
     });
 
     it('should resolve omitted input ids from the selected input use case', async () => {
-        const on_complete = vi.fn();
+        const on_terminal = vi.fn();
 
-        await startAudioRecording('track-1', on_complete);
+        await startAudioRecording('track-1', on_terminal);
 
         expect(getSelectedInputId).toHaveBeenCalledTimes(1);
-        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_complete, 'selected-input');
+        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_terminal, 'selected-input');
     });
 
     it('should resolve undefined input ids from the selected input use case', async () => {
-        const on_complete = vi.fn();
+        const on_terminal = vi.fn();
 
-        await startAudioRecording('track-1', on_complete, undefined);
+        await startAudioRecording('track-1', on_terminal, undefined);
 
         expect(getSelectedInputId).toHaveBeenCalledTimes(1);
-        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_complete, 'selected-input');
+        expect(startAudioRecordingRepo).toHaveBeenCalledWith('track-1', on_terminal, 'selected-input');
     });
 });

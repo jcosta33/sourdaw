@@ -114,6 +114,9 @@ vi.mock('../../transformers/llmActionBridge', async () => {
 const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
     '../agentReference/bridgeGroundedLlmToolCalls'
 );
+const actualParsing = await vi.importActual<typeof import('../../transformers/promptParser/parsing')>(
+    '../../transformers/promptParser/parsing'
+);
 
 const baseContext: ProjectContext = {
     tempo: 120,
@@ -448,6 +451,121 @@ describe('parsePromptToActions', () => {
             { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
         ]);
         expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('preserves user text case when renaming a clip through deterministic parameterized path', async () => {
+        vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
+
+        const mixerContext = createMixerContext();
+        const track = mixerContext.tracks[0]!;
+        const context: ProjectContext = {
+            ...mixerContext,
+            tracks: [
+                {
+                    ...track,
+                    clipCount: 1,
+                    clips: [
+                        {
+                            id: 'c1',
+                            name: 'Intro',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 0,
+                        },
+                    ],
+                },
+                ...mixerContext.tracks.slice(1),
+            ],
+            selectedClipId: 'c1',
+            selectedClipIds: ['c1'],
+        };
+        vi.mocked(getProjectContext).mockReturnValue(context);
+
+        const result = await parsePromptToActions('rename clip to Verse', context);
+
+        expect(result.actions).toEqual([
+            {
+                type: 'renameClip',
+                payload: { clipId: 'c1', name: 'Verse' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const upperResult = await parsePromptToActions('RENAME THE CLIP TO "Chorus 1"', context);
+
+        expect(upperResult.actions).toEqual([
+            {
+                type: 'renameClip',
+                payload: { clipId: 'c1', name: 'Chorus 1' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('preserves 1% gain semantics for track volume command on fast path', async () => {
+        vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
+
+        const context: ProjectContext = {
+            ...createMixerContext(),
+            selectedTrackId: 'track-vocals',
+        };
+        vi.mocked(getProjectContext).mockReturnValue(context);
+
+        const percentResult = await parsePromptToActions('volume 1%', context);
+
+        expect(percentResult.actions).toHaveLength(1);
+        expect(percentResult.actions[0]?.payload).toMatchObject({
+            trackId: 'track-vocals',
+            gain: 0.01,
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const bareResult = await parsePromptToActions('set volume to 1', context);
+
+        expect(bareResult.actions).toHaveLength(1);
+        expect(bareResult.actions[0]?.payload).toMatchObject({
+            trackId: 'track-vocals',
+            gain: 1,
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('preserves user text case for track names when creating multiple tracks through compound fast path', async () => {
+        vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
+
+        const result = await parsePromptToActions(
+            'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
+            baseContext
+        );
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addTrack',
+                payload: { name: 'Lead Vocals', kind: 'audio' },
+            },
+            {
+                type: 'addTrack',
+                payload: { name: 'Backing Vocals', kind: 'audio' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const upperResult = await parsePromptToActions(
+            'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
+            baseContext
+        );
+        expect(upperResult.actions).toEqual([
+            {
+                type: 'addTrack',
+                payload: { name: 'Lead Vocals', kind: 'audio' },
+            },
+            {
+                type: 'addTrack',
+                payload: { name: 'Backing Vocals', kind: 'audio' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
     it.each([

@@ -1,7 +1,9 @@
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
+export { captureCheckpointRoot } from './captureCheckpointRoot';
 export { captureProjectIdentity } from './captureProjectIdentity';
+export { captureProjectRootIdentity } from './captureProjectRootIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
 export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
@@ -52,3 +54,8 @@ export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';
+export { commitCheckpointArtifact } from './commitCheckpointArtifact';
+export { readCheckpointArtifact } from './readCheckpointArtifact';
+export { listCheckpointCatalog } from './listCheckpointCatalog';
+export { deleteCheckpointArtifact } from './deleteCheckpointArtifact';
+export { inspectCheckpointRootMedia } from './inspectCheckpointRootMedia';

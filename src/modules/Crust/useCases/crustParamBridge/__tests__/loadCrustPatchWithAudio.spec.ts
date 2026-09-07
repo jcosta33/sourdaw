@@ -39,6 +39,10 @@ const mocks = vi.hoisted(() => ({
 const { updateDeviceParam, persistDeviceParam } = mocks;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     updateDeviceParam: mocks.updateDeviceParam,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -70,7 +74,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -87,6 +90,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

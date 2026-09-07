@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AdjustmentLayerStrip, EMPTY_RANGE_SENTINEL, DEFAULT_FULL_RANGE_REGION } from '../AdjustmentLayerStrip';
@@ -26,7 +26,7 @@ type MockLayer = {
 const mocks = vi.hoisted(() => ({
     layers: [] as MockLayer[],
     tracks: [] as Array<{ id: string; name: string }>,
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -52,7 +52,7 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
@@ -142,7 +142,7 @@ describe('AdjustmentLayerStrip', () => {
         renderStrip();
         const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(layerRow, { altKey: true, button: 0, clientX: 200 });
-        const calls = mocks.executeAppAction.mock.calls;
+        const calls = mocks.executeUserAppAction.mock.calls;
         const addRegionCall = calls.find((call) => {
             const action = call[0] as { type: string };
             return action.type === 'addAdjustmentRegion';
@@ -168,7 +168,38 @@ describe('AdjustmentLayerStrip', () => {
         renderStrip();
         const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.contextMenu(layerRow, { clientX: 100, clientY: 100 });
-        expect(screen.getByText(/disable layer|enable layer/i)).toBeInTheDocument();
+        expect(
+            within(screen.getByTestId('adjustment-layer-context-menu')).getByText(/disable layer|enable layer/i)
+        ).toBeInTheDocument();
+    });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open menu deletes the arrangement clips behind it.
+    it('layer context menu items sit inside a [role="menu"] surface', () => {
+        mocks.layers = [
+            {
+                id: 'L1',
+                name: 'EQ Layer',
+                effectType: 'eq',
+                parameters: [],
+                affectedTrackIds: [],
+                insertionIndex: 0,
+                regions: [],
+                enabled: true,
+                mix: 1,
+                color: '#ff0000',
+            },
+        ];
+        renderStrip();
+        const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
+        fireEvent.contextMenu(layerRow, { clientX: 100, clientY: 100 });
+
+        expect(
+            within(screen.getByTestId('adjustment-layer-context-menu'))
+                .getByText(/disable layer|enable layer/i)
+                .closest('[role="menu"]')
+        ).not.toBeNull();
     });
 
     it('should open the Add menu when the add button is clicked', () => {
@@ -176,6 +207,13 @@ describe('AdjustmentLayerStrip', () => {
         const addButton = screen.getByRole('button', { name: /add adjustment layer/i });
         fireEvent.click(addButton);
         expect(screen.getByText('New Adjustment Layer')).toBeInTheDocument();
+    });
+
+    it('Add menu items sit inside a [role="menu"] surface', () => {
+        renderStrip();
+        fireEvent.click(screen.getByRole('button', { name: /add adjustment layer/i }));
+
+        expect(screen.getByText('New Adjustment Layer').closest('[role="menu"]')).not.toBeNull();
     });
 
     const layerWithRegion = (): MockLayer => ({
@@ -192,9 +230,9 @@ describe('AdjustmentLayerStrip', () => {
     });
 
     const findCall = (type: string): unknown => {
-        const call = mocks.executeAppAction.mock.calls.find((c) => (c[0] as { type: string }).type === type);
+        const call = mocks.executeUserAppAction.mock.calls.find((c) => (c[0] as { type: string }).type === type);
         if (!call) {
-            throw new Error(`expected executeAppAction call of type ${type}`);
+            throw new Error(`expected executeUserAppAction call of type ${type}`);
         }
         return call[0];
     };
@@ -212,7 +250,7 @@ describe('AdjustmentLayerStrip', () => {
     it('toggles a layer enabled from the row power button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Disable'));
+        fireEvent.click(screen.getByRole('button', { name: 'Disable layer' }));
         expect(findCall('toggleAdjustmentLayer')).toMatchObject({
             type: 'toggleAdjustmentLayer',
             payload: { layerId: 'L1' },
@@ -222,7 +260,7 @@ describe('AdjustmentLayerStrip', () => {
     it('removes a layer from the row remove button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Remove layer'));
+        fireEvent.click(screen.getByRole('button', { name: 'Remove layer' }));
         expect(findCall('removeAdjustmentLayer')).toMatchObject({
             type: 'removeAdjustmentLayer',
             payload: { layerId: 'L1' },
@@ -232,7 +270,7 @@ describe('AdjustmentLayerStrip', () => {
     it('opens the affected-tracks picker from the row settings button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         expect(screen.getByRole('dialog', { name: /affected tracks for eq layer/i })).toBeInTheDocument();
     });
 
@@ -243,7 +281,7 @@ describe('AdjustmentLayerStrip', () => {
             { id: 't2', name: 'Bass' },
         ];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         // t1 is already selected; clicking it removes it.
         const guitarCheckbox = screen.getByLabelText('Guitar') as HTMLInputElement;
         fireEvent.click(guitarCheckbox);
@@ -256,7 +294,7 @@ describe('AdjustmentLayerStrip', () => {
     it('clears all affected tracks via the clear button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         fireEvent.click(screen.getByText('Clear (= all below)'));
         expect(findCall('setLayerAffectedTracks')).toMatchObject({
             type: 'setLayerAffectedTracks',
@@ -303,7 +341,7 @@ describe('AdjustmentLayerStrip', () => {
         const regionEl = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(regionEl, { altKey: true, button: 2, clientX: 200 });
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
         ).toBe(false);
     });
 
@@ -313,7 +351,7 @@ describe('AdjustmentLayerStrip', () => {
         const regionEl = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(regionEl, { altKey: false, button: 0, clientX: 200 });
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
         ).toBe(false);
     });
 
@@ -397,7 +435,9 @@ describe('AdjustmentLayerStrip', () => {
         drag.move(101); // < MIN_DRAG_PX (3)
         drag.up();
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some(
+                (c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion'
+            )
         ).toBe(false);
     });
 
@@ -437,7 +477,9 @@ describe('AdjustmentLayerStrip', () => {
         drag.move(200);
         drag.up();
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some(
+                (c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion'
+            )
         ).toBe(false);
     });
 

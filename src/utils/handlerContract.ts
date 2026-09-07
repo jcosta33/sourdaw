@@ -178,6 +178,23 @@ export type ClipMoveActionSnapshot = {
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
 };
+/** One clip's target placement in a multi-clip move — the `moveClips` payload unit
+ *  and the moved-clip half of its `restoreClipMoves` inverse. */
+export type ClipMoveTarget = {
+    readonly clipId: string;
+    readonly trackId: string;
+    readonly startBeat: number;
+};
+/** A ripple-shifted neighbor's pre-gesture placement, captured for exact restore. */
+export type ClipShiftSnapshot = {
+    readonly clipId: string;
+    readonly origStartBeat: number;
+    readonly origEndBeat: number;
+};
+/** The neighbor shifts one ripple insert produced — the ripple half of `discardDrawnClip`'s payload. */
+export type ClipRippleInsertPlanSnapshot = {
+    readonly shiftedClips: readonly ClipShiftSnapshot[];
+};
 export type ClipStretchStateSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
@@ -1141,6 +1158,70 @@ export type AppAction =
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
+           *  drawn length, exactly as the gesture's ripple insert did. */
+          type: 'drawClip';
+          payload: {
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              id?: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              ripple: boolean;
+          };
+      }
+    | {
+          /** Inverse of `drawClip`. Removes the drawn clip and restores any
+           *  ripple-shifted neighbors. Emitted only by the `drawClip` handler's
+           *  `describe()` — not invoked directly. */
+          type: 'discardDrawnClip';
+          payload: { clipId: string; trackId: string; ripplePlan: ClipRippleInsertPlanSnapshot | null };
+      }
+    | {
+          /** Redo of `drawClip`. Re-creates the drawn clip and re-applies the
+           *  ripple plan captured at draw time — never re-plans against live
+           *  state, so redo restores the forward placement whatever the current
+           *  ripple preference is. Emitted only by the `drawClip` handler's
+           *  `describe()` — not invoked directly. */
+          type: 'restoreDrawnClip';
+          payload: {
+              clipId: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              ripplePlan: ClipRippleInsertPlanSnapshot | null;
+          };
+      }
+    | {
+          type: 'duplicateClipAt';
+          payload: {
+              clipId: string;
+              destinationTrackId: string;
+              startBeat: number;
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              targetClipId?: string;
+          };
+      }
+    | {
+          /** One multi-clip move gesture — plain and ripple commits alike. The
+           *  handler computes each ripple plan between sequential writes, exactly
+           *  as the callback loop did. */
+          type: 'moveClips';
+          payload: { moves: readonly ClipMoveTarget[]; ripple: boolean };
+      }
+    | {
+          /** Inverse of `moveClips`. Restores every moved clip's placement and the
+           *  pre-gesture positions of every ripple-shifted neighbor. Emitted only
+           *  by the `moveClips` handler — not invoked directly. */
+          type: 'restoreClipMoves';
+          payload: { movedClips: readonly ClipMoveTarget[]; neighborShifts: readonly ClipShiftSnapshot[] };
+      }
     | {
           type: 'addDevice';
           payload: {
@@ -2365,6 +2446,19 @@ type ActionHandlerCommon<Action extends AppAction> = {
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
     canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
+    /**
+     * Whether this handler's `execute` can genuinely refuse to write against a diverged
+     * document — some path returns `{ status: 'conflict' }` or throws `AppActionConflictError`.
+     * `executeAppAction` never calls `validate` at dispatch, so conflict capability is only
+     * knowable from the handler that will actually run: many undoable handlers route through
+     * `toHandlerExecutionResult` (`no-write | written`) and can never refuse. Undo step-over
+     * (#2881) may advance onto an entry only when its inverse resolves to a flagged handler;
+     * stepping onto an unflagged one risks silently overwriting the edit that caused the
+     * conflict. A declared capability, not a derived one — see the registry honesty spec in
+     * `Command/useCases/__tests__/` for the proof each flag owes. Distinct from
+     * `canReapplyAfterDivergence`, which certifies reapplication inside an atomic batch.
+     */
+    canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
     /** Owner-provided strict validation for a payload after application-owned materialization. */

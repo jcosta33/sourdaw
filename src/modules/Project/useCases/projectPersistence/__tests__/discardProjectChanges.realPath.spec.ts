@@ -32,6 +32,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb, and resetAudioGraph; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({ id: 'audio' })),
     importCachedAudioBuffers: vi.fn(),
@@ -67,7 +71,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -85,10 +88,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
@@ -124,7 +131,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
+    hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
+    restorePluginState: vi.fn(),
     registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));

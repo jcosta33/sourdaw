@@ -26,6 +26,22 @@ describe('resolvePluginEditorCapability', () => {
         ).toBe('unknown');
     });
 
+    /**
+     * The scanner answers the port question and leaves the editor question open
+     * for a format whose only editor query is an editor call it cannot make.
+     * Reading that `false` as "no editor" hides the control for every plugin in
+     * that format, whose editors the runtime host can in fact open.
+     */
+    it('reports unknown when the reason says the editor question was never asked', () => {
+        expect(
+            resolvePluginEditorCapability({
+                has_custom_ui: false,
+                capability_metadata_reason:
+                    'The scanner did not ask this plugin whether it offers an editor; the host asks the plugin itself when it loads.',
+            })
+        ).toBe('unknown');
+    });
+
     it('reports unknown for a plugin the scan registry does not hold', () => {
         expect(resolvePluginEditorCapability(undefined)).toBe('unknown');
     });

@@ -33,7 +33,7 @@ type TestRecordingBuffer = { duration: number };
 type TestRecordingClip = { id: string; trackId: string; startBeat: number; endBeat: number };
 type TestTrack = { id: string; kind: 'audio' | 'midi'; armed: boolean };
 type TestTrackState = { tracks: TestTrack[] };
-type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<boolean>;
+type StartAudioRecording = typeof import('#/modules/AudioEngine/useCases').startAudioRecording;
 
 const mocks = vi.hoisted(() => {
     const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };

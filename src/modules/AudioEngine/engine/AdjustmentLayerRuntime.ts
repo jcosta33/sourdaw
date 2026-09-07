@@ -16,7 +16,6 @@ type LiveBus = {
 
 export type TrackRerouteDeps = {
     rerouteTrack: (trackId: string) => void;
-    getTrackOutputNode: (trackId: string) => AudioNode | null;
     getTrackDefaultDestination: (trackId: string) => AudioNode | null;
     getContext: () => BaseAudioContext | null;
 };

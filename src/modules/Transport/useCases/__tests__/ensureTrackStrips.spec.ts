@@ -68,6 +68,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 // Mock AudioEngine use cases
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     ensureTrackStrip: mocks.ensureTrackStrip,
     setTrackOutput: mocks.setTrackOutput,
     setTrackGain: mocks.setTrackGain,
@@ -108,7 +112,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeMidiFxFromStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setTrackSoloGate: vi.fn(),
@@ -117,6 +120,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: vi.fn(),
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 // Mock Routing use cases

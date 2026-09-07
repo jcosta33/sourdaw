@@ -19,10 +19,13 @@ export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
+export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
+export { configureDurableAudioBufferOwnership } from './configureDurableAudioBufferOwnership';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
 export { clearRuntimeCachedAudioBuffers } from './clearRuntimeCachedAudioBuffers';
+export { ensureCachedAudioBuffersDurable } from './ensureCachedAudioBuffersDurable';
 export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
 export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
 export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAudioBuffersBySize';
@@ -35,6 +38,7 @@ export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
 export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
+export { releaseCheckpointAudioRetention } from './releaseCheckpointAudioRetention';
 export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
@@ -53,8 +57,10 @@ export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 
 export { decodeAudioFile } from './decodeAudioFile';
 export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
+export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
 export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
@@ -104,10 +110,19 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
+export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
+export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+// Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
+export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
+export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
+export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
 export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';
@@ -117,7 +132,6 @@ export { getCompensationDelay } from './latencyCompensation/compensation/getComp
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 export { reportLatency } from './latencyCompensation/compensation/reportLatency';
-export { reportBridgeRoundTripFrames } from './latencyCompensation/compensation/reportBridgeRoundTripFrames';
 export { clearReportedLatency } from './latencyCompensation/compensation/clearReportedLatency';
 
 export { cancelExport } from './offlineRender/exportCancellation';
@@ -142,8 +156,6 @@ export { stopAllScheduled } from './scheduling/stopAllScheduled';
 export { registerScheduledSource } from './scheduling/registerScheduledSource';
 export { getCurrentTime } from './scheduling/getCurrentTime';
 export { createBufferSource } from './scheduling/createBufferSource';
-
-export { setMasterGain } from './setMasterGain';
 
 export { setTrackGain } from './trackAudioControls/setTrackGain';
 export { setTrackPan } from './trackAudioControls/setTrackPan';

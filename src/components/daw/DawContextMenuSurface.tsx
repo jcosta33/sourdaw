@@ -1,4 +1,12 @@
-import { type ComponentPropsWithRef, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import {
+    type ComponentPropsWithRef,
+    type CSSProperties,
+    type FocusEvent,
+    type ReactElement,
+    type ReactNode,
+    useEffect,
+    useRef,
+} from 'react';
 
 import { createPortal } from 'react-dom';
 
@@ -29,8 +37,48 @@ export const DawContextMenuSurface = ({
     onClose,
     className,
     style,
+    ref,
     ...props
 }: DawContextMenuSurfaceProps): ReactElement => {
+    const surfaceRef = useRef<HTMLDivElement | null>(null);
+    const returnFocusRef = useRef<HTMLElement | null>(null);
+
+    // Focus has to move into the menu, or the keydown never originates inside
+    // the gated surface: the global shortcut layer classifies keydowns by their
+    // target's closest `role="menu"` ancestor
+    // (`CommandInterface/.../keyboardShortcutsContract.ts`), so an unfocused
+    // menu leaves Delete free to delete the selected clips behind it (#3831).
+    // On close focus returns where it came from, the same dismiss-restore
+    // contract as the shortcut cheat sheet.
+    useEffect(() => {
+        const activeElement = document.activeElement;
+        returnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+        surfaceRef.current?.focus();
+
+        return () => {
+            returnFocusRef.current?.focus();
+            returnFocusRef.current = null;
+        };
+    }, []);
+
+    const setSurfaceRef = (node: HTMLDivElement | null): void => {
+        surfaceRef.current = node;
+        if (typeof ref === 'function') {
+            ref(node);
+        } else if (ref) {
+            ref.current = node;
+        }
+    };
+
+    // Focus leaving a focused menu surface closes it — the WAI-ARIA menu
+    // convention, and it keeps keydowns from falling through to the global
+    // shortcut layer ungated once the menu no longer owns the keyboard.
+    const handleSurfaceBlur = (event: FocusEvent<HTMLDivElement>): void => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+            onClose?.();
+        }
+    };
+
     const farEdgeInset = 8;
     const availableAbove = Math.max(0, y - farEdgeInset);
     const availableBelow = Math.max(0, window.innerHeight - y - farEdgeInset);
@@ -56,6 +104,9 @@ export const DawContextMenuSurface = ({
                 />
             ) : null}
             <div
+                ref={setSurfaceRef}
+                tabIndex={-1}
+                onBlur={handleSurfaceBlur}
                 className={cn('daw-floating-surface fixed z-50 rounded-md py-1', className)}
                 style={{ ...positionStyle, ...style }}
                 {...props}

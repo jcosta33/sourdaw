@@ -9,11 +9,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Clip, type Track } from '#/modules/Arrangement/stores';
+import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 import { clampFaderGain, dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
-import { projectStripAutomationWrites, type StripAutomationWritesInput } from '../projectStripAutomationWrites';
+import {
+    projectStripAutomationWrites,
+    type StripAutomationDeviceEntry,
+    type StripAutomationWritesInput,
+} from '../projectStripAutomationWrites';
 
 function createTrack(overrides?: Partial<Track>): Track {
     return {
@@ -364,6 +368,87 @@ describe('projectStripAutomationWrites — no lanes', () => {
     it('converts a track whose automationMode is off into zero entries without reading its lanes', () => {
         const track = createTrack({ automationMode: 'off' });
         const lanes: AutomationLane[] = [lane({ parameterId: 'gain', points: [point(0, 0.8)] })];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result).toEqual({ outcome: 'converted', entries: [] });
+    });
+});
+
+/**
+ * The device half of the projection (#3568). A caller that names devices and
+ * supplies a law gets an entry per automated parameter, addressed by the
+ * plugin's own numeric parameter id; a caller that names none gets exactly what
+ * it got before, which is what keeps the export byte-for-byte unchanged.
+ */
+describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => {
+    const hostedDevice: Device = {
+        id: 'plugin-1',
+        name: 'Compressor',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalInstanceId: 'instance-1',
+    };
+
+    const deviceEntries: StripAutomationDeviceEntry[] = [
+        { deviceId: hostedDevice.id, deviceType: hostedDevice.type, externalInstanceId: 'instance-1' },
+    ];
+
+    const deviceParameterLaw: StripAutomationWritesInput['deviceParameterLaw'] = {
+        acceptsAutomation: ({ deviceId, parameterId }) => deviceId === hostedDevice.id && parameterId === '7',
+        clampValue: ({ value }) => value,
+        quantiseValue: ({ value }) => value,
+    };
+
+    it('projects a named hosted device parameter into step writes opening at the region start', () => {
+        const track = createTrack({ devices: [hostedDevice] });
+        const lanes: AutomationLane[] = [lane({ parameterId: 'plugin-1:7', points: [point(0, 0.6)] })];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry?.target).toEqual({
+            kind: 'device-parameter',
+            trackId: track.id,
+            deviceId: hostedDevice.id,
+            parameterId: '7',
+        });
+        // Region-relative and stepped: the seed the compiler opens every span
+        // with is what converges a plugin the pass was armed in the middle of.
+        expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.6, time: 0 });
+    });
+
+    it('leaves a lane on a device the law refuses unprojected', () => {
+        const track = createTrack({ devices: [hostedDevice] });
+        const lanes: AutomationLane[] = [lane({ parameterId: 'plugin-1:9', points: [point(0, 0.6)] })];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+        });
+
+        expect(result).toEqual({ outcome: 'converted', entries: [] });
+    });
+
+    it('names no device target for a caller that supplies no device entries', () => {
+        const track = createTrack({ devices: [hostedDevice] });
+        const lanes: AutomationLane[] = [lane({ parameterId: 'plugin-1:7', points: [point(0, 0.6)] })];
 
         const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
 

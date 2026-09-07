@@ -86,7 +86,10 @@ struct FakeState {
     component_chunk: Mutex<Vec<u8>>,
     controller_chunk: Mutex<Vec<u8>>,
     controller_saw_component_chunk: Mutex<Vec<u8>>,
-    notes: Mutex<Vec<(i16, i16, bool)>>,
+    /// Every note the plugin was handed, as `(channel, pitch, is_note_on,
+    /// sample_offset)`. The offset is recorded because it is the one field a
+    /// host can get wrong without the note going missing.
+    notes: Mutex<Vec<(i16, i16, bool, int32)>>,
     handler: Mutex<Option<ComPtr<IComponentHandler>>>,
 
     /// The audio buses the plugin declares, and the arrangement it currently
@@ -663,7 +666,7 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
                     noteId: -1,
                 }
             };
-            notes.push((note.channel, note.pitch, is_on));
+            notes.push((note.channel, note.pitch, is_on, event.sampleOffset));
         }
     }
 
@@ -1739,6 +1742,23 @@ fn render_over_stale_output(
 }
 
 /// Hand the plugin one block of a constant signal and read what came back.
+/// One note as the engine hands it over, offset included.
+fn host_note(
+    note: u8,
+    velocity: u8,
+    channel: i16,
+    is_note_on: bool,
+    frame_offset: u32,
+) -> HostMidiEvent {
+    HostMidiEvent {
+        note,
+        velocity,
+        channel,
+        is_note_on,
+        frame_offset,
+    }
+}
+
 fn render(wrapper: &mut Vst3Wrapper, level: f32, frames: usize) -> Vec<f32> {
     let left = vec![level; frames];
     let right = vec![level; frames];
@@ -1982,7 +2002,7 @@ fn a_plugin_without_an_event_input_is_never_handed_notes() {
         &[&[1.0; 8], &[1.0; 8]],
         &mut [&mut [0.0; 8], &mut [0.0; 8]],
         8,
-        &[(60, 100, 0, true)],
+        &[host_note(60, 100, 0, true, 0)],
         &[],
     );
 
@@ -2001,13 +2021,43 @@ fn a_plugin_with_an_event_input_receives_the_notes_it_is_sent() {
         &[&[1.0; 8], &[1.0; 8]],
         &mut [&mut [0.0; 8], &mut [0.0; 8]],
         8,
-        &[(60, 100, 1, true), (60, 0, 1, false)],
+        &[
+            host_note(60, 100, 1, true, 0),
+            host_note(60, 0, 1, false, 0),
+        ],
         &[],
     );
 
     assert_eq!(
         *state.notes.lock().expect("notes mutex"),
-        vec![(1, 60, true), (1, 60, false)]
+        vec![(1, 60, true, 0), (1, 60, false, 0)]
+    );
+}
+
+/// The host's own stamp reaches the plugin as the event's sample offset, so a
+/// note written a third of the way into a block sounds there rather than at the
+/// block's head. Without it every note in a block collapses onto frame zero and
+/// the timing a producer wrote is lost between the engine and the plugin.
+#[test]
+fn a_notes_frame_offset_reaches_the_plugin_as_its_sample_offset() {
+    let state = FakeState::with_event_input();
+    let mut wrapper = load(&state, COMBINED_CID);
+    render(&mut wrapper, 1.0, 128);
+
+    wrapper.process_with_midi_and_parameters(
+        &[&[1.0; 128], &[1.0; 128]],
+        &mut [&mut [0.0; 128], &mut [0.0; 128]],
+        128,
+        &[
+            host_note(60, 100, 1, true, 31),
+            host_note(60, 0, 1, false, 96),
+        ],
+        &[],
+    );
+
+    assert_eq!(
+        *state.notes.lock().expect("notes mutex"),
+        vec![(1, 60, true, 31), (1, 60, false, 96)]
     );
 }
 
@@ -3855,7 +3905,7 @@ fn a_render_block_performs_no_heap_allocation() {
         param_id: GAIN_PARAM,
         value: 0.5,
     }];
-    let notes = [(60u8, 100u8, 0i16, true)];
+    let notes = [host_note(60, 100, 0, true, 0)];
 
     // A block that carries a full gesture queue rather than a token one: the
     // drain sorts what it collected, and a sort only reaches its allocating

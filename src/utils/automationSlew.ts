@@ -66,6 +66,17 @@
 export const AUTOMATION_SLEW_ALPHA = 0.4;
 
 /**
+ * How far the smoothed value must have moved before it is worth stating again.
+ *
+ * The live tick path skips a dispatch below it — the engine already holds that
+ * value, within this tolerance — and the native producer skips a step for the
+ * same reason, so the two cannot disagree about which moves of one glide are
+ * worth a write. It lives beside the filter rather than beside either reader
+ * because a second copy would be a second answer to the same question.
+ */
+export const AUTOMATION_SLEW_EPSILON = 5e-5;
+
+/**
  * The grain the live scheduler falls back to when handed a non-positive one.
  *
  * Kept in step with `schedulerWorker.ts`'s `msg.interval > 0 ? msg.interval : 10`

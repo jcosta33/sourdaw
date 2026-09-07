@@ -464,7 +464,6 @@ class AudioEngineImpl implements AudioEngine {
 
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
             getContext: () => this.context ?? null,
-            getTrackOutputNode: (trackId) => this.trackNodes.get(trackId)?.strip.analyserNode ?? null,
             getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
             rerouteTrack: (trackId) => this.trackNodes.get(trackId)?.routeOutput(),
         });
@@ -863,7 +862,6 @@ class AudioEngineImpl implements AudioEngine {
     private async loadWorklets(generation: number): Promise<void> {
         await Promise.all([
             this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js'),
-            this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js'),
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
             this.context.audioWorklet.addModule(bitcrusherRateProcessorUrl),
@@ -2226,27 +2224,32 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public async waitForDevices(timeoutMs = 10000): Promise<void> {
-        const deadline = Date.now() + timeoutMs;
-        while (this.pendingDevicePromises.size > 0) {
-            const remainingMs = Math.max(0, deadline - Date.now());
-            let timeoutId: ReturnType<typeof setTimeout> | undefined;
-            const timedOut = await Promise.race([
-                Promise.allSettled(this.pendingDevicePromises).then(() => false),
-                new Promise<true>((resolve) => {
-                    timeoutId = setTimeout(() => resolve(true), remainingMs);
-                }),
-            ]);
-            if (timeoutId !== undefined) {
-                clearTimeout(timeoutId);
+        const capturedPromises = new Set(this.pendingDevicePromises);
+        if (capturedPromises.size === 0) {
+            return;
+        }
+
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = await Promise.race([
+            Promise.allSettled(capturedPromises).then(() => false),
+            new Promise<true>((resolve) => {
+                timeoutId = setTimeout(() => resolve(true), timeoutMs);
+            }),
+        ]);
+        if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+        }
+        if (timedOut) {
+            const pendingCount = [...capturedPromises].filter((promise) =>
+                this.pendingDevicePromises.has(promise)
+            ).length;
+            logger.warn(`[AudioEngine] Device loading timed out (${pendingCount} pending)`);
+            for (const trackNode of this.trackNodes.values()) {
+                trackNode.timeoutPendingDeviceLoads(capturedPromises);
             }
-            if (timedOut) {
-                logger.warn(`[AudioEngine] Device loading timed out (${this.pendingDevicePromises.size} pending)`);
-                for (const trackNode of this.trackNodes.values()) {
-                    trackNode.timeoutPendingDeviceLoads();
-                }
-                this.pendingDevicePromises.clear();
-                return;
-            }
+        }
+        for (const promise of capturedPromises) {
+            this.pendingDevicePromises.delete(promise);
         }
     }
 

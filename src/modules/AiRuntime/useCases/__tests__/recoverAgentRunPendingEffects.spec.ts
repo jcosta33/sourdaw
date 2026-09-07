@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.logError } }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
     getVersionedCommandBatchIdempotentReplay: mocks.getReceipt,
     parseVersionedCommandBatchEnvelope: mocks.parseBatch,

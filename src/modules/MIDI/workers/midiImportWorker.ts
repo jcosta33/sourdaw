@@ -14,11 +14,21 @@ type ParsedNote = {
     startBeat: number;
     duration: number;
     velocity: number;
+    channel: number;
+};
+
+type ParsedCC = {
+    id: string;
+    controller: number;
+    value: number;
+    beat: number;
+    channel: number;
 };
 
 type ParsedTrack = {
     name: string;
     notes: ParsedNote[];
+    ccs: ParsedCC[];
     endTick: number;
 };
 
@@ -200,6 +210,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         let trackName = `Track ${time + 1}`;
         const activeNotes = new Map<number, { tick: number; velocity: number }>();
         const notes: ParsedNote[] = [];
+        const ccs: ParsedCC[] = [];
         let tick = 0;
         let runningStatus = 0;
 
@@ -290,9 +301,22 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                             startBeat: start.tick / ticksPerBeat,
                             duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
                             velocity: start.velocity,
+                            channel,
                         });
                         activeNotes.delete(key);
                     }
+                } else if (eventType === 0xb0) {
+                    // Control changes are read above only to stay in sync; the
+                    // musical ones are clip content — sustain (CC64) and
+                    // modulation (CC1) ride this lane — so keep them for the
+                    // parsed track instead of dropping them here.
+                    ccs.push({
+                        id: crypto.randomUUID(),
+                        controller: data1 & 0x7f,
+                        value: data2 & 0x7f,
+                        beat: tick / ticksPerBeat,
+                        channel,
+                    });
                 }
             }
         } catch (error) {
@@ -316,6 +340,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
                 startBeat: start.tick / ticksPerBeat,
                 duration: Math.max(MIN_NOTE_DURATION_BEATS, (tick - start.tick) / ticksPerBeat),
                 velocity: start.velocity,
+                channel: Math.floor(key / PITCHES_PER_CHANNEL),
             });
         }
         activeNotes.clear();
@@ -325,7 +350,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         reader.seek(chunkEnd);
 
         if (notes.length > 0) {
-            parsedTracks.push({ name: trackName, notes, endTick: tick });
+            parsedTracks.push({ name: trackName, notes, ccs, endTick: tick });
         }
     }
 

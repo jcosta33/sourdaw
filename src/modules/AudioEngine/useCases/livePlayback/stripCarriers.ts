@@ -17,6 +17,15 @@
  * track marked native the engine cannot build goes silent, and a track left on
  * Web Audio the engine also plays is heard twice.
  *
+ * "Everything that reaches the speakers" covers what a strip *sounds*, not only
+ * what it processes. A native instrument — a hosted plugin the engine reports
+ * attached, or a built-in whose body sounds notes — is the one kind of device
+ * on a chain that has a native body and only a native body: Web Audio builds
+ * nothing for either, and the engine splices an instrument into the chain as a
+ * generator (#3826) — so a strip holding one can sound with no clip under the
+ * playhead at all. That is why rule 1 asks about the chain as well as the
+ * programme; {@link firstFailure} states the order the two are weighed in.
+ *
  * Buses get no entry. They are shared: a native-carried track feeds the native
  * bus while a web-carried one feeds the Web Audio bus of the same name, and the
  * two sum at the hardware output. That is what makes the split per track
@@ -32,7 +41,9 @@ import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
+import { soundsNativeNotes } from './soundsNativeNotes';
 
 /**
  * The engine that sounds one track strip. A `web` carrier states why, because a
@@ -52,15 +63,13 @@ export type StripCarriersInput = Readonly<{
 }>;
 
 /**
- * The one built-in device type `daw-engine` builds a body for, matched the way
- * `no_native_body` matches it. Stated here because this module's whole job is
+ * Whether the native engine can build a body for this device.
+ *
+ * A built-in is answered from `nativeBuiltinBodies`, which is the renderer's
+ * mirror of the engine's own registry and states why it must stay one. This
+ * module reads that registry rather than restating it, because its whole job is
  * to answer for a batch the engine takes: a second, looser reading of what is
  * representable is how `contributesAudio` starts refusing sessions.
- */
-const NATIVE_DEVICE_TYPE = 'knead';
-
-/**
- * Whether the native engine can build a body for this device.
  *
  * An externally hosted plugin is the one device whose answer is not a property
  * of the project at all: `map_device` splices in the engine-owned instance the
@@ -78,7 +87,7 @@ function hasNativeBody(device: AudioGraphDeviceChain[number], attachedInstanceId
     if (device.externalPluginId !== undefined) {
         return false;
     }
-    return device.type.toLowerCase() === NATIVE_DEVICE_TYPE;
+    return nativeBuiltinBody(device.type) !== null;
 }
 
 /** The first strip on a route the native engine cannot build, and what stopped it. */
@@ -114,6 +123,47 @@ function chainReason(device: AudioGraphDeviceChain[number]): string {
  */
 function chainOf(track: Track, context: CarrierContext): AudioGraphDeviceChain {
     return context.programme.bakedStripIds.has(track.id) ? [] : track.devices;
+}
+
+/**
+ * Whether this strip's own chain holds a device something gives a clip-less
+ * strip to sound: an externally hosted plugin instance the engine reports
+ * attached, or a built-in whose body sounds notes.
+ *
+ * Live MIDI input reaches each of them natively — the engine holds a note
+ * store for a hosted plugin unconditionally and for a built-in exactly when
+ * its type sounds notes (`soundsNativeNotes`) — so both count. A built-in
+ * effect still counts for nothing: it processes an input and generates
+ * nothing on its own, so it gives a clip-less strip nothing to sound.
+ */
+function hostsNativeInstrument(track: Track, context: CarrierContext): boolean {
+    return chainOf(track, context).some(
+        (device) =>
+            (device.externalInstanceId !== undefined && context.attachedInstanceIds.has(device.externalInstanceId)) ||
+            soundsNativeNotes(device.type)
+    );
+}
+
+/**
+ * The rule-1 reason a strip with no native playback stays on Web Audio, or
+ * `null` when rule 1 passes it. Read in the order the code checks it:
+ *
+ * - No native instrument on the chain: `'nothing scheduled'` — nothing native
+ *   is scheduled and no native instrument gives the strip a native body, so
+ *   Web Audio keeps whatever the strip plays and no plugin notice is owed.
+ * - The strip is in `programme.webVoicedStripIds`: `'its clips play on Web
+ *   Audio'` — Web Audio is already voicing this strip's clips, so carrying it
+ *   natively would silence them with no notice given. A MIDI strip whose
+ *   instrument the engine holds is absent from that set, because the engine
+ *   voices its notes through `schedule-midi` (#3892).
+ * - Otherwise `null`: the native instrument is uncontested, so it carries the
+ *   strip natively with no clip under the playhead at all.
+ */
+function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
+    if (!hostsNativeInstrument(track, context)) {
+        return 'nothing scheduled';
+    }
+    return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
 }
 
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
@@ -180,14 +230,26 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * Order is the contract, not an implementation detail: the reason a musician
  * reads has to be the first thing that is actually wrong, and a track with no
  * clips on it is not "missing a plugin".
+ *
+ * Rule 1 reads the programme first, exactly as the code does: a strip the
+ * programme scheduled native playback for passes rule 1 outright. Only a
+ * strip with no native playback falls to
+ * {@link webReasonWithoutNativePlayback}, whose guards state the one
+ * exception — a native instrument gives a strip something to sound only when
+ * nothing on the Web Audio path still voices that strip, which the programme's
+ * own `webVoicedStripIds` is the record of.
  */
 function firstFailure(
     track: Track,
     context: CarrierContext,
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
-    if ((context.programme.playbacksByStripId.get(track.id)?.length ?? 0) === 0) {
-        return 'nothing scheduled';
+    const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
+    if (!plays) {
+        const webReason = webReasonWithoutNativePlayback(track, context);
+        if (webReason) {
+            return webReason;
+        }
     }
     if (inputMonitoredTrackIds.has(track.id)) {
         // The live input reaches the Web Audio strip and nothing else, so

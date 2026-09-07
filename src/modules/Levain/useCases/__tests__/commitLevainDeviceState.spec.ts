@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../models/LevainDeviceState', () => ({

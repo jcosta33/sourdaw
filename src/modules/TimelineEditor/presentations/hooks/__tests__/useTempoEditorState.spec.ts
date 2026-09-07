@@ -141,7 +141,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: (action: unknown): void => {
+    executeUserAppAction: (action: unknown): void => {
         mockExecuteAppAction(action);
     },
 }));
@@ -347,7 +347,7 @@ describe('useTempoEditorState', () => {
             expect(result.current.resetTempoValue).toBeNull();
         });
 
-        it('resets to the default base tempo through executeAppAction when no map governs', () => {
+        it('resets to the default base tempo through executeUserAppAction when no map governs', () => {
             mockTempoFieldState = {
                 ...editableFieldState,
                 governedByMap: false,
@@ -432,7 +432,7 @@ describe('useTempoEditorState', () => {
 
             // `parseInt('', 10)` and `parseInt('nope', 10)` are both NaN, and
             // `NaN < 1 || NaN > 32` is false for either bound — the pre-fix range
-            // check alone let this reach `executeAppAction`.
+            // check alone let this reach `executeUserAppAction`.
             expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.editingTimeSig).toBe(true);
         });

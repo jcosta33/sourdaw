@@ -79,6 +79,16 @@ describe('AutomationModeControl', () => {
         fireEvent.click(modeButton);
         expect(screen.getByText('Touch')).toBeInTheDocument();
     });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open dropdown deletes the arrangement clips behind it.
+    it('mode dropdown items sit inside a [role="menu"] surface', () => {
+        render(<AutomationModeControl {...defaultProps} />);
+        fireEvent.click(screen.getByLabelText('Automation mode: read'));
+
+        expect(screen.getByText('Touch').closest('[role="menu"]')).not.toBeNull();
+    });
 });
 
 describe('AutomationAddLaneControl', () => {
@@ -104,6 +114,13 @@ describe('AutomationAddLaneControl', () => {
         const addButton = screen.getByText('Add Lane');
         fireEvent.click(addButton);
         expect(screen.getByText('Parameter 1')).toBeInTheDocument();
+    });
+
+    it('add-lane dropdown items sit inside a [role="menu"] surface', () => {
+        render(<AutomationAddLaneControl {...defaultProps} />);
+        fireEvent.click(screen.getByText('Add Lane'));
+
+        expect(screen.getByText('Parameter 1').closest('[role="menu"]')).not.toBeNull();
     });
 
     it('should show available count when showAvailableCount is true', () => {

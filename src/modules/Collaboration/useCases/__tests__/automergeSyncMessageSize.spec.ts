@@ -15,6 +15,7 @@ import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { createPeerSyncMessages } from './peerSyncHandshake';
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
 
@@ -261,7 +262,6 @@ describe('AutomergeSync over an SCTP-limited data channel', () => {
         });
         harness.channel.maxMessageSize = Number.POSITIVE_INFINITY;
         harness.channel.sent.length = 0;
-        harness.notifyLocalChange('root');
         await vi.waitFor(() => {
             expect(harness.channel.sent.length).toBeGreaterThan(0);
         });
@@ -279,8 +279,6 @@ describe('AutomergeSync over an SCTP-limited data channel', () => {
             syncMessageBase64: harness.joinerHandshake,
         });
         harness.channel.sent.length = 0;
-
-        harness.notifyLocalChange('root');
 
         await vi.waitFor(() => {
             expect(harness.channel.sent.length).toBeGreaterThan(0);

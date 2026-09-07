@@ -1,5 +1,11 @@
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
-import { getCompensationDelay, getFactoryDrumKitByIndex } from '#/modules/AudioEngine/useCases';
+import {
+    getCompensationDelay,
+    getFactoryDrumKitByIndex,
+    isDeviceCarriedByNativeSession,
+    sendNativeLiveMidiNote,
+    soundsNativeNotes,
+} from '#/modules/AudioEngine/useCases';
 import {
     completeMidiLearn,
     getMidiLearnState,
@@ -49,12 +55,15 @@ export const midiMessageHandlerDependencies = {
     getSynthParamsForTrack,
     getTrackStoreState,
     getTransportStoreValue,
+    isDeviceCarriedByNativeSession,
     panicLiveNotes,
     playheadPositionRef,
     processRealtimeMidiInput,
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNote,
+    sendNativeLiveMidiNote,
+    soundsNativeNotes,
     stepRecordNoteOff,
     stepRecordNoteOn,
 };

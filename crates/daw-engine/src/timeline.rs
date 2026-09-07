@@ -13,6 +13,7 @@
 use std::sync::Arc;
 
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
+use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use triple_buffer::{Input, Output};
 
 /// Tracks the graph holds. A command naming a further track is refused and
@@ -88,6 +89,26 @@ pub struct ChainEntry {
     pub kind: DeviceKind,
 }
 
+impl ChainEntry {
+    /// The input hold a splice of this entry ships with, built control-side
+    /// because the audio thread may neither allocate a line nor free one
+    /// (ADR 0020).
+    ///
+    /// A generator starts at zero on a strip whose input has already waited,
+    /// so it is held back to meet what lands there exactly as the strip's own
+    /// clips are. An effect transforms a signal that arrived aligned already
+    /// and needs no line of its own. The line is sized at the ceiling like
+    /// every other, so a recompensation only ever re-aims it.
+    pub fn input_hold(&self) -> Option<Box<CompensationDelay>> {
+        match self.kind {
+            DeviceKind::Effect => None,
+            DeviceKind::Generator => {
+                Some(Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)))
+            }
+        }
+    }
+}
+
 /// How a time-stamped parameter change travels from its current value to its
 /// target.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,23 +139,113 @@ pub enum AutomationTarget {
     MasterGain,
 }
 
-/// A parameter of a built-in device, addressed without a name for the reason
-/// given on [`AutomationTarget`].
+/// Bytes a [`BuiltinParamName`] holds. The longest name any built-in body
+/// spells today is well inside it, and the buffer is sized for those
+/// vocabularies to grow without the wire changing shape.
+pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
+
+/// One built-in body's own parameter name, carried inline.
+///
+/// Named rather than numbered because a modelled instrument's patch is a flat
+/// record of the instrument's own snake_case names, and its discrete selectors
+/// — the engine, the waveform, the modes, layer management, the temperament —
+/// are not in the automation table an ordinal addresses at all. Fixed-size and
+/// inline for the reason given on [`AutomationTarget`]: a command carrying a
+/// `String` would have its allocation freed on the audio thread. Matching a
+/// name on that thread is comparisons alone, so the write itself is real-time
+/// safe.
+///
+/// The type is body-neutral by construction and not by coincidence: the shape
+/// rule below is the only thing the engine knows about any of these names, so
+/// one carrier serves every built-in that answers to its own vocabulary rather
+/// than to the engine's.
+///
+/// Shape is the only refusal available here. The instrument owns its
+/// vocabulary and answers a name it does not know by doing nothing at all —
+/// exactly as the web worklet does — and naming its parameters here would be a
+/// second copy of a table `daw-dsp` is free to extend. So [`Self::parse`]
+/// refuses what was never one of those names, and a well-shaped name the
+/// instrument happens not to have is the instrument's own silent no-op, on
+/// both runtimes alike.
+///
+/// The buffer is carried by value everywhere the address travels, and that is
+/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
+/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// effect table. That is a one-off cost at construction, paid for a wire that
+/// never has to enumerate a vocabulary `daw-dsp` owns.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BuiltinParamName {
+    bytes: [u8; BUILTIN_PARAM_NAME_CAPACITY],
+    len: u8,
+}
+
+impl BuiltinParamName {
+    /// The name `name` spells, or `None` when it is not shaped like one of the
+    /// instrument's names.
+    ///
+    /// `const` so a caller can pin a name at compile time; the loop is written
+    /// out rather than iterated because a `const fn` has no iterators.
+    pub const fn parse(name: &str) -> Option<Self> {
+        let source = name.as_bytes();
+        if source.is_empty() || source.len() > BUILTIN_PARAM_NAME_CAPACITY {
+            return None;
+        }
+        let mut bytes = [0u8; BUILTIN_PARAM_NAME_CAPACITY];
+        let mut index = 0;
+        while index < source.len() {
+            if !is_builtin_name_byte(source[index]) {
+                return None;
+            }
+            bytes[index] = source[index];
+            index += 1;
+        }
+        Some(Self {
+            bytes,
+            len: source.len() as u8,
+        })
+    }
+
+    /// The name, spelled as the instrument's own `set_param` takes it.
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.bytes[..self.len as usize])
+            .expect("parse admits ASCII bytes alone, and ASCII is always valid UTF-8")
+    }
+}
+
+/// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
+/// spells its parameters in.
+const fn is_builtin_name_byte(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+}
+
+/// A parameter of a built-in device, addressed without an owned name for the
+/// reason given on [`AutomationTarget`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeviceParam {
     ShiftSemitones,
     RetuneSpeedMs,
     FormantPreserve,
+    /// One of a built-in body's own parameters, under the name that body
+    /// spells it with, for the reason on [`BuiltinParamName`].
+    BuiltinNamed(BuiltinParamName),
 }
 
 impl DeviceParam {
     /// The `SetParam` name this parameter corresponds to, so the named and the
     /// addressed paths cannot drift into meaning different things.
-    pub const fn name(self) -> &'static str {
+    ///
+    /// `None` for an address with no name of the engine's to drift from: a
+    /// built-in body's parameter arrives in that body's own vocabulary, which
+    /// the engine does not name, and [`Self::from_name`] is the inverse of the
+    /// engine's own named vocabulary alone.
+    pub const fn name(self) -> Option<&'static str> {
         match self {
-            Self::ShiftSemitones => "shift_semitones",
-            Self::RetuneSpeedMs => "retune_speed_ms",
-            Self::FormantPreserve => "formant_preserve",
+            Self::ShiftSemitones => Some("shift_semitones"),
+            Self::RetuneSpeedMs => Some("retune_speed_ms"),
+            Self::FormantPreserve => Some("formant_preserve"),
+            Self::BuiltinNamed(_) => None,
         }
     }
 
@@ -150,6 +261,22 @@ impl DeviceParam {
             _ => None,
         }
     }
+}
+
+/// The body a time-stamped device-parameter change is addressed at.
+///
+/// A built-in's parameters are a closed set the engine itself names, so they
+/// travel as a [`DeviceParam`] address and the named and the addressed paths
+/// cannot drift into meaning different things. A hosted plugin's parameters
+/// are the plugin's own `u32` ids: opaque to the engine, resolved by the
+/// plugin when it processes the block, and impossible to enumerate here. The
+/// two are separate variants rather than one id space so a stamp aimed at the
+/// wrong kind of body is a mismatch the audio thread counts rather than a
+/// number it silently misreads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DeviceParamTarget {
+    Builtin(DeviceParam),
+    Hosted { id: u32 },
 }
 
 /// Counters for every timeline command the graph refused, published off the
@@ -193,6 +320,27 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// the renderer cannot read has no correct substitute, and guessing unity
     /// would play the wrong material at the wrong pitch without saying so.
     pub invalid_clip_playbacks: u64,
+    /// How many delay lines the latest compensation pass could not aim where
+    /// it wanted to, because more hold was asked for than
+    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] holds. Route lines and dry
+    /// lines both count: a route the ceiling cut short still sounds, but it
+    /// sounds early, and a device declaring past the ceiling runs a dry line
+    /// cut short even on a strip whose every route aligns exactly — its
+    /// bypass then moves the strip. Only this number says either happened.
+    ///
+    /// A state rather than an event, like [`Self::pdc_max_arrival_frames`]:
+    /// restated by every pass, so it falls back to zero once the device that
+    /// asked for too much is gone. A lifetime sum would keep reporting a
+    /// misalignment the graph no longer has, and would climb on every
+    /// unrelated recompute while it lasted.
+    pub pdc_clamped_routes: u64,
+    /// The largest latency any contributor currently declares on its way to a
+    /// summing point — the figure every other contributor is delayed up to.
+    ///
+    /// A state rather than an event: restated by each compensation pass, so it
+    /// falls again when the device that raised it is removed, and it reports
+    /// what the graph declared rather than what the ceiling allowed.
+    pub pdc_max_arrival_frames: u64,
 }
 
 pub(crate) struct TimelineRtDiagnosticsReader {
@@ -231,6 +379,8 @@ impl TimelineRtDiagnostics {
                 exponential_ramp_fallbacks: 0,
                 unresolved_send_buses: 0,
                 invalid_clip_playbacks: 0,
+                pdc_clamped_routes: 0,
+                pdc_max_arrival_frames: 0,
             },
         }
     }
@@ -273,6 +423,17 @@ impl TimelineRtDiagnostics {
     fn record_invalid_clip_playback(&mut self) {
         self.snapshot.invalid_clip_playbacks =
             self.snapshot.invalid_clip_playbacks.saturating_add(1);
+    }
+
+    /// State the route lines and dry lines this pass found the ceiling had cut
+    /// short. Stated rather than accumulated, so the figure falls again once
+    /// the declaration that raised it is gone.
+    fn state_pdc_clamped_routes(&mut self, lines: usize) {
+        self.snapshot.pdc_clamped_routes = lines as u64;
+    }
+
+    fn state_pdc_max_arrival(&mut self, frames: usize) {
+        self.snapshot.pdc_max_arrival_frames = frames as u64;
     }
 }
 
@@ -603,13 +764,25 @@ impl RampedParam {
 
 /// Time-stamped device-parameter changes one effect holds before its earliest
 /// unlanded change is refused.
-pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 8;
+///
+/// The window is per *effect*, not per parameter, and a hosted plugin exposes
+/// as many parameters as it likes — so one plugin with a batch writing several
+/// automation lanes at once spends the window several times over, and the batch
+/// refuses whole. It is sized at what one process call of a hosted body can
+/// take: such a body accepts a bounded number of parameter writes per call, and
+/// a window wider than that would only move the refusal off the batch — which
+/// refuses whole and can be resent — onto the body, which drops the excess with
+/// nothing left to retry.
+pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 64;
 
-/// One time-stamped change to a built-in device parameter.
+/// One time-stamped change to a device parameter.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DeviceParamEvent {
-    pub param: DeviceParam,
-    pub value: f32,
+    pub param: DeviceParamTarget,
+    /// The value the parameter takes. `f64` because a hosted plugin parameter
+    /// is `f64` on the CLAP and VST3 wire, so an `f32` round trip here would
+    /// move the value the plugin displays. A built-in narrows it at apply.
+    pub value: f64,
     /// Absolute timeline frame at which the change takes effect. A device owns
     /// its own parameter smoothing, so the change lands on the first block
     /// whose span reaches the stamp rather than at a sample offset inside it.
@@ -618,7 +791,7 @@ pub struct DeviceParamEvent {
 
 impl DeviceParamEvent {
     const SETTLED: Self = Self {
-        param: DeviceParam::ShiftSemitones,
+        param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
         value: 0.0,
         at_frame: 0,
     };
@@ -989,12 +1162,18 @@ fn clip_fade_envelope(offset: u64, length: u64, head: u64, tail: u64) -> f32 {
 /// `AddSend` and `AddBus` in a command batch cannot matter. Whether the send
 /// actually found its bus is therefore a render-time fact, latched here so a
 /// dead send is diagnosed once rather than once per callback.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct TrackSend {
     bus_id: usize,
     tap: SendTap,
     level: RampedParam,
     bus_missing: bool,
+    /// This send's own plugin delay compensation: the bus it lands on is a
+    /// summing point of its own, and a send taps a strip at a different depth
+    /// than that strip's output does. Built on the control thread and carried
+    /// in by [`crate::scheduler::GraphCommand::AddSend`], because the callback
+    /// may neither allocate it nor free it.
+    delay: Box<CompensationDelay>,
 }
 
 /// One track: an input sum, clips, a device chain, a solo gate, sends, a fader,
@@ -1030,6 +1209,19 @@ pub struct TimelineTrack {
     muted: bool,
     solo_gated: bool,
     output: RouteTarget,
+    /// Plugin delay compensation for this track's own clips. Whatever is
+    /// routed into this track's input arrives at that input's compensated
+    /// depth, while a clip on this track starts at zero, so the clips are the
+    /// side that waits.
+    ///
+    /// Live input already summed into `input_left` is deliberately not held
+    /// here. That is the monitoring path, and delaying what a player hears
+    /// themselves through is the one alignment a DAW must not make.
+    source_delay: CompensationDelay,
+    /// Plugin delay compensation for this track's own output, applied where
+    /// the strip ends and the summing point begins. See
+    /// [`TimelineGraph::compensate`].
+    output_delay: CompensationDelay,
 }
 
 impl TimelineTrack {
@@ -1049,7 +1241,30 @@ impl TimelineTrack {
             muted: false,
             solo_gated: false,
             output: RouteTarget::Master,
+            source_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
+            output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
+    }
+
+    /// Frames this track's own clips are currently held back by, so that they
+    /// meet what other strips route into this track's input.
+    pub fn source_delay_frames(&self) -> usize {
+        self.source_delay.delay()
+    }
+
+    /// Frames this track's output is currently held back by, for callers
+    /// proving the alignment rather than inferring it from a mix.
+    pub fn output_delay_frames(&self) -> usize {
+        self.output_delay.delay()
+    }
+
+    /// Frames one of this track's sends is currently held back by, or `None`
+    /// when no send lands on `bus_id`.
+    pub fn send_delay_frames(&self, bus_id: usize) -> Option<usize> {
+        self.sends
+            .iter()
+            .find(|send| send.bus_id == bus_id)
+            .map(|send| send.delay.delay())
     }
 
     pub const fn id(&self) -> usize {
@@ -1121,6 +1336,9 @@ pub struct TimelineBus {
     muted: bool,
     solo_gated: bool,
     output: RouteTarget,
+    /// Plugin delay compensation for this bus's own output, on the same law as
+    /// a track's: a bus is a contributor to whatever it feeds.
+    output_delay: CompensationDelay,
 }
 
 impl TimelineBus {
@@ -1137,7 +1355,14 @@ impl TimelineBus {
             muted: false,
             solo_gated: false,
             output: RouteTarget::Master,
+            output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
+    }
+
+    /// Frames this bus's output is currently held back by. See
+    /// [`TimelineTrack::output_delay_frames`].
+    pub fn output_delay_frames(&self) -> usize {
+        self.output_delay.delay()
     }
 
     pub const fn id(&self) -> usize {
@@ -1180,7 +1405,59 @@ impl TimelineBus {
 /// bridges and their MIDI state, so the graph asks for one to be run rather
 /// than owning it.
 pub(crate) trait DeviceChain {
+    /// Run one effect over the chain signal, which it transforms in place.
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize);
+
+    /// Run one generator: it produces its own material into the cleared
+    /// scratch pair the caller sums in, and holds the chain signal passing
+    /// through it by whatever latency it declares.
+    ///
+    /// A generator is handed both pairs because it stands on both sides of the
+    /// fan-in. An instrument declaring latency emits its events that many
+    /// frames late, so everything else on the strip has to leave the device
+    /// that late too — otherwise the strip's own clips would arrive ahead of
+    /// the figure the chain declares and ahead of every sibling held to meet
+    /// it. Running the generator over `left` / `right` instead would erase
+    /// that signal, which is why the two passes are separate rather than one.
+    fn run_generator(
+        &mut self,
+        effect_id: usize,
+        scratch_left: &mut [f32],
+        scratch_right: &mut [f32],
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+    );
+}
+
+/// What one compensation pass asks of the same device table.
+///
+/// The topology walk belongs to the graph and the devices belong to the
+/// scheduler, so the pass borrows the table for the length of one walk exactly
+/// as [`DeviceChain`] borrows it for the length of one render. It is one
+/// borrow rather than two callbacks because a pass both reads a declared
+/// latency and re-aims a generator's line: two closures over one table cannot
+/// hold the shared and the exclusive borrow at once.
+pub(crate) trait CompensationDevices {
+    /// What one device declares, bypassed or not: bypass keeps latency, so an
+    /// A/B never moves the mix.
+    fn device_latency(&self, effect_id: usize) -> usize;
+
+    /// Aim one generator's input hold at `depth`, and answer whether the
+    /// ceiling cut that hold short.
+    fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool;
+
+    /// What a whole chain declares — the figure a strip's output arrives at.
+    ///
+    /// Every entry counts, generators included: a latent instrument holds the
+    /// signal passing through it exactly as a latent effect does, so the
+    /// strip's material really does leave the chain that late.
+    fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
+        chain
+            .iter()
+            .map(|entry| self.device_latency(entry.effect_id))
+            .sum()
+    }
 }
 
 /// What one removal hands back to the retirement channel, so the audio thread
@@ -1189,6 +1466,9 @@ pub(crate) enum RetiredTimelineObject {
     Track(Box<TimelineTrack>),
     Bus(Box<TimelineBus>),
     Clip(Box<TimelineClip>),
+    /// A compensation delay a refused send, a removed send, or a replaced
+    /// device latency gave up. Its ring is heap like any other buffer here.
+    Delay(Box<CompensationDelay>),
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a
@@ -1198,6 +1478,90 @@ pub(crate) enum RetiredTimelineObject {
 enum MixNode {
     Track(usize),
     Bus(usize),
+}
+
+/// Where a pull to silence stops. A one-pole approach only ever covers a
+/// fraction of what is left, so a fader pulled to silence would never reach it
+/// and would keep multiplying the mix by numbers small enough to cost a
+/// denormal on every frame of the rest of the session.
+///
+/// The epsilon ends approaches to targets near silence, below roughly -25 dB
+/// at 48 kHz (the crossover moves with the coefficient): there an `f32` step
+/// stays representable past this distance, so the descent runs out of
+/// distance before it runs out of step. Everywhere louder the step underflows
+/// first, and [`MasterFader::next`] ends the approach on that stall instead.
+const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
+
+/// The master fader: a level the mix approaches sample by sample, holding no
+/// timeline coordinate of its own.
+///
+/// A fader gesture names no frame. It says where the hand left the fader, not
+/// what the arrangement does to the master at frame `F`, so it is not
+/// automation and is not carried as a stamped ramp on
+/// [`AutomationTarget::MasterGain`]: a stamped ramp answers to the seek, hold
+/// and loop-wrap laws that govern the lane, and a wrap re-renders frames below
+/// the ramp's start, where a ramp resolves to the value it started from. The
+/// mix would step at the seam and play the whole next pass at the level the
+/// gesture moved away from. An approach has no start frame to be below.
+///
+/// The law is the one `setTargetAtTime` applies on the Web Audio fader the same
+/// gesture moves, so the two carriers of one mix arrive at one level together.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MasterFader {
+    value: f32,
+    target: f32,
+    /// The fraction of the distance left that one sample covers.
+    smoothing: f32,
+}
+
+impl MasterFader {
+    const fn new(value: f32) -> Self {
+        Self {
+            value,
+            target: value,
+            smoothing: 1.0,
+        }
+    }
+
+    /// Aim at `target`, from wherever the fader currently stands.
+    fn set_target(&mut self, target: f32, smoothing: f32) {
+        self.target = target;
+        self.smoothing = smoothing;
+    }
+
+    /// Whether the fader holds one level for as long as nothing re-aims it.
+    const fn settled(&self) -> bool {
+        self.value == self.target
+    }
+
+    /// The level for one sample, advancing the approach by that sample. A
+    /// sample is multiplied by the level the fader stood at when it arrived, so
+    /// the first sample after a gesture still carries the level the sample
+    /// before it did and nothing steps.
+    ///
+    /// The approach ends for either of two reasons, and both are needed to
+    /// reach [`Self::settled`] from anywhere in the audible range. Close to
+    /// silence the distance left falls under
+    /// [`MASTER_FADER_SETTLED_EPSILON`] first, which is what keeps a pull to
+    /// silence out of the denormals. Everywhere else the increment underflows
+    /// before that: one step covers a coefficient's worth of what is left, and
+    /// that lands below half an ULP of `value` while roughly `1e-4` dB of
+    /// distance remains — inaudible, but enough that a fader which never
+    /// settled would leave the block-constant path in
+    /// `apply_master_fader` unreachable for the rest of the session.
+    /// A step that cannot move the value is that end, so it settles there.
+    fn next(&mut self) -> f32 {
+        let level = self.value;
+        let advanced = self.value + (self.target - self.value) * self.smoothing;
+        let stalled = advanced == self.value;
+        let within_epsilon = (self.target - advanced).abs() < MASTER_FADER_SETTLED_EPSILON;
+        self.value = if stalled || within_epsilon {
+            self.target
+        } else {
+            advanced
+        };
+        level
+    }
 }
 
 /// The routed graph.
@@ -1214,6 +1578,7 @@ pub struct TimelineGraph {
     /// Kahn ready-queue scratch for a mix-order rebuild.
     mix_ready: Vec<usize>,
     master_gain: RampedParam,
+    master_fader: MasterFader,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
     /// Where a generator writes before it is summed into the chain it sits on.
@@ -1221,6 +1586,30 @@ pub struct TimelineGraph {
     /// place over the running signal without discarding it.
     generator_left: Vec<f32>,
     generator_right: Vec<f32>,
+    /// Where a send's tapped copy is delayed before it sums into its bus. A
+    /// send taps the strip's running signal, which the strip still needs, so
+    /// the compensation cannot run in place over it.
+    send_left: Vec<f32>,
+    send_right: Vec<f32>,
+    /// Where a track's own clips are rendered before they are held back to
+    /// meet the routes summing into that track's input. What those routes
+    /// delivered is already in the input and must not be delayed a second
+    /// time, so the clips cannot be laid straight over it.
+    source_left: Vec<f32>,
+    source_right: Vec<f32>,
+    /// The latency each contributor arrives at its summing point with, indexed
+    /// as [`Self::mix_order`] indexes strips. Scratch for
+    /// [`Self::compensate`], sized on the control thread for the same reason
+    /// the mix-order buffers are.
+    track_arrival: Vec<usize>,
+    bus_arrival: Vec<usize>,
+    /// The deepest arrival each bus has to wait for.
+    bus_summing_depth: Vec<usize>,
+    /// The deepest arrival each track's *input* has to wait for. A track input
+    /// is a summing point exactly as a bus is: [`route_sum`] adds a
+    /// contributor into it, and the track lays its own clips over that sum
+    /// before its chain runs.
+    track_summing_depth: Vec<usize>,
     diagnostics: TimelineRtDiagnostics,
 }
 
@@ -1233,10 +1622,19 @@ impl TimelineGraph {
             mix_in_degree: Vec::with_capacity(MIX_NODE_CAPACITY),
             mix_ready: Vec::with_capacity(MIX_NODE_CAPACITY),
             master_gain: RampedParam::new(1.0),
+            master_fader: MasterFader::new(1.0),
             scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
             generator_left: vec![0.0; MAX_CALLBACK_FRAMES],
             generator_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            send_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            send_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            source_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            source_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            track_arrival: vec![0; MAX_TIMELINE_TRACKS],
+            bus_arrival: vec![0; MAX_TIMELINE_BUSES],
+            bus_summing_depth: vec![0; MAX_TIMELINE_BUSES],
+            track_summing_depth: vec![0; MAX_TIMELINE_TRACKS],
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1254,10 +1652,19 @@ impl TimelineGraph {
             mix_in_degree: Vec::new(),
             mix_ready: Vec::new(),
             master_gain: RampedParam::new(1.0),
+            master_fader: MasterFader::new(1.0),
             scratch_left: Vec::new(),
             scratch_right: Vec::new(),
             generator_left: Vec::new(),
             generator_right: Vec::new(),
+            send_left: Vec::new(),
+            send_right: Vec::new(),
+            source_left: Vec::new(),
+            source_right: Vec::new(),
+            track_arrival: Vec::new(),
+            bus_arrival: Vec::new(),
+            bus_summing_depth: Vec::new(),
+            track_summing_depth: Vec::new(),
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1549,18 +1956,28 @@ impl TimelineGraph {
         true
     }
 
-    pub(crate) fn add_send(&mut self, track_id: usize, bus_id: usize, tap: SendTap, level: f32) {
+    /// Take ownership of a send's compensation delay, or hand it straight back
+    /// when the send is refused — the caller retires what comes back rather
+    /// than dropping it on the callback.
+    pub(crate) fn add_send(
+        &mut self,
+        track_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    ) -> Option<Box<CompensationDelay>> {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return Some(delay);
         };
         if track.sends.iter().any(|send| send.bus_id == bus_id) {
             self.diagnostics.record_id_collision();
-            return;
+            return Some(delay);
         }
         if track.sends.len() == track.sends.capacity() {
             self.diagnostics.record_capacity_refusal();
-            return;
+            return Some(delay);
         }
 
         track.sends.push(TrackSend {
@@ -1568,28 +1985,40 @@ impl TimelineGraph {
             tap,
             level: RampedParam::new(level),
             bus_missing: false,
+            delay,
         });
-        if !self.rebuild_mix_order() {
-            if let Some(track) = self.track_mut(track_id) {
-                track.sends.pop();
-            }
-            self.diagnostics.record_routing_cycle_refused();
-            let _ = self.rebuild_mix_order();
+        if self.rebuild_mix_order() {
+            return None;
         }
+
+        let refused = self
+            .track_mut(track_id)
+            .and_then(|track| track.sends.pop())
+            .map(|send| send.delay);
+        self.diagnostics.record_routing_cycle_refused();
+        let _ = self.rebuild_mix_order();
+        refused
     }
 
-    pub(crate) fn remove_send(&mut self, track_id: usize, bus_id: usize) {
+    /// Take a send out of a track and hand its compensation delay back for
+    /// retirement.
+    pub(crate) fn remove_send(
+        &mut self,
+        track_id: usize,
+        bus_id: usize,
+    ) -> Option<Box<CompensationDelay>> {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return None;
         };
         let Some(index) = track.sends.iter().position(|send| send.bus_id == bus_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return None;
         };
 
-        track.sends.remove(index);
+        let removed = track.sends.remove(index);
         let _ = self.rebuild_mix_order();
+        Some(removed.delay)
     }
 
     /// The tap a send takes its signal from, for callers proving the strip
@@ -1865,6 +2294,162 @@ impl TimelineGraph {
         );
     }
 
+    /// Re-aim every route's compensation delay so that each summing point
+    /// receives every contributor at the same latency.
+    ///
+    /// `devices` answers what one strip's device chain declares and aims the
+    /// generators on it; the effects themselves live on the scheduler, so the
+    /// graph asks rather than owning either. Bypassed devices count towards a
+    /// chain's latency, because a bypassed device keeps its latency — see
+    /// [`TimelineTrack`]'s strip order for why a change that shifted alignment
+    /// would click.
+    ///
+    /// `clamped_devices` is the other half of the clamp count this pass
+    /// reports: how many devices declare more latency than the ceiling holds,
+    /// and so run a dry line cut short. The graph cannot see a declared figure
+    /// — only what a chain sums to — and a lone latent strip clamps no route
+    /// at all, so a count taken from the route lines alone would report a
+    /// perfectly aligned graph while every bypass toggle shifted that strip.
+    /// It is a figure handed in rather than one this pass accumulates, so the
+    /// total is restated by each pass instead of latched.
+    ///
+    /// A strip counts once in that total however many of its input's lines the
+    /// ceiling cut short: what the count names is a summing point the graph
+    /// could not align, and one strip's input is one such point whether its
+    /// clips, its generators, or both were held short of it.
+    ///
+    /// The walk is [`Self::mix_order`], which puts every contributor ahead of
+    /// what it feeds, so one pass settles every summing point's depth — a
+    /// bus's input, a track's input, the master sum — and a second aims the
+    /// delays at it. O(strips + sends + devices), and nothing here allocates:
+    /// every buffer it touches was sized on the control thread.
+    pub(crate) fn compensate(
+        &mut self,
+        clamped_devices: usize,
+        devices: &mut impl CompensationDevices,
+    ) {
+        let Self {
+            tracks,
+            buses,
+            mix_order,
+            track_arrival,
+            bus_arrival,
+            bus_summing_depth,
+            track_summing_depth,
+            diagnostics,
+            ..
+        } = self;
+
+        let track_count = tracks.len();
+        let bus_count = buses.len();
+        track_arrival[..track_count].fill(0);
+        bus_arrival[..bus_count].fill(0);
+        bus_summing_depth[..bus_count].fill(0);
+        track_summing_depth[..track_count].fill(0);
+
+        let mut master_depth = 0;
+        for order_index in 0..mix_order.len() {
+            let (arrival, output) = match mix_order[order_index] {
+                MixNode::Track(index) => {
+                    // Everything routed into this track's input has already
+                    // been visited, so its own chain starts from the deepest of
+                    // them — the law a bus follows, because a track fed by
+                    // other strips is the same kind of summing point.
+                    let arrival =
+                        track_summing_depth[index] + devices.chain_latency(&tracks[index].chain);
+                    track_arrival[index] = arrival;
+                    for send in &tracks[index].sends {
+                        if let Some(bus) = buses.iter().position(|bus| bus.id == send.bus_id) {
+                            bus_summing_depth[bus] = bus_summing_depth[bus].max(arrival);
+                        }
+                    }
+                    (arrival, tracks[index].output)
+                }
+                MixNode::Bus(index) => {
+                    let arrival =
+                        bus_summing_depth[index] + devices.chain_latency(&buses[index].chain);
+                    bus_arrival[index] = arrival;
+                    (arrival, buses[index].output)
+                }
+            };
+            match summing_point(output, tracks, buses) {
+                SummingPoint::Master => master_depth = master_depth.max(arrival),
+                SummingPoint::Bus(index) => {
+                    bus_summing_depth[index] = bus_summing_depth[index].max(arrival);
+                }
+                SummingPoint::TrackInput(index) => {
+                    track_summing_depth[index] = track_summing_depth[index].max(arrival);
+                }
+            }
+        }
+
+        let mut clamped = clamped_devices;
+        for index in 0..track_count {
+            let arrival = track_arrival[index];
+            for send in tracks[index].sends.iter_mut() {
+                let hold = buses
+                    .iter()
+                    .position(|bus| bus.id == send.bus_id)
+                    .map_or(0, |bus| bus_summing_depth[bus].saturating_sub(arrival));
+                clamped += usize::from(send.delay.set_delay(hold));
+            }
+
+            // This track's own clips start at zero, so they wait the whole
+            // depth of what arrives at its input. An instrument on its chain
+            // waits that depth plus the latency the chain declares ahead of
+            // it, because its material joins where the signal already took
+            // that latency. One summing point, so one clamp however many of
+            // its lines the ceiling cut short.
+            let depth = track_summing_depth[index];
+            let mut input_clamped = tracks[index].source_delay.set_delay(depth);
+            input_clamped |= aim_chain_generators(&tracks[index].chain, depth, devices);
+            clamped += usize::from(input_clamped);
+
+            let output = tracks[index].output;
+            let hold = hold_for(
+                output,
+                arrival,
+                tracks,
+                buses,
+                bus_summing_depth,
+                track_summing_depth,
+                master_depth,
+            );
+            clamped += usize::from(tracks[index].output_delay.set_delay(hold));
+        }
+        for index in 0..bus_count {
+            let arrival = bus_arrival[index];
+
+            // A bus has no clips, so its input hold is the generators on its
+            // chain and nothing else — an instrument on a bus is the same
+            // contributor a track's is: its input depth plus the latency the
+            // chain declares ahead of it.
+            let depth = bus_summing_depth[index];
+            clamped += usize::from(aim_chain_generators(&buses[index].chain, depth, devices));
+
+            let output = buses[index].output;
+            let hold = hold_for(
+                output,
+                arrival,
+                tracks,
+                buses,
+                bus_summing_depth,
+                track_summing_depth,
+                master_depth,
+            );
+            clamped += usize::from(buses[index].output_delay.set_delay(hold));
+        }
+
+        diagnostics.state_pdc_clamped_routes(clamped);
+        diagnostics.state_pdc_max_arrival(
+            bus_summing_depth[..bus_count]
+                .iter()
+                .chain(track_summing_depth[..track_count].iter())
+                .copied()
+                .fold(master_depth, usize::max),
+        );
+    }
+
     /// Render one block of the timeline, summing the master output into
     /// `master_left` / `master_right`.
     ///
@@ -1896,6 +2481,10 @@ impl TimelineGraph {
             scratch_right,
             generator_left,
             generator_right,
+            send_left,
+            send_right,
+            source_left,
+            source_right,
             diagnostics,
             ..
         } = self;
@@ -1917,11 +2506,16 @@ impl TimelineGraph {
                         let track = &mut tracks[index];
                         left.copy_from_slice(&track.input_left[..frames]);
                         right.copy_from_slice(&track.input_right[..frames]);
-                        if render_clips {
-                            for clip in &track.clips {
-                                clip.render_into(block_start, frames, left, right);
-                            }
-                        }
+                        render_track_source(
+                            track,
+                            block_start,
+                            frames,
+                            render_clips,
+                            left,
+                            right,
+                            &mut source_left[..frames],
+                            &mut source_right[..frames],
+                        );
                     }
 
                     run_device_chain(
@@ -1952,6 +2546,8 @@ impl TimelineGraph {
                             frames,
                             left,
                             right,
+                            &mut send_left[..frames],
+                            &mut send_right[..frames],
                             diagnostics,
                         );
                         apply_gain(
@@ -1982,8 +2578,19 @@ impl TimelineGraph {
                             frames,
                             left,
                             right,
+                            &mut send_left[..frames],
+                            &mut send_right[..frames],
                             diagnostics,
                         );
+                        // Last on the strip, after the post-fader tap: the
+                        // sends carry their own compensation, and only what
+                        // leaves for the summing point is held back here.
+                        //
+                        // Run on every block this strip renders, whether or
+                        // not it holds: nothing above skips the line — mute
+                        // and solo zero the block rather than leaving it — so
+                        // the ring keeps pace with the strip.
+                        track.output_delay.run(left, right, frames);
                     }
 
                     route_sum(
@@ -2035,6 +2642,11 @@ impl TimelineGraph {
                             right.fill(0.0);
                         }
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
+                        // Run on every block this bus renders, for the reason
+                        // a track's output line is: mute and solo zero the
+                        // block rather than leaving it, so nothing above skips
+                        // the line.
+                        bus.output_delay.run(left, right, frames);
                     }
 
                     route_sum(
@@ -2052,8 +2664,17 @@ impl TimelineGraph {
         }
     }
 
-    /// Apply the master fader, the last stage of the strip, after the master
-    /// insert chain has run.
+    /// Aim the master fader at a new level, which it approaches from wherever
+    /// it stands. Nothing here is stamped, so nothing the transport does to the
+    /// playhead reaches it.
+    pub(crate) fn set_master_fader_target(&mut self, target: f32, smoothing: f32) {
+        self.master_fader.set_target(target, smoothing);
+    }
+
+    /// Apply the master stage, the last stage of the strip, after the master
+    /// insert chain has run: the automation lane's gain, then the fader over
+    /// it. The two are separate levels on one signal — the arrangement's master
+    /// curve, and where the hand left the fader — so they multiply.
     pub(crate) fn apply_master_gain(
         &mut self,
         block_start: u64,
@@ -2069,7 +2690,80 @@ impl TimelineGraph {
             &mut right[..frames],
             &mut self.diagnostics,
         );
+        apply_master_fader(
+            &mut self.master_fader,
+            frames,
+            &mut left[..frames],
+            &mut right[..frames],
+        );
     }
+}
+
+/// Multiply the master fader into one span.
+///
+/// A settled fader is one number for the whole span, which is the common case:
+/// the fader only moves while a hand is on it. A moving one is walked sample by
+/// sample and takes no frame, because where it stands is a function of how many
+/// samples it has passed rather than of the position those samples play at.
+fn apply_master_fader(fader: &mut MasterFader, frames: usize, left: &mut [f32], right: &mut [f32]) {
+    if fader.settled() {
+        let level = fader.value;
+        if level == 1.0 {
+            return;
+        }
+        for index in 0..frames {
+            left[index] *= level;
+            right[index] *= level;
+        }
+        return;
+    }
+
+    for index in 0..frames {
+        let level = fader.next();
+        left[index] *= level;
+        right[index] *= level;
+    }
+}
+
+/// Lay a track's own clips over what other strips have already summed into its
+/// input.
+///
+/// A route landing on this track's input arrives at that input's compensated
+/// depth, while a clip on this track starts at zero, so the clips are held back
+/// to meet it. They are staged apart from the input for exactly that reason:
+/// what the input carries is aligned already, and running the hold over the
+/// pair would delay every contributor a second time — and with them the live
+/// input monitored through this track, which is the one signal that must not
+/// wait.
+///
+/// The staging happens on every block, at zero hold and with no clip to render
+/// alike, because the line is written on every block this strip renders: a
+/// source line skipped while it holds nothing would freeze, and the next hold
+/// it is aimed at would replay the passage it froze in.
+#[allow(clippy::too_many_arguments)]
+fn render_track_source(
+    track: &mut TimelineTrack,
+    block_start: u64,
+    frames: usize,
+    render_clips: bool,
+    left: &mut [f32],
+    right: &mut [f32],
+    source_left: &mut [f32],
+    source_right: &mut [f32],
+) {
+    // Staged over silence, and staged even on a stopped transport: the line
+    // has to keep running for the material still inside it to come out, which
+    // is what the rest of the strip does with its tails.
+    source_left.fill(0.0);
+    source_right.fill(0.0);
+    if render_clips {
+        for clip in &track.clips {
+            clip.render_into(block_start, frames, source_left, source_right);
+        }
+    }
+    track.source_delay.run(source_left, source_right, frames);
+    sum_into(left, source_left);
+    sum_into(right, source_right);
 }
 
 /// Run one strip's device chain over the signal in `left` / `right`.
@@ -2081,6 +2775,12 @@ impl TimelineGraph {
 /// output stays connected and the generator's output joins them — and it is the
 /// only way a chain can hold an instrument without the instrument erasing
 /// whatever the strip already carried.
+///
+/// A generator is handed the chain signal too, because a latent instrument
+/// delays what passes through it: its events come out as late as it declares,
+/// so the strip's own material has to leave the device that late as well. That
+/// is what makes the summed declared latency of a chain the arrival its strip
+/// really has.
 fn run_device_chain(
     chain: &[ChainEntry],
     devices: &mut impl DeviceChain,
@@ -2096,11 +2796,97 @@ fn run_device_chain(
             DeviceKind::Generator => {
                 generator_left.fill(0.0);
                 generator_right.fill(0.0);
-                devices.run_device(entry.effect_id, generator_left, generator_right, frames);
+                devices.run_generator(
+                    entry.effect_id,
+                    generator_left,
+                    generator_right,
+                    left,
+                    right,
+                    frames,
+                );
                 sum_into(left, generator_left);
                 sum_into(right, generator_right);
             }
         }
+    }
+}
+
+/// Aim every generator on one chain at the input its strip sums at, and answer
+/// whether the ceiling cut any of those holds short.
+///
+/// [`run_device_chain`] sums a generator's material at that generator's own
+/// index, so what it joins there has already taken the latency every effect
+/// ahead of it declares. The hold is therefore that prefix on top of the
+/// input's depth: aimed at the depth alone, an instrument spliced behind a
+/// latent device would lead the routed-in material it was placed to meet by
+/// exactly the latency standing in front of it. Every entry ahead contributes,
+/// generators included — a latent instrument holds the signal passing through
+/// it like any other device, so one standing in front of another puts its
+/// declared latency between that one and the strip's input.
+fn aim_chain_generators(
+    chain: &[ChainEntry],
+    depth: usize,
+    devices: &mut impl CompensationDevices,
+) -> bool {
+    let mut clamped = false;
+    let mut prefix = 0;
+    for entry in chain {
+        if entry.kind == DeviceKind::Generator {
+            clamped |= devices.aim_generator(entry.effect_id, depth + prefix);
+        }
+        prefix += devices.device_latency(entry.effect_id);
+    }
+    clamped
+}
+
+/// Where one route's audio is summed with everything else arriving there.
+enum SummingPoint {
+    Master,
+    /// The named bus's input, by index.
+    Bus(usize),
+    /// The named track's input, by index. A track fed by other strips is a
+    /// group, and its input sums exactly as a bus's does; the track's own clips
+    /// are held back to meet what lands there.
+    TrackInput(usize),
+}
+
+/// Resolve a route target the way [`route_sum`] resolves it, so compensation
+/// is computed for the point the audio actually lands on: a target naming no
+/// live node falls back to the master sum there, and must fall back here too.
+fn summing_point(
+    target: RouteTarget,
+    tracks: &[Box<TimelineTrack>],
+    buses: &[Box<TimelineBus>],
+) -> SummingPoint {
+    match target {
+        RouteTarget::Master => SummingPoint::Master,
+        RouteTarget::Track(id) => tracks
+            .iter()
+            .position(|track| track.id == id)
+            .map_or(SummingPoint::Master, SummingPoint::TrackInput),
+        RouteTarget::Bus(id) => buses
+            .iter()
+            .position(|bus| bus.id == id)
+            .map_or(SummingPoint::Master, SummingPoint::Bus),
+    }
+}
+
+/// Frames a contributor arriving at `arrival` must be held back so it meets
+/// the rest of `target`'s sources.
+#[allow(clippy::too_many_arguments)]
+fn hold_for(
+    target: RouteTarget,
+    arrival: usize,
+    tracks: &[Box<TimelineTrack>],
+    buses: &[Box<TimelineBus>],
+    bus_summing_depth: &[usize],
+    track_summing_depth: &[usize],
+    master_depth: usize,
+) -> usize {
+    match summing_point(target, tracks, buses) {
+        SummingPoint::Master => master_depth.saturating_sub(arrival),
+        SummingPoint::Bus(index) => bus_summing_depth[index].saturating_sub(arrival),
+        SummingPoint::TrackInput(index) => track_summing_depth[index].saturating_sub(arrival),
     }
 }
 
@@ -2174,6 +2960,11 @@ fn sum_into(destination: &mut [f32], source: &[f32]) {
     }
 }
 
+/// Sum this track's sends at `tap` into the buses they land on.
+///
+/// `send_left` / `send_right` are the graph's scratch pair: a send that carries
+/// compensation delays its own copy of the tapped signal, which the strip still
+/// needs unchanged for everything downstream of the tap.
 #[allow(clippy::too_many_arguments)]
 fn run_sends(
     track: &mut TimelineTrack,
@@ -2183,12 +2974,32 @@ fn run_sends(
     frames: usize,
     left: &[f32],
     right: &[f32],
+    send_left: &mut [f32],
+    send_right: &mut [f32],
     diagnostics: &mut TimelineRtDiagnostics,
 ) {
     for send in track.sends.iter_mut() {
         if send.tap != tap {
             continue;
         }
+
+        // Ahead of every reason this send might contribute nothing this block:
+        // a bus that was removed or never added, and a level that leaves zero,
+        // both `continue` below. The line has to see every frame of the tap or
+        // its content stops matching the time it is asked for, and the send
+        // would then read audio from whenever it last ran.
+        //
+        // The copy into the scratch pair is unconditional, because the line
+        // runs in place and the strip still needs the tapped block unchanged
+        // for everything downstream of the tap. Copying only while the send
+        // holds would put a second branch on the hold here, beside the one
+        // `run` already owns; one block copy per send is what keeps that
+        // decision in a single place.
+        send_left.copy_from_slice(&left[..frames]);
+        send_right.copy_from_slice(&right[..frames]);
+        send.delay.run(send_left, send_right, frames);
+        let (left, right) = (&send_left[..frames], &send_right[..frames]);
+
         let Some(bus) = buses.iter_mut().find(|bus| bus.id == send.bus_id) else {
             // A send is the one command whose target is resolved at render
             // time, so a bus that was removed or never added can only be
@@ -2327,6 +3138,17 @@ mod tests {
             _frames: usize,
         ) {
         }
+
+        fn run_generator(
+            &mut self,
+            _effect_id: usize,
+            _scratch_left: &mut [f32],
+            _scratch_right: &mut [f32],
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _frames: usize,
+        ) {
+        }
     }
 
     /// Runs one scaling effect and one generator that emits a constant,
@@ -2346,19 +3168,34 @@ mod tests {
             right: &mut [f32],
             frames: usize,
         ) {
-            if effect_id == self.scaler_id {
-                for index in 0..frames {
-                    left[index] *= self.factor;
-                    right[index] *= self.factor;
-                }
-            } else if effect_id == self.generator_id {
-                // A generator ignores whatever reached it and emits its own
-                // material, which is exactly why running one in place would
-                // erase the strip's signal.
-                for index in 0..frames {
-                    left[index] = self.emits;
-                    right[index] = self.emits;
-                }
+            if effect_id != self.scaler_id {
+                return;
+            }
+            for index in 0..frames {
+                left[index] *= self.factor;
+                right[index] *= self.factor;
+            }
+        }
+
+        fn run_generator(
+            &mut self,
+            effect_id: usize,
+            scratch_left: &mut [f32],
+            scratch_right: &mut [f32],
+            _left: &mut [f32],
+            _right: &mut [f32],
+            frames: usize,
+        ) {
+            if effect_id != self.generator_id {
+                return;
+            }
+            // A generator ignores whatever reached it and emits its own
+            // material, which is exactly why running one in place would
+            // erase the strip's signal. These fixtures declare no latency,
+            // so nothing here holds the signal passing through.
+            for index in 0..frames {
+                scratch_left[index] = self.emits;
+                scratch_right[index] = self.emits;
             }
         }
     }
@@ -2548,9 +3385,102 @@ mod tests {
             DeviceParam::RetuneSpeedMs,
             DeviceParam::FormantPreserve,
         ] {
-            assert_eq!(DeviceParam::from_name(param.name()), Some(param));
+            let name = param.name().expect("a named built-in parameter has a name");
+            assert_eq!(DeviceParam::from_name(name), Some(param));
         }
         assert_eq!(DeviceParam::from_name("not_a_real_param"), None);
+        let cutoff =
+            BuiltinParamName::parse("cutoff").expect("'cutoff' is shaped like a parameter name");
+        assert_eq!(
+            DeviceParam::BuiltinNamed(cutoff).name(),
+            None,
+            "a built-in body's parameter carries that body's own name, not one of the engine's"
+        );
+    }
+
+    /// A parameter name survives the wire unchanged: what the mapper parsed is
+    /// what the instrument's own `set_param` is handed.
+    ///
+    /// The name is copied into a fixed buffer, so a length or an offset off by
+    /// one reads back as a different word — or as one with the buffer's zero
+    /// padding still on it.
+    #[test]
+    fn a_builtin_param_name_reads_back_as_the_name_it_was_parsed_from() {
+        let parsed = BuiltinParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
+
+        assert_eq!(parsed.as_str(), "cutoff");
+    }
+
+    /// The inline name keeps a parameter address inside the size
+    /// [`BuiltinParamName`] documents.
+    ///
+    /// The address sits in every slot of the [`DeviceParamQueue`] each effect
+    /// holds inline, so a byte here is multiplied by the queue's capacity and
+    /// again by the whole effect table. Widening it is a megabyte-scale
+    /// decision, and the documented figure has to move with it.
+    #[test]
+    fn builtin_param_name_keeps_device_param_within_its_stated_size() {
+        let size = std::mem::size_of::<DeviceParam>();
+
+        assert_eq!(
+            size, 34,
+            "a device parameter address is {size} bytes, not the 34 documented on \
+             `BuiltinParamName` — move that figure, the `DeviceParamEvent` and per-queue \
+             byte counts, and the per-scheduler total with it"
+        );
+    }
+
+    /// A name exactly as long as the buffer parses.
+    ///
+    /// The capacity is the wire's whole allowance for a built-in body's
+    /// vocabulary to grow, so a bound written as `>=` rather than `>` would
+    /// refuse the longest name that still fits.
+    #[test]
+    fn a_builtin_param_name_filling_the_buffer_parses() {
+        let longest = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY);
+
+        let parsed = BuiltinParamName::parse(&longest)
+            .expect("a name the length of the buffer fits the buffer");
+
+        assert_eq!(parsed.as_str(), longest);
+    }
+
+    /// A key that was never one of the instrument's names is refused by shape.
+    ///
+    /// The instrument answers a name it does not know by doing nothing, so a
+    /// misspelled key would otherwise be a parameter write the producer
+    /// believes landed and the mix never heard. Shape is the whole of the
+    /// refusal the engine can make without keeping a copy of the instrument's
+    /// table, and each row here is a different way to miss the vocabulary.
+    #[test]
+    fn a_key_shaped_unlike_a_builtin_param_name_is_refused() {
+        let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
+
+        assert_eq!(
+            BuiltinParamName::parse(""),
+            None,
+            "the empty key names no parameter"
+        );
+        assert_eq!(
+            BuiltinParamName::parse("Cutoff"),
+            None,
+            "the instrument spells its names in lowercase"
+        );
+        assert_eq!(
+            BuiltinParamName::parse("cut off"),
+            None,
+            "a space is not a character of the instrument's vocabulary"
+        );
+        assert_eq!(
+            BuiltinParamName::parse("cut-off"),
+            None,
+            "the instrument separates words with underscores, not hyphens"
+        );
+        assert_eq!(
+            BuiltinParamName::parse(&too_long),
+            None,
+            "a name past the buffer would be truncated into a different word"
+        );
     }
 
     #[test]
@@ -2558,12 +3488,12 @@ mod tests {
         let mut queue = DeviceParamQueue::new();
         assert!(queue.is_empty());
         assert!(queue.schedule(DeviceParamEvent {
-            param: DeviceParam::RetuneSpeedMs,
+            param: DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs),
             value: 20.0,
             at_frame: 8,
         }));
         assert!(queue.schedule(DeviceParamEvent {
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 5.0,
             at_frame: 4,
         }));
@@ -2574,12 +3504,12 @@ mod tests {
         assert_eq!(queue.pop_due(3), None);
         assert_eq!(
             queue.pop_due(4).map(|event| (event.param, event.value)),
-            Some((DeviceParam::ShiftSemitones, 5.0))
+            Some((DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones), 5.0))
         );
         assert_eq!(queue.pop_due(4), None);
         assert_eq!(
             queue.pop_due(9).map(|event| (event.param, event.value)),
-            Some((DeviceParam::RetuneSpeedMs, 20.0))
+            Some((DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs), 20.0))
         );
         assert!(queue.is_empty());
     }
@@ -2589,14 +3519,14 @@ mod tests {
         let mut queue = DeviceParamQueue::new();
         for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
             assert!(queue.schedule(DeviceParamEvent {
-                param: DeviceParam::ShiftSemitones,
+                param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                 value: 1.0,
                 at_frame: index as u64,
             }));
         }
 
         assert!(!queue.schedule(DeviceParamEvent {
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 1.0,
             at_frame: 100,
         }));
@@ -2720,7 +3650,9 @@ mod tests {
                 )
             )
             .is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -2761,6 +3693,13 @@ mod tests {
         assert_eq!(graph.diagnostics().unresolved_send_buses, 2);
     }
 
+    /// The delay line every send is built with control-side, at rest. A graph
+    /// that never runs `compensate` leaves it at zero delay, so a send built
+    /// with one taps its source exactly as it did before compensation existed.
+    fn uncompensated() -> Box<CompensationDelay> {
+        Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
+    }
+
     /// A track carrying one mono clip of a constant value, with no fade of any
     /// kind so the arithmetic under test is the only thing shaping the mix.
     fn graph_with_constant_clip(track_id: usize, value: f32, frames: u64) -> TimelineGraph {
@@ -2785,7 +3724,9 @@ mod tests {
     fn the_solo_gate_closes_ahead_of_the_send_taps_and_the_mute_deliberately_does_not() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PreFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PreFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -2827,7 +3768,9 @@ mod tests {
     fn bus_strip_mute_silences_the_sends_that_feed_it() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -2891,7 +3834,9 @@ mod tests {
     fn bus_strip_solo_gate_silences_like_a_track() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         graph.set_bus_solo_gate(50, true);
         assert!(graph.bus(50).expect("the bus").is_solo_gated());
@@ -2917,7 +3862,9 @@ mod tests {
     fn a_send_bus_runs_its_own_insert_chain_over_what_reaches_it() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
         let mut devices = TestDevices {
             scaler_id: 7,
             factor: 0.5,

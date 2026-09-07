@@ -19,10 +19,15 @@
  *   → { id, type: 'compacted',     bundle: [string, Uint8Array][] }
  *   → { id, type: 'compactStale',  reason: string }
  *
+ *   ← { id, type: 'inspectCheckpointRootMedia', rootBytes: Uint8Array }
+ *   → { id, type: 'checkpointRootMediaInspected', audioBufferIds: string[] }
+ *
  *   → { id, type: 'error', message: string }  (on any failure)
  */
 
 import { type Doc, type Heads, getHeads, load, loadIncremental, merge, save } from '@automerge/automerge';
+
+import { inspectCheckpointRootMedia } from './checkpointRootMedia';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -235,7 +240,8 @@ type WorkerInMsg =
           deltas: [string, Uint8Array][];
           removedDocIds: string[];
           expectedHeads: [string, Heads][];
-      };
+      }
+    | { id: number; type: 'inspectCheckpointRootMedia'; rootBytes: Uint8Array };
 
 self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
     const { id } = data;
@@ -259,7 +265,7 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
             } else {
                 self.postMessage({ id, type: 'compacted', bundle: result.bundle });
             }
-        } else {
+        } else if (data.type === 'mergeBundle') {
             const current = new Map<string, Uint8Array>(data.current);
             const incoming = new Map<string, Uint8Array>(data.incoming);
             const result = processMerge(current, incoming);
@@ -271,6 +277,11 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
                 mergedDocIds: result.mergedDocIds,
                 newDocIds: result.newDocIds,
             });
+        } else if (data.type === 'inspectCheckpointRootMedia') {
+            const result = inspectCheckpointRootMedia(data.rootBytes);
+            self.postMessage({ id, type: 'checkpointRootMediaInspected', audioBufferIds: result.audioBufferIds });
+        } else {
+            throw new Error('[CrdtWorker] Unsupported request type');
         }
     } catch (error) {
         self.postMessage({ id, type: 'error', message: String(error) });

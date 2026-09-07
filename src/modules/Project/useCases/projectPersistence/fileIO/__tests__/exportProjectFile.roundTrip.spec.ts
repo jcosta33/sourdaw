@@ -48,6 +48,10 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -61,6 +65,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersByAge: vi.fn(),
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(() =>
+        Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+    ),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     getCompensationDelay: vi.fn(),
@@ -76,7 +83,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeMidiFxFromStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setTrackGain: vi.fn(),
@@ -90,6 +96,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 const persistCrdtProjectMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({

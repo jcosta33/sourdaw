@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 // Import mocked functions
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -29,7 +29,7 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
 
@@ -163,7 +163,7 @@ describe('TrackHeader', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Arm Test Track' }));
 
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'track1', armed: true },
         });

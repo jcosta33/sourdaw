@@ -12,7 +12,7 @@ import {
 } from '../vitestUnitShardExclusions.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const [censusSpec, releaseProofSpec] = UNIT_SHARD_EXCLUDED_SPECS;
+const [censusSpec, releaseProofSpec, agentDeliveryScriptsSpec] = UNIT_SHARD_EXCLUDED_SPECS;
 const excludeArguments = UNIT_SHARD_EXCLUDED_SPECS.flatMap((spec) => ['--exclude', unitShardExcludeGlob(spec)]);
 
 describe('appendUnitShardExclusions', () => {
@@ -22,13 +22,15 @@ describe('appendUnitShardExclusions', () => {
     });
 
     // Spelled out rather than derived, so shortening or reordering the list fails here instead of passing silently.
-    it('appends the census and release proof exclude globs, in that order, when sharding', () => {
+    it('appends the census, release proof, and agent delivery scripts exclude globs, in that order, when sharding', () => {
         expect(appendUnitShardExclusions(['--shard=1/4'])).toEqual([
             '--shard=1/4',
             '--exclude',
             '**/deviceWriteBoundaryClosure.spec.ts',
             '--exclude',
             '**/releaseProof.spec.ts',
+            '--exclude',
+            '**/agentDeliveryScripts.spec.ts',
         ]);
     });
 
@@ -42,17 +44,35 @@ describe('appendUnitShardExclusions', () => {
 
     it('does not duplicate an exclude when the sharded run names that spec as a positional path', () => {
         const args = ['--shard=2/4', releaseProofSpec] as const;
-        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
+        expect(appendUnitShardExclusions(args)).toEqual([
+            ...args,
+            '--exclude',
+            unitShardExcludeGlob(censusSpec),
+            '--exclude',
+            unitShardExcludeGlob(agentDeliveryScriptsSpec),
+        ]);
     });
 
     it('does not duplicate an exclude already present as separate --exclude arguments', () => {
         const args = ['--shard=2/4', '--exclude', unitShardExcludeGlob(releaseProofSpec)] as const;
-        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
+        expect(appendUnitShardExclusions(args)).toEqual([
+            ...args,
+            '--exclude',
+            unitShardExcludeGlob(censusSpec),
+            '--exclude',
+            unitShardExcludeGlob(agentDeliveryScriptsSpec),
+        ]);
     });
 
     it('does not duplicate an exclude already present as a single --exclude= argument', () => {
         const args = ['--shard=2/4', `--exclude=${unitShardExcludeGlob(releaseProofSpec)}`] as const;
-        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
+        expect(appendUnitShardExclusions(args)).toEqual([
+            ...args,
+            '--exclude',
+            unitShardExcludeGlob(censusSpec),
+            '--exclude',
+            unitShardExcludeGlob(agentDeliveryScriptsSpec),
+        ]);
     });
 
     it('still appends the exclude when a non-exclude argument merely contains a listed basename', () => {
@@ -63,12 +83,20 @@ describe('appendUnitShardExclusions', () => {
             unitShardExcludeGlob(censusSpec),
             '--exclude',
             unitShardExcludeGlob(releaseProofSpec),
+            '--exclude',
+            unitShardExcludeGlob(agentDeliveryScriptsSpec),
         ]);
     });
 
-    it('appends only the release proof glob when the census is already excluded', () => {
+    it('appends the remaining globs when the census is already excluded', () => {
         const args = ['--shard=2/4', '--exclude', unitShardExcludeGlob(censusSpec)] as const;
-        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(releaseProofSpec)]);
+        expect(appendUnitShardExclusions(args)).toEqual([
+            ...args,
+            '--exclude',
+            unitShardExcludeGlob(releaseProofSpec),
+            '--exclude',
+            unitShardExcludeGlob(agentDeliveryScriptsSpec),
+        ]);
     });
 });
 
@@ -110,6 +138,10 @@ describe('UNIT_SHARD_EXCLUDED_SPECS', () => {
             return specFile;
         });
 
-        expect(proven).toEqual(['deviceWriteBoundaryClosure.spec.ts', 'releaseProof.spec.ts']);
+        expect(proven).toEqual([
+            'deviceWriteBoundaryClosure.spec.ts',
+            'releaseProof.spec.ts',
+            'agentDeliveryScripts.spec.ts',
+        ]);
     });
 });

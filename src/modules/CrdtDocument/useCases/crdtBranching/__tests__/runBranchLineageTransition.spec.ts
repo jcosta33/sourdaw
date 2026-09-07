@@ -18,9 +18,12 @@ const {
     mockFlushStorage: vi.fn(),
     mockAutomergeRepo: {
         getDoc: vi.fn(() => null),
+        getRootId: vi.fn(() => 'root'),
+        getRootIdentityEpoch: vi.fn(() => 1),
         hasDoc: vi.fn(() => false),
         removeDoc: vi.fn(),
         replaceDoc: vi.fn(),
+        replaceRootContentPreservingIdentity: vi.fn(),
         insertDoc: vi.fn(),
     },
     mockBranchStore: {

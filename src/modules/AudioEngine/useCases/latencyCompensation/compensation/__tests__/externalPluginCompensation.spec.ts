@@ -28,12 +28,10 @@ vi.mock('../../../engineAccess/getAudioContext', () => ({
 
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { clearReportedLatency } from '../clearReportedLatency';
-import { clearAllReportedLatency, externalBridgeRoundTripFrames } from '../externalLatencyRegistry';
+import { clearAllReportedLatency } from '../externalLatencyRegistry';
 import { getCompensationDelay } from '../getCompensationDelay';
 import { getDeviceLatencyMs } from '../getDeviceLatencyMs';
 import { getTrackLatency } from '../getTrackLatency';
-import { reportBridgeRoundTripFrames } from '../reportBridgeRoundTripFrames';
 import { reportLatency } from '../reportLatency';
 
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
@@ -41,13 +39,6 @@ const mockTrackStore = trackStore as unknown as MutableTrackStore;
 
 /** A plugin lookahead large enough that a leak would be unmistakable: 1500 samples @48k. */
 const PLUGIN_MS = (1500 / 48_000) * 1000;
-
-/**
- * What the native host used to report for a bridge on a 512-frame device period:
- * ten blocks of ring depth, 128 frames each. Still reported, still recorded, and
- * no longer a term in this sum.
- */
-const BRIDGE_FRAMES = 10 * 128;
 
 function makeTrack(overrides: { id: string; devices?: { id: string; type?: string }[] }) {
     return {
@@ -78,12 +69,6 @@ describe('an external-plugin device costs the Web Audio graph nothing', () => {
         clearAllReportedLatency();
     });
 
-    it('adds no bridge round trip, because no audio crosses a bridge any more', () => {
-        reportBridgeRoundTripFrames('dev-native', BRIDGE_FRAMES);
-
-        expect(getDeviceLatencyMs('dev-native', 'external-plugin')).toBe(0);
-    });
-
     it('adds no plugin lookahead either, because the engine that applies it also sounds it', () => {
         // The lookahead is real, and it is the native engine's to compensate.
         // Charging it to the Web Audio chain would delay every Web Audio track
@@ -96,7 +81,6 @@ describe('an external-plugin device costs the Web Audio graph nothing', () => {
     it('leaves every other track undelayed for a hosted plugin', () => {
         setUpHostedPluginProject();
         reportLatency('dev-native', PLUGIN_MS);
-        reportBridgeRoundTripFrames('dev-native', BRIDGE_FRAMES);
 
         expect(getTrackLatency('guitar').deviceLatencyMs).toBe(0);
         expect(getCompensationDelay('drums')).toBe(0);
@@ -104,24 +88,8 @@ describe('an external-plugin device costs the Web Audio graph nothing', () => {
 
     it('leaves a built-in device that reports its own latency untouched', () => {
         reportLatency('dev-wasm', 12);
-        // A stale bridge entry under the same id must not reach a device that
-        // never used the bridge, and the zero rule must not spread past the one
-        // device type it is about.
-        reportBridgeRoundTripFrames('dev-wasm', BRIDGE_FRAMES);
 
+        // The zero rule must not spread past the one device type it is about.
         expect(getDeviceLatencyMs('dev-wasm', 'builtin-eq')).toBe(12);
-    });
-
-    it('still records and still clears the reported round trip with its device', () => {
-        // The host still reports the figure and the registry still holds it,
-        // paired with the reported-latency map so the two are cleared together.
-        // An entry surviving its device would outlive the plugin that produced
-        // it, and the id it is keyed by does not recur.
-        reportBridgeRoundTripFrames('dev-native', BRIDGE_FRAMES);
-        expect(externalBridgeRoundTripFrames.get('dev-native')).toBe(BRIDGE_FRAMES);
-
-        clearReportedLatency('dev-native');
-
-        expect(externalBridgeRoundTripFrames.has('dev-native')).toBe(false);
     });
 });

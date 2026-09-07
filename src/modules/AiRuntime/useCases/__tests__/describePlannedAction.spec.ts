@@ -40,6 +40,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     appendClipToTrack: vi.fn(),
     clampDeviceParamWrite: vi.fn(),
     takeLaneStore: { value: null, subscribe: () => () => undefined },
+    activeRecordingRef: { current: [] },
 }));
 
 import { type ProjectContext } from '../../models/ProjectContext';

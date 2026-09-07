@@ -63,6 +63,9 @@ vi.mock('../../../stores/projectStore', () => ({
     },
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
@@ -92,7 +95,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -141,6 +143,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: vi.fn(),
+    executeUserAppAction: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),

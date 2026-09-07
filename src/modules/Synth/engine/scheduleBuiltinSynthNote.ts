@@ -149,12 +149,13 @@ export function scheduleBuiltinSynthNote({
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
 
-    // Velocity → filter brightness: harder hits open the filter more
-    const velSens = params.filterVelocitySensitivity ?? 0;
+    // Velocity → filter brightness: harder hits open the filter more.
+    // When explicitly provided (including 0), use linear sensitivity scaling:
+    // 0 sens = always full (disabled), 1 sens = full range (0 to 1).
+    // When undefined (legacy callers), fall back to legacy default (0.3 + 0.7 * vel/127).
+    const velSens = params.filterVelocitySensitivity;
     const velocityScale =
-        velSens > 0
-            ? 1 - velSens + velSens * (safeVelocity / 127) // 0 sens = always full, 1 sens = full range
-            : 0.3 + 0.7 * (safeVelocity / 127); // legacy default when param not set
+        velSens !== undefined ? 1 - velSens + velSens * (safeVelocity / 127) : 0.3 + 0.7 * (safeVelocity / 127);
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
     const pitchScale = Math.sqrt(frequency / 440);
     let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
@@ -191,13 +192,24 @@ export function scheduleBuiltinSynthNote({
     const releaseStart = startTime + duration;
     const releaseEnd = releaseStart + params.release;
 
-    env.gain.linearRampToValueAtTime(peakGain, attackEnd);
-
-    if (decayEnd < releaseStart) {
-        env.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
-        env.gain.setValueAtTime(sustainLevel, releaseStart);
+    if (releaseStart <= attackEnd) {
+        // Note released during attack: ramp only up to the interpolated level reached at note-off
+        const attackProgress = velAttack > 0 ? (releaseStart - startTime) / velAttack : 1;
+        const currentGain = peakGain * Math.max(0, Math.min(1, attackProgress));
+        env.gain.linearRampToValueAtTime(currentGain, releaseStart);
+    } else if (releaseStart < decayEnd) {
+        // Note released during decay: complete attack, then ramp down to interpolated decay level
+        env.gain.linearRampToValueAtTime(peakGain, attackEnd);
+        const decayProgress = params.decay > 0 ? (releaseStart - attackEnd) / params.decay : 1;
+        const currentGain = peakGain + (sustainLevel - peakGain) * Math.max(0, Math.min(1, decayProgress));
+        env.gain.linearRampToValueAtTime(currentGain, releaseStart);
     } else {
-        env.gain.linearRampToValueAtTime(sustainLevel, releaseStart);
+        // Note sustained: full attack and decay, hold at sustain until note-off
+        env.gain.linearRampToValueAtTime(peakGain, attackEnd);
+        env.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
+        if (releaseStart > decayEnd) {
+            env.gain.setValueAtTime(sustainLevel, releaseStart);
+        }
     }
 
     env.gain.linearRampToValueAtTime(0, releaseEnd);

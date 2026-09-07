@@ -15,9 +15,10 @@ import {
     getPluginById,
     compileReorderDevicesAction,
     executeAddDeviceAction,
+    executeRemoveDeviceAction,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import {
     pluginScanStore,
     defaultPluginScanState,
@@ -107,8 +108,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
         })
     );
 
-    // Every device that could have an editor: an external plugin that is
-    // actually loaded. Anything else has no instance for the host to address.
+    // Every external-plugin device that has an instance id. Having an id does not mean
+    // the host holds the instance; each derivation below narrows by the status it needs.
     const externalDeviceEditors = track.devices.flatMap((device) =>
         device.type === 'external-plugin' && device.externalInstanceId
             ? [{ device, instanceId: device.externalInstanceId }]
@@ -131,6 +132,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         )
                     ) !== 'absent'
             )
+            .map(({ device }) => device.id)
+    );
+    // Only an 'active' entry means the host holds an instance the GUI open/close IPC can
+    // address; while loading, or with no entry at all, the control could only fail.
+    const activeExternalDeviceIds = new Set(
+        externalDeviceEditors
+            .filter(({ instanceId }) => activationState.byInstanceId[instanceId]?.status === 'active')
             .map(({ device }) => device.id)
     );
     const openEditorDeviceIds = new Set(
@@ -255,7 +263,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             className={cn(menuBtnClass, 'justify-between text-foreground')}
                                             role="menuitem"
                                             onClick={() => {
-                                                void executeAppAction({
+                                                void executeUserAppAction({
                                                     type: 'loadExternalPlugin',
                                                     payload: { pluginId: plugin.id, trackId: track.id },
                                                 });
@@ -331,7 +339,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 const draggedDeviceId = event.dataTransfer.getData('text/plain');
                                 const action = compileReorderDevicesAction(track.id, draggedDeviceId, device.id);
                                 if (action) {
-                                    void executeAppAction(action);
+                                    void executeUserAppAction(action);
                                 }
                             }}
                         >
@@ -372,7 +380,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         // action is undoable; the raw use case
                                         // write never entered history (#1938
                                         // precedent for the add path).
-                                        void executeAppAction({
+                                        void executeUserAppAction({
                                             type: 'bypassDevice',
                                             payload: { deviceId: device.id, bypassed: !device.bypassed },
                                         });
@@ -407,6 +415,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 {device.type === 'external-plugin' &&
                                 device.externalInstanceId &&
                                 !unavailableExternalDeviceIds.has(device.id) &&
+                                activeExternalDeviceIds.has(device.id) &&
                                 editorCapableDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
@@ -446,13 +455,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-remove-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        // Action boundary: removeDevice is
-                                        // undoable via its restoreDevice
-                                        // inverse.
-                                        void executeAppAction({
-                                            type: 'removeDevice',
-                                            payload: { deviceId: device.id },
-                                        });
+                                        void executeRemoveDeviceAction(device.id);
                                     }}
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />

@@ -1,4 +1,12 @@
 /// <reference lib="webworker" />
+
+import {
+    isRecordingSampleCount,
+    readRecordingPublication,
+    RECORDING_RING_CONTROL_BYTES,
+    RECORDING_RING_CONTROL_INTS,
+} from '../models/RecordingRingProtocol';
+import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../models/RecordingWavLimits';
 /**
  * Recording OPFS Worker — drains the SAB ring buffer to an OPFS temp file
  * during capture, then transfers the complete PCM Float32Array to the main
@@ -13,7 +21,13 @@
  *   ← { type: 'start' }
  *   ← { type: 'stop'  }
  *   → { type: 'wav',   buffer: ArrayBuffer }                        (transferable)
- *   → { type: 'error', message: string }                            (on failure)
+ *   → { type: 'error', message: string, tempFile?: string }         (on failure)
+ *
+ * Integrity policy: if the producer laps the drain reader (ring overrun), the
+ * overwritten history cannot be recovered, so the take is abandoned — an
+ * 'error' is posted, no 'wav' is ever sent, and the temp file's name rides the
+ * error payload: the main thread removes it, because this worker is terminated
+ * on 'error' and a terminated worker never resumes its in-flight removeEntry.
  */
 
 const POLL_MS = 50; // drain interval — plenty of margin ahead of worklet writes
@@ -21,6 +35,15 @@ const POLL_MS = 50; // drain interval — plenty of margin ahead of worklet writ
 /** Canonical WAV/RIFF header size, in bytes. The PCM payload begins here so the
  *  header can be patched in place on stop without clobbering the first samples. */
 export const WAV_HEADER_BYTES = 44;
+export function canAppendWavSamples(currentSamples: number, appendedSamples: number): boolean {
+    return (
+        Number.isInteger(currentSamples) &&
+        currentSamples >= 0 &&
+        Number.isInteger(appendedSamples) &&
+        appendedSamples >= 0 &&
+        appendedSamples <= MAX_MONO_FLOAT32_RIFF_SAMPLES - currentSamples
+    );
+}
 
 /**
  * Build a 44-byte WAV/RIFF header for mono 32-bit IEEE-float PCM.
@@ -29,6 +52,9 @@ export const WAV_HEADER_BYTES = 44;
  * Exported so the byte layout is verifiable independently of OPFS I/O.
  */
 export function buildWavHeader(totalSamples: number, sampleRate: number): ArrayBuffer {
+    if (!Number.isInteger(totalSamples) || totalSamples < 0 || totalSamples > MAX_MONO_FLOAT32_RIFF_SAMPLES) {
+        throw new RangeError(`WAV sample count ${String(totalSamples)} is outside the mono float32 RIFF range`);
+    }
     const header = new ArrayBuffer(WAV_HEADER_BYTES);
     const view = new DataView(header);
     const dataBytes = totalSamples * 4;
@@ -51,30 +77,62 @@ export function buildWavHeader(totalSamples: number, sampleRate: number): ArrayB
 }
 
 /**
+ * The result of an acquire-read of the recording ring.
+ *
+ * `overrun` means the producer lapped this reader before it drained: the
+ * requested interval's start was overwritten, so no intact chunk exists.
+ * `currentWrite` is the head observed under the acquire fence, for diagnostics.
+ */
+export type AcquiredRingChunk =
+    | { status: 'ok'; chunk: Uint8Array<ArrayBuffer>; nextReadHead: number }
+    | { status: 'overrun'; currentWrite: number }
+    | { status: 'retry' }
+    | { status: 'protocol-error' };
+
+/**
  * Acquire-read of the SPSC ring's currently-published samples.
  *
- * `Atomics.load(writeHead, 0)` is the acquire fence: it pairs with the
- * producer's `Atomics.add`/`Atomics.store` release and guarantees every ring
- * write sequenced-before that publish is visible to the bare reads that follow.
+ * A stable even publication sequence brackets the snapshot. The consumer reads
+ * the full cumulative count before and after copying, accepting PCM only when
+ * neither the sequence nor count changed. This prevents a producer from
+ * overwriting part of an in-flight copy while preserving nonblocking polling.
  *
  * The drained samples are copied into a fresh, `ArrayBuffer`-backed `Uint8Array`
  * (not a view over the `SharedArrayBuffer` ring): `FileSystemWritableFileStream`
  * only accepts non-shared `BufferSource`, and decoupling from the ring lets the
- * producer keep writing while this chunk is in flight to OPFS. Returns the bytes
- * plus the advanced read head.
+ * producer keep writing while this chunk is in flight to OPFS.
  *
- * Exported so the acquire ordering and wrap-around copy are testable without OPFS.
+ * If the producer lapped the reader — `writeHead - readFrom` exceeds the ring
+ * capacity, i.e. the requested start predates the oldest surviving sample — the
+ * interval no longer exists in the ring. Reading it modulo capacity would
+ * silently return newer samples in place of the lost history, so the read
+ * fails with `overrun` instead of returning duplicated PCM. A read starting
+ * exactly at `writeHead - capacity` (the oldest surviving sample) succeeds.
+ *
+ * Exported so the acquire ordering, wrap-around copy, and overrun detection are
+ * testable without OPFS.
  */
-export function acquireRingChunk(
-    ring: Float32Array,
-    writeHead: Int32Array,
-    readFrom: number
-): { chunk: Uint8Array<ArrayBuffer>; nextReadHead: number } {
-    // Acquire fence — must precede the ring reads below.
-    const currentWrite = Atomics.load(writeHead, 0);
-    const available = currentWrite - readFrom;
-    if (available <= 0) {
-        return { chunk: new Uint8Array(0), nextReadHead: readFrom };
+export function acquireRingChunk(ring: Float32Array, control: Int32Array, readFrom: number): AcquiredRingChunk {
+    if (!isRecordingSampleCount(readFrom) || ring.length === 0) {
+        return { status: 'protocol-error' };
+    }
+
+    const before = readRecordingPublication(control);
+    if (before.status !== 'stable') {
+        return before;
+    }
+    const available = before.sampleCount - readFrom;
+    if (available < 0) {
+        return { status: 'protocol-error' };
+    }
+    if (available === 0) {
+        return { status: 'ok', chunk: new Uint8Array(0), nextReadHead: readFrom };
+    }
+    // Lapped reader: sample `readFrom` was overwritten before it could be
+    // drained, so the requested interval is gone. Never read it modulo
+    // capacity — that would present newer samples as the original take.
+    if (available > ring.length) {
+        return { status: 'overrun', currentWrite: before.sampleCount };
     }
 
     // Copy out of the ring into an owned, non-shared ArrayBuffer (handles
@@ -88,40 +146,67 @@ export function acquireRingChunk(
     for (let index = 0; index < available; index++) {
         samples[index] = ring[(readFrom + index) % ringSize] ?? 0;
     }
-    return { chunk: new Uint8Array(backing), nextReadHead: readFrom + available };
+
+    const after = readRecordingPublication(control);
+    if (after.status !== 'stable') {
+        return after;
+    }
+    const afterAvailable = after.sampleCount - readFrom;
+    if (afterAvailable < 0) {
+        return { status: 'protocol-error' };
+    }
+    if (afterAvailable > ring.length) {
+        return { status: 'overrun', currentWrite: after.sampleCount };
+    }
+    if (after.sequence !== before.sequence || after.sampleCount !== before.sampleCount) {
+        return { status: 'retry' };
+    }
+    return { status: 'ok', chunk: new Uint8Array(backing), nextReadHead: before.sampleCount };
 }
 
 let ring: Float32Array | null = null;
-let writeHead: Int32Array | null = null;
+let control: Int32Array | null = null;
 let localReadHead = 0;
+let totalSamplesWritten = 0;
 let workerSampleRate = 48000;
 let headerReserved = false;
+// Set when a ring overrun abandons the take: no further drains run and no
+// 'wav' is ever produced for the recording.
+let takeAbandoned = false;
 
 let opfsWritable: FileSystemWritableFileStream | null = null;
 let opfsFileHandle: FileSystemFileHandle | null = null;
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let active = false;
+let stopRequested = false;
+let initializationPromise: Promise<void> | null = null;
+let drainInFlight: Promise<DrainResult> | null = null;
 
 // Unique temp filename per recording session to avoid collisions.
 let tmpName = '';
 
 async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<void> {
-    writeHead = new Int32Array(sab, 0, 1);
-    ring = new Float32Array(sab, 4);
+    control = new Int32Array(sab, 0, RECORDING_RING_CONTROL_INTS);
+    ring = new Float32Array(sab, RECORDING_RING_CONTROL_BYTES);
     localReadHead = 0;
+    totalSamplesWritten = 0;
     headerReserved = false;
+    takeAbandoned = false;
+    stopRequested = false;
     workerSampleRate = sampleRate;
-    tmpName = `rec-tmp-${Date.now()}.pcm`;
+    tmpName = `rec-tmp-${crypto.randomUUID()}.pcm`;
 
     const root = await navigator.storage.getDirectory();
     opfsFileHandle = await root.getFileHandle(tmpName, { create: true });
     opfsWritable = await opfsFileHandle.createWritable();
 }
 
-async function drain(): Promise<void> {
-    if (!ring || !writeHead || !opfsWritable) {
-        return;
+type DrainResult = 'drained' | 'empty' | 'retry' | 'failed';
+
+async function drain(): Promise<DrainResult> {
+    if (!ring || !control || !opfsWritable || takeAbandoned) {
+        return 'failed';
     }
 
     // Reserve the WAV header slot before the first PCM byte lands, so the PCM
@@ -133,22 +218,96 @@ async function drain(): Promise<void> {
     }
 
     // Acquire-read the published samples out of the ring (handles wrap-around).
-    const { chunk, nextReadHead } = acquireRingChunk(ring, writeHead, localReadHead);
+    const acquired = acquireRingChunk(ring, control, localReadHead);
+    if (acquired.status === 'retry') {
+        return 'retry';
+    }
+    if (acquired.status === 'overrun') {
+        abandonTake(
+            `Recording ring overrun: ${String(acquired.currentWrite - localReadHead)} samples from ${String(localReadHead)} were overwritten before they could be drained; take abandoned`
+        );
+        return 'failed';
+    }
+    if (acquired.status === 'protocol-error') {
+        abandonTake('Recording ring protocol became invalid; take abandoned');
+        return 'failed';
+    }
+    const { chunk, nextReadHead } = acquired;
     if (chunk.length === 0) {
+        return 'empty';
+    }
+
+    const chunkSamples = chunk.byteLength / Float32Array.BYTES_PER_ELEMENT;
+    if (!canAppendWavSamples(totalSamplesWritten, chunkSamples)) {
+        abandonTake(
+            `Recording exceeds the mono float32 RIFF limit of ${String(MAX_MONO_FLOAT32_RIFF_SAMPLES)} samples; take abandoned`
+        );
+        return 'failed';
+    }
+    const nextTotalSamples = totalSamplesWritten + chunkSamples;
+    await opfsWritable.write(chunk);
+    localReadHead = nextReadHead;
+    totalSamplesWritten = nextTotalSamples;
+    return 'drained';
+}
+
+async function runDrain(): Promise<DrainResult> {
+    if (drainInFlight) {
+        return drainInFlight;
+    }
+    const running = drain().catch((error: unknown) => {
+        abandonTake(`Recording storage write failed: ${error instanceof Error ? error.message : String(error)}`);
+        return 'failed' as const;
+    });
+    drainInFlight = running;
+    const result = await running;
+    if (drainInFlight === running) {
+        drainInFlight = null;
+    }
+    return result;
+}
+
+/**
+ * Defined drop policy for a lapped reader: the overwritten interval can never
+ * be recovered, so the take is abandoned. Stop draining and notify the main
+ * thread on the established error channel — it tears the session down on
+ * 'error'. The temp file's name rides the payload: this worker is terminated
+ * on 'error', and a terminated worker never resumes an in-flight
+ * `removeEntry`, so the main thread — which outlives it — owns the removal.
+ * No 'wav' is ever produced, so overwritten history is never presented as a
+ * recording.
+ */
+function abandonTake(message: string): void {
+    if (takeAbandoned) {
         return;
     }
-    localReadHead = nextReadHead;
-
-    await opfsWritable.write(chunk);
+    takeAbandoned = true;
+    active = false;
+    if (pollTimer !== null) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+    }
+    self.postMessage({
+        type: 'error',
+        message,
+        tempFile: tmpName,
+    });
 }
 
 function startPolling(): void {
+    if (stopRequested || active) {
+        return;
+    }
     active = true;
     const tick = async (): Promise<void> => {
         if (!active) {
             return;
         }
-        await drain();
+        await runDrain();
+        // A drain can abandon the take (ring overrun); stop the poll loop then.
+        if (!active) {
+            return;
+        }
         pollTimer = setTimeout(() => {
             void tick();
         }, POLL_MS);
@@ -156,18 +315,40 @@ function startPolling(): void {
     void tick();
 }
 
-async function stopWorker(): Promise<void> {
+async function stopWorker(expectedFinalSampleCount: number): Promise<void> {
+    if (stopRequested) {
+        return;
+    }
+    stopRequested = true;
     active = false;
     if (pollTimer !== null) {
         clearTimeout(pollTimer);
         pollTimer = null;
     }
 
-    // Final drain — pick up any samples written between the last poll and stop.
-    await drain();
+    await initializationPromise;
+    const pendingDrain = drainInFlight;
+    if (pendingDrain) {
+        await pendingDrain;
+    }
+    const finalDrain = await runDrain();
+    if (finalDrain === 'retry') {
+        abandonTake('Recording ring publication was unstable after the producer stopped; take abandoned');
+    }
+    if (!isRecordingSampleCount(expectedFinalSampleCount) || localReadHead !== expectedFinalSampleCount) {
+        abandonTake(
+            `Recording stopped at ${String(expectedFinalSampleCount)} published samples but drained ${String(localReadHead)}; take abandoned`
+        );
+    }
 
     await opfsWritable?.close();
     opfsWritable = null;
+
+    if (takeAbandoned) {
+        // The error — carrying the temp file name for main-thread removal —
+        // was posted when the take was abandoned; never send a 'wav' for it.
+        return;
+    }
 
     if (!opfsFileHandle) {
         self.postMessage({ type: 'error', message: 'OPFS file handle missing on stop' });
@@ -179,8 +360,7 @@ async function stopWorker(): Promise<void> {
     // payload begins at byte WAV_HEADER_BYTES — patching position 0 here leaves
     // every sample intact.
     const patchStream = await opfsFileHandle.createWritable({ keepExistingData: true });
-    const totalSamples = localReadHead;
-    const header = buildWavHeader(totalSamples, workerSampleRate);
+    const header = buildWavHeader(totalSamplesWritten, workerSampleRate);
 
     await patchStream.write({ type: 'write', position: 0, data: header });
     await patchStream.close();
@@ -191,7 +371,14 @@ async function stopWorker(): Promise<void> {
 
     self.postMessage({ type: 'wav', buffer: arrayBuffer }, [arrayBuffer]);
 
-    // Remove the temp file — non-fatal if it fails.
+    await discardTempFile();
+}
+
+/** Best-effort removal of this session's OPFS temp file. Non-fatal on failure. */
+async function discardTempFile(): Promise<void> {
+    if (!opfsFileHandle) {
+        return;
+    }
     try {
         const root = await navigator.storage.getDirectory();
         await root.removeEntry(tmpName);
@@ -202,21 +389,32 @@ async function stopWorker(): Promise<void> {
 }
 
 type WorkerMessage =
-    { type: 'init'; sab: SharedArrayBuffer; sampleRate: number } | { type: 'start' } | { type: 'stop' };
+    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'start' }
+    | { type: 'stop'; expectedFinalSampleCount: number };
 
 self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
     switch (data.type) {
         case 'init':
-            void initWorker(data.sab, data.sampleRate).then(() => {
-                self.postMessage({ type: 'ready' });
-                return null;
-            });
+            initializationPromise = initWorker(data.sab, data.sampleRate);
+            void initializationPromise
+                .then(() => {
+                    if (!stopRequested) {
+                        self.postMessage({ type: 'ready' });
+                    }
+                    return null;
+                })
+                .catch((error: unknown) => {
+                    abandonTake(
+                        `Recording storage initialization failed: ${error instanceof Error ? error.message : String(error)}`
+                    );
+                });
             break;
         case 'start':
             startPolling();
             break;
         case 'stop':
-            void stopWorker();
+            void stopWorker(data.expectedFinalSampleCount);
             break;
     }
 };

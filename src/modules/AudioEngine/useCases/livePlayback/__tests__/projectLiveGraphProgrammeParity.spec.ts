@@ -65,9 +65,10 @@
  * fade endpoints fall outside their own sound — a clip slipped left of its
  * material, and a clip longer than its material.
  *
- * No devices: no built-in has a native body yet (#3124), and both producers
- * degrade a bodiless chain the same way, so a device here would measure
- * nothing. No automation lanes, and `automationMode: 'off'` — writes during
+ * No devices: the fixtures hold no chains at all, because this suite's parity
+ * question is about clip placement, not chain admission — a device here would
+ * measure the same rule `stripCarriers.spec.ts` and `nativeMidiNoteSink`'s own
+ * suite already pin. No automation lanes, and `automationMode: 'off'` — writes during
  * playback are a later slice, and the export's recorder would otherwise emit
  * `write-parameter` commands the live producer has no counterpart for. Master
  * gain is unity, because the export applies it after the render, outside the
@@ -611,11 +612,16 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
+        // Unity: the export leg this render is compared against applies the
+        // project's own master level, so any other reading here would be a
+        // difference in the mix rather than in the programme under test.
+        masterGain: 1,
         // No fixture track monitors live input, so the carrier law leaves every
         // one of them to be judged on its chain and its routing alone.
         inputMonitoredTrackIds: new Set(),
         programme: projectLiveGraphProgramme({
             stripTracks,
+            attachedInstanceIds: new Set(),
             sampleRate: SAMPLE_RATE,
             defaultTempo: TEMPO,
             changes: [],

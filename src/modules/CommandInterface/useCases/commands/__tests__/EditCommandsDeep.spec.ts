@@ -11,6 +11,7 @@ const { mockUndo, mockRedo, mockCopy, mockCut, mockPaste, mockSelectAll, mockDes
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     undo: mockUndo,
     redo: mockRedo,
 }));

@@ -5,10 +5,11 @@ import { Button } from '#/components/ui/button';
 import {
     compileReorderDevicesAction,
     executeAddDeviceAction,
+    executeRemoveDeviceAction,
     getPlatformPlugins,
     selectTrack,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { openInspector } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -53,7 +54,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 // and is undoable — the same mutation issued
                                 // by an AI prompt already goes through this
                                 // action (#1938 precedent).
-                                void executeAppAction({
+                                void executeUserAppAction({
                                     type: 'bypassDevice',
                                     payload: { deviceId: data.id, bypassed: !data.bypassed },
                                 });
@@ -73,7 +74,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                                 const draggedDeviceId = event.dataTransfer.getData('text/plain');
                                 const action = compileReorderDevicesAction(track.id, draggedDeviceId, data.id);
                                 if (action) {
-                                    void executeAppAction(action);
+                                    void executeUserAppAction(action);
                                 }
                             }}
                         >
@@ -89,13 +90,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                // Same boundary routing as bypass: the
-                                // removeDevice action is undoable (its
-                                // restoreDevice inverse snapshots the device).
-                                void executeAppAction({
-                                    type: 'removeDevice',
-                                    payload: { deviceId: data.id },
-                                });
+                                void executeRemoveDeviceAction(data.id);
                             }}
                             aria-label={`Remove ${data.name}`}
                             title={`Remove ${data.name}`}

@@ -1,7 +1,9 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     applyRuntimeGraphDelta,
     getRuntimeGraphRevision,
     matchesRuntimeDeviceChainTopology,
+    mirrorDeviceChainDelta,
 } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
@@ -40,6 +42,22 @@ export type DeviceChainRuntimeDeltaDischarged = Readonly<{
 
 export type ApplyDeviceChainRuntimeDeltaResult =
     ReturnType<typeof applyRuntimeGraphDelta> | DeviceChainRuntimeDeltaSuperseded | DeviceChainRuntimeDeltaDischarged;
+
+/**
+ * Send the same chain to the rolling native engine, and wait for none of it.
+ *
+ * A native session is a second carrier, not a second authority: the Web Audio
+ * delta has already landed by the time this runs, and a change the native
+ * engine declines is deferred to the next play and said out loud there (#3575).
+ * Awaiting it would put a bridge round trip inside a project mutation, and
+ * letting it throw would report a runtime-graph failure for a graph that is
+ * intact — which is what `postCommitEffect: 'repair'` would then try to fix.
+ */
+function mirrorNativeDeviceChain(before: Track, after: Track): void {
+    void mirrorDeviceChainDelta({ before, after }).catch((error: unknown) => {
+        logger.warn(`[Arrangement] the native device-chain mirror for track ${after.id} failed: ${String(error)}`);
+    });
+}
 
 function getDeviceChainMutationTrackId(action: AppAction, currentStep: Track): string | undefined {
     switch (action.type) {
@@ -125,7 +143,7 @@ export function applyDeviceChainRuntimeDelta({
         });
     }
 
-    return applyRuntimeGraphDelta({
+    const result = applyRuntimeGraphDelta({
         schemaVersion: 1,
         command: 'replace-track-device-chain',
         correlation: {
@@ -137,4 +155,12 @@ export function applyDeviceChainRuntimeDelta({
         after: authoritativeAfter,
         parameters: [],
     });
+    // Only a delta Web Audio actually applied: a rejected or half-applied one
+    // leaves the two carriers to be reconciled by the repair the result already
+    // asks for, and mirroring it would put a chain on the native engine that
+    // the Web Audio graph does not have.
+    if (result.acceptance === 'accepted' && result.application === 'applied') {
+        mirrorNativeDeviceChain(before, mayComposeGroupedFinal && currentTrack ? currentTrack : after);
+    }
+    return result;
 }

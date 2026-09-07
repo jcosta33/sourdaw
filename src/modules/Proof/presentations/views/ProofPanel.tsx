@@ -473,11 +473,13 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
     return (
         <div className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3">
-            {/* The desk column never shrinks below the EQ surface (500px
-                canvas plus section and desk padding); when the panel is
-                smaller than the rails plus that minimum, the faceplate
-                scrolls like a plugin window in any host instead of
-                crushing the controls into unreachable slivers. */}
+            {/* The desk column never shrinks below the EQ surface, so the grid
+                overflows a narrower panel sideways and the faceplate scrolls
+                like a plugin window in any host instead of crushing the
+                controls into unreachable slivers. The faceplate carries no
+                min-height floor: a floor makes the rail taller than the panel,
+                and a chip scrolled into view then lands under whatever is
+                drawn over the dock. */}
             <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
                 <DawPluginRail>
                     <SideCard

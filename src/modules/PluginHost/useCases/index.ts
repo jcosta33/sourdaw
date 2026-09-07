@@ -14,20 +14,26 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { forgetRetiredPluginInstances } from './pluginLifecycle/forgetRetiredPluginInstances';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
 // The edit shape stays private: a foreign module derives it from this callable,
 // which is the module contract, rather than from a type the use case owns.
 export { observeExternalPluginParameterEdits } from './pluginLifecycle/observeExternalPluginParameterEdits';
-export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
+// The report shape stays private too, for the same reason: a foreign module
+// derives it from the sink it registers.
+export { registerReleasedStripReportSink } from './pluginLifecycle/registerReleasedStripReportSink';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
+export { clearExternalPluginRestoreFailure } from './pluginLifecycle/clearExternalPluginRestoreFailure';
+export { hasUnresolvedExternalPluginRestoreFailure } from './pluginLifecycle/hasUnresolvedExternalPluginRestoreFailure';
 export { markExternalPluginEngineAttached } from './pluginLifecycle/markExternalPluginEngineAttached';
+export { shouldWarnExternalPluginRestoreFailure } from './pluginLifecycle/shouldWarnExternalPluginRestoreFailure';
 export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild';
 export { beginProjectSessionPluginRetirement } from './pluginLifecycle/beginProjectSessionPluginRetirement';

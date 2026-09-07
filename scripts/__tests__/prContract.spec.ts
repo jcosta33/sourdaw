@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,15 +11,23 @@ import {
     assertLaneSlug,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
+    canonicalPath,
     composeDeliveryReceipt,
     composePublishBody,
     composeReviewCommentBody,
+    containsPath,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
     parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
+    GUARD_FAILURES_DIR,
+    guardFailureReceiptPath,
+    isGuardFailureReason,
+    parseGuardFailureReceipt,
+    readGuardFailureReceipt,
+    type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
 
@@ -681,5 +693,207 @@ describe('pull-request contract', () => {
         expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
             new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
         );
+    });
+});
+
+describe('guard failure receipt contract', () => {
+    const validReceipt: GuardFailureReceipt = {
+        version: 1,
+        lane: 'agent-3161-test',
+        branch: 'agent/3161/test',
+        headSha: '0123456789abcdef0123456789abcdef01234567',
+        failedAt: '2026-09-07T12:00:00.000Z',
+        reason: 'memory',
+        command: 'pnpm',
+        args: ['test:run', 'src/x.spec.ts'],
+        profile: 'focused',
+        peakRssBytes: 5 * 1024 ** 3,
+        maxRssBytes: 4 * 1024 ** 3,
+        durationMs: 1500,
+    };
+
+    it('identifies guard failure reasons correctly', () => {
+        expect(isGuardFailureReason('leak')).toBe(true);
+        expect(isGuardFailureReason('memory')).toBe(true);
+        expect(isGuardFailureReason('monitor')).toBe(true);
+        expect(isGuardFailureReason('pressure')).toBe(true);
+        expect(isGuardFailureReason('timeout')).toBe(true);
+
+        expect(isGuardFailureReason('signal')).toBe(false);
+        expect(isGuardFailureReason('unknown')).toBe(false);
+        expect(isGuardFailureReason(123)).toBe(false);
+        expect(isGuardFailureReason(null)).toBe(false);
+        expect(isGuardFailureReason(undefined)).toBe(false);
+        expect(isGuardFailureReason({})).toBe(false);
+    });
+
+    it('computes the guard failure receipt path', () => {
+        expect(GUARD_FAILURES_DIR).toBe('.agents/guard-failures');
+        expect(guardFailureReceiptPath('/repo', 'agent-lane')).toBe('/repo/.agents/guard-failures/agent-lane.json');
+    });
+
+    it('parses a valid guard-failure receipt', () => {
+        const raw = JSON.stringify(validReceipt, null, 2);
+        const parsed = parseGuardFailureReceipt(raw);
+        expect(parsed).toEqual(validReceipt);
+    });
+
+    it('rejects invalid JSON', () => {
+        expect(() => parseGuardFailureReceipt('not-json')).toThrow(/not valid JSON/);
+    });
+
+    it('rejects non-object receipts', () => {
+        expect(() => parseGuardFailureReceipt('"string"')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('null')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('123')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('[]')).toThrow(/must be a JSON object/);
+    });
+
+    it('rejects bad version', () => {
+        const raw = JSON.stringify({ ...validReceipt, version: 2 });
+        expect(() => parseGuardFailureReceipt(raw)).toThrow(/version must be 1/);
+    });
+
+    it('rejects invalid reason', () => {
+        const raw = JSON.stringify({ ...validReceipt, reason: 'signal' });
+        expect(() => parseGuardFailureReceipt(raw)).toThrow(/reason is invalid/);
+    });
+
+    it('rejects invalid or missing string fields', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, lane: '' }))).toThrow(
+            /lane is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, branch: '' }))).toThrow(
+            /branch is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, failedAt: '' }))).toThrow(
+            /failedAt is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, command: '' }))).toThrow(
+            /command is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, profile: '' }))).toThrow(
+            /profile is invalid/
+        );
+    });
+
+    it('rejects non-40-hex headSha', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, headSha: 'short' }))).toThrow(
+            /headSha must be a 40-character hex commit SHA/
+        );
+        expect(() =>
+            parseGuardFailureReceipt(
+                JSON.stringify({ ...validReceipt, headSha: '0123456789abcdef0123456789abcdef0123456z' })
+            )
+        ).toThrow(/headSha must be a 40-character hex commit SHA/);
+        expect(() =>
+            parseGuardFailureReceipt(
+                JSON.stringify({ ...validReceipt, headSha: '0123456789abcdef0123456789abcdef012345678' })
+            )
+        ).toThrow(/headSha must be a 40-character hex commit SHA/);
+    });
+
+    it('rejects invalid args', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, args: 'not-array' }))).toThrow(
+            /args must be an array of strings/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, args: [123] }))).toThrow(
+            /args must be an array of strings/
+        );
+    });
+
+    it('rejects invalid number fields', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, peakRssBytes: -1 }))).toThrow(
+            /peakRssBytes must be a non-negative number/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, maxRssBytes: '400' }))).toThrow(
+            /maxRssBytes must be a non-negative number/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, durationMs: NaN }))).toThrow(
+            /durationMs must be a non-negative number/
+        );
+    });
+
+    it('returns undefined when receipt file does not exist', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-prcontract-test-'));
+        try {
+            expect(readGuardFailureReceipt(primaryRoot, 'non-existent-lane')).toBeUndefined();
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('throws when receipt file exists but contains invalid JSON or schema violation', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-prcontract-test-'));
+        const dir = join(primaryRoot, GUARD_FAILURES_DIR);
+        mkdirSync(dir, { recursive: true });
+        try {
+            // Invalid JSON
+            writeFileSync(join(dir, 'invalid-json.json'), 'not valid json', 'utf8');
+            expect(() => readGuardFailureReceipt(primaryRoot, 'invalid-json')).toThrow(/not valid JSON/);
+
+            // Schema violation: invalid reason
+            writeFileSync(
+                join(dir, 'schema-violation.json'),
+                JSON.stringify({ ...validReceipt, reason: 'invalid_reason' }),
+                'utf8'
+            );
+            expect(() => readGuardFailureReceipt(primaryRoot, 'schema-violation')).toThrow(/reason is invalid/);
+
+            // Valid receipt parses correctly
+            writeFileSync(join(dir, 'valid.json'), JSON.stringify(validReceipt), 'utf8');
+            expect(readGuardFailureReceipt(primaryRoot, 'valid')).toEqual(validReceipt);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('canonicalPath and containsPath', () => {
+    describe('containsPath', () => {
+        it('identifies exact match as contained', () => {
+            expect(containsPath('/repo/sub', '/repo/sub')).toBe(true);
+        });
+
+        it('identifies parent-child containment', () => {
+            expect(containsPath('/repo', '/repo/sub')).toBe(true);
+            expect(containsPath('/repo', '/repo/sub/deep/nested')).toBe(true);
+        });
+
+        it('rejects sibling and cousin paths', () => {
+            expect(containsPath('/repo/sub1', '/repo/sub2')).toBe(false);
+            expect(containsPath('/repo/sub', '/repo/sub-other')).toBe(false);
+            expect(containsPath('/repo/sub', '/other/repo/sub')).toBe(false);
+            expect(containsPath('/repo/sub/deep', '/repo/sub')).toBe(false);
+        });
+    });
+
+    describe('canonicalPath', () => {
+        it('resolves path through resolveExisting resolver', () => {
+            const resolved = canonicalPath('/some/path', (p) => `${p}/canonical`);
+            expect(resolved).toBe(resolve('/some/path/canonical'));
+        });
+
+        it('falls back to resolved absolute path when resolveExisting throws', () => {
+            const resolved = canonicalPath('relative/path', () => {
+                throw new Error('ENOENT');
+            });
+            expect(resolved).toBe(resolve('relative/path'));
+        });
+
+        it('resolves real symlinks on filesystem', () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-canonical-test-'));
+            try {
+                const targetDir = join(root, 'target');
+                const linkDir = join(root, 'link');
+                mkdirSync(targetDir);
+                symlinkSync(targetDir, linkDir);
+
+                const canonical = canonicalPath(linkDir, realpathSync);
+                expect(canonical).toBe(realpathSync(targetDir));
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
     });
 });

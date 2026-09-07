@@ -11,9 +11,14 @@
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
     /**
-     * False when no native engine has been started. Every number reads zero in
-     * that case too, so this flag is the only thing distinguishing a stopped
-     * engine from one parked at the song start.
+     * False when no native engine has been started, and also false for an
+     * engine that exists but whose output stream has produced no render
+     * callback within the engine's stall window — a handle existing is not
+     * the same as the device rendering it. In the first case every number
+     * reads zero, so this flag is the only thing distinguishing a stopped
+     * engine from one parked at the song start. In the second, the other
+     * fields are the last values the callback published before it stalled,
+     * not what anyone is currently hearing.
      */
     running: boolean;
     playing: boolean;
@@ -41,6 +46,19 @@ export type EngineTransportPosition = {
     tempo: number;
     timeSigNum: number;
     timeSigDenom: number;
+    /**
+     * The engine's held master peak, linear and never negative.
+     *
+     * Alone on this reading in making no claim about *when* it was taken: the
+     * engine publishes it on its own channel, and it rides this reply only
+     * because the renderer already polls this command once a frame. Reading it
+     * beside a position is bridge-wakeup economy, not evidence that the two
+     * came from one callback.
+     *
+     * It measures what the engine handed the device, so a shadowed monitor
+     * reads zero however loud the graph behind it is.
+     */
+    masterPeak: number;
 };
 
 /** The shape a stopped engine reports, and the shape the browser build reports. */
@@ -54,6 +72,7 @@ export const stoppedEngineTransportPosition: EngineTransportPosition = {
     tempo: 0,
     timeSigNum: 0,
     timeSigDenom: 0,
+    masterPeak: 0,
 };
 
 /**

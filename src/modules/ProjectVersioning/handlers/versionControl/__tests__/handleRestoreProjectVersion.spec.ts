@@ -26,24 +26,26 @@ describe('handleRestoreProjectVersion', () => {
     it('notifies the user when the version has no restorable snapshot', async () => {
         vi.mocked(restoreVersion).mockReturnValue(false);
 
-        await handleRestoreProjectVersion.execute({
+        const result = await handleRestoreProjectVersion.execute({
             type: 'restoreProjectVersion',
             payload: { versionId: 'v1' },
         });
 
         expect(restoreVersion).toHaveBeenCalledWith('v1');
-        expect(notifyUser).toHaveBeenCalledWith('This version has no restorable snapshot', 'error');
+        expect(result).toEqual({ status: 'no-write' });
+        expect(notifyUser).toHaveBeenCalledWith('This version cannot be restored in the active project', 'error');
     });
 
     it('does not notify when the restore succeeds', async () => {
         vi.mocked(restoreVersion).mockReturnValue(true);
 
-        await handleRestoreProjectVersion.execute({
+        const result = await handleRestoreProjectVersion.execute({
             type: 'restoreProjectVersion',
             payload: { versionId: 'v1' },
         });
 
         expect(restoreVersion).toHaveBeenCalledWith('v1');
+        expect(result).toEqual({ status: 'written' });
         expect(notifyUser).not.toHaveBeenCalled();
     });
 });

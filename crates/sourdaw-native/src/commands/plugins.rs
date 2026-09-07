@@ -1,5 +1,6 @@
 //! Plugin scanning, loading, and parameter management.
 
+use crate::commands::graph::{self, StripReportPayload};
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
     PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim, ScanRow,
@@ -10,9 +11,9 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
-use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
+use daw_engine::timeline::DeviceKind;
 use daw_plugin_host::scanner::{
     self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
     ScannedPlugin,
@@ -21,7 +22,6 @@ use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRunti
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -58,25 +58,141 @@ pub struct PluginInstance {
     /// announces a new one — over `plugin-tail-changed` rather than in this
     /// value, which is the reading at load and nothing later.
     pub tail_samples: u32,
-    /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
-    /// latency, at the engine rate this instance was activated with. Zero when
-    /// no engine took the instance — nothing crosses a bridge that does not
-    /// exist. The frontend adds it to `latency_ms` when compensating this
-    /// device.
-    ///
-    /// Reported once, at load, and never revised: a device or period change
-    /// mid-session leaves an already-loaded instance compensating the period it
-    /// was loaded under. No revision machinery is being built for it, because
-    /// jcosta33/sourdaw#2230 replaces the relay with the native graph and takes
-    /// this field, and the round trip it reports, with it.
-    pub bridge_round_trip_frames: u32,
     pub engine_plugin_id: Option<usize>,
 }
 
-pub type PluginUnloadResult = (Vec<String>, Vec<String>);
+/// A native `unload_plugin`'s reply.
+///
+/// `reports` is the final chain of every strip an unloaded instance's release
+/// touched, exactly as `apply_graph_commands`'s own `reports` describe a
+/// batch — because an unload changes native strip state with no batch of its
+/// own, and a caller whose mirror of that state only ever updates from a
+/// batch's reports would otherwise go stale the moment an unload releases a
+/// chain entry, landing its next insert at the wrong native index.
+#[derive(Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUnloadReply {
+    pub unloaded_instance_ids: Vec<String>,
+    pub errors: Vec<String>,
+    pub reports: Vec<StripReportPayload>,
+}
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+
+/// A `PLUGIN_RUNTIME_GATE` guard that records its own release.
+///
+/// Every sweep of the retirement vec is contracted to run with the gate free,
+/// and the moment the gate becomes free is a guard's drop. Binding the record
+/// to that drop is what makes the contract observable: a guard widened back to
+/// function scope, or handed out of the frame that took it, then reports the
+/// release it actually performs rather than the one a statement standing beside
+/// the sweep claims for it.
+///
+/// Production holds the bare guard — outside `cfg(test)` this name is the
+/// guard's own type and [`observe_gate_release`] is the identity.
+#[cfg(test)]
+pub(crate) struct ObservedGateGuard<G>(Option<G>);
+
+#[cfg(test)]
+impl<G> Drop for ObservedGateGuard<G> {
+    /// The gate is let go before the release is recorded, so the record never
+    /// runs ahead of the thing it reports.
+    fn drop(&mut self) {
+        self.0.take();
+        note_teardown_event(TeardownEvent::RuntimeGateReleased);
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) type ObservedGateGuard<G> = G;
+
+#[cfg(test)]
+fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
+    ObservedGateGuard(Some(guard))
+}
+
+#[cfg(not(test))]
+fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
+    guard
+}
+
+/// Hold the plugin-runtime gate in read mode for a caller outside this module.
+///
+/// The gate is what serialises every body that touches a live runtime against
+/// every other one, and it stays private here so no caller can take it in a
+/// mode this module did not sanction. A retire drains `engine_plugins` and
+/// reaches into third-party editor code, so it needs exactly the mode a keyed
+/// unload takes: shared with other drains, excluded by the quit cascade's
+/// writer.
+///
+/// The caller must let the guard go before it sweeps the retirement vec. The
+/// gate is fair, so a queued writer would otherwise wait out third-party
+/// teardown of unbounded length.
+pub(crate) async fn hold_plugin_runtime_gate(
+) -> ObservedGateGuard<tokio::sync::RwLockReadGuard<'static, ()>> {
+    observe_gate_release(PLUGIN_RUNTIME_GATE.read().await)
+}
+
+/// Serialises the tests that take `PLUGIN_RUNTIME_GATE` exclusively against
+/// the tests whose batch has to attach a dormant instance, because
+/// [`attach_dormant_plugins`] only `try_read`s the process-global gate and so
+/// answers "nothing attached" rather than waiting while any writer is held.
+#[cfg(test)]
+static EXCLUSIVE_GATE_TEST_SERIAL: Mutex<()> = Mutex::new(());
+
+/// Take that serial lock: the first statement of any test that holds the gate
+/// exclusively, observes it exclusively, or asserts an attach.
+///
+/// Poisoning is ignored, because the lock guards a schedule rather than data —
+/// one panicking test must not turn every other one into a panic of its own.
+#[cfg(test)]
+pub(crate) fn serialize_against_exclusive_gate_holds() -> std::sync::MutexGuard<'static, ()> {
+    EXCLUSIVE_GATE_TEST_SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The exclusive hold a test takes: the gate's own writer, and the serial lock
+/// that keeps an attach out from under it.
+///
+/// Field order is drop order, and it is load bearing here: releasing the
+/// schedule first would let an attach through while the writer it must not
+/// race is still held.
+#[cfg(test)]
+pub(crate) struct ExclusiveGateHold {
+    _gate: tokio::sync::RwLockWriteGuard<'static, ()>,
+    _serial: std::sync::MutexGuard<'static, ()>,
+}
+
+/// Hold the gate in the exclusive mode [`unload_all_plugin_runtimes`] takes,
+/// for a test outside this module.
+///
+/// `cfg(test)` only, and deliberately not a production seam: the gate stays
+/// private precisely so no body elsewhere can choose its own mode. What a test
+/// gets from it is a stand-in for the load or unload a reader must wait for,
+/// which is the only way a test in another module can observe that a caller of
+/// [`hold_plugin_runtime_gate`] really waits.
+#[cfg(test)]
+pub(crate) async fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
+    let serial = serialize_against_exclusive_gate_holds();
+    ExclusiveGateHold {
+        _gate: PLUGIN_RUNTIME_GATE.write().await,
+        _serial: serial,
+    }
+}
+
+/// Answer whether the gate is free for a writer right now, without waiting.
+///
+/// For a test that already holds the serial lock, which is why this one never
+/// takes it: a `std` `Mutex` is not reentrant, so claiming it a second time on
+/// the same thread would deadlock rather than serialise anything.
+#[cfg(test)]
+pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
+) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
+    PLUGIN_RUNTIME_GATE.try_write().ok()
+}
+
 struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
@@ -241,6 +357,16 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 /// An empty descriptor id is never a key: a format with no identity of its own
 /// would otherwise have every plugin collide on `""`.
 ///
+/// The most registry keys [`key_scanned_plugins`] writes for one scanned
+/// plugin: its path hash, and its own descriptor id.
+///
+/// `pub(crate)` because the persisted registry multiplies its row cap by it
+/// (`host::plugin_registry_store`). The producer owns the number, so a key this
+/// function starts writing raises that cap in the same edit rather than
+/// silently overflowing a bound restated elsewhere — which would refuse, at
+/// every launch, a document this build's own scan wrote.
+pub(crate) const SCANNED_PLUGIN_KEY_CAPACITY: usize = 2;
+
 /// The one keying rule, so the in-memory lookup table and the persisted
 /// registry cannot come to disagree about which keys resolve a plugin.
 fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
@@ -251,13 +377,19 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
     plugins
         .iter()
         .map(|plugin| {
-            let mut keys = vec![plugin.id.clone()];
+            let mut keys = Vec::with_capacity(SCANNED_PLUGIN_KEY_CAPACITY);
+            keys.push(plugin.id.clone());
             let takes_descriptor_key = !plugin.descriptor_id.is_empty()
                 && !claimed_primary_keys.contains(plugin.descriptor_id.as_str())
                 && claimed_descriptor_keys.insert(plugin.descriptor_id.clone());
             if takes_descriptor_key {
                 keys.push(plugin.descriptor_id.clone());
             }
+            debug_assert!(
+                keys.len() <= SCANNED_PLUGIN_KEY_CAPACITY,
+                "the registry row cap multiplies by SCANNED_PLUGIN_KEY_CAPACITY, so a plugin \
+                 keyed more times than that writes rows the reader will refuse"
+            );
             ScanRow {
                 keys,
                 plugin: plugin.clone(),
@@ -705,11 +837,19 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 /// make the ordinary state of a machine look like a failed scan. A root under
 /// one — a folder the user added — is still refused by name: the user typed it,
 /// so its absence is theirs to see and fix.
+///
+/// Two requested roots that authorize to the same canonical folder — a Linux
+/// distribution's `/usr/lib64 -> /usr/lib` symlink hands out exactly this —
+/// keep only the first: pushing both would walk that folder's bundles twice
+/// before `retain_first_candidate_per_path` runs, and a large-enough folder
+/// walked twice exhausts `MAX_SCAN_CANDIDATES` on its own duplicate and drops
+/// every root behind it.
 fn authorize_scan_roots(
     policy: &PluginScanPolicy,
     requested: Vec<PathBuf>,
 ) -> (Vec<PathBuf>, Vec<String>) {
     let mut authorized = Vec::new();
+    let mut already_authorized = HashSet::new();
     let mut errors = Vec::new();
 
     for path in requested {
@@ -724,6 +864,9 @@ fn authorize_scan_roots(
             if !policy.is_platform_default_root(&canonical) {
                 errors.push(format!("Not a directory: {}", path.display()));
             }
+            continue;
+        }
+        if !already_authorized.insert(canonical.clone()) {
             continue;
         }
         authorized.push(canonical);
@@ -1053,9 +1196,9 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
 
 /// The rate the output device runs at by default.
 ///
-/// Not the activation rate, and no longer used as one: the audio a bridged
-/// plugin actually processes is rendered by the renderer's engine and relayed
-/// here, so the plugin has to run on *that* clock whatever the device prefers.
+/// Not the activation rate, and no longer used as one: a hosted plugin
+/// processes the audio the engine renders, on the engine's own clock, whatever
+/// the device prefers.
 /// This is kept only as the reference [`engine_rate_divergence_note`] compares
 /// against, so the two never diverge silently. Falling back to 48 kHz when no
 /// device answers keeps the comparison from failing on a machine with no output
@@ -1104,25 +1247,10 @@ fn engine_rate_divergence_note(engine_sample_rate: f64, device_sample_rate: f64)
     ))
 }
 
-/// Frames of bridge round trip to report for a load, given the engine that took
-/// it.
-///
-/// Only the render callback knows the device period the bridge's depth settles
-/// from, so the number comes from there. A load with no engine behind it
-/// reports none: the instance is in no graph, so no audio crosses the bridge.
-///
-/// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay with
-/// the native graph, and this goes with it.
-fn bridge_round_trip_frames(engine: Option<&daw_engine::EngineHandle>) -> u32 {
-    engine.map_or(0, |engine| {
-        u32::try_from(engine.bridge_round_trip_frames()).unwrap_or(u32::MAX)
-    })
-}
-
 /// Construct and activate one plugin. The only format-specific step in a load.
 ///
 /// Everything after it — the latency query, the notifier, the engine
-/// registration, the bridge, the instance record — is written against
+/// registration, the instance record — is written against
 /// `HostedRuntime` and does not know which format it is holding.
 fn create_hosted_runtime(
     backend: HostBackend,
@@ -1188,7 +1316,57 @@ pub async fn load_plugin(
 /// `scan_descriptor`/`scan_instance` let a scan test inject a scan outcome.
 /// Production reaches this only through [`load_plugin`], which always supplies
 /// [`create_hosted_runtime`].
+///
+/// Holds no lock of its own: the runtime and lifecycle guards live inside
+/// [`load_plugin_under_runtime_gate`] and are gone by the time this resumes,
+/// so the sweep below runs with `PLUGIN_RUNTIME_GATE` free.
 async fn load_plugin_with_backend(
+    plugin_id: PluginId,
+    instance_id: PluginInstanceId,
+    engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
+) -> Result<PluginInstance, String> {
+    let instance = load_plugin_under_runtime_gate(
+        plugin_id,
+        instance_id,
+        engine_sample_rate,
+        windows_host,
+        state,
+        create_runtime,
+    )
+    .await?;
+
+    if instance.engine_plugin_id.is_some() {
+        // A load is the moment the process is about to want the memory a
+        // previous unload could not free yet. Sweep once the new instance is
+        // safely in the scheduler, the engine lock is released, and —
+        // crucially — `PLUGIN_RUNTIME_GATE` itself is free: the gate is fair,
+        // so running a retired plugin's teardown under it would park a
+        // queued `unload_all_plugin_runtimes` writer, and every later
+        // `try_read` attach, for as long as that third-party teardown takes.
+        state.sweep_retired_engine_plugins();
+    }
+
+    Ok(instance)
+}
+
+/// The guarded body of [`load_plugin_with_backend`]: returns the loaded
+/// [`PluginInstance`] without sweeping anything.
+///
+/// The rate check and the registry resolution run first, holding nothing —
+/// resolution can wait on a bounded child-process rescan, and the gate is fair.
+/// `PLUGIN_RUNTIME_GATE` and the instance's lifecycle lease are taken directly
+/// after that resolution. The lifecycle lease is held to the end of this body
+/// on every exit. The runtime gate is held to the end of this body only on
+/// exits that do not pass through [`refuse_load`]: that helper takes the gate
+/// by value and releases it before the runtime's own teardown, so a refusal
+/// exit added after `create_runtime` must return through `refuse_load` rather
+/// than the bare reason, or it would tear the runtime down still holding the
+/// gate. Never call this directly outside that wrapper: the sweep the wrapper
+/// runs afterward depends on this frame, and both guards it took, being gone.
+async fn load_plugin_under_runtime_gate(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
     engine_sample_rate: f64,
@@ -1210,14 +1388,14 @@ async fn load_plugin_with_backend(
     // which the quit path runs) blocks behind the rescan and every later reader
     // blocks behind the writer.
     let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
-    let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
+    let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
 
     // The session limit on engine-owned hosted instances comes before any
     // engine dependency and before the plugin library is even constructed:
-    // the effect table's hosted-plugin reserve and the bridge table — one
-    // bridge per instance — are sized to exactly this number, so a load past
+    // the effect table's hosted-plugin reserve is sized to exactly this
+    // number, so a load past
     // it must refuse here, where the error reaches the user rather than dying
     // as a counter on the callback. Checked against the instance map, which
     // counts the session's hosted instances whether or not a stream is
@@ -1320,12 +1498,8 @@ async fn load_plugin_with_backend(
         );
     }
 
-    // Send the plugin to the native audio thread for real-time processing
-    // and create an audio bridge for worklet ↔ Rust data transfer.
+    // Send the plugin to the native audio thread for real-time processing.
     //
-    // The bridge's round trip is read under this same lock, from the engine
-    // that is taking the instance: it is what the caller has to compensate on
-    // top of the plugin's own latency, and only the render callback knows it.
     // The engine lock is held for the registration and for nothing else. Both
     // of the other outcomes carry the runtime out of the block untouched,
     // because dropping one destroys the plugin: CLAP and VST3 both run
@@ -1354,6 +1528,7 @@ async fn load_plugin_with_backend(
                 &name,
                 &params,
                 has_gui,
+                entry.chain_kind,
             ) {
                 Ok(registration) => EngineHandover::Registered(registration),
                 Err(refusal) => EngineHandover::Refused(refusal),
@@ -1362,13 +1537,10 @@ async fn load_plugin_with_backend(
         }
     };
 
-    let (engine_plugin_id, bridge_frames) = match outcome {
+    let engine_plugin_id = match outcome {
         EngineHandover::Registered(registration) => {
             install_host_request_wake(&instance_id.0, &registration.runtime);
-            (
-                Some(registration.engine_plugin_id),
-                registration.bridge_round_trip_frames,
-            )
+            Some(registration.engine_plugin_id)
         }
         EngineHandover::Refused(refusal) => {
             // The engine lock left scope with the block above; `refuse_load`
@@ -1405,20 +1577,12 @@ async fn load_plugin_with_backend(
                     name: name.clone(),
                     parameters: params.clone(),
                     has_gui,
+                    chain_kind: entry.chain_kind,
                 },
             );
-            (None, bridge_round_trip_frames(None))
+            None
         }
     };
-
-    if engine_plugin_id.is_some() {
-        // A load is the moment the process is about to want the memory a
-        // previous unload could not free yet. Sweep once the new
-        // instance is safely in the scheduler and the engine lock is
-        // released — the plugin teardown a sweep may run belongs on this
-        // thread, but not inside another subsystem's critical section.
-        state.sweep_retired_engine_plugins();
-    }
 
     let instance = PluginInstance {
         instance_id: instance_id.clone(),
@@ -1429,7 +1593,6 @@ async fn load_plugin_with_backend(
         latency_samples,
         latency_ms,
         tail_samples,
-        bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
 
@@ -1458,8 +1621,8 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
 /// Nothing native enumerates hosted instances — the map is unbounded, keyed by
 /// instance id — so the ceiling is stated by the engine
 /// (`HOSTED_PLUGIN_RESERVE`) and enforced here, control-side, where the
-/// refusal reaches the user. The effect table's hosted-plugin reserve and the
-/// bridge table (one bridge per instance) are sized to exactly this number, so
+/// refusal reaches the user. The effect table's hosted-plugin reserve is sized
+/// to exactly this number, so
 /// a load past it must never reach the audio thread: its refusal is a counter
 /// the loader cannot read, and the plugin it refused would sit in the rack
 /// passing dry audio forever.
@@ -1490,9 +1653,8 @@ fn ensure_hosted_plugin_session_headroom(
 /// count this critical section sees, it also inserts against, so nothing
 /// slips past `HOSTED_PLUGIN_RESERVE` between its early check and its
 /// insert. A refusal here is clean: `load_plugin` reaches this section
-/// having reserved only a monotonic plugin id (never reused, safe to burn)
-/// and built bridge rings that drop with the return — no engine command has
-/// been pushed and no record exists.
+/// having reserved only a monotonic plugin id (never reused, safe to burn) —
+/// no engine command has been pushed and no record exists.
 ///
 /// Standing alone, engine-free, on purpose: reaching `load_plugin`'s engine
 /// section needs an activated plugin and a live engine handle, so this seam
@@ -1550,19 +1712,17 @@ fn activation_refusal_reason(name: &str) -> String {
 /// teardown is still running `deinit_entry` and `dlclose` on.
 ///
 /// Takes the guard by value so that the release is this function's own
-/// statement rather than a scope ending somewhere below. Every guard in
-/// [`load_plugin_with_backend`] is function-scope, so reverse declaration order
-/// is what each exit between the runtime's construction and its handover would
-/// otherwise fall back on — which is the teardown-under-the-gate this exists to
-/// prevent.
+/// statement rather than a scope ending somewhere below. The runtime gate and
+/// the lifecycle lease are function-scope in [`load_plugin_under_runtime_gate`],
+/// so reverse declaration order is what each exit between the runtime's
+/// construction and its handover would otherwise fall back on — which is the
+/// teardown-under-the-gate this exists to prevent.
 fn refuse_load(
     runtime: HostedRuntime,
     reason: String,
-    gate: tokio::sync::RwLockReadGuard<'_, ()>,
+    gate: ObservedGateGuard<tokio::sync::RwLockReadGuard<'_, ()>>,
 ) -> String {
     drop(gate);
-    #[cfg(test)]
-    note_load_teardown_event(LoadTeardownEvent::RuntimeGateReleased);
     drop(runtime);
     reason
 }
@@ -1570,7 +1730,7 @@ fn refuse_load(
 /// What a refused load did, in the order it did it.
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LoadTeardownEvent {
+enum TeardownEvent {
     RuntimeGateReleased,
     RuntimeTornDown,
 }
@@ -1585,25 +1745,36 @@ thread_local! {
     /// instead — and between the release in [`refuse_load`] and the runtime's
     /// drop there is no await, so the two events are adjacent on whichever
     /// thread ran the refusal.
-    static LOAD_TEARDOWN_EVENTS: std::cell::RefCell<Vec<LoadTeardownEvent>> =
+    ///
+    /// The three ordering tests named for sweeping retired runtimes only after
+    /// releasing the runtime gate record the release from the guard's own drop
+    /// inside the loading body, then the teardown from the sweep in the
+    /// wrapper, with an `.await?` between the two. That gap still answers here
+    /// because [`crate::block_on_test`] drives each test on a current-thread
+    /// runtime, so the task carrying both events never migrates to another
+    /// thread across the await.
+    ///
+    /// Every release entry is written by [`ObservedGateGuard`]'s own drop, so
+    /// the sequence carries where each guard actually ended rather than where a
+    /// statement claimed it had.
+    static TEARDOWN_EVENTS: std::cell::RefCell<Vec<TeardownEvent>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
-fn note_load_teardown_event(event: LoadTeardownEvent) {
-    LOAD_TEARDOWN_EVENTS.with(|events| events.borrow_mut().push(event));
+fn note_teardown_event(event: TeardownEvent) {
+    TEARDOWN_EVENTS.with(|events| events.borrow_mut().push(event));
 }
 
 /// Take this thread's sequence, leaving it empty for the next observation.
 #[cfg(test)]
-fn take_load_teardown_events() -> Vec<LoadTeardownEvent> {
-    LOAD_TEARDOWN_EVENTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
+fn take_teardown_events() -> Vec<TeardownEvent> {
+    TEARDOWN_EVENTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
 }
 
 /// What the engine took, for the caller to report.
 struct EngineRegistration {
     engine_plugin_id: usize,
-    bridge_round_trip_frames: u32,
     /// The owner the audio thread now reads through, handed back so the caller
     /// can install the host-request wake once the engine lock is gone — see
     /// [`install_host_request_wake`].
@@ -1616,7 +1787,7 @@ struct EngineRegistration {
 /// Every variant that still owns a runtime exists so that owning it is the
 /// caller's problem outside the lock: dropping a runtime destroys the plugin,
 /// and parking one takes a second lock. Neither belongs inside the engine's
-/// critical section — see the block in [`load_plugin_with_backend`].
+/// critical section — see the block in [`load_plugin_under_runtime_gate`].
 enum EngineHandover {
     Registered(EngineRegistration),
     Refused(RegistrationRefusal),
@@ -1628,7 +1799,7 @@ struct RegistrationRefusal {
     reason: String,
     /// The runtime, handed back so the caller can park the instance again and
     /// retry on the next batch ([`attach_dormant_plugins`]) or drop it clear of
-    /// the engine lock ([`load_plugin_with_backend`]).
+    /// the engine lock ([`load_plugin_under_runtime_gate`]).
     ///
     /// `None` only when the runtime could not be got back at all: see
     /// [`RegistrationRefusal::recovered`].
@@ -1650,7 +1821,7 @@ impl RegistrationRefusal {
     ///
     /// The engine holds nothing on either of these paths: the record insert
     /// refuses before any command is pushed and drops the record it was handed,
-    /// and a refused `add_plugin_with_bridge` drops the slot with the command it
+    /// and a refused `add_hosted_plugin` drops the slot with the command it
     /// could not push. So the owner is sole-held by the time this runs, and the
     /// instance is recoverable rather than spent — the alternative is a device
     /// the renderer still shows whose native instance is gone.
@@ -1673,14 +1844,14 @@ impl RegistrationRefusal {
     }
 }
 
-/// Hand one runtime to a running engine: reserve its id, build its bridge,
-/// record the instance, and register the slot.
+/// Hand one runtime to a running engine: reserve its id, record the instance,
+/// and register the slot.
 ///
 /// The one copy of that sequence. A load reaches it with a runtime it has just
-/// built ([`load_plugin_with_backend`]); the engine's first graph batch reaches
-/// it with a runtime that has been sitting dormant since a load found no engine
-/// ([`attach_dormant_plugins`]). Two copies would let the two paths drift, and
-/// the dormant one is exactly the path nobody exercises by hand.
+/// built ([`load_plugin_under_runtime_gate`]); the engine's first graph batch
+/// reaches it with a runtime that has been sitting dormant since a load found
+/// no engine ([`attach_dormant_plugins`]). Two copies would let the two paths
+/// drift, and the dormant one is exactly the path nobody exercises by hand.
 ///
 /// Takes the runtime by value because registering it moves it into the shared
 /// owner the audio thread reads through. Every refusal hands it back — before
@@ -1700,6 +1871,7 @@ fn register_runtime_with_engine(
     name: &str,
     parameters: &[PluginParameter],
     has_gui: bool,
+    chain_kind: DeviceKind,
 ) -> Result<EngineRegistration, RegistrationRefusal> {
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
@@ -1724,19 +1896,24 @@ fn register_runtime_with_engine(
     }
 
     let id = engine.reserve_plugin_id();
-    let (bridge, bridge_handle) = create_audio_bridge(id);
 
     // Take the parameter-event queue before the runtime is handed to the audio
     // thread. Held on the record so the drain reaches it without the control
     // seam — see `EnginePluginInstanceData`.
     let parameter_events = AudioPlugin::parameter_event_queue(&runtime);
 
+    // Read while the runtime is still exclusively ours. Both formats define the
+    // figure only for an activated plugin, and the guard above proved that; once
+    // the runtime is shared, reaching it again waits on the control gate an open
+    // editor can hold.
+    let latency_frames = <HostedRuntime as HostedPluginRuntime>::latency_samples(&runtime) as usize;
+
     let shared_plugin = Arc::new(SharedHostedPlugin::new(runtime));
 
     // The record insert re-decides the session ceiling inside its own critical
     // section — see `insert_engine_plugin_record`. A refusal there leaves
-    // nothing behind: the id above is a burned monotonic counter, the rings
-    // drop with the return, and no engine command has been pushed yet. The
+    // nothing behind: the id above is a burned monotonic counter, and no engine
+    // command has been pushed yet. The
     // record it could not insert is dropped inside, which is what leaves the
     // owner sole-held for the recovery below.
     if let Err(reason) = insert_engine_plugin_record(
@@ -1748,8 +1925,7 @@ fn register_runtime_with_engine(
             name: name.to_string(),
             parameters: parameters.to_vec(),
             has_gui,
-            bridge: Some(bridge_handle),
-            relay_scratch: crate::state::PluginRelayScratch::default(),
+            chain_kind,
             parameter_events,
         },
     ) {
@@ -1760,10 +1936,9 @@ fn register_runtime_with_engine(
     // the slot it was handed, and with it the last reference, so an owner given
     // away here would take the runtime down with a refusal the caller was about
     // to recover from.
-    if let Err(error) = engine.add_plugin_with_bridge(
+    if let Err(error) = engine.add_hosted_plugin(
         id,
         Box::new(HostedPluginSlot::new(Arc::clone(&shared_plugin))),
-        bridge,
     ) {
         // The engine refused the registration (a full effect table, or the
         // ring): unwind the record under a fresh acquisition, same order as
@@ -1784,9 +1959,18 @@ fn register_runtime_with_engine(
         return Err(RegistrationRefusal::recovered(error, shared_plugin));
     }
 
+    // Past the registration, on the same control-thread visit that read the
+    // figure, and never before it: the command names an effect id, and the
+    // graph refuses one its table does not hold yet. A push that fails leaves
+    // the instance registered and sounding — uncompensated until the next
+    // latency change, which is a worse mix rather than a broken one, so it is
+    // reported and not unwound.
+    if let Err(error) = engine.set_effect_latency(id, latency_frames) {
+        eprintln!("[Plugin] failed to publish latency for instance {instance_id}: {error}");
+    }
+
     Ok(EngineRegistration {
         engine_plugin_id: id,
-        bridge_round_trip_frames: bridge_round_trip_frames(Some(engine)),
         runtime: shared_plugin,
     })
 }
@@ -1842,7 +2026,6 @@ fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
 pub struct AttachedPlugin {
     pub instance_id: String,
     pub engine_plugin_id: usize,
-    pub bridge_round_trip_frames: u32,
 }
 
 /// Register the instances that were loaded while no engine was running, up to
@@ -1850,10 +2033,9 @@ pub struct AttachedPlugin {
 ///
 /// The engine starts lazily, on the first graph batch, so a plugin loaded
 /// before the first Play is parked in `state.plugins` with no engine plugin id.
-/// Nothing used to move it out again: it stayed dormant for the rest of the
-/// session, and the relay answered every block for it with "No engine plugin
-/// for instance". This is what moves it, called by `apply_graph_commands` right
-/// after the crumbs slot it mirrors.
+/// Nothing used to move it out again: it stayed dormant, rendering nothing, for
+/// the rest of the session. This is what moves it, called by
+/// `apply_graph_commands` right after the crumbs slot it mirrors.
 ///
 /// Each attach pushes one command onto the ring the caller's batch just filled,
 /// so the caller reserves that many slots before sending it and passes the same
@@ -1956,6 +2138,7 @@ fn attach_one_dormant_plugin(
         name,
         parameters,
         has_gui,
+        chain_kind,
     } = dormant;
 
     let registration = {
@@ -1972,6 +2155,7 @@ fn attach_one_dormant_plugin(
                 &name,
                 &parameters,
                 has_gui,
+                chain_kind,
             ),
             None => Err(RegistrationRefusal::parked(
                 "no native engine is running".to_string(),
@@ -1986,7 +2170,6 @@ fn attach_one_dormant_plugin(
             Ok(Some(AttachedPlugin {
                 instance_id: instance_id.to_string(),
                 engine_plugin_id: registration.engine_plugin_id,
-                bridge_round_trip_frames: registration.bridge_round_trip_frames,
             }))
         }
         Err(refusal) => {
@@ -2007,6 +2190,7 @@ fn attach_one_dormant_plugin(
                             name,
                             parameters,
                             has_gui,
+                            chain_kind,
                         },
                     );
             }
@@ -2015,7 +2199,7 @@ fn attach_one_dormant_plugin(
     }
 }
 
-fn remove_plugin_window(
+pub(crate) fn remove_plugin_window(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
@@ -2033,65 +2217,187 @@ pub async fn unload_plugin(
     instance_id: Option<PluginInstanceId>,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
+) -> Result<PluginUnloadReply, String> {
     match instance_id {
         Some(instance_id) => {
-            let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
-            let mut response = PluginUnloadResult::default();
-            match unload_plugin_runtime(&instance_id.0, Some(windows_host), state).await {
-                Ok(()) => response.0.push(instance_id.0),
-                Err(error) => response.1.push(error),
+            let mut reply = PluginUnloadReply::default();
+            {
+                let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
+                match unload_plugin_runtime(&instance_id.0, Some(windows_host), state).await {
+                    Ok(reports) => {
+                        reply.unloaded_instance_ids.push(instance_id.0);
+                        reply.reports = reports;
+                    }
+                    Err(error) => reply.errors.push(error),
+                }
             }
-            Ok(response)
+            // The read guard above ends with the block, not with this
+            // function: `unload_plugin_runtime` no longer sweeps, so this is
+            // the moment a retired runtime's teardown is safe to run. Run it
+            // here rather than under the guard — `PLUGIN_RUNTIME_GATE` is
+            // fair, so a queued `unload_all_plugin_runtimes` writer would
+            // otherwise wait out third-party teardown of unbounded length.
+            state.sweep_retired_engine_plugins();
+            Ok(reply)
         }
         None => unload_all_plugin_runtimes(Some(windows_host), state).await,
     }
 }
 
+/// Fold per-instance strip reports from a cascade into one entry per strip,
+/// keeping the last.
+///
+/// Each report is built from the registry as it stood right after its own
+/// instance's release committed, so a strip two cascade instances shared
+/// carries an earlier, incomplete chain in its first report and the final
+/// one in its last — keeping the last is keeping the true final chain,
+/// without a second pass over the registry once the cascade is done.
+fn dedupe_strip_reports_keeping_last(reports: Vec<StripReportPayload>) -> Vec<StripReportPayload> {
+    let mut deduped: Vec<StripReportPayload> = Vec::new();
+    for report in reports {
+        match deduped.iter_mut().find(|entry| entry.id == report.id) {
+            Some(entry) => *entry = report,
+            None => deduped.push(report),
+        }
+    }
+    deduped
+}
+
 async fn unload_all_plugin_runtimes(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
-    let _runtime_guard = PLUGIN_RUNTIME_GATE.write().await;
-    let instance_ids = {
-        let plugins = state
-            .plugins
-            .lock()
-            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
-        plugins
-            .keys()
-            .chain(engine_plugins.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>()
-    };
-    let mut result = PluginUnloadResult::default();
-    for instance_id in instance_ids {
-        match unload_plugin_runtime(&instance_id, windows_host, state).await {
-            Ok(()) => result.0.push(instance_id),
-            Err(error) => result.1.push(error),
+) -> Result<PluginUnloadReply, String> {
+    let mut reply = PluginUnloadReply::default();
+    let mut reports = Vec::new();
+    {
+        let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.write().await);
+        let instance_ids = {
+            let plugins = state
+                .plugins
+                .lock()
+                .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+            plugins
+                .keys()
+                .chain(engine_plugins.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>()
+        };
+        for instance_id in instance_ids {
+            match unload_plugin_runtime(&instance_id, windows_host, state).await {
+                Ok(strip_reports) => {
+                    reply.unloaded_instance_ids.push(instance_id);
+                    reports.extend(strip_reports);
+                }
+                Err(error) => reply.errors.push(error),
+            }
         }
     }
-    Ok(result)
+    // One sweep for the whole cascade, after the write guard above is gone:
+    // the gate has to be free either way, and a sweep per instance inside the
+    // loop would only repeat the same wait under it once per instance.
+    state.sweep_retired_engine_plugins();
+    reply.reports = dedupe_strip_reports_keeping_last(reports);
+    Ok(reply)
 }
 
-/// The thread this unload's editor teardown must run on.
+/// The thread an instance's editor teardown must run on.
 ///
-/// An unload can run with no window host at all — a shell may lose its windows
+/// A teardown can run with no window host at all — a shell may lose its windows
 /// before its last instance — and [`NoWindowHost`] says so: the editor calls then
 /// run on this thread, which is the only one left to run them on.
-fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+pub(crate) fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
     windows_host.unwrap_or(&NoWindowHost)
 }
 
+/// Take the instance's chain entries out of the live graph, then retire it.
+///
+/// Order is the whole point. A chain entry naming a retired effect is not
+/// counted anywhere — `resolve_effect` returns `None` on a failed
+/// effect-table lookup, and both `TrackDeviceChain::run_device` and
+/// `run_generator` return without processing it, a hosted instance being
+/// spliced as a generator — so it is a silent passthrough for as long as it
+/// stands, and on a rolling engine no topology replacement ever arrives to
+/// clear it. Retiring first would therefore open that hole for the rest of the
+/// session; releasing first closes it before the hole can exist.
+///
+/// Both guards are held across the pair so the release ops and the retirement
+/// reach the ring from one producer with nothing interleaved. They are taken
+/// registry-then-engine, the order `apply_graph_commands` takes them in, which
+/// is what keeps a concurrent batch from deadlocking against this one.
+///
+/// The removal is computed on a working clone and committed only once the ring
+/// has taken the batch, the law `map_batch` follows: a batch the ring refused
+/// is not a fence, and a registry that had already forgotten a chain entry the
+/// engine still holds could never name it again — the caller's later
+/// `remove-device` would find no device and do nothing.
+///
+/// Answers with the strip reports for every strip the release actually
+/// touched, built from the committed clone after the ring has taken the
+/// batch — never from the working clone before it, which could describe a
+/// release the engine went on to refuse. A refused release, or one with
+/// nothing to release, reports no strip.
+fn release_then_retire_engine_plugin(
+    engine_plugin_id: usize,
+    state: &AppState,
+) -> Result<Vec<StripReportPayload>, String> {
+    let mut registry = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {}", error))?;
+    let mut engine_guard = state
+        .engine
+        .lock()
+        .map_err(|error| format!("Failed to lock engine: {}", error))?;
+    let Some(engine) = engine_guard.as_mut() else {
+        return Err("Native engine not running".to_string());
+    };
+
+    let mut working = registry.clone();
+    let release = working.release_engine_plugin(engine_plugin_id);
+    let mut reports = Vec::new();
+    if !release.ops.is_empty() {
+        // The reserved slot is the `RemovePlugin` push below: the
+        // retirement must not find the ring full behind the release.
+        match engine.send_graph_batch_with_headroom(release.ops, 1) {
+            Ok(()) => {
+                working.record_fenced_batch();
+                reports = graph::strip_reports(&working, &release.touched_strip_ids);
+                *registry = working;
+            }
+            Err(error) => {
+                // Logged and carried on, with the clone discarded. The
+                // retirement still goes: refusing here would abandon an unload
+                // the caller has already begun, and the entry the registry
+                // keeps is what lets a later batch unlink it. No report is
+                // owed for a release the registry never committed.
+                eprintln!(
+                    "[Plugin] chain release before unload was refused: {:?}",
+                    error
+                );
+            }
+        }
+    }
+
+    engine.remove_plugin(engine_plugin_id)?;
+    Ok(reports)
+}
+
+/// Tear one instance's runtime out of the engine and the plugin maps.
+///
+/// Never sweeps the retirement vec: this always runs with the caller's
+/// `PLUGIN_RUNTIME_GATE` guard held — `unload_plugin`'s read guard for a
+/// keyed unload, `unload_all_plugin_runtimes`'s write guard for the quit
+/// cascade — so a sweep in here would tear a retired plugin's runtime down
+/// under that same fair gate. The caller sweeps once its own guard is gone.
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<Vec<StripReportPayload>, String> {
     let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
     let command_plugin = {
         let mut plugins = state
@@ -2111,7 +2417,9 @@ async fn unload_plugin_runtime(
             |plugin| plugin.close_gui(),
         );
         remove_plugin_window(instance_id, windows_host, state);
-        return Ok(());
+        // A command-owned instance names no chain entry: it never bound to
+        // a strip, so there is no strip to report.
+        return Ok(Vec::new());
     }
 
     let engine_plugin = {
@@ -2127,23 +2435,14 @@ async fn unload_plugin_runtime(
     };
 
     if let Some((engine_plugin_id, runtime)) = engine_plugin {
-        let scheduler_removal_result = {
-            let engine_guard = state
-                .engine
-                .lock()
-                .map_err(|e| format!("Failed to lock engine: {}", e));
-            match engine_guard {
-                Ok(mut engine_guard) => match engine_guard.as_mut() {
-                    Some(engine) => engine.remove_plugin(engine_plugin_id),
-                    None => Err("Native engine not running".to_string()),
-                },
-                Err(error) => Err(error),
+        let scheduler_removal_result = release_then_retire_engine_plugin(engine_plugin_id, state);
+        let reports = match scheduler_removal_result {
+            Ok(reports) => reports,
+            Err(error) => {
+                runtime.cancel_unload();
+                return Err(error);
             }
         };
-        if let Err(error) = scheduler_removal_result {
-            runtime.cancel_unload();
-            return Err(error);
-        }
 
         state.retain_retired_engine_plugin(Arc::clone(&runtime));
 
@@ -2178,24 +2477,20 @@ async fn unload_plugin_runtime(
         }
         runtime.retire();
 
-        // The instance record owned this instance's bridge handle, so removing
-        // it above already dropped the ring. Nothing keyed by engine_plugin_id
-        // is left to clean up.
-        //
-        // Reclaim what earlier unloads had to keep. This runtime is not a
-        // candidate yet — `runtime` is still a live reference here and the
-        // scheduler removal was only queued — so the sweep frees the previous
-        // generation, not this one.
+        // This runtime is not a sweep candidate yet even once the caller's
+        // guard is gone: `runtime` is still a live reference here and the
+        // scheduler removal was only queued, so the caller's sweep frees the
+        // previous generation, not this one.
         drop(runtime);
-        state.sweep_retired_engine_plugins();
-        return Ok(());
+        return Ok(reports);
     }
 
     // A keyed unload is a convergence operation: the requested runtime being
     // absent already satisfies its postcondition. This also makes a retry safe
     // when the process stopped after native teardown but before its durable
-    // command-batch checkpoint advanced.
-    Ok(())
+    // command-batch checkpoint advanced. No runtime means no chain entry to
+    // have released, so there is no strip to report either.
+    Ok(Vec::new())
 }
 
 // ── Parameter commands ──────────────────────────────────────────────────
@@ -2238,9 +2533,8 @@ pub async fn set_plugin_parameter(
 
     // Resolve the runtime under the map lock and release it before the write.
     // `enqueue_parameter` blocks unbounded on the instance's non-RT control
-    // lock, and the worklet relay (`process_plugin_audio`) takes this same map
-    // lock once per render quantum — holding it across the write parks the
-    // relay, and the audio it carries, for as long as control is held.
+    // lock, so holding the map lock across the write parks every other reader of
+    // this map for as long as control is held.
     let runtime = {
         let engine_plugins = state
             .engine_plugins
@@ -2394,9 +2688,8 @@ fn write_plugin_state_chunk(
 
     // Resolve the runtime under the map lock and release it before the restore.
     // `set_state_invalidating_pending_parameters` waits up to 2 s for control
-    // access and then runs the plugin's own `set_state`; the worklet relay
-    // (`process_plugin_audio`) takes this same map lock once per render quantum,
-    // so holding it across that work parks the relay for seconds.
+    // access and then runs the plugin's own `set_state`, so holding the map lock
+    // across that work parks every other reader of this map for seconds.
     let runtime = {
         let engine_plugins = state
             .engine_plugins
@@ -2494,6 +2787,7 @@ pub async fn send_plugin_midi(
             clip_id_hash: 0,
             event_id_hash: 0,
             absolute_occurrence_index: 0,
+            frame_offset: 0,
         },
     )
 }
@@ -2517,9 +2811,8 @@ fn engine_plugin_id_for_instance(instance_id: &str, state: &AppState) -> Result<
 
 /// Bypass or un-bypass a natively hosted plugin on the audio thread.
 ///
-/// Keyed by `instance_id` for the same reason as `process_plugin_audio`: the
-/// engine plugin id is reserved inside the audio engine and the frontend has no
-/// reliable way to learn it.
+/// Keyed by `instance_id`: the engine plugin id is reserved inside the audio
+/// engine and the frontend has no reliable way to learn it.
 ///
 /// Bypass is not unloading. The instance, its parameters and its editor stay
 /// exactly as they were — the professional convention — and only its processing
@@ -2538,126 +2831,6 @@ pub async fn set_plugin_bypass(
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
     engine.set_bypass(engine_plugin_id, bypassed)
-}
-
-/// Process an audio block through a native plugin via the ring-buffer bridge.
-/// Called from the main thread (relayed from the AudioWorklet via MessagePort).
-///
-/// Takes interleaved stereo audio as raw bytes (IEEE 754 little-endian f32,
-/// L0,R0,L1,R1,...). Returns processed audio as raw bytes in the same format.
-/// Uses the lock-free ring buffer — no mutex on the audio thread.
-///
-/// Keyed by `instance_id`, not by the engine plugin id. The engine id is
-/// reserved inside the audio engine and is meaningless to the frontend: the
-/// frontend has no reliable way to learn it, and a placeholder value resolves
-/// no bridge at all, which degrades to an unprocessed dry signal rather than to
-/// a visible error. The instance id is the identifier both sides already agree
-/// on, so the engine id is resolved here, where it is actually known.
-///
-/// Runs once per render quantum per bridged plugin — ~2.7 ms apart at 48 kHz —
-/// so it takes exactly one lock and performs exactly one lookup: the instance
-/// record owns its ring and its de-interleave scratch, and both come back
-/// together. Two sequential mutex takes on this path were two chances per block
-/// to wait behind an unrelated control command.
-///
-/// The de-interleave scratch is preallocated on the instance, so this path
-/// performs no heap allocation except the IPC return value: the processed block
-/// is handed to the IPC layer by value, so its buffer cannot be pooled here.
-/// `push_input` still stack-constructs a zeroed `AudioBlock` per call before
-/// copying into it — that is a stack cost inside the bridge, not an allocation
-/// this command can pool away.
-pub async fn process_plugin_audio(
-    instance_id: String,
-    mut audio_bytes: Vec<u8>,
-    state: &AppState,
-) -> Result<Vec<u8>, String> {
-    let mut engine_plugins = state
-        .engine_plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    let instance = engine_plugins
-        .get_mut(&instance_id)
-        .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))?;
-    let engine_plugin_id = instance.engine_plugin_id;
-    let relay_scratch = &mut instance.relay_scratch;
-    let bridge = instance
-        .bridge
-        .as_mut()
-        .ok_or_else(|| format!("No audio bridge for plugin {}", engine_plugin_id))?;
-
-    // Interleaved stereo f32: two samples, four bytes each, per frame.
-    const BYTES_PER_FRAME: usize = 2 * std::mem::size_of::<f32>();
-    let frames = audio_bytes.len() / BYTES_PER_FRAME;
-
-    // Push input to the audio thread. A refusal means the input ring was full,
-    // so this block never reaches the plugin and its output is a hole in the
-    // processed stream. It cannot fail the command: the caller is the worklet relay,
-    // an error there costs the output block that IS ready below, and the very
-    // condition being reported is the engine already running behind. So it is
-    // counted where `engine_rt_diagnostics` can see it, alongside the engine's
-    // own output-side and backlog counters.
-    //
-    // A block past the bridge's capacity is refused by `push_input` itself, so
-    // it is refused here without de-interleaving it — the scratch stays sized
-    // to what the bridge accepts and never has to grow.
-    let block_accepted = if frames > MAX_BLOCK_FRAMES {
-        false
-    } else {
-        relay_scratch.left.clear();
-        relay_scratch.right.clear();
-        for frame in audio_bytes.chunks_exact(BYTES_PER_FRAME) {
-            relay_scratch
-                .left
-                .push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-            relay_scratch
-                .right
-                .push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-        bridge.push_input(&relay_scratch.left, &relay_scratch.right)
-    };
-
-    if !block_accepted {
-        state
-            .bridge_input_blocks_refused
-            .fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    // Try to pop processed output
-    // This may be from the previous block with one block of latency.
-    if let Some(output) = bridge.pop_output() {
-        // Re-interleave and encode as raw bytes. The block reports its own
-        // frame count, so a quantum other than 128 round-trips whole instead of
-        // being silently clipped to the first 128 frames.
-        let n = output.frames;
-        let mut result = Vec::with_capacity(n * BYTES_PER_FRAME);
-        for i in 0..n {
-            result.extend_from_slice(&output.left[i].to_le_bytes());
-            result.extend_from_slice(&output.right[i].to_le_bytes());
-        }
-        Ok(result)
-    } else {
-        // Nothing came back this quantum: the ring is still priming on the first
-        // block, or the engine fell behind and has none ready.
-        //
-        // Silence, not the dry input. Passing dry makes an under-run audible as
-        // the unprocessed source — a chain the user is hearing as a filter or a
-        // distortion briefly plays the raw signal at full level, and a bridged
-        // instrument plays whatever the worklet happened to send it. That is
-        // both louder and less honest than a gap, and
-        // `.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md`
-        // records under-run output as zero independently of the failure policy
-        // it decides.
-        //
-        // No ramp: an f32 sample is four zero bytes, and a quantum this command
-        // never processed has no ramp state to carry — the ramped hand-over
-        // belongs to the failure path that knows a plugin stopped.
-        //
-        // Zeroed in place rather than allocated: the input block is owned here
-        // and already the right length, and this path runs once per quantum per
-        // bridged plugin.
-        audio_bytes.fill(0);
-        Ok(audio_bytes)
-    }
 }
 
 #[cfg(test)]
@@ -2686,10 +2859,10 @@ mod tests {
     ///
     /// The one ordering a refusal owes: `PLUGIN_RUNTIME_GATE` released, and only
     /// then the plugin's own `deactivate`, `destroy` and `deinit_entry`.
-    fn event_before_teardown(events: &[LoadTeardownEvent]) -> Option<LoadTeardownEvent> {
+    fn event_before_teardown(events: &[TeardownEvent]) -> Option<TeardownEvent> {
         let teardown = events
             .iter()
-            .position(|event| *event == LoadTeardownEvent::RuntimeTornDown)?;
+            .position(|event| *event == TeardownEvent::RuntimeTornDown)?;
         teardown.checked_sub(1).map(|before| events[before])
     }
 
@@ -2746,15 +2919,6 @@ mod tests {
     }
 
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, state_bytes: Vec<u8>) {
-        insert_engine_owned_fixture_with_bridge(state, instance_id, state_bytes, None);
-    }
-
-    fn insert_engine_owned_fixture_with_bridge(
-        state: &AppState,
-        instance_id: &str,
-        state_bytes: Vec<u8>,
-        bridge: Option<daw_engine::audio_bridge::PluginAudioBridgeHandle>,
-    ) {
         let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
             "Engine Owned Fixture",
             state_bytes,
@@ -2775,8 +2939,7 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters,
                 has_gui: true,
-                bridge,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
+                chain_kind: DeviceKind::Effect,
                 parameter_events: None,
             },
         );
@@ -2829,9 +2992,9 @@ mod tests {
         assert_eq!(refusal, Err("Native engine not running".to_string()));
     }
 
-    /// `process_plugin_audio` and `set_plugin_bypass` must address the same
-    /// plugin for the same instance id: a bypass that resolved differently from
-    /// the audio path would mute a plugin the app is still feeding.
+    /// Every command keyed by instance id must resolve the same engine plugin:
+    /// a bypass that resolved differently from a parameter write would mute a
+    /// plugin the user is still editing.
     #[test]
     fn every_command_resolves_one_instance_to_the_same_engine_plugin_id() {
         let state = AppState::default();
@@ -2852,282 +3015,6 @@ mod tests {
             "sourdaw-{test_name}-{}-{unique_suffix}",
             std::process::id()
         ))
-    }
-
-    /// Regression (F14): `push_input` reports a refusal and the result used to
-    /// be discarded, so a block the plugin never saw looked exactly like one it
-    /// processed. Refusals must reach the diagnostics surface.
-    #[test]
-    fn a_refused_input_block_is_counted_while_an_accepted_one_is_not() {
-        let state = AppState::default();
-        // Hold the RT side alive so the ring refuses only because it is full,
-        // not because its consumer went away.
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-input-refusal",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let block_bytes = vec![0u8; 128 * 2 * 4];
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes.clone(),
-            &state,
-        ))
-        .expect("a block with room in the ring should be accepted");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            0,
-            "an accepted block must not be counted as refused"
-        );
-
-        {
-            let mut engine_plugins = state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock should be available");
-            let bridge = engine_plugins
-                .get_mut("instance-input-refusal")
-                .and_then(|instance| instance.bridge.as_mut())
-                .expect("bridge should be registered");
-            let left = [0.0_f32; 128];
-            while bridge.push_input(&left, &left) {}
-        }
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes.clone(),
-            &state,
-        ))
-        .expect("a refused input block must not fail the round trip");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            1,
-            "a block the plugin never received must be counted"
-        );
-
-        // The ring is still full, so this one is refused too. The counter is
-        // cumulative since engine start: a store rather than an add would read
-        // 1 here and make a stream refusing every period look like one hiccup.
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes,
-            &state,
-        ))
-        .expect("a refused input block must not fail the round trip");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            2,
-            "every refused block must add to the count, not overwrite it"
-        );
-    }
-
-    /// One quantum of interleaved stereo at full scale, so a block that came
-    /// back unchanged is unmistakable from one the host zeroed.
-    fn loud_block(frames: usize) -> Vec<u8> {
-        let mut block = Vec::with_capacity(frames * 2 * 4);
-        for _ in 0..frames * 2 {
-            block.extend_from_slice(&1.0_f32.to_le_bytes());
-        }
-        block
-    }
-
-    /// Nothing is processed on the first block — and nothing is processed for as
-    /// long as the engine is behind. Handing the dry input back makes an
-    /// under-run audible as the unprocessed source at full level, which ADR 0021
-    /// records as wrong independently of the failure policy it decides.
-    #[test]
-    fn an_underrun_answers_silence_rather_than_the_dry_input() {
-        let state = AppState::default();
-        // The RT side stays alive and never processes, so `pop_output` has
-        // nothing for the whole test — exactly the under-run this covers.
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-underrun",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let block = loud_block(128);
-        let answer = crate::block_on_test(process_plugin_audio(
-            "instance-underrun".to_string(),
-            block.clone(),
-            &state,
-        ))
-        .expect("an under-run must not fail the round trip");
-
-        assert_eq!(
-            answer.len(),
-            block.len(),
-            "the quantum the caller asked for must come back whole"
-        );
-        assert_eq!(
-            answer,
-            vec![0u8; block.len()],
-            "an under-run must answer silence, not the signal the plugin never processed"
-        );
-    }
-
-    /// The relay ran once per render quantum and allocated its de-interleave
-    /// buffers every time. They are preallocated on the instance now: the same
-    /// storage must serve consecutive blocks, including blocks of different
-    /// lengths, without moving.
-    ///
-    /// Both channels are checked: the relay fills two independent `Vec`s, so a
-    /// regression that reallocated only the right one would pass a left-only
-    /// assertion. What this cannot see is an added *clone* of the scratch — the
-    /// address it reads is the instance's own buffer either way — so the
-    /// no-copy property is carried by the code, not by this test.
-    #[test]
-    fn the_relay_refills_one_preallocated_scratch_buffer_across_blocks() {
-        let state = AppState::default();
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-scratch",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        // Both channels, every time: pointer, capacity and length.
-        type ScratchShape = ((*const f32, usize, usize), (*const f32, usize, usize));
-        let scratch_shape = || -> ScratchShape {
-            let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-            let instance = engine_plugins
-                .get("instance-scratch")
-                .expect("fixture should exist");
-            (
-                (
-                    instance.relay_scratch.left.as_ptr(),
-                    instance.relay_scratch.left.capacity(),
-                    instance.relay_scratch.left.len(),
-                ),
-                (
-                    instance.relay_scratch.right.as_ptr(),
-                    instance.relay_scratch.right.capacity(),
-                    instance.relay_scratch.right.len(),
-                ),
-            )
-        };
-
-        let ((left_before, left_capacity_before, _), (right_before, right_capacity_before, _)) =
-            scratch_shape();
-        assert_eq!(
-            (left_capacity_before, right_capacity_before),
-            (MAX_BLOCK_FRAMES, MAX_BLOCK_FRAMES),
-            "both scratch channels must be sized once to the largest block the bridge accepts"
-        );
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-scratch".to_string(),
-            vec![0u8; 128 * 2 * 4],
-            &state,
-        ))
-        .expect("a 128-frame block should round-trip");
-        let (
-            (left_after_short, left_capacity_after_short, left_frames_after_short),
-            (right_after_short, right_capacity_after_short, right_frames_after_short),
-        ) = scratch_shape();
-        assert_eq!(
-            (left_frames_after_short, right_frames_after_short),
-            (128, 128),
-            "the block must be de-interleaved into the instance's own scratch, both channels"
-        );
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-scratch".to_string(),
-            vec![0u8; 256 * 2 * 4],
-            &state,
-        ))
-        .expect("a 256-frame block should round-trip");
-        let (
-            (left_after_long, left_capacity_after_long, left_frames_after_long),
-            (right_after_long, right_capacity_after_long, right_frames_after_long),
-        ) = scratch_shape();
-
-        assert_eq!(
-            (left_frames_after_long, right_frames_after_long),
-            (256, 256)
-        );
-        assert_eq!(
-            (
-                left_before,
-                left_capacity_before,
-                right_before,
-                right_capacity_before
-            ),
-            (
-                left_after_short,
-                left_capacity_after_short,
-                right_after_short,
-                right_capacity_after_short
-            ),
-            "the relay must reuse both buffers, not allocate new ones per block"
-        );
-        assert_eq!(
-            (
-                left_before,
-                left_capacity_before,
-                right_before,
-                right_capacity_before
-            ),
-            (
-                left_after_long,
-                left_capacity_after_long,
-                right_after_long,
-                right_capacity_after_long
-            ),
-            "a longer block must fit the preallocated capacity without moving either channel"
-        );
-    }
-
-    /// A block past the bridge's capacity is refused, and refusing it must not
-    /// be the thing that grows the preallocated scratch.
-    #[test]
-    fn an_oversized_block_is_refused_without_resizing_the_relay_scratch() {
-        let state = AppState::default();
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-oversized",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let oversized = vec![0u8; (MAX_BLOCK_FRAMES + 1) * 2 * 4];
-        crate::block_on_test(process_plugin_audio(
-            "instance-oversized".to_string(),
-            oversized,
-            &state,
-        ))
-        .expect("an oversized block must not fail the round trip");
-
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            1,
-            "a block the plugin never received must be counted"
-        );
-        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-        let instance = engine_plugins
-            .get("instance-oversized")
-            .expect("fixture should exist");
-        assert_eq!(
-            instance.relay_scratch.left.capacity(),
-            MAX_BLOCK_FRAMES,
-            "an oversized block must not grow the scratch past what the bridge accepts"
-        );
     }
 
     /// The cache only ever recorded writes this host made, so a knob turned in
@@ -3222,8 +3109,7 @@ mod tests {
             name: "Reloaded Fixture".to_string(),
             parameters,
             has_gui: true,
-            bridge: None,
-            relay_scratch: crate::state::PluginRelayScratch::default(),
+            chain_kind: DeviceKind::Effect,
             parameter_events: None,
         }
     }
@@ -3282,11 +3168,11 @@ mod tests {
         parameters.iter().map(|parameter| parameter.value).collect()
     }
 
-    /// The relay (`process_plugin_audio`) takes the `engine_plugins` map lock
-    /// once per render quantum. `set_plugin_parameter` used to hold that same
-    /// lock across `enqueue_parameter`, which blocks unbounded on the instance's
-    /// non-RT control lock — so a plugin holding control parked the audio relay
-    /// with it. The map must be free while the control write is in flight.
+    /// `set_plugin_parameter` used to hold the `engine_plugins` map lock across
+    /// `enqueue_parameter`, which blocks unbounded on the instance's non-RT
+    /// control lock — so a plugin holding control parked every other reader of
+    /// that map with it. The map must be free while the control write is in
+    /// flight.
     ///
     /// And once it is free, an unload+reload can land in that window: the value
     /// went to the runtime that is gone, so it must not be written onto the
@@ -3712,7 +3598,7 @@ mod tests {
 
     /// The session-limit predicate itself, at the ceiling, in the wording
     /// that names it: past the limit the effect table's hosted-plugin reserve
-    /// and the bridge table have no slot left, and the audio thread's own
+    /// has no slot left, and the audio thread's own
     /// refusal is a counter nothing propagates — the plugin would load, open
     /// its editor, and pass dry audio forever. The predicate is only part of
     /// the guarantee: the load path's early call is pinned by
@@ -3782,8 +3668,7 @@ mod tests {
                 name: "Re-check Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui: false,
-                bridge: None,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
+                chain_kind: DeviceKind::Effect,
                 parameter_events: None,
             }
         }
@@ -3855,6 +3740,7 @@ mod tests {
             "Recovered Fixture",
             &[],
             false,
+            DeviceKind::Effect,
         )
         .err()
         .expect("a session at its ceiling must refuse the record insert");
@@ -3894,6 +3780,56 @@ mod tests {
         );
     }
 
+    /// A plugin with a lookahead or an FFT window declares its latency at
+    /// activation and never flags a change afterwards, so the registration is
+    /// the only visit that can carry the figure to the graph. Without it the
+    /// effect registers at zero and every route parallel to the plugin stays
+    /// ahead of it for the rest of the session.
+    #[test]
+    fn registering_a_latent_plugin_publishes_its_declared_latency_with_a_dry_delay() {
+        let state = AppState::default();
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Latent Fixture", Vec::new(), false);
+        wrapper.set_engine_owned_command_fixture_latency_samples(512);
+        let runtime: HostedRuntime = wrapper.into();
+
+        let registration = register_runtime_with_engine(
+            &mut engine,
+            &state,
+            "latent-instance",
+            runtime,
+            "Latent Fixture",
+            &[],
+            false,
+            DeviceKind::Effect,
+        );
+        let Ok(registration) = registration else {
+            panic!("a fresh session registers the instance");
+        };
+
+        let mut published = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            if let daw_engine::scheduler::GraphCommand::SetEffectLatency {
+                effect_id,
+                latency_frames,
+                dry_delay,
+            } = command
+            {
+                published.push((effect_id, latency_frames, dry_delay.is_some()));
+            }
+        }
+
+        assert_eq!(
+            published,
+            vec![(registration.engine_plugin_id, 512, true)],
+            "the registration publishes the plugin's own declared latency, \
+             and the dry line that holds a bypassed pass at it"
+        );
+    }
+
     /// A load the running engine refuses tears its runtime down holding nothing:
     /// not the engine lock, not the runtime gate, not the lifecycle lease.
     ///
@@ -3927,7 +3863,7 @@ mod tests {
         );
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -3949,7 +3885,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     engine_free.store(
                         observed_state.engine.try_lock().is_ok(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -3980,9 +3916,9 @@ mod tests {
                 .contains_key("refused-by-the-engine"),
             "and the engine kept none of it"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
         assert!(
@@ -3992,7 +3928,7 @@ mod tests {
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "nor under the runtime gate, which is fair: a quit's write request \
              queued behind this teardown parks every later load and unload, and \
              fails every batch's attach outright. Got: {events:?}"
@@ -4025,7 +3961,7 @@ mod tests {
         );
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4042,7 +3978,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     engine_free.store(
                         observed_state.engine.try_lock().is_ok(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -4073,9 +4009,9 @@ mod tests {
                 .contains_key("editor-ask-unanswered"),
             "and hands the engine nothing"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the runtime it built must actually have been torn down, not leaked"
         );
         assert!(
@@ -4085,7 +4021,7 @@ mod tests {
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "nor under the runtime gate, which is fair: a quit's write request \
              queued behind this teardown parks every later load and unload, and \
              fails every batch's attach outright. Got: {events:?}"
@@ -4158,6 +4094,108 @@ mod tests {
         );
     }
 
+    /// A load resolves the registry entry the scan wrote, and an `"instrument"`
+    /// category is the one scan answer that must carry through registration as
+    /// `Generator`: the engine-owned record this load produces is exactly what
+    /// `commands::graph::map_device` reads back when the panel later splices
+    /// this instance into a strip, so a dropped kind here is a silenced clip
+    /// two modules away.
+    #[test]
+    fn a_loaded_instrument_registers_its_generator_kind() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[ScannedPlugin {
+                category: "instrument".to_string(),
+                ..scanned("instrument1111", "com.vendor.synth", "clap")
+            }],
+        );
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("instrument1111".to_string()),
+            PluginInstanceId("instrument-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture(
+                        "Synth Fixture",
+                        Vec::new(),
+                        false,
+                    ),
+                ))
+            },
+        ))
+        .expect("an instrument load against a running engine must succeed");
+
+        assert_eq!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .get("instrument-instance")
+                .expect("the load must have registered the instance")
+                .chain_kind,
+            DeviceKind::Generator,
+            "an instrument's registry category must carry through to the engine record"
+        );
+    }
+
+    /// The dormant-attach path is a second route onto the engine record the
+    /// load path above already covers: an instance parked in `state.plugins`
+    /// before an engine existed carries its own scanned `chain_kind`, and
+    /// `attach_one_dormant_plugin` must carry that through to the engine
+    /// record exactly as `register_runtime_with_engine` does for a fresh
+    /// load, or a project reopened before the engine started would silence
+    /// every instrument it holds the moment it attaches.
+    #[test]
+    fn a_dormant_instrument_attaches_as_a_generator() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Dormant Synth", Vec::new(), false);
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                "dormant-instrument".to_string(),
+                PluginInstanceData {
+                    plugin: HostedRuntime::from(wrapper),
+                    name: "Dormant Synth".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    chain_kind: DeviceKind::Generator,
+                },
+            );
+
+        attach_dormant_plugins(&state, 1).expect("the dormant instance must reach the engine");
+
+        assert_eq!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .get("dormant-instrument")
+                .expect("the attach must have registered the instance")
+                .chain_kind,
+            DeviceKind::Generator,
+            "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
     /// And the attach path does the same, for the same reason.
     ///
     /// It is the worse of the two: `apply_graph_commands` holds the graph
@@ -4165,6 +4203,7 @@ mod tests {
     /// here parks the next batch behind a plugin's editor twice over.
     #[test]
     fn an_attach_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4199,6 +4238,7 @@ mod tests {
                     name: "Wake Attached".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -4237,6 +4277,7 @@ mod tests {
     /// follows a topology within one start sequence.
     #[test]
     fn the_attach_takes_no_more_instances_than_its_caller_reserved_room_for() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4323,7 +4364,7 @@ mod tests {
         );
 
         let lease_held_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4340,7 +4381,7 @@ mod tests {
                 wrapper.deactivate_engine_owned_command_fixture();
                 let lease_held = Arc::clone(&lease_held_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     lease_held.store(
                         try_lock_plugin_lifecycle("never-activated-dormant").is_none(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -4371,14 +4412,14 @@ mod tests {
                 .contains_key("never-activated-dormant"),
             "and nothing is parked: an attach could only refuse it, once per batch, forever"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "and it must go down with the runtime gate already released: that \
              gate is fair, so a quit's write request queued behind this teardown \
              parks every later load and unload, and fails every batch's attach \
@@ -4393,6 +4434,289 @@ mod tests {
         );
     }
 
+    /// A load's own sweep may only ever reach a runtime the runtime gate has
+    /// already let go of — not one it is still torn down while holding.
+    ///
+    /// Fixture A is loaded, then unloaded: its runtime lands in
+    /// `retired_engine_plugins`, still held by the `AddHostedPlugin`
+    /// command this command-capture engine never drained, exactly as a real
+    /// scheduler holds it between a queued removal and the audio thread
+    /// dropping the slot. Draining the ring is this test's stand-in for that
+    /// drop, and it is what makes A reclaimable. Fixture B's load is the next
+    /// moment the process asks for that memory: its own success sweeps the
+    /// retirement vec, and A's teardown must land only after that load's own
+    /// runtime gate guard is gone.
+    #[test]
+    fn a_load_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unload call itself does not fail");
+        assert_eq!(
+            unload_response.errors,
+            Vec::<String>::new(),
+            "fixture A must unload cleanly, or the reclaim below proves nothing"
+        );
+
+        // The scheduler's own acknowledgment: draining the ring drops the
+        // `AddHostedPlugin` slot that load pushed, which is the only
+        // other owner of A's runtime once the maps have forgotten it.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-b".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture B loads");
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "B's load must release its own runtime gate guard before sweeping \
+             A's retired runtime down"
+        );
+    }
+
+    /// A keyed unload's own sweep is subject to the identical rule: it may
+    /// reach a retired runtime only once the gate guard *this* unload took is
+    /// gone, never while `unload_plugin_runtime` is still running under it.
+    ///
+    /// Fixture A is loaded and unloaded first, but the ring that holds its
+    /// last reference is deliberately left undrained until after fixture C
+    /// also loads — so C's own load sweeps an empty retirement vec, and A
+    /// only becomes reclaimable afterward. That isolates the sweep under
+    /// test to C's *unload*: it is the one call whose sweep can still reach
+    /// A, and its own runtime gate guard is what must be gone first.
+    #[test]
+    fn a_keyed_unload_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("fixture A unloads");
+
+        // A is still held by the queued `AddHostedPlugin` its own load
+        // pushed, so it is not reclaimable yet: C's load, next, sweeps a
+        // retirement vec it cannot free anything from.
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-c".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture C loads");
+
+        // The scheduler's own acknowledgment, now that both A's removal and
+        // C's addition are queued: draining drops both commands' slots, and
+        // A becomes reclaimable only at this point.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-c".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unload call itself does not fail");
+        assert_eq!(
+            unload_response.errors,
+            Vec::<String>::new(),
+            "fixture C must unload cleanly"
+        );
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "C's own unload must release its runtime gate guard before its \
+             sweep reaches A's now-reclaimable runtime"
+        );
+    }
+
+    /// The quit cascade's sweep answers to the same rule on the gate's write
+    /// side: `unload_all_plugin_runtimes` holds one write guard across every
+    /// instance it tears down, and the single sweep that follows may reach a
+    /// retired runtime only once that guard is gone.
+    ///
+    /// Staged as the keyed case is. Fixture A is loaded and unloaded while the
+    /// ring still holds its last reference, so fixture D's load sweeps a
+    /// retirement vec it can free nothing from; draining the ring afterward is
+    /// what makes A reclaimable, and the cascade is then the one remaining call
+    /// whose sweep can reach it.
+    #[test]
+    fn the_quit_cascade_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("fixture A unloads");
+
+        // A is still held by the queued `AddHostedPlugin` its own load
+        // pushed, so it is not reclaimable yet: D's load, next, sweeps a
+        // retirement vec it cannot free anything from.
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-d".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture D loads");
+
+        // The scheduler's own acknowledgment, now that both A's removal and
+        // D's addition are queued: draining drops both commands' slots, and
+        // A becomes reclaimable only at this point.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        let cascade_response = crate::block_on_test(unload_plugin(None, &NoWindowHost, &state))
+            .expect("the cascade call itself does not fail");
+        assert_eq!(
+            cascade_response.errors,
+            Vec::<String>::new(),
+            "fixture D must unload cleanly"
+        );
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "the cascade must release its runtime gate write guard before its \
+             sweep reaches A's now-reclaimable runtime"
+        );
+    }
+
     /// The reservation counts instances the engine took, not instances tried.
     ///
     /// A refusal pushes no command and spends no reserved slot, so an instance
@@ -4402,6 +4726,7 @@ mod tests {
     /// engine holding nothing, on a batch that reserved room for one.
     #[test]
     fn a_refused_instance_does_not_spend_the_slot_reserved_for_another() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4541,26 +4866,6 @@ mod tests {
     #[test]
     fn an_engine_rate_matching_the_device_reports_no_divergence() {
         assert_eq!(engine_rate_divergence_note(48_000.0, 48_000.0), None);
-    }
-
-    /// The bridge round trip a load reports is the engine's own measurement,
-    /// and a load with no engine reports none: there is no bridge to cross, so
-    /// compensating for one would push the track late by a latency it does not
-    /// have.
-    #[test]
-    fn the_reported_bridge_round_trip_comes_from_the_engine_and_is_none_without_one() {
-        let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-
-        assert_eq!(bridge_round_trip_frames(None), 0);
-        assert_eq!(
-            bridge_round_trip_frames(Some(&engine)),
-            u32::try_from(engine.bridge_round_trip_frames()).expect("a plausible frame count")
-        );
-        assert!(
-            bridge_round_trip_frames(Some(&engine)) > 0,
-            "a running engine's bridge has a depth to compensate"
-        );
     }
 
     /// Wiring: the ceiling the predicate states is the one the load path
@@ -4725,6 +5030,7 @@ mod tests {
                     num_outputs: 2,
                     has_custom_ui: true,
                     capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
     }
@@ -4870,6 +5176,7 @@ mod tests {
                     num_outputs: 2,
                     has_custom_ui: false,
                     capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -6434,6 +6741,39 @@ mod tests {
         );
     }
 
+    /// A Linux distribution's `/usr/lib64 -> /usr/lib` symlink authorizes
+    /// `/usr/lib/vst3` and `/usr/lib64/vst3` to the same canonical folder.
+    /// Walking that folder twice before dedup-by-path runs is what let a
+    /// 130-bundle real install exhaust `MAX_SCAN_CANDIDATES` on its own
+    /// duplicate and drop every scan root behind it.
+    #[cfg(unix)]
+    #[test]
+    fn authorize_scan_roots_dedupes_two_requests_that_share_a_canonical_root() {
+        let temp_root = unique_temp_scan_root("authorize-scan-roots-dedupe");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let linked_root = temp_root.join("linked");
+        std::fs::create_dir_all(&real_vst3).expect("real VST3 root should be created");
+        std::os::unix::fs::symlink(&real_root, &linked_root)
+            .expect("linked root symlink should be created");
+
+        let linked_vst3 = linked_root.join("VST3");
+        let policy =
+            PluginScanPolicy::with_allowed_roots(vec![real_vst3.clone(), linked_vst3.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![real_vst3.clone(), linked_vst3]);
+
+        let expected = std::fs::canonicalize(&real_vst3).expect("real VST3 root should resolve");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            ordered,
+            vec![expected],
+            "both roots resolve to the same canonical folder and must be walked once"
+        );
+    }
+
     #[test]
     fn get_default_plugin_paths_returns_authorized_native_scan_roots() {
         let paths = crate::block_on_test(get_default_plugin_paths())
@@ -6472,6 +6812,7 @@ mod tests {
                     capability_metadata_reason: Some(
                         scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                     ),
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -6543,6 +6884,7 @@ mod tests {
                         capability_metadata_reason: Some(
                             scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                         ),
+                        chain_kind: DeviceKind::Effect,
                     },
                 );
 
@@ -6636,6 +6978,7 @@ mod tests {
                     capability_metadata_reason: Some(
                         scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                     ),
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -6652,6 +6995,7 @@ mod tests {
 
     #[test]
     fn bulk_unload_waits_for_inflight_load_or_unload_access() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         crate::block_on_test(async {
             let state = AppState::default();
             let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
@@ -6666,6 +7010,7 @@ mod tests {
 
     #[test]
     fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
         let wrapper =
@@ -6683,8 +7028,8 @@ mod tests {
             .insert("command-instance".into(), "command-window".into());
         let unload_all = crate::block_on_test(unload_all_plugin_runtimes(None, &state));
         let unload_all = unload_all.expect("bulk inventory should complete");
-        assert_eq!(unload_all.0, ["command-instance"]);
-        assert_eq!(unload_all.1, ["Native engine not running"]);
+        assert_eq!(unload_all.unloaded_instance_ids, ["command-instance"]);
+        assert_eq!(unload_all.errors, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
     }
@@ -6741,13 +7086,441 @@ mod tests {
         let first = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
         let retry = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
 
-        assert_eq!(first, Ok(()));
-        assert_eq!(retry, Ok(()));
+        assert_eq!(first, Ok(Vec::new()));
+        assert_eq!(retry, Ok(Vec::new()));
         assert!(!state
             .plugins
             .lock()
             .expect("plugins lock")
             .contains_key("command-instance"));
+    }
+
+    /// The unload-relevant commands the engine received, in ring order.
+    ///
+    /// `GraphCommand` carries whole clips and has no `Debug`, so the shape is
+    /// reduced to names, and the fence beside them is dropped: what these
+    /// cases are about is which of the two arrived first.
+    fn released_then_retired(
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) -> Vec<&'static str> {
+        let mut order = Vec::new();
+        while let Ok(command) = commands.pop() {
+            match command {
+                daw_engine::scheduler::GraphCommand::RemoveTrackDevice { .. } => {
+                    order.push("release")
+                }
+                daw_engine::scheduler::GraphCommand::RemovePlugin(_) => order.push("retire"),
+                _ => {}
+            }
+        }
+        order
+    }
+
+    /// One track strip whose only device borrows the engine-owned fixture.
+    fn strip_binding_the_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-plugin", "name": "Engine Owned Fixture", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-1" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// The registry's count of fences the engine has been handed.
+    fn fenced_batches(state: &AppState) -> u64 {
+        state
+            .graph
+            .lock()
+            .expect("graph registry lock")
+            .fenced_batches()
+    }
+
+    /// Build the strip that binds the fixture and drain what building it
+    /// pushed, so what stays on the ring afterwards is the unload's alone.
+    fn bind_the_fixture_to_a_strip(
+        state: &AppState,
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) {
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_the_fixture(),
+            state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind the attached instance, or nothing is released later"
+        );
+        while commands.pop().is_ok() {}
+    }
+
+    /// Push empty batches until the engine's command ring holds only
+    /// `free_slots` free slots, so a batch needing more than that is refused
+    /// rather than queued.
+    fn leave_command_ring_with_free_slots(
+        state: &AppState,
+        commands: &rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+        free_slots: usize,
+    ) {
+        let mut engine_guard = state.engine.lock().expect("engine lock");
+        let engine = engine_guard.as_mut().expect("the engine is running");
+        while commands.buffer().capacity() - commands.slots() > free_slots {
+            engine
+                .send_graph_batch_with_headroom(Vec::new(), 0)
+                .expect("an empty batch fits while the ring still has room");
+        }
+    }
+
+    /// An unload releases the instance's chain entry before it retires the
+    /// instance. A chain entry naming a retired effect is not counted anywhere
+    /// — the scheduler's `run_device` returns on a failed effect-table lookup
+    /// — and a rolling engine gets no topology replacement to clear it, so the
+    /// two commands are ordered rather than merely both present.
+    ///
+    /// The release is its own fence, so the registry's count advances by one:
+    /// a release that reached the ring unnumbered would leave every later
+    /// batch's stamp held against a horizon the engine had already passed.
+    #[test]
+    fn unloading_a_bound_instance_releases_its_chain_entry_before_retiring_it() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_the_fixture_to_a_strip(&state, &mut command_rx);
+        let fences_before = fenced_batches(&state);
+
+        crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect("the bound instance unloads");
+
+        assert_eq!(
+            released_then_retired(&mut command_rx),
+            vec!["release", "retire"],
+            "the chain entry leaves the graph before the effect it names is retired"
+        );
+        assert_eq!(
+            fenced_batches(&state),
+            fences_before + 1,
+            "the release the engine took is one fence, and the registry numbers it"
+        );
+    }
+
+    /// No strip holds this instance, so there is nothing to release and the
+    /// unload is the retirement alone: the release must not manufacture a
+    /// chain command for a graph that never named the instance, nor number a
+    /// fence for a batch it never sent.
+    #[test]
+    fn unloading_an_unbound_instance_only_retires_it() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        let fences_before = fenced_batches(&state);
+
+        crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect("the unbound instance unloads");
+
+        assert_eq!(
+            released_then_retired(&mut command_rx),
+            vec!["retire"],
+            "an instance in no chain is retired without a release before it"
+        );
+        assert_eq!(
+            fenced_batches(&state),
+            fences_before,
+            "no batch was sent, so no fence is numbered"
+        );
+    }
+
+    /// A release the ring refuses is not a release, so the registry keeps the
+    /// device and the strip keeps its chain entry. Forgetting them here would
+    /// leave the engine's chain naming an effect the retirement is about to
+    /// free, with the next `remove-device` finding no device and doing
+    /// nothing — the entry would stand until a topology replacement a rolling
+    /// engine never gets.
+    #[test]
+    fn an_unload_whose_chain_release_is_refused_keeps_the_device_in_the_registry() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, mut command_rx, retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_the_fixture_to_a_strip(&state, &mut command_rx);
+        let fences_before = fenced_batches(&state);
+
+        // The release wants three slots: its one op, that batch's fence, and
+        // the retirement's reservation. Two are left, and a reclaimer that is
+        // gone refuses the channel swap that would otherwise make room.
+        leave_command_ring_with_free_slots(&state, &command_rx, 2);
+        drop(retired_adoption_rx);
+
+        let reports = crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect("the unload still retires the instance");
+
+        let registry = state.graph.lock().expect("graph registry lock");
+        assert!(
+            registry.holds_device("d-plugin"),
+            "a release the engine refused must leave the device in the registry"
+        );
+        assert_eq!(
+            registry.strip_chain("lead"),
+            ["d-plugin"],
+            "a release the engine refused must leave the entry in the strip's chain"
+        );
+        assert_eq!(
+            registry.fenced_batches(),
+            fences_before,
+            "a batch the ring refused is not a fence"
+        );
+        drop(registry);
+        assert_eq!(
+            released_then_retired(&mut command_rx),
+            vec!["retire"],
+            "the refused release reached no ring, so only the retirement did"
+        );
+        assert!(
+            reports.is_empty(),
+            "a release the engine refused reports no strip, got: {:?}",
+            reports
+        );
+    }
+
+    /// One track strip whose chain binds three engine-owned fixtures, in
+    /// order — for a test that unloads the middle one and reads what the
+    /// other two leave behind.
+    fn strip_binding_three_fixtures() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-comp", "name": "Comp", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-comp" },
+                    { "id": "d-proq", "name": "Pro-Q", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-proq" },
+                    { "id": "d-limiter", "name": "Limiter", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-limiter" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// One track strip whose chain binds two engine-owned fixtures — for a
+    /// test that unloads both in one cascade and reads the strip's one final
+    /// report.
+    fn strip_binding_two_fixtures() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-a", "name": "A", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-a" },
+                    { "id": "d-b", "name": "B", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-b" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// Build the strip that binds three fixtures and drain what building it
+    /// pushed, so what stays on the ring afterwards is the unload's alone.
+    fn bind_three_fixtures_to_a_strip(
+        state: &AppState,
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) {
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_three_fixtures(),
+            state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind all three attached instances, or nothing is released later"
+        );
+        while commands.pop().is_ok() {}
+    }
+
+    /// Build the strip that binds two fixtures and drain what building it
+    /// pushed, so what stays on the ring afterwards is the cascade's alone.
+    fn bind_two_fixtures_to_a_strip(
+        state: &AppState,
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) {
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_two_fixtures(),
+            state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind both attached instances, or nothing is released later"
+        );
+        while commands.pop().is_ok() {}
+    }
+
+    /// Like [`insert_engine_owned_fixture`], with an explicit engine plugin
+    /// id — needed once a test binds more than one fixture to the same
+    /// strip, where the fixture helper's fixed id would collide.
+    fn insert_engine_owned_fixture_with_id(
+        state: &AppState,
+        instance_id: &str,
+        engine_plugin_id: usize,
+    ) {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", Vec::new(), true);
+        let parameters = wrapper.get_parameters();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters,
+                has_gui: true,
+                chain_kind: DeviceKind::Effect,
+                parameter_events: None,
+            },
+        );
+    }
+
+    /// The reply's `reports` mirror what the strip's chain still holds after
+    /// one bound instance releases from it: the two devices this unload does
+    /// not touch, in their original chain order.
+    #[test]
+    fn unloading_a_bound_instance_reports_the_strips_released_chain() {
+        let state = AppState::default();
+        insert_engine_owned_fixture_with_id(&state, "inst-comp", 201);
+        insert_engine_owned_fixture_with_id(&state, "inst-proq", 202);
+        insert_engine_owned_fixture_with_id(&state, "inst-limiter", 203);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_three_fixtures_to_a_strip(&state, &mut command_rx);
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("inst-proq".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the bound instance unloads");
+
+        assert_eq!(
+            unload_response.reports,
+            vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: vec!["d-comp".to_string(), "d-limiter".to_string()],
+            }],
+            "the reply must report the strip's final chain with the unloaded \
+             instance's device gone and the others in their original order, \
+             got: {:?}",
+            unload_response.reports
+        );
+    }
+
+    /// An instance no strip holds releases no chain entry, so the reply
+    /// reports no strip.
+    #[test]
+    fn unloading_an_unbound_instance_reports_no_strip() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("inst-1".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unbound instance unloads");
+
+        assert!(
+            unload_response.reports.is_empty(),
+            "an instance no strip holds must report no strip, got: {:?}",
+            unload_response.reports
+        );
+    }
+
+    /// A strip two cascade-unloaded instances share must appear once in the
+    /// reply, carrying its final chain — not once per instance that touched
+    /// it, each with an intermediate one.
+    #[test]
+    fn an_unkeyed_unload_reports_each_released_strip_once_with_its_final_chain() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        insert_engine_owned_fixture_with_id(&state, "inst-a", 301);
+        insert_engine_owned_fixture_with_id(&state, "inst-b", 302);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_two_fixtures_to_a_strip(&state, &mut command_rx);
+
+        let cascade_response = crate::block_on_test(unload_plugin(None, &NoWindowHost, &state))
+            .expect("the cascade call itself does not fail");
+
+        assert_eq!(
+            cascade_response.reports,
+            vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: Vec::new(),
+            }],
+            "the strip both instances shared must appear exactly once, \
+             carrying its final (empty) chain, got: {:?}",
+            cascade_response.reports
+        );
+    }
+
+    /// The wire reply is a hand-maintained mirror on the TypeScript side;
+    /// pin its spellings the way `graph`'s own result payload pins its own.
+    #[test]
+    fn the_unload_reply_serializes_with_the_contract_spellings() {
+        let reply = serde_json::to_string(&PluginUnloadReply {
+            unloaded_instance_ids: vec!["inst-1".to_string()],
+            errors: vec!["inst-2: still mid-unload".to_string()],
+            reports: vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: vec!["d-comp".to_string()],
+            }],
+        })
+        .expect("the unload reply serializes");
+        assert_eq!(
+            reply,
+            concat!(
+                r#"{"unloadedInstanceIds":["inst-1"],"errors":["inst-2: still mid-unload"],"#,
+                r#""reports":[{"kind":"track","id":"lead","deviceIds":["d-comp"]}]}"#
+            )
+        );
     }
 
     #[test]
@@ -7287,6 +8060,30 @@ mod tests {
         let entry = registry.get("aaaa1111").expect("path hash resolves");
         assert_eq!(entry.path, "/plugins/aaaa1111.clap");
         assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The persisted registry's row cap multiplies by
+    /// `SCANNED_PLUGIN_KEY_CAPACITY`, and this is the producer the number
+    /// describes. A cap above what the producer writes wastes nothing, but a
+    /// cap below it makes the reader refuse a document this build's own scan
+    /// wrote — at every launch, with no recovery but deleting the file.
+    ///
+    /// Mutation this catches: moving the constant without moving the keying,
+    /// or keying a plugin an extra way without raising the constant.
+    #[test]
+    fn key_scanned_plugins_fills_the_capacity_the_registry_row_cap_multiplies_by() {
+        let rows = key_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+
+        let [row] = rows.as_slice() else {
+            panic!("one scanned plugin is one row, got {}", rows.len());
+        };
+        assert_eq!(
+            row.keys.len(),
+            SCANNED_PLUGIN_KEY_CAPACITY,
+            "a plugin with its own descriptor id takes every key the row cap \
+             budgets for it, got {:?}",
+            row.keys
+        );
     }
 
     #[test]

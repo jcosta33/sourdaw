@@ -183,16 +183,16 @@ describe('computeCounterDeltas', () => {
     it('subtracts the first reading from the last for every named monotonic counter', () => {
         expect(
             computeCounterDeltas(
-                { bridgeOutputBlocksDropped: 3, unmatchedBridgeBlocks: 1 },
-                { bridgeOutputBlocksDropped: 9, unmatchedBridgeBlocks: 1 }
+                { captureBlocksDropped: 3, captureInputUnderruns: 1 },
+                { captureBlocksDropped: 9, captureInputUnderruns: 1 }
             )
-        ).toEqual({ ...zeroedCounterDeltas, bridgeOutputBlocksDropped: 6, unmatchedBridgeBlocks: 0 });
+        ).toEqual({ ...zeroedCounterDeltas, captureBlocksDropped: 6, captureInputUnderruns: 0 });
     });
 
     it('treats a named counter absent from a reading as having started or ended at zero', () => {
-        expect(computeCounterDeltas({}, { bridgeBacklogBlocksShed: 5 })).toEqual({
+        expect(computeCounterDeltas({}, { captureConsumerRefusals: 5 })).toEqual({
             ...zeroedCounterDeltas,
-            bridgeBacklogBlocksShed: 5,
+            captureConsumerRefusals: 5,
         });
     });
 
@@ -225,9 +225,10 @@ describe('describeAudibleFloor', () => {
 
 describe('MONOTONIC_COUNTER_NAMES and GAUGE_NAMES', () => {
     it('together name every numeric field engine_rt_diagnostics reports, so a field added later cannot fall through uncovered', () => {
-        const { running, events, ...numericFields } = notRunningEngineRtDiagnostics;
+        const { running, events, outputStreamFault, ...numericFields } = notRunningEngineRtDiagnostics;
         expect(running).toBe(false);
         expect(events).toEqual([]);
+        expect(outputStreamFault).toBeNull();
         expect(new Set([...MONOTONIC_COUNTER_NAMES, ...GAUGE_NAMES])).toEqual(new Set(Object.keys(numericFields)));
     });
 });

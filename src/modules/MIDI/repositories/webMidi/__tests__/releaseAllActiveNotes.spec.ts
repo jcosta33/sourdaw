@@ -42,7 +42,7 @@ describe('releaseAllActiveNotes', () => {
             fermenterDeviceId: 'ferm-1',
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(fermenter_note_off).toHaveBeenCalledWith(60);
     });
@@ -59,7 +59,7 @@ describe('releaseAllActiveNotes', () => {
             grandBouleDeviceId: 'gb-1',
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(grand_boule_note_off).toHaveBeenCalledWith(48);
     });
@@ -76,7 +76,7 @@ describe('releaseAllActiveNotes', () => {
             levainDeviceId: 'lev-1',
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(levain_note_off).toHaveBeenCalledWith(72);
     });
@@ -93,9 +93,32 @@ describe('releaseAllActiveNotes', () => {
             toasterRoute: { deviceId: 'toast-1', pad: 3 },
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(toaster_note_off).toHaveBeenCalledWith(3);
+    });
+
+    it('releases a natively voiced note on the body that voiced it', () => {
+        const release_native_note = vi.fn();
+        activeNotes.set(createWebMidiNoteKey(2, 64), {
+            channel: 2,
+            note: 64,
+            trackId: 'track-1',
+            instrumentTrackId: 'parent-1',
+            nativeDeviceId: 'plug-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+
+        releaseAllActiveNotes({ getTrackStrip: () => undefined, releaseNativeNote: release_native_note });
+
+        expect(release_native_note).toHaveBeenCalledExactlyOnceWith({
+            trackId: 'parent-1',
+            deviceId: 'plug-1',
+            note: 64,
+            channel: 2,
+        });
+        expect(activeNotes.size).toBe(0);
     });
 
     it('omits the member channel so every voice at the pitch is released, not just one', () => {
@@ -113,7 +136,7 @@ describe('releaseAllActiveNotes', () => {
             fermenterDeviceId: 'ferm-1',
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(fermenter_note_off.mock.calls[0]).toEqual([60]);
     });
@@ -134,7 +157,7 @@ describe('releaseAllActiveNotes', () => {
             } as unknown as OscillatorNode & { _env?: GainNode },
         });
 
-        releaseAllActiveNotes({ getCurrentTime: () => 4, getTrackStrip: () => undefined });
+        releaseAllActiveNotes({ getCurrentTime: () => 4, getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(set_target).toHaveBeenCalledWith(0, 4, 0.005);
         expect(stop).toHaveBeenCalledWith(4.02);
@@ -154,7 +177,7 @@ describe('releaseAllActiveNotes', () => {
             });
         }
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(fermenter_note_off.mock.calls.map(([note]) => note)).toEqual([60, 62, 64]);
     });
@@ -173,7 +196,7 @@ describe('releaseAllActiveNotes', () => {
         });
         channelToNote.set(2, key);
 
-        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip });
+        releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => strip, releaseNativeNote: () => {} });
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
@@ -192,7 +215,13 @@ describe('releaseAllActiveNotes', () => {
             levainDeviceId: 'lev-1',
         });
 
-        expect(() => releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => undefined })).not.toThrow();
+        expect(() =>
+            releaseAllActiveNotes({
+                getCurrentTime: () => 1,
+                getTrackStrip: () => undefined,
+                releaseNativeNote: () => {},
+            })
+        ).not.toThrow();
         expect(activeNotes.size).toBe(0);
     });
 
@@ -211,7 +240,13 @@ describe('releaseAllActiveNotes', () => {
             } as unknown as OscillatorNode & { _env?: GainNode },
         });
 
-        expect(() => releaseAllActiveNotes({ getCurrentTime: () => 1, getTrackStrip: () => undefined })).not.toThrow();
+        expect(() =>
+            releaseAllActiveNotes({
+                getCurrentTime: () => 1,
+                getTrackStrip: () => undefined,
+                releaseNativeNote: () => {},
+            })
+        ).not.toThrow();
         expect(activeNotes.size).toBe(0);
     });
 });

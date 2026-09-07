@@ -1,7 +1,7 @@
 import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { NATIVE_DSP_ENGINE_GAPS, findNativeDspEngineGapParam } from '#/utils/nativeDspEngineGaps';
 
 import { chamberEngineIdForAlgorithm } from '../../../models/ProofChamberAlgorithmGating';
@@ -44,7 +44,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     // The real one returns `{ groupId, groupLabel }`; a mock returning a bare
     // string would destructure to `undefined` and make any assertion about the
@@ -211,7 +211,7 @@ function writesReachingEngine(paramId: string, control: PanelControl): number {
     }
 
     return vi
-        .mocked(executeAppAction)
+        .mocked(executeUserAppAction)
         .mock.calls.filter(([action]) => action.type === 'setDeviceParameter' && action.payload.paramId === paramId)
         .length;
 }
@@ -321,7 +321,7 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
                 // chip toggles, and a second copy left mounted would make
                 // `getAllByRole` return the previous render's nodes too.
                 cleanup();
-                vi.mocked(executeAppAction).mockClear();
+                vi.mocked(executeUserAppAction).mockClear();
                 renderPanel(algorithm);
 
                 const writes = writesReachingEngine(paramId, control);
@@ -404,7 +404,7 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
 
     it('writes the algorithm and nothing else; the engine-side replay is guarded in crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs', () => {
         // The name says what this row observes, and nothing more. It asserts
-        // the panel's *action payload* against a mocked `executeAppAction`;
+        // the panel's *action payload* against a mocked `executeUserAppAction`;
         // deleting `replay_cached_parameters()` from `lib.rs` leaves it green,
         // so it is not a guard on engine retention and must not be read as one
         // — a title is what a reader or a coverage census scans.
@@ -433,13 +433,13 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
         // So a second write from here would be wrong, not missing: the panel
         // sends the algorithm, and the engine keeps the rest.
         renderPanel('plate');
-        vi.mocked(executeAppAction).mockClear();
+        vi.mocked(executeUserAppAction).mockClear();
 
         const [reverseChip] = screen.getAllByRole('button', { name: 'Reverse' });
         fireEvent.click(reverseChip!);
 
         const written = vi
-            .mocked(executeAppAction)
+            .mocked(executeUserAppAction)
             .mock.calls.map(([action]) => action)
             .filter((action) => action.type === 'setDeviceParameter')
             .map((action) => (action.type === 'setDeviceParameter' ? action.payload : null));

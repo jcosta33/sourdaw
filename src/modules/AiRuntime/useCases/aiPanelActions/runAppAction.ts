@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { getProjectContext } from '../getProjectContext';
@@ -16,5 +16,5 @@ export async function runAppAction(action: RuntimeAction): Promise<void> {
         return;
     }
 
-    await executeAppAction(materialized.actions[0]!);
+    await executeUserAppAction(materialized.actions[0]!);
 }

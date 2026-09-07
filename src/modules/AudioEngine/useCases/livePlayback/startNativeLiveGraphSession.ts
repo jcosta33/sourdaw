@@ -103,20 +103,30 @@ import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/cre
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
-import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
+import { masterGainState } from '../engineAccess/masterGainState';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { armNativeLiveMidiWriter } from './armNativeLiveMidiWriter';
+import { claimCarriedStrips } from './claimCarriedStrips';
+import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
+import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
-import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
+import {
+    projectLiveGraphTopology,
+    type LiveGraphMonitorMode,
+    type LiveGraphTopologyInput,
+} from './projectLiveGraphTopology';
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
+import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
+import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
 
 /**
  * What a session runs at unless a caller asks for the shadow.
@@ -296,6 +306,56 @@ function notifySilentHostedPlugins(input: {
 }
 
 /**
+ * What this session plays, read against the topology it is building.
+ *
+ * The attach state travels with it because the programme cannot be projected
+ * without it: whether a MIDI strip stays Web Audio's turns on whether the
+ * engine already holds the instrument its notes address. Taken as an argument
+ * rather than off the topology, because a session states its programme more
+ * than once — again when the first batch reports newly attached plugins — and
+ * a programme projected against the earlier set would leave an instrument the
+ * engine has just taken web-voiced in a batch that gates Web Audio out of it.
+ */
+function sessionProgramme(input: {
+    topology: ReturnType<typeof readSessionTopology>;
+    attachedInstanceIds: ReadonlySet<string>;
+    sampleRate: number;
+}): LiveGraphProgramme {
+    return readLiveGraphProgramme({
+        stripTracks: input.topology.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds,
+        sampleRate: input.sampleRate,
+    });
+}
+
+/**
+ * Record which strips this batch carries, and say which plugins that silences.
+ *
+ * The two travel together because they are one reading of the carrier law: the
+ * claim is what gates a carried strip's Web Audio twin out of the mix, and the
+ * notice is what tells a musician why the plugin on a strip that stayed behind
+ * produces nothing.
+ */
+function claimCarriersOf(input: {
+    commands: readonly AudioGraphCommand[];
+    stripTracks: readonly Track[];
+    attachedInstanceIds: ReadonlySet<string>;
+    programme: LiveGraphProgramme;
+    inputMonitoredTrackIds: ReadonlySet<string>;
+}): void {
+    claimCarriedStrips(carriedStripIds(input.commands));
+    notifySilentHostedPlugins({
+        stripTracks: input.stripTracks,
+        carriers: projectStripCarriers({
+            stripTracks: input.stripTracks,
+            attachedInstanceIds: input.attachedInstanceIds,
+            programme: input.programme,
+            inputMonitoredTrackIds: input.inputMonitoredTrackIds,
+        }),
+    });
+}
+
+/**
  * Where this session's programme ends, on the engine clock.
  *
  * The bound a non-looping automation pass is written into. The session is the
@@ -371,6 +431,10 @@ async function applyTopologyBatch(input: {
     // no audio, and corrected nowhere else. Reported before the session
     // bookkeeping, because a device told late has already been read as degraded.
     reportAttachedPlugins(result);
+    // Replaced rather than merged: this batch tore every strip down inside its
+    // own fence, so a strip missing from these reports is a strip the engine no
+    // longer has, and a mirror addressing one must find nothing.
+    replaceNativeChains(result.reports);
     return { outcome: 'applied', result, commands };
 }
 
@@ -457,8 +521,11 @@ function reasonOf(error: unknown): string {
  * reopening the gates here cannot double a mix the engine is already sounding.
  */
 function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
-    setNativeCarriedTracks(new Set());
+    claimCarriedStrips(new Set());
     nativeLiveGraphSession.audibleCarrier = false;
+    // A topology batch may already have written its chains before the throw,
+    // and they describe a graph this start is walking away from.
+    clearNativeChains();
     if (nativeLiveGraphSession.backend !== backend) {
         // Thrown before this handle was adopted, so nothing else will ever
         // close it.
@@ -534,6 +601,10 @@ async function rollNativeTransport(
 async function rollSessionTransport(input: {
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     stripTracks: readonly Track[];
+    /** The attach state the topology this session installed was built from. */
+    attachedInstanceIds: ReadonlySet<string>;
+    /** The strips the batch that installed this topology built contributing. */
+    carriedStripIds: ReadonlySet<string>;
     transportMaps: EngineTransportMaps;
     positionSeconds: number;
     sampleRate: number;
@@ -565,9 +636,35 @@ async function rollSessionTransport(input: {
     // engine can say which this one is.
     nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
     nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
+    // Before the roll, and awaited — the opposite order to the automation
+    // writer's, for a reason that belongs to the note store rather than to
+    // preference. `apply_due_midi_notes` delivers nothing while the transport
+    // is stopped, and an entry whose frame the playhead has already passed is
+    // counted late and never delivered: notes that arrive after the engine
+    // starts advancing are simply lost from the head of the take. The region
+    // this pass is written into is known here all the same, because the maps
+    // above already installed it and the engine has already answered whether it
+    // will wrap.
+    await armNativeLiveMidiWriter({
+        stripTracks: input.stripTracks,
+        // The set the standing topology was built from, never a fresh read:
+        // an instrument this session left web-voiced must not also be sent
+        // notes, and one it gated Web Audio out of must be.
+        attachedInstanceIds: input.attachedInstanceIds,
+        // Same reasoning, same batch: the strips this topology actually built
+        // contributing, not the session's own claimed set.
+        carriedStripIds: input.carriedStripIds,
+        sampleRate: input.sampleRate,
+        positionSeconds: input.positionSeconds,
+    });
     const rolled = await rollNativeTransport(input.backend, input.positionSeconds);
     nativeLiveGraphSession.rolling = rolled.rolling;
     if (!rolled.rolling) {
+        // The notes went out ahead of a roll that never happened. A parked
+        // engine delivers none of them, and the next play arms afresh; leaving
+        // the pass standing would let the playhead feed pump a window for a
+        // transport that is not moving.
+        disarmNativeLiveMidiWriter();
         return rolled.reason;
     }
     // After the roll, never before it: the region the pass is written into is
@@ -581,6 +678,163 @@ async function rollSessionTransport(input: {
         provenAfterBatch: rolled.provenAfterBatch,
     });
     return null;
+}
+
+/**
+ * The session's topology batch, at the level the master fader is standing at.
+ *
+ * The level is read here rather than taken as an argument because a session
+ * states its topology more than once — again when the first batch reports newly
+ * attached plugins — and the fader may have moved between the two. Reading it
+ * per projection is what keeps the second batch from restoring the first one's
+ * level.
+ */
+function projectSessionTopology(input: Omit<LiveGraphTopologyInput, 'masterGain'>): readonly AudioGraphCommand[] {
+    return projectLiveGraphTopology({ ...input, masterGain: masterGainState.gain });
+}
+
+/**
+ * Reopening the gates, and the only route that does: every decline past the
+ * optimistic claim runs through it, so no path can leave Web Audio silenced for
+ * an engine that never sounded anything.
+ */
+function releaseCarriedStrips(): void {
+    claimCarriedStrips(new Set());
+}
+
+/**
+ * The attach state the topology the engine actually holds was built from, and
+ * the programme read against that same set.
+ *
+ * One pair, always read together: whether a strip is web-voiced and whether its
+ * instrument has a native body are the same question asked twice, and a caller
+ * answering them from different sets gates Web Audio out of a strip the engine
+ * has no body for.
+ */
+type InstalledProjection = Readonly<{
+    attachedInstanceIds: ReadonlySet<string>;
+    programme: LiveGraphProgramme;
+}>;
+
+/**
+ * Send the topology once more, bound to the instances the first batch attached.
+ *
+ * The batch that attached them was mapped before the engine held them, so their
+ * strips went out with no body for the plugin; one more parked batch, built
+ * against the attach state those reports have just written, is what binds them
+ * — see the header for why there is never a third. Nothing is re-sent when the
+ * first batch attached nothing, because there is nothing new to bind.
+ *
+ * The re-send answers with what now stands rather than only what was applied: a
+ * refused re-send leaves the *first* batch's graph installed, and that graph is
+ * the one every carrier decision past here has to be read against.
+ */
+async function bindAttachedPlugins(input: {
+    transport: NativeGraphTransport;
+    backend: ReturnType<typeof createNativeLiveGraphBackend>;
+    topology: ReturnType<typeof readSessionTopology>;
+    sampleRate: number;
+    started: Extract<TopologyBatchOutcome, { outcome: 'applied' }>;
+    programme: LiveGraphProgramme;
+    projectTopology: (
+        attachedInstanceIds: ReadonlySet<string>,
+        against: LiveGraphProgramme
+    ) => readonly AudioGraphCommand[];
+}): Promise<Readonly<{ resent: TopologyBatchOutcome; installed: InstalledProjection }>> {
+    const { transport, backend, topology, started, programme, projectTopology } = input;
+    const first: InstalledProjection = { attachedInstanceIds: topology.attachedInstanceIds, programme };
+    if ((started.result.attachedPlugins ?? []).length === 0) {
+        return { resent: started, installed: first };
+    }
+    const attachedInstanceIds = readAttachedExternalInstanceIds();
+    // Re-projected, not reused: binding an instrument moves a MIDI strip out of
+    // `webVoicedStripIds`, and the first programme was read before the engine
+    // held that instrument.
+    const bound: InstalledProjection = {
+        attachedInstanceIds,
+        programme: sessionProgramme({ topology, attachedInstanceIds, sampleRate: input.sampleRate }),
+    };
+    const resent = await applyTopologyBatch({
+        transport,
+        backend,
+        commands: projectTopology(bound.attachedInstanceIds, bound.programme),
+    });
+    return { resent, installed: resent.outcome === 'applied' ? bound : first };
+}
+
+/**
+ * Hand the applied topology to the session and start it moving.
+ *
+ * The previous session's handle is closed only once its replacement is applied:
+ * a decline must leave the engine reachable through the handle that was already
+ * working. A new session is new news too, so whatever the previous one deferred
+ * — about a topology this batch has just replaced — goes with it.
+ *
+ * Whether this engine sounds anything is read off the batch actually sent, as
+ * the strips it was told to contribute: a contributing strip is one Web Audio
+ * has been gated out of, so the engine is the only carrier left for it whether a
+ * clip plays on it or a hosted plugin generates into it. Whether any of that can
+ * be heard is the monitor mode, and a shadowed engine writes true zeros at the
+ * device however full its timeline is.
+ *
+ * The topology went out parked, so this session has not rolled yet whatever the
+ * one it replaced was doing — and whatever that one left armed addresses a
+ * topology this batch has just replaced, over a region this session may not
+ * share.
+ */
+async function installRolledSession(input: {
+    session: StartNativeLiveGraphSessionInput;
+    backend: ReturnType<typeof createNativeLiveGraphBackend>;
+    topology: ReturnType<typeof readSessionTopology>;
+    installed: InstalledProjection;
+    rebound: Extract<TopologyBatchOutcome, { outcome: 'applied' }>;
+    monitor: LiveGraphMonitorMode;
+}): Promise<void> {
+    const { session, backend, topology, installed, rebound, monitor } = input;
+    nativeLiveGraphSession.backend?.dispose();
+    // This session's `replaceTopology` batch has already replaced the whole
+    // topology a still-orphaned handle was left rolling, so that handle has
+    // nothing left to park — the engine it named no longer holds the strips
+    // it abandoned.
+    nativeLiveGraphSession.orphanedBackend?.dispose();
+    nativeLiveGraphSession.orphanedBackend = null;
+    nativeLiveGraphSession.backend = backend;
+    nativeLiveGraphSession.lastDeferredChainNotice = null;
+    const shadowed = monitor === 'shadowed';
+    nativeLiveGraphSession.monitorShadowed = shadowed;
+    // The batch the engine actually holds, not the session's own claimed set:
+    // a shadowed monitor claims nothing while the engine still builds every
+    // contributing strip, and the note writer has to agree with the engine
+    // rather than with what Web Audio was told to give up.
+    const reboundStripIds = carriedStripIds(rebound.commands);
+    nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
+    nativeLiveGraphSession.rolling = false;
+    disarmNativeLiveAutomationWriter();
+    disarmNativeLiveMidiWriter();
+    const parkedReason = await rollSessionTransport({
+        backend,
+        stripTracks: topology.stripTracks,
+        attachedInstanceIds: installed.attachedInstanceIds,
+        carriedStripIds: reboundStripIds,
+        transportMaps: session.transportMaps,
+        positionSeconds: session.positionSeconds,
+        sampleRate: session.sampleRate,
+        programmeEndSeconds: programmeEndSeconds(installed.programme),
+    });
+    if (monitor === 'audible' && parkedReason !== null) {
+        // A parked engine renders no frame at all, so a strip gated out of Web
+        // Audio for it is a strip on no carrier whatsoever — silent for the
+        // whole take. The session itself stands: its handle, its topology and
+        // its plugin hosting are what stop, reposition and re-map still need.
+        // Only the audio goes back.
+        releaseCarriedStrips();
+        nativeLiveGraphSession.audibleCarrier = false;
+        notifyNativeDecline(parkedReason);
+    }
+    startNativeEnginePlayheadFeed();
+    // The session stands parked or rolling either way, and a stall is a fact
+    // about the engine under both — so the watch runs whichever this session is.
+    startNativeEngineLivenessWatch();
 }
 
 export function startNativeLiveGraphSession(
@@ -605,7 +859,11 @@ export function startNativeLiveGraphSession(
         // (`advance_playhead` returns on `!is_playing`), so nothing can be
         // rendered ahead of the region that governs it.
         const monitor = input.monitor ?? DEFAULT_MONITOR;
-        const programme = readLiveGraphProgramme({ stripTracks: topology.stripTracks, sampleRate: input.sampleRate });
+        const programme = sessionProgramme({
+            topology,
+            attachedInstanceIds: topology.attachedInstanceIds,
+            sampleRate: input.sampleRate,
+        });
         // Here, because this is where the programme is applied.
         logProgrammeExclusions(programme);
         // Material before the batch that names it, always: the native side
@@ -615,15 +873,22 @@ export function startNativeLiveGraphSession(
         // it.
         const parked = { playing: false, positionSeconds: input.positionSeconds } as const;
         const audible = monitor === 'audible';
-        const projectTopology = (attachedInstanceIds: ReadonlySet<string>): readonly AudioGraphCommand[] =>
-            projectLiveGraphTopology({ ...topology, attachedInstanceIds, transport: parked, monitor, programme });
-        // Reopening the gates, and the only route that does: every decline past
-        // the optimistic claim below runs through it, so no path can leave Web
-        // Audio silenced for an engine that never sounded anything.
-        const releaseCarriedStrips = (): void => setNativeCarriedTracks(new Set());
-
+        // The programme travels beside the set it was projected against, never
+        // implied from it: the two are one reading of the attach state, and a
+        // batch built from one of each is a strip both carriers refuse.
+        const projectTopology = (
+            attachedInstanceIds: ReadonlySet<string>,
+            against: LiveGraphProgramme
+        ): readonly AudioGraphCommand[] =>
+            projectSessionTopology({
+                ...topology,
+                attachedInstanceIds,
+                transport: parked,
+                monitor,
+                programme: against,
+            });
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
-        const firstCommands = projectTopology(topology.attachedInstanceIds);
+        const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
         // Everything past the claim, so that every way out of it reopens the
         // gates — a rejected sample registration, a bridge that drops mid-apply,
         // a reporter that throws. An unwind that left them shut would silence
@@ -632,7 +897,7 @@ export function startNativeLiveGraphSession(
             // Before the first await, and only for an audible session — see the
             // header for why the claim is made ahead of the answer rather than after
             // it. A shadowed session sounds nothing, so it releases instead.
-            setNativeCarriedTracks(audible ? carriedStripIds(firstCommands) : new Set());
+            claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
             const started = await applyTopologyBatch({
                 transport: availability.transport,
                 backend,
@@ -644,26 +909,25 @@ export function startNativeLiveGraphSession(
                 notifyNativeDecline(started.reason);
                 return { outcome: 'declined', reason: started.reason };
             }
-            // The batch that attached those instances was mapped before the engine
-            // held them, so their strips went out with no body for the plugin. One
-            // more parked batch, built against the attach state the reports above
-            // have just written, is what binds them — see the header for why there
-            // is never a third.
-            const boundInstanceIds =
-                (started.result.attachedPlugins ?? []).length > 0 ? readAttachedExternalInstanceIds() : null;
-            const resent = boundInstanceIds
-                ? await applyTopologyBatch({
-                      transport: availability.transport,
-                      backend,
-                      commands: projectTopology(boundInstanceIds),
-                  })
-                : started;
+            const { resent, installed } = await bindAttachedPlugins({
+                transport: availability.transport,
+                backend,
+                topology,
+                sampleRate: input.sampleRate,
+                started,
+                programme,
+                projectTopology,
+            });
             if (resent.outcome === 'unreconciled') {
                 // Half of a topology replacement is neither this batch's graph nor
                 // the one the first batch installed, so there is nothing left to
                 // keep.
                 releaseCarriedStrips();
                 backend.dispose();
+                // The first batch's chains were recorded and are now describing
+                // a graph that is half of two topologies and reachable through
+                // no handle.
+                clearNativeChains();
                 notifyNativeDecline(resent.reason);
                 return { outcome: 'declined', reason: resent.reason };
             }
@@ -676,63 +940,26 @@ export function startNativeLiveGraphSession(
                 logger.warn(`[AudioEngine] native engine refused the plugin-attach re-send: ${resent.reason}`);
             }
             const rebound = resent.outcome === 'applied' ? resent : started;
-            const reboundInstanceIds =
-                resent.outcome === 'applied' && boundInstanceIds ? boundInstanceIds : topology.attachedInstanceIds;
             // Restated against the batch that actually stands: binding an instance
             // can move a strip from web to native, and the optimistic claim above
             // was made before the engine held it.
             if (audible) {
-                setNativeCarriedTracks(carriedStripIds(rebound.commands));
-                notifySilentHostedPlugins({
+                claimCarriersOf({
+                    commands: rebound.commands,
                     stripTracks: topology.stripTracks,
-                    carriers: projectStripCarriers({
-                        stripTracks: topology.stripTracks,
-                        attachedInstanceIds: reboundInstanceIds,
-                        programme,
-                        inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
-                    }),
+                    attachedInstanceIds: installed.attachedInstanceIds,
+                    programme: installed.programme,
+                    inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
                 });
             }
-            // The previous session's handle is closed only once its replacement is
-            // applied: a decline must leave the engine reachable through the handle
-            // that was already working.
-            nativeLiveGraphSession.backend?.dispose();
-            nativeLiveGraphSession.backend = backend;
-            // Both halves, and both are needed. What was scheduled is read off the
-            // batch actually sent, so the day the producer emits clips nothing has
-            // to be remembered here; whether any of it can be heard is the monitor
-            // mode, and a shadowed engine writes true zeros at the device however
-            // full its timeline is.
-            const shadowed = monitor === 'shadowed';
-            const schedulesClips = rebound.commands.some((command) => command.kind === 'schedule-clip');
-            nativeLiveGraphSession.monitorShadowed = shadowed;
-            nativeLiveGraphSession.audibleCarrier = schedulesClips && !shadowed;
-            // The topology went out parked (see the batch above), so this session
-            // has not rolled yet whatever the one it replaced was doing.
-            nativeLiveGraphSession.rolling = false;
-            // Whatever the previous session left armed addresses a topology this
-            // batch has just replaced, and a region this session may not share.
-            disarmNativeLiveAutomationWriter();
-
-            const parkedReason = await rollSessionTransport({
+            await installRolledSession({
+                session: input,
                 backend,
-                stripTracks: topology.stripTracks,
-                transportMaps: input.transportMaps,
-                positionSeconds: input.positionSeconds,
-                sampleRate: input.sampleRate,
-                programmeEndSeconds: programmeEndSeconds(programme),
+                topology,
+                installed,
+                rebound,
+                monitor,
             });
-            if (audible && parkedReason !== null) {
-                // A parked engine renders no frame at all, so a strip gated out of
-                // Web Audio for it is a strip on no carrier whatsoever — silent for
-                // the whole take. The session itself stands: its handle, its
-                // topology and its plugin hosting are what stop, reposition and
-                // re-map still need. Only the audio goes back.
-                releaseCarriedStrips();
-                nativeLiveGraphSession.audibleCarrier = false;
-                notifyNativeDecline(parkedReason);
-            }
-            startNativeEnginePlayheadFeed();
             // The last topology batch the engine *applied*: a re-send that landed
             // replaced every strip the first one built, so its reports are the only
             // ones describing the graph now held — and a re-send the engine refused

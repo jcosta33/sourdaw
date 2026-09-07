@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     setStepRetrigger: vi.fn(),
     setStepCondition: vi.fn(),
     setStepProbability: vi.fn(),
+    setStepMicroTiming: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -44,6 +45,9 @@ vi.mock('../../../useCases/stepModifications/setStepCondition', () => ({
 }));
 vi.mock('../../../useCases/stepModifications/setStepProbability', () => ({
     setStepProbability: mocks.setStepProbability,
+}));
+vi.mock('../../../useCases/stepModifications/setStepMicroTiming', () => ({
+    setStepMicroTiming: mocks.setStepMicroTiming,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -316,5 +320,44 @@ describe('ToasterPanel', () => {
 
         expect(mocks.setStepProbability).toHaveBeenCalledTimes(1);
         expect(mocks.setStepProbability).toHaveBeenCalledWith('toaster-test', 0, 0, 0.5);
+    });
+
+    it('passes onSetMicroTiming to StepSequencer and invokes setStepMicroTiming', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const microTimingOption = screen.getByRole('menuitem', { name: '+25%' });
+        fireEvent.click(microTimingOption);
+
+        expect(mocks.setStepMicroTiming).toHaveBeenCalledTimes(1);
+        expect(mocks.setStepMicroTiming).toHaveBeenCalledWith('toaster-test', 0, 0, 0.25);
+    });
+
+    it('ensures section cards do not collapse in the bottom panel', () => {
+        const { container } = render(<ToasterPanel deviceId="toaster-test" />);
+        const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
+        expect(sectionCards.length).toBe(6);
+        for (const title of ['Kit shelf', 'Pad bay', 'Transport', 'Pad mixer', 'Fill tools', 'Groove']) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section).toHaveClass('shrink-0', 'toaster-window');
+        }
+    });
+
+    it('applies DAW styling classes to the pattern groove amount slider', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        const slider = screen.getByRole('slider', { name: 'Pattern groove amount' });
+        expect(slider).toHaveClass(
+            'h-1.5',
+            'w-full',
+            'cursor-pointer',
+            'appearance-none',
+            'rounded-lg',
+            'bg-white/10',
+            'accent-[var(--color-accent-peach)]'
+        );
     });
 });

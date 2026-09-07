@@ -13,4 +13,7 @@ export { audioRecordingStore } from './audioRecordingStore';
 export type { AdjustmentApplicationState } from './adjustmentApplicationStore';
 export { adjustmentApplicationStore } from './adjustmentApplicationStore';
 
+export type { NativeEngineRearmState } from './nativeEngineRearmStore';
+export { defaultNativeEngineRearmState, nativeEngineRearmStore } from './nativeEngineRearmStore';
+
 // elasticAudio + audioWarp stores moved to ElasticAudio (ADR 0011 W4).

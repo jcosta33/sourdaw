@@ -10,7 +10,6 @@ use crate::state::AppState;
 use daw_engine::engine_events::{EngineEvent, StreamErrorKind, StreamSide};
 use daw_engine::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::Ordering;
 
 /// Why the audio backend reported a stream error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,17 +97,6 @@ pub struct EngineRtDiagnostics {
     pub effect_id_collisions: u64,
     pub unsupported_effect_additions: u64,
     pub unmapped_set_param_calls: u64,
-    pub bridge_output_blocks_dropped: u64,
-    pub unmatched_bridge_blocks: u64,
-    pub bridge_backlog_blocks_shed: u64,
-    /// Bridge blocks returned unprocessed because a strip chain owns the
-    /// plugin this block, from
-    /// `ActiveMidiRtDiagnosticsSnapshot::bridge_blocks_passed_chain_bound`.
-    pub bridge_blocks_passed_chain_bound: u64,
-    pub callback_frames_over_bridge_reach: u64,
-    /// Counted on the control side, not the audio thread: input blocks the app
-    /// could not hand to a bridge because its input ring was full.
-    pub bridge_input_blocks_refused: u64,
     /// A `RegisterCaptureConsumer` the input bus would not take, from
     /// `ActiveMidiRtDiagnosticsSnapshot::capture_consumer_refusals`.
     pub capture_consumer_refusals: u64,
@@ -122,6 +110,21 @@ pub struct EngineRtDiagnostics {
     /// capture is not serving — see `daw_engine::EngineHandle::input_latency_frames`
     /// for what zero does and does not mean.
     pub input_latency_frames: u64,
+    /// The kind of the last non-xrun error the output stream reported, or
+    /// `null` if it has not reported one.
+    ///
+    /// Detail beside `running`, not a substitute for it: a `DeviceChanged`
+    /// reroute or a recovered WASAPI invalidation can leave this non-null
+    /// while `running` is still `true`, because the render callback kept
+    /// being called through it. `running: false` with this non-null names
+    /// the condition a host actually needs to act on — an engine object
+    /// exists, its other counters are real readings rather than the zeroed
+    /// not-running default, but no render callback is running and nothing
+    /// renders until the engine is restarted (restart is a later slice).
+    /// Never `#[serde(skip_serializing_if)]` — a reader must be able to tell
+    /// "healthy" from "not asked" from the key's own presence, the same
+    /// reason every other counter here is unconditional.
+    pub output_stream_fault: Option<StreamErrorKindPayload>,
     pub events: Vec<EngineEventPayload>,
 }
 
@@ -134,26 +137,26 @@ pub struct EngineRtDiagnostics {
 fn running_engine_diagnostics(
     snapshot: ActiveMidiRtDiagnosticsSnapshot,
     events: Vec<EngineEvent>,
-    bridge_input_blocks_refused: u64,
     input_latency_frames: usize,
+    rendering: bool,
+    output_stream_fault: Option<StreamErrorKind>,
 ) -> EngineRtDiagnostics {
     EngineRtDiagnostics {
-        running: true,
+        // An engine object existing is not the same as it rendering: the
+        // output stream's error callback runs the render thread down without
+        // dropping the `EngineHandle`, so `running` reads the watchdog's
+        // render-liveness verdict rather than whether a handle exists.
+        running: rendering,
         scheduler_event_buffer_overflows: snapshot.scheduler_event_buffer_overflows,
         arpeggiator_active_note_exhaustions: snapshot.arpeggiator_active_note_exhaustions,
         effect_id_collisions: snapshot.effect_id_collisions,
         unsupported_effect_additions: snapshot.unsupported_effect_additions,
         unmapped_set_param_calls: snapshot.unmapped_set_param_calls,
-        bridge_output_blocks_dropped: snapshot.bridge_output_blocks_dropped,
-        unmatched_bridge_blocks: snapshot.unmatched_bridge_blocks,
-        bridge_backlog_blocks_shed: snapshot.bridge_backlog_blocks_shed,
-        bridge_blocks_passed_chain_bound: snapshot.bridge_blocks_passed_chain_bound,
-        callback_frames_over_bridge_reach: snapshot.callback_frames_over_bridge_reach,
-        bridge_input_blocks_refused,
         capture_consumer_refusals: snapshot.capture_consumer_refusals,
         capture_blocks_dropped: snapshot.capture_blocks_dropped,
         capture_input_underruns: snapshot.capture_input_underruns,
         input_latency_frames: input_latency_frames as u64,
+        output_stream_fault: output_stream_fault.map(StreamErrorKindPayload::from),
         events: events.into_iter().map(EngineEventPayload::from).collect(),
     }
 }
@@ -171,29 +174,27 @@ fn running_engine_diagnostics(
 /// and is held only for the snapshot and the drain, so there is no await
 /// under it.
 pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnostics, String> {
-    let bridge_input_blocks_refused = state.bridge_input_blocks_refused.load(Ordering::Relaxed);
-
     let mut engine_guard = state
         .engine
         .lock()
         .map_err(|error| format!("Failed to lock engine: {error}"))?;
 
     let Some(engine) = engine_guard.as_mut() else {
-        return Ok(EngineRtDiagnostics {
-            bridge_input_blocks_refused,
-            ..EngineRtDiagnostics::default()
-        });
+        return Ok(EngineRtDiagnostics::default());
     };
 
     let snapshot = engine.midi_rt_diagnostics_snapshot();
     let events = engine.drain_engine_events();
     let input_latency_frames = engine.input_latency_frames();
+    let rendering = engine.is_rendering();
+    let output_stream_fault = engine.output_stream_fault();
 
     Ok(running_engine_diagnostics(
         snapshot,
         events,
-        bridge_input_blocks_refused,
         input_latency_frames,
+        rendering,
+        output_stream_fault,
     ))
 }
 
@@ -212,16 +213,11 @@ mod tests {
             effect_id_collisions: 3,
             unsupported_effect_additions: 4,
             unmapped_set_param_calls: 5,
-            bridge_output_blocks_dropped: 6,
-            unmatched_bridge_blocks: 7,
-            bridge_backlog_blocks_shed: 8,
-            bridge_blocks_passed_chain_bound: 15,
-            callback_frames_over_bridge_reach: 9,
-            bridge_input_blocks_refused: 10,
             capture_consumer_refusals: 11,
             capture_blocks_dropped: 12,
             capture_input_underruns: 13,
             input_latency_frames: 14,
+            output_stream_fault: Some(StreamErrorKindPayload::DeviceChanged),
             events: vec![EngineEventPayload::StreamError {
                 side: StreamSidePayload::Input,
                 kind: StreamErrorKindPayload::DeviceNotAvailable,
@@ -236,12 +232,9 @@ mod tests {
                 r#"{"running":true,"schedulerEventBufferOverflows":1,"#,
                 r#""arpeggiatorActiveNoteExhaustions":2,"effectIdCollisions":3,"#,
                 r#""unsupportedEffectAdditions":4,"unmappedSetParamCalls":5,"#,
-                r#""bridgeOutputBlocksDropped":6,"unmatchedBridgeBlocks":7,"#,
-                r#""bridgeBacklogBlocksShed":8,"bridgeBlocksPassedChainBound":15,"#,
-                r#""callbackFramesOverBridgeReach":9,"#,
-                r#""bridgeInputBlocksRefused":10,"captureConsumerRefusals":11,"#,
+                r#""captureConsumerRefusals":11,"#,
                 r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
-                r#""inputLatencyFrames":14,"#,
+                r#""inputLatencyFrames":14,"outputStreamFault":"deviceChanged","#,
                 r#""events":[{"type":"streamError","side":"input","#,
                 r#""kind":"deviceNotAvailable"}]}"#
             )
@@ -259,12 +252,9 @@ mod tests {
                 r#"{"running":false,"schedulerEventBufferOverflows":0,"#,
                 r#""arpeggiatorActiveNoteExhaustions":0,"effectIdCollisions":0,"#,
                 r#""unsupportedEffectAdditions":0,"unmappedSetParamCalls":0,"#,
-                r#""bridgeOutputBlocksDropped":0,"unmatchedBridgeBlocks":0,"#,
-                r#""bridgeBacklogBlocksShed":0,"bridgeBlocksPassedChainBound":0,"#,
-                r#""callbackFramesOverBridgeReach":0,"#,
-                r#""bridgeInputBlocksRefused":0,"captureConsumerRefusals":0,"#,
+                r#""captureConsumerRefusals":0,"#,
                 r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
-                r#""inputLatencyFrames":0,"events":[]}"#
+                r#""inputLatencyFrames":0,"outputStreamFault":null,"events":[]}"#
             )
         );
     }
@@ -310,14 +300,12 @@ mod tests {
             effect_id_collisions: 3,
             unsupported_effect_additions: 4,
             unmapped_set_param_calls: 5,
-            bridge_output_blocks_dropped: 6,
-            unmatched_bridge_blocks: 7,
-            bridge_backlog_blocks_shed: 8,
-            bridge_blocks_passed_chain_bound: 15,
-            callback_frames_over_bridge_reach: 9,
             capture_consumer_refusals: 10,
             capture_blocks_dropped: 12,
             capture_input_underruns: 13,
+            // Not on this payload, so there is no mapping here to get wrong.
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
         };
 
         let diagnostics = running_engine_diagnostics(
@@ -326,8 +314,9 @@ mod tests {
                 side: StreamSide::Output,
                 kind: StreamErrorKind::DeviceBusy,
             }],
-            11,
             14,
+            true,
+            None,
         );
 
         assert!(diagnostics.running);
@@ -336,18 +325,11 @@ mod tests {
         assert_eq!(diagnostics.effect_id_collisions, 3);
         assert_eq!(diagnostics.unsupported_effect_additions, 4);
         assert_eq!(diagnostics.unmapped_set_param_calls, 5);
-        assert_eq!(diagnostics.bridge_output_blocks_dropped, 6);
-        assert_eq!(diagnostics.unmatched_bridge_blocks, 7);
-        assert_eq!(diagnostics.bridge_backlog_blocks_shed, 8);
-        assert_eq!(diagnostics.bridge_blocks_passed_chain_bound, 15);
-        assert_eq!(diagnostics.callback_frames_over_bridge_reach, 9);
         assert_eq!(diagnostics.capture_consumer_refusals, 10);
         assert_eq!(diagnostics.capture_blocks_dropped, 12);
         assert_eq!(diagnostics.capture_input_underruns, 13);
-        // The refusal count is the app's, not the snapshot's: it must not be
-        // read off the audio thread's counters.
-        assert_eq!(diagnostics.bridge_input_blocks_refused, 11);
         assert_eq!(diagnostics.input_latency_frames, 14);
+        assert_eq!(diagnostics.output_stream_fault, None);
         assert_eq!(
             diagnostics.events,
             vec![EngineEventPayload::StreamError {
@@ -355,6 +337,108 @@ mod tests {
                 kind: StreamErrorKindPayload::DeviceBusy,
             }]
         );
+    }
+
+    /// `running` reports the watchdog's render-liveness verdict, not merely
+    /// whether an `EngineHandle` exists: a stalled render callback leaves an
+    /// engine object standing, and this is the one payload a host reads to
+    /// tell the two apart. Mutation: hardcode `running: true` in
+    /// `running_engine_diagnostics` — this test goes red because a stalled
+    /// stream would then report healthy.
+    #[test]
+    fn a_stalled_engine_reports_not_running_with_its_last_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            Vec::new(),
+            0,
+            false,
+            Some(StreamErrorKind::DeviceChanged),
+        );
+
+        assert!(
+            !diagnostics.running,
+            "an engine whose render callback stalled renders nothing"
+        );
+        assert_eq!(
+            diagnostics.output_stream_fault,
+            Some(StreamErrorKindPayload::DeviceChanged)
+        );
+    }
+
+    /// A `DeviceChanged` reroute or a recovered WASAPI invalidation can leave
+    /// a fault recorded while the render callback never actually stopped —
+    /// `running` must track the watchdog's verdict, not merely whether a
+    /// fault was ever reported. Mutation: derive `running` from
+    /// `output_stream_fault.is_none()` instead of the `rendering` argument —
+    /// this test goes red because a recorded-but-survived fault would then
+    /// report not running.
+    #[test]
+    fn a_rendering_engine_reports_running_even_with_a_recorded_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            Vec::new(),
+            0,
+            true,
+            Some(StreamErrorKind::DeviceChanged),
+        );
+
+        assert!(
+            diagnostics.running,
+            "a survived reroute must not be read as the stream having stopped"
+        );
+        assert_eq!(
+            diagnostics.output_stream_fault,
+            Some(StreamErrorKindPayload::DeviceChanged)
+        );
+    }
+
+    /// The ordinary case: a healthy output stream reports running with no
+    /// fault recorded.
+    #[test]
+    fn a_healthy_engine_reports_running_with_no_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(snapshot, Vec::new(), 0, true, None);
+
+        assert!(diagnostics.running);
+        assert_eq!(diagnostics.output_stream_fault, None);
     }
 
     /// A capture failure and a playback failure reach the frontend as the
@@ -396,18 +480,16 @@ mod tests {
         );
     }
 
+    /// A poll before the first Play is a legitimate poll, not a failure: it
+    /// answers the not-running shape rather than an error.
     #[test]
-    fn a_stopped_engine_still_reports_refused_input_blocks() {
+    fn a_stopped_engine_answers_the_not_running_shape() {
         let state = AppState::default();
-        state
-            .bridge_input_blocks_refused
-            .store(3, std::sync::atomic::Ordering::Relaxed);
 
         let diagnostics = crate::block_on_test(engine_rt_diagnostics(&state))
             .expect("diagnostics should be readable");
 
         assert!(!diagnostics.running);
-        assert_eq!(diagnostics.bridge_input_blocks_refused, 3);
         assert!(diagnostics.events.is_empty());
     }
 }
