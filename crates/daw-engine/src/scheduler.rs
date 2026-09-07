@@ -13029,9 +13029,7 @@ mod timeline_tests {
     /// would be comparing two different synthesisers.
     const FERMENTER_RATE: f32 = 48_000.0;
 
-    /// A track carrying a Fermenter spliced as a generator, the way
-    /// `commands/graph.rs` places a built-in instrument: registered detached
-    /// with its own note store, then spliced at the head of the chain.
+    /// Send [`fermenter_strip_commands`] with no patch.
     ///
     /// The track holds no clip, so every non-zero sample the master carries
     /// came out of the instrument.
@@ -13164,10 +13162,15 @@ mod timeline_tests {
     /// and the note-off (frame 900: live block starts 896, offline block
     /// starts 512) each land in blocks that start at a different frame on
     /// the two sides, so a delivery that depended on block phase would
-    /// diverge here. With whole-run callbacks the body's own output is
-    /// identical by [`FermenterBody`]'s own contract; its grain independence
-    /// from either grid is pinned separately by
-    /// [`a_hosted_fermenter_renders_the_worklet_samples_for_the_same_programme`].
+    /// diverge here.
+    ///
+    /// The body's own samples agree because both grids are whole multiples of
+    /// [`FERMENTER_BLOCK_FRAMES`] aligned at frame 0, so the instrument sees
+    /// one and the same run sequence on both sides. A live period that is not
+    /// a multiple of 128, or a loop seam inside a callback, advances the block
+    /// smoothers one extra step by the body's own contract and is outside what
+    /// this pins; see
+    /// [`a_partial_fermenter_run_advances_the_block_smoothers_one_extra_step`].
     #[test]
     fn a_fermenter_note_renders_the_same_samples_live_and_offline() {
         const TRACK_ID: usize = 1;
