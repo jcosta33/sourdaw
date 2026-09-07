@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_02f3eddaa26531::t_05d7cc412ae1e4 1,3837-3863
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a096b47bcfb9e8b7f9c685d089bb5a3ae4e3bea3",
+  "prompts": {},
+  "sessions": {
+    "s_02f3eddaa26531": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82ff2e0ff8401602",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
