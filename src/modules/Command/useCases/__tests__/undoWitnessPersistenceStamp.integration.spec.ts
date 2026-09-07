@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     captureDurableDocumentWitness,
     clearActionHistory as clearCrdtActionHistory,
+    compactProject,
     createCrdtDoc,
+    hasCrdtDoc,
+    loadCrdtProject,
     markActionHistoryEntryReverted,
     persistCrdtProject,
     recordActionHistoryEntry,
@@ -66,12 +73,15 @@ function flushPendingMicrotask(): Promise<void> {
 
 describe('Command undo witness persistence stamp integration (#3331)', () => {
     let unsubscribeActionHistory: (() => void) | null = null;
+    let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
+        indexedDb = installTransactionalIndexedDb();
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        await compactProject();
         clearCrdtActionHistory();
         setActionHistoryMetadataPort({
             record: recordActionHistoryEntry,
@@ -109,6 +119,8 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         sessionUndoWitnessStampPort.setProvider(null);
         removeCrdtDoc('root');
         sessionStorage.removeItem(UNDO_SESSION_KEY);
+        await indexedDb?.dispose();
+        indexedDb = null;
         vi.restoreAllMocks();
     });
 
@@ -139,19 +151,25 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         // re-witnesses it.
         expect(readMirroredWitness()).toBe(staleMirroredWitness);
 
-        // The real production persistence step, driven end to end: no
-        // IndexedDB is available in this test environment, so the CRDT
-        // persistence repositories resolve as a graceful no-op commit —
-        // but the coordinator still force-flushes this generation's
-        // deferred writes and stamps the undo witness through the real
-        // port before returning, exactly as it does in production.
+        // The real production persistence step flushes the generation,
+        // commits the bytes through IndexedDB, and stamps the witness through
+        // the production port before returning.
         await persistCrdtProject();
 
         expect(readMirroredWitness()).toBe(witnessAfterFrame);
+        expect(indexedDb?.persistence.records.size).toBeGreaterThan(0);
+
+        // Drop the live root, then use the public lifecycle to install the
+        // bytes the persistence step actually committed. Reconciliation below
+        // therefore cannot compare the session mirror to the untouched root.
+        removeCrdtDoc('root');
+        expect(hasCrdtDoc('root')).toBe(false);
+        createCrdtDoc('root');
+        await expect(loadCrdtProject()).resolves.toBe(true);
+        expect(captureDurableDocumentWitness()).toBe(witnessAfterFrame);
 
         // Simulate the next boot: hydrate from the mirror the stamp just
-        // wrote, then reconcile against the same project id and the real
-        // capture — the stacks must be kept, not cleared.
+        // wrote, then reconcile against the reloaded document witness.
         hydrateUndoStoreFromSession(sessionActionContracts);
         reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TransactionalPersistence } from '#/infra/testing/transactionalPersistence';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
@@ -7,7 +8,6 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
-import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { createCrdtProject } from '../createCrdtProject';
@@ -135,12 +135,15 @@ async function settleOperationCapturingWrites({
     firstWriteOccurrence: number;
     operation: Promise<void>;
     persistence: TransactionalPersistence;
-}): Promise<{ error: unknown; writes: readonly import('../../testing/transactionalPersistence').TransactionWrite[] }> {
+}): Promise<{
+    error: unknown;
+    writes: readonly import('#/infra/testing/transactionalPersistence').TransactionWrite[];
+}> {
     const outcomePromise: Promise<PersistenceOperationOutcome> = operation.then(
         () => ({ kind: 'resolved' }),
         (error: unknown) => ({ kind: 'rejected', error })
     );
-    const writes: import('../../testing/transactionalPersistence').TransactionWrite[] = [];
+    const writes: import('#/infra/testing/transactionalPersistence').TransactionWrite[] = [];
     let occurrence = firstWriteOccurrence;
 
     for (let attempt = 0; attempt < 4; attempt++) {

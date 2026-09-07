@@ -1,4 +1,4 @@
-/** Owner-local deterministic IndexedDB transaction fixture for CRDT tests. */
+/** Deterministic in-memory byte transaction fixture for persistence tests. */
 type FakeRequest<Result> = {
     result: Result;
 };
@@ -13,6 +13,10 @@ type TransactionOperation = (records: Map<string, Uint8Array>) => void;
 
 export type TransactionalPersistenceDatabase = {
     transaction(storeName: string, mode?: IDBTransactionMode): TransactionalPersistenceTransaction;
+};
+
+export type TransactionalPersistenceOptions = {
+    autoCompleteReadwrite?: boolean;
 };
 
 export class TransactionalPersistenceTransaction {
@@ -179,7 +183,7 @@ export class TransactionalPersistence {
     }> = [];
     private activeReadwriteTransaction: TransactionalPersistenceTransaction | null = null;
 
-    constructor() {
+    constructor(private readonly options: TransactionalPersistenceOptions = {}) {
         const database = {
             transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => this.createTransaction(mode),
         };
@@ -250,6 +254,9 @@ export class TransactionalPersistence {
         if (mode === 'readwrite') {
             this.queuedReadwriteTransactions.push(transaction);
             this.startNextReadwriteTransaction();
+            if (this.options.autoCompleteReadwrite) {
+                queueMicrotask(() => transaction.complete());
+            }
         } else {
             transaction.start();
             queueMicrotask(() => transaction.complete());

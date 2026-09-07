@@ -2,7 +2,7 @@ import { change, getHeads, init, load, loadIncremental, merge, save } from '@aut
 
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 
-import type { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import type { TransactionalPersistence } from '#/infra/testing/transactionalPersistence';
 
 export type BundleEntry = [string, Uint8Array];
 
