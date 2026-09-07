@@ -1,11 +1,13 @@
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { RECORDING_RING_CONTROL_BYTES } from '../../models/RecordingRingProtocol';
+
 // 2^19 floats = 524 288 samples ~= 10.9 s @ 48 kHz.
 // The OPFS worker drains every 50 ms (~2 400 samples) so the ring stays nearly
 // empty under normal conditions. The extra headroom covers transient stalls.
 const RING_FLOATS = 524_288;
 
-export const SAB_BYTES = 4 + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT;
+export const SAB_BYTES = RECORDING_RING_CONTROL_BYTES + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 
 export const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
@@ -18,6 +20,7 @@ export type RecordingSession = {
     status: 'starting' | 'recording' | 'stopping';
     onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
     stopFlushTimer: ReturnType<typeof setTimeout> | null;
+    producerStopAcknowledged: boolean;
 };
 
 export type RecordingStopWaiter = {

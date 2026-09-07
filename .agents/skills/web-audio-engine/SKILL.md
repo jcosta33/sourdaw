@@ -69,6 +69,28 @@ UI displays summaries and requests changes via commands. It never owns playback 
 
 **Why:** conflating runtime handles with project meaning makes save/load and collaboration impossible.
 
+### 9. Recording rings publish a cumulative, versioned position
+
+A recording worklet must never publish a signed 32-bit cursor as the history
+contract. Publish an odd sequence before overwriting ring data, then the full
+nonnegative cumulative sample count, then an even sequence. A worker copies
+only an interval bracketed by the same stable sequence and cumulative count;
+it retries an in-progress or changed copy and abandons a lapped interval rather
+than writing substituted PCM. Test real 128-frame writes across signed and
+unsigned word rollover, capacity minus one/exact/plus one, and a writer paused
+inside the consumer copy.
+
+Stopping has the same ownership fence: accept only the captured session's
+producer-stop acknowledgment, make one final worker drain against that count,
+and keep the original flush deadline armed through acknowledgment. A missing
+acknowledgment or flush cleans that exact captured session without touching a
+successor for the same track.
+
+**Why:** a pre-copy cursor check can admit mixed PCM, and a signed or low-word
+rollover can make a full ring turn look empty. Clearing the stop deadline on
+the producer acknowledgment allows a stalled final drain to retain the input
+session indefinitely.
+
 ## Out of scope
 
 Native plugin host isolation beyond the shared RT rules — see `plugin-hosting`.

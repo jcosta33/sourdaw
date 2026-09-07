@@ -1,10 +1,9 @@
-import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
 import { type RecordingSession } from './recordingSession';
 import { releaseSharedMediaStream } from './releaseSharedMediaStream';
 
 export function cleanupNodesForRecordingSession(session: RecordingSession): void {
-    clearRecordingStopFlushTimer(session);
     if (session.recordingNode) {
+        session.recordingNode.port.onmessage = null;
         session.recordingNode.disconnect();
         session.recordingNode = null;
     }

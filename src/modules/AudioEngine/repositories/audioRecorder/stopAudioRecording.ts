@@ -1,7 +1,6 @@
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 
 import { armRecordingStopFlushTimer } from './armRecordingStopFlushTimer';
-import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
 import { activeSessions, recordingLifecycleState } from './recordingSession';
 import { waitForRecordingSessions } from './waitForRecordingSessions';
 
@@ -13,10 +12,8 @@ export function stopAudioRecording(): Promise<void> {
             continue;
         }
         session.status = 'stopping';
-        session.recordingNode?.port.postMessage({ type: 'stop' });
-        session.recordingWorker?.postMessage({ type: 'stop' });
-        cleanupNodesForRecordingSession(session);
         armRecordingStopFlushTimer(session);
+        session.recordingNode?.port.postMessage({ type: 'stop' });
     }
 
     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
