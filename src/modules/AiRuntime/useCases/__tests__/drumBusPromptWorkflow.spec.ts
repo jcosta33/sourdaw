@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, onTestFinished, vi } from 'vitest';
 
 import {
     captureAgentProjectInspectionState,
@@ -3834,6 +3834,33 @@ describe('drum bus prompt workflow', () => {
         setMf06Project();
         useMf06WebLlmFixture();
         settleFixtureProjectWrites();
+        // Every state this case asserts stays projection-only: the collaborator
+        // rename below must never reach the document, or the confirmation would
+        // observe a project change and invalidate instead of failing the
+        // fingerprint preflight. A CRDT-backed store write lands in the document
+        // on a deferred animation frame, so whether that frame fires inside
+        // confirm's await window decides the transition — under shard load it
+        // does, and the case observed 'invalidated' where an idle run observes
+        // 'failed'. Hold frames for the whole case so the document is frozen by
+        // construction; the pending write belongs to no document after the next
+        // authority reset releases it, and onTestFinished restores the timers.
+        const scheduledFrames = new Map<number, FrameRequestCallback>();
+        let nextFrameId = 1;
+        const requestAnimationFrameSpy = vi
+            .spyOn(globalThis, 'requestAnimationFrame')
+            .mockImplementation((callback) => {
+                const frameId = nextFrameId++;
+                scheduledFrames.set(frameId, callback);
+                return frameId;
+            });
+        const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frameId) => {
+            scheduledFrames.delete(frameId);
+        });
+        onTestFinished(() => {
+            requestAnimationFrameSpy.mockRestore();
+            cancelAnimationFrameSpy.mockRestore();
+            scheduledFrames.clear();
+        });
         const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
         const tracksBeforePlanning = structuredClone(trackStore.value);
         const routesBeforePlanning = structuredClone(sidechainStore.value);
