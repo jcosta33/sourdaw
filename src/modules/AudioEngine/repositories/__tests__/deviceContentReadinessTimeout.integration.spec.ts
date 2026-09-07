@@ -28,6 +28,7 @@ class FakeWorkletNode {
 type CrumbsGeneration = {
     readonly destroy: ReturnType<typeof vi.fn>;
     readonly result: CrumbsNodeResult;
+    readonly signal: Promise<AbortSignal>;
 };
 
 type ContentLoad = {
@@ -65,8 +66,22 @@ function createCrumbsGeneration(): CrumbsGeneration {
         destroy,
         ready: Promise.resolve({}),
     };
-    crumbsFactory.createCrumbsNode.mockResolvedValueOnce(result);
-    return { destroy, result };
+    const signal = Promise.withResolvers<AbortSignal>();
+    crumbsFactory.createCrumbsNode.mockImplementationOnce(
+        (
+            _context: BaseAudioContext,
+            _wasmUrl?: string,
+            _onFault?: (message: string) => void,
+            ownerSignal?: AbortSignal
+        ) => {
+            if (!ownerSignal) {
+                throw new Error('Expected TrackNode to pass its device-load signal to Crumbs');
+            }
+            signal.resolve(ownerSignal);
+            return Promise.resolve(result);
+        }
+    );
+    return { destroy, result, signal: signal.promise };
 }
 
 function observeContentLoad(
@@ -182,6 +197,52 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         loadB.settle('ready');
         await vi.advanceTimersByTimeAsync(0);
         expect(readinessFor(engine, 'crumbs-1')).toMatchObject({ status: 'ready' });
+        expect(liveDevice(engine, 'crumbs-1')?.inputNode).toBe(generationB.result.workletNode);
+    });
+
+    it('does not consume a synchronous same-id replacement installed by the captured abort callback', async () => {
+        createCrumbsGeneration();
+        engine.addDeviceToStrip('track-1', 'crumbs-1', 'builtin-crumbs');
+        const loadA = await observeContentLoad(loads, loadObservers, 0);
+        let generationB: CrumbsGeneration | undefined;
+        loadA.signal.addEventListener(
+            'abort',
+            () => {
+                engine.removeDeviceFromStrip('track-1', 'crumbs-1');
+                generationB = createCrumbsGeneration();
+                engine.addDeviceToStrip('track-1', 'crumbs-1', 'builtin-crumbs');
+            },
+            { once: true }
+        );
+
+        const waitingForA = engine.waitForDevices(100);
+        await vi.advanceTimersByTimeAsync(100);
+        await waitingForA;
+        await vi.advanceTimersByTimeAsync(0);
+
+        if (!generationB) {
+            throw new Error('Expected generation A abort to install generation B');
+        }
+        const loadBSignal = await generationB.signal;
+        expect({
+            signalAborted: loadBSignal.aborted,
+            admittedContentLoads: loads.length,
+            destroyCalls: generationB.destroy.mock.calls.length,
+            readiness: readinessFor(engine, 'crumbs-1'),
+            retainedRealNode: liveDevice(engine, 'crumbs-1')?.inputNode === generationB.result.workletNode,
+        }).toEqual({
+            signalAborted: false,
+            admittedContentLoads: 2,
+            destroyCalls: 0,
+            readiness: expect.objectContaining({ status: 'content-pending', failureStage: null }),
+            retainedRealNode: true,
+        });
+
+        const loadB = await observeContentLoad(loads, loadObservers, 1);
+        loadB.settle('ready');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(loadB.signal.aborted).toBe(false);
+        expect(readinessFor(engine, 'crumbs-1')).toMatchObject({ status: 'ready', failureStage: null });
         expect(liveDevice(engine, 'crumbs-1')?.inputNode).toBe(generationB.result.workletNode);
     });
 
