@@ -139,20 +139,26 @@ pub enum AutomationTarget {
     MasterGain,
 }
 
-/// Bytes a [`FermenterParamName`] holds. The longest name the instrument
-/// spells today is well inside it, and the buffer is sized for that vocabulary
-/// to grow without the wire changing shape.
-pub const FERMENTER_PARAM_NAME_CAPACITY: usize = 32;
+/// Bytes a [`BuiltinParamName`] holds. The longest name any built-in body
+/// spells today is well inside it, and the buffer is sized for those
+/// vocabularies to grow without the wire changing shape.
+pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
 
-/// One of the Fermenter's own parameter names, carried inline.
+/// One built-in body's own parameter name, carried inline.
 ///
-/// Named rather than numbered because a Fermenter's patch is a flat record of
-/// the instrument's own snake_case names, and its discrete selectors — the
-/// engine, the waveform, the modes, layer management — are not in the
-/// automation table an ordinal addresses at all. Fixed-size and inline for the
-/// reason given on [`AutomationTarget`]: a command carrying a `String` would
-/// have its allocation freed on the audio thread. Matching a name on that
-/// thread is comparisons alone, so the write itself is real-time safe.
+/// Named rather than numbered because a modelled instrument's patch is a flat
+/// record of the instrument's own snake_case names, and its discrete selectors
+/// — the engine, the waveform, the modes, layer management, the temperament —
+/// are not in the automation table an ordinal addresses at all. Fixed-size and
+/// inline for the reason given on [`AutomationTarget`]: a command carrying a
+/// `String` would have its allocation freed on the audio thread. Matching a
+/// name on that thread is comparisons alone, so the write itself is real-time
+/// safe.
+///
+/// The type is body-neutral by construction and not by coincidence: the shape
+/// rule below is the only thing the engine knows about any of these names, so
+/// one carrier serves every built-in that answers to its own vocabulary rather
+/// than to the engine's.
 ///
 /// Shape is the only refusal available here. The instrument owns its
 /// vocabulary and answers a name it does not know by doing nothing at all —
@@ -170,12 +176,12 @@ pub const FERMENTER_PARAM_NAME_CAPACITY: usize = 32;
 /// effect table. That is a one-off cost at construction, paid for a wire that
 /// never has to enumerate a vocabulary `daw-dsp` owns.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct FermenterParamName {
-    bytes: [u8; FERMENTER_PARAM_NAME_CAPACITY],
+pub struct BuiltinParamName {
+    bytes: [u8; BUILTIN_PARAM_NAME_CAPACITY],
     len: u8,
 }
 
-impl FermenterParamName {
+impl BuiltinParamName {
     /// The name `name` spells, or `None` when it is not shaped like one of the
     /// instrument's names.
     ///
@@ -183,13 +189,13 @@ impl FermenterParamName {
     /// out rather than iterated because a `const fn` has no iterators.
     pub const fn parse(name: &str) -> Option<Self> {
         let source = name.as_bytes();
-        if source.is_empty() || source.len() > FERMENTER_PARAM_NAME_CAPACITY {
+        if source.is_empty() || source.len() > BUILTIN_PARAM_NAME_CAPACITY {
             return None;
         }
-        let mut bytes = [0u8; FERMENTER_PARAM_NAME_CAPACITY];
+        let mut bytes = [0u8; BUILTIN_PARAM_NAME_CAPACITY];
         let mut index = 0;
         while index < source.len() {
-            if !is_fermenter_name_byte(source[index]) {
+            if !is_builtin_name_byte(source[index]) {
                 return None;
             }
             bytes[index] = source[index];
@@ -210,7 +216,7 @@ impl FermenterParamName {
 
 /// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
 /// spells its parameters in.
-const fn is_fermenter_name_byte(byte: u8) -> bool {
+const fn is_builtin_name_byte(byte: u8) -> bool {
     byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
 }
 
@@ -221,9 +227,9 @@ pub enum DeviceParam {
     ShiftSemitones,
     RetuneSpeedMs,
     FormantPreserve,
-    /// One of the Fermenter's own parameters, under the name the instrument
-    /// spells it with, for the reason on [`FermenterParamName`].
-    FermenterNamed(FermenterParamName),
+    /// One of a built-in body's own parameters, under the name that body
+    /// spells it with, for the reason on [`BuiltinParamName`].
+    BuiltinNamed(BuiltinParamName),
 }
 
 impl DeviceParam {
@@ -231,7 +237,7 @@ impl DeviceParam {
     /// addressed paths cannot drift into meaning different things.
     ///
     /// `None` for an address with no name of the engine's to drift from: a
-    /// Fermenter parameter arrives in the instrument's own vocabulary, which
+    /// built-in body's parameter arrives in that body's own vocabulary, which
     /// the engine does not name, and [`Self::from_name`] is the inverse of the
     /// engine's own named vocabulary alone.
     pub const fn name(self) -> Option<&'static str> {
@@ -239,7 +245,7 @@ impl DeviceParam {
             Self::ShiftSemitones => Some("shift_semitones"),
             Self::RetuneSpeedMs => Some("retune_speed_ms"),
             Self::FormantPreserve => Some("formant_preserve"),
-            Self::FermenterNamed(_) => None,
+            Self::BuiltinNamed(_) => None,
         }
     }
 
@@ -3384,11 +3390,11 @@ mod tests {
         }
         assert_eq!(DeviceParam::from_name("not_a_real_param"), None);
         let cutoff =
-            FermenterParamName::parse("cutoff").expect("'cutoff' is shaped like a parameter name");
+            BuiltinParamName::parse("cutoff").expect("'cutoff' is shaped like a parameter name");
         assert_eq!(
-            DeviceParam::FermenterNamed(cutoff).name(),
+            DeviceParam::BuiltinNamed(cutoff).name(),
             None,
-            "a Fermenter parameter carries the instrument's own name, not one of the engine's"
+            "a built-in body's parameter carries that body's own name, not one of the engine's"
         );
     }
 
@@ -3399,41 +3405,41 @@ mod tests {
     /// one reads back as a different word — or as one with the buffer's zero
     /// padding still on it.
     #[test]
-    fn a_fermenter_parameter_name_reads_back_as_the_name_it_was_parsed_from() {
-        let parsed = FermenterParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
+    fn a_builtin_param_name_reads_back_as_the_name_it_was_parsed_from() {
+        let parsed = BuiltinParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
 
         assert_eq!(parsed.as_str(), "cutoff");
     }
 
     /// The inline name keeps a parameter address inside the size
-    /// [`FermenterParamName`] documents.
+    /// [`BuiltinParamName`] documents.
     ///
     /// The address sits in every slot of the [`DeviceParamQueue`] each effect
     /// holds inline, so a byte here is multiplied by the queue's capacity and
     /// again by the whole effect table. Widening it is a megabyte-scale
     /// decision, and the documented figure has to move with it.
     #[test]
-    fn fermenter_param_name_keeps_device_param_within_its_stated_size() {
+    fn builtin_param_name_keeps_device_param_within_its_stated_size() {
         let size = std::mem::size_of::<DeviceParam>();
 
         assert_eq!(
             size, 34,
             "a device parameter address is {size} bytes, not the 34 documented on \
-             `FermenterParamName` — move that figure, the `DeviceParamEvent` and per-queue \
+             `BuiltinParamName` — move that figure, the `DeviceParamEvent` and per-queue \
              byte counts, and the per-scheduler total with it"
         );
     }
 
     /// A name exactly as long as the buffer parses.
     ///
-    /// The capacity is the wire's whole allowance for the instrument's
+    /// The capacity is the wire's whole allowance for a built-in body's
     /// vocabulary to grow, so a bound written as `>=` rather than `>` would
     /// refuse the longest name that still fits.
     #[test]
-    fn a_fermenter_parameter_name_filling_the_buffer_parses() {
-        let longest = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY);
+    fn a_builtin_param_name_filling_the_buffer_parses() {
+        let longest = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY);
 
-        let parsed = FermenterParamName::parse(&longest)
+        let parsed = BuiltinParamName::parse(&longest)
             .expect("a name the length of the buffer fits the buffer");
 
         assert_eq!(parsed.as_str(), longest);
@@ -3447,31 +3453,31 @@ mod tests {
     /// refusal the engine can make without keeping a copy of the instrument's
     /// table, and each row here is a different way to miss the vocabulary.
     #[test]
-    fn a_key_shaped_unlike_a_fermenter_parameter_name_is_refused() {
-        let too_long = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY + 1);
+    fn a_key_shaped_unlike_a_builtin_param_name_is_refused() {
+        let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
 
         assert_eq!(
-            FermenterParamName::parse(""),
+            BuiltinParamName::parse(""),
             None,
             "the empty key names no parameter"
         );
         assert_eq!(
-            FermenterParamName::parse("Cutoff"),
+            BuiltinParamName::parse("Cutoff"),
             None,
             "the instrument spells its names in lowercase"
         );
         assert_eq!(
-            FermenterParamName::parse("cut off"),
+            BuiltinParamName::parse("cut off"),
             None,
             "a space is not a character of the instrument's vocabulary"
         );
         assert_eq!(
-            FermenterParamName::parse("cut-off"),
+            BuiltinParamName::parse("cut-off"),
             None,
             "the instrument separates words with underscores, not hyphens"
         );
         assert_eq!(
-            FermenterParamName::parse(&too_long),
+            BuiltinParamName::parse(&too_long),
             None,
             "a name past the buffer would be truncated into a different word"
         );
