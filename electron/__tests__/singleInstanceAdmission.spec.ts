@@ -15,21 +15,32 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
     };
 
     class MockBrowserWindow {
-        static fromWebContents = vi.fn();
+        static fromWebContents = vi.fn(() => state.windows.at(-1) ?? null);
+        private readonly eventListeners = new Map<string, Array<(...args: never[]) => void>>();
+        private readonly onceListeners = new Map<string, Array<(...args: never[]) => void>>();
         readonly webContents = {
             getURL: () => 'app://sourdaw/',
             on: vi.fn(),
             send: vi.fn(),
             setWindowOpenHandler: vi.fn(),
         };
-        readonly once = vi.fn();
-        readonly on = vi.fn();
+        readonly once = vi.fn((event: string, listener: (...args: never[]) => void) => {
+            const listeners = this.onceListeners.get(event) ?? [];
+            listeners.push(listener);
+            this.onceListeners.set(event, listeners);
+        });
+        readonly on = vi.fn((event: string, listener: (...args: never[]) => void) => {
+            const listeners = this.eventListeners.get(event) ?? [];
+            listeners.push(listener);
+            this.eventListeners.set(event, listeners);
+        });
         readonly loadURL = vi.fn(() => Promise.resolve());
         readonly show = vi.fn();
         readonly hide = vi.fn();
         readonly close = vi.fn();
         readonly destroy = vi.fn(() => {
             this.destroyed = true;
+            this.emit('closed');
         });
         readonly restore = vi.fn();
         readonly focus = vi.fn();
@@ -43,6 +54,17 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
 
         isDestroyed = (): boolean => this.destroyed;
         isMinimized = (): boolean => this.minimized;
+
+        emit(event: string, ...args: never[]): void {
+            for (const listener of this.eventListeners.get(event) ?? []) {
+                listener(...args);
+            }
+            const onceListeners = this.onceListeners.get(event) ?? [];
+            this.onceListeners.delete(event);
+            for (const listener of onceListeners) {
+                listener(...args);
+            }
+        }
     }
 
     const state = {
@@ -116,8 +138,7 @@ vi.mock('../native.js', () => ({
 }));
 
 const flushStartup = async (): Promise<void> => {
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(state.windows).toHaveLength(1));
 };
 
 const emitSecondInstance = (): void => {
@@ -128,14 +149,40 @@ const emitSecondInstance = (): void => {
     listener();
 };
 
+const emitRendererCrash = (window: InstanceType<typeof MockBrowserWindow>): void => {
+    MockBrowserWindow.fromWebContents.mockReturnValueOnce(window);
+    const listener = state.listeners.get('render-process-gone');
+    if (listener === undefined) {
+        throw new Error('main entry did not register render-process-gone');
+    }
+    listener(undefined, {}, { reason: 'crashed', exitCode: 1 });
+};
+
+type ProcessErrorListener = (...args: never[]) => void;
+
+let stdoutErrorListeners: ProcessErrorListener[] = [];
+let stderrErrorListeners: ProcessErrorListener[] = [];
+
 describe('Electron single-instance admission', () => {
     beforeEach(() => {
         vi.resetModules();
         state.reset();
+        stdoutErrorListeners = process.stdout.listeners('error');
+        stderrErrorListeners = process.stderr.listeners('error');
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
 
     afterEach(() => {
+        for (const listener of process.stdout.listeners('error') as ProcessErrorListener[]) {
+            if (!stdoutErrorListeners.includes(listener)) {
+                process.stdout.removeListener('error', listener);
+            }
+        }
+        for (const listener of process.stderr.listeners('error') as ProcessErrorListener[]) {
+            if (!stderrErrorListeners.includes(listener)) {
+                process.stderr.removeListener('error', listener);
+            }
+        }
         vi.restoreAllMocks();
     });
 
@@ -151,11 +198,12 @@ describe('Electron single-instance admission', () => {
         expect(state.nativeLoads).not.toHaveBeenCalled();
     });
 
-    it('admits the primary before startup and routes later activation through the existing single-window lifecycle', async () => {
+    it('admits the primary before startup without exiting and lets normal ready startup own a pre-ready launch', async () => {
         await import('../main.js');
 
         expect(state.order).toEqual(['register-scheme', 'request-lock']);
         expect(state.whenReady).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
 
         emitSecondInstance();
         expect(state.windows).toHaveLength(0);
@@ -164,22 +212,96 @@ describe('Electron single-instance admission', () => {
         await flushStartup();
         expect(state.windows).toHaveLength(1);
         expect(state.nativeLoads).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
+    });
+
+    it('shows and focuses a live primary whether or not it is minimized without allocating or restarting native startup', async () => {
+        await import('../main.js');
+        state.ready.resolve();
+        await flushStartup();
 
         const primaryWindow = state.windows[0];
         if (primaryWindow === undefined) {
             throw new Error('ready startup did not create the primary window');
         }
+
+        emitSecondInstance();
+
+        expect(primaryWindow.restore).not.toHaveBeenCalled();
+        expect(primaryWindow.show).toHaveBeenCalledOnce();
+        expect(primaryWindow.focus).toHaveBeenCalledOnce();
+        expect(state.windows).toHaveLength(1);
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
+
         primaryWindow.minimized = true;
         emitSecondInstance();
 
         expect(primaryWindow.restore).toHaveBeenCalledOnce();
-        expect(primaryWindow.show).toHaveBeenCalledOnce();
-        expect(primaryWindow.focus).toHaveBeenCalledOnce();
+        expect(primaryWindow.show).toHaveBeenCalledTimes(2);
+        expect(primaryWindow.focus).toHaveBeenCalledTimes(2);
         expect(state.windows).toHaveLength(1);
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
+    });
 
-        primaryWindow.destroyed = true;
+    it('adopts a replacement for a destroyed owner and does not allocate again when that replacement is activated', async () => {
+        await import('../main.js');
+        state.ready.resolve();
+        await flushStartup();
+
+        const primaryWindow = state.windows[0];
+        if (primaryWindow === undefined) {
+            throw new Error('ready startup did not create the primary window');
+        }
+        primaryWindow.destroy();
+
+        emitSecondInstance();
+        expect(state.windows).toHaveLength(2);
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+
+        const replacementWindow = state.windows[1];
+        if (replacementWindow === undefined) {
+            throw new Error('second-instance did not create a replacement');
+        }
         emitSecondInstance();
 
         expect(state.windows).toHaveLength(2);
+        expect(replacementWindow.show).toHaveBeenCalledOnce();
+        expect(replacementWindow.focus).toHaveBeenCalledOnce();
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
+    });
+
+    it('reopens one adopted window after the real crash teardown leaves no main-window owner', async () => {
+        await import('../main.js');
+        state.ready.resolve();
+        await flushStartup();
+
+        for (let crash = 0; crash < 4; crash += 1) {
+            const currentWindow = state.windows.at(-1);
+            if (currentWindow === undefined) {
+                throw new Error('renderer crash did not have an owned window');
+            }
+            emitRendererCrash(currentWindow);
+        }
+
+        expect(state.windows).toHaveLength(4);
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+
+        emitSecondInstance();
+        expect(state.windows).toHaveLength(5);
+
+        const replacementWindow = state.windows[4];
+        if (replacementWindow === undefined) {
+            throw new Error('windowless primary did not reopen');
+        }
+        emitSecondInstance();
+
+        expect(state.windows).toHaveLength(5);
+        expect(replacementWindow.show).toHaveBeenCalledOnce();
+        expect(replacementWindow.focus).toHaveBeenCalledOnce();
+        expect(state.nativeLoads).toHaveBeenCalledOnce();
+        expect(state.exit).not.toHaveBeenCalled();
     });
 });
