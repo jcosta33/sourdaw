@@ -115,6 +115,7 @@ export async function importMidiFile(
     }
 
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
+    const newCCData: Record<string, (typeof parsedTracks)[number]['ccs']> = {};
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
         const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
@@ -141,6 +142,7 @@ export async function importMidiFile(
             muted: false,
         };
         newMidiData[clip.id] = parsedTrack.notes;
+        newCCData[clip.id] = parsedTrack.ccs;
         return { ...track, clips: [clip] };
     });
 
@@ -158,6 +160,7 @@ export async function importMidiFile(
         midiChange = batchStoreUpdates(() => {
             const change = mergeImportedMidiClipNotes({
                 notesByClipId: newMidiData,
+                ccByClipId: newCCData,
             });
             try {
                 if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {

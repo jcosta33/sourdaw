@@ -1,22 +1,24 @@
-import { type MidiNote } from '../models/MidiNote';
-import { defaultMidiStoreState, midiStore, type MidiStoreState } from '../stores/midiStore';
+import { type MidiCC, type MidiNote } from '../models/MidiNote';
+import { defaultMidiStoreState, midiStore } from '../stores/midiStore';
 
 type MergeImportedMidiClipNotesInput = {
     notesByClipId: Record<string, MidiNote[]>;
+    /** Optional so notes-only callers keep their exact current behaviour. */
+    ccByClipId?: Record<string, MidiCC[]>;
 };
 
-type NotesSnapshot = Map<string, { found: true; notes: MidiNote[] } | { found: false }>;
+type RowsSnapshot<TRow> = Map<string, { found: true; rows: TRow[] } | { found: false }>;
 
 type MergeImportedMidiClipNotesOutput = {
     undo: () => void;
     redo: () => void;
 };
 
-function captureNotes(notesByClipId: MidiStoreState['notesByClipId'], clipIds: readonly string[]): NotesSnapshot {
-    const snapshot: NotesSnapshot = new Map();
+function captureRows<TRow>(rowsByClipId: Record<string, TRow[]>, clipIds: readonly string[]): RowsSnapshot<TRow> {
+    const snapshot: RowsSnapshot<TRow> = new Map();
     for (const clipId of clipIds) {
-        if (Object.hasOwn(notesByClipId, clipId)) {
-            snapshot.set(clipId, { found: true, notes: notesByClipId[clipId] ?? [] });
+        if (Object.hasOwn(rowsByClipId, clipId)) {
+            snapshot.set(clipId, { found: true, rows: rowsByClipId[clipId] ?? [] });
         } else {
             snapshot.set(clipId, { found: false });
         }
@@ -24,15 +26,31 @@ function captureNotes(notesByClipId: MidiStoreState['notesByClipId'], clipIds: r
     return snapshot;
 }
 
+function restoreRows<TRow>(target: Record<string, TRow[]>, snapshot: RowsSnapshot<TRow>): Record<string, TRow[]> {
+    const restored = { ...target };
+    for (const [clipId, clipSnapshot] of snapshot) {
+        if (clipSnapshot.found) {
+            restored[clipId] = clipSnapshot.rows;
+        } else {
+            delete restored[clipId];
+        }
+    }
+    return restored;
+}
+
 export function mergeImportedMidiClipNotes({
     notesByClipId,
+    ccByClipId,
 }: MergeImportedMidiClipNotesInput): MergeImportedMidiClipNotesOutput {
     const clipIds = Object.keys(notesByClipId);
-    let previousNotes: NotesSnapshot = new Map();
+    const ccClipIds = ccByClipId === undefined ? [] : Object.keys(ccByClipId);
+    let previousNotes: RowsSnapshot<MidiNote> = new Map();
+    let previousCCs: RowsSnapshot<MidiCC> = new Map();
 
     function apply(): void {
         const currentState = midiStore.value ?? defaultMidiStoreState;
-        previousNotes = captureNotes(currentState.notesByClipId, clipIds);
+        previousNotes = captureRows(currentState.notesByClipId, clipIds);
+        previousCCs = captureRows(currentState.ccByClipId, ccClipIds);
 
         midiStore.set({
             ...currentState,
@@ -40,22 +58,17 @@ export function mergeImportedMidiClipNotes({
                 ...currentState.notesByClipId,
                 ...notesByClipId,
             },
+            ...(ccByClipId === undefined ? {} : { ccByClipId: { ...currentState.ccByClipId, ...ccByClipId } }),
         });
     }
 
     function undo(): void {
         const currentState = midiStore.value ?? defaultMidiStoreState;
-        const restoredNotes = { ...currentState.notesByClipId };
+        const restoredNotes = restoreRows(currentState.notesByClipId, previousNotes);
+        const restoredCCs =
+            ccByClipId === undefined ? currentState.ccByClipId : restoreRows(currentState.ccByClipId, previousCCs);
 
-        for (const [clipId, snapshot] of previousNotes) {
-            if (snapshot.found) {
-                restoredNotes[clipId] = snapshot.notes;
-            } else {
-                delete restoredNotes[clipId];
-            }
-        }
-
-        midiStore.set({ ...currentState, notesByClipId: restoredNotes });
+        midiStore.set({ ...currentState, notesByClipId: restoredNotes, ccByClipId: restoredCCs });
     }
 
     apply();

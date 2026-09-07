@@ -1,9 +1,10 @@
 import { createMidiError } from '../errors/MidiError';
-import { type MidiNote } from '../models/MidiNote';
+import { type MidiCC, type MidiNote } from '../models/MidiNote';
 
 type ParsedTrack = {
     name: string;
     notes: MidiNote[];
+    ccs: MidiCC[];
     endTick: number;
 };
 
