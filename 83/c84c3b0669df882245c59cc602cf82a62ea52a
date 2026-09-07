@@ -1,0 +1,19 @@
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_2d5e0613338a52::t_a749ce054e8c14 811-822,850,973-976,981-982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "83c84c3b0669df882245c59cc602cf82a62ea52a",
+  "prompts": {},
+  "sessions": {
+    "s_2d5e0613338a52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c37-c137-7ee1-a3b7-9f326828a1e1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
