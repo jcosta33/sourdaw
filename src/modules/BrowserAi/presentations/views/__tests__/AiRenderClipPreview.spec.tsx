@@ -143,6 +143,50 @@ describe('AiRenderClipPreview', () => {
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
     });
 
+    // Regression (#3766): a canceled repeat drag must not revoke the ownership
+    // the earlier successful drop established. The boolean mark this count
+    // replaced forgot the first drop here, and the unmount release silenced the
+    // placed clip.
+    it('should keep a handed-off buffer cached when a later drag is canceled after a successful drop', () => {
+        const view = render_preview();
+        const accepted = create_data_transfer('copy');
+        const canceled = create_data_transfer('none');
+
+        fireEvent.dragStart(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragEnd(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragStart(get_preview_row(), { dataTransfer: canceled });
+        fireEvent.dragEnd(get_preview_row(), { dataTransfer: canceled });
+        view.unmount();
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('should keep the handed-off buffer cached when audio is replaced after a successful drop', () => {
+        const view = render_preview(new Float32Array([0.1, 0.2, 0.3]));
+        const accepted = create_data_transfer('copy');
+
+        fireEvent.dragStart(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragEnd(get_preview_row(), { dataTransfer: accepted });
+        view.rerender(
+            <AiRenderClipPreview audio={new Float32Array([0.4, 0.5])} sampleRate={48_000} label="A" name="Clip A" />
+        );
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalledWith('preview-buffer');
+    });
+
+    it('should keep the buffer cached while any of several successful drops still owns it', () => {
+        const view = render_preview();
+        const accepted = create_data_transfer('copy');
+
+        fireEvent.dragStart(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragEnd(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragStart(get_preview_row(), { dataTransfer: accepted });
+        fireEvent.dragEnd(get_preview_row(), { dataTransfer: accepted });
+        view.unmount();
+
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
     it('should clear play state when playback ends naturally', () => {
         render_preview();
 

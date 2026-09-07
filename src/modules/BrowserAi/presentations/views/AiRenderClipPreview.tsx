@@ -42,10 +42,13 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     });
     const playbackRef = useRef<PreviewPlayback | null>(null);
     const bufferIdRef = useRef<string | null>(null);
-    // Set once this row's buffer has been dragged onto a track: the dropped clip
-    // now points at the same cache entry (see useTimelineFileDrop), so this row
-    // must not evict it on unmount or it would silence the placed clip.
-    const handedOffRef = useRef(false);
+    // Every successful timeline drop places a clip pointing at this row's cached
+    // buffer (see useTimelineFileDrop — each drop reuses the same buffer id), so
+    // the row must not evict it on unmount while any such clip exists.
+    // Successful handoffs are counted, not flagged: a canceled later gesture must
+    // never invalidate the ownership an earlier successful drop established,
+    // which is how a placed clip used to lose its audio (#3766).
+    const handedOffCountRef = useRef(0);
 
     const durationSec = audio.length / sampleRate;
     const isPlaying = playState.isPlaying && playState.audio === audio && playState.sampleRate === sampleRate;
@@ -63,19 +66,20 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     // across the app, growing unbounded for the lifetime of the session.
     // The buffer is derived from (audio, sampleRate), so a change to either makes
     // the previously cached buffer stale and reachable only through the dropped ref.
-    // A buffer that was dragged onto a track is owned by the resulting clip and is
-    // deliberately left in place.
+    // A buffer any successful drop placed on the timeline is owned by the resulting
+    // clip(s) and is deliberately left in place; only never-dropped buffers are
+    // reclaimed here.
     useEffect(() => {
         const evictPriorBuffer = (): void => {
             const activePlayback = playbackRef.current;
             playbackRef.current = null;
             activePlayback?.stop();
 
-            if (bufferIdRef.current && !handedOffRef.current) {
+            if (bufferIdRef.current && handedOffCountRef.current === 0) {
                 releasePreviewAudioBuffer(bufferIdRef.current);
             }
             bufferIdRef.current = null;
-            handedOffRef.current = false;
+            handedOffCountRef.current = 0;
         };
         return evictPriorBuffer;
     }, [audio, sampleRate]);
@@ -112,9 +116,10 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
     const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
         const bufferId = ensureBufferId();
-        // The dropped clip will reference this same cached buffer; mark it handed
-        // off so the unmount cleanup does not evict it out from under the clip.
-        handedOffRef.current = true;
+        // The dropped clip will reference this same cached buffer; count the
+        // optimistic handoff so the unmount cleanup does not evict it out from
+        // under the clip. handleDragEnd settles the count.
+        handedOffCountRef.current += 1;
         event.dataTransfer.setData(
             'application/x-sourdaw-ai-render',
             JSON.stringify({ name, bufferId, durationSeconds: durationSec })
@@ -124,12 +129,12 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
     const handleDragEnd = (event: DragEvent<HTMLDivElement>): void => {
         // A drag released off any drop target reports dropEffect 'none' — nothing
-        // took ownership of the buffer, so undo the optimistic handoff mark set in
-        // handleDragStart. Otherwise a started-but-cancelled drag would suppress
-        // unmount eviction and leak the cached buffer. On a real drop the dropEffect
-        // is the accepted effect (e.g. 'copy'), so the handoff mark stands.
+        // took ownership of the buffer, so settle the optimistic handoff count set
+        // in handleDragStart. Otherwise a started-but-cancelled drag would leak
+        // the cached buffer. Only the count this gesture added is given back, so a
+        // canceled repeat drag can never revoke an earlier successful drop.
         if (event.dataTransfer.dropEffect === 'none') {
-            handedOffRef.current = false;
+            handedOffCountRef.current = Math.max(0, handedOffCountRef.current - 1);
         }
     };
 
