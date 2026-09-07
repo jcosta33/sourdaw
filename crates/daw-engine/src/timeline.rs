@@ -13,7 +13,9 @@
 use std::sync::Arc;
 
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
+use crate::meter::PeakHold;
 use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
+use crate::scheduler::StripPeak;
 use triple_buffer::{Input, Output};
 
 /// Tracks the graph holds. A command naming a further track is refused and
@@ -1222,6 +1224,14 @@ pub struct TimelineTrack {
     /// the strip ends and the summing point begins. See
     /// [`TimelineGraph::compensate`].
     output_delay: CompensationDelay,
+    /// This strip's own peak hold, for [`TimelineGraph::publish_strip_peaks`].
+    meter: PeakHold,
+    /// The loudest sample this strip has handed its route so far this
+    /// callback, across every chunk [`TimelineGraph::render`] has rendered.
+    /// Reset to zero once [`TimelineGraph::publish_strip_peaks`] has read it,
+    /// exactly as the master's own callback peak spans chunks in
+    /// `audio_thread.rs`.
+    callback_peak: f32,
 }
 
 impl TimelineTrack {
@@ -1243,6 +1253,8 @@ impl TimelineTrack {
             output: RouteTarget::Master,
             source_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
             output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
+            meter: PeakHold::default(),
+            callback_peak: 0.0,
         })
     }
 
@@ -2591,6 +2603,13 @@ impl TimelineGraph {
                         // and solo zero the block rather than leaving it — so
                         // the ring keeps pace with the strip.
                         track.output_delay.run(left, right, frames);
+                        // What this strip hands its route, after the fader,
+                        // pan, mute and output delay above — the same pair
+                        // `route_sum` is about to sum. Folded into this
+                        // callback's running peak rather than replacing it,
+                        // because a callback can render this track over
+                        // several chunks.
+                        track.callback_peak = track.callback_peak.max(pair_peak(left, right));
                     }
 
                     route_sum(
@@ -2697,6 +2716,34 @@ impl TimelineGraph {
             &mut right[..frames],
         );
     }
+
+    /// Hold and publish every track's own strip peak, in mix order, and hand
+    /// back how many `out` now holds.
+    ///
+    /// Each track accumulated its own callback peak across every chunk
+    /// [`Self::render`] rendered this callback (see [`TimelineTrack`]'s
+    /// `callback_peak`), exactly as the master's callback peak spans chunks
+    /// in `audio_thread.rs`. That accumulator is reset here, once per
+    /// callback, so the next callback starts from silence rather than
+    /// carrying a stale peak forward.
+    pub(crate) fn publish_strip_peaks(
+        &mut self,
+        frames: u64,
+        hold_frames: u64,
+        out: &mut [StripPeak; MAX_TIMELINE_TRACKS],
+    ) -> usize {
+        let mut count = 0;
+        for track in self.tracks.iter_mut() {
+            let peak = track.meter.hold(track.callback_peak, frames, hold_frames);
+            track.callback_peak = 0.0;
+            out[count] = StripPeak {
+                track_id: track.id,
+                peak,
+            };
+            count += 1;
+        }
+        count
+    }
 }
 
 /// Multiply the master fader into one span.
@@ -2723,6 +2770,21 @@ fn apply_master_fader(fader: &mut MasterFader, frames: usize, left: &mut [f32], 
         left[index] *= level;
         right[index] *= level;
     }
+}
+
+/// The loudest sample either channel of a rendered pair holds.
+///
+/// Runs inside the audio deadline: one fold over slices the caller already
+/// borrowed, no allocation and no branch on data. The same shape as
+/// `audio_thread.rs`'s `block_peak`, kept separate because that one folds one
+/// interleaved device buffer and this one folds a still-split stereo pair.
+fn pair_peak(left: &[f32], right: &[f32]) -> f32 {
+    let left_peak = left
+        .iter()
+        .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+    right
+        .iter()
+        .fold(left_peak, |peak, sample| peak.max(sample.abs()))
 }
 
 /// Lay a track's own clips over what other strips have already summed into its
