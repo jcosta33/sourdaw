@@ -142,6 +142,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     saveProject: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     applyRuntimeGraphDelta: vi.fn(),

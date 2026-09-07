@@ -24,11 +24,28 @@
  *
  * ── Clear all, then schedule, in one batch ────────────────────────────────
  *
- * `clear-midi 0..null` wipes whatever the previous pass left in every target's
- * store. It travels in the same batch as the notes that replace it because a
- * batch is one visibility: split in two, the clear lands first and releases a
- * note the rewrite only meant to move
- * ({@link AudioGraphScheduleMidiCommand}).
+ * `clear-midi 0..null` wipes every store this pass names, and this pass is
+ * refilled to the horizon in the same batch: a batch is one visibility, so a
+ * clear split from the notes that replace it would land first and release a
+ * note the rewrite only meant to move ({@link AudioGraphScheduleMidiCommand}).
+ *
+ * A store the outgoing pass named that this one drops is a different matter.
+ * A chain edit can move a strip's sink between one arm and the next — an
+ * instrument inserted ahead of another takes over as the note carrier, and the
+ * device it displaced keeps whatever the outgoing pass left in its store
+ * unless something clears it, so the part would otherwise sound on both — but
+ * the pass that named that target is about to be overwritten, and a batch can
+ * be refused or thrown with no later chance to retry from the pass itself.
+ * That clear is therefore owed rather than sent here: recorded in the writer
+ * state ({@link nativeLiveMidiWriter.owedClears}), sent in its own batch ahead
+ * of this one ({@link settleOwedMidiClears}), retried by every later arm until
+ * the engine takes it, and forgotten once the chain record no longer lists the
+ * device — naming one it has already released refuses a batch whole
+ * (`graph.rs`'s `midi_device_plugin_id`). The settle spans an await a newer
+ * arm or a disarm can run behind, so this arm pins the epoch it bumped before
+ * that await and checks it again after: a superseded arm discharges nothing
+ * and sends no opening batch, leaving both to whichever arm now owns the
+ * writer.
  *
  * ── Before the roll, never after it ───────────────────────────────────────
  *
@@ -43,7 +60,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../models/AudioGraphBackend';
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
@@ -58,6 +75,7 @@ import {
 } from './nativeLiveMidiWriterState';
 import { type LiveMidiProgrammeExclusion, type LiveMidiSpan } from './projectLiveMidiProgramme';
 import { readLiveMidiProgramme } from './readLiveMidiProgramme';
+import { settleOwedMidiClears } from './settleOwedMidiClears';
 import { watchNativeLiveMidiEdits } from './watchNativeLiveMidiEdits';
 
 export type ArmNativeLiveMidiWriterInput = Readonly<{
@@ -73,6 +91,14 @@ export type ArmNativeLiveMidiWriterInput = Readonly<{
      * graph has no body for it.
      */
     attachedInstanceIds: ReadonlySet<string>;
+    /**
+     * The strips the topology batch built with `contributesAudio: true`.
+     *
+     * From the batch the standing topology installed, never the session's
+     * claimed set: a shadowed monitor or a roll that never took claims
+     * nothing, while the engine still builds every contributing strip.
+     */
+    carriedStripIds: ReadonlySet<string>;
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
     /** Where this pass begins, on the engine clock. */
@@ -114,6 +140,38 @@ function reportExclusions(exclusions: readonly LiveMidiProgrammeExclusion[]): vo
     }
 }
 
+function targetKey(target: AudioGraphDeviceTarget): string {
+    return `${target.trackId}::${target.deviceId}`;
+}
+
+/**
+ * Mark every outgoing target this arm does not renew as owed a clear, and
+ * clear the mark from every target it does.
+ *
+ * A target the incoming pass also names needs no owed entry: its own slot in
+ * {@link openingBatch} wipes and refills it in this very arm's batch. A
+ * target neither pass names is the one left holding the previous pass's
+ * notes — an instrument the chain edit demoted, its sink taken over by the
+ * device inserted ahead of it — and {@link settleOwedMidiClears} is the only
+ * thing that ever addresses it again.
+ */
+function recordAbandonedTargets(
+    outgoing: readonly LiveMidiWriterTarget[],
+    incoming: readonly LiveMidiWriterTarget[]
+): void {
+    const incomingKeys = new Set(incoming.map((slot) => targetKey(slot.target)));
+    for (const slot of outgoing) {
+        const key = targetKey(slot.target);
+        if (incomingKeys.has(key)) {
+            continue;
+        }
+        nativeLiveMidiWriter.owedClears.set(key, slot.target);
+    }
+    for (const slot of incoming) {
+        nativeLiveMidiWriter.owedClears.delete(targetKey(slot.target));
+    }
+}
+
 /** The opening batch: every target's store wiped, then filled to the horizon. */
 function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
     // A looping pass is sent whole: the wrap replays what the store already
@@ -145,6 +203,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     const programme = readLiveMidiProgramme({
         stripTracks: input.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
+        carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         span,
     });
@@ -152,12 +211,17 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
 
     const trackNameById = new Map(input.stripTracks.map((track): [string, string] => [track.id, track.name]));
     nativeLiveMidiWriter.epoch += 1;
+    // Captured right after the bump, before any await, and used for everything
+    // this arm does from here on: a re-read after the settle await below
+    // would answer with a newer arm's epoch instead of this one's.
+    const epoch = nativeLiveMidiWriter.epoch;
     // Any arm answers a re-read the outgoing pass owed: this one re-projects
     // every strip's notes, so a request still standing would re-arm again for
     // an edit this pass already carries.
     nativeLiveMidiWriter.pendingRearm = false;
     const pass: LiveMidiWriterPass = {
         stripTracks: input.stripTracks,
+        carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         probabilitySeed: programme.probabilitySeed,
         entrySeconds: input.positionSeconds,
@@ -182,14 +246,42 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
             };
         }),
     };
+    // Read ahead of the assignment below: once the outgoing pass is
+    // overwritten there is no other way back to what it was carrying.
+    recordAbandonedTargets(nativeLiveMidiWriter.pass?.targets ?? [], pass.targets);
     nativeLiveMidiWriter.pass = pass;
     // For the life of the pass: a note edited under a rolling playhead has to
     // reach the store the engine is reading from.
     watchNativeLiveMidiEdits();
+    // Claimed synchronously, before the first await below: the playhead feed
+    // fires the pump right behind this call without waiting for it, and a
+    // pump that read this pass between here and its own opening batch would
+    // extend an uncleared store — the exact race the opening batch's own
+    // clear exists to close. `applyMidiBatch` restates the same claim when it
+    // sends and releases it in its `finally`, so the pass stays claimed for
+    // this whole sequence; a pass with nothing to send leaves the claim standing
+    // until the next arm's own, which costs nothing because the pump has nothing
+    // to send for it either.
+    nativeLiveMidiWriter.inFlightEpoch = epoch;
+
+    // Ahead of this pass's own batch: a target the outgoing pass abandoned is
+    // owed a clear this pass's own targets say nothing about, and it gets its
+    // own visibility rather than riding in on this pass's.
+    await settleOwedMidiClears(epoch);
+
+    // A newer arm or a disarm owns the writer now: this pass's opening batch
+    // belongs to a world that no longer exists, and `applyMidiBatch` sends
+    // before it checks. Nothing to release either: the epoch only ever
+    // increases, so a claim of this one can never equal a live epoch again, and
+    // after a disarm the pump bails on the missing pass before it reads the
+    // claim.
+    if (nativeLiveMidiWriter.epoch !== epoch) {
+        return;
+    }
 
     await applyMidiBatch({
         pass,
         batch: openingBatch(pass, input.positionSeconds),
-        epoch: nativeLiveMidiWriter.epoch,
+        epoch,
     });
 }

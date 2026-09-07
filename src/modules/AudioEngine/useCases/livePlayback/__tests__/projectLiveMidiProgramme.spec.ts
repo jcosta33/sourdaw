@@ -143,6 +143,7 @@ function projectProgramme(
     return projectLiveMidiProgramme({
         attachedInstanceIds: new Set(['i1']),
         bakedStripIds: new Set(),
+        carriedStripIds: new Set(overrides.stripTracks.map((track) => track.id)),
         notesByClipId: {},
         probabilitySeed: PROBABILITY_SEED,
         defaultTempo: TEMPO,
@@ -290,6 +291,72 @@ describe('projectLiveMidiProgramme', () => {
         expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
     });
 
+    // A built-in instrument holds a note store by type alone — it needs no
+    // attach state the way a hosted plugin does, so an empty attach set still
+    // addresses this strip's notes to it.
+    it('addresses a MIDI strip’s notes to its built-in instrument with no attach state', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'fermenter' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
+    });
+
+    // Chain order picks the first sink across both kinds, hosted or built-in,
+    // whichever the chain places first.
+    it('takes the first note sink in chain order across hosted and built-in', () => {
+        const clip1 = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const clip2 = midiClip({ id: 'clip-2', trackId: 'midi-2' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'midi-1',
+                    devices: [instrument('d1', 'i1'), createDevice({ id: 'd2', type: 'fermenter' })],
+                    clips: [clip1],
+                }),
+                createTrack({
+                    id: 'midi-2',
+                    devices: [createDevice({ id: 'd3', type: 'fermenter' }), instrument('d4', 'i2')],
+                    clips: [clip2],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1', 'i2']),
+            notesByClipId: {
+                'clip-1': [note({ id: 'n1' })],
+                'clip-2': [note({ id: 'n2' })],
+            },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([
+            { trackId: 'midi-1', deviceId: 'd1' },
+            { trackId: 'midi-2', deviceId: 'd3' },
+        ]);
+    });
+
+    // A built-in effect ahead of the instrument is passed over: it processes
+    // an input and generates nothing on its own, so it is never a sink.
+    it('passes over a built-in effect ahead of the instrument', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'midi-1',
+                    devices: [createDevice({ id: 'd1', type: 'knead' }), createDevice({ id: 'd2', type: 'fermenter' })],
+                    clips: [clip],
+                }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd2' }]);
+    });
+
     // A generative strip produces its notes on the Web Audio path, so it has no
     // native route at all — and unlike a strip with no instrument, it is one a
     // musician can see a plugin on and would otherwise never hear.
@@ -344,5 +411,40 @@ describe('projectLiveMidiProgramme', () => {
 
         const events = programme.targets[0]?.events ?? [];
         expect(events.map((event) => event.time)).toEqual([seconds(1), seconds(5)]);
+    });
+
+    // A later carrier rule can leave a strip with a voiced built-in on Web
+    // Audio all the same, and Web Audio already sounds that generator — so a
+    // strip the batch did not build contributing gets no notes at all, however
+    // voiced its sink would otherwise be.
+    it('sends nothing to a voiced Fermenter strip the batch did not build contributing', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'fermenter' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+            carriedStripIds: new Set(),
+        });
+
+        expect(programme.targets).toEqual([]);
+        expect(programme.nativeVoicedStripIds).toEqual(new Set());
+        expect(programme.exclusions).toEqual([]);
+    });
+
+    // Same gate for a hosted instrument: the attach state alone says the engine
+    // holds a body for it, not that this batch built the strip contributing.
+    it('sends nothing to a voiced hosted-instrument strip the batch did not build contributing', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [voicedTrack([clip])],
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+            carriedStripIds: new Set(),
+        });
+
+        expect(programme.targets).toEqual([]);
+        expect(programme.nativeVoicedStripIds).toEqual(new Set());
+        expect(programme.exclusions).toEqual([]);
     });
 });

@@ -28,6 +28,7 @@ import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
+import { rearmNativeLiveMidiWriterInPlace } from '../rearmNativeLiveMidiWriterInPlace';
 import { recordNativeChainReleases } from '../recordNativeChainReleases';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +45,9 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 });
 vi.mock('../rearmNativeLiveAutomationWriterInPlace', () => ({
     rearmNativeLiveAutomationWriterInPlace: vi.fn(),
+}));
+vi.mock('../rearmNativeLiveMidiWriterInPlace', () => ({
+    rearmNativeLiveMidiWriterInPlace: vi.fn(),
 }));
 
 const APPLIED: AudioGraphApplyResult = {
@@ -103,6 +107,7 @@ beforeEach(() => {
     nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'comp']]]);
     nativeLiveGraphSession.pending = Promise.resolve();
     vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockClear();
+    vi.mocked(rearmNativeLiveMidiWriterInPlace).mockClear();
     nativeEnginePlayheadFeed.reading = null;
     nativeLiveAutomationWriter.pass = null;
 });
@@ -373,15 +378,49 @@ describe('mirrorDeviceChainDelta', () => {
             provenAfterBatch: 12,
             positionSeconds: 4.5,
         });
+        expect(vi.mocked(rearmNativeLiveMidiWriterInPlace)).toHaveBeenCalledWith({ positionSeconds: 4.5 });
     });
 
-    it('leaves the pass in flight alone when the device that joined is a built-in', async () => {
+    // A device type this session's registry has no native body for — never
+    // `knead` or `fermenter`, both of which the engine builds a body for.
+    it('leaves the pass in flight alone when the device that joined has no native body', async () => {
         await mirrorDeviceChainDelta({
             before: track([device('eq'), device('comp')]),
-            after: track([device('eq'), device('comp'), device('knead')]),
+            after: track([device('eq'), device('comp'), device('filt', { type: 'builtin-filter' })]),
         });
 
         expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
+        expect(vi.mocked(rearmNativeLiveMidiWriterInPlace)).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A Fermenter dropped onto a rolling chain is the built-in half of #3568.
+     * The engine stamps a native-bodied built-in's parameters exactly as it
+     * stamps a hosted plugin's, and a body that sounds notes gives the strip
+     * its native sink the moment it joins — so both passes were projected
+     * against a chain that had neither, and both have to be re-read from
+     * where the engine stands.
+     */
+    it('re-reads both passes when a built-in with a native body joins the chain', async () => {
+        nativeEnginePlayheadFeed.reading = {
+            ...stoppedEngineTransportPosition,
+            running: true,
+            playing: true,
+            positionSeconds: 4.5,
+        };
+        apply.mockResolvedValue({ ...APPLIED, admittedBatch: 12 });
+        const ferm = device('ferm', { type: 'fermenter' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([ferm, device('eq'), device('comp')]),
+        });
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).toHaveBeenCalledWith({
+            provenAfterBatch: 12,
+            positionSeconds: 4.5,
+        });
+        expect(vi.mocked(rearmNativeLiveMidiWriterInPlace)).toHaveBeenCalledWith({ positionSeconds: 4.5 });
     });
 
     /**

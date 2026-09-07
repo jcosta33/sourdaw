@@ -81,6 +81,15 @@ export type LiveMidiWriterPass = {
      * while each strip's *contents* are re-read at every re-arm.
      */
     stripTracks: readonly Track[];
+    /**
+     * The strips the topology batch built with `contributesAudio: true`.
+     *
+     * Held on the pass for the same reason `stripTracks` is: a re-arm reuses
+     * the set the standing topology installed rather than the session's own
+     * claimed set, which a shadowed monitor or a parked roll leaves empty
+     * while the engine still builds every contributing strip.
+     */
+    carriedStripIds: ReadonlySet<string>;
     sampleRate: number;
     /**
      * The seed every `schedule-midi` in this pass states.
@@ -161,6 +170,19 @@ export const nativeLiveMidiWriter: {
     pendingRearm: boolean;
     /** Ends the note-edit subscriptions, or `null` when none are running. */
     unwatch: (() => void) | null;
+    /**
+     * An outgoing pass's target that no later pass has renewed, owed a
+     * `clear-midi 0..null` until the engine takes one — keyed
+     * `${trackId}::${deviceId}`.
+     *
+     * Held here rather than on the pass, because the pass that named a target
+     * is replaced before its own batch is answered: a store cannot stay this
+     * side's one belief about what the engine still owes if that belief is
+     * overwritten on every arm. A refused or thrown batch discharges nothing,
+     * so the entry survives until a settle actually applies, or until the
+     * chain record says the engine no longer holds the device at all.
+     */
+    owedClears: Map<string, AudioGraphDeviceTarget>;
 } = {
     epoch: 0,
     inFlightEpoch: null,
@@ -168,4 +190,5 @@ export const nativeLiveMidiWriter: {
     reportedExclusions: null,
     pendingRearm: false,
     unwatch: null,
+    owedClears: new Map(),
 };

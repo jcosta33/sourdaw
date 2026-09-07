@@ -35,6 +35,8 @@ export type ReadLiveMidiProgrammeInput = Readonly<{
      * about which instruments the engine holds.
      */
     attachedInstanceIds: ReadonlySet<string>;
+    /** The strips the topology batch built with `contributesAudio: true`. */
+    carriedStripIds: ReadonlySet<string>;
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
     span: LiveMidiSpan;
@@ -67,6 +69,7 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
         ...projectLiveMidiProgramme({
             stripTracks: input.stripTracks,
             attachedInstanceIds: input.attachedInstanceIds,
+            carriedStripIds: input.carriedStripIds,
             bakedStripIds: bakedStripIds({
                 stripTracks: input.stripTracks,
                 readBuffer: (bufferId) => audioBufferCache.get(bufferId),

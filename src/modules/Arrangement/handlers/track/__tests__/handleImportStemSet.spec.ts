@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     removeBusStrip: mocks.removeBusStrip,
     removeTrackStrip: mocks.removeTrackStrip,

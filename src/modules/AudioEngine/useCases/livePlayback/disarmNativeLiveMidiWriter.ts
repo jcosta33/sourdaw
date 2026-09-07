@@ -23,4 +23,7 @@ export function disarmNativeLiveMidiWriter(): void {
     nativeLiveMidiWriter.reportedExclusions = null;
     nativeLiveMidiWriter.unwatch?.();
     nativeLiveMidiWriter.unwatch = null;
+    // A session end rebuilds the engine's graph from nothing: whatever this
+    // side still owed a clear was owed to a graph that no longer exists.
+    nativeLiveMidiWriter.owedClears.clear();
 }

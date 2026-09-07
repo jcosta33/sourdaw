@@ -112,6 +112,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     getAudioContext: () => audioContextStub,
     getCurrentTime: () => ctxTime.now,
     scheduleClick: scheduleClickSpy,

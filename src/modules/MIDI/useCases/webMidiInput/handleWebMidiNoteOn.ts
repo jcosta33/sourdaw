@@ -196,9 +196,7 @@ export const handleWebMidiNoteOn = inject({
             // The native body precedes every built-in branch below: a device the
             // engine is carrying is silent on Web Audio, so a carried device must
             // never fall into a built-in branch that would voice it there instead.
-            const nativeSink = instrumentTrack
-                ? resolveNativeNoteSink(instrumentTrack, deps.isDeviceCarriedByNativeSession)
-                : null;
+            const nativeSink = instrumentTrack ? resolveNativeNoteSink(instrumentTrack, deps) : null;
             if (nativeSink) {
                 noteData.nativeDeviceId = nativeSink.id;
                 void deps.sendNativeLiveMidiNote({

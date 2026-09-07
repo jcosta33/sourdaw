@@ -42,6 +42,7 @@ export async function rearmNativeLiveMidiWriterInPlace(input: RearmNativeLiveMid
     await armNativeLiveMidiWriter({
         stripTracks: currentStripTracks(pass.stripTracks),
         attachedInstanceIds: readAttachedExternalInstanceIds(),
+        carriedStripIds: pass.carriedStripIds,
         sampleRate: pass.sampleRate,
         positionSeconds: input.positionSeconds ?? pass.entrySeconds,
     });
