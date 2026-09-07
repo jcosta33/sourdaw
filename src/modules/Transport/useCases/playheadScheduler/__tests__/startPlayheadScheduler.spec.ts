@@ -953,12 +953,12 @@ describe('startPlayheadScheduler', () => {
         });
         const recClip = { trackId: 'rec-1', id: 'clip-rec-1' };
         arrangementMocks.startRecording.mockReturnValueOnce([recClip]);
-        let capturedOnBuffer: ((buffer: unknown) => void) | null = null;
+        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
         audioEngineMocks.startAudioRecording.mockImplementationOnce(((
             _trackId: string,
-            onBuffer: (buffer: unknown) => void
+            onTerminal: (result: { kind: string; buffer?: unknown }) => void
         ) => {
-            capturedOnBuffer = onBuffer;
+            capturedOnTerminal = onTerminal;
             return Promise.resolve();
         }) as never);
         startPlayheadScheduler();
@@ -971,13 +971,42 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         // Drive the recorded-buffer callback the engine invokes.
-        expect(capturedOnBuffer).not.toBeNull();
-        capturedOnBuffer!({ duration: 1 });
+        expect(capturedOnTerminal).not.toBeNull();
+        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
         expect(audioEngineMocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: { duration: 1 },
             bufferId: expect.any(String),
         });
         expect(arrangementMocks.updateClip).toHaveBeenCalledWith('clip-rec-1', expect.any(Function));
+    });
+
+    it('does not cache or update a punched clip for a failed recording result', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        transportStoreState.value = playingState({
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        let capturedOnTerminal: ((result: { kind: string; reason?: string }) => void) | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
+            _trackId: string,
+            onTerminal: (result: { kind: string; reason?: string }) => void
+        ) => {
+            capturedOnTerminal = onTerminal;
+            return Promise.resolve(true);
+        }) as never);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(capturedOnTerminal).not.toBeNull();
+        capturedOnTerminal!({ kind: 'failed', reason: 'worker-crash' });
+        expect(audioEngineMocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
     });
 
     it('stops punch-out recording and clears the flag once the playhead crosses punchOutBeat', async () => {

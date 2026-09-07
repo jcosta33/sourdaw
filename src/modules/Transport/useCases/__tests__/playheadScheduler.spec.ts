@@ -41,7 +41,10 @@ type TestRecordingClip = {
 
 type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
 
-type StartAudioRecordingMock = (trackId: string, onComplete: (buffer: AudioBuffer) => void) => Promise<boolean>;
+type StartAudioRecordingMock = (
+    trackId: string,
+    onTerminal: (result: { kind: 'completed'; buffer: AudioBuffer } | { kind: 'failed'; reason: string }) => void
+) => Promise<boolean>;
 
 type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
 
@@ -553,7 +556,7 @@ describe('playhead scheduler tick', () => {
 
             const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
             const buffer = create_test_audio_buffer();
-            complete_recording(buffer);
+            complete_recording({ kind: 'completed', buffer });
 
             expect(harness.cache_audio_buffer).toHaveBeenCalledWith({
                 buffer,

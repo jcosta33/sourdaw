@@ -23,23 +23,34 @@ import { audioRecordingStore } from '../../stores/audioRecordingStore';
 import { audioEngine } from '../createWebAudioEngine';
 
 import { acquireSharedMediaStream } from './acquireSharedMediaStream';
-import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
 import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
-import { activeSessions, recordingLifecycleState, SAB_BYTES, type RecordingSession } from './recordingSession';
+import {
+    activeSessions,
+    recordingLifecycleState,
+    SAB_BYTES,
+    type RecordingSession,
+    type RecordingTerminalCallback,
+} from './recordingSession';
 import { releaseSharedMediaStream } from './releaseSharedMediaStream';
-import { terminateRecordingWorker } from './terminateRecordingWorker';
+import { settleRecordingSession } from './settleRecordingSession';
 import { waitForRecordingSessions } from './waitForRecordingSessions';
 
 export { audioRecordingStore };
 export type { AudioRecordingState } from '../../stores/audioRecordingStore';
 
-export const startAudioRecording = inject({ logger })(
+type StartAudioRecording = (
+    trackId: string,
+    onTerminal: RecordingTerminalCallback,
+    inputId?: string | null
+) => Promise<boolean>;
+
+export const startAudioRecording: StartAudioRecording = inject({ logger })(
     ({ logger }) =>
         async function startAudioRecording(
             trackId: string,
-            onComplete: (buffer: AudioBuffer) => void,
+            onTerminal: RecordingTerminalCallback,
             inputId: string | null = null
         ): Promise<boolean> {
             const startGeneration = recordingLifecycleState.startGeneration;
@@ -111,7 +122,8 @@ export const startAudioRecording = inject({ logger })(
                     recordingNode: readyRecordingNode,
                     recordingWorker: readyRecordingWorker,
                     status: 'starting',
-                    onRecordingComplete: onComplete,
+                    onTerminal,
+                    decodePending: false,
                     stopFlushTimer: null,
                     producerStopAcknowledged: false,
                 };
@@ -157,10 +169,10 @@ export const startAudioRecording = inject({ logger })(
                         void decodeAndDeliver(session, msg.buffer, ctx);
                     } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
-                        cleanupRecordingNode({ expectedSession: session, trackId });
+                        settleRecordingSession(session, { kind: 'failed', reason: 'worker-error' });
                         // The worker names the abandoned take's temp file because
-                        // it cannot remove the file itself: cleanupRecordingNode
-                        // terminated it, and a terminated worker never resumes its
+                        // it cannot remove the file itself: settlement terminated
+                        // it, and a terminated worker never resumes its
                         // in-flight removeEntry — this thread outlives it. A
                         // missing entry is fine: the file may never have been
                         // created or may already be gone.
@@ -178,7 +190,7 @@ export const startAudioRecording = inject({ logger })(
 
                 recordingWorker.onerror = (event): void => {
                     logger.error(new Error(`Recording worker crashed on track ${trackId}`, { cause: event }));
-                    cleanupRecordingNode({ expectedSession: session, trackId });
+                    settleRecordingSession(session, { kind: 'failed', reason: 'worker-crash' });
                 };
 
                 recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
@@ -189,6 +201,7 @@ export const startAudioRecording = inject({ logger })(
                 const sessionWasRegistered =
                     registeredSession !== null && activeSessions.get(trackId) === registeredSession;
                 if (registeredSession) {
+                    registeredSession.onTerminal = null;
                     cleanupRecordingNode({ expectedSession: registeredSession, trackId });
                 }
                 if (!sessionWasRegistered && mediaStream) {
@@ -209,28 +222,30 @@ async function decodeAndDeliver(session: RecordingSession, wavBuffer: ArrayBuffe
     if (activeSessions.get(trackId) !== session) {
         return;
     }
+    if (session.decodePending) {
+        return;
+    }
+    session.decodePending = true;
 
     // The worker flushed in time — cancel the stop-flush guard.
     clearRecordingStopFlushTimer(session);
 
-    const cb = session.onRecordingComplete;
-    session.onRecordingComplete = null;
-
-    if (!cb || wavBuffer.byteLength <= 44) {
-        terminateRecordingWorker(session);
-        activeSessions.delete(trackId);
-        checkAllRecordingsStopped();
+    if (wavBuffer.byteLength <= 44) {
+        settleRecordingSession(session, { kind: 'failed', reason: 'empty-wav' });
         return;
     }
 
     try {
         const buffer = await ctx.decodeAudioData(wavBuffer);
-        cb(buffer);
+        if (activeSessions.get(trackId) !== session) {
+            return;
+        }
+        settleRecordingSession(session, { kind: 'completed', buffer });
     } catch (error) {
+        if (activeSessions.get(trackId) !== session) {
+            return;
+        }
         logger.error(new Error(`Failed to decode recorded audio for track ${trackId}`, { cause: error }));
+        settleRecordingSession(session, { kind: 'failed', reason: 'decode-failed' });
     }
-
-    terminateRecordingWorker(session);
-    activeSessions.delete(trackId);
-    checkAllRecordingsStopped();
 }

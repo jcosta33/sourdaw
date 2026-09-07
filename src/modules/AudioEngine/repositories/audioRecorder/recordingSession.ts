@@ -11,6 +11,15 @@ export const SAB_BYTES = RECORDING_RING_CONTROL_BYTES + RING_FLOATS * Float32Arr
 
 export const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
+export type RecordingResult =
+    | { kind: 'completed'; buffer: AudioBuffer }
+    | {
+          kind: 'failed';
+          reason: 'worker-error' | 'worker-crash' | 'flush-timeout' | 'empty-wav' | 'decode-failed';
+      };
+
+export type RecordingTerminalCallback = (result: RecordingResult) => void;
+
 export type RecordingSession = {
     trackId: string;
     mediaStream: MediaStream | null;
@@ -18,7 +27,8 @@ export type RecordingSession = {
     recordingNode: AudioWorkletNode | null;
     recordingWorker: Worker | null;
     status: 'starting' | 'recording' | 'stopping';
-    onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
+    onTerminal: RecordingTerminalCallback | null;
+    decodePending: boolean;
     stopFlushTimer: ReturnType<typeof setTimeout> | null;
     producerStopAcknowledged: boolean;
 };

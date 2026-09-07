@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { activeSessions, STOP_FLUSH_TIMEOUT_MS, type RecordingSession } from './recordingSession';
+import { settleRecordingSession } from './settleRecordingSession';
 
 export function armRecordingStopFlushTimer(session: RecordingSession): void {
     const { trackId } = session;
@@ -15,7 +15,6 @@ export function armRecordingStopFlushTimer(session: RecordingSession): void {
                 `Recording worker did not flush within ${STOP_FLUSH_TIMEOUT_MS}ms on track ${trackId}; forcing teardown`
             )
         );
-        stalled.onRecordingComplete = null;
-        cleanupRecordingNode({ expectedSession: session, trackId });
+        settleRecordingSession(session, { kind: 'failed', reason: 'flush-timeout' });
     }, STOP_FLUSH_TIMEOUT_MS);
 }
