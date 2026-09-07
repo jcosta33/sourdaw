@@ -156,6 +156,26 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
     });
 
+    it('leaves the engine down when the transport stops without a session stop during the reload', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        let settleActivation = (): void => undefined;
+        const activation = new Promise<{ status: 'active' }>((resolve) => {
+            settleActivation = () => resolve({ status: 'active' });
+        });
+        vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activation]));
+
+        offerRearm();
+        await flushMicrotasks();
+
+        // The runtime-graph repair window writes isPlaying false without a session stop,
+        // so the claim can hold while the transport is stopped.
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false, tempo: 120 });
+        settleActivation();
+        await flushMicrotasks();
+
+        expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+    });
+
     it("leaves a new play's session alone when the claiming play stopped during the reload", async () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
         let settleActivationA = (): void => undefined;
