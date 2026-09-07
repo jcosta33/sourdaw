@@ -13,6 +13,7 @@ import {
     externalPluginActivationTasks,
     type ExternalPluginActivationResult,
 } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
@@ -51,6 +52,16 @@ type ActivateExternalPluginInput = {
      */
     onLatencyMs?: (latencyMs: number) => void;
 };
+
+/**
+ * The failed-restore episode is over — the saved chunk is in the plugin again.
+ * The warned-set entry goes with the marker, so a NEW failure warns again
+ * instead of staying silent behind an already-issued warning.
+ */
+function resolveRestoreFailure(instanceId: string): void {
+    externalPluginRestoreFailures.delete(instanceId);
+    warnedExternalPluginRestoreFailures.delete(instanceId);
+}
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
     externalPluginActivationStore.update((state) => {
@@ -117,11 +128,18 @@ export function activateExternalPlugin({
                         };
                     }
                     setActivationStatus(instanceId, 'active');
+                    // The saved chunk is in the plugin again, so what it reports
+                    // over get-state is authoritative state.
+                    resolveRestoreFailure(instanceId);
                     return { status: 'active' };
                 })
                 .catch((error: unknown): ExternalPluginActivationResult => {
                     const reason = String(error);
                     setActivationStatus(instanceId, 'error', reason);
+                    // The plugin rejected the chunk and holds its defaults; its
+                    // runtime state must not reach a save until real state
+                    // exists again.
+                    externalPluginRestoreFailures.add(instanceId);
                     logger.warn(
                         `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${reason}`
                     );
@@ -216,14 +234,20 @@ export function activateExternalPlugin({
         }
         try {
             await restorePluginState(instanceId, stateChunk);
+            // The saved chunk is in the plugin again, so what it reports over
+            // get-state is authoritative state.
+            resolveRestoreFailure(instanceId);
             return attachment ?? { status: 'active' };
         } catch (error) {
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.
+            setActivationStatus(instanceId, 'error', String(error));
+            // The plugin rejected the chunk and holds its defaults; its runtime
+            // state must not reach a save until real state exists again.
+            externalPluginRestoreFailures.add(instanceId);
             logger.warn(
                 `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${String(error)}`
             );
-            setActivationStatus(instanceId, 'error', String(error));
             return { status: 'failed', stage: 'restore', reason: String(error) };
         }
     })().then((outcome) => {

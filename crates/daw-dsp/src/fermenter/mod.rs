@@ -170,6 +170,13 @@ const AUTOMATION_PARAM_NAMES: [&str; 104] = [
     "grain_pan_spread",
 ];
 
+/// Frames one `process` call renders, and the length of both channel buffers.
+///
+/// A host reading the pointers `process` returns may read at most this many
+/// frames per call — `FermenterInstance::new` sizes `left_buf` and `right_buf`
+/// at exactly this length, and no method resizes them afterward.
+pub const FERMENTER_BLOCK_FRAMES: usize = 128;
+
 /// WASM-exported Fermenter instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct FermenterInstance {
@@ -189,11 +196,10 @@ impl FermenterInstance {
     /// to 1..=64 across all layers. Each voice can render up to 16 unison
     /// oscillators; bounded steal tails overlap only for de-clicking.
     pub fn new(sample_rate: f32, max_voices: u32) -> Self {
-        let block_size = 128;
         Self {
             synth: MasterSynth::new(sample_rate, max_voices as usize),
-            left_buf: vec![0.0; block_size],
-            right_buf: vec![0.0; block_size],
+            left_buf: vec![0.0; FERMENTER_BLOCK_FRAMES],
+            right_buf: vec![0.0; FERMENTER_BLOCK_FRAMES],
             events: [MidiEvent::default(); MAX_BLOCK_EVENTS],
             event_count: 0,
             nan_flush_count: 0,
@@ -316,8 +322,8 @@ impl FermenterInstance {
         })
     }
 
-    /// Process a block of 128 samples. Returns pointer to left channel.
-    /// Caller reads left + right from WASM memory.
+    /// Process a block of [`FERMENTER_BLOCK_FRAMES`] samples. Returns pointer
+    /// to left channel. Caller reads left + right from WASM memory.
     ///
     /// Consumes every event queued since the last call, splitting the render at
     /// each event's sample offset, and empties the list.
@@ -382,13 +388,21 @@ impl FermenterInstance {
         self.event_count += 1;
         true
     }
+
+    /// Lengths of the left and right channel buffers `process` renders into,
+    /// so the native engine host can assert both are the length
+    /// [`FERMENTER_BLOCK_FRAMES`] promises before it trusts pointers into
+    /// them (the worklet cannot call it, it is outside the bindings).
+    pub fn channel_buffer_frames(&self) -> (usize, usize) {
+        (self.left_buf.len(), self.right_buf.len())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use assert_no_alloc::assert_no_alloc;
 
-    use super::{FermenterInstance, MAX_BLOCK_EVENTS};
+    use super::{FermenterInstance, FERMENTER_BLOCK_FRAMES, MAX_BLOCK_EVENTS};
     use crate::primitives::ProcessLifecycle;
 
     /// Index of the first sample the instance rendered as non-zero.
@@ -403,8 +417,8 @@ mod tests {
         instance.note_on(60, 100);
         let mut rendered = Vec::with_capacity(512);
         for _ in 0..4 {
-            instance.process(128);
-            rendered.extend_from_slice(&instance.left_buf[..128]);
+            instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            rendered.extend_from_slice(&instance.left_buf[..FERMENTER_BLOCK_FRAMES]);
         }
         rendered
     }

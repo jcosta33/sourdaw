@@ -144,6 +144,7 @@ type PendingDeviceLoad = {
 
 type InvalidatePendingDeviceLoadInput = {
     deviceId: string;
+    expectedPendingLoad?: PendingDeviceLoad;
     failureStage?: DeviceReadinessFailureStage;
     abortPublished?: boolean;
     clearFailure?: boolean;
@@ -620,7 +621,14 @@ export class TrackNode {
             'needs-reconcile',
             `Async device promotion for ${readinessToken.deviceId} rolled back after a live graph failure`
         );
-        this.strip.deviceNodes[index] = pendingLoad.placeholder;
+        if (this._pendingDeviceLoads.get(readinessToken.deviceId) !== pendingLoad) {
+            return false;
+        }
+        const currentIndex = this.strip.deviceNodes.findIndex((device) => device === failedDevice);
+        if (currentIndex === -1) {
+            return false;
+        }
+        this.strip.deviceNodes[currentIndex] = pendingLoad.placeholder;
         pendingLoad.abortController.abort();
         try {
             this.deps.onDeviceRemoved?.(this.trackId, failedDevice);
@@ -779,16 +787,20 @@ export class TrackNode {
 
     private invalidatePendingDeviceLoad({
         deviceId,
+        expectedPendingLoad,
         failureStage,
         abortPublished = false,
         clearFailure = false,
     }: InvalidatePendingDeviceLoadInput): void {
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (expectedPendingLoad && pendingLoad !== expectedPendingLoad) {
+            return;
+        }
         if (failureStage) {
             this._failedDeviceLoads.add(deviceId);
         } else if (clearFailure) {
             this._failedDeviceLoads.delete(deviceId);
         }
-        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (!pendingLoad) {
             return;
         }
@@ -937,15 +949,23 @@ export class TrackNode {
         });
     }
 
-    public timeoutPendingDeviceLoads(): void {
+    public timeoutPendingDeviceLoads(loadPromises: ReadonlySet<Promise<unknown>>): void {
         let graphChanged = false;
         for (const [deviceId, pendingLoad] of this._pendingDeviceLoads) {
+            if (!pendingLoad.loadPromise || !loadPromises.has(pendingLoad.loadPromise)) {
+                continue;
+            }
             let failureStage: DeviceReadinessFailureStage = 'node';
             if (pendingLoad.resolved) {
                 failureStage = this._pendingGraphReadinessTokens.has(pendingLoad.readinessToken) ? 'graph' : 'content';
                 graphChanged = this.rollbackPromotedDevice(pendingLoad.readinessToken) || graphChanged;
             }
-            this.invalidatePendingDeviceLoad({ deviceId, failureStage, abortPublished: true });
+            this.invalidatePendingDeviceLoad({
+                deviceId,
+                expectedPendingLoad: pendingLoad,
+                failureStage,
+                abortPublished: true,
+            });
         }
         if (graphChanged) {
             this.scheduleRebuildChain();
