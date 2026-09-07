@@ -1,0 +1,62 @@
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_9b530f08172a54::t_ac09b43ad847c6 211-222,224,235-237,241-244,252,262-277,285-286
+  s_9b530f08172a54::t_a5f93e319cb40d 863-871,873,877-881,884-886,889-893,895-916,918-928
+  s_9b530f08172a54::t_107ea99bb4e8d5 291-292,302-303,308-362
+  s_9b530f08172a54::t_0dc2ed650a7132 39-41,45-47,52-55
+  s_9b530f08172a54::t_4ec90c50e2a4b8 460-491
+  s_9b530f08172a54::t_5a25d1e453c0b6 887-888,894
+  s_9b530f08172a54::t_f465d8b884d8fa 42
+  s_9b530f08172a54::t_dd7073685e7cdf 51
+  s_9b530f08172a54::t_79505f9102bb9a 181
+  s_9b530f08172a54::t_e062e7c414bf4f 278-284
+  s_9b530f08172a54::t_d52254728705f0 582,602,628-685,692-696,698-732,762,846
+  s_9b530f08172a54::t_7ecb67e5cede0f 106-124,126-132,136,138-154,156-180,182-183,186,193,195-198,201,203,205-208,287
+  s_9b530f08172a54::t_fc5e043e3efbe9 686-691,697
+  s_9b530f08172a54::t_f48a283e0e0d75 155
+  s_9b530f08172a54::t_16793ae79f1e67 288
+  s_9b530f08172a54::t_192c0fd16edd0f 363
+  s_81e02cb25bfd4f::t_da01b0396ed554 498,520,549,741,791
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_448a3e887dd7e9 120-136
+  s_9b530f08172a54::t_4c58b8b6af258f 95
+  s_9b530f08172a54::t_b823b26d675f69 2143
+  s_9b530f08172a54::t_7b323479b06f00 2248,2250,2253
+  s_9b530f08172a54::t_5bf0c112bb05bd 108
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_9b530f08172a54::t_5da3eed207a4ef 589-600,605-606,609
+  s_9b530f08172a54::t_09e49b91507bda 1804-1847
+  s_9b530f08172a54::t_21d518c9c4ddc6 608
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_9791f515de3a0b 719-723
+  s_9b530f08172a54::t_cbb155837fd741 726,731
+electron/pluginCommandAdmission.ts
+  s_9b530f08172a54::t_71da1a15b2213d 39
+  s_9b530f08172a54::t_41064f01cc18f4 20-25
+electron/__tests__/pluginCommandAdmission.spec.ts
+  s_9b530f08172a54::t_c085d0289c916a 17
+  s_9b530f08172a54::t_932dfa728e2e20 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c647ec1d4e35d78553cca06f1b6c25e50c41b4ed",
+  "prompts": {},
+  "sessions": {
+    "s_81e02cb25bfd4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad3339ed8673c455f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
