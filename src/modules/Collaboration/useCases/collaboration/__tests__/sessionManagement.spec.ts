@@ -849,8 +849,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 createSession('Session A');
                 const sessionAManager = latestPeerManager();
                 sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
-                const sendEntered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
-                const sends = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+                const sendEntered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()] as const;
+                const sends = [Promise.withResolvers<void>(), Promise.withResolvers<void>()] as const;
                 let sendIndex = 0;
                 sessionAManager.sendCrdtSyncBuffered.mockImplementation(async () => {
                     const index = sendIndex;

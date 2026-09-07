@@ -36,7 +36,7 @@ const baseState: CollaborationState = {
     quarantinedPeerIds: [],
 };
 
-const resetStoreShape = {
+const resetStoreShape: CollaborationState = {
     isEnabled: false,
     sessionId: null,
     localPeerId: null,
