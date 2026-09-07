@@ -283,6 +283,19 @@ describe('audioBufferCache durable ownership', () => {
             );
         });
 
+        it('keeps raw PCM and metadata when no ownership provider is registered', async () => {
+            seedOrdinaryEntry(controls, 'provider-absent', THIRTY_ONE_DAYS_AGO, 4);
+
+            const deleted = await routes.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+
+            expect(deleted).toBe(0);
+            expect(controls.committed.get('provider-absent')).toEqual(ordinaryRecord(THIRTY_ONE_DAYS_AGO, 4));
+            expect(controls.committedMeta.get('provider-absent')).toEqual({
+                lastAccessed: THIRTY_ONE_DAYS_AGO,
+                sizeInBytes: 4,
+            });
+        });
+
         it('deletes nothing when the cross-renderer storage lock is unavailable', async () => {
             routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
             seedOrdinaryEntry(controls, 'unowned-middle', THIRTY_ONE_DAYS_AGO);
