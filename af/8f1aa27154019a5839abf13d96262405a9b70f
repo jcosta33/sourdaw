@@ -1,0 +1,45 @@
+scripts/__tests__/prContract.spec.ts
+  s_87ab0a2f60ccf8::t_620be780b44463 1-4,14,18,29,816-898
+scripts/__tests__/removeLane.spec.ts
+  s_d9371c93951884::t_2e5ffa95d868cd 39,140-143,494-500,869-876,898,919-925,973,1032,1239,1522,1539,1574,1576,1613,1615
+scripts/__tests__/resourceGuard.spec.ts
+  s_fb52f94e76dc8e::t_b4f1e8053d1bbe 37,737,909,920,931,1174-1226,1374-1429
+scripts/prContract.ts
+  s_87ab0a2f60ccf8::t_72d5b1256f2faa 705,707-712,714
+scripts/removeLane.ts
+  s_d9371c93951884::t_4de7a1a7848d60 71,441,460,607,642,686,859,863,868
+scripts/resourceGuard.ts
+  s_87ab0a2f60ccf8::t_50740e1918c895 1299-1301,1316,1320,1327,1349,1375,1380,1418-1420,1425,1452,1454-1455,1457,1472-1481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "af8f1aa27154019a5839abf13d96262405a9b70f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d9371c93951884": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4d345ba372accaf5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fb52f94e76dc8e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07bb9-e58a-7b12-b814-694e7b4a4144",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
