@@ -45,19 +45,41 @@ function makeAnswer(overrides: Record<string, unknown> = {}): Record<string, unk
 describe('acceptAnswer', () => {
     const ownerA = {};
     const ownerB = {};
+    let peers: Map<string, { acceptAnswer: ReturnType<typeof vi.fn> }>;
     let getPeer: ReturnType<typeof vi.fn>;
+    let rekeyPeer: ReturnType<typeof vi.fn>;
+    let removePeer: ReturnType<typeof vi.fn>;
     let acceptAnswerOnPeer: ReturnType<typeof vi.fn>;
+
+    function installPendingPeer(peerId: string): void {
+        peers.clear();
+        peers.set(peerId, { acceptAnswer: acceptAnswerOnPeer });
+        mockRuntime.state.pendingInviteId = peerId;
+    }
 
     beforeEach(() => {
         vi.clearAllMocks();
         collaborationStore.set({ ...baseState, peers: [] });
-        mockRuntime.state.pendingInviteId = 'stale-pending-id';
         acceptAnswerOnPeer = vi.fn().mockResolvedValue(undefined);
-        getPeer = vi.fn().mockReturnValue({ acceptAnswer: acceptAnswerOnPeer });
+        peers = new Map();
+        installPendingPeer('pending-1');
+        getPeer = vi.fn().mockImplementation((peerId: string) => peers.get(peerId));
+        rekeyPeer = vi.fn().mockImplementation((oldPeerId: string, newPeerId: string, localPeerId?: string | null) => {
+            const peer = peers.get(oldPeerId);
+            if (!peer || oldPeerId === newPeerId || peers.has(newPeerId) || newPeerId === localPeerId) {
+                return false;
+            }
+            peers.delete(oldPeerId);
+            peers.set(newPeerId, peer);
+            return true;
+        });
+        removePeer = vi.fn().mockImplementation((peerId: string) => {
+            peers.delete(peerId);
+        });
         mockRuntime.state.peerManager = {
             getPeer,
-            rekeyPeer: vi.fn().mockReturnValue(true),
-            removePeer: vi.fn(),
+            rekeyPeer,
+            removePeer,
         } as unknown as PeerConnectionManager;
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
@@ -111,8 +133,10 @@ describe('acceptAnswer', () => {
         expect(outcomes[0]?.status).toBe('fulfilled');
         expect(outcomes[1]).toMatchObject({
             status: 'rejected',
-            reason: expect.objectContaining({ message: expect.stringContaining('Called in wrong state') }),
+            reason: expect.objectContaining({ message: expect.stringContaining('superseded') }),
         });
+        expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1);
+        expect(peers.get('joiner-1')).toBeDefined();
         expect(collaborationStore.value?.error).toBeNull();
     });
 
@@ -143,6 +167,7 @@ describe('acceptAnswer', () => {
     });
 
     it('applies the SDP answer to the matching pending peer', async () => {
+        installPendingPeer('pending-7');
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-7', sdp: 'sdp-xyz' }))
         );
@@ -228,8 +253,7 @@ describe('acceptAnswer', () => {
     });
 
     it('re-keys the peer in peerManager from pendingPeerId to answer.peerId', async () => {
-        const rekeyPeer = vi.fn().mockReturnValue(true);
-        mockRuntime.state.peerManager = { getPeer, rekeyPeer } as unknown as PeerConnectionManager;
+        installPendingPeer('pending-slot-42');
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'joiner-actual-99' }))
         );
@@ -244,8 +268,7 @@ describe('acceptAnswer', () => {
             ...baseState,
             localPeerId: 'host-peer-id',
         });
-        const removePeer = vi.fn();
-        mockRuntime.state.peerManager = { getPeer, removePeer } as unknown as PeerConnectionManager;
+        installPendingPeer('pending-slot-42');
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'host-peer-id' }))
         );
@@ -255,9 +278,8 @@ describe('acceptAnswer', () => {
     });
 
     it('rejects answer and closes pending connection if rekeyPeer fails due to duplicate peer ID', async () => {
-        const rekeyPeer = vi.fn().mockReturnValue(false);
-        const removePeer = vi.fn();
-        mockRuntime.state.peerManager = { getPeer, rekeyPeer, removePeer } as unknown as PeerConnectionManager;
+        installPendingPeer('pending-slot-42');
+        peers.set('duplicate-peer-id', { acceptAnswer: vi.fn() });
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'duplicate-peer-id' }))
         );
@@ -305,5 +327,105 @@ describe('acceptAnswer', () => {
         expect(mockRuntime.state.peerManager).toBe(sessionBManager);
         expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
         expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', localName: 'Session B', error: null });
+    });
+
+    it('preserves live confirmed peer state and a newer pending invite after older SDP acceptance', async () => {
+        const sdpAcceptance = Promise.withResolvers<void>();
+        acceptAnswerOnPeer.mockReturnValueOnce(sdpAcceptance.promise);
+        mockRuntime.state.pendingInviteId = 'pending-1';
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        const accepting = acceptAnswer('raw');
+        await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
+
+        const newerPeer = { acceptAnswer: vi.fn() };
+        peers.set('pending-2', newerPeer);
+        mockRuntime.state.pendingInviteId = 'pending-2';
+        const liveJoiner = {
+            id: 'joiner-1',
+            name: 'Live Joiner',
+            color: '#f59e0b',
+            isHost: false,
+            isConnected: true,
+            lastSeen: 42,
+            latencyMs: 18,
+            syncHealth: 'diverged' as const,
+        };
+        const unrelatedPeer = {
+            id: 'other-peer',
+            name: 'Other',
+            color: '#ef4444',
+            isHost: false,
+            isConnected: true,
+            lastSeen: 41,
+            latencyMs: 7,
+            syncHealth: 'converging' as const,
+        };
+        collaborationStore.set({
+            ...baseState,
+            peers: [liveJoiner, unrelatedPeer],
+            connectionStatus: 'connected',
+            error: 'concurrent warning',
+            quarantinedPeerIds: ['joiner-1'],
+        });
+        sdpAcceptance.resolve();
+
+        await accepting;
+        expect(mockRuntime.state.pendingInviteId).toBe('pending-2');
+        expect(getPeer('pending-2')).toBe(newerPeer);
+        expect(collaborationStore.value).toEqual({
+            ...baseState,
+            peers: [liveJoiner, unrelatedPeer],
+            connectionStatus: 'connected',
+            error: 'concurrent warning',
+            quarantinedPeerIds: ['joiner-1'],
+        });
+    });
+
+    it.each(['removed', 'replaced'] as const)(
+        'quietly supersedes acceptance when its confirmed peer mapping is %s during SDP',
+        async (mappingChange) => {
+            const sdpAcceptance = Promise.withResolvers<void>();
+            acceptAnswerOnPeer.mockReturnValueOnce(sdpAcceptance.promise);
+            mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+            const accepting = acceptAnswer('raw');
+            await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
+
+            if (mappingChange === 'removed') {
+                peers.delete('joiner-1');
+            } else {
+                peers.set('joiner-1', { acceptAnswer: vi.fn() });
+            }
+            mockRuntime.state.pendingInviteId = 'pending-2';
+            const replacementState = {
+                ...baseState,
+                sessionId: 'session-current',
+                error: null,
+            };
+            collaborationStore.set(replacementState);
+            sdpAcceptance.resolve();
+
+            await expect(accepting).rejects.toThrow('superseded');
+            expect(mockRuntime.state.pendingInviteId).toBe('pending-2');
+            expect(collaborationStore.value).toEqual(replacementState);
+        }
+    );
+
+    it('marks a newly appended peer diverged when quarantine arrives during SDP acceptance', async () => {
+        const sdpAcceptance = Promise.withResolvers<void>();
+        acceptAnswerOnPeer.mockReturnValueOnce(sdpAcceptance.promise);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        const accepting = acceptAnswer('raw');
+        await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
+        collaborationStore.set({ ...baseState, quarantinedPeerIds: ['joiner-1'] });
+        sdpAcceptance.resolve();
+
+        await accepting;
+        expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['joiner-1']);
+        expect(collaborationStore.value?.peers).toEqual([
+            expect.objectContaining({ id: 'joiner-1', syncHealth: 'diverged' }),
+        ]);
     });
 });

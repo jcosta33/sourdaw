@@ -44,14 +44,76 @@ const acceptAttemptAuthority = {
     },
 };
 
+type PeerManager = NonNullable<typeof runtime.state.peerManager>;
+type PendingPeer = ReturnType<PeerManager['getPeer']>;
+
+function getPendingPeer(peerManager: PeerManager | null, pendingId: string | null): PendingPeer {
+    if (!peerManager || !pendingId) {
+        return undefined;
+    }
+    return peerManager.getPeer(pendingId);
+}
+
+function isCurrentSession(
+    owner: ReturnType<typeof runtime.captureOwner>,
+    requestWitness: ReturnType<typeof joinAttemptAuthority.capture>,
+    peerManager: PeerManager | null
+): boolean {
+    if (!joinAttemptAuthority.isCurrent(requestWitness) || runtime.state.peerManager !== peerManager) {
+        return false;
+    }
+    return owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner);
+}
+
+function matchesOriginalPendingPeer(
+    answer: SignalingMessage,
+    originalPendingId: string | null,
+    pendingPeer: PendingPeer
+): pendingPeer is NonNullable<PendingPeer> {
+    return originalPendingId === answer.pendingPeerId && pendingPeer !== undefined;
+}
+
+function isPeerMapped(peerManager: PeerManager | null, peerId: string | null, pendingPeer: PendingPeer): boolean {
+    return peerId !== null && peerManager?.getPeer(peerId) === pendingPeer;
+}
+
+function removePeerIfMapped(peerManager: PeerManager, peerId: string | null, pendingPeer: PendingPeer): void {
+    if (peerId === null || !isPeerMapped(peerManager, peerId, pendingPeer)) {
+        return;
+    }
+    peerManager.removePeer(peerId);
+}
+
+function appendAnsweredPeer(answer: SignalingMessage): void {
+    collaborationStore.update((current) => {
+        if (!current || current.peers.some((peer) => peer.id === answer.peerId)) {
+            return current;
+        }
+        const joinerInfo: CollaborationPeer = {
+            id: answer.peerId,
+            // Answer payloads are sender-controlled — bound the joiner name
+            // with the same limit every identity ingress uses.
+            name: sanitizePeerName(answer.name),
+            color: runtime.pickPeerColor([current.localColor, ...current.peers.map((peer) => peer.color)]),
+            isHost: false,
+            isConnected: false,
+            lastSeen: Date.now(),
+            latencyMs: null,
+            syncHealth: current.quarantinedPeerIds.includes(answer.peerId) ? 'diverged' : 'converging',
+        };
+        return { ...current, peers: [...current.peers, joinerInfo] };
+    });
+}
+
 export async function acceptAnswer(answerString: string): Promise<void> {
     const owner = runtime.captureOwner();
     const requestWitness = joinAttemptAuthority.capture();
-    const isCurrentSession = () =>
-        joinAttemptAuthority.isCurrent(requestWitness) &&
-        (owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner));
+    const peerManager = runtime.state.peerManager;
+    const originalPendingId = runtime.state.pendingInviteId;
+    const pendingPeer = getPendingPeer(peerManager, originalPendingId);
     clearCollaborationFailure();
     const acceptAttempt = acceptAttemptAuthority.begin();
+    let peerIdentitySuperseded = false;
     try {
         let json: string;
         try {
@@ -59,7 +121,7 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         } catch {
             throw createCollaborationError('Invalid answer — must be a valid answer string');
         }
-        if (!isCurrentSession()) {
+        if (!isCurrentSession(owner, requestWitness, peerManager)) {
             throw createSupersededOperationError();
         }
 
@@ -74,21 +136,23 @@ export async function acceptAnswer(answerString: string): Promise<void> {
             throw createCollaborationError('Invalid answer');
         }
 
-        const peerManager = runtime.state.peerManager;
         if (!peerManager) {
             throw createCollaborationError('No active session');
         }
-
-        const peer = peerManager.getPeer(answer.pendingPeerId);
-        if (!peer) {
+        if (!matchesOriginalPendingPeer(answer, originalPendingId, pendingPeer)) {
             throw createCollaborationError(
                 'No pending peer connection matches this answer — the invite may have expired'
             );
         }
 
+        if (!isPeerMapped(peerManager, originalPendingId, pendingPeer)) {
+            peerIdentitySuperseded = true;
+            throw createSupersededOperationError();
+        }
+
         const state = collaborationStore.value;
         if (state && answer.peerId === state.localPeerId) {
-            peerManager.removePeer(answer.pendingPeerId);
+            removePeerIfMapped(peerManager, originalPendingId, pendingPeer);
             throw createCollaborationError(
                 'Invalid answer — peer ID is already in use by another session peer or the host'
             );
@@ -97,41 +161,29 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         if (answer.pendingPeerId !== answer.peerId) {
             const rekeyed = peerManager.rekeyPeer(answer.pendingPeerId, answer.peerId, state?.localPeerId);
             if (!rekeyed) {
-                peerManager.removePeer(answer.pendingPeerId);
+                removePeerIfMapped(peerManager, originalPendingId, pendingPeer);
                 throw createCollaborationError(
                     'Invalid answer — peer ID is already in use by another session peer or the host'
                 );
             }
         }
 
-        await peer.acceptAnswer(answer.sdp);
-        if (!isCurrentSession()) {
+        await pendingPeer.acceptAnswer(answer.sdp);
+        if (
+            !isCurrentSession(owner, requestWitness, peerManager) ||
+            !isPeerMapped(peerManager, answer.peerId, pendingPeer)
+        ) {
+            peerIdentitySuperseded = true;
             throw createSupersededOperationError();
         }
-        runtime.state.pendingInviteId = null;
-
-        // Add the joiner to our peer list
-        if (state) {
-            const joinerInfo: CollaborationPeer = {
-                id: answer.peerId,
-                // Answer payloads are sender-controlled — bound the joiner name
-                // with the same limit every identity ingress uses.
-                name: sanitizePeerName(answer.name),
-                color: runtime.pickPeerColor([state.localColor, ...state.peers.map((param) => param.color)]),
-                isHost: false,
-                isConnected: false,
-                lastSeen: Date.now(),
-                latencyMs: null,
-                syncHealth: 'converging',
-            };
-            collaborationStore.set({
-                ...state,
-                peers: [...state.peers, joinerInfo],
-            });
+        if (runtime.state.pendingInviteId === originalPendingId) {
+            runtime.state.pendingInviteId = null;
         }
+
+        appendAnsweredPeer(answer);
         acceptAttemptAuthority.settle();
     } catch (error) {
-        if (!isCurrentSession()) {
+        if (!isCurrentSession(owner, requestWitness, peerManager) || peerIdentitySuperseded) {
             throw createSupersededOperationError();
         }
         if (acceptAttemptAuthority.isCurrent(acceptAttempt)) {
