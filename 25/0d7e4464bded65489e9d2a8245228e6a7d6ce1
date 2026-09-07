@@ -1,0 +1,36 @@
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_87ab0a2f60ccf8::t_b809559382cc64 213-215,218-220,224,237,243,255-257,261,269,278-279
+  s_87ab0a2f60ccf8::t_56de28ea4b12be 39,41-42,51-96,128,130,133-141,254
+  s_87ab0a2f60ccf8::t_2987412ec6243a 144-148,221
+  s_87ab0a2f60ccf8::t_a4bbcd23c42c9e 212
+  s_87ab0a2f60ccf8::t_c2be83f371b277 200-203
+  s_87ab0a2f60ccf8::t_59ac6966533d95 271
+  s_87ab0a2f60ccf8::t_c6c7812a092556 40
+  s_87ab0a2f60ccf8::t_9e63bdc9b7240f 142,172-199,204-205,223,242,249-253
+  s_87ab0a2f60ccf8::t_8801fc989c4c8c 143
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_87ab0a2f60ccf8::t_ee18d86da95f37 45,52,54
+  s_87ab0a2f60ccf8::t_e7647474ffd8ee 20-21
+  s_87ab0a2f60ccf8::t_c908e63c8a7fae 7-19,22-34,41-44,53,58-59,62,208-212,245-249
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_87ab0a2f60ccf8::t_830151fc4d90f6 7-32,63-64,66-68,79,87,96,99
+  s_87ab0a2f60ccf8::t_30fb36bc3a768f 65,81,83-86,193,478-482,495-503,505-529,569-574,592-594
+  s_87ab0a2f60ccf8::t_6259b131d8dc8e 456-477,483-494,504,530-568,575-591,595-625
+  s_87ab0a2f60ccf8::t_6f2e3e75692a5c 180,298,313-318,327,340-344,366,423
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "250d7e4464bded65489e9d2a8245228e6a7d6ce1",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
