@@ -15,6 +15,6 @@ with {
 
 // Sum of harmonics with rolloff and anti-aliasing
 process = sum(i, partials,
-    os.osc(min(ma.SR * 0.49, freq * (i+1))) / pow(i+1, rolloff) * nyquist_weight(freq * (i+1))
+    os.osc(freq * (i+1)) / pow(i+1, rolloff) * nyquist_weight(freq * (i+1))
 ) / partials * en.adsr(0.01, 0.2, 0.7, 0.5, gate) * gain <: _, _
 with { rolloff = hslider("rolloff", 1.5, 0.5, 4, 0.01); };
