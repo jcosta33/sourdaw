@@ -59,6 +59,17 @@ export type EngineTransportPosition = {
      * reads zero however loud the graph behind it is.
      */
     masterPeak: number;
+    /**
+     * The engine's held peak for every track strip its own registry carries,
+     * keyed by track id, linear and never negative.
+     *
+     * Keyed by every strip the native graph knows about, not only the ones
+     * this session is sounding — a strip Web Audio still owns audio for can
+     * still appear here with a stale or silent reading. A reader that has not
+     * confirmed the strip is this session's carried, audible strip has no
+     * business trusting the number it finds under its id.
+     */
+    stripPeaks: Readonly<Record<string, number>>;
 };
 
 /** The shape a stopped engine reports, and the shape the browser build reports. */
@@ -73,6 +84,7 @@ export const stoppedEngineTransportPosition: EngineTransportPosition = {
     timeSigNum: 0,
     timeSigDenom: 0,
     masterPeak: 0,
+    stripPeaks: {},
 };
 
 /**

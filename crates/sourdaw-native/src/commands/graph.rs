@@ -1032,6 +1032,20 @@ impl GraphRegistry {
         self.batches_sent
     }
 
+    /// Every track strip this registry holds, keyed by the *native* track id
+    /// the engine knows it by.
+    ///
+    /// Buses are not metered by this map: a bus strip has no engine-side
+    /// meter to key, so naming one here would promise a reading nothing
+    /// publishes.
+    pub(crate) fn track_strip_ids(&self) -> HashMap<usize, &str> {
+        self.strips
+            .iter()
+            .filter(|(_, entry)| entry.kind == StripKind::Track)
+            .map(|(strip_id, entry)| (entry.native_id, strip_id.as_str()))
+            .collect()
+    }
+
     fn allocate_node_id(&mut self) -> usize {
         let id = self.next_node_id;
         self.next_node_id += 1;
@@ -4703,6 +4717,33 @@ mod tests {
             .ops
             .iter()
             .any(|op| matches!(op, GraphCommand::SetBusOutput(2, RouteTarget::Track(1)))));
+    }
+
+    /// The strip-peak wiring keys off native track ids, so the map from a
+    /// native id back to the strip id the app knows has to name every track
+    /// strip the registry holds and nothing else — a bus has no meter of its
+    /// own to key.
+    #[test]
+    fn track_strip_ids_names_every_track_strip_and_no_bus() {
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "create-bus-strip", "busId": "b1", "name": "B", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true }
+        ]));
+
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+            .expect("a track strip and a bus strip must both map");
+
+        // Node ids are allocated in creation order: the track is 1, the bus is 2.
+        let track_strip_ids = registry.track_strip_ids();
+        assert_eq!(track_strip_ids.get(&1), Some(&"t1"));
+        assert_eq!(
+            track_strip_ids.len(),
+            1,
+            "the bus's native id must not appear in a map keyed for track meters"
+        );
     }
 
     #[test]

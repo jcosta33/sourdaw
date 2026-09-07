@@ -4,6 +4,7 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
+use crate::meter::PeakHold;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
@@ -146,38 +147,76 @@ pub(crate) fn transport_position_channel(
     (input, TransportPositionReader { output })
 }
 
-/// What the engine's master output measured, for a meter drawn from it.
+/// What the engine's master output, and every timeline track's own strip,
+/// measured, for a meter drawn from either.
 ///
 /// Its own channel rather than a field on [`TransportPositionSnapshot`]: that
 /// one answers "where is the transport", and the batch count riding on it is
 /// paired with the playhead beside it on purpose. A level is not part of that
 /// pairing — nothing dates a meter reading against a command — so carrying it
 /// there would widen a contract to hold a number that makes no claim under it.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct MasterMeterSnapshot {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeterSnapshot {
     /// The loudest sample the device was handed, linear and non-negative,
-    /// held for [`AudioScheduler::publish_master_meter`]'s hold window so a
-    /// UI-rate poll landing between callbacks cannot under-read a transient.
+    /// held for [`AudioScheduler::publish_meters`]'s hold window so a UI-rate
+    /// poll landing between callbacks cannot under-read a transient.
     ///
     /// It measures what reached the device, not what the graph rendered: a
     /// shadowed monitor writes zeros, and a meter that reported the silenced
     /// render would show a level nobody can hear.
+    pub master_peak: f32,
+    /// How many of `strips` are live. See [`Self::strips`].
+    strip_count: usize,
+    strips: [StripPeak; MAX_TIMELINE_TRACKS],
+}
+
+/// One timeline track's own strip peak, keyed by the track's id.
+///
+/// Each entry is one timeline track's own output — the pair the track hands
+/// to its route after its fader, pan, mute and output delay, so it measures
+/// what the track contributes to whatever it feeds — held for the same
+/// window as the master. It measures the render, not the device, so a
+/// shadowed monitor still reports the strips' levels while `master_peak`
+/// reads zero; the control side decides whether a shadowed session's strips
+/// are shown.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StripPeak {
+    pub track_id: usize,
     pub peak: f32,
 }
 
-pub struct MasterMeterReader {
-    output: Output<MasterMeterSnapshot>,
+impl MeterSnapshot {
+    /// The strips this snapshot carries, in the tracks' registration order.
+    /// That order carries no meaning of its own — look up a strip by its
+    /// `track_id`.
+    pub fn strips(&self) -> &[StripPeak] {
+        &self.strips[..self.strip_count]
+    }
 }
 
-impl MasterMeterReader {
-    pub fn snapshot(&mut self) -> MasterMeterSnapshot {
+impl Default for MeterSnapshot {
+    fn default() -> Self {
+        Self {
+            master_peak: 0.0,
+            strip_count: 0,
+            strips: [StripPeak::default(); MAX_TIMELINE_TRACKS],
+        }
+    }
+}
+
+pub struct MeterReader {
+    output: Output<MeterSnapshot>,
+}
+
+impl MeterReader {
+    pub fn snapshot(&mut self) -> MeterSnapshot {
         *self.output.read()
     }
 }
 
-pub(crate) fn master_meter_channel() -> (Input<MasterMeterSnapshot>, MasterMeterReader) {
-    let (input, output) = triple_buffer::triple_buffer(&MasterMeterSnapshot::default());
-    (input, MasterMeterReader { output })
+pub(crate) fn meter_channel() -> (Input<MeterSnapshot>, MeterReader) {
+    let (input, output) = triple_buffer::triple_buffer(&MeterSnapshot::default());
+    (input, MeterReader { output })
 }
 
 /// How many times a second the held peak may fall on its own — 50, so a
@@ -2683,15 +2722,12 @@ pub struct AudioScheduler {
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
-    /// The master peak currently being held, for [`MasterMeterSnapshot`].
-    held_peak: f32,
-    /// Frames rendered since `held_peak` was last taken, against
-    /// `peak_hold_frames`.
-    held_frames: u64,
+    /// The master peak currently being held, for [`MeterSnapshot`].
+    master_hold: PeakHold,
     /// How long a peak stands before a quieter callback may replace it, in
     /// frames on this engine's own clock.
     peak_hold_frames: u64,
-    master_meter_tx: Input<MasterMeterSnapshot>,
+    meter_tx: Input<MeterSnapshot>,
     #[cfg(test)]
     rt_work: RtWorkCounters,
 }
@@ -2725,7 +2761,7 @@ impl AudioScheduler {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, _transport_position_reader) = transport_position_channel();
-        let (master_meter_tx, _master_meter_reader) = master_meter_channel();
+        let (meter_tx, _meter_reader) = meter_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -2734,7 +2770,7 @@ impl AudioScheduler {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
-            master_meter_tx,
+            meter_tx,
         )
     }
 
@@ -2747,7 +2783,7 @@ impl AudioScheduler {
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
         graph_progress_tx: Input<GraphProgressSnapshot>,
         transport_position_tx: Input<TransportPositionSnapshot>,
-        master_meter_tx: Input<MasterMeterSnapshot>,
+        meter_tx: Input<MeterSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -2788,13 +2824,12 @@ impl AudioScheduler {
             batches_applied: 0,
             graph_progress_tx,
             transport_position_tx,
-            held_peak: 0.0,
-            held_frames: 0,
+            master_hold: PeakHold::default(),
             // Derived from the rate the stream actually opened at, so the hold
             // lasts the same wall-clock span on a 44.1 kHz device as on a
             // 96 kHz one.
             peak_hold_frames: (sample_rate / PEAK_HOLD_RELEASES_PER_SECOND) as u64,
-            master_meter_tx,
+            meter_tx,
             #[cfg(test)]
             rt_work: RtWorkCounters::default(),
         }
@@ -2859,7 +2894,8 @@ impl AudioScheduler {
         self.transport_position_tx.write(snapshot);
     }
 
-    /// Hold this callback's device peak and publish what is being held.
+    /// Hold this callback's device peak and every track's own strip peak,
+    /// and publish what is being held.
     ///
     /// A meter is polled at UI rate and fed at callback rate, so most peaks
     /// are never seen by the reader that samples between them. The hold is
@@ -2869,17 +2905,21 @@ impl AudioScheduler {
     /// quieter callback inside the window advances the window rather than the
     /// level. `>=` rather than `>` restarts the window on a repeated peak, so
     /// steady material holds at its own level instead of decaying under it.
+    /// Every strip is held the same way, against the same window, so a
+    /// strip's meter and the master's fall on the same schedule.
     #[inline]
-    pub(crate) fn publish_master_meter(&mut self, callback_peak: f32, frames: u64) {
-        if callback_peak >= self.held_peak || self.held_frames >= self.peak_hold_frames {
-            self.held_peak = callback_peak;
-            self.held_frames = 0;
-        } else {
-            self.held_frames += frames;
-        }
-        self.master_meter_tx.write(MasterMeterSnapshot {
-            peak: self.held_peak,
-        });
+    pub(crate) fn publish_meters(&mut self, callback_peak: f32, frames: u64) {
+        let master_peak = self
+            .master_hold
+            .hold(callback_peak, frames, self.peak_hold_frames);
+        let mut snapshot = MeterSnapshot {
+            master_peak,
+            ..Default::default()
+        };
+        snapshot.strip_count =
+            self.timeline
+                .publish_strip_peaks(frames, self.peak_hold_frames, &mut snapshot.strips);
+        self.meter_tx.write(snapshot);
     }
 
     /// The routed graph, for callers proving what a command did to it.

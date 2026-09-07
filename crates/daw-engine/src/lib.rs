@@ -5,6 +5,7 @@ pub(crate) mod device;
 /// its refusal is the one part of it a host has to be able to name.
 pub use device::InputOpenRefusal;
 pub mod engine_events;
+mod meter;
 pub mod midi;
 pub mod midi_fx;
 pub mod offline;
@@ -25,10 +26,10 @@ use pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
-    graph_progress_channel, master_meter_channel, transport_position_channel, BuiltinEffectType,
-    GraphCommand, GraphProgressReader, GraphProgressSnapshot, MasterMeterReader,
-    MasterMeterSnapshot, PluginCore, RetiredGraphObjects, TransportPositionReader,
-    TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+    graph_progress_channel, meter_channel, transport_position_channel, BuiltinEffectType,
+    GraphCommand, GraphProgressReader, GraphProgressSnapshot, MeterReader, MeterSnapshot,
+    PluginCore, RetiredGraphObjects, TransportPositionReader, TransportPositionSnapshot,
+    CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -152,7 +153,7 @@ pub struct EngineHandle {
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
-    master_meter: MasterMeterReader,
+    meter: MeterReader,
     /// Stream errors the engine's output device reported.
     engine_events: Consumer<EngineEvent>,
     /// Stream errors the engine's input device reported.
@@ -226,7 +227,7 @@ impl EngineHandle {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (meter_tx, meter_reader) = meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let spawned = spawn_audio_thread_with_diagnostics(
@@ -235,7 +236,7 @@ impl EngineHandle {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
-            master_meter_tx,
+            meter_tx,
             engine_event_tx,
             // Handing an event ring over here is the whole of asking for
             // capture, and it no longer opens anything: the ends an input
@@ -295,7 +296,7 @@ impl EngineHandle {
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
-            master_meter: master_meter_reader,
+            meter: meter_reader,
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
@@ -605,18 +606,19 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
-    /// Read what the engine's master output measured, outside the callback.
+    /// Read what the engine's master output, and every timeline track's own
+    /// strip, measured, outside the callback.
     ///
     /// Its own channel rather than a field on the transport snapshot, for the
-    /// reason [`MasterMeterSnapshot`] gives: a level makes none of the
+    /// reason [`MeterSnapshot`] gives: a level makes none of the
     /// happens-before claims the position's fields make, and pairing it with
     /// them would say it did.
     ///
-    /// The peak is already held at the engine, so a poll at UI rate reads the
-    /// loudest thing the device was handed inside the hold window rather than
+    /// Every peak is already held at the engine, so a poll at UI rate reads
+    /// the loudest thing each was handed inside the hold window rather than
     /// whichever callback the poll happened to land after.
-    pub fn master_meter_snapshot(&mut self) -> MasterMeterSnapshot {
-        self.master_meter.snapshot()
+    pub fn meter_snapshot(&mut self) -> MeterSnapshot {
+        self.meter.snapshot()
     }
 
     /// Take every engine event published since the last drain, output-side
@@ -1383,7 +1385,7 @@ fn engine_handle_fixture(
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
-    master_meter: MasterMeterReader,
+    meter: MeterReader,
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
     capture_refusal: Arc<AtomicU8>,
@@ -1402,7 +1404,7 @@ fn engine_handle_fixture(
         timeline_rt_diagnostics,
         graph_progress,
         transport_position,
-        master_meter,
+        meter,
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
@@ -1432,7 +1434,7 @@ pub fn engine_handle_for_command_capture(
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-    let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+    let (_meter_tx, meter_reader) = meter_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
     let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
@@ -1445,7 +1447,7 @@ pub fn engine_handle_for_command_capture(
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
-            master_meter_reader,
+            meter_reader,
             engine_event_rx,
             capture_event_rx,
             audio_thread::new_capture_refusal_slot(),
@@ -1471,7 +1473,7 @@ mod tests {
     use crate::midi::note_store::MidiNoteStore;
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{
-        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
         BuiltinEffectType, GraphCommand, PluginCore,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
@@ -2621,7 +2623,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2634,7 +2636,7 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
-                master_meter_reader,
+                meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
@@ -2859,7 +2861,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2872,7 +2874,7 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
-                master_meter_reader,
+                meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
@@ -2943,7 +2945,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2960,7 +2962,7 @@ mod tests {
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
-            master_meter_reader,
+            meter_reader,
             engine_event_rx,
             capture_event_rx,
             capture_refusal,

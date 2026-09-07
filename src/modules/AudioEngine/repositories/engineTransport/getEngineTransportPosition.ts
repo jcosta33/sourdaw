@@ -7,6 +7,26 @@ function readNumber(payload: Record<string, unknown>, key: keyof EngineTransport
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * Keep only the strip peaks that are actually finite numbers, on their own
+ * keys — a payload from an untrusted bridge call gets no benefit of the
+ * doubt, and a malformed or missing entry is dropped rather than coerced.
+ */
+function readStripPeaks(payload: Record<string, unknown>): Readonly<Record<string, number>> {
+    const raw = payload.stripPeaks;
+    if (typeof raw !== 'object' || raw === null) {
+        return {};
+    }
+
+    const peaks: Record<string, number> = {};
+    for (const [trackId, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            peaks[trackId] = value;
+        }
+    }
+    return peaks;
+}
+
 function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     if (typeof response !== 'object' || response === null) {
         return stoppedEngineTransportPosition;
@@ -24,6 +44,7 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         timeSigNum: readNumber(payload, 'timeSigNum'),
         timeSigDenom: readNumber(payload, 'timeSigDenom'),
         masterPeak: readNumber(payload, 'masterPeak'),
+        stripPeaks: readStripPeaks(payload),
     };
 }
 

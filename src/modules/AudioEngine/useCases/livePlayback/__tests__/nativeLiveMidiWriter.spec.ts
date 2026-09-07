@@ -176,6 +176,7 @@ async function poll(positionSeconds: number): Promise<void> {
         timeSigNum: 4,
         timeSigDenom: 4,
         masterPeak: 0,
+        stripPeaks: {},
     });
     nativeEnginePlayheadFeed.inFlightEpoch = null;
     pollNativeEnginePlayheadOnce();
