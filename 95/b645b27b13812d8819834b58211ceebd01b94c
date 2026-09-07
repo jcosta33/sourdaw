@@ -1,0 +1,67 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_e4babda98381ac 120-121,179-180,291,453,843-856
+src/app/bootstrap.ts
+  s_9b530f08172a54::t_cab6d9af280495 56,143,342-347
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_8937cc80dc9068 3,1641-1660,2352-2355,2389,2435-2440,2498-2501,2537-2540
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.spec.ts
+  s_9b530f08172a54::t_d45aa345abd257 1-334
+src/modules/Project/useCases/projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds.ts
+  s_9b530f08172a54::t_045643a5bb089f 1-102
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurableOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_8d42c80504b699 1-200
+src/modules/AudioEngine/stores/durableAudioBufferOwnership.ts
+  s_41e0768d7fd8b0::t_79941c266eb77b 1-31
+src/modules/AudioEngine/useCases/index.ts
+  s_62c37310616ecd::t_9500272c89e106 23
+src/modules/Project/useCases/index.ts
+  s_e33598737b8f70::t_95eb73ae3fbe99 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "95b645b27b13812d8819834b58211ceebd01b94c",
+  "prompts": {},
+  "sessions": {
+    "s_41e0768d7fd8b0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07bd3-5dab-7080-bcbc-08844c78dc76",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_62c37310616ecd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07bec-d456-7bd1-bdfc-8548b6c1524a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e33598737b8f70": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a73144e016a86ab09",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
