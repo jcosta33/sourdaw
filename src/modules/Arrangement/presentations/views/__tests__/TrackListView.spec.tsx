@@ -186,14 +186,6 @@ describe('TrackListView', () => {
                     collapsed: false,
                     height: 64,
                 }),
-                normalizeTrack({
-                    id: 't3',
-                    name: 'Master',
-                    kind: 'master',
-                    parentId: null,
-                    collapsed: false,
-                    height: 64,
-                }),
             ],
             selectedTrackId: 't1',
         });
@@ -441,7 +433,7 @@ describe('TrackListView', () => {
     });
 
     it('stops the Delete keydown from reaching window before the confirmation resolves (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(true);
         const windowKeyDown = vi.fn();
@@ -456,11 +448,11 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         // The track deletion itself still runs once the user confirms.
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
     });
 
     it('stops the Backspace keydown from reaching window when deletion is cancelled (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         vi.mocked(confirmUser).mockResolvedValue(false);
         const windowKeyDown = vi.fn();
@@ -474,11 +466,11 @@ describe('TrackListView', () => {
         window.removeEventListener('keydown', windowKeyDown);
         await Promise.resolve();
         await Promise.resolve();
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('ignores Backspace typed into the inline rename input (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         renderWithTooltip(<TrackListView />);
         const input = screen.getByTestId('inline-rename-input');
@@ -489,7 +481,7 @@ describe('TrackListView', () => {
         // The rename input owns the keystroke: no delete confirmation may
         // open and no removeTrack action may fire from the bubbled keydown.
         expect(confirmUser).not.toHaveBeenCalled();
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
         // Not cancelling matters as much as not acting: the native default
         // must survive or character deletion breaks inside the input.
         expect(backspaceEvent.defaultPrevented).toBe(false);
@@ -520,7 +512,7 @@ describe('TrackListView', () => {
     });
 
     it('claims Delete for a selected-but-hidden master track without confirming (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
@@ -567,11 +559,11 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(confirmUser).not.toHaveBeenCalled();
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('claims Delete pressed on the header-band spectrum for a hidden selection (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
@@ -615,11 +607,11 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(confirmUser).not.toHaveBeenCalled();
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('claims Delete pressed on the header-band spectrum and confirms for a visible selection (#3602)', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         const windowKeyDown = vi.fn();
         window.addEventListener('keydown', windowKeyDown);
@@ -634,7 +626,7 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(confirmUser).toHaveBeenCalledTimes(1);
-        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
     it('reorders a track via drag and drop', async () => {
