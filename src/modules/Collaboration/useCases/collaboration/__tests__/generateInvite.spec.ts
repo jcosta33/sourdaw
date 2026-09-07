@@ -1,39 +1,65 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type SignalingMessage } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { generateInvite } from '../generateInvite';
 
-const mockRuntime = vi.hoisted(() => ({
-    state: {
-        peerManager: null as PeerConnectionManager | null,
-        pendingInviteId: null as string | null,
-        sessionSecret: null as string | null,
-    },
-    generatePeerId: vi.fn<() => string>(),
-    compressInvite: vi.fn<(json: string) => Promise<string>>(),
-    captureOwner: vi.fn<() => object | null>(),
-    canWrite: vi.fn<(owner: object | null) => boolean>(),
-}));
+type InvitePeer = {
+    createOffer: () => Promise<string>;
+};
+
+type InvitePeerManager = {
+    createPeer: (peerId: string) => InvitePeer;
+    getPeer: (peerId: string) => InvitePeer | undefined;
+    removePeer: (peerId: string) => void;
+};
+
+const mockRuntime = vi.hoisted(() => {
+    const state: {
+        peerManager: InvitePeerManager | null;
+        pendingInviteId: string | null;
+        sessionSecret: string | null;
+    } = {
+        peerManager: null,
+        pendingInviteId: null,
+        sessionSecret: null,
+    };
+    return {
+        state,
+        generatePeerId: vi.fn<() => string>(),
+        compressInvite: vi.fn<(json: string) => Promise<string>>(),
+        captureOwner: vi.fn<() => object | null>(),
+        canWrite: vi.fn<(owner: object | null) => boolean>(),
+    };
+});
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 describe('generateInvite', () => {
     const ownerA = {};
     const ownerB = {};
-    let removePeer: ReturnType<typeof vi.fn>;
-    let createPeer: ReturnType<typeof vi.fn>;
-    let createOffer: ReturnType<typeof vi.fn>;
+    let peers: Map<string, InvitePeer>;
+    let getPeer: InvitePeerManager['getPeer'];
+    let removePeer: ReturnType<typeof vi.fn<(peerId: string) => void>>;
+    let createPeer: ReturnType<typeof vi.fn<(peerId: string) => InvitePeer>>;
+    let createOffer: ReturnType<typeof vi.fn<() => Promise<string>>>;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockRuntime.state.pendingInviteId = null;
         mockRuntime.state.sessionSecret = 'room-secret-1';
-        createOffer = vi.fn().mockResolvedValue('fresh-offer-sdp');
-        createPeer = vi.fn().mockReturnValue({ createOffer });
-        removePeer = vi.fn();
-        mockRuntime.state.peerManager = { createPeer, removePeer } as unknown as PeerConnectionManager;
+        peers = new Map();
+        createOffer = vi.fn<() => Promise<string>>().mockResolvedValue('fresh-offer-sdp');
+        createPeer = vi.fn<(peerId: string) => InvitePeer>().mockImplementation((peerId) => {
+            const peer: InvitePeer = { createOffer };
+            peers.set(peerId, peer);
+            return peer;
+        });
+        getPeer = (peerId) => peers.get(peerId);
+        removePeer = vi.fn<(peerId: string) => void>().mockImplementation((peerId) => {
+            peers.delete(peerId);
+        });
+        mockRuntime.state.peerManager = { createPeer, getPeer, removePeer };
         mockRuntime.generatePeerId.mockReturnValue('joiner-new');
         mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
         mockRuntime.captureOwner.mockReturnValue(ownerA);
@@ -82,6 +108,36 @@ describe('generateInvite', () => {
         await expect(generateInvite()).rejects.toThrow('Compression stream failed');
 
         expect(collaborationStore.value?.error).toBe('Compression stream failed');
+    });
+
+    it('removes only its own pending peer when current offer creation fails', async () => {
+        createOffer.mockRejectedValueOnce(new Error('WebRTC offer failed'));
+
+        await expect(generateInvite()).rejects.toThrow('WebRTC offer failed');
+
+        expect(mockRuntime.state.pendingInviteId).toBeNull();
+        expect(getPeer('joiner-new')).toBeUndefined();
+    });
+
+    it('removes only its own pending peer when current invite compression fails', async () => {
+        mockRuntime.compressInvite.mockRejectedValueOnce(new Error('Compression stream failed'));
+
+        await expect(generateInvite()).rejects.toThrow('Compression stream failed');
+
+        expect(mockRuntime.state.pendingInviteId).toBeNull();
+        expect(getPeer('joiner-new')).toBeUndefined();
+    });
+
+    it('keeps peer-creation setup failures actionable and clears only the reserved slot', async () => {
+        const setupError = new Error('Peer construction failed');
+        createPeer.mockImplementationOnce(() => {
+            throw setupError;
+        });
+
+        await expect(generateInvite()).rejects.toBe(setupError);
+
+        expect(mockRuntime.state.pendingInviteId).toBeNull();
+        expect(collaborationStore.value?.error).toBe('Peer construction failed');
     });
 
     it('clears a previously surfaced failure when a new attempt succeeds', async () => {
@@ -149,7 +205,11 @@ describe('generateInvite', () => {
         const generating = generateInvite();
         await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
 
-        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        const sessionBManager: InvitePeerManager = {
+            createPeer: vi.fn<(peerId: string) => InvitePeer>(),
+            getPeer: () => undefined,
+            removePeer: vi.fn<(peerId: string) => void>(),
+        };
         mockRuntime.captureOwner.mockReturnValue(ownerB);
         mockRuntime.state.peerManager = sessionBManager;
         mockRuntime.state.pendingInviteId = 'session-b-invite';
@@ -182,7 +242,11 @@ describe('generateInvite', () => {
         const generating = generateInvite();
         await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
 
-        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        const sessionBManager: InvitePeerManager = {
+            createPeer: vi.fn<(peerId: string) => InvitePeer>(),
+            getPeer: () => undefined,
+            removePeer: vi.fn<(peerId: string) => void>(),
+        };
         mockRuntime.captureOwner.mockReturnValue(ownerB);
         mockRuntime.state.peerManager = sessionBManager;
         mockRuntime.state.pendingInviteId = 'session-b-invite';
@@ -194,5 +258,105 @@ describe('generateInvite', () => {
         expect(mockRuntime.state.peerManager).toBe(sessionBManager);
         expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
         expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', error: null });
+    });
+
+    it('keeps the newer invite state when an older same-session offer rejects', async () => {
+        const oldOffer = Promise.withResolvers<string>();
+        createOffer.mockReturnValueOnce(oldOffer.promise).mockResolvedValueOnce('new-offer');
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        const olderSettled = Promise.allSettled([older]);
+        await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
+        await expect(generateInvite()).resolves.toEqual(expect.any(String));
+        const newerPeer = getPeer('joiner-new');
+        const newerState = { ...collaborationStore.value!, error: 'newer invite generation error' };
+        collaborationStore.set(newerState);
+
+        oldOffer.reject(new Error('old offer rejection'));
+
+        const [result] = await olderSettled;
+        expect({
+            result,
+            pendingInviteId: mockRuntime.state.pendingInviteId,
+            peerEntries: [...peers.entries()],
+            state: collaborationStore.value,
+        }).toEqual({
+            result: expect.objectContaining({
+                status: 'rejected',
+                reason: expect.objectContaining({ message: expect.stringContaining('superseded') }),
+            }),
+            pendingInviteId: 'joiner-new',
+            peerEntries: [['joiner-new', newerPeer]],
+            state: newerState,
+        });
+    });
+
+    it('keeps the newer invite state when an older same-session compression rejects', async () => {
+        const oldCompression = Promise.withResolvers<string>();
+        mockRuntime.compressInvite.mockReturnValueOnce(oldCompression.promise);
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        const olderSettled = Promise.allSettled([older]);
+        await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
+        await expect(generateInvite()).resolves.toEqual(expect.any(String));
+        const newerPeer = getPeer('joiner-new');
+        const newerState = { ...collaborationStore.value!, error: 'newer invite compression error' };
+        collaborationStore.set(newerState);
+
+        oldCompression.reject(new Error('old compression rejection'));
+
+        const [result] = await olderSettled;
+        expect({
+            result,
+            pendingInviteId: mockRuntime.state.pendingInviteId,
+            peerEntries: [...peers.entries()],
+            state: collaborationStore.value,
+        }).toEqual({
+            result: expect.objectContaining({
+                status: 'rejected',
+                reason: expect.objectContaining({ message: expect.stringContaining('superseded') }),
+            }),
+            pendingInviteId: 'joiner-new',
+            peerEntries: [['joiner-new', newerPeer]],
+            state: newerState,
+        });
+    });
+
+    it('does not return an older same-session invite after a newer offer replaces its peer', async () => {
+        const oldOffer = Promise.withResolvers<string>();
+        createOffer.mockReturnValueOnce(oldOffer.promise).mockResolvedValueOnce('new-offer');
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
+        const newer = generateInvite();
+        await expect(newer).resolves.toEqual(expect.any(String));
+        oldOffer.resolve('old-offer');
+
+        await expect(older).rejects.toThrow('superseded');
+        expect(mockRuntime.state.pendingInviteId).toBe('joiner-new');
+        expect(getPeer('joiner-old')).toBeUndefined();
+        expect(getPeer('joiner-new')).toBeDefined();
+    });
+
+    it('does not return an older same-session invite after its compression is superseded', async () => {
+        const oldCompression = Promise.withResolvers<string>();
+        mockRuntime.compressInvite
+            .mockReturnValueOnce(oldCompression.promise)
+            .mockImplementationOnce((json: string) => Promise.resolve(`new:${json}`));
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
+        const newer = generateInvite();
+        await expect(newer).resolves.toContain('new:');
+        oldCompression.resolve('old-compressed');
+
+        await expect(older).rejects.toThrow('superseded');
+        expect(mockRuntime.state.pendingInviteId).toBe('joiner-new');
+        expect(getPeer('joiner-old')).toBeUndefined();
+        expect(getPeer('joiner-new')).toBeDefined();
     });
 });
