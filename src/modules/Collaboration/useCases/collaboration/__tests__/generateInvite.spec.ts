@@ -1,49 +1,65 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type SignalingMessage } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { generateInvite } from '../generateInvite';
 
-const mockRuntime = vi.hoisted(() => ({
-    state: {
-        peerManager: null as PeerConnectionManager | null,
-        pendingInviteId: null as string | null,
-        sessionSecret: null as string | null,
-    },
-    generatePeerId: vi.fn<() => string>(),
-    compressInvite: vi.fn<(json: string) => Promise<string>>(),
-    captureOwner: vi.fn<() => object | null>(),
-    canWrite: vi.fn<(owner: object | null) => boolean>(),
-}));
+type InvitePeer = {
+    createOffer: () => Promise<string>;
+};
+
+type InvitePeerManager = {
+    createPeer: (peerId: string) => InvitePeer;
+    getPeer: (peerId: string) => InvitePeer | undefined;
+    removePeer: (peerId: string) => void;
+};
+
+const mockRuntime = vi.hoisted(() => {
+    const state: {
+        peerManager: InvitePeerManager | null;
+        pendingInviteId: string | null;
+        sessionSecret: string | null;
+    } = {
+        peerManager: null,
+        pendingInviteId: null,
+        sessionSecret: null,
+    };
+    return {
+        state,
+        generatePeerId: vi.fn<() => string>(),
+        compressInvite: vi.fn<(json: string) => Promise<string>>(),
+        captureOwner: vi.fn<() => object | null>(),
+        canWrite: vi.fn<(owner: object | null) => boolean>(),
+    };
+});
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 describe('generateInvite', () => {
     const ownerA = {};
     const ownerB = {};
-    let peers: Map<string, { createOffer: ReturnType<typeof vi.fn> }>;
-    let getPeer: ReturnType<typeof vi.fn>;
-    let removePeer: ReturnType<typeof vi.fn>;
-    let createPeer: ReturnType<typeof vi.fn>;
-    let createOffer: ReturnType<typeof vi.fn>;
+    let peers: Map<string, InvitePeer>;
+    let getPeer: InvitePeerManager['getPeer'];
+    let removePeer: ReturnType<typeof vi.fn<(peerId: string) => void>>;
+    let createPeer: ReturnType<typeof vi.fn<(peerId: string) => InvitePeer>>;
+    let createOffer: ReturnType<typeof vi.fn<() => Promise<string>>>;
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockRuntime.state.pendingInviteId = null;
         mockRuntime.state.sessionSecret = 'room-secret-1';
         peers = new Map();
-        createOffer = vi.fn().mockResolvedValue('fresh-offer-sdp');
-        createPeer = vi.fn().mockImplementation((peerId: string) => {
-            const peer = { createOffer };
+        createOffer = vi.fn<() => Promise<string>>().mockResolvedValue('fresh-offer-sdp');
+        createPeer = vi.fn<(peerId: string) => InvitePeer>().mockImplementation((peerId) => {
+            const peer: InvitePeer = { createOffer };
             peers.set(peerId, peer);
             return peer;
         });
-        getPeer = vi.fn().mockImplementation((peerId: string) => peers.get(peerId));
-        removePeer = vi.fn().mockImplementation((peerId: string) => {
+        getPeer = (peerId) => peers.get(peerId);
+        removePeer = vi.fn<(peerId: string) => void>().mockImplementation((peerId) => {
             peers.delete(peerId);
         });
-        mockRuntime.state.peerManager = { createPeer, getPeer, removePeer } as unknown as PeerConnectionManager;
+        mockRuntime.state.peerManager = { createPeer, getPeer, removePeer };
         mockRuntime.generatePeerId.mockReturnValue('joiner-new');
         mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
         mockRuntime.captureOwner.mockReturnValue(ownerA);
@@ -189,7 +205,11 @@ describe('generateInvite', () => {
         const generating = generateInvite();
         await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
 
-        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        const sessionBManager: InvitePeerManager = {
+            createPeer: vi.fn<(peerId: string) => InvitePeer>(),
+            getPeer: () => undefined,
+            removePeer: vi.fn<(peerId: string) => void>(),
+        };
         mockRuntime.captureOwner.mockReturnValue(ownerB);
         mockRuntime.state.peerManager = sessionBManager;
         mockRuntime.state.pendingInviteId = 'session-b-invite';
@@ -222,7 +242,11 @@ describe('generateInvite', () => {
         const generating = generateInvite();
         await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
 
-        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        const sessionBManager: InvitePeerManager = {
+            createPeer: vi.fn<(peerId: string) => InvitePeer>(),
+            getPeer: () => undefined,
+            removePeer: vi.fn<(peerId: string) => void>(),
+        };
         mockRuntime.captureOwner.mockReturnValue(ownerB);
         mockRuntime.state.peerManager = sessionBManager;
         mockRuntime.state.pendingInviteId = 'session-b-invite';
