@@ -74,10 +74,12 @@ class FakeFileHandle {
 
 class FakeDirectory {
     handle = new FakeFileHandle();
+    removedEntries: string[] = [];
     getFileHandle(): Promise<FakeFileHandle> {
         return Promise.resolve(this.handle);
     }
-    removeEntry(): Promise<void> {
+    removeEntry(name: string): Promise<void> {
+        this.removedEntries.push(name);
         return Promise.resolve();
     }
 }
@@ -116,6 +118,23 @@ async function loadWorker(): Promise<void> {
 }
 
 let sendToWorker: (data: unknown) => void;
+
+type AcquireResult = ReturnType<WorkerModule['acquireRingChunk']>;
+type OkAcquireResult = Extract<AcquireResult, { status: 'ok' }>;
+
+/** Narrow an acquire result to its `ok` variant, failing the test otherwise. */
+function expectOkRead(result: AcquireResult): OkAcquireResult {
+    if (result.status !== 'ok') {
+        throw new Error(`expected an ok ring read, got '${result.status}'`);
+    }
+    return result;
+}
+
+/** Reinterpret a chunk's bytes as the Float32 samples that were copied. */
+function chunkSamples(chunk: Uint8Array<ArrayBuffer>): number[] {
+    const floats = new Float32Array(chunk.buffer, chunk.byteOffset, chunk.byteLength / 4);
+    return Array.from(floats);
+}
 
 /** Wait for `postMessage` to emit a message of the given type. */
 async function waitFor(type: string, timeoutMs = 1000): Promise<Record<string, unknown>> {
@@ -158,18 +177,20 @@ describe('acquireRingChunk', () => {
         const sab = new SharedArrayBuffer(4 + 4 * 4);
         const writeHead = new Int32Array(sab, 0, 1);
         const ring = new Float32Array(sab, 4);
-        // Producer published 5 samples into a 4-slot ring (slot 0 wrapped).
-        ring[0] = 5;
-        ring[1] = 2;
-        ring[2] = 3;
-        ring[3] = 4;
-        Atomics.store(writeHead, 0, 5);
+        // Producer published 6 samples into a 4-slot ring: samples 4 and 5
+        // wrapped into slots 0 and 1.
+        ring[0] = 4;
+        ring[1] = 5;
+        ring[2] = 2;
+        ring[3] = 3;
+        Atomics.store(writeHead, 0, 6);
 
-        const { chunk, nextReadHead } = mod.acquireRingChunk(ring, writeHead, 0);
-        expect(nextReadHead).toBe(5);
+        // The reader already drained 0–3; the remaining interval 4–5 starts
+        // inside surviving history and reads the wrapped slots 0–1.
+        const { chunk, nextReadHead } = expectOkRead(mod.acquireRingChunk(ring, writeHead, 4));
+        expect(nextReadHead).toBe(6);
         // The chunk is a byte view over a fresh ArrayBuffer; reinterpret as floats.
-        const floats = new Float32Array(chunk.buffer, chunk.byteOffset, chunk.byteLength / 4);
-        expect(Array.from(floats)).toEqual([5, 2, 3, 4, 5]);
+        expect(chunkSamples(chunk)).toEqual([4, 5]);
     });
 
     it('returns the drained bytes over a non-shared ArrayBuffer, decoupled from the ring SAB', () => {
@@ -180,7 +201,7 @@ describe('acquireRingChunk', () => {
         ring[1] = 2;
         Atomics.store(writeHead, 0, 2);
 
-        const { chunk } = mod.acquireRingChunk(ring, writeHead, 0);
+        const { chunk } = expectOkRead(mod.acquireRingChunk(ring, writeHead, 0));
         // FileSystemWritableFileStream rejects SharedArrayBuffer-backed views; the
         // chunk's backing buffer must be a plain, owned ArrayBuffer.
         expect(chunk.buffer).toBeInstanceOf(ArrayBuffer);
@@ -192,9 +213,135 @@ describe('acquireRingChunk', () => {
         const writeHead = new Int32Array(sab, 0, 1);
         const ring = new Float32Array(sab, 4);
         Atomics.store(writeHead, 0, 3);
-        const { chunk, nextReadHead } = mod.acquireRingChunk(ring, writeHead, 3);
+        const { chunk, nextReadHead } = expectOkRead(mod.acquireRingChunk(ring, writeHead, 3));
         expect(chunk.length).toBe(0);
         expect(nextReadHead).toBe(3);
+    });
+
+    it('reports overrun instead of duplicated samples when the producer lapped the reader', () => {
+        const sab = new SharedArrayBuffer(4 + 4 * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        // Writes 0..5 into a 4-slot ring: sample 0 was overwritten by 4 and
+        // sample 1 by 5. A reader still at 0 asks for six samples out of four
+        // slots — the requested interval no longer exists in the ring.
+        ring[0] = 4;
+        ring[1] = 5;
+        ring[2] = 2;
+        ring[3] = 3;
+        Atomics.store(writeHead, 0, 6);
+
+        const result = mod.acquireRingChunk(ring, writeHead, 0);
+        expect(result.status).toBe('overrun');
+        if (result.status !== 'overrun') {
+            throw new Error('expected the overrun variant');
+        }
+        expect(result.currentWrite).toBe(6);
+        // The defect returned [4,5,2,3,4,5] — newer samples presented as the
+        // original interval. A failed read carries no chunk at all.
+        expect('chunk' in result).toBe(false);
+    });
+
+    it('flags overrun at production capacity when the interval exceeds 524288 samples', () => {
+        const capacity = 524288;
+        const sab = new SharedArrayBuffer(4 + capacity * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        for (let sample = 0; sample < capacity + 128; sample++) {
+            ring[sample % capacity] = sample;
+        }
+        Atomics.store(writeHead, 0, capacity + 128);
+
+        const result = mod.acquireRingChunk(ring, writeHead, 0);
+        // The defect returned all 524416 "samples" modulo capacity — 524288 of
+        // them duplicated newer PCM, with the first sample reading `capacity`.
+        expect(result.status).toBe('overrun');
+    });
+
+    it('succeeds when the read starts exactly at the oldest surviving sample', () => {
+        const sab = new SharedArrayBuffer(4 + 4 * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        ring[0] = 4;
+        ring[1] = 5;
+        ring[2] = 2;
+        ring[3] = 3;
+        Atomics.store(writeHead, 0, 6);
+
+        // writeHead - capacity = 2: the oldest surviving sample. Exactly at the
+        // boundary is NOT an overrun — the full surviving history is readable.
+        const { chunk, nextReadHead } = expectOkRead(mod.acquireRingChunk(ring, writeHead, 2));
+        expect(nextReadHead).toBe(6);
+        expect(chunkSamples(chunk)).toEqual([2, 3, 4, 5]);
+    });
+});
+
+describe('recordingWorker ring overrun drop policy', () => {
+    beforeEach(async () => {
+        await loadWorker();
+    });
+
+    /** Four-slot SAB lapped by the producer: writes 0..5, reader never drained. */
+    function lappedRingSab(): SharedArrayBuffer {
+        const sab = new SharedArrayBuffer(4 + 4 * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        ring[0] = 4;
+        ring[1] = 5;
+        ring[2] = 2;
+        ring[3] = 3;
+        Atomics.store(writeHead, 0, 6);
+        return sab;
+    }
+
+    it('abandons the take when a poll drain discovers the overrun', async () => {
+        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000 });
+        await waitFor('ready');
+
+        sendToWorker({ type: 'start' });
+        const error = await waitFor('error');
+        expect(String(error.message)).toMatch(/overrun/i);
+        // The main thread terminates this worker on 'error', so the worker
+        // cannot remove its own temp file — it must hand the name over for
+        // main-thread removal.
+        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
+
+        // The corrupted interval is never written to the OPFS history and no
+        // 'wav' is ever produced for the take.
+        expect(messages.some((m) => m.type === 'wav')).toBe(false);
+        expect(fakeDir.handle.store.bytes.length).toBeLessThanOrEqual(mod.WAV_HEADER_BYTES);
+    });
+
+    it('abandons the take when the final drain at stop discovers the overrun', async () => {
+        sendToWorker({ type: 'init', sab: lappedRingSab(), sampleRate: 48000 });
+        await waitFor('ready');
+
+        sendToWorker({ type: 'stop' });
+        const error = await waitFor('error');
+        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
+        expect(messages.some((m) => m.type === 'wav')).toBe(false);
+    });
+
+    it('discards its OPFS temp file after delivering the wav on a normal stop', async () => {
+        const sab = new SharedArrayBuffer(4 + 64 * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        ring[0] = 1;
+        ring[1] = 2;
+        Atomics.store(writeHead, 0, 2);
+
+        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        await waitFor('ready');
+        sendToWorker({ type: 'start' });
+        // Let one drain tick run, then stop.
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        sendToWorker({ type: 'stop' });
+        await waitFor('wav');
+
+        // The worker owns cleanup on the normal path: the temp entry is gone
+        // once the take has been delivered.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
     });
 });
 
