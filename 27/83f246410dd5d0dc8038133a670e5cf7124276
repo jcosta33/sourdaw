@@ -1,0 +1,14 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_1228e573df1f42 279,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2783f246410dd5d0dc8038133a670e5cf7124276",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
