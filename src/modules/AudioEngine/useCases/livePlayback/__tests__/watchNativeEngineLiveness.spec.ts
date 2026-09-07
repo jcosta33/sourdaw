@@ -22,6 +22,8 @@ import type { AudioGraphBackend } from '../../../models/AudioGraphBackend';
 
 const mocks = vi.hoisted(() => ({
     refreshEngineRtDiagnostics: vi.fn<() => Promise<EngineRtDiagnostics | null>>(),
+    retireNativeEngine: vi.fn<() => Promise<{ outcome: string; retiredInstanceIds: readonly string[] }>>(),
+    forgetRetiredPluginInstances: vi.fn<(instanceIds: readonly string[]) => void>(),
     stopPlayheadFeed: vi.fn(),
     setNativeCarriedTracks: vi.fn<(trackIds: ReadonlySet<string>) => void>(),
     notifyUser: vi.fn<(message: string, level: string) => void>(),
@@ -30,6 +32,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../engineAccess/refreshEngineRtDiagnostics', () => ({
     refreshEngineRtDiagnostics: () => mocks.refreshEngineRtDiagnostics(),
+}));
+vi.mock('../../../repositories/engineLifecycle/retireNativeEngine', () => ({
+    retireNativeEngine: () => mocks.retireNativeEngine(),
+}));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    forgetRetiredPluginInstances: (instanceIds: readonly string[]) => mocks.forgetRetiredPluginInstances(instanceIds),
 }));
 vi.mock('../startNativeEnginePlayheadFeed', () => ({ startNativeEnginePlayheadFeed: vi.fn() }));
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
@@ -59,6 +67,11 @@ function fakeBackend(): AudioGraphBackend & {
 beforeEach(() => {
     vi.useFakeTimers();
     mocks.refreshEngineRtDiagnostics.mockReset();
+    mocks.retireNativeEngine.mockReset();
+    // A retire that finds the engine rendering leaves the orphan exactly where
+    // it was, so it is the default that changes nothing for the park cases.
+    mocks.retireNativeEngine.mockResolvedValue({ outcome: 'rendering', retiredInstanceIds: [] });
+    mocks.forgetRetiredPluginInstances.mockReset();
     mocks.stopPlayheadFeed.mockClear();
     mocks.setNativeCarriedTracks.mockReset();
     mocks.notifyUser.mockClear();
@@ -204,7 +217,7 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         expect(orphan.apply).toHaveBeenCalledTimes(2);
     });
 
-    it('does not park while the orphan’s engine still reports not running', async () => {
+    it('retires the engine instead of parking it while the orphan’s stream is still down', async () => {
         const backend = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
         mocks.refreshEngineRtDiagnostics.mockResolvedValue({
             ...notRunningEngineRtDiagnostics,
@@ -215,12 +228,18 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
         await nativeLiveGraphSession.pending;
         expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(mocks.retireNativeEngine).not.toHaveBeenCalled();
+
+        mocks.retireNativeEngine.mockResolvedValue({ outcome: 'retired', retiredInstanceIds: ['inst-1'] });
 
         await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
         await nativeLiveGraphSession.pending;
 
+        // A park would have sent a set-transport batch through this handle; the
+        // engine is not rendering, so the slot is emptied instead.
         expect(backend.apply).not.toHaveBeenCalled();
-        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(mocks.retireNativeEngine).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
     });
 
     it('retires itself when neither a session nor an orphan exists', async () => {

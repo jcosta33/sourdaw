@@ -74,6 +74,7 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { has: vi.fn(() => false) },
+    nativeEngineRearmStore: { subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({

@@ -14,6 +14,7 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
+export { forgetRetiredPluginInstances } from './pluginLifecycle/forgetRetiredPluginInstances';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
 export { closePluginGui } from './pluginLifecycle/closePluginGui';
 export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
