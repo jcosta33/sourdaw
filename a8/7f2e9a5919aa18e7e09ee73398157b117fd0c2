@@ -1,0 +1,37 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/saveIncrementalsToIdb.spec.ts
+  s_87ab0a2f60ccf8::t_3ffe913441df82 143,146-150,153-155,157,316-317,320
+src/modules/CrdtDocument/useCases/__tests__/loadCrdtProject.sanitization.integration.spec.ts
+  s_87ab0a2f60ccf8::t_3ffe913441df82 160-179
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/crdtPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_3ffe913441df82 199,201-204,208-212
+  s_9b530f08172a54::t_ba150e60ef7dac 213-214
+src/modules/CrdtDocument/repositories/crdtPersistence/saveAllToIdb.ts
+  s_87ab0a2f60ccf8::t_9e807c6f3648d6 41
+  s_87ab0a2f60ccf8::t_5aa699e66f477e 10
+src/modules/CrdtDocument/repositories/crdtPersistence/saveIncrementalsToIdb.ts
+  s_87ab0a2f60ccf8::t_9e807c6f3648d6 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a87f2e9a5919aa18e7e09ee73398157b117fd0c2",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
