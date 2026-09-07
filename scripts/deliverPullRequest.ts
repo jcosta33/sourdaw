@@ -2679,9 +2679,10 @@ function deliverPullRequestWithCiAdmission(
                     port.log(`PR #${number} was already merged; repaired 0 remaining dependent(s)`);
                     return;
                 }
+                recoveryPostMergeValidation = persistedPreparedPostMergeValidation(initial, target);
                 receipt = ensureDeliveryReceipt(initial, target, port, ciAdmissionMode);
                 receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
-                persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, undefined, port);
+                persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
             } else {
                 fail(`PR #${number} delivery receipt authority cannot be proven`);
             }

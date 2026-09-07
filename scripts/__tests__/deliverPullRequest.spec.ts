@@ -7692,7 +7692,7 @@ describe('pull-request delivery', () => {
 
         it('mints missing delivery receipt and completes issue when merged with missing receipt authority and an open closing issue', () => {
             const closes = relationshipBody('Closes #2372');
-            const { port, calls, tracker } = fakePort({
+            const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
                 primary: [
                     pullRequest({
                         state: 'MERGED',
@@ -7711,11 +7711,16 @@ describe('pull-request delivery', () => {
             expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
             expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
             expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+            const authority = persistedReceiptAuthority();
+            expect(authority?.phase).toBe('terminal');
+            if (authority?.phase === 'terminal') {
+                expect(authority.postMergeValidation).toEqual(persistedPostMergeValidation('head', closes, 2372));
+            }
         });
 
         it('mints missing delivery receipt and retargets remaining dependents when merged with missing receipt authority and stacked children', () => {
             const child = stacked();
-            const { port, calls, tracker } = fakePort({
+            const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
                 primary: [
                     pullRequest({
                         state: 'MERGED',
@@ -7732,6 +7737,57 @@ describe('pull-request delivery', () => {
             expect(calls).toContain('add-receipt:42');
             expect(calls).toContain('retarget:43:main');
             expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+            const authority = persistedReceiptAuthority();
+            expect(authority?.phase).toBe('terminal');
+            if (authority?.phase === 'terminal') {
+                expect(authority.postMergeValidation).toEqual({
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    title: 'feat(delivery): add gate',
+                    bodySha256: createHash('sha256').update(relationshipBody('None.')).digest('hex'),
+                    trackerTarget: null,
+                });
+            }
+        });
+
+        it('idempotently repairs an already-merged pull request on a second delivery run using the persisted terminal authority', () => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[], []],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain('add-receipt:42');
+            expect(calls).toContain('complete:2372');
+            expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+            expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+
+            expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+            expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+            expect(
+                calls.filter((call) => call === 'PR #42 was already merged; repaired 0 remaining dependent(s)')
+            ).toHaveLength(2);
+            const authority = persistedReceiptAuthority();
+            expect(authority?.phase).toBe('terminal');
+            if (authority?.phase === 'terminal') {
+                expect(authority.postMergeValidation).toEqual(persistedPostMergeValidation('head', closes, 2372));
+            }
         });
     });
 });
