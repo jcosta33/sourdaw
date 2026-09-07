@@ -202,6 +202,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiNote: () => Promise.resolve(true),
+    soundsNativeNotes: () => false,
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRoute: vi.fn(),
