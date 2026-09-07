@@ -1,0 +1,29 @@
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_f8e47c7cb68a3e::t_723e242fd670f1 45-51,69-71,78,82,119-122,132-135,137
+src/modules/BrowserAi/presentations/views/__tests__/AiRenderClipPreview.spec.tsx
+  s_5e9c82b9a82460::t_12da744e8b31d1 146-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8c964235332937188109a97dedf966c147b6a06a",
+  "prompts": {},
+  "sessions": {
+    "s_5e9c82b9a82460": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cbf-1470-7040-a7d3-4c2e2d1121fc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f8e47c7cb68a3e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cc4-4c9c-7923-917d-c7ecf5df52be",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
