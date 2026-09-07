@@ -128,9 +128,39 @@ pub(crate) const RENDER_LIVENESS_POLICY: RenderLivenessPolicy = RenderLivenessPo
     stall_after_polls: 4,
 };
 
+/// What the control side asks of the owner thread.
+///
+/// One channel carries both, so a request sent before the handle is dropped
+/// is always handled before the shutdown that follows it.
+pub(crate) enum OwnerCommand {
+    Shutdown,
+    /// Open the capture stream now. See [`open_pending_capture`] for why the
+    /// input device is opened from here rather than while the engine starts.
+    OpenCapture,
+}
+
 pub struct AudioThreadHandle {
-    shutdown_tx: Sender<()>,
+    owner_tx: Sender<OwnerCommand>,
     shutdown_complete_rx: Receiver<()>,
+}
+
+impl AudioThreadHandle {
+    /// Ask the owner thread to open the default input device.
+    ///
+    /// A disconnected send is dropped rather than reported: an owner thread
+    /// that is gone is an engine whose liveness already reads not rendering,
+    /// and the request has nothing left to open.
+    ///
+    /// The open runs on the owner thread, so a backend that hangs inside
+    /// `open_default_input` blocks this loop: the liveness watchdog stops
+    /// observing, and a `Shutdown` queued behind the request waits until
+    /// [`AUDIO_STREAM_SHUTDOWN_TIMEOUT`] gives up on it, exactly as a
+    /// stranded factory did before. The render callback is not affected — the
+    /// output stream is already started and the owner thread is not in its
+    /// path.
+    pub(crate) fn request_capture_open(&self) {
+        let _ = self.owner_tx.send(OwnerCommand::OpenCapture);
+    }
 }
 
 /// A handle that owns no audio stream, for tests that drive an [`crate::EngineHandle`]
@@ -140,12 +170,30 @@ pub struct AudioThreadHandle {
 /// channel disconnected on its first send and returns without waiting.
 #[cfg(any(test, feature = "command-capture-fixture"))]
 pub(crate) fn detached_audio_thread_handle() -> AudioThreadHandle {
-    let (shutdown_tx, _) = mpsc::channel();
+    let (owner_tx, _) = mpsc::channel();
     let (_, shutdown_complete_rx) = mpsc::channel();
     AudioThreadHandle {
-        shutdown_tx,
+        owner_tx,
         shutdown_complete_rx,
     }
+}
+
+/// The same handle with its owner channel held open, so a test can observe
+/// what a control-side call asked the owner thread to do.
+///
+/// The completion end is dropped as it is above, so dropping the handle
+/// returns without waiting.
+#[cfg(test)]
+pub(crate) fn observed_audio_thread_handle() -> (AudioThreadHandle, Receiver<OwnerCommand>) {
+    let (owner_tx, owner_rx) = mpsc::channel();
+    let (_, shutdown_complete_rx) = mpsc::channel();
+    (
+        AudioThreadHandle {
+            owner_tx,
+            shutdown_complete_rx,
+        },
+        owner_rx,
+    )
 }
 
 struct StreamWithReclaimerShutdown<Stream>(Option<Stream>, Sender<()>);
@@ -159,7 +207,7 @@ impl<Stream> Drop for StreamWithReclaimerShutdown<Stream> {
 
 impl Drop for AudioThreadHandle {
     fn drop(&mut self) {
-        if self.shutdown_tx.send(()).is_err() {
+        if self.owner_tx.send(OwnerCommand::Shutdown).is_err() {
             return;
         }
 
@@ -175,24 +223,31 @@ impl Drop for AudioThreadHandle {
     }
 }
 
-fn spawn_owned_audio_stream<Stream, Factory>(
+fn spawn_owned_audio_stream<Stream, Factory, OnCapture>(
     factory: Factory,
+    on_capture: OnCapture,
     liveness: RenderLiveness,
 ) -> Result<AudioThreadHandle, String>
 where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+    OnCapture: FnMut(&mut Stream) + Send + 'static,
 {
     spawn_owned_audio_stream_with_timeout(
         factory,
+        on_capture,
         AUDIO_STREAM_STARTUP_TIMEOUT,
         liveness,
         RENDER_LIVENESS_POLICY,
     )
 }
 
-fn spawn_owned_audio_stream_with_timeout<Stream, Factory>(
+/// `on_capture` runs on the owner thread, against the stream it owns, every
+/// time a capture open is requested. It is the only work this loop does
+/// besides watching the render counter.
+fn spawn_owned_audio_stream_with_timeout<Stream, Factory, OnCapture>(
     factory: Factory,
+    mut on_capture: OnCapture,
     startup_timeout: Duration,
     liveness: RenderLiveness,
     policy: RenderLivenessPolicy,
@@ -200,25 +255,33 @@ fn spawn_owned_audio_stream_with_timeout<Stream, Factory>(
 where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
+    OnCapture: FnMut(&mut Stream) + Send + 'static,
 {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let (owner_tx, owner_rx) = mpsc::channel();
     let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel();
     let _owner_thread = thread::Builder::new()
         .name("sourdaw-audio-owner".to_string())
         .spawn(move || match factory() {
-            Ok(stream) => {
+            Ok(mut stream) => {
                 if ready_tx.send(Ok(())).is_ok() {
-                    // A watchdog rather than a single wait: the shutdown
-                    // channel still ends this loop the instant it fires, but
-                    // between shutdowns this thread polls the render
+                    // A watchdog rather than a single wait: an owner command
+                    // still reaches this loop the instant it is sent, but
+                    // between commands this thread polls the render
                     // callback's own counter and publishes what it sees. See
                     // `RenderLiveness` and `RenderStallWatch` for why the
                     // counter, not the error kind, is what decides this.
+                    //
+                    // The loop exists only because the factory returned `Ok`,
+                    // which is what makes the capture open reachable solely
+                    // from a started output. See [`open_pending_capture`].
                     let mut watch = RenderStallWatch::default();
                     loop {
-                        match shutdown_rx.recv_timeout(policy.poll) {
-                            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                        match owner_rx.recv_timeout(policy.poll) {
+                            Ok(OwnerCommand::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
+                                break
+                            }
+                            Ok(OwnerCommand::OpenCapture) => on_capture(&mut stream),
                             Err(RecvTimeoutError::Timeout) => {
                                 let rendering = watch.observe(
                                     liveness.callbacks_rendered.load(Ordering::Relaxed),
@@ -240,7 +303,7 @@ where
 
     match ready_rx.recv_timeout(startup_timeout) {
         Ok(Ok(())) => Ok(AudioThreadHandle {
-            shutdown_tx,
+            owner_tx,
             shutdown_complete_rx,
         }),
         Ok(Err(error)) => Err(error),
@@ -422,6 +485,14 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             Err(error) => {
                 let _ = reclaimer_shutdown_tx.send(());
                 Err(error)
+            }
+        },
+        |owned: &mut StreamWithReclaimerShutdown<OwnedDeviceStreams>| {
+            if let Some(streams) = owned.0.as_mut() {
+                open_requested_capture::<PlatformInputBackend>(
+                    &mut streams.capture,
+                    &mut streams.pending_capture,
+                );
             }
         },
         owner_liveness,
@@ -972,45 +1043,80 @@ fn capture_side<Stream>(
     Some(stream)
 }
 
-/// Open the capture side beside an output stream that started, and only then.
+/// Everything an input open still needs once the output stream is running.
+///
+/// It is built while the output stream is, because these are the ends that
+/// have nowhere else to live: the feed producer's consumer goes into the
+/// renderer the output stream owns, and the event producer is this side's
+/// half of an SPSC ring the two backends cannot share. The open itself waits
+/// for a consumer to ask for it.
+struct PendingCapture {
+    capture_event_tx: Producer<EngineEvent>,
+    sample_rate: f32,
+    feed_tx: Producer<CaptureFeed>,
+    input_latency_slot: Arc<AtomicUsize>,
+    capture_refusal_slot: Arc<AtomicU8>,
+    output_stream_fault_slot: Arc<AtomicU8>,
+}
+
+/// Open the capture side of an engine whose output stream is already running.
 ///
 /// The order is load-bearing rather than incidental. An output that cannot
 /// start is the engine failing, and opening an input device on the way to
 /// that failure asks the OS — and on macOS the musician — for microphone
-/// access a session that is about to die will never use. This function is a
-/// convention, not a proof: `Result<Output, String>` is constructible without
-/// a stream, and the seam's own tests build one. What holds the contract is
-/// the pair of ordering tests below, which observe that a failed output build
-/// never reaches the input device and that a started one does.
+/// access a session that is about to die will never use. Nothing here has to
+/// be trusted to keep that order: this runs only from the owner thread's
+/// command loop, and that loop exists only once the stream factory returned
+/// `Ok`, so an engine that never started has no thread to ask.
 ///
 /// Capture is attempted at all only when the caller asked for it by handing
-/// over an event ring of its own. That ring is SPSC and the two backends run
-/// their error callbacks on different threads, so one producer cannot serve
-/// both sides.
-fn capture_beside<Output, B: InputBackend>(
-    output: Result<Output, String>,
-    capture_event_tx: Option<Producer<EngineEvent>>,
-    engine_sample_rate: f32,
-    input_latency_slot: &Arc<AtomicUsize>,
-    feed_tx: &mut Producer<CaptureFeed>,
-    capture_refusal_slot: &Arc<AtomicU8>,
-    output_stream_fault_slot: &Arc<AtomicU8>,
-) -> Result<(Option<<B::Open as OpenInput>::Stream>, Output), String> {
-    let output = output?;
-    let capture = capture_event_tx.and_then(|tx| {
-        capture_side(
-            attach_capture::<B>(
-                engine_sample_rate,
-                stream_error_sink(StreamSide::Input, tx, Arc::clone(output_stream_fault_slot)),
-                Arc::clone(input_latency_slot),
-            ),
-            feed_tx,
-            input_latency_slot,
-            capture_refusal_slot,
-        )
-    });
+/// over an event ring of its own — a caller that handed none leaves no
+/// [`PendingCapture`] to open.
+fn open_pending_capture<B: InputBackend>(
+    pending: PendingCapture,
+) -> Option<<B::Open as OpenInput>::Stream> {
+    let PendingCapture {
+        capture_event_tx,
+        sample_rate,
+        mut feed_tx,
+        input_latency_slot,
+        capture_refusal_slot,
+        output_stream_fault_slot,
+    } = pending;
 
-    Ok((capture, output))
+    capture_side(
+        attach_capture::<B>(
+            sample_rate,
+            stream_error_sink(
+                StreamSide::Input,
+                capture_event_tx,
+                output_stream_fault_slot,
+            ),
+            Arc::clone(&input_latency_slot),
+        ),
+        &mut feed_tx,
+        &input_latency_slot,
+        &capture_refusal_slot,
+    )
+}
+
+/// Answer one capture-open request, at most once per engine.
+///
+/// One attempt is the whole contract: the pending ends are taken out of their
+/// slot before the open runs, so a refused open leaves nothing to try again
+/// with and a later request opens nothing. That matches what an engine could
+/// do before this became a request — the open happened once, while the engine
+/// started — and closing the input again when the last consumer leaves is a
+/// separate change.
+fn open_requested_capture<B: InputBackend>(
+    capture: &mut Option<<B::Open as OpenInput>::Stream>,
+    pending: &mut Option<PendingCapture>,
+) {
+    let Some(request) = pending.take() else {
+        return;
+    };
+
+    *capture = open_pending_capture::<B>(request);
 }
 
 /// The wait-free error sink a backend's error callback is handed.
@@ -1055,15 +1161,23 @@ fn stream_error_sink(
     })
 }
 
-/// The device streams one engine owns for the life of its audio thread.
+/// The device streams one engine owns for the life of its audio thread, plus
+/// the ends an input it has not opened yet would need.
 ///
 /// The capture side is declared first so it stops before the ring it writes
 /// into is dropped, and the whole value is what the owner thread holds and
 /// drops: teardown stays a single `drop`, whether or not capture was opened.
 /// The ring's reader lives inside the renderer the output stream owns, so this
 /// order is what keeps the capture callback from writing into a ring whose
-/// consumer has already gone.
-type OwnedDeviceStreams = (Option<PlatformInputStream>, PlatformStream);
+/// consumer has already gone, and it puts the unused producer of an engine
+/// that never opened an input down before that renderer too.
+struct OwnedDeviceStreams {
+    capture: Option<PlatformInputStream>,
+    pending_capture: Option<PendingCapture>,
+    /// Held for its drop alone — stopping the output stream is dropping it —
+    /// and declared last so the capture side above stops first.
+    _output: PlatformStream,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
@@ -1112,7 +1226,7 @@ fn build_audio_stream(
 
     // Built before the renderer, because the renderer takes the consumer with
     // it into the output stream and nothing can reach it afterwards.
-    let (mut capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
+    let (capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
     let mut renderer = DeviceRenderer::new(
         scheduler,
         capture_feed_rx,
@@ -1122,29 +1236,35 @@ fn build_audio_stream(
         renderer.render(data, channels);
     });
 
-    capture_beside::<_, PlatformInputBackend>(
-        open.start(
-            render,
-            stream_error_sink(
-                StreamSide::Output,
-                engine_event_tx,
-                Arc::clone(output_stream_fault_slot),
-            ),
+    let output = open.start(
+        render,
+        stream_error_sink(
+            StreamSide::Output,
+            engine_event_tx,
+            Arc::clone(output_stream_fault_slot),
         ),
-        capture_event_tx,
-        sample_rate,
-        input_latency_slot,
-        &mut capture_feed_tx,
-        capture_refusal_slot,
-        output_stream_fault_slot,
-    )
+    )?;
+
+    Ok(OwnedDeviceStreams {
+        capture: None,
+        pending_capture: capture_event_tx.map(|tx| PendingCapture {
+            capture_event_tx: tx,
+            sample_rate,
+            feed_tx: capture_feed_tx,
+            input_latency_slot: Arc::clone(input_latency_slot),
+            capture_refusal_slot: Arc::clone(capture_refusal_slot),
+            output_stream_fault_slot: Arc::clone(output_stream_fault_slot),
+        }),
+        _output: output,
+    })
 }
 
 #[cfg(test)]
 mod capture_seam_tests {
     use super::{
-        attach_capture, capture_beside, capture_side, new_capture_refusal_slot,
-        new_input_latency_slot, new_output_stream_fault_slot, CaptureFeed,
+        attach_capture, capture_side, new_capture_refusal_slot, new_input_latency_slot,
+        new_output_stream_fault_slot, new_render_liveness, open_requested_capture,
+        spawn_owned_audio_stream, AudioThreadHandle, CaptureFeed, PendingCapture,
     };
     use crate::capture::target_depth_frames;
     use crate::device::{
@@ -1153,8 +1273,9 @@ mod capture_seam_tests {
     };
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use rtrb::{Consumer, Producer, RingBuffer};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+    use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
+    use std::time::Duration;
 
     const ENGINE_RATE: f32 = 48_000.0;
     const DEVICE_CHANNELS: usize = 2;
@@ -1179,7 +1300,29 @@ mod capture_seam_tests {
     /// an open that must never happen.
     struct CountedInput;
 
+    /// The same counting open on a machine with no input device, for the
+    /// tests about what a refusal leaves behind.
+    struct CountedAbsentInput;
+
     static OPENS_ATTEMPTED: AtomicUsize = AtomicUsize::new(0);
+
+    /// Held for the whole of every test that reads [`OPENS_ATTEMPTED`].
+    ///
+    /// The counter is one static shared by the whole binary, so a reading
+    /// taken before a test and compared after it would count the opens of any
+    /// other test the runner scheduled alongside it. Holding this lock — and
+    /// zeroing the counter under it — is what makes an absolute count the
+    /// honest assertion it reads as.
+    static OPEN_COUNTER: Mutex<()> = Mutex::new(());
+
+    /// A failing test poisons the lock, and a poisoned lock would fail every
+    /// later test for a reason that is not its own, so the guard is taken
+    /// through the poison rather than around it.
+    fn counted_opens() -> MutexGuard<'static, ()> {
+        let guard = OPEN_COUNTER.lock().unwrap_or_else(PoisonError::into_inner);
+        OPENS_ATTEMPTED.store(0, Ordering::Relaxed);
+        guard
+    }
 
     struct OpenTestInput(NegotiatedInput);
 
@@ -1211,6 +1354,15 @@ mod capture_seam_tests {
         fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
             OPENS_ATTEMPTED.fetch_add(1, Ordering::Relaxed);
             PresentInput::open_default_input(request)
+        }
+    }
+
+    impl InputBackend for CountedAbsentInput {
+        type Open = OpenTestInput;
+
+        fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            OPENS_ATTEMPTED.fetch_add(1, Ordering::Relaxed);
+            AbsentInput::open_default_input(request)
         }
     }
 
@@ -1365,88 +1517,194 @@ mod capture_seam_tests {
         );
     }
 
-    /// An engine whose output stream never started must not have asked for a
-    /// microphone on the way down. On macOS the first input open is what
-    /// raises the system permission prompt, so a failing engine that opened
-    /// one would prompt the musician for access to a session that is already
-    /// over.
-    #[test]
-    fn an_output_that_never_started_never_reaches_the_input_device() {
-        let slot = new_input_latency_slot();
-        let refusal_slot = new_capture_refusal_slot();
-        let (tx, _rx) = engine_event_channel();
-        let (mut feed_tx, _feed_rx) = feed_channel();
-        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
-
-        let built = capture_beside::<(), CountedInput>(
-            Err("Audio output device reports zero channels".to_string()),
-            Some(tx),
-            ENGINE_RATE,
-            &slot,
-            &mut feed_tx,
-            &refusal_slot,
-            &new_output_stream_fault_slot(),
-        );
-
-        assert!(built.is_err(), "a failed output build stays failed");
-        assert_eq!(
-            OPENS_ATTEMPTED.load(Ordering::Relaxed),
-            before,
-            "a failing engine must not open an input device"
-        );
-        assert_eq!(slot.load(Ordering::Relaxed), 0);
+    /// What `build_audio_stream` leaves behind for a caller that asked for
+    /// capture, with both ends of everything the open publishes into.
+    struct PendingUnderTest {
+        pending: PendingCapture,
+        refusal_slot: Arc<AtomicU8>,
+        feed_rx: Consumer<CaptureFeed>,
     }
 
-    /// The same call with a started output does open one — without which the
-    /// test above would pass on a seam that never opens an input at all.
+    fn pending_capture() -> PendingUnderTest {
+        let (capture_event_tx, _events_rx) = engine_event_channel();
+        let (feed_tx, feed_rx) = feed_channel();
+        let refusal_slot = new_capture_refusal_slot();
+
+        PendingUnderTest {
+            pending: PendingCapture {
+                capture_event_tx,
+                sample_rate: ENGINE_RATE,
+                feed_tx,
+                input_latency_slot: new_input_latency_slot(),
+                capture_refusal_slot: Arc::clone(&refusal_slot),
+                output_stream_fault_slot: new_output_stream_fault_slot(),
+            },
+            refusal_slot,
+            feed_rx,
+        }
+    }
+
+    /// What the owner thread holds in place of the production
+    /// `OwnedDeviceStreams`: the same two capture slots, plus a drop signal.
+    ///
+    /// The signal is what makes these tests wait on the loop rather than on a
+    /// clock: owner commands travel one channel in order, so a stream dropped
+    /// is a queue drained, and every request sent before the handle went away
+    /// has been handled by the time the signal arrives.
+    struct TestStreams {
+        capture: Option<()>,
+        pending: Option<PendingCapture>,
+        dropped_tx: mpsc::Sender<()>,
+    }
+
+    impl Drop for TestStreams {
+        fn drop(&mut self) {
+            let _ = self.dropped_tx.send(());
+        }
+    }
+
+    /// Start an owner thread over a stream carrying `pending`, answering
+    /// capture requests through the production handler on backend `B`.
+    fn owner_thread_over<B>(
+        pending: Option<PendingCapture>,
+    ) -> (AudioThreadHandle, mpsc::Receiver<()>)
+    where
+        B: InputBackend + 'static,
+        B::Open: OpenInput<Stream = ()>,
+    {
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+        let handle = spawn_owned_audio_stream(
+            move || {
+                Ok(TestStreams {
+                    capture: None,
+                    pending,
+                    dropped_tx,
+                })
+            },
+            |streams: &mut TestStreams| {
+                open_requested_capture::<B>(&mut streams.capture, &mut streams.pending);
+            },
+            new_render_liveness(),
+        )
+        .expect("the owner thread should start");
+
+        (handle, dropped_rx)
+    }
+
+    /// Wait for the owner thread to drop its stream, which it does only after
+    /// every command sent before the shutdown has been handled.
+    fn wait_for_teardown(dropped_rx: &mpsc::Receiver<()>) {
+        dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the owner thread should drop its stream once its queue drains");
+    }
+
+    /// Starting the engine is not what opens the microphone. On macOS the
+    /// first input open is what raises the system permission prompt, and on a
+    /// Bluetooth headset it is what forces the hands-free profile the output
+    /// stream does not survive — neither belongs to a session that has only
+    /// been asked to play back.
+    #[test]
+    fn an_engine_that_starts_opens_no_input_device() {
+        let _opens = counted_opens();
+        let ready = pending_capture();
+
+        let (handle, dropped_rx) = owner_thread_over::<CountedInput>(Some(ready.pending));
+        drop(handle);
+        wait_for_teardown(&dropped_rx);
+
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::Relaxed),
+            0,
+            "an engine nobody asked for capture must not touch an input device"
+        );
+    }
+
+    /// The ordering law, on the loop that now holds it: the handler that
+    /// opens an input runs on the owner thread, and that loop is reached only
+    /// once the stream factory returned a started output. An engine whose
+    /// output never started has no such loop, so it has no route to an input
+    /// device at all — the failed-build case needs no test of its own because
+    /// it cannot be expressed.
     #[test]
     fn a_started_output_is_what_lets_the_input_open() {
-        let slot = new_input_latency_slot();
-        let refusal_slot = new_capture_refusal_slot();
-        let (tx, _rx) = engine_event_channel();
-        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
+        let _opens = counted_opens();
+        let mut ready = pending_capture();
 
-        let (mut feed_tx, mut feed_rx) = feed_channel();
-        let (capture, ()) = capture_beside::<(), CountedInput>(
-            Ok(()),
-            Some(tx),
-            ENGINE_RATE,
-            &slot,
-            &mut feed_tx,
-            &refusal_slot,
-            &new_output_stream_fault_slot(),
-        )
-        .expect("a started output build stays started");
+        let (handle, dropped_rx) = owner_thread_over::<CountedInput>(Some(ready.pending));
+        handle.request_capture_open();
+        drop(handle);
+        wait_for_teardown(&dropped_rx);
 
-        assert!(capture.is_some());
-        assert!(feed_rx.pop().is_ok(), "a started capture hands over a feed");
-        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before + 1);
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), 1);
+        assert!(
+            ready.feed_rx.pop().is_ok(),
+            "a started capture hands over a feed"
+        );
+    }
+
+    /// Every consumer that registers asks, because the control side holds no
+    /// record of whether the input is already open. One open is what all of
+    /// those requests may cost.
+    #[test]
+    fn the_first_capture_request_opens_the_input_once() {
+        let _opens = counted_opens();
+        let ready = pending_capture();
+
+        let (handle, dropped_rx) = owner_thread_over::<CountedInput>(Some(ready.pending));
+        handle.request_capture_open();
+        handle.request_capture_open();
+        drop(handle);
+        wait_for_teardown(&dropped_rx);
+
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::Relaxed),
+            1,
+            "a second request must not open a second input stream"
+        );
+    }
+
+    /// One attempt per engine, refusal included: the pending ends are spent
+    /// by the first request, so a machine with no microphone is asked once
+    /// however many consumers register. Reopening a refused input is the
+    /// business of a device change, which this engine answers by restarting.
+    #[test]
+    fn a_refused_open_is_not_retried_by_a_second_request() {
+        let _opens = counted_opens();
+        let ready = pending_capture();
+
+        let (handle, dropped_rx) = owner_thread_over::<CountedAbsentInput>(Some(ready.pending));
+        handle.request_capture_open();
+        handle.request_capture_open();
+        drop(handle);
+        wait_for_teardown(&dropped_rx);
+
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::Relaxed),
+            1,
+            "a refusal is one attempt, not one per request"
+        );
+        assert_eq!(
+            StreamErrorKind::from_slot(ready.refusal_slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceNotAvailable),
+            "the refusal is named once, in the slot the drain reads"
+        );
     }
 
     /// A caller that asked for no capture gets none, and no input device is
-    /// touched: handing over an event ring is the whole of asking.
+    /// touched however many requests arrive: handing over an event ring is
+    /// the whole of asking, and a caller that handed none leaves nothing
+    /// pending to open.
     #[test]
     fn a_caller_that_asked_for_no_capture_opens_no_input_device() {
-        let slot = new_input_latency_slot();
-        let refusal_slot = new_capture_refusal_slot();
-        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
+        let _opens = counted_opens();
 
-        let (mut feed_tx, mut feed_rx) = feed_channel();
-        let (capture, ()) = capture_beside::<(), CountedInput>(
-            Ok(()),
-            None,
-            ENGINE_RATE,
-            &slot,
-            &mut feed_tx,
-            &refusal_slot,
-            &new_output_stream_fault_slot(),
-        )
-        .expect("a started output build stays started");
+        let (handle, dropped_rx) = owner_thread_over::<CountedInput>(None);
+        handle.request_capture_open();
+        drop(handle);
+        wait_for_teardown(&dropped_rx);
 
-        assert!(capture.is_none());
-        assert!(feed_rx.pop().is_err());
-        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before);
-        assert_eq!(slot.load(Ordering::Relaxed), 0);
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), 0);
     }
 
     /// A refused open is not a silent one: the seam names it, and the name
@@ -1684,6 +1942,11 @@ mod tests {
     /// unambiguously distinguished from one that waited the stall out, on any runner.
     const STALL_MULTIPLE: u32 = 20;
 
+    /// The handler for the owner loop's capture request, for the tests that
+    /// are about the loop rather than about capture. What a request does when
+    /// it is answered is `capture_seam_tests`' subject.
+    fn no_capture_open<Stream>(_stream: &mut Stream) {}
+
     struct ThreadBoundResource {
         created_on: thread::ThreadId,
         dropped_tx: mpsc::Sender<(thread::ThreadId, thread::ThreadId)>,
@@ -1896,6 +2159,7 @@ mod tests {
                     _not_send: Rc::new(()),
                 })
             },
+            no_capture_open,
             new_render_liveness(),
         )
         .expect("owner thread should start");
@@ -1938,6 +2202,7 @@ mod tests {
                     _notifier: DropNotifier(dropped_tx),
                 })
             },
+            no_capture_open,
             new_render_liveness(),
         )
         .expect("audio owner should start");
@@ -1954,8 +2219,9 @@ mod tests {
 
     #[test]
     fn owner_thread_reports_stream_startup_failure() {
-        let result = spawn_owned_audio_stream::<ThreadBoundResource, _>(
+        let result = spawn_owned_audio_stream::<ThreadBoundResource, _, _>(
             || Err("audio device unavailable".to_string()),
+            no_capture_open,
             new_render_liveness(),
         );
         let error = match result {
@@ -1994,6 +2260,7 @@ mod tests {
                     _not_send: Rc::new(()),
                 })
             },
+            no_capture_open,
             STALLED_STARTUP_TIMEOUT,
             new_render_liveness(),
             RENDER_LIVENESS_POLICY,
@@ -2039,6 +2306,7 @@ mod tests {
                     _not_send: Rc::new(()),
                 })
             },
+            no_capture_open,
             new_render_liveness(),
         )
         .expect("owner thread should start");
@@ -2126,6 +2394,7 @@ mod tests {
 
         let handle = spawn_owned_audio_stream_with_timeout(
             move || Ok::<(), String>(()),
+            no_capture_open,
             Duration::from_secs(1),
             liveness,
             policy,

@@ -89,7 +89,7 @@ pub struct EngineHandle {
     /// Hands freshly provisioned retirement consumers to the reclaimer thread
     /// when the command channel is reallocated for a large batch.
     retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
-    _audio_thread: AudioThreadHandle,
+    audio_thread: AudioThreadHandle,
     next_plugin_id: usize,
     /// How many effect-table slots this handle has sent registrations for and
     /// not yet sent retirements for.
@@ -233,43 +233,42 @@ impl EngineHandle {
             transport_position_tx,
             master_meter_tx,
             engine_event_tx,
-            // The engine opens the default input device when it starts, the
-            // way Logic, Live and Cubase do — not later, when a recorder is
-            // created. The packaged app carries `NSMicrophoneUsageDescription`,
-            // so this is the one moment the OS asks the musician for
-            // microphone access. Handing an event ring over here is the whole
-            // of asking for capture.
+            // Handing an event ring over here is the whole of asking for
+            // capture, and it no longer opens anything: the ends an input
+            // open needs are parked on the owner thread, and the first
+            // consumer to register opens the device (`Self::push`). Starting
+            // the engine therefore touches no input device at all, which is
+            // what keeps a Bluetooth headset on its playback profile until a
+            // musician actually records — the hands-free renegotiation an
+            // input open forces takes the output stream down with it.
             //
             // A refused or absent input never fails engine start — capture is
-            // additive (see `audio_thread::capture_beside`) — so a refusal is
-            // a logged line plus an `Input`-side `EngineEvent`, and the
-            // engine runs without capture. The event does not cross the ring
-            // a mid-stream error would: a refusal can still be discovered
-            // after `open.start` has already handed this producer to a
-            // backend that goes on to drop it, so `capture_side` instead
+            // additive (see `audio_thread::open_pending_capture`) — so a
+            // refusal is a logged line plus an `Input`-side `EngineEvent`,
+            // and the engine runs without capture. The event does not cross
+            // the ring a mid-stream error would: a refusal can still be
+            // discovered after `open.start` has already handed this producer
+            // to a backend that goes on to drop it, so `capture_side` instead
             // stores the refused kind into a slot this handle also carries
             // (`capture_refusal`), and `Self::drain_engine_events` is what
-            // turns that stored kind into the one reported `EngineEvent`. The
-            // open shares the output's startup timeout and its one fallback
-            // attempt (`spawn_with_fallback`, above): an input device whose
-            // open hangs fails the whole engine start exactly as a hung
-            // output would, and there is no in-session engine restart that
-            // could reopen it later. A hung input open strands the owner
-            // thread that already started this output stream — `open.start`
-            // returned before this input open began, so the stream is live,
-            // but the factory building it is now blocked past the point the
-            // startup timeout gives up on it — and the fallback attempt then
-            // opens a second output stream on the same device, on a fresh
-            // owner thread, while the first stays stranded. Both render an
-            // empty graph, so nothing is audible either way, but two output
-            // streams exist on the device for as long as the hang lasts: the
-            // stranded thread's factory call only returns once the input
-            // open resolves, at which point it drops its own stream unheard,
-            // because nothing is still waiting on its readiness. On macOS a
-            // denied microphone permission does not surface as a refusal at
-            // all — CoreAudio opens the stream and delivers silence in place
-            // of real input rather than an error, so a denial reads as
-            // capture that opened but never carries audio.
+            // turns that stored kind into the one reported `EngineEvent`. One
+            // attempt is all any engine makes: a refused open is never
+            // retried by a later registration, exactly as a refusal at start
+            // was never retried in-session.
+            //
+            // The open no longer shares the output's startup timeout, because
+            // it no longer happens while the engine starts: it runs on the
+            // owner thread's command loop instead. A backend that hangs
+            // inside `open_default_input` therefore blocks that loop rather
+            // than engine start — the liveness watchdog stops observing and a
+            // shutdown waits out `AUDIO_STREAM_SHUTDOWN_TIMEOUT`, exactly as
+            // a stranded factory did — while the render callback goes on
+            // rendering, because the output stream is already started and the
+            // owner thread is not in its path. On macOS a denied microphone
+            // permission does not surface as a refusal at all — CoreAudio
+            // opens the stream and delivers silence in place of real input
+            // rather than an error, so a denial reads as capture that opened
+            // but never carries audio.
             Some(capture_event_tx),
             force_default_buffer,
         )?;
@@ -277,7 +276,7 @@ impl EngineHandle {
         Ok(Self {
             command_tx: tx,
             retired_adoption_tx: spawned.retired_adoption_tx,
-            _audio_thread: spawned.handle,
+            audio_thread: spawned.handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             effect_registrations: 0,
             // The zero baseline is exact: the diagnostics pair this handle
@@ -1235,7 +1234,16 @@ impl EngineHandle {
             // The refusals above proved the id absent and the reserve unspent,
             // so this never duplicates an entry nor grows past the capacity
             // the vector was built with.
-            Some(CaptureLedgerEffect::Register(id)) => self.capture_consumers.push(id),
+            Some(CaptureLedgerEffect::Register(id)) => {
+                self.capture_consumers.push(id);
+                // Every route onto the ring passes here, so this is the one
+                // place a consumer's arrival is known, and a registration
+                // that was refused above never reaches it. The owner thread
+                // opens at most one input per engine however many requests
+                // it is sent, so asking on every registration costs nothing
+                // and needs no record on this side.
+                self.audio_thread.request_capture_open();
+            }
             Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
             None => {}
         }
@@ -1357,7 +1365,7 @@ fn engine_handle_fixture(
     EngineHandle {
         command_tx,
         retired_adoption_tx,
-        _audio_thread: audio_thread::detached_audio_thread_handle(),
+        audio_thread: audio_thread::detached_audio_thread_handle(),
         next_plugin_id: 1000,
         effect_registrations: 0,
         reconciled_effect_id_collisions: 0,
@@ -1427,6 +1435,7 @@ mod tests {
         engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
         GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
+    use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
@@ -1727,6 +1736,54 @@ mod tests {
             command_rx.pop(),
             Ok(GraphCommand::RegisterCaptureConsumer(7))
         ));
+    }
+
+    /// A consumer registering is what opens the input device, so the arrival
+    /// of one has to reach the owner thread. A registration this handle
+    /// refuses must not: the callback will never feed that consumer, and an
+    /// engine that opened a microphone for it would raise the macOS
+    /// permission prompt — and renegotiate a Bluetooth headset's profile —
+    /// on behalf of a consumer that does not exist. Leaving the bus asks for
+    /// nothing either: closing the input when the last consumer goes is a
+    /// later change.
+    #[test]
+    fn registering_a_capture_consumer_requests_the_capture_open() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+
+        assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "one registration asks exactly once"
+        );
+
+        engine
+            .unregister_capture_consumer(7)
+            .expect("the consumer comes off the bus");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "leaving the bus asks the owner thread for nothing"
+        );
+
+        engine
+            .register_capture_consumer(7)
+            .expect("the release freed the id");
+        assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
+
+        engine
+            .register_capture_consumer(7)
+            .expect_err("an id already on the bus is refused");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "a refused registration asks for no input device"
+        );
     }
 
     /// The reserve is a running capacity, not a lifetime budget: a session
