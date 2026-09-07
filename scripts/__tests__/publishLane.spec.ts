@@ -181,8 +181,10 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`log:${message}`);
             logs.push(message);
         },
-        guardFailure: (laneName) =>
-            input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt,
+        guardFailure: (laneName) => {
+            calls.push(`guardFailure:${laneName}`);
+            return input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt;
+        },
     };
     return { port, calls, logs, bodies };
 }
@@ -1609,6 +1611,7 @@ describe('lane publish', () => {
             expect(() => publishLane(12, port)).toThrow(
                 "refusing publish: lane agent/12/work has an unresolved guard-failure receipt (memory at 123456789 during 'pnpm test:run src/app.spec.ts'): prove it resolved under pnpm guard or run 'pnpm guard --recover' before publishing"
             );
+            expect(calls).toContain('guardFailure:agent-12-work');
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         });
 
@@ -1617,6 +1620,7 @@ describe('lane publish', () => {
 
             const pr = publishLane(12, port, 'closes', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
             expect(pr).toBe(88);
+            expect(calls).toContain('guardFailure:agent-12-work');
             expect(calls.some((call) => call.startsWith('push:'))).toBe(true);
         });
     });
