@@ -2131,10 +2131,11 @@ impl ActiveEffect {
 
     /// An effect placed somewhere other than the master chain, but still homed
     /// there: a built-in the graph registers detached is the engine's own, and
-    /// the master chain is where it belongs once no strip holds it. That
-    /// holds for an effect body only — an instrument body is homed detached
-    /// instead (see [`Self::detached`]), because the master chain runs
-    /// effects only.
+    /// the master chain is where it belongs once no strip holds it. That is a
+    /// registration rule, not one this constructor enforces: `add_builtin_effect`
+    /// homes an instrument body detached instead (see [`Self::detached`]),
+    /// because the master chain runs effects only, and a refusal builds its
+    /// retirement carrier through here with whatever body it carried.
     fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
         Self::homed(id, instance, placement, EffectPlacement::MasterChain)
     }
@@ -3646,9 +3647,9 @@ impl AudioScheduler {
         // refused registration retires the whole effect rather than freeing
         // the box the command carried.
         //
-        // A note-sink built-in is homed detached rather than at the caller's
-        // placement: the master chain runs effects only, so an instrument
-        // body must never be what a release hands back. `AddEffect` already
+        // A note-sink built-in is homed detached rather than on the master
+        // chain: the master chain runs effects only, so an instrument body
+        // must never be what a release hands back. `AddEffect` already
         // refuses a sink before it reaches here, so a sink's `placement` is
         // always `Detached` already — the assert below is the invariant, not
         // a live branch.

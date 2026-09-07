@@ -957,10 +957,11 @@ impl EngineHandle {
         })
     }
 
-    /// Take an effect out of a track's chain without unloading it. An effect
-    /// body returns to the master insert chain; an instrument body runs
-    /// nowhere until a chain takes it again, because the master chain runs
-    /// effects only.
+    /// Take an effect out of a track's chain without unloading it. A built-in
+    /// effect body returns to the master insert chain; a hosted plugin and an
+    /// instrument body run nowhere until a chain takes them again, because a
+    /// hosted plugin belongs to the load that created it and the master chain
+    /// runs effects only.
     pub fn remove_track_device(&mut self, track_id: usize, effect_id: usize) -> Result<(), String> {
         self.push(GraphCommand::RemoveTrackDevice {
             track_id,
