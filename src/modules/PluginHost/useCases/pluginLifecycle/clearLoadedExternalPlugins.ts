@@ -13,6 +13,7 @@ import {
     externalPluginActivationOutcomes,
     externalPluginActivationTasks,
 } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { loadedExternalInstances } from './loadedExternalInstances';
 
 /**
@@ -30,6 +31,9 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
     externalPluginActivationOutcomes.clear();
+    // The markers belong to the outgoing generation's instances.
+    externalPluginRestoreFailures.clear();
+    warnedExternalPluginRestoreFailures.clear();
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
     // The parameter snapshots belong to the outgoing generation's instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
