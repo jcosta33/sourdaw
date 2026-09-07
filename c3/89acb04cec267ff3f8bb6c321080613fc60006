@@ -1,0 +1,45 @@
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_19366bc61d5cc8 714-718
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_9b530f08172a54::t_dbae0a834cee60 68,72-77,81-85
+  s_9b530f08172a54::t_fcddb5b10b743d 162-166,168,171-172,176,178-179
+  s_9b530f08172a54::t_f120604b2136c3 357
+  s_9b530f08172a54::t_099b6c07ccef22 433-445
+  s_9b530f08172a54::t_dcaaa1a388c9af 306
+  s_9b530f08172a54::t_2ef28099ccad92 119,126,131,143
+  s_9b530f08172a54::t_b9a76b88f13b15 328-329
+  s_9b530f08172a54::t_7e97010f9abaaa 35-37
+  s_9b530f08172a54::t_cc87ff6313430b 430-432
+  s_2021053ef8dcb5::t_dabf2dab25b88d 429
+src/modules/AudioEngine/models/RetireNativeEngineOutcome.ts
+  s_9b530f08172a54::t_ce48008ee494fc 21-34
+src/modules/AudioEngine/repositories/engineLifecycle/__tests__/retireNativeEngine.spec.ts
+  s_9b530f08172a54::t_8a72e39f68c625 24,26-35,39,47,58-63,67
+src/modules/AudioEngine/repositories/engineLifecycle/retireNativeEngine.ts
+  s_9b530f08172a54::t_44a87d66e2a6c4 25-35,38-42
+  s_9b530f08172a54::t_eb1af3902399e0 3-7,9-10,22-24,36-37,43-53,62-65,67,69,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c389acb04cec267ff3f8bb6c321080613fc60006",
+  "prompts": {},
+  "sessions": {
+    "s_2021053ef8dcb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5194db81b2b253ee",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
