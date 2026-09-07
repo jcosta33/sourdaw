@@ -1,0 +1,32 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_87ab0a2f60ccf8::t_c1fcccfcd85f86 234-235,238-239,281-282,295
+  s_87ab0a2f60ccf8::t_f1e48d8ecc47e8 5
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRecovery.spec.ts
+  s_87ab0a2f60ccf8::t_af23355e26468b 5-6,27-28,33-34,40,43,45,222-226
+  s_87ab0a2f60ccf8::t_c540737e5f6360 29,36-39,44
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_b736af1a6e57be 3-4,44-47,49-59
+  s_87ab0a2f60ccf8::t_4aee3b4fc1eb99 60-62,136-137,142-144
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_de1a66847631ea 4,193-194,196-197,235-236
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_d4549b8202f450 38,317-318,342-344
+  s_87ab0a2f60ccf8::t_88600e89ed05c2 312,314,316
+  s_87ab0a2f60ccf8::t_43ce0265a35124 345-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c7239eff06f39b7be16fce4bd1b15b5fd96dd8b1",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
