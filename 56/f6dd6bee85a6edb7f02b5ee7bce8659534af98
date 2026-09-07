@@ -1,0 +1,126 @@
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_7f27dfac190936 1200
+  s_87ab0a2f60ccf8::t_53c666c89f305b 166,1690
+.agents/skills/web-audio-engine/SKILL.md
+  s_87ab0a2f60ccf8::t_ee136fe6b86310 72-99
+.gitignore
+  s_87ab0a2f60ccf8::t_8673925b29a380 33-35
+crates/sourdaw-native/src/addon/mod.rs
+  s_87ab0a2f60ccf8::t_918aa00a7daf42 712-736
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_87ab0a2f60ccf8::t_feaaea28c477c6 570-636,1818-1910
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_87ab0a2f60ccf8::t_5311887e428af7 1-1194
+crates/sourdaw-native/src/commands/graph.rs
+  s_87ab0a2f60ccf8::t_1a6ffa51ab26af 971-976,1106-1108,1142-1163,1230-1246,4204,6093-6151,6491,6545,6609,6652,6726,6831
+crates/sourdaw-native/src/commands/mod.rs
+  s_87ab0a2f60ccf8::t_cd0df024c33b93 5
+crates/sourdaw-native/src/commands/plugins.rs
+  s_87ab0a2f60ccf8::t_d7adbb29483be3 95,108,120-195,2202,2307,2309,2312,4161,4206,4280,4637,4729,6998,7013,7478
+electron/__tests__/commands.spec.ts
+  s_87ab0a2f60ccf8::t_e8300840f13d7e 390
+electron/__tests__/pluginCommandAdmission.spec.ts
+  s_87ab0a2f60ccf8::t_85b9a70f59be35 17,61-63
+electron/commands.ts
+  s_87ab0a2f60ccf8::t_17d59273b69070 84
+electron/pluginCommandAdmission.ts
+  s_87ab0a2f60ccf8::t_b155041e2d10d8 20-25,39
+package.json
+  s_87ab0a2f60ccf8::t_5170540a3c9544 15
+release/dependency-license-proofs.json
+  s_87ab0a2f60ccf8::t_535b70321c6b6d 64
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_87ab0a2f60ccf8::t_87c56c6df6eac8 1120-1123,1146,3095-3156
+scripts/__tests__/prContract.spec.ts
+  s_87ab0a2f60ccf8::t_d4113075d957e5 1-4,14,18,25-30,698-899
+scripts/__tests__/publishLane.spec.ts
+  s_87ab0a2f60ccf8::t_33bd1ce415c162 25,122-123,184-187,1591-1626
+scripts/__tests__/removeLane.spec.ts
+  s_87ab0a2f60ccf8::t_b0c113e53f2819 18,39,140-143,494-500,869-876,898,919-925,973,1032,1239,1522,1539,1542-1621
+scripts/__tests__/resourceGuard.spec.ts
+  s_87ab0a2f60ccf8::t_54433daf5ef3d7 2-12,18,21-22,25,30,32,36-39,739,745,893-1512
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_87ab0a2f60ccf8::t_bb94826b5ff71d 279,282
+scripts/checkReleaseInventory.ts
+  s_87ab0a2f60ccf8::t_963d5c0a9ef181 1343,1376-1389
+scripts/prContract.ts
+  s_87ab0a2f60ccf8::t_717552ef9edf9a 1-3,599-729
+scripts/publishLane.ts
+  s_87ab0a2f60ccf8::t_966ebd99c44956 4,31,33,37,39,43-44,110,459-467,787
+scripts/removeLane.ts
+  s_87ab0a2f60ccf8::t_b96f46064a8176 17,71,445,460,642,686,859,863,868
+scripts/resourceGuard.ts
+  s_87ab0a2f60ccf8::t_6688fd6848055a 5,7,10-22,1254-1325,1328,1332,1339,1343,1351-1354,1361,1386-1388,1392,1395-1410,1412-1458,1462-1474,1481-1515,1517-1518
+src/modules/AudioEngine/models/RecordingRingProtocol.ts
+  s_87ab0a2f60ccf8::t_335c73f37de60c 1-57
+src/modules/AudioEngine/models/RecordingWavLimits.ts
+  s_87ab0a2f60ccf8::t_d02ebacdfe9993 1
+src/modules/AudioEngine/models/RetireNativeEngineOutcome.ts
+  s_87ab0a2f60ccf8::t_13f9cc36a3869a 1-34
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  s_87ab0a2f60ccf8::t_1a450251e6be75 71-74,80,107-110,113-118,243-245
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_aefa942db87398 5,7,9,25,49-52,58-60,80-92,128-131,135,147,154-161,169-184,189,194-220,222-225,227-228,246-247,264-281,288-290,296-297,300-316,325-371,382-385,391-394,399-400
+src/modules/AudioEngine/repositories/audioRecorder/armRecordingStopFlushTimer.ts
+  s_87ab0a2f60ccf8::t_ad3156b17fef81 3,10,19
+src/modules/AudioEngine/repositories/audioRecorder/cleanupNodesForRecordingSession.ts
+  s_87ab0a2f60ccf8::t_a94c821fb5b7df 6
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_87ab0a2f60ccf8::t_bba81c64c2f9d2 27,116,121-138
+src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts
+  s_87ab0a2f60ccf8::t_9adbf3960c42c3 3-4,10,23
+src/modules/AudioEngine/repositories/audioRecorder/stopAudioRecording.ts
+  s_87ab0a2f60ccf8::t_3fe28f12309717 16
+src/modules/AudioEngine/repositories/engineLifecycle/__tests__/retireNativeEngine.spec.ts
+  s_87ab0a2f60ccf8::t_ca5ff4dcb3db0a 1-70
+src/modules/AudioEngine/repositories/engineLifecycle/retireNativeEngine.ts
+  s_87ab0a2f60ccf8::t_a4df38d508108c 1-73
+src/modules/AudioEngine/services/__tests__/recordingProcessor.spec.ts
+  s_87ab0a2f60ccf8::t_d5bb29508f4f3d 3-10,38-50,60-61,67,74,77,88,95,99,105,113-114,119,122,125,127,139,141-151,153-154,161-164,170-200
+src/modules/AudioEngine/services/recordingProcessor.ts
+  s_87ab0a2f60ccf8::t_5e829faabe703b 8-9,15,18-25,31-35,39,41-44,48-51,55,58,67-68,70-72,80-83,91,99
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_87ab0a2f60ccf8::t_9c5289ea671445 3-14,35-39,52-53,109-113,117,142-159,190-440,458-467,476,483,487,494,497,499,507-509,514-518,520,523,525,530-531,538,542,544,551,556,560,564-670,680,685,699,711,713,718,721,728,734-872,888,896,904
+src/modules/AudioEngine/workers/recordingWorker.ts
+  s_87ab0a2f60ccf8::t_bba7b95bbd5fca 2-9,38-46,55-57,88-90,95-98,115-128,135,149-164,168,170,182-184,190-191,193,196,198,205-209,221-224,226-233,237,240-247,249-267,280-283,292,298-300,306,318-322,329-342,363,392-394,399-411,417
+src/modules/Fermenter/AGENTS.md
+  s_87ab0a2f60ccf8::t_8f74b2bdc96ab7 7
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_87ab0a2f60ccf8::t_c644b3a4853a5a 1,14,28,456-466
+src/modules/Fermenter/presentations/views/__tests__/fermenterProjectHydration.spec.tsx
+  s_87ab0a2f60ccf8::t_1d29a452a9e68c 1-86
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  s_87ab0a2f60ccf8::t_1b9ff917990145 1-239
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  s_87ab0a2f60ccf8::t_4e0e82e649653d 1-80
+src/modules/Fermenter/useCases/index.ts
+  s_87ab0a2f60ccf8::t_ad967ccf66e48b 4
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_87ab0a2f60ccf8::t_a9dccee14fcb5d 228,389,410-605,617
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_87ab0a2f60ccf8::t_fb36cfd3ec96f0 1,126-135,194-201,203-258,260-265,308-313,317-328,332-337,341-352
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_6988a5dfaa0c09 382,408,411
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_87ab0a2f60ccf8::t_469c5733f4cf9d 216,236,251-295
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_87ab0a2f60ccf8::t_c5f32b7b82842f 8-11,29-34,75-88,95
+src/utils/sourdawCommandArguments.ts
+  s_87ab0a2f60ccf8::t_f22f478020faae 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "56f6dd6bee85a6edb7f02b5ee7bce8659534af98",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
