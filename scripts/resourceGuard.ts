@@ -1292,13 +1292,24 @@ export function detectAuthorLane(
     }
 }
 
-export function writeGuardFailureReceipt(primaryRoot: string, receipt: GuardFailureReceipt): void {
+export type WriteGuardFailureReceiptPorts = {
+    writeFileSync?: typeof writeFileSync;
+    renameSync?: typeof renameSync;
+};
+
+export function writeGuardFailureReceipt(
+    primaryRoot: string,
+    receipt: GuardFailureReceipt,
+    ports: WriteGuardFailureReceiptPorts = {}
+): void {
     const dir = join(primaryRoot, GUARD_FAILURES_DIR);
     mkdirSync(dir, { recursive: true });
     const receiptPath = guardFailureReceiptPath(primaryRoot, receipt.lane);
     const candidatePath = `${receiptPath}.candidate-${randomUUID()}`;
-    writeFileSync(candidatePath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
-    renameSync(candidatePath, receiptPath);
+    const write = ports.writeFileSync ?? writeFileSync;
+    const rename = ports.renameSync ?? renameSync;
+    write(candidatePath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    rename(candidatePath, receiptPath);
 }
 
 export function clearGuardFailureReceipt(primaryRoot: string, laneName: string): boolean {

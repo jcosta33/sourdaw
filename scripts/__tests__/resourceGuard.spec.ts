@@ -6,6 +6,7 @@ import {
     readdirSync,
     readFileSync,
     realpathSync,
+    renameSync,
     rmSync,
     writeFileSync,
 } from 'node:fs';
@@ -35,6 +36,7 @@ import {
     type DetectedLane,
     type GuardedCommandResult,
     type ResourceProfile,
+    type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
 import { parseArgs as parseLintArgs } from '../runLint';
 
@@ -1009,6 +1011,85 @@ describe('guard failure stop enforcement', () => {
             expect(clearGuardFailureReceipt(repoRoot, laneName)).toBe(true);
             expect(existsSync(guardFailureReceiptPath(repoRoot, laneName))).toBe(false);
             expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('verifies writeGuardFailureReceipt performs an atomic write using candidate renaming', () => {
+        const repoRoot = fixtureRoot('receipts-atomic');
+        const laneName = 'agent-99-atomic';
+        const receipt: GuardFailureReceipt = {
+            version: 1,
+            lane: laneName,
+            branch: 'agent/99/atomic',
+            headSha: '2222222222222222222222222222222222222222',
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'memory',
+            command: 'pnpm',
+            args: ['test:run', 'test.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 5 * 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 500,
+        };
+
+        const targetPath = guardFailureReceiptPath(repoRoot, laneName);
+        const writtenPaths: string[] = [];
+        const renameCalls: Array<{
+            source: string;
+            target: string;
+            candidateExistedBeforeRename: boolean;
+            candidateContentBeforeRename: string;
+            targetExistedBeforeRename: boolean;
+        }> = [];
+
+        try {
+            const ports: WriteGuardFailureReceiptPorts = {
+                writeFileSync: (path, data, options) => {
+                    writtenPaths.push(String(path));
+                    writeFileSync(path, data, options);
+                },
+                renameSync: (source, target) => {
+                    const sourcePath = String(source);
+                    const targetPathStr = String(target);
+                    const candidateExistedBeforeRename = existsSync(source);
+                    const candidateContentBeforeRename = candidateExistedBeforeRename
+                        ? readFileSync(source, 'utf8')
+                        : '';
+                    const targetExistedBeforeRename = existsSync(target);
+                    renameCalls.push({
+                        source: sourcePath,
+                        target: targetPathStr,
+                        candidateExistedBeforeRename,
+                        candidateContentBeforeRename,
+                        targetExistedBeforeRename,
+                    });
+                    renameSync(source, target);
+                },
+            };
+
+            writeGuardFailureReceipt(repoRoot, receipt, ports);
+
+            expect(writtenPaths).toHaveLength(1);
+            expect(renameCalls).toHaveLength(1);
+            const renameCall = renameCalls[0];
+            expect(renameCall).toBeDefined();
+            if (renameCall === undefined) {
+                throw new Error('expected renameCall to be defined');
+            }
+            expect(writtenPaths[0]).toBe(renameCall.source);
+            expect(writtenPaths[0]).not.toBe(targetPath);
+            expect(renameCall.target).toBe(targetPath);
+            expect(renameCall.source).toMatch(
+                new RegExp(`^${targetPath.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.candidate-[0-9a-f-]+$`)
+            );
+            expect(renameCall.candidateExistedBeforeRename).toBe(true);
+            expect(renameCall.targetExistedBeforeRename).toBe(false);
+            expect(JSON.parse(renameCall.candidateContentBeforeRename)).toEqual(receipt);
+            expect(existsSync(renameCall.source)).toBe(false);
+            expect(existsSync(targetPath)).toBe(true);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toEqual(receipt);
         } finally {
             rmSync(repoRoot, { recursive: true, force: true });
         }
