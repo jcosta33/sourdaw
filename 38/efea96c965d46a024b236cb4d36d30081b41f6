@@ -1,0 +1,93 @@
+src/modules/Command/stores/index.ts
+  s_87ab0a2f60ccf8::t_8669b54ef8a0f5 10-15
+src/modules/Command/useCases/pushUndoEntry.ts
+  s_9b530f08172a54::t_afcffab71cfbeb 10-11,25
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_9b530f08172a54::t_e690868b93e58c 936,942-947,978
+src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts
+  s_e5d2e3debe0426::t_526c70545cc3aa 3-4,20-23,41-42
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_e5d2e3debe0426::t_b4c20a6c949b0f 14,270-274,302-303
+src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts
+  s_e5d2e3debe0426::t_f96968a7ad3416 10,220-224,238-239
+src/modules/Arrangement/useCases/index.ts
+  s_87ab0a2f60ccf8::t_617f6772a49391 97
+src/modules/Arrangement/useCases/isAudioBufferReferencedByUndoHistory.ts
+  s_87ab0a2f60ccf8::t_0613e63838b519 1-3,7-8,10,14-19,21-26,29,34-37,41-53
+src/modules/Arrangement/useCases/timeOperations/collectTimeOperationPlanBufferIds.ts
+  s_e5d2e3debe0426::t_28b44fc387ae76 1-34
+src/modules/Arrangement/useCases/timeOperations/collectTracksClipBufferIds.ts
+  s_9aa7fb9cd5c257::t_fa4cd2bf646ac5 1-14
+src/modules/Arrangement/useCases/timeOperations/createUndoableGlobalTimeOperation.ts
+  s_e5d2e3debe0426::t_01e7c3b7854176 1,29-31,34-39,44
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_e5d2e3debe0426::t_111468c8dddb69 2,6-12,15-17,32-39,96-129,179-186,228,230,236,240-243,245,275-369,371-380
+src/modules/AudioRendering/useCases/renderToClip.ts
+  s_87ab0a2f60ccf8::t_d41481aa90be80 72-74
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_57b7eaed091e1e::t_b8edc0c4ea7461 17
+src/modules/BrowserAi/presentations/views/__tests__/AiRenderClipPreview.spec.tsx
+  s_87ab0a2f60ccf8::t_3dbec3d2ca13f6 16-17
+src/modules/Command/models/UndoEntry.ts
+  s_87ab0a2f60ccf8::t_e4d4661aa78aa1 26-30
+src/modules/Command/useCases/createCallbackUndoEntry.ts
+  s_57b7eaed091e1e::t_be2cd5cec177af 8-9,17,27
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_deb155004df04d::t_4974918c025896 183-185,414-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "38efea96c965d46a024b236cb4d36d30081b41f6",
+  "prompts": {},
+  "sessions": {
+    "s_57b7eaed091e1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6d725ef5ec1b8bd4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9aa7fb9cd5c257": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d33-f5c7-7da2-b4e9-196289aef1c7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_deb155004df04d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d2c-74d0-7d73-b79d-442ec397ed25",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e5d2e3debe0426": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8053964be5a8474b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
