@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_9b530f08172a54::t_6ef1f7500bd5fa 260-264
+  s_9b530f08172a54::t_7a05247bebfb69 214
+  s_9b530f08172a54::t_4e65fdf00be1a2 274-277
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_d4d53965a4e29e 651-652
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "19ec7fa7a2e055930123909da700d109f9202dbd",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
