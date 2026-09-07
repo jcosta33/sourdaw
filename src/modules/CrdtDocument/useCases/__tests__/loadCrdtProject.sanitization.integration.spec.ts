@@ -1,4 +1,4 @@
-import { change, init, save, saveIncremental } from '@automerge/automerge';
+import { change, init, load, save, saveIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -87,6 +87,34 @@ function create_incremental_bundle(): Map<string, Uint8Array> {
     ]);
 }
 
+function load_saved_root(bundle: Map<string, Uint8Array>): PersistedRootDocument {
+    const root = bundle.get('root');
+    if (!root) {
+        throw new Error('expected the sanitized persistence bundle to contain root');
+    }
+    return load<PersistedRootDocument>(root);
+}
+
+function expect_sanitized_root(root: PersistedRootDocument | undefined, project: string): void {
+    expect(root?.project).toBe(project);
+    expect(root?.actionHistory?.entries[0]).toEqual({
+        id: 'entry',
+        label: 'Set tempo',
+        actionKind: 'setTempo',
+        source: 'manual',
+        timestamp: 1,
+        reverted: false,
+    });
+}
+
+function expect_sanitized_saved_root(bundle: Map<string, Uint8Array>, project: string): void {
+    expect_sanitized_root(load_saved_root(bundle), project);
+}
+
+function expect_sanitized_installed_root(project: string): void {
+    expect_sanitized_root(automergeRepository.getDoc<PersistedRootDocument>('root'), project);
+}
+
 describe('loadCrdtProject persisted action-history sanitization', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -136,8 +164,9 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
     });
 
     it('should persist a sanitized bundle once when executable legacy fields exist', async () => {
+        const expected_authority = authority(4);
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: authority(4),
+            authority: expected_authority,
             bundle: create_persisted_bundle({ legacy: true }),
         });
         mocks.saveAllToIdb.mockResolvedValue({ status: 'committed', authority: authority(5) });
@@ -146,28 +175,44 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(1);
         const persisted_bundle = mocks.saveAllToIdb.mock.calls[0]?.[0] as Map<string, Uint8Array>;
-        expect(persisted_bundle).toBeInstanceOf(Map);
-        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.actionHistory?.entries[0]).toEqual({
-            id: 'entry',
-            label: 'Set tempo',
-            actionKind: 'setTempo',
-            source: 'manual',
-            timestamp: 1,
-            reverted: false,
+        expect(mocks.saveAllToIdb.mock.calls[0]?.[1]).toEqual({ expectedAuthority: expected_authority });
+        expect_sanitized_saved_root(persisted_bundle, 'B');
+        expect_sanitized_installed_root('B');
+    });
+
+    it('preserves a sanitation-save refusal and the installed root document', async () => {
+        let installed = init<PersistedRootDocument>();
+        installed = change(installed, (draft) => {
+            draft.project = 'Current';
+            draft.actionHistory = { entries: [] };
         });
+        automergeRepository.replaceDoc('root', installed);
+
+        const failure = new Error('CRDT persistence is unavailable');
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: authority(4),
+            bundle: create_persisted_bundle({ legacy: true, project: 'Incoming' }),
+        });
+        mocks.saveAllToIdb.mockRejectedValue(failure);
+
+        await expect(loadCrdtProject()).rejects.toBe(failure);
+
+        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('Current');
     });
 
     it('should sanitize the conflicting latest snapshot and retry the compare-and-swap', async () => {
+        const first_authority = authority(4);
+        const retry_authority = authority(5);
         const first_bundle = create_persisted_bundle({ legacy: true, project: 'B' });
         const latest_bundle = create_persisted_bundle({ legacy: true, project: 'C' });
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: authority(4),
+            authority: first_authority,
             bundle: first_bundle,
         });
         mocks.saveAllToIdb
             .mockResolvedValueOnce({
                 status: 'conflict',
-                authority: authority(5),
+                authority: retry_authority,
                 bundle: latest_bundle,
             })
             .mockResolvedValueOnce({ status: 'committed', authority: authority(6) });
@@ -175,7 +220,13 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         await expect(loadCrdtProject()).resolves.toBe(true);
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(2);
-        expect(mocks.saveAllToIdb.mock.calls[1]?.[1]).toEqual({ expectedAuthority: authority(5) });
+        const first_saved_bundle = mocks.saveAllToIdb.mock.calls[0]?.[0] as Map<string, Uint8Array>;
+        const retried_saved_bundle = mocks.saveAllToIdb.mock.calls[1]?.[0] as Map<string, Uint8Array>;
+        expect(mocks.saveAllToIdb.mock.calls[0]?.[1]).toEqual({ expectedAuthority: first_authority });
+        expect(mocks.saveAllToIdb.mock.calls[1]?.[1]).toEqual({ expectedAuthority: retry_authority });
+        expect_sanitized_saved_root(first_saved_bundle, 'B');
+        expect_sanitized_saved_root(retried_saved_bundle, 'C');
+        expect_sanitized_installed_root('C');
         expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('C');
     });
 });

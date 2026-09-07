@@ -162,8 +162,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:95edcbad50fa10c1ca2a130eb177bb9cfcbd61cbe802116b8ef258169a6417ad:release/dependency-license-proofs.json"
+                "sha256:ecd14c8008c16acf0774259aeb2e91edc7ec3b39815e3634e4d86a486fba02e9:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4b9471d74e59988d10e733b6a0035e50fb59265758ca0fa246e9106703bd17ee:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -273,7 +273,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d",
+                "sha256:e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -1194,7 +1194,7 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:80f4fa20d045c1d72eb82a96214f32837ce2b3944e26a877aa9cb1e5eba0ef67:grand-boule-live-runtime",
+                "tracked-set-sha256:043648af851c27f9535875b5cc1274b3e46305d6c9a95c1f9ddc1ad4b1985c21:grand-boule-live-runtime",
                 "tracked-set-sha256:74d2e8f57ac453b162238591a3d47382c6ccc49c7a2321ec3bf77138a040df22:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:cbeabff31e795c5a5708e890c9f80e416f9f62dd07c9bee3964ba675e6244a0f:grand-boule-release-proof"
@@ -1687,7 +1687,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "169d10afe7e161febe3479702e2881414ce23b29168fb51a001648450e96fcec"
+            "sha256": "e7dbf1e11709be55608d2028996d902bf2d12790b0bb1656725652ddd11be049"
         },
         {
             "path": "server/package.json",
@@ -1699,7 +1699,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d"
+            "sha256": "e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424"
         },
         {
             "path": "Cargo.toml",

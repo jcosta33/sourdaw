@@ -45,7 +45,14 @@ const attemptLateActivation = async (
 describe('Project session PluginHost retirement boundary', () => {
     beforeAll(async () => {
         await import('#/modules/Project/useCases');
-    });
+        // Warm-up only, and it transforms the whole application graph — three
+        // contract barrels, two of them spread from the real module. That cost
+        // grows with the app and had already reached the default ten-second
+        // hook timeout, so the hook failed on module transform rather than on
+        // anything this file asserts. Budgeted explicitly rather than left to
+        // drift back over the default; nothing here is asserted, so a generous
+        // ceiling weakens no check.
+    }, 60_000);
 
     beforeEach(() => {
         vi.resetModules();

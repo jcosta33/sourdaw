@@ -1,6 +1,7 @@
 /**
  * Poll the native engine for a stall, abandon the session when it finds one,
- * and park an already-abandoned engine once it renders again (#3635).
+ * and then either park an already-abandoned engine once it renders again
+ * (#3635) or retire the slot it left behind while it stays down (#3960).
  *
  * The watch reuses `refreshEngineRtDiagnostics` rather than reading the bridge
  * itself, because that use case drains the engine's event ring: a second
@@ -17,11 +18,14 @@
  * is nothing left this poll could ever act on, and `stopNativeEngineLivenessWatch`
  * is that self-retirement, idempotent, with no other production caller. The
  * second is the stall this watch was written for: a `running: false` reading
- * queues the identity-guarded abandon. The third is the mirror case #3635
- * added — a `running: true` reading on an orphan means the stream this
- * session abandoned is calling back again with the old topology still
- * rolling, and `parkOrphanedNativeEngine.ts` is what stops it before that
- * topology sounds a second time beside Web Audio.
+ * queues the identity-guarded abandon. The third is the orphan, and it splits
+ * on what the reading says. A `running: true` reading is the mirror case #3635
+ * added — the stream this session abandoned is calling back again with the old
+ * topology still rolling, and `parkOrphanedNativeEngine.ts` is what stops it
+ * before that topology sounds a second time beside Web Audio. A `running:
+ * false` reading is the engine still down, and `retireOrphanedNativeEngine.ts`
+ * is what clears the slot so the next graph batch can boot a fresh engine on
+ * the current default device rather than on the one that went away (#3960).
  *
  * The stop half lives in `stopNativeEngineLivenessWatch.ts`, the same split
  * `startNativeEnginePlayheadFeed.ts` / `stopNativeEnginePlayheadFeed.ts` already
@@ -33,6 +37,7 @@ import { refreshEngineRtDiagnostics } from '../engineAccess/refreshEngineRtDiagn
 import { abandonNativeLiveGraphSession } from './abandonNativeLiveGraphSession';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { parkOrphanedNativeEngine } from './parkOrphanedNativeEngine';
+import { retireOrphanedNativeEngine } from './retireOrphanedNativeEngine';
 import { stopNativeEngineLivenessWatch } from './stopNativeEngineLivenessWatch';
 
 import type { EngineStreamErrorKind } from '../../models/EngineRtDiagnostics';
@@ -87,12 +92,15 @@ async function pollOnce(): Promise<void> {
             });
             return;
         }
-        // The session already abandoned this backend; a resumed stream is the
+        // The session already abandoned this backend. A resumed stream is the
         // one signal that it is time to park the transport that handle left
-        // rolling.
+        // rolling; a stream still down is the signal to retire the engine
+        // behind it.
         if (reading.running) {
             void parkOrphanedNativeEngine();
+            return;
         }
+        void retireOrphanedNativeEngine();
     } finally {
         inFlight = false;
     }

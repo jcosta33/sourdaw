@@ -46,6 +46,7 @@ export { createPunchRegionPatch } from './transportControls/punchRegion';
 export { setPunchOut } from './transportControls/setPunchOut';
 export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
+export { rearmNativeSessionAfterEngineRetire } from './transportControls/rearmNativeSessionAfterEngineRetire';
 export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';
 export { toggleLoop } from './transportControls/toggleLoop';

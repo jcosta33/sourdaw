@@ -7,11 +7,7 @@ import { decodePersistenceAuthority } from './decodePersistenceAuthority';
 import { decodePersistenceBundle } from './decodePersistenceBundle';
 import { encodePersistenceAuthority } from './encodePersistenceAuthority';
 import { STORE_NAME, openDatabase } from './helpers';
-import {
-    EMPTY_PERSISTENCE_AUTHORITY,
-    PERSISTENCE_AUTHORITY_KEY,
-    type CrdtPersistenceAuthority,
-} from './persistenceAuthorityModel';
+import { PERSISTENCE_AUTHORITY_KEY, type CrdtPersistenceAuthority } from './persistenceAuthorityModel';
 
 export type SaveAllToIdbOptions = {
     expectedAuthority?: CrdtPersistenceAuthority;
@@ -42,15 +38,7 @@ export async function saveAllToIdb(
 ): Promise<SaveAllToIdbResult> {
     const database = await openDatabase();
     if (!database) {
-        const current = options.expectedAuthority ?? EMPTY_PERSISTENCE_AUTHORITY;
-        return {
-            status: 'committed',
-            authority: advancePersistenceAuthority(
-                current,
-                options.nextEpoch ?? current.epoch,
-                options.nextRootLineage ?? current.rootLineage
-            ),
-        };
+        throw new Error('CRDT persistence is unavailable');
     }
 
     return new Promise((resolve, reject) => {

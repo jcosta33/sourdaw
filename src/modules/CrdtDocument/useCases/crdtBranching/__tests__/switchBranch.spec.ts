@@ -83,7 +83,9 @@ const mocks = vi.hoisted(() => ({
     hasDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
+    replaceRootContentPreservingIdentity: vi.fn(),
     removeDoc: vi.fn(),
+    rootIdentityEpoch: 1,
     clearUndoHistory: vi.fn<() => void>(),
     captureUndoHistory: vi.fn<() => UndoSnapshot>(),
     restoreUndoHistory: vi.fn<(snapshot: UndoSnapshot) => void>(),
@@ -118,9 +120,12 @@ vi.mock('../../../repositories/automergeRepository', () => ({
         getDoc: mocks.getDoc,
         getDocIds: mocks.getDocIds,
         getHeads: mocks.getHeads,
+        getRootId: () => 'root',
+        getRootIdentityEpoch: () => mocks.rootIdentityEpoch,
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
+        replaceRootContentPreservingIdentity: mocks.replaceRootContentPreservingIdentity,
         removeDoc: mocks.removeDoc,
     },
 }));
@@ -168,11 +173,18 @@ describe('switchBranch', () => {
         });
         mocks.replaceDoc.mockImplementation((id: string, doc: unknown) => {
             docs[id] = doc;
+            if (id === 'root') {
+                mocks.rootIdentityEpoch++;
+            }
+        });
+        mocks.replaceRootContentPreservingIdentity.mockImplementation((doc: unknown) => {
+            docs.root = doc;
         });
         mocks.removeDoc.mockImplementation((id: string) => {
             delete docs[id];
         });
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.rootIdentityEpoch = 1;
         mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.runCrdtPersistenceOperation.mockResolvedValue(undefined);
         mocks.undoHistory = createEmptyUndoSnapshot();
@@ -263,6 +275,7 @@ describe('switchBranch', () => {
     it('rejects and restores the prior branch when persistence fails', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        const rootIdentity = mocks.rootIdentityEpoch;
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
 
@@ -270,6 +283,7 @@ describe('switchBranch', () => {
         expect(mocks.storeTrySet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
         expect(docs.root).toEqual(ROOT_LIVE_DOC);
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
+        expect(mocks.rootIdentityEpoch).toBeGreaterThan(rootIdentity);
     });
 
     it('restores the undo history captured before the swap when the transition rejects', async () => {

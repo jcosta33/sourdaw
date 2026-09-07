@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
     hasDoc: vi.fn(() => false),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
+    replaceRootContentPreservingIdentity: vi.fn(),
     removeDoc: vi.fn(),
+    rootIdentityEpoch: 1,
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
     storeSet: vi.fn(),
     // The rollback path writes with trySet: it runs after the documents have
@@ -37,9 +39,12 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) =
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getDoc: mocks.getDoc,
+        getRootId: () => 'root',
+        getRootIdentityEpoch: () => mocks.rootIdentityEpoch,
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
+        replaceRootContentPreservingIdentity: mocks.replaceRootContentPreservingIdentity,
         removeDoc: mocks.removeDoc,
     },
 }));
@@ -62,6 +67,12 @@ describe('forkProjectBranch', () => {
         mocks.clone.mockReturnValue(CLONED_DOC);
         mocks.getHeads.mockReturnValue(['h1']);
         mocks.getDoc.mockImplementation((id: string) => (id === 'root' ? SOURCE_DOC : undefined));
+        mocks.rootIdentityEpoch = 1;
+        mocks.replaceDoc.mockImplementation((id: string) => {
+            if (id === 'root') {
+                mocks.rootIdentityEpoch++;
+            }
+        });
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
     });
@@ -119,11 +130,13 @@ describe('forkProjectBranch', () => {
     it('rejects and restores the source branch when persistence fails', async () => {
         const error = new Error('persist failed');
         mocks.compactProject.mockRejectedValueOnce(error);
+        const rootIdentity = mocks.rootIdentityEpoch;
 
         await expect(forkProjectBranch('feature')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
         expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
+        expect(mocks.rootIdentityEpoch).toBeGreaterThan(rootIdentity);
     });
 
     it('throws when there is no root document to fork', async () => {

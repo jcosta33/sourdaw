@@ -53,7 +53,7 @@ export async function mergeBranch(sourceBranchId: string): Promise<void> {
         to: state.activeBranchId,
         apply: () => {
             const merged = merge(targetDoc, sourceDoc);
-            automergeRepository.replaceDoc(DOC_PREFIX_ROOT, merged);
+            automergeRepository.replaceRootContentPreservingIdentity(merged);
             if (activeBranch.rootDocId !== DOC_PREFIX_ROOT) {
                 automergeRepository.replaceDoc(activeBranch.rootDocId, cloneDoc(merged));
             }

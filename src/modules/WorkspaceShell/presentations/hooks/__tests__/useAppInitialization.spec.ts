@@ -90,6 +90,7 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     getTransportState: vi.fn(() => transportStateMock.current),
+    rearmNativeSessionAfterEngineRetire: vi.fn(() => vi.fn()),
     syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));

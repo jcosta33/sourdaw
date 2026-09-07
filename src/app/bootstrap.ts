@@ -53,6 +53,7 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
+    configureDurableAudioBufferOwnership,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -139,6 +140,7 @@ import {
     registerReleasedStripReportSink,
 } from '#/modules/PluginHost/useCases';
 import {
+    collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -336,6 +338,12 @@ setProjectIdentityTransitionDependencies({
         });
     },
 });
+
+// The audio-cache collectors pull the durable owned-id set at collection time
+// (issue #3777), so ordinary PCM a saved project still references survives the
+// age/budget sweeps while it is inactive. Enumeration stays a pull from the
+// persisted snapshots — no second ownership table to drift.
+configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();
