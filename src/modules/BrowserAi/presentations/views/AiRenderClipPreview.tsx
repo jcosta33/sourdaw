@@ -14,12 +14,12 @@ import { GripVertical, Play, Square } from 'lucide-react';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { isAudioBufferReferencedByUndoHistory } from '#/modules/Arrangement/useCases';
 import {
     cachePreviewAudioBuffer,
     playCachedAudioBufferPreview,
     releasePreviewAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
-import { isAudioBufferReferencedByUndoHistory } from '#/modules/Command/useCases';
 
 type AiRenderClipPreviewProps = {
     audio: Float32Array;

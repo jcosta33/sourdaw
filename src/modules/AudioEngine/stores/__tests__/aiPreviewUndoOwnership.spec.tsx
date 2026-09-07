@@ -1,12 +1,20 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    addTrack,
+    deleteTimeRange,
+    getArrangementHandlers,
+    setTimeOperationDependencies,
+} from '#/modules/Arrangement/useCases';
 import { AiRenderClipPreview } from '#/modules/BrowserAi/presentations/views';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
 
 import { ensureCachedAudioBuffersDurable } from '../../useCases/ensureCachedAudioBuffersDurable';
 import { getCachedAudioBuffer } from '../../useCases/getCachedAudioBuffer';
@@ -21,14 +29,14 @@ import {
     installFakeAudioIndexedDb,
 } from './fakeAudioBufferIndexedDb';
 
-// #3766 follow-up — removing a placed clip is undoable, and undo re-appends the
-// clip snapshot with the same audioBufferId. A preview cleanup that runs while
-// the clip is deleted would release the buffer out from under that restore and
-// the resurrected clip would be permanently silent. This spec drives the real
-// undo machinery: the removal goes through the registered Arrangement handlers
-// (executeAppAction creates the undoable entry with its restoreClip inverse),
-// the preview unmounts while the clip is deleted, and undo must resurrect a
-// clip whose audio still resolves.
+// #3766 follow-up — undo and redo can resurrect clips that reference a preview's
+// buffer, through action legs (restoreClip, restoreTimeOperationState with its
+// encoded plans) and through callback entries whose closures rewrite whole track
+// states. A preview cleanup that runs while such a clip is not live would
+// release the buffer and the resurrected clip would be permanently silent.
+// These specs drive the real undo machinery: removals and time operations go
+// through the registered Arrangement handlers, and the callback flows go
+// through the real producers.
 
 const placedClipSources = vi.hoisted(() => ({
     sources: [] as Array<{
@@ -85,6 +93,40 @@ type AiRenderDragPayload = { name: string; bufferId: string; durationSeconds: nu
 // first test's database.
 const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
 
+function noChangeTimeOperationPreparation() {
+    return {
+        status: 'ready' as const,
+        hasChanges: false,
+        apply: () => false,
+        revert: () => false,
+    };
+}
+
+function installTimeOperationDependencies(): void {
+    setTimeOperationDependencies({
+        prepareAutomationTimeOperation: () => ({
+            status: 'ready' as const,
+            hasChanges: false,
+            replayPlan: { version: 1 as const, notes: [] },
+            inversePlan: null,
+            apply: () => false,
+            revert: () => false,
+        }),
+        prepareAutomationTimeStateRestore: noChangeTimeOperationPreparation,
+        prepareMidiGlobalTimeTransaction,
+        prepareMidiTimeStateRestore: noChangeTimeOperationPreparation,
+        prepareTimelineMapTimeOperation: () => ({
+            status: 'ready' as const,
+            hasChanges: false,
+            replayPlan: { version: 1 as const, notes: [] },
+            inversePlan: null,
+            apply: () => false,
+            revert: () => false,
+        }),
+        prepareTimelineMapStateRestore: noChangeTimeOperationPreparation,
+    });
+}
+
 function renderPreview(audio: Float32Array): { row: HTMLElement; unmount: () => void } {
     const view = render(<AiRenderClipPreview audio={audio} sampleRate={48_000} label="A" name="Clip A" />);
     const row = screen.getByText('Clip A').closest('div');
@@ -134,6 +176,14 @@ function liveClipById(clipId: string) {
     return trackStore.value?.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
 }
 
+function selectedTrackId(): string {
+    const trackId = trackStore.value?.selectedTrackId;
+    if (!trackId) {
+        throw new Error('expected a selected audio track');
+    }
+    return trackId;
+}
+
 function expectResidentPcm(bufferId: string, pcm: Float32Array): void {
     expect(getCachedAudioBuffer({ bufferId })?.getChannelData(0)).toEqual(pcm);
 }
@@ -175,17 +225,24 @@ describe('AI preview undo ownership', () => {
         controls.committedCheckpointRetentions.clear();
         placedClipSources.sources.length = 0;
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         clearUndoHistory();
+        installTimeOperationDependencies();
         injectDependencies(addTrack, { eventBus: { emit: vi.fn() } });
     });
 
     afterEach(async () => {
         clearRuntimeAudioBufferCache();
+        setTimeOperationDependencies(null);
         await flushIndexedDbTasks(4);
     });
 
+    afterAll(() => {
+        clearHandlerRegistry();
+    });
+
     it('keeps the buffer alive across an undoable clip removal, and undo restores audible audio', async () => {
-        addTrack({ name: 'AI Renders', kind: 'audio', suppressAddedEvent: true });
+        givenAudioTrack();
         const preview = renderPreview(RENDERED_PCM);
 
         // The drag settles 'none' (the WebKit dropEffect reality), so the
@@ -215,4 +272,109 @@ describe('AI preview undo ownership', () => {
         expectResidentPcm(bufferId, RENDERED_PCM);
         expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
     });
+
+    // The deleteTime entry's restore plans carry whole track state in the
+    // time-operation codec's encoded form; only the decode path can see the
+    // buffer id inside it.
+    it('keeps the buffer alive across a handler-driven deleteTime, and undo restores audible audio', async () => {
+        givenAudioTrack();
+        const preview = renderPreview(RENDERED_PCM);
+
+        const payload = dragGesture(preview.row, 'none');
+        const clip = placeDroppedClip(payload);
+        const bufferId = droppedBufferId(payload);
+
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 0, endBeat: 4 } });
+        expect(liveClipById(clip.id)).toBeUndefined();
+
+        preview.unmount();
+
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        await expectDurablePcm(bufferId, RENDERED_PCM);
+
+        await undo();
+        const restoredClip = liveClipById(clip.id);
+        expect(restoredClip?.audioBufferId).toBe(bufferId);
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
+    });
+
+    // deleteTimeRange files a callback-kind entry whose closures flip whole
+    // track states; only its push-time buffer declaration can own the history.
+    it('keeps the buffer alive through deleteTimeRange, and undo restores audible audio', async () => {
+        givenAudioTrack();
+        const preview = renderPreview(RENDERED_PCM);
+
+        const payload = dragGesture(preview.row, 'none');
+        const clip = placeDroppedClip(payload);
+        const bufferId = droppedBufferId(payload);
+        const trackId = selectedTrackId();
+
+        deleteTimeRange(0, 4, [trackId]);
+        expect(liveClipById(clip.id)).toBeUndefined();
+
+        preview.unmount();
+
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        await expectDurablePcm(bufferId, RENDERED_PCM);
+
+        await undo();
+        const restoredClip = liveClipById(clip.id);
+        expect(restoredClip?.audioBufferId).toBe(bufferId);
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
+    });
+
+    // After undoing the clip-creating entry the clip is not live and the entry
+    // sits on the future stack: only its action leg (the redo) still owns the
+    // buffer across the preview unmount.
+    it('keeps the buffer alive across undo while absent, and redo restores audible audio', async () => {
+        givenAudioTrack();
+        const preview = renderPreview(RENDERED_PCM);
+
+        const payload = dragGesture(preview.row, 'none');
+        const bufferId = droppedBufferId(payload);
+        const trackId = selectedTrackId();
+
+        await executeAppAction({
+            type: 'addClip',
+            payload: {
+                trackId,
+                startBeat: 0,
+                endBeat: 4,
+                name: 'Clip A',
+                type: 'audio',
+                audioBufferId: bufferId,
+            },
+        });
+        const placedClip = liveClipByBufferId(bufferId);
+        if (!placedClip) {
+            throw new Error('expected the placed clip');
+        }
+        const clipId = placedClip.id;
+
+        await undo();
+        expect(liveClipById(clipId)).toBeUndefined();
+
+        preview.unmount();
+
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        await expectDurablePcm(bufferId, RENDERED_PCM);
+
+        await redo();
+        const restoredClip = liveClipById(clipId);
+        expect(restoredClip?.audioBufferId).toBe(bufferId);
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
+    });
 });
+
+function givenAudioTrack(): void {
+    addTrack({ name: 'AI Renders', kind: 'audio', suppressAddedEvent: true });
+}
+
+function liveClipByBufferId(bufferId: string) {
+    return trackStore.value?.tracks
+        .flatMap((track) => track.clips)
+        .find((candidate) => candidate.audioBufferId === bufferId);
+}

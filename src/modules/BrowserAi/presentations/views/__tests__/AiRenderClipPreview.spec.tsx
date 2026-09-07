@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cachePreviewAudioBuffer: mocks.cachePreviewAudioBuffer,
     playCachedAudioBufferPreview: mocks.playCachedAudioBufferPreview,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,

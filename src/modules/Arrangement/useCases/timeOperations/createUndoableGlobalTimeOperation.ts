@@ -1,3 +1,4 @@
+import { collectTimeOperationPlanBufferIds } from './collectTimeOperationPlanBufferIds';
 import { prepareTimeOperationStateRestore } from './prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from './reverseRestorePlan';
 
@@ -25,11 +26,21 @@ function restoreOrThrow(plan: unknown, operation: 'undo' | 'redo'): void {
 export function createUndoableGlobalTimeOperation({ initialResult }: CreateUndoableGlobalTimeOperationInput): {
     undo: () => void;
     redo: () => void;
+    /** Audio buffer ids either restore plan can bring back — declared for the
+     * undo entry the caller files from this transaction. */
+    restoresBufferIds: readonly string[];
 } {
     const redoPlan = reverseRestorePlan(initialResult.inversePlan);
+    const restoresBufferIds = [
+        ...new Set([
+            ...collectTimeOperationPlanBufferIds(initialResult.inversePlan),
+            ...collectTimeOperationPlanBufferIds(redoPlan),
+        ]),
+    ];
 
     return {
         undo: () => restoreOrThrow(initialResult.inversePlan, 'undo'),
         redo: () => restoreOrThrow(redoPlan, 'redo'),
+        restoresBufferIds,
     };
 }
