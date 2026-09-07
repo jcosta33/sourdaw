@@ -73,7 +73,14 @@ describe('FermenterPanel project hydration', () => {
 
         await waitFor(() => {
             expect(getFermenterState(DEVICE_ID).patch.filterCutoff).toBe(1400);
-            expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.2);
+            expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.75);
         });
+    });
+
+    it('does not crash when trackStore snapshot is null', () => {
+        act(() => {
+            trackStore.set(null);
+        });
+        expect(() => renderPanel(DEVICE_ID)).not.toThrow();
     });
 });

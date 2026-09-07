@@ -202,4 +202,36 @@ describe('hydrateFermenterFromProject', () => {
         hydrateFermenterFromProject(DEVICE_ID);
         expect(getFermenterState(DEVICE_ID).patch.filterCutoff).toBe(1200);
     });
+
+    it('preserves live macro edits during subsequent runtime parameter updates', () => {
+        // 1. Initialize trackStore with macro0: 0.5
+        trackStore.set({
+            tracks: [makeTrack({ filterCutoff: 600, macro0: 0.5 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        // 2. Initial hydration seeds macros
+        hydrateFermenterFromProject(DEVICE_ID);
+        expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.5);
+
+        // 3. User adjusts macro 0 in store
+        const currentPatch = getFermenterState(DEVICE_ID).patch;
+        loadFermenterPatch(DEVICE_ID, { ...currentPatch, macros: [0.8, ...currentPatch.macros.slice(1)] });
+        expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.8);
+
+        // 4. Runtime parameter update in trackStore (macro0 remains stale 0.5)
+        trackStore.set({
+            tracks: [makeTrack({ filterCutoff: 1200, macro0: 0.5 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        // 5. Subsequent hydration must not overwrite the live macro edit
+        hydrateFermenterFromProject(DEVICE_ID);
+
+        // 6. Assertions
+        expect(getFermenterState(DEVICE_ID).patch.filterCutoff).toBe(1200);
+        expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.8);
+    });
 });

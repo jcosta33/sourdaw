@@ -456,7 +456,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const projectParameterValues = useStoreSelector(
         trackStore,
         (state) =>
-            state?.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId)?.parameterValues
+            (state?.tracks ?? []).flatMap((track) => track.devices).find((device) => device.id === deviceId)
+                ?.parameterValues
     );
 
     useEffect(() => {

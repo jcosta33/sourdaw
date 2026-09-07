@@ -21,14 +21,18 @@ function isPatchUnchanged(currentInstance: unknown, currentPatch: FermenterPatch
     });
 }
 
-function applyParameterValues(patch: FermenterPatch, parameterValues: Record<string, unknown>): void {
+function applyParameterValues(
+    patch: FermenterPatch,
+    parameterValues: Record<string, number>,
+    seedMacros: boolean
+): void {
     for (const [key, value] of Object.entries(parameterValues)) {
         if (key === 'macros' || key === 'macroMappings' || key === 'name' || key === 'version') {
             continue;
         }
         if (key in patch && typeof value === 'number' && Number.isFinite(value)) {
             (patch as Record<string, unknown>)[key] = value;
-        } else if (key.startsWith('macro') && typeof value === 'number' && Number.isFinite(value)) {
+        } else if (seedMacros && key.startsWith('macro') && typeof value === 'number' && Number.isFinite(value)) {
             const idx = parseInt(key.slice(5), 10);
             if (idx >= 0 && idx < 8) {
                 patch.macros[idx] = value;
@@ -64,8 +68,9 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
         macroMappings: currentPatch.macroMappings ? [...currentPatch.macroMappings] : undefined,
     };
 
+    const isUnseeded = currentInstance === undefined;
     if (device.parameterValues) {
-        applyParameterValues(patch, device.parameterValues);
+        applyParameterValues(patch, device.parameterValues, isUnseeded);
     }
 
     if (!isPatchUnchanged(currentInstance, currentPatch, patch)) {
