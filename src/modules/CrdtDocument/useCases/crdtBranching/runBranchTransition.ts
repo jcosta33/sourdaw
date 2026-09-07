@@ -34,12 +34,19 @@ function createDocumentSnapshot(id: DocId): DocumentSnapshot {
     return { id, doc: doc ? cloneDoc(doc) : null };
 }
 
-function restoreDocumentSnapshot({ id, doc }: DocumentSnapshot): void {
+function restoreDocumentSnapshot({ id, doc }: DocumentSnapshot, capturedRootIdentity: number): void {
     if (!doc) {
         automergeRepository.removeDoc(id);
         return;
     }
     if (automergeRepository.hasDoc(id)) {
+        if (
+            id === automergeRepository.getRootId() &&
+            automergeRepository.getRootIdentityEpoch() === capturedRootIdentity
+        ) {
+            automergeRepository.replaceRootContentPreservingIdentity(cloneDoc(doc));
+            return;
+        }
         automergeRepository.replaceDoc(id, cloneDoc(doc));
         return;
     }
@@ -63,14 +70,16 @@ function getDurableBranchState(error: unknown, previousState: BranchStoreState):
 async function recoverFailedTransition({
     error,
     previousState,
+    capturedRootIdentity,
     snapshots,
 }: {
     error: unknown;
     previousState: BranchStoreState;
+    capturedRootIdentity: number;
     snapshots: DocumentSnapshot[];
 }): Promise<void> {
     for (const snapshot of snapshots) {
-        restoreDocumentSnapshot(snapshot);
+        restoreDocumentSnapshot(snapshot, capturedRootIdentity);
     }
 
     let recoveredState = previousState;
@@ -103,6 +112,7 @@ export async function runBranchTransition<TResult>({
     }
 
     flushAutomergeStorageWrites();
+    const capturedRootIdentity = automergeRepository.getRootIdentityEpoch();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
     branchTransitionInProgress = true;
 
@@ -118,7 +128,7 @@ export async function runBranchTransition<TResult>({
         await compactProject();
         return result;
     } catch (error) {
-        await recoverFailedTransition({ error, previousState, snapshots });
+        await recoverFailedTransition({ error, previousState, capturedRootIdentity, snapshots });
         throw error;
     } finally {
         branchTransitionInProgress = false;
