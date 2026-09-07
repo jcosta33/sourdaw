@@ -1212,7 +1212,8 @@ fn member_channel(channel: i16) -> Option<u8> {
 /// the absolute 128-frame grid the worklet grids from — the host counts its
 /// own runs from the span's own frame 0, not from that absolute origin. A
 /// span starting off it, after a loop seam or under a device callback whose
-/// period does not divide 128, voices a note up to
+/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
+/// it), voices a note up to
 /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
 /// because the instrument has no offset-aware note API to close the gap.
 /// Tracked as #3997.
@@ -1291,7 +1292,8 @@ impl GrandBouleBody {
     /// worklet grids its own runs from. Parity with the worklet is exact only
     /// when the span itself starts on the absolute 128-frame grid; a span
     /// starting off it, after a loop seam or under a device callback whose
-    /// period does not divide [`GRAND_BOULE_RUN_FRAMES`], sounds a note up to
+    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
+    /// divide it), sounds a note up to
     /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
     /// it, because the instrument has no offset-aware note API to close the
     /// gap (#3997).
@@ -14278,8 +14280,10 @@ mod timeline_tests {
             });
 
         assert!(
-            worklet_left.iter().any(|sample| *sample != 0.0),
-            "the reference render is silent, so an equality against it proves nothing"
+            worklet_left[..RELEASE_FRAME as usize]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent before the release, so an equality against it proves nothing"
         );
         assert_eq!(
             hosted_left, worklet_left,
@@ -14432,8 +14436,9 @@ mod timeline_tests {
     /// `note_on_with_channel`, so two notes stamped on different wire
     /// channels must still sound as two separate voices rather than both
     /// folding onto member channel 0 — a body that dropped the channel would
-    /// voice both notes on channel 0, and the channel-2 note-off would then
-    /// release both instead of one.
+    /// voice both notes on channel 0, so the channel-2 note-off would find no
+    /// channel-2 voice to narrow onto and release neither, leaving both
+    /// notes ringing where the reference render lets only one continue.
     #[test]
     fn a_grand_boule_note_off_on_a_channel_releases_only_that_channels_voice() {
         const NOTE: u8 = 60;
@@ -14492,6 +14497,13 @@ mod timeline_tests {
             }
         }
 
+        assert!(
+            reference_left[..GRAND_BOULE_RUN_FRAMES]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "both notes must be audible before the channel-2 release, or the comparison below \
+             is against silence"
+        );
         assert_eq!(
             hosted_left, reference_left,
             "the hosted left channel is not the signal a channel-narrowed release produces"
