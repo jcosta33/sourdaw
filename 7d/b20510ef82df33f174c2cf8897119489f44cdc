@@ -1,0 +1,29 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_6e0877989a9b15 233
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_a33c665aba9f9a 21
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_7920dd749fd592 88-90
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_2491db81b70584 32-37,39-40,55,61
+  s_9b530f08172a54::t_3dc56c0f9389c5 161-163,165,167,171-178,180-193,197-200
+  s_9b530f08172a54::t_4b9e77085e845a 148-151
+  s_9b530f08172a54::t_565bd3bf0906d0 264-279
+  s_9b530f08172a54::t_ae5e4f4569adfd 95-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7db20510ef82df33f174c2cf8897119489f44cdc",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
