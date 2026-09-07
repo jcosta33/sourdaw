@@ -22,6 +22,7 @@ vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
             sampleRate: 48000,
             createMediaStreamSource: vi.fn(),
             createBuffer: vi.fn(),
+            decodeAudioData: vi.fn(),
         },
         ensureTrackStrip: vi.fn(() => ({
             gainNode: { connect: vi.fn() },
@@ -76,6 +77,19 @@ function make_media_stream_source(disconnect: () => void = vi.fn()): MediaStream
     };
 }
 
+function make_audio_buffer(): AudioBuffer {
+    const samples = new Float32Array([0.25, -0.5]);
+    return {
+        duration: samples.length / 48_000,
+        length: samples.length,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+        getChannelData: () => samples,
+        copyFromChannel: (destination) => destination.set(samples),
+        copyToChannel: (source) => samples.set(source),
+    };
+}
+
 describe('stopAudioRecording', () => {
     let media_track_stop: ReturnType<typeof vi.fn>;
     let source_disconnect: Mock<() => void>;
@@ -111,11 +125,14 @@ describe('stopAudioRecording', () => {
         vi.unstubAllGlobals();
     });
 
-    async function startAndArm(trackId: string): Promise<{
+    async function startAndArm(
+        trackId: string,
+        onComplete: (buffer: AudioBuffer) => void = vi.fn()
+    ): Promise<{
         worker: FakeWorker;
         worklet: FakeAudioWorkletNode;
     }> {
-        await expect(startAudioRecording(trackId, vi.fn())).resolves.toBe(true);
+        await expect(startAudioRecording(trackId, onComplete)).resolves.toBe(true);
         await Promise.resolve();
         await Promise.resolve();
         const worker = FakeWorker.last;
@@ -149,19 +166,66 @@ describe('stopAudioRecording', () => {
     });
 
     it('resolves stop only after the recording worker finishes delivery', async () => {
-        const { worker, worklet } = await startAndArm('track-flush');
+        let resolveDecode: ((buffer: AudioBuffer) => void) | undefined;
+        const decodePending = new Promise<AudioBuffer>((resolve) => {
+            resolveDecode = resolve;
+        });
+        vi.mocked(audioEngine.context.decodeAudioData).mockReturnValue(decodePending);
+        const decodedBuffer = make_audio_buffer();
+        const deliveryOrder: string[] = [];
+        const onComplete = vi.fn((buffer: AudioBuffer) => {
+            expect(buffer).toBe(decodedBuffer);
+            deliveryOrder.push('callback');
+        });
+        const { worker, worklet } = await startAndArm('track-flush', onComplete);
+        const session = activeSessions.get('track-flush');
+        if (!session) {
+            throw new Error('Expected a recording session');
+        }
         let settled = false;
 
         const stopping = Promise.resolve(stopAudioRecording()).then(() => {
             settled = true;
+            deliveryOrder.push('settled');
         });
         await Promise.resolve();
 
         expect(settled).toBe(false);
-        worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+
+        // ACK releases input resources but retains its worker/session until
+        // the worker's nonempty WAV has decoded and reached the caller.
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(activeSessions.get('track-flush')).toBe(session);
+        expect(worker.terminate).not.toHaveBeenCalled();
+        expect(worklet.disconnect).toHaveBeenCalledOnce();
+        expect(source_disconnect).toHaveBeenCalledOnce();
+        expect(media_track_stop).toHaveBeenCalledOnce();
+
+        const wav = new ArrayBuffer(52);
+        worker.emit({ type: 'wav', buffer: wav });
+        await Promise.resolve();
+
+        expect(audioEngine.context.decodeAudioData).toHaveBeenCalledWith(wav);
+        expect(onComplete).not.toHaveBeenCalled();
+        expect(settled).toBe(false);
+        expect(activeSessions.get('track-flush')).toBe(session);
+        expect(worker.terminate).not.toHaveBeenCalled();
+
+        const resolve = resolveDecode;
+        if (!resolve) {
+            throw new Error('Expected decodeAudioData to be pending');
+        }
+        resolve(decodedBuffer);
         await stopping;
+
+        expect(onComplete).toHaveBeenCalledOnce();
+        expect(onComplete).toHaveBeenCalledWith(decodedBuffer);
+        expect(deliveryOrder).toEqual(['callback', 'settled']);
         expect(settled).toBe(true);
+        expect(activeSessions.get('track-flush')).toBeUndefined();
+        expect(worker.terminate).toHaveBeenCalledOnce();
     });
 
     it('ignores a late ready event after stop has become terminal', async () => {
