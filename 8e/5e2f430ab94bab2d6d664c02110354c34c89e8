@@ -1,0 +1,40 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_a3346ffef5f850 1718
+  s_9b530f08172a54::t_fe2f9b28dfa0e4 1331
+  s_9b530f08172a54::t_b59483e673491e 1337
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_cf8ba1e5756f6c 13117-13120
+crates/daw-dsp/src/fermenter/mod.rs
+  s_9b530f08172a54::t_d8da397652d88d 420-421
+  s_9b530f08172a54::t_e738ea99f879d7 325-326
+  s_9b530f08172a54::t_f149143a059767 405
+  s_9b530f08172a54::t_4049c125ed0073 392-397
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_d845ae04290bdd 1,285-286
+public/wasm/daw-dsp/daw_dsp.js
+  s_9b530f08172a54::t_fed676a7965ed4 578-579
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_fdb8f9a2fba2a0 1
+public/wasm/manifest.json
+  s_9b530f08172a54::t_6a0562b65594f8 12,15,17-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_f859150f795c15 1,285-286
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_9b530f08172a54::t_c26b302cb53016 755-756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8e5e2f430ab94bab2d6d664c02110354c34c89e8",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
