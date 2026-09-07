@@ -1,0 +1,56 @@
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_e1446b85f89db4 22
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_e80c5dd5739adc 113
+src/modules/AudioEngine/useCases/livePlayback/__tests__/claimNativeSessionRearm.spec.ts
+  s_9b530f08172a54::t_5d37d2fb99c293 15
+  s_9b530f08172a54::t_d8b241fde026e2 30,35-37,41,45-58
+  s_9b530f08172a54::t_624081dee02ab8 34
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_3b52c1b1e91ce7 43
+  s_9b530f08172a54::t_a28cf32646e436 35,54-60,62
+  s_9b530f08172a54::t_0e5e942050507d 81-82
+  s_9b530f08172a54::t_134f92ffc8fa72 88
+  s_9b530f08172a54::t_4aeb7c4a917a13 61,65
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_1a64a997c15d5a 234
+src/modules/AudioEngine/useCases/livePlayback/nativeSessionRearmClaimHolds.ts
+  s_9b530f08172a54::t_8e4e8490ffa6d9 1-15
+src/modules/AudioEngine/useCases/livePlayback/claimNativeSessionRearm.ts
+  s_9b530f08172a54::t_fd027aff3aa434 4-7,12,14,17
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_2390092f422e68 49-51,53
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_b2b746a2f5df46 129,140-142,151-193
+  s_9b530f08172a54::t_a54063986d7a29 89-90
+  s_9b530f08172a54::t_23538fb4abc372 150
+  s_9b530f08172a54::t_c16b0a3301325a 31-36,44,46,49,51
+  s_87ab0a2f60ccf8::t_abf8d5e66d59ce 194
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_a0310ed027d4ae 161-162
+  s_9b530f08172a54::t_23d16fe2f3127b 196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5db74db86aacccef5a8b8f118fcd86112f75292c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
