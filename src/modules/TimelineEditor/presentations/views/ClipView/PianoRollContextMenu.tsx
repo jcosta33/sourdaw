@@ -12,12 +12,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
-    addMidiNote,
     removeMidiNote,
     moveMidiNote,
     setNoteVelocity,
     humanizeNotes,
     getNotesForClip,
+    setNotesForClip,
     strumNotes,
     restoreStrumOriginals,
     snapClipToScale,
@@ -31,6 +31,15 @@ import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
+
+/**
+ * Whole-clip note snapshot for undo closures: complete note objects — id and
+ * every optional performance field — detached from the store array. Undo must
+ * restore the exact prior notes, and `addMidiNote` can only rebuild a stripped
+ * pitch/start/duration/velocity copy under a fresh id.
+ */
+const snapshotClipNotes = (clipId: string): ReturnType<typeof getNotesForClip> =>
+    getNotesForClip(clipId).map((node) => ({ ...node }));
 
 type PianoRollContextMenuProps = {
     menu: NonNullable<PianoRollMenu>;
@@ -109,23 +118,17 @@ export const PianoRollContextMenu = ({
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
                     const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
+                    const notesBefore = snapshotClipNotes(clipId);
                     copySelectedNotes(clipId, [...selectedNoteIds]);
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }
+                    const notesAfter = snapshotClipNotes(clipId);
                     if (cutNotes.length > 0) {
                         pushUndoEntry(
                             `Cut ${cutNotes.length} note${cutNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of cutNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
-                                }
-                            },
-                            () => {
-                                for (const node of cutNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
+                            () => setNotesForClip(clipId, notesBefore),
+                            () => setNotesForClip(clipId, notesAfter)
                         );
                     }
                     onClearSelection();
@@ -464,22 +467,16 @@ export const PianoRollContextMenu = ({
                     const deletedNotes = notes
                         .filter((node) => selectedNoteIds.has(node.id))
                         .map((node) => ({ ...node }));
+                    const notesBefore = snapshotClipNotes(clipId);
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }
+                    const notesAfter = snapshotClipNotes(clipId);
                     if (deletedNotes.length > 0) {
                         pushUndoEntry(
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of deletedNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
-                                }
-                            },
-                            () => {
-                                for (const node of deletedNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
+                            () => setNotesForClip(clipId, notesBefore),
+                            () => setNotesForClip(clipId, notesAfter)
                         );
                     }
                     onClearSelection();

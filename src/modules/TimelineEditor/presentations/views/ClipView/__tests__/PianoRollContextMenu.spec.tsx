@@ -5,13 +5,13 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
-    addMidiNote,
     getNotesForClip,
     humanizeNotes,
     moveMidiNote,
     removeMidiNote,
     restoreStrumOriginals,
     setNoteVelocity,
+    setNotesForClip,
     snapClipToScale,
     strumNotes,
 } from '#/modules/MIDI/useCases';
@@ -78,11 +78,11 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    addMidiNote: vi.fn(),
     removeMidiNote: vi.fn(),
     moveMidiNote: vi.fn(),
     setNoteVelocity: vi.fn(),
     getNotesForClip: vi.fn(() => []),
+    setNotesForClip: vi.fn(),
     humanizeNotes: vi.fn(),
     restoreStrumOriginals: vi.fn(),
     strumNotes: vi.fn(),
@@ -213,6 +213,10 @@ describe('PianoRollContextMenu', () => {
             { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
             { id: 'n2', pitch: 64, startBeat: 1, duration: 0.5, velocity: 90 },
         ];
+        // The undo/redo snapshots read the clip's notes from the store before
+        // and after the cut, so the store mock reports the pre-cut list and
+        // then the post-cut list with n1 gone.
+        vi.mocked(getNotesForClip).mockReturnValueOnce(notes).mockReturnValueOnce([notes[1]!]);
         renderWithTooltip(
             <PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1', 'n2'])} />
         );
@@ -224,15 +228,13 @@ describe('PianoRollContextMenu', () => {
         expect(defaultProps.onClearSelection).toHaveBeenCalled();
         expect(pushUndoEntry).toHaveBeenCalledWith('Cut 2 notes', expect.any(Function), expect.any(Function));
 
+        // Undo restores the captured pre-cut snapshot — complete note objects
+        // with their original ids — and redo restores the post-cut one (#3664).
         const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
         undo();
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 64, 1, 0.5, 90);
-
-        vi.mocked(removeMidiNote).mockClear();
+        expect(setNotesForClip).toHaveBeenCalledWith('clip-1', notes);
         redo();
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n2');
+        expect(setNotesForClip).toHaveBeenLastCalledWith('clip-1', [notes[1]]);
     });
 
     it('should quantize notes through the AppAction boundary', () => {
@@ -353,6 +355,10 @@ describe('PianoRollContextMenu', () => {
 
     it('should delete the selected notes and restore them on undo', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        // The undo/redo snapshots read the clip's notes from the store before
+        // and after the delete, so the store mock reports the pre-delete list
+        // and then the emptied post-delete list.
+        vi.mocked(getNotesForClip).mockReturnValueOnce(notes).mockReturnValueOnce([]);
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1'])} />);
         fireEvent.click(screen.getByText('Delete Selected'));
 
@@ -360,13 +366,13 @@ describe('PianoRollContextMenu', () => {
         expect(defaultProps.onClearSelection).toHaveBeenCalled();
         expect(pushUndoEntry).toHaveBeenCalledWith('Delete 1 note', expect.any(Function), expect.any(Function));
 
+        // Undo restores the captured pre-delete snapshot — the complete note
+        // object with its original id — and redo restores the emptied list (#3664).
         const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
         undo();
-        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
-
-        vi.mocked(removeMidiNote).mockClear();
+        expect(setNotesForClip).toHaveBeenCalledWith('clip-1', notes);
         redo();
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
+        expect(setNotesForClip).toHaveBeenLastCalledWith('clip-1', []);
     });
 
     it('should disable Invert Pitch and Reverse (Retrograde) when notes is empty', () => {
