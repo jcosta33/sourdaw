@@ -170,6 +170,13 @@ const AUTOMATION_PARAM_NAMES: [&str; 104] = [
     "grain_pan_spread",
 ];
 
+/// Frames one `process` call renders, and the length of both channel buffers.
+///
+/// A host reading the pointers `process` returns may read at most this many
+/// frames per call — `FermenterInstance::new` sizes `left_buf` and `right_buf`
+/// at exactly this length, and no method resizes them afterward.
+pub const FERMENTER_BLOCK_FRAMES: usize = 128;
+
 /// WASM-exported Fermenter instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct FermenterInstance {
@@ -189,11 +196,10 @@ impl FermenterInstance {
     /// to 1..=64 across all layers. Each voice can render up to 16 unison
     /// oscillators; bounded steal tails overlap only for de-clicking.
     pub fn new(sample_rate: f32, max_voices: u32) -> Self {
-        let block_size = 128;
         Self {
             synth: MasterSynth::new(sample_rate, max_voices as usize),
-            left_buf: vec![0.0; block_size],
-            right_buf: vec![0.0; block_size],
+            left_buf: vec![0.0; FERMENTER_BLOCK_FRAMES],
+            right_buf: vec![0.0; FERMENTER_BLOCK_FRAMES],
             events: [MidiEvent::default(); MAX_BLOCK_EVENTS],
             event_count: 0,
             nan_flush_count: 0,
@@ -381,6 +387,15 @@ impl FermenterInstance {
         self.events[self.event_count] = event;
         self.event_count += 1;
         true
+    }
+}
+
+impl FermenterInstance {
+    /// Length of the channel buffers `process` renders into, so a host can
+    /// assert the buffer it reads is the length [`FERMENTER_BLOCK_FRAMES`]
+    /// promises.
+    pub fn block_frames(&self) -> usize {
+        self.left_buf.len()
     }
 }
 
