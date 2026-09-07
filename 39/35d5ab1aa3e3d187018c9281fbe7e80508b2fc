@@ -1,0 +1,54 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_2d78b9ee17f84c 532
+  s_9b530f08172a54::t_a1b6b8994d6d44 23-27
+  s_9b530f08172a54::t_7e8786fb423fd5 1953-1957,1960-1964
+  s_9b530f08172a54::t_ee45a74e0efbe3 917-933
+src/modules/AudioEngine/useCases/livePlayback/watchNativeEngineLiveness.ts
+  s_9b530f08172a54::t_30f3fc22a2c006 59-64,66,75,78-79,82-95
+  s_9b530f08172a54::t_2194b6efd668d5 2-3,14-25,35-36
+  s_9b530f08172a54::t_ef1e00575f4ba5 67-71
+src/modules/AudioEngine/useCases/livePlayback/describeEngineNotRenderingRefusal.ts
+  s_9b530f08172a54::t_cc8058607c436e 1-15
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_634589850de299 157
+  s_9b530f08172a54::t_3a92984f5f5f36 22-36
+  s_9b530f08172a54::t_98fa19036d8b8b 21
+src/modules/AudioEngine/useCases/livePlayback/engineNotRenderingRefusal.ts
+  s_9b530f08172a54::t_12332adb4eb566 9-10,12-13,15
+src/modules/AudioEngine/useCases/livePlayback/__tests__/abandonNativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_b9b0184cec348f 101,107,122-124,126-127,130-131,147-170,184-185
+  s_9b530f08172a54::t_0171ddc53dae5c 88
+src/modules/AudioEngine/useCases/livePlayback/__tests__/watchNativeEngineLiveness.spec.ts
+  s_9b530f08172a54::t_ee0063078de6f4 48-51
+  s_9b530f08172a54::t_2c224709abfb85 67,77
+  s_9b530f08172a54::t_89b348dfe77324 2-4,9-11
+  s_9b530f08172a54::t_e6dbfae2bddc5d 223-226
+  s_9b530f08172a54::t_29277d5aa27d51 92-93,102,105,108-129,132-197,199
+src/modules/AudioEngine/useCases/livePlayback/abandonNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_10106141bb5594 11-13,15-26,57-61
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_4350b24d407d4c 795-800
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_e27c5222a1a02d 26
+  s_9b530f08172a54::t_fb80dfe30cd653 80-83
+src/modules/AudioEngine/useCases/livePlayback/parkOrphanedNativeEngine.ts
+  s_9b530f08172a54::t_65bdf1ca94f2a1 56-58
+  s_9b530f08172a54::t_2744b6f7420226 1-45,55,59-69
+  s_9b530f08172a54::t_b53fead78557c3 46-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3935d5ab1aa3e3d187018c9281fbe7e80508b2fc",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
