@@ -16,6 +16,11 @@ import {
     parseDeliveryReceipt,
     supersessionCommentBody,
     supersessionReplacement,
+    GUARD_FAILURES_DIR,
+    guardFailureReceiptPath,
+    isGuardFailureReason,
+    parseGuardFailureReceipt,
+    type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
 
@@ -680,6 +685,125 @@ describe('pull-request contract', () => {
 
         expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
             new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
+        );
+    });
+});
+
+describe('guard failure receipt contract', () => {
+    const validReceipt: GuardFailureReceipt = {
+        version: 1,
+        lane: 'agent-3161-test',
+        branch: 'agent/3161/test',
+        headSha: '0123456789abcdef0123456789abcdef01234567',
+        failedAt: '2026-09-07T12:00:00.000Z',
+        reason: 'memory',
+        command: 'pnpm',
+        args: ['test:run', 'src/x.spec.ts'],
+        profile: 'focused',
+        peakRssBytes: 5 * 1024 ** 3,
+        maxRssBytes: 4 * 1024 ** 3,
+        durationMs: 1500,
+    };
+
+    it('identifies guard failure reasons correctly', () => {
+        expect(isGuardFailureReason('leak')).toBe(true);
+        expect(isGuardFailureReason('memory')).toBe(true);
+        expect(isGuardFailureReason('monitor')).toBe(true);
+        expect(isGuardFailureReason('pressure')).toBe(true);
+        expect(isGuardFailureReason('timeout')).toBe(true);
+
+        expect(isGuardFailureReason('signal')).toBe(false);
+        expect(isGuardFailureReason('unknown')).toBe(false);
+        expect(isGuardFailureReason(123)).toBe(false);
+        expect(isGuardFailureReason(null)).toBe(false);
+        expect(isGuardFailureReason(undefined)).toBe(false);
+        expect(isGuardFailureReason({})).toBe(false);
+    });
+
+    it('computes the guard failure receipt path', () => {
+        expect(GUARD_FAILURES_DIR).toBe('.agents/guard-failures');
+        expect(guardFailureReceiptPath('/repo', 'agent-lane')).toBe('/repo/.agents/guard-failures/agent-lane.json');
+    });
+
+    it('parses a valid guard-failure receipt', () => {
+        const raw = JSON.stringify(validReceipt, null, 2);
+        const parsed = parseGuardFailureReceipt(raw);
+        expect(parsed).toEqual(validReceipt);
+    });
+
+    it('rejects invalid JSON', () => {
+        expect(() => parseGuardFailureReceipt('not-json')).toThrow(/not valid JSON/);
+    });
+
+    it('rejects non-object receipts', () => {
+        expect(() => parseGuardFailureReceipt('"string"')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('null')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('123')).toThrow(/must be a JSON object/);
+        expect(() => parseGuardFailureReceipt('[]')).toThrow(/must be a JSON object/);
+    });
+
+    it('rejects bad version', () => {
+        const raw = JSON.stringify({ ...validReceipt, version: 2 });
+        expect(() => parseGuardFailureReceipt(raw)).toThrow(/version must be 1/);
+    });
+
+    it('rejects invalid reason', () => {
+        const raw = JSON.stringify({ ...validReceipt, reason: 'signal' });
+        expect(() => parseGuardFailureReceipt(raw)).toThrow(/reason is invalid/);
+    });
+
+    it('rejects invalid or missing string fields', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, lane: '' }))).toThrow(
+            /lane is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, branch: '' }))).toThrow(
+            /branch is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, failedAt: '' }))).toThrow(
+            /failedAt is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, command: '' }))).toThrow(
+            /command is invalid/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, profile: '' }))).toThrow(
+            /profile is invalid/
+        );
+    });
+
+    it('rejects non-40-hex headSha', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, headSha: 'short' }))).toThrow(
+            /headSha must be a 40-character hex commit SHA/
+        );
+        expect(() =>
+            parseGuardFailureReceipt(
+                JSON.stringify({ ...validReceipt, headSha: '0123456789abcdef0123456789abcdef0123456z' })
+            )
+        ).toThrow(/headSha must be a 40-character hex commit SHA/);
+        expect(() =>
+            parseGuardFailureReceipt(
+                JSON.stringify({ ...validReceipt, headSha: '0123456789abcdef0123456789abcdef012345678' })
+            )
+        ).toThrow(/headSha must be a 40-character hex commit SHA/);
+    });
+
+    it('rejects invalid args', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, args: 'not-array' }))).toThrow(
+            /args must be an array of strings/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, args: [123] }))).toThrow(
+            /args must be an array of strings/
+        );
+    });
+
+    it('rejects invalid number fields', () => {
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, peakRssBytes: -1 }))).toThrow(
+            /peakRssBytes must be a non-negative number/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, maxRssBytes: '400' }))).toThrow(
+            /maxRssBytes must be a non-negative number/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, durationMs: NaN }))).toThrow(
+            /durationMs must be a non-negative number/
         );
     });
 });

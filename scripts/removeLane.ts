@@ -14,6 +14,7 @@ import {
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { supersessionReplacement } from './prContract.ts';
+import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
 export type Worktree = {
     path: string;
@@ -436,10 +437,15 @@ function validateOwnership(
     };
 }
 
-export function removeLane(target: string, port: LaneRemovalPort): void {
+export function removeLane(
+    target: string,
+    port: LaneRemovalPort,
+    resolvePrimary: () => string = resolvePrimaryRoot
+): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
+    const laneName = basename(target);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
     if (!authorLocked) {
         port.lock(target);
@@ -454,6 +460,7 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
         port.unlock(target);
         releaseOnFailure = false;
         port.remove(target);
+        clearGuardFailureReceipt(resolvePrimary(), laneName);
     } finally {
         if (releaseOnFailure) {
             port.unlock(target);
@@ -600,7 +607,12 @@ function refuseReceiptConflict(laneName: string, head: string, port: LaneStrandP
  * abandonment is auditable and the branch tip stays recoverable from the recorded head after the
  * force-delete.
  */
-export function strandLane(target: string, reason: string, port: LaneStrandPort): void {
+export function strandLane(
+    target: string,
+    reason: string,
+    port: LaneStrandPort,
+    resolvePrimary: () => string = resolvePrimaryRoot
+): void {
     port.fetch();
     const lane = identifyStrandLane(target, port);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
@@ -635,6 +647,7 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
         if (final.branch !== null) {
             port.deleteBranch(final.branch);
         }
+        clearGuardFailureReceipt(resolvePrimary(), laneName);
         port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json`);
     } finally {
         if (releaseOnFailure) {

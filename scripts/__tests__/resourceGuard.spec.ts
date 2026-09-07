@@ -1,22 +1,39 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdtempSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { GUARD_FAILURES_DIR, guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract';
 import {
     acquireResourceLock,
+    clearGuardFailureReceipt,
+    detectAuthorLane,
     enterResourceSession,
     hasExplicitTarget,
+    main as runGuardCli,
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
     psSamplingArgs,
+    readGuardFailureReceipt,
     resolveDefaultMaxRssBytes,
+    writeGuardFailureReceipt,
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
+    type DetectedLane,
+    type GuardedCommandResult,
 } from '../resourceGuard';
 import { parseArgs as parseLintArgs } from '../runLint';
 
@@ -721,6 +738,7 @@ describe('resource CLI', () => {
                 showOutput: true,
                 command: 'pnpm',
                 args: ['test'],
+                recover: false,
             }
         );
     });
@@ -866,5 +884,434 @@ describe('default budgets', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+});
+
+describe('guard failure stop enforcement', () => {
+    function fakeResult(overrides: Partial<GuardedCommandResult> = {}): GuardedCommandResult {
+        return {
+            code: 0,
+            signal: null,
+            output: '',
+            omittedBytes: 0,
+            peakRssBytes: 1024 ** 2,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 100,
+            ...overrides,
+        };
+    }
+
+    it('parses --recover flag in parseCliArgs', () => {
+        expect(parseCliArgs(['--recover'])).toEqual({
+            profile: 'focused',
+            maxRssBytes: undefined,
+            requireTarget: false,
+            showOutput: false,
+            command: '',
+            args: [],
+            recover: true,
+        });
+
+        expect(parseCliArgs(['--recover', '--max-rss-mib', '2048', '--show-output'])).toEqual({
+            profile: 'focused',
+            maxRssBytes: 2048 * 1024 ** 2,
+            requireTarget: false,
+            showOutput: true,
+            command: '',
+            args: [],
+            recover: true,
+        });
+
+        expect(parseCliArgs(['--profile', 'broad', '--recover'])).toEqual({
+            profile: 'broad',
+            maxRssBytes: undefined,
+            requireTarget: false,
+            showOutput: false,
+            command: '',
+            args: [],
+            recover: true,
+        });
+    });
+
+    it('detects author lane from inside worktree and returns undefined outside', () => {
+        const repoRoot = realpathSync(fixtureRoot('detect-repo'));
+        const worktreeDir = join(repoRoot, '.agents', 'worktrees', 'agent-42-feature');
+        mkdirSync(worktreeDir, { recursive: true });
+        mkdirSync(join(repoRoot, '.git'), { recursive: true });
+
+        try {
+            const mockCapture = (_command: string, args: string[]): string => {
+                if (args.includes('--git-common-dir')) {
+                    return join(repoRoot, '.git');
+                }
+                if (args.includes('--show-toplevel')) {
+                    return worktreeDir;
+                }
+                if (args.includes('--abbrev-ref')) {
+                    return 'agent/42/feature';
+                }
+                if (args.includes('HEAD')) {
+                    return '1111111111111111111111111111111111111111';
+                }
+                return '';
+            };
+
+            const detected = detectAuthorLane(worktreeDir, mockCapture);
+            expect(detected).toEqual({
+                primaryRoot: repoRoot,
+                laneName: 'agent-42-feature',
+                branch: 'agent/42/feature',
+                headSha: '1111111111111111111111111111111111111111',
+                worktreePath: worktreeDir,
+            });
+
+            // Outside worktree: inside repoRoot itself
+            const outside = detectAuthorLane(repoRoot, mockCapture);
+            expect(outside).toBeUndefined();
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('writes, reads, and clears guard failure receipts', () => {
+        const repoRoot = fixtureRoot('receipts');
+        const laneName = 'agent-99-fix';
+        const receipt: GuardFailureReceipt = {
+            version: 1,
+            lane: laneName,
+            branch: 'agent/99/fix',
+            headSha: '2222222222222222222222222222222222222222',
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'memory',
+            command: 'pnpm',
+            args: ['test:run', 'test.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 5 * 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 500,
+        };
+
+        try {
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(clearGuardFailureReceipt(repoRoot, laneName)).toBe(false);
+
+            writeGuardFailureReceipt(repoRoot, receipt);
+            expect(existsSync(guardFailureReceiptPath(repoRoot, laneName))).toBe(true);
+
+            const read = readGuardFailureReceipt(repoRoot, laneName);
+            expect(read).toEqual(receipt);
+
+            expect(clearGuardFailureReceipt(repoRoot, laneName)).toBe(true);
+            expect(existsSync(guardFailureReceiptPath(repoRoot, laneName))).toBe(false);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('writes guard-failure receipt on memory/timeout/monitor/leak failure in an author lane', async () => {
+        const repoRoot = fixtureRoot('lane-fail');
+        const laneName = 'agent-101-work';
+        const headSha = '3333333333333333333333333333333333333333';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/101/work',
+            headSha,
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+
+        const logs: string[] = [];
+        const errors: string[] = [];
+
+        try {
+            for (const reason of ['memory', 'timeout', 'monitor', 'leak'] as const) {
+                const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                    cwd: lane.worktreePath,
+                    detectLane: () => lane,
+                    runCommand: async () =>
+                        fakeResult({
+                            code: 1,
+                            reason,
+                            peakRssBytes: 6 * 1024 ** 3,
+                            maxRssBytes: 4 * 1024 ** 3,
+                            durationMs: 300,
+                        }),
+                    log: (msg) => logs.push(msg),
+                    error: (msg) => errors.push(msg),
+                });
+
+                expect(code).toBe(1);
+                const receipt = readGuardFailureReceipt(repoRoot, laneName);
+                expect(receipt).toBeDefined();
+                expect(receipt?.reason).toBe(reason);
+                expect(receipt?.headSha).toBe(headSha);
+                expect(receipt?.command).toBe('pnpm');
+                expect(receipt?.args).toEqual(['test:run', 'test.spec.ts']);
+                expect(errors).toContain(
+                    `guard: recorded guard-failure receipt in ${GUARD_FAILURES_DIR}/${laneName}.json; lane is stopped`
+                );
+                clearGuardFailureReceipt(repoRoot, laneName);
+            }
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses verification when active receipt matches current headSha', async () => {
+        const repoRoot = fixtureRoot('lane-refuse');
+        const laneName = 'agent-102-stopped';
+        const headSha = '4444444444444444444444444444444444444444';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/102/stopped',
+            headSha,
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+
+        const receipt: GuardFailureReceipt = {
+            version: 1,
+            lane: laneName,
+            branch: lane.branch,
+            headSha,
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'memory',
+            command: 'pnpm',
+            args: ['test:run', 'test.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 5 * 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 500,
+        };
+        writeGuardFailureReceipt(repoRoot, receipt);
+
+        let commandRan = false;
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => {
+                    commandRan = true;
+                    return fakeResult();
+                },
+                error: (msg) => errors.push(msg),
+            });
+
+            expect(code).toBe(1);
+            expect(commandRan).toBe(false);
+            expect(errors[0]).toMatch(
+                /guard: refusing verification: active guard-failure receipt exists for lane agent-102-stopped/
+            );
+            expect(errors[0]).toMatch(/A timeout, RSS kill, or memory-monitor failure is a stop/);
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('admits verification and clears receipt when headSha changes and verification succeeds', async () => {
+        const repoRoot = fixtureRoot('lane-admit');
+        const laneName = 'agent-103-advance';
+        const oldHeadSha = '5555555555555555555555555555555555555555';
+        const newHeadSha = '6666666666666666666666666666666666666666';
+
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/103/advance',
+            headSha: newHeadSha,
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+
+        const receipt: GuardFailureReceipt = {
+            version: 1,
+            lane: laneName,
+            branch: lane.branch,
+            headSha: oldHeadSha,
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'timeout',
+            command: 'pnpm',
+            args: ['test:run', 'test.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 600_000,
+        };
+        writeGuardFailureReceipt(repoRoot, receipt);
+
+        let commandRan = false;
+        const logs: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => {
+                    commandRan = true;
+                    return fakeResult({ code: 0 });
+                },
+                log: (msg) => logs.push(msg),
+            });
+
+            expect(code).toBe(0);
+            expect(commandRan).toBe(true);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(logs).toContain(
+                `guard: failure resolved by committed change ${newHeadSha.slice(0, 9)}; receipt cleared`
+            );
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    describe('--recover workflow', () => {
+        it('refuses --recover outside an author worktree', async () => {
+            const errors: string[] = [];
+            const code = await runGuardCli(['--recover'], {
+                detectLane: () => undefined,
+                error: (msg) => errors.push(msg),
+            });
+            expect(code).toBe(1);
+            expect(errors[0]).toContain('--recover must be run inside an author worktree');
+        });
+
+        it('reports clean when no receipt exists for the lane', async () => {
+            const repoRoot = fixtureRoot('recover-none');
+            const laneName = 'agent-104-clean';
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: 'agent/104/clean',
+                headSha: '7777777777777777777777777777777777777777',
+                worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+            };
+
+            const logs: string[] = [];
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: lane.worktreePath,
+                    detectLane: () => lane,
+                    log: (msg) => logs.push(msg),
+                });
+                expect(code).toBe(0);
+                expect(logs).toContain(`guard: no active guard-failure receipt for lane ${laneName}`);
+            } finally {
+                rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('re-executes receipt command on --recover and clears receipt on success', async () => {
+            const repoRoot = fixtureRoot('recover-success');
+            const laneName = 'agent-105-recover';
+            const headSha = '8888888888888888888888888888888888888888';
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: 'agent/105/recover',
+                headSha,
+                worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+            };
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha,
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'heavy.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            writeGuardFailureReceipt(repoRoot, receipt);
+
+            let capturedCommand: string | undefined;
+            let capturedArgs: string[] | undefined;
+            let capturedMaxRss: number | undefined;
+            const logs: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--max-rss-mib', '6144'], {
+                    cwd: lane.worktreePath,
+                    detectLane: () => lane,
+                    runCommand: async (input) => {
+                        capturedCommand = input.command;
+                        capturedArgs = input.args;
+                        capturedMaxRss = input.maxRssBytes;
+                        return fakeResult({ code: 0, peakRssBytes: 5.5 * 1024 ** 3 });
+                    },
+                    log: (msg) => logs.push(msg),
+                });
+
+                expect(code).toBe(0);
+                expect(capturedCommand).toBe('pnpm');
+                expect(capturedArgs).toEqual(['test:run', 'heavy.spec.ts']);
+                expect(capturedMaxRss).toBe(6144 * 1024 ** 2);
+                expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+                expect(logs).toContain(`guard: recovery succeeded; guard-failure receipt cleared for lane ${laneName}`);
+            } finally {
+                rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('retains updated receipt when --recover run fails', async () => {
+            const repoRoot = fixtureRoot('recover-fail');
+            const laneName = 'agent-106-recover-fail';
+            const headSha = '9999999999999999999999999999999999999999';
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: 'agent/106/recover-fail',
+                headSha,
+                worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+            };
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha,
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'heavy.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            writeGuardFailureReceipt(repoRoot, receipt);
+
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: lane.worktreePath,
+                    detectLane: () => lane,
+                    runCommand: async () =>
+                        fakeResult({
+                            code: 1,
+                            reason: 'memory',
+                            peakRssBytes: 5.8 * 1024 ** 3,
+                            maxRssBytes: 4 * 1024 ** 3,
+                            durationMs: 1500,
+                        }),
+                    error: (msg) => errors.push(msg),
+                });
+
+                expect(code).toBe(1);
+                const updated = readGuardFailureReceipt(repoRoot, laneName);
+                expect(updated).toBeDefined();
+                expect(updated?.peakRssBytes).toBe(5.8 * 1024 ** 3);
+                expect(errors).toContain(`guard: recovery failed; lane ${laneName} remains stopped`);
+            } finally {
+                rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
     });
 });

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
+
 export const TITLE_PATTERN = /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([^)]+\))?!?: .+/;
 
 /**
@@ -592,4 +595,131 @@ export function composeReviewCommentBody(content: ReviewCommentContent, context 
         fail(`${context} is ${byteLength} bytes, exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`);
     }
     return body;
+}
+
+export const GUARD_FAILURES_DIR = '.agents/guard-failures';
+export type GuardFailureReason = 'leak' | 'memory' | 'monitor' | 'pressure' | 'timeout';
+
+export type GuardFailureReceipt = {
+    version: 1;
+    lane: string;
+    branch: string;
+    headSha: string;
+    failedAt: string;
+    reason: GuardFailureReason;
+    command: string;
+    args: string[];
+    profile: string;
+    peakRssBytes: number;
+    maxRssBytes: number;
+    durationMs: number;
+};
+
+const GUARD_FAILURE_REASONS = new Set<GuardFailureReason>(['leak', 'memory', 'monitor', 'pressure', 'timeout']);
+
+export function isGuardFailureReason(value: unknown): value is GuardFailureReason {
+    return typeof value === 'string' && GUARD_FAILURE_REASONS.has(value as GuardFailureReason);
+}
+
+export function parseGuardFailureReceipt(raw: string, label = 'guard-failure receipt'): GuardFailureReceipt {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        fail(`${label} is not valid JSON`);
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        fail(`${label} must be a JSON object`);
+    }
+    const candidate = parsed as Record<string, unknown>;
+    if (candidate.version !== 1) {
+        fail(`${label} version must be 1`);
+    }
+    if (!isGuardFailureReason(candidate.reason)) {
+        fail(`${label} reason is invalid`);
+    }
+    if (typeof candidate.lane !== 'string' || candidate.lane.trim() === '') {
+        fail(`${label} lane is invalid`);
+    }
+    if (typeof candidate.branch !== 'string' || candidate.branch.trim() === '') {
+        fail(`${label} branch is invalid`);
+    }
+    if (typeof candidate.headSha !== 'string' || !/^[0-9a-f]{40}$/i.test(candidate.headSha)) {
+        fail(`${label} headSha must be a 40-character hex commit SHA`);
+    }
+    if (typeof candidate.failedAt !== 'string' || candidate.failedAt.trim() === '') {
+        fail(`${label} failedAt is invalid`);
+    }
+    if (typeof candidate.command !== 'string' || candidate.command.trim() === '') {
+        fail(`${label} command is invalid`);
+    }
+    if (!Array.isArray(candidate.args) || !candidate.args.every((arg) => typeof arg === 'string')) {
+        fail(`${label} args must be an array of strings`);
+    }
+    if (typeof candidate.profile !== 'string' || candidate.profile.trim() === '') {
+        fail(`${label} profile is invalid`);
+    }
+    if (
+        typeof candidate.peakRssBytes !== 'number' ||
+        !Number.isFinite(candidate.peakRssBytes) ||
+        candidate.peakRssBytes < 0
+    ) {
+        fail(`${label} peakRssBytes must be a non-negative number`);
+    }
+    if (
+        typeof candidate.maxRssBytes !== 'number' ||
+        !Number.isFinite(candidate.maxRssBytes) ||
+        candidate.maxRssBytes < 0
+    ) {
+        fail(`${label} maxRssBytes must be a non-negative number`);
+    }
+    if (
+        typeof candidate.durationMs !== 'number' ||
+        !Number.isFinite(candidate.durationMs) ||
+        candidate.durationMs < 0
+    ) {
+        fail(`${label} durationMs must be a non-negative number`);
+    }
+    return {
+        version: 1,
+        lane: candidate.lane,
+        branch: candidate.branch,
+        headSha: candidate.headSha,
+        failedAt: candidate.failedAt,
+        reason: candidate.reason,
+        command: candidate.command,
+        args: candidate.args,
+        profile: candidate.profile,
+        peakRssBytes: candidate.peakRssBytes,
+        maxRssBytes: candidate.maxRssBytes,
+        durationMs: candidate.durationMs,
+    };
+}
+
+export function guardFailureReceiptPath(primaryRoot: string, laneName: string): string {
+    return join(primaryRoot, GUARD_FAILURES_DIR, `${laneName}.json`);
+}
+
+export function readGuardFailureReceipt(primaryRoot: string, laneName: string): GuardFailureReceipt | undefined {
+    const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    try {
+        const content = readFileSync(receiptPath, 'utf8');
+        return parseGuardFailureReceipt(content);
+    } catch {
+        return undefined;
+    }
+}
+
+export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {
+    const absolute = resolve(path);
+    try {
+        return resolveExisting(absolute);
+    } catch {
+        return absolute;
+    }
+}
+
+export function containsPath(container: string, candidate: string): boolean {
+    const relation = relative(container, candidate);
+    return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
 }
