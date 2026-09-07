@@ -1,0 +1,41 @@
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_9b530f08172a54::t_4334195d6ea797 1-218
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_224ba21a9949e0::t_80d5b0c57794ea 22,61-73,116-117
+src/modules/Command/useCases/index.ts
+  s_575ce05f06d14a::t_89900b030e2cc4 78
+src/modules/Command/useCases/isAudioBufferReferencedByUndoHistory.ts
+  s_575ce05f06d14a::t_5cd9b49aeada31 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4516e9f5b9b547e1edda7e4cfd7170af84af5250",
+  "prompts": {},
+  "sessions": {
+    "s_224ba21a9949e0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d0a-6d48-7720-b3e1-e501945d1c33",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_575ce05f06d14a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a21bf471472008909",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
