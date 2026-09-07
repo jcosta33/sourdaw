@@ -13,6 +13,7 @@ import { GripVertical, Play, Square } from 'lucide-react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     cachePreviewAudioBuffer,
     playCachedAudioBufferPreview,
@@ -33,6 +34,28 @@ type PreviewPlayState = {
     audio: Float32Array;
     sampleRate: number;
 };
+
+// A buffer a dropped clip references is owned by that clip, and the dragend
+// dropEffect that settles the handoff count is not a reliable acceptance
+// signal on every engine: WebKit can report 'none' after a target accepted
+// the drop. The live track state is the authority — read at cleanup time, so
+// a clip the user deleted since the drop stops protecting its buffer.
+function clipReferencesBuffer(bufferId: string): boolean {
+    const state = trackStore.value;
+    if (!state) {
+        return false;
+    }
+    return (
+        state.tracks.some(
+            (track) =>
+                track.clips.some((clip) => clip.audioBufferId === bufferId) ||
+                track.alternatives.some((alternative) =>
+                    alternative.clips.some((clip) => clip.audioBufferId === bufferId)
+                )
+        ) ||
+        (state.ghostClips?.some((clip) => clip.audioBufferId === bufferId) ?? false)
+    );
+}
 
 export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRenderClipPreviewProps): ReactElement => {
     const [playState, setPlayState] = useState<PreviewPlayState>({
@@ -75,8 +98,14 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
             playbackRef.current = null;
             activePlayback?.stop();
 
-            if (bufferIdRef.current && handedOffCountRef.current === 0) {
-                releasePreviewAudioBuffer(bufferIdRef.current);
+            const bufferId = bufferIdRef.current;
+            // Release only what nothing else owns: a handoff still settling
+            // (the count) or a placed clip still referencing the buffer — the
+            // clip gate is what makes the release engine-proof, because the
+            // dropEffect this count settles on is not a trustworthy
+            // cancellation signal everywhere (WebKit, #3766).
+            if (bufferId && handedOffCountRef.current === 0 && !clipReferencesBuffer(bufferId)) {
+                releasePreviewAudioBuffer(bufferId);
             }
             bufferIdRef.current = null;
             handedOffCountRef.current = 0;

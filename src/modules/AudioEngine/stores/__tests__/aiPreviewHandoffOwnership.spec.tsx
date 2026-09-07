@@ -220,6 +220,27 @@ describe('AI preview handoff ownership', () => {
         expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
     });
 
+    // WebKit can report dropEffect 'none' at dragend even after a target
+    // accepted the drop, so the source never sees an acceptance signal. The
+    // placed clip is the only proof the handoff happened, and its reference
+    // must keep the buffer alive through the preview's cleanup.
+    it('keeps a placed clip audible when the engine reports no drop effect at dragend', async () => {
+        givenAudioTrack();
+        const preview = renderPreview(RENDERED_PCM);
+
+        // The source never writes an acceptance dropEffect; the target's
+        // acceptance is expressed only by the clip the drop places.
+        const payload = dragGesture(preview.row, 'none');
+        const clip = placeDroppedClip(payload);
+        preview.unmount();
+
+        const bufferId = droppedBufferId(payload);
+        expect(clip.audioBufferId).toBe(bufferId);
+        expectResidentPcm(bufferId, RENDERED_PCM);
+        await expectDurablePcm(bufferId, RENDERED_PCM);
+        expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
+    });
+
     it('keeps a placed clip audible when result replacement replaces the preview audio', async () => {
         givenAudioTrack();
         const preview = renderPreview(RENDERED_PCM);
@@ -236,6 +257,19 @@ describe('AI preview handoff ownership', () => {
         expectResidentPcm(bufferId, RENDERED_PCM);
         await expectDurablePcm(bufferId, RENDERED_PCM);
         expectPlaybackResolvesPcm(bufferId, RENDERED_PCM);
+
+        // The replacement's own audio must stay reclaimable: a canceled drag on
+        // the new audio mints its buffer and settles back to no handoff, so the
+        // unmount that follows releases it. A stale count carried over from the
+        // dropped clip would leak every post-replacement buffer here.
+        const newAudioPayload = dragGesture(preview.row, 'none');
+        const newBufferId = droppedBufferId(newAudioPayload);
+        expect(newBufferId).not.toBe(bufferId);
+        preview.unmount();
+
+        expect(getCachedAudioBuffer({ bufferId: newBufferId })).toBeNull();
+        await flushIndexedDbTasks();
+        expect(controls.committed.has(newBufferId)).toBe(false);
     });
 
     it('reclaims a never-dropped preview whose only drag was canceled', async () => {
