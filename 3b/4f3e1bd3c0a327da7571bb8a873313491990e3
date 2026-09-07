@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/__tests__/deviceContentReadinessTimeout.integration.spec.ts
+  s_87ab0a2f60ccf8::t_d7c3053aaeaf9f 147,161,179,192,218-219,253,259,279,294,296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3b4f3e1bd3c0a327da7571bb8a873313491990e3",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
