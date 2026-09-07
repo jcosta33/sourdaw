@@ -69,7 +69,9 @@ describe('renderToClip', () => {
             type: 'audio',
             audioBufferId: result?.audioBufferId,
         });
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Render to clip', expect.any(Function), expect.any(Function));
+        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Render to clip', expect.any(Function), expect.any(Function), {
+            restoresBufferIds: [result?.audioBufferId],
+        });
     });
 
     it('creates a new audio track when targetTrackId is "new"', async () => {
