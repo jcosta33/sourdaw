@@ -1,0 +1,16 @@
+src/modules/Synth/useCases/dsp/__tests__/additiveSynthDspBehavior.spec.ts
+  h_1228e573df1f42 1-248
+src/modules/Synth/useCases/dsp/additive-synth.dsp
+  h_1228e573df1f42 6-16,18,20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "15871a1fdb65d9d9122cb441478bb4a38ca376a8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
