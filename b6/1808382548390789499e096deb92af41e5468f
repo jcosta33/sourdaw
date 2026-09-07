@@ -1,0 +1,24 @@
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_8e2e80364a3678 14501,14504-14505
+  s_9b530f08172a54::t_46565598b47c28 1215-1216
+  s_9b530f08172a54::t_5944d9b86f9246 14283-14286
+  s_9b530f08172a54::t_04adf37dc2b232 14439-14441
+  s_9b530f08172a54::t_45bed0bd8dab2f 1295-1296
+  s_9b530f08172a54::t_85c1b657422eb7 14500,14502-14503,14506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b61808382548390789499e096deb92af41e5468f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
