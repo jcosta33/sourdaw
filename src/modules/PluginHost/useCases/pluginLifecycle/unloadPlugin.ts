@@ -74,6 +74,7 @@ import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiSto
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
+import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
@@ -83,6 +84,9 @@ function forgetPluginInstance(instanceId: string): void {
     externalLatencyReporters.delete(instanceId);
     externalPluginActivationTasks.delete(instanceId);
     externalPluginActivationOutcomes.delete(instanceId);
+    // The instance is gone; a stale marker would preserve a chunk for a plugin
+    // that no longer exists instead of letting a fresh instance capture.
+    externalPluginRestoreFailures.delete(instanceId);
     // The parameters described an instance that no longer exists; leaving them
     // would keep offering automation targets for a destroyed plugin.
     dropExternalPluginParameterSnapshot(instanceId);

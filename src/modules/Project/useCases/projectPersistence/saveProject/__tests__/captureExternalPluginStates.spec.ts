@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     trackStore: { value: null as { tracks: { id: string; devices: unknown[] }[] } | null },
     executeAppAction: vi.fn<(action: unknown, options?: unknown) => Promise<void>>(),
     readPluginState: vi.fn<(instanceId: string) => Promise<string>>(),
+    hasUnresolvedExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
@@ -21,7 +22,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: vi.fn(),
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ readPluginState: mocks.readPluginState }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    readPluginState: mocks.readPluginState,
+    hasUnresolvedExternalPluginRestoreFailure: mocks.hasUnresolvedExternalPluginRestoreFailure,
+}));
 
 function setTrackDevices(devices: MockDevice[]): void {
     mocks.trackStore.value = { tracks: [{ id: 't1', devices }] };
@@ -32,6 +36,7 @@ describe('captureExternalPluginStates', () => {
         vi.clearAllMocks();
         mocks.trackStore.value = null;
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(false);
         capturedNativePluginStateCache.clear();
     });
 
@@ -67,6 +72,52 @@ describe('captureExternalPluginStates', () => {
         await captureExternalPluginStates();
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    // Regression (issue 3693): a plugin that instantiated but REJECTED its saved
+    // state stays loaded holding its defaults. Committing its get-state would
+    // overwrite the original saved chunk with plugin defaults — permanent data
+    // loss on the first Save or Export after the failed restore.
+    it('preserves the stored chunk while a failed restore is unresolved (host is not read)', async () => {
+        setTrackDevices([
+            { id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1', externalStateChunk: 'original' },
+        ]);
+        mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
+        // The plugin's default state is exactly what must NOT be committed.
+        mocks.readPluginState.mockResolvedValue('defaults');
+
+        await captureExternalPluginStates();
+
+        expect(mocks.readPluginState).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(capturedNativePluginStateCache.has('inst-1')).toBe(false);
+    });
+
+    it('captures normally again once the failed-restore marker resolves', async () => {
+        const device: MockDevice = {
+            id: 'd1',
+            type: 'external-plugin',
+            externalInstanceId: 'inst-1',
+            externalStateChunk: 'original',
+        };
+        setTrackDevices([device]);
+        mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
+        mocks.readPluginState.mockResolvedValue('defaults');
+
+        await captureExternalPluginStates();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+
+        // A successful re-restore or explicit replacement cleared the marker;
+        // the host now reports fresh authoritative state.
+        mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(false);
+        mocks.readPluginState.mockResolvedValue('fresh');
+
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setExternalPluginState', payload: { deviceId: 'd1', stateChunk: 'fresh' } },
+            { skipMacroRecording: true }
+        );
     });
 
     it('skips a chunk that is unchanged from what is already stored', async () => {

@@ -131,6 +131,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
     registerFaustDSP: vi.fn(),
 }));

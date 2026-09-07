@@ -346,7 +346,9 @@ vi.mock('#/modules/Routing/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
     beginProjectSessionPluginRetirement: vi.fn(),
+    clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
+    hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     isFaustInstrumentModule: vi.fn(),
     observeExternalPluginParameterEdits: vi.fn(),
     readPluginState: vi.fn(),

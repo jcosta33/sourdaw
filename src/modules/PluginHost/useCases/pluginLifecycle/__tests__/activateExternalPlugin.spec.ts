@@ -5,7 +5,10 @@ import {
     externalPluginActivationStore,
 } from '../../../stores/externalPluginActivationStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
+import { clearExternalPluginRestoreFailure } from '../clearExternalPluginRestoreFailure';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
+import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
+import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExternalPluginRestoreFailure';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { unloadPlugin } from '../unloadPlugin';
@@ -275,6 +278,105 @@ describe('activateExternalPlugin', () => {
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
         expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(2);
+    });
+
+    // Issue 3693: a plugin that rejects its saved chunk holds its own defaults,
+    // so its runtime state must not reach a save. The marker records exactly
+    // that, resolves on the first successful restore, and never resolves on a
+    // get-state read.
+    it('marks the restore as failed when the plugin rejects its saved state', async () => {
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+
+        await expect(
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
+        ).resolves.toEqual({ status: 'failed', stage: 'restore', reason: 'Error: state chunk rejected' });
+
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+    });
+
+    it('keeps the failure marker through a rejected retry and clears it once a restore succeeds', async () => {
+        mocks.setPluginStateRepo
+            .mockRejectedValueOnce(new Error('state chunk rejected'))
+            .mockRejectedValueOnce(new Error('still rejected'));
+
+        await activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        // The rebuild retry re-runs the restore and is rejected again.
+        await activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        // The plugin accepts the chunk this time (vendor fixed a version skew).
+        await expect(
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
+        ).resolves.toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+    });
+
+    it('never marks a restore failure when activation succeeds or no chunk is restored', async () => {
+        await expect(
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
+        ).resolves.toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+
+        clearLoadedExternalPlugins();
+        await expect(
+            activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-2' })
+        ).resolves.toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-2')).toBe(false);
+    });
+
+    it('drops the failure marker when the instance is unloaded or the graph is torn down', async () => {
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+        mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: ['inst-1'], errors: [], reports: [] });
+
+        await activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+            stateChunk: SAVED_CHUNK,
+        });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        await unloadPlugin('inst-1');
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+
+        externalPluginRestoreFailures.add('inst-1');
+        clearLoadedExternalPlugins();
+        expect(externalPluginRestoreFailures.size).toBe(0);
+    });
+
+    it('resolves the marker only through the explicit clear, not through a state read', () => {
+        externalPluginRestoreFailures.add('inst-1');
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        clearExternalPluginRestoreFailure('inst-1');
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
     });
 
     it('reports the activation latency in milliseconds to the injected sink', async () => {

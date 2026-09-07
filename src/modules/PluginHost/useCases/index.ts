@@ -29,6 +29,8 @@ export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
+export { clearExternalPluginRestoreFailure } from './pluginLifecycle/clearExternalPluginRestoreFailure';
+export { hasUnresolvedExternalPluginRestoreFailure } from './pluginLifecycle/hasUnresolvedExternalPluginRestoreFailure';
 export { markExternalPluginEngineAttached } from './pluginLifecycle/markExternalPluginEngineAttached';
 export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild';
