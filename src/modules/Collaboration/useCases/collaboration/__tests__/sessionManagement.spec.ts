@@ -9,7 +9,10 @@ import {
 } from '../../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../../models/SyncChannelConstants';
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { createSession } from '../createSession';
 import { configureCollaborationAssetOwner } from '../getCollaborationAssetOwnerId';
+import { joinSession } from '../joinSession';
+import { leaveSession } from '../leaveSession';
 import { onPresence } from '../onPresence';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
@@ -28,6 +31,7 @@ type CapturedCallbacks = {
     onMessage: (input: { peerId: PeerId; message: PeerMessage }) => void;
     onConnected: (peerId: PeerId) => void;
     onDisconnected: (peerId: PeerId) => void;
+    onSendError: (input: { peerId: PeerId; error: unknown }) => void;
 };
 
 const peerConnectionMock = vi.hoisted(() => ({
@@ -37,6 +41,7 @@ const peerConnectionMock = vi.hoisted(() => ({
         getConnectedPeerIds: ReturnType<typeof vi.fn>;
         broadcastPresence: ReturnType<typeof vi.fn>;
         sendCrdtSync: ReturnType<typeof vi.fn>;
+        sendCrdtSyncBuffered: Mock<(input: unknown) => Promise<void>>;
         removePeer: ReturnType<typeof vi.fn>;
     }[],
 }));
@@ -161,6 +166,7 @@ vi.mock('../../../repositories/peerConnection', () => ({
             // Matches the real contract: the send resolves only once the
             // transport has taken the message.
             sendCrdtSync: vi.fn().mockResolvedValue(undefined),
+            sendCrdtSyncBuffered: vi.fn<(input: unknown) => Promise<void>>().mockResolvedValue(undefined),
             removePeer: vi.fn(),
         };
         peerConnectionMock.instances.push(instance);
@@ -800,6 +806,70 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('cleanup()', () => {
+        it('does not let a delayed leave tear down a replacement session', async () => {
+            createSession('Session A');
+            const sessionAManager = latestPeerManager();
+            const sessionASync = latestAutomergeSync();
+            sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
+            const sendEntered = Promise.withResolvers<void>();
+            const releaseSend = Promise.withResolvers<void>();
+            sessionAManager.sendCrdtSyncBuffered.mockImplementation(async () => {
+                sendEntered.resolve();
+                await releaseSend.promise;
+            });
+
+            const leavingSessionA = leaveSession();
+            await sendEntered.promise;
+            expect(sessionASync.stop).toHaveBeenCalledTimes(1);
+
+            const sessionBId = createSession('Session B');
+            const sessionBManager = latestPeerManager();
+
+            releaseSend.resolve();
+            await leavingSessionA;
+
+            expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
+            expect(sessionBManager.closeAll).not.toHaveBeenCalled();
+            expect(collaborationStore.value).toMatchObject({
+                isEnabled: true,
+                sessionId: sessionBId,
+                localName: 'Session B',
+                isHost: true,
+            });
+        });
+
+        it('ignores retained callbacks from a replaced session', () => {
+            createSession('Session A');
+            const sessionAManager = latestPeerManager();
+            const sessionASync = latestAutomergeSync();
+            const sessionATransfer = latestAssetTransfer();
+
+            createSession('Session B');
+            const sessionBManager = latestPeerManager();
+            const sessionBState = collaborationStore.value;
+
+            sessionAManager.callbacks.onMessage({
+                peerId: 'stale-peer',
+                message: {
+                    type: 'peer-info',
+                    peer: makePeer({ id: 'stale-peer', name: 'Stale peer' }),
+                },
+            });
+            sessionAManager.callbacks.onConnected('stale-peer');
+            sessionAManager.callbacks.onDisconnected('stale-peer');
+            sessionAManager.callbacks.onSendError({ peerId: 'stale-peer', error: new Error('stale send') });
+            sessionASync.hooks.onPersistError?.(new Error('stale persist'));
+            sessionASync.hooks.onSyncQuarantine?.({
+                peerId: 'stale-peer',
+                docId: 'root',
+                error: new Error('stale quarantine'),
+            });
+            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer');
+
+            expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
+            expect(collaborationStore.value).toEqual(sessionBState);
+        });
+
         it('tears down every subsystem and clears session state', () => {
             const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
             const automergeSync = latestAutomergeSync();
@@ -845,6 +915,30 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('canApplySync (AutomergeSync hooks built at initialize())', () => {
+        it('rejects every sync decision made by a replaced session', async () => {
+            sessionRuntimePrimitives.initialize('project-owner-1', { rebindToSynchronizedOwner: true });
+            const oldHooks = latestAutomergeSync().hooks;
+            sessionRuntimePrimitives.cleanup();
+            sessionRuntimePrimitives.initialize('project-owner-2');
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'host-1', isHost: true })] }));
+
+            expect(oldHooks.captureSyncAcceptance?.({ peerId: 'host-1', docId: 'root' })).toEqual({
+                accepted: false,
+                senderIsHost: false,
+            });
+            expect(oldHooks.canApplySync?.('host-1', 'root')).toBe(false);
+            expect(oldHooks.getProtectedProjectId?.({ peerId: 'host-1', docId: 'root' })).toBeUndefined();
+            await expect(
+                oldHooks.prepareSyncPersistence?.({
+                    peerId: 'host-1',
+                    docId: 'root',
+                    projectId: 'project-owner-1',
+                    rootHeads: ['old-head'],
+                    senderIsHost: true,
+                })
+            ).rejects.toThrow('superseded');
+        });
+
         it('always allows syncs sent by the host, even for branch metadata', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'host-1', isHost: true })] }));
@@ -1510,6 +1604,10 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('startBranchSync / stopBranchSync (via startBranchSync() and cleanup())', () => {
+        beforeEach(() => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+        });
+
         it('seeds the __branches__ doc from the current branch list when hosting', () => {
             branchStoreMock.value = { branches: [{ id: 'b1' }], activeBranchId: 'b1' };
 
@@ -1602,6 +1700,28 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             finishTransition?.('aborted');
             await transition;
+            await Promise.resolve();
+
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
+        });
+
+        it('does not apply a deferred branch write after its session is replaced', async () => {
+            const transition = Promise.withResolvers<'aborted' | 'committed'>();
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition.promise);
+            sessionRuntimePrimitives.startBranchSync(true);
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            branchStoreListener({ branches: [{ id: 'session-a' }], activeBranchId: 'session-a' });
+            sessionRuntimePrimitives.cleanup();
+            sessionRuntimePrimitives.initialize('project-owner-2');
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            transition.resolve('committed');
+            await transition.promise;
             await Promise.resolve();
 
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
@@ -1748,7 +1868,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             crdtMock.persistCrdtProject.mockRejectedValueOnce(new Error('disk full'));
             sessionRuntimePrimitives.startBranchSync(true);
 
-            sessionRuntimePrimitives.cleanup();
+            await leaveSession();
             await Promise.resolve();
             await Promise.resolve();
 
@@ -1757,6 +1877,35 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 expect.any(Error)
             );
             expect(collaborationStore.value?.error).toBe('Failed to save project locally after leaving the session.');
+        });
+
+        it('does not surface old cleanup persistence failure into a pending join', async () => {
+            collaborationStore.set(makeState());
+            const persistence = Promise.withResolvers<void>();
+            crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+            sessionRuntimePrimitives.startBranchSync(true);
+            await leaveSession();
+
+            const decompression = Promise.withResolvers<string>();
+            const decompressInvite = vi
+                .spyOn(sessionRuntimePrimitives, 'decompressInvite')
+                .mockReturnValueOnce(decompression.promise);
+            const joining = joinSession('invite', 'Joining session');
+            expect(collaborationStore.value).toMatchObject({ connectionStatus: 'connecting', error: null });
+
+            persistence.reject(new Error('old cleanup failed'));
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    '[Collaboration] Failed to persist after branch sync cleanup:',
+                    expect.any(Error)
+                )
+            );
+
+            expect(collaborationStore.value).toMatchObject({ connectionStatus: 'connecting', error: null });
+
+            decompression.resolve(JSON.stringify({ type: 'answer' }));
+            await expect(joining).rejects.toThrow('expected offer');
+            decompressInvite.mockRestore();
         });
     });
 
@@ -1849,6 +1998,49 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(decodeAudioData).toHaveBeenCalledWith(arrayBuffer);
             expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: decodedBuffer });
+        });
+
+        it('does not cache a decoded buffer after its session is replaced', async () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
+            latestAssetTransfer().getAsset.mockReturnValue(blob);
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decoding.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+
+            sessionRuntimePrimitives.cleanup();
+            sessionRuntimePrimitives.initialize('project-owner-2');
+            decoding.resolve(makeAudioBuffer());
+            await decoding.promise;
+            await Promise.resolve();
+
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
+
+        it('does not begin decoding after an old session finishes reading an asset', async () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            const reading = Promise.withResolvers<ArrayBuffer>();
+            latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockReturnValue(reading.promise) });
+            const decodeAudioData = vi.fn();
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(null);
+            trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
+
+            latestAssetTransfer().options.onAssetAvailable('hash-1');
+            await Promise.resolve();
+            sessionRuntimePrimitives.cleanup();
+            sessionRuntimePrimitives.initialize('project-owner-2');
+            reading.resolve(new ArrayBuffer(8));
+            await reading.promise;
+            await Promise.resolve();
+
+            expect(decodeAudioData).not.toHaveBeenCalled();
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalled();
         });
 
         // The transfer-failure row is only otherwise cleared by session

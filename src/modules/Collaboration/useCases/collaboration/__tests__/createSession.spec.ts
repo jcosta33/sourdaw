@@ -11,8 +11,10 @@ import { createSession } from '../createSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     state: { sessionSecret: null as string | null },
-    cleanup: vi.fn<() => void>(),
+    cleanup: vi.fn<(owner?: object | null) => boolean>(),
     initialize: vi.fn<(assetOwnerId: string) => void>(),
+    captureOwner: vi.fn<() => object | null>(),
+    retire: vi.fn<(owner: object | null) => void>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -27,6 +29,8 @@ vi.mock('../getCollaborationAssetOwnerId', () => ({
 }));
 
 describe('createSession', () => {
+    const owner = {};
+
     beforeEach(() => {
         vi.clearAllMocks();
         collaborationStore.set(null);
@@ -35,6 +39,8 @@ describe('createSession', () => {
         mockRuntime.generateSessionId.mockReturnValue('sess-1');
         mockRuntime.generateSessionSecret.mockReturnValue('secret-1');
         mockRuntime.pickPeerColor.mockReturnValue('#3b82f6');
+        mockRuntime.captureOwner.mockReturnValue(owner);
+        mockRuntime.cleanup.mockReturnValue(true);
     });
 
     it('mints a fresh room secret onto the session runtime', () => {
@@ -80,5 +86,16 @@ describe('createSession', () => {
             error: null,
             quarantinedPeerIds: [],
         });
+    });
+
+    it('cleans only its partial runtime when host setup fails', () => {
+        mockRuntime.startBranchSync.mockImplementationOnce(() => {
+            throw new Error('branch setup failed');
+        });
+
+        expect(() => createSession('Host')).toThrow('branch setup failed');
+
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
+        expect(mockRuntime.cleanup).toHaveBeenLastCalledWith(owner);
     });
 });

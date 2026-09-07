@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { createCollaborationError } from '../../errors/CollaborationError';
 import { type SignalingMessage, PEER_COLORS, sanitizePeerName } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
@@ -7,9 +9,9 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function joinSession(inviteString: string, name: string): Promise<string> {
+    const joinAttempt = joinAttemptAuthority.begin();
     runtime.cleanup();
     const settledAssetOwnerId = collaborationAssetOwnership.getOwnerId();
-    const joinAttempt = joinAttemptAuthority.begin();
     collaborationStore.set({
         isEnabled: true,
         sessionId: null,
@@ -23,7 +25,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         quarantinedPeerIds: [],
     });
 
-    let runtimeStarted = false;
+    let installedOwner: ReturnType<typeof runtime.captureOwner> = null;
     try {
         if (!inviteString.trim()) {
             throw createCollaborationError('Invite string is empty');
@@ -90,17 +92,17 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             quarantinedPeerIds: [],
         });
 
-        runtimeStarted = true;
         const peerManager = runtime.initialize(`collaboration-join:${invite.sessionId}:${peerId}:${joinAttempt}`, {
             handoffSourceOwnerIds: [settledAssetOwnerId],
             rebindToSynchronizedOwner: true,
         });
+        installedOwner = runtime.captureOwner();
         runtime.startPlayheadBroadcast();
         runtime.startBranchSync(false);
 
         const peer = peerManager.createPeer(invite.peerId);
         const answerSdp = await peer.acceptOffer(invite.sdp);
-        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+        if (!joinAttemptAuthority.isCurrent(joinAttempt) || !installedOwner || !runtime.canWrite(installedOwner)) {
             throw createCollaborationError('Join attempt was superseded');
         }
 
@@ -113,16 +115,22 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         };
 
         const compressedAnswer = await runtime.compressInvite(JSON.stringify(answer));
-        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+        if (!joinAttemptAuthority.isCurrent(joinAttempt) || !runtime.canWrite(installedOwner)) {
             throw createCollaborationError('Join attempt was superseded');
         }
         return compressedAnswer;
     } catch (error) {
-        if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
-            throw error;
+        const ownsInstalledRuntime = installedOwner === null || runtime.isInstalled(installedOwner);
+        if (installedOwner) {
+            runtime.retire(installedOwner);
+            try {
+                runtime.cleanup(installedOwner);
+            } catch (cleanupError) {
+                logger.warn('[Collaboration] Failed to clean up join session setup:', cleanupError);
+            }
         }
-        if (runtimeStarted) {
-            runtime.cleanup();
+        if (!joinAttemptAuthority.isCurrent(joinAttempt) || !ownsInstalledRuntime) {
+            throw error;
         }
         collaborationStore.set({
             isEnabled: false,

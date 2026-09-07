@@ -12,6 +12,8 @@ const mockRuntime = vi.hoisted(() => ({
     },
     decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
+    captureOwner: vi.fn<() => object | null>(),
+    canWrite: vi.fn<(owner: object | null) => boolean>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -41,6 +43,8 @@ function makeAnswer(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 describe('acceptAnswer', () => {
+    const ownerA = {};
+    const ownerB = {};
     let getPeer: ReturnType<typeof vi.fn>;
     let acceptAnswerOnPeer: ReturnType<typeof vi.fn>;
 
@@ -57,6 +61,8 @@ describe('acceptAnswer', () => {
         } as unknown as PeerConnectionManager;
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
+        mockRuntime.captureOwner.mockReturnValue(ownerA);
+        mockRuntime.canWrite.mockImplementation((owner) => owner === mockRuntime.captureOwner());
     });
 
     it('converts a decompression failure into a collaboration error instead of leaking the raw exception', async () => {
@@ -258,5 +264,46 @@ describe('acceptAnswer', () => {
 
         await expect(acceptAnswer('raw')).rejects.toThrow('Invalid answer — peer ID is already in use');
         expect(removePeer).toHaveBeenCalledWith('pending-slot-42');
+    });
+
+    it('does not let decompression from an old session read or overwrite its replacement', async () => {
+        const decompression = Promise.withResolvers<string>();
+        mockRuntime.decompressInvite.mockReturnValueOnce(decompression.promise);
+
+        const accepting = acceptAnswer('raw');
+
+        const sessionBManager = { getPeer: vi.fn() } as unknown as PeerConnectionManager;
+        mockRuntime.captureOwner.mockReturnValue(ownerB);
+        mockRuntime.state.peerManager = sessionBManager;
+        mockRuntime.state.pendingInviteId = 'session-b-invite';
+        collaborationStore.set({ ...baseState, sessionId: 'session-b', localName: 'Session B', error: null });
+        decompression.resolve(JSON.stringify(makeAnswer()));
+
+        await expect(accepting).rejects.toThrow('superseded by a newer session');
+        expect(mockRuntime.state.peerManager).toBe(sessionBManager);
+        expect(sessionBManager.getPeer).not.toHaveBeenCalled();
+        expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
+        expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', error: null });
+    });
+
+    it('does not let SDP acceptance from an old session overwrite its replacement', async () => {
+        const sdpAcceptance = Promise.withResolvers<void>();
+        acceptAnswerOnPeer.mockReturnValueOnce(sdpAcceptance.promise);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        const accepting = acceptAnswer('raw');
+        await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
+
+        const sessionBManager = { getPeer: vi.fn() } as unknown as PeerConnectionManager;
+        mockRuntime.captureOwner.mockReturnValue(ownerB);
+        mockRuntime.state.peerManager = sessionBManager;
+        mockRuntime.state.pendingInviteId = 'session-b-invite';
+        collaborationStore.set({ ...baseState, sessionId: 'session-b', localName: 'Session B', error: null });
+        sdpAcceptance.resolve();
+
+        await expect(accepting).rejects.toThrow('superseded by a newer session');
+        expect(mockRuntime.state.peerManager).toBe(sessionBManager);
+        expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
+        expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', localName: 'Session B', error: null });
     });
 });

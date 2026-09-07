@@ -4,8 +4,13 @@ import { collaborationStore } from '../../stores/collaborationStore';
 import { type CollaborationPeer } from '../collaborationQueries';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { recordCollaborationFailure } from './recordCollaborationFailure';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
+
+function createSupersededOperationError(): Error {
+    return createCollaborationError('Answer acceptance was superseded by a newer session');
+}
 
 /**
  * Pins a surfaced failure to the accept attempt that is still live.
@@ -40,6 +45,11 @@ const acceptAttemptAuthority = {
 };
 
 export async function acceptAnswer(answerString: string): Promise<void> {
+    const owner = runtime.captureOwner();
+    const requestWitness = joinAttemptAuthority.capture();
+    const isCurrentSession = () =>
+        joinAttemptAuthority.isCurrent(requestWitness) &&
+        (owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner));
     clearCollaborationFailure();
     const acceptAttempt = acceptAttemptAuthority.begin();
     try {
@@ -48,6 +58,9 @@ export async function acceptAnswer(answerString: string): Promise<void> {
             json = await runtime.decompressInvite(answerString);
         } catch {
             throw createCollaborationError('Invalid answer — must be a valid answer string');
+        }
+        if (!isCurrentSession()) {
+            throw createSupersededOperationError();
         }
 
         let answer: SignalingMessage;
@@ -92,6 +105,9 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         }
 
         await peer.acceptAnswer(answer.sdp);
+        if (!isCurrentSession()) {
+            throw createSupersededOperationError();
+        }
         runtime.state.pendingInviteId = null;
 
         // Add the joiner to our peer list
@@ -115,6 +131,9 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         }
         acceptAttemptAuthority.settle();
     } catch (error) {
+        if (!isCurrentSession()) {
+            throw createSupersededOperationError();
+        }
         if (acceptAttemptAuthority.isCurrent(acceptAttempt)) {
             recordCollaborationFailure(error);
         }

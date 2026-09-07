@@ -6,7 +6,9 @@ import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function leaveSession(): Promise<void> {
     joinAttemptAuthority.invalidate();
+    const owner = runtime.captureOwner();
     const peerManager = runtime.state.peerManager;
+    runtime.retire(owner);
     if (peerManager) {
         const leaveMessage: PeerMessage = {
             type: 'peer-leave',
@@ -24,7 +26,10 @@ export async function leaveSession(): Promise<void> {
         );
     }
 
-    runtime.cleanup();
+    const removedCurrentRuntime = runtime.cleanup(owner);
+    if (!removedCurrentRuntime) {
+        return;
+    }
 
     collaborationStore.set({
         isEnabled: false,

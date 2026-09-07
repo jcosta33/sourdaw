@@ -110,6 +110,17 @@ durable recovery whose branch or complete document membership/heads diverge from
 snapshot rollback as the positive control. Assert that the final active document reference and undo history agree;
 checking only whether a restore callback ran cannot prove that its entries belong to the recovered project truth.
 
+### Session teardown and callbacks must remain bound to their installed runtime
+
+Commit `78060bccd0bcc3d8f41637c7403443826f9de355` introduced the buffered leave-message drain followed
+by global session cleanup after an await. GitHub reports no pull request associated with that commit. PR #279 commit
+`38d981302e115ffab908a087c146dd7f321c539e` later extracted the behavior unchanged, and commit
+`a1a0739473f06e44bd482761603f2615c711791d` invalidated stale join continuations without binding cleanup to the
+runtime that began it. Collaboration lifecycle review must pause an outgoing leave at its transport await, install a
+successor session, then prove the outgoing cleanup cannot close or reset the successor. Retain old manager, sync,
+asset, timer, branch-transition, and decode callbacks and invoke or settle them after replacement; they must neither
+read successor state nor write project, runtime, or panel state, while current-owner callbacks remain effective.
+
 ### CRITICAL — Direct store write against a CRDT-backed store
 
 ❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".

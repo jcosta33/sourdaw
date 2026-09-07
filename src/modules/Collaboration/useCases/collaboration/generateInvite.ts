@@ -3,8 +3,13 @@ import { type SignalingMessage } from '../../models/CollaborationTypes';
 import { collaborationStore } from '../../stores/collaborationStore';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
+import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { recordCollaborationFailure } from './recordCollaborationFailure';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
+
+function createSupersededOperationError(): Error {
+    return createCollaborationError('Invite generation was superseded by a newer session');
+}
 
 /**
  * Mint an invite string for one joiner slot.
@@ -29,6 +34,11 @@ import { sessionRuntimePrimitives as runtime } from './sessionManagement';
  * WebSocket relay.
  */
 export async function generateInvite(): Promise<string> {
+    const owner = runtime.captureOwner();
+    const requestWitness = joinAttemptAuthority.capture();
+    const isCurrent = () =>
+        joinAttemptAuthority.isCurrent(requestWitness) &&
+        (owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner));
     clearCollaborationFailure();
     try {
         const peerManager = runtime.state.peerManager;
@@ -47,6 +57,9 @@ export async function generateInvite(): Promise<string> {
         runtime.state.pendingInviteId = joinerPeerId;
         const peer = peerManager.createPeer(joinerPeerId);
         const sdp = await peer.createOffer();
+        if (!isCurrent()) {
+            throw createSupersededOperationError();
+        }
 
         const state = collaborationStore.value!;
         const invite: SignalingMessage = {
@@ -59,8 +72,15 @@ export async function generateInvite(): Promise<string> {
             sessionSecret,
         };
 
-        return await runtime.compressInvite(JSON.stringify(invite));
+        const compressedInvite = await runtime.compressInvite(JSON.stringify(invite));
+        if (!isCurrent()) {
+            throw createSupersededOperationError();
+        }
+        return compressedInvite;
     } catch (error) {
+        if (!isCurrent()) {
+            throw createSupersededOperationError();
+        }
         recordCollaborationFailure(error);
         throw error;
     }

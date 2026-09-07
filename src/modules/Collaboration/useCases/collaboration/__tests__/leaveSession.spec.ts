@@ -15,7 +15,9 @@ const mockRuntime = vi.hoisted(() => ({
     state: {
         peerManager: null as PeerConnectionManager | null,
     },
-    cleanup: vi.fn<() => void>(),
+    captureOwner: vi.fn<() => object | null>(),
+    retire: vi.fn<(owner: object | null) => void>(),
+    cleanup: vi.fn<(owner?: object | null) => boolean>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -47,16 +49,21 @@ const resetStoreShape = {
 };
 
 describe('leaveSession', () => {
+    const owner = {};
+
     beforeEach(() => {
         vi.clearAllMocks();
         mockRuntime.state.peerManager = null;
+        mockRuntime.captureOwner.mockReturnValue(owner);
+        mockRuntime.cleanup.mockReturnValue(true);
         collaborationStore.set({ ...baseState });
     });
 
     it('tears down runtime and resets the store even without an active peer manager', async () => {
+        mockRuntime.captureOwner.mockReturnValue(null);
         await leaveSession();
 
-        expect(mockRuntime.cleanup).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null);
         expect(collaborationStore.value).toEqual(resetStoreShape);
     });
 
@@ -70,6 +77,7 @@ describe('leaveSession', () => {
 
         await leaveSession();
 
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
         expect(sendCrdtSyncBuffered).toHaveBeenCalledWith({
             peerId: 'p1',
             message: { type: 'peer-leave', peerId: 'me' },
@@ -112,5 +120,13 @@ describe('leaveSession', () => {
 
         expect(sendCrdtSyncBuffered).toHaveBeenCalledTimes(2);
         expect(collaborationStore.value).toEqual(resetStoreShape);
+    });
+
+    it('does not reset the store when its captured runtime has already been replaced', async () => {
+        mockRuntime.cleanup.mockReturnValue(false);
+
+        await leaveSession();
+
+        expect(collaborationStore.value).toEqual(baseState);
     });
 });

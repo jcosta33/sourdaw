@@ -14,7 +14,7 @@ import { leaveSession } from '../leaveSession';
  * transitions without opening a real peer connection.
  */
 const mockRuntime = vi.hoisted(() => ({
-    cleanup: vi.fn<() => void>(),
+    cleanup: vi.fn<(owner?: object | null) => boolean>(),
     initialize:
         vi.fn<
             (
@@ -24,6 +24,10 @@ const mockRuntime = vi.hoisted(() => ({
         >(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
+    captureOwner: vi.fn<() => object | null>(),
+    isInstalled: vi.fn<(owner: object | null) => boolean>(),
+    canWrite: vi.fn<(owner: object | null) => boolean>(),
+    retire: vi.fn<(owner: object | null) => void>(),
     generatePeerId: vi.fn<() => string>(),
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
@@ -52,6 +56,7 @@ function makeOffer(overrides: Partial<Offer> = {}): Offer {
 }
 
 describe('joinSession', () => {
+    const owner = {};
     let acceptOffer: ReturnType<typeof vi.fn>;
     let createPeer: ReturnType<typeof vi.fn>;
 
@@ -78,6 +83,10 @@ describe('joinSession', () => {
         mockRuntime.pickPeerColor.mockReturnValue(PEER_COLORS[3]);
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
+        mockRuntime.captureOwner.mockReturnValue(owner);
+        mockRuntime.isInstalled.mockReturnValue(true);
+        mockRuntime.canWrite.mockReturnValue(true);
+        mockRuntime.cleanup.mockReturnValue(true);
     });
 
     it('cleans up any prior session runtime even before the invite is validated', async () => {
@@ -164,6 +173,7 @@ describe('joinSession', () => {
         await expect(joinSession('invite', 'Alice')).rejects.toThrow('offer rejected');
 
         expect(mockRuntime.cleanup).toHaveBeenCalledTimes(2);
+        expect(mockRuntime.cleanup).toHaveBeenLastCalledWith(owner);
         expect(canExecuteCommandBatch()).toBe(true);
         expect(collaborationStore.value).toMatchObject({
             connectionStatus: 'error',
