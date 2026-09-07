@@ -1,13 +1,12 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { automergeRepository } from '../../../repositories/automergeRepository';
+import { loadAllFromIdb } from '../../../repositories/crdtPersistence/loadAllFromIdb';
 import {
     TransactionalPersistence,
     type TransactionalPersistenceTransaction,
-} from '#/infra/testing/transactionalPersistence';
-
-import { automergeRepository } from '../../../repositories/automergeRepository';
-import { loadAllFromIdb } from '../../../repositories/crdtPersistence/loadAllFromIdb';
+} from '../../../testing/transactionalPersistence';
 import { compactProject } from '../../compactProject';
 import { crdtProjectCompactionState } from '../../crdtProjectCompactionState';
 import { persistCrdtProject } from '../../persistCrdtProject';

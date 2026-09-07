@@ -162,8 +162,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:bf4d2d6a5ae10ff053ae47e8cc1c9cd29aa6d1ca3d2a773c34e2b63550be03f5:release/dependency-license-proofs.json"
+                "sha256:ecd14c8008c16acf0774259aeb2e91edc7ec3b39815e3634e4d86a486fba02e9:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:2d012555048856509e3e122777d59462110e2ab7b78fb48c4c8c3d875a1e36b6:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -273,7 +273,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d",
+                "sha256:e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -1687,7 +1687,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "47d888591f963cbf65c99b5b99e0fe8bad267bfe490102566f419491c83daac0"
+            "sha256": "5bdb3a2dafb28be1b4833f5a2a23353b502c479e4746f9cc3cb31c7c75acafa2"
         },
         {
             "path": "server/package.json",
@@ -1699,7 +1699,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d"
+            "sha256": "e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424"
         },
         {
             "path": "Cargo.toml",

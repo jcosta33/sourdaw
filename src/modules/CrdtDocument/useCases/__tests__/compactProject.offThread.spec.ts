@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TransactionalPersistence } from '#/infra/testing/transactionalPersistence';
-
 import {
     ControlledWorker,
     respondToCompactShadow,
@@ -9,6 +7,7 @@ import {
     type CompactShadowRequest,
 } from '../../repositories/__tests__/automergeWorkerTestHarness';
 import { automergeRepository } from '../../repositories/automergeRepository';
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';

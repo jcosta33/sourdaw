@@ -1,10 +1,9 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TransactionalPersistence } from '#/infra/testing/transactionalPersistence';
-
 import { type CrdtPersistenceSnapshot } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
@@ -35,7 +34,7 @@ type OperationOutcome = { kind: 'resolved' } | { kind: 'rejected'; error: unknow
 
 type ConflictAttempt = {
     error: unknown;
-    unexpectedWrites: readonly import('#/infra/testing/transactionalPersistence').TransactionWrite[];
+    unexpectedWrites: readonly import('../../testing/transactionalPersistence').TransactionWrite[];
 };
 
 async function importContext(): Promise<PersistenceContext> {
@@ -149,10 +148,7 @@ async function runRetryAttempt({
 }: {
     persistence: TransactionalPersistence;
     operation: Promise<void>;
-}): Promise<{
-    error: unknown;
-    writes: readonly import('#/infra/testing/transactionalPersistence').TransactionWrite[];
-}> {
+}): Promise<{ error: unknown; writes: readonly import('../../testing/transactionalPersistence').TransactionWrite[] }> {
     const occurrence = persistence.getTransactions('readwrite').length + 1;
     const transaction = await persistence.waitForTransaction('readwrite', occurrence);
     const writes = [...transaction.writes];

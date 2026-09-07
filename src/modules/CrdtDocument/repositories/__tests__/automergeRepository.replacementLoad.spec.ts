@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TransactionalPersistence } from '#/infra/testing/transactionalPersistence';
-
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../../useCases/compactProject';
 import { loadCrdtProject } from '../../useCases/loadCrdtProject';
 import { persistCrdtProject } from '../../useCases/persistCrdtProject';

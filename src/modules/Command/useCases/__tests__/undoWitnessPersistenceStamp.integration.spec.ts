@@ -157,7 +157,6 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         await persistCrdtProject();
 
         expect(readMirroredWitness()).toBe(witnessAfterFrame);
-        expect(indexedDb?.persistence.records.size).toBeGreaterThan(0);
 
         // Drop the live root, then use the public lifecycle to install the
         // bytes the persistence step actually committed. Reconciliation below

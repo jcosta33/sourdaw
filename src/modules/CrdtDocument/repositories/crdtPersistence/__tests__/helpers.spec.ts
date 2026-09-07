@@ -216,4 +216,66 @@ describe('crdt persistence database helper', () => {
 
         await expect(openDatabase()).resolves.toBeNull();
     });
+
+    it('invalidates an open disposed before upgrade and uses a fresh successor without resetting the helper', async () => {
+        const { installTransactionalIndexedDb } = await import('#/infra/testing/installTransactionalIndexedDb');
+        const first = installTransactionalIndexedDb();
+        let second: ReturnType<typeof installTransactionalIndexedDb> | null = null;
+
+        try {
+            const { openDatabase } = await import('../helpers');
+            const firstOpen = openDatabase();
+            const disposal = first.dispose();
+            await expect(firstOpen).resolves.not.toBeNull();
+            await disposal;
+
+            second = installTransactionalIndexedDb();
+            const secondOpen = openDatabase();
+            const secondDatabase = await secondOpen;
+
+            expect(secondOpen).not.toBe(firstOpen);
+            expect(secondDatabase).not.toBeNull();
+            expect(secondDatabase?.objectStoreNames.contains('documents')).toBe(true);
+        } finally {
+            await second?.dispose();
+            await first.dispose();
+        }
+    });
+
+    it('invalidates an open disposed inside upgrade and uses a fresh successor without resetting the helper', async () => {
+        const { installTransactionalIndexedDb } = await import('#/infra/testing/installTransactionalIndexedDb');
+        const first = installTransactionalIndexedDb();
+        const firstFactory = indexedDB;
+        const open = firstFactory.open.bind(firstFactory);
+        const lifecycle: { disposal: Promise<void> | null } = { disposal: null };
+        firstFactory.open = (name, version) => {
+            const request = version === undefined ? open(name) : open(name, version);
+            request.addEventListener('upgradeneeded', () => {
+                lifecycle.disposal = first.dispose();
+            });
+            return request;
+        };
+
+        let second: ReturnType<typeof installTransactionalIndexedDb> | null = null;
+        try {
+            const { openDatabase } = await import('../helpers');
+            const firstOpen = openDatabase();
+            await expect(firstOpen).resolves.not.toBeNull();
+            if (!lifecycle.disposal) {
+                throw new Error('Expected disposal to start during upgrade');
+            }
+            await lifecycle.disposal;
+
+            second = installTransactionalIndexedDb();
+            const secondOpen = openDatabase();
+            const secondDatabase = await secondOpen;
+
+            expect(secondOpen).not.toBe(firstOpen);
+            expect(secondDatabase).not.toBeNull();
+            expect(secondDatabase?.objectStoreNames.contains('documents')).toBe(true);
+        } finally {
+            await second?.dispose();
+            await first.dispose();
+        }
+    });
 });
