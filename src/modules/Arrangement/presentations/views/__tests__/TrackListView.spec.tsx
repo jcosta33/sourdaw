@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -453,6 +453,29 @@ describe('TrackListView', () => {
         renderWithTooltip(<TrackListView />);
         fireEvent.click(screen.getByLabelText('Add folder'));
         expect(createFolder).toHaveBeenCalledWith('Folder 1');
+    });
+
+    it('adds an audio track through the registered addTrack action on the add-track menu click', async () => {
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
+        const { addTrack } = await import('../../../useCases/addTrack');
+        renderWithTooltip(<TrackListView />);
+        // Radix DropdownMenu triggers open on pointerdown (see the
+        // components/ui dropdown-menu spec for the canonical jsdom probe).
+        fireEvent.pointerDown(screen.getByRole('button', { name: 'Add track' }), { pointerId: 1 });
+        await waitFor(() => {
+            expect(screen.getByTestId('add-track-audio')).toBeInTheDocument();
+        });
+        fireEvent.click(screen.getByTestId('add-track-audio'));
+        // The undoable `addTrack` action, not the bare use case: the use case
+        // captures no inverse, so a menu-created track left no history
+        // (issue #3696). `trackCreateUndo.integration.spec.tsx` asserts the
+        // resulting undo/redo end-to-end.
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'addTrack',
+            payload: { name: 'Audio 3', kind: 'audio' },
+        });
+        expect(addTrack).not.toHaveBeenCalled();
     });
 
     it('seeds the canonical prompt draft without submitting the request', async () => {

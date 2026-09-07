@@ -33,7 +33,6 @@ import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { timelineViewStore, setScrollY, setTimelineViewportHeight } from '../../stores/timelineViewStore';
-import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
@@ -345,7 +344,14 @@ export const TrackListView = ({
 const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
     const createTrackOfKind = (kind: 'audio' | 'midi' | 'bus') => {
         const labels = { audio: 'Audio', midi: 'MIDI', bus: 'Bus' };
-        addTrack({ name: `${labels[kind]} ${trackCount + 1}`, kind });
+        // The undoable `addTrack` action, not the bare use case: the use case
+        // captures no inverse (issue #3696), so a menu-created track left no
+        // history. The handler's `discardCreatedTrack` inverse removes
+        // precisely the created track and redo restores its id.
+        void executeUserAppAction({
+            type: 'addTrack',
+            payload: { name: `${labels[kind]} ${trackCount + 1}`, kind },
+        });
     };
 
     const templates = getTrackTemplates();
