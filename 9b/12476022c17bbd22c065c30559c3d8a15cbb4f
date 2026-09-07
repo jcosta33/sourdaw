@@ -1,0 +1,73 @@
+src/modules/PluginHost/AGENTS.md
+  s_9b530f08172a54::t_702551c99cb97d 12,30
+src/modules/PluginHost/useCases/index.ts
+  s_9b530f08172a54::t_a55201150cdf26 35
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_9b530f08172a54::t_13add3a4c7be45 32,42,49,175-180,267,316-427
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_87ab0a2f60ccf8::t_17781f86b8931b 16,56-65,133,239
+src/modules/PluginHost/useCases/pluginLifecycle/clearExternalPluginRestoreFailure.ts
+  s_9b530f08172a54::t_d42f0042c54e61 1,6-8,12
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_9b530f08172a54::t_ddfb88b620baab 16,36
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_11b573c2db1cf1 77,90
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_9b530f08172a54::t_09ba33e5659230 19,31,97,112-142,153
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_ad8a2b79748fea::t_395eb50ab3c5f8 353
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginRestoreFailures.ts
+  s_87ab0a2f60ccf8::t_ff25e4630bcef8 16-24
+src/modules/PluginHost/useCases/pluginLifecycle/shouldWarnExternalPluginRestoreFailure.ts
+  s_2113eb821cfdc5::t_784e6fbec2af47 1-19
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_36c4f60841f905::t_49dc3a8071f1de 3-7,30-33,62-64,66-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9b12476022c17bbd22c065c30559c3d8a15cbb4f",
+  "prompts": {},
+  "sessions": {
+    "s_2113eb821cfdc5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cb1-a39c-71d1-8b16-dfeb0b5bc920",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_36c4f60841f905": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab13ae168bb1c3b13",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ad8a2b79748fea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a44306f20d16178d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
