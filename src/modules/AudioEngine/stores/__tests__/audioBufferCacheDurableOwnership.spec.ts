@@ -362,7 +362,9 @@ describe('audioBufferCache durable ownership', () => {
                 async () => undefined
             );
 
-            expect(controls.committed.get('replacement-race')?.channelData[0]).toEqual(new Float32Array([0.9]));
+            expect(Array.from(controls.committed.get('replacement-race')?.channelData[0] ?? [])).toEqual([
+                Math.fround(0.9),
+            ]);
             const durability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
             expect(durability.status).toBe('durable');
             if (durability.status === 'durable') {
@@ -391,7 +393,9 @@ describe('audioBufferCache durable ownership', () => {
                 async () => undefined
             );
 
-            expect(controls.committed.get('replacement-after-clear')?.channelData[0]).toEqual(new Float32Array([0.9]));
+            expect(Array.from(controls.committed.get('replacement-after-clear')?.channelData[0] ?? [])).toEqual([
+                Math.fround(0.9),
+            ]);
         });
     });
 });
