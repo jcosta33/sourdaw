@@ -52,17 +52,17 @@ const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// successful reopen, with the stream still rendering — so a kind alone
 /// cannot say whether callbacks continued. The render callback itself is the
 /// only honest witness: [`DeviceRenderer::render`] advances
-/// `callbacks_rendered` on every call, and the owner thread's watchdog
-/// (`spawn_owned_audio_stream_with_timeout`) is what turns a stalled counter
-/// into `rendering: false`.
+/// `callbacks_rendered` on every call, and the liveness thread
+/// ([`spawn_render_stall_watch`]) is what turns a stalled counter into
+/// `rendering: false`.
 #[derive(Clone)]
 pub(crate) struct RenderLiveness {
     /// Advanced by [`DeviceRenderer::render`] on every callback, whatever the
     /// channel count — a zero-channel callback is still a callback.
     pub callbacks_rendered: Arc<AtomicU64>,
     /// Whether the stream is presently believed to be rendering. Starts
-    /// `true`: the stream has just been opened, and only the watchdog below
-    /// may clear it once a stall is observed.
+    /// `true`: the stream has just been opened, and only the liveness
+    /// thread may clear it once a stall is observed.
     pub rendering: Arc<AtomicBool>,
 }
 
@@ -102,7 +102,7 @@ impl RenderStallWatch {
     }
 }
 
-/// How often the owner thread polls the render counter, and how many
+/// How often the liveness thread polls the render counter, and how many
 /// consecutive idle polls declare a stall.
 pub(crate) struct RenderLivenessPolicy {
     pub poll: Duration,
@@ -141,6 +141,11 @@ pub(crate) enum OwnerCommand {
 
 pub struct AudioThreadHandle {
     owner_tx: Sender<OwnerCommand>,
+    /// Held for its drop alone and never sent on: disconnecting it is what
+    /// ends the liveness thread, so that thread outlives the owner thread and
+    /// answers for a stream the owner thread stopped watching. See
+    /// [`spawn_render_stall_watch`].
+    _watch_stop_tx: Sender<()>,
     shutdown_complete_rx: Receiver<()>,
 }
 
@@ -152,12 +157,12 @@ impl AudioThreadHandle {
     /// and the request has nothing left to open.
     ///
     /// The open runs on the owner thread, so a backend that hangs inside
-    /// `open_default_input` blocks this loop: the liveness watchdog stops
-    /// observing, and a `Shutdown` queued behind the request waits until
-    /// [`AUDIO_STREAM_SHUTDOWN_TIMEOUT`] gives up on it, exactly as a
-    /// stranded factory did before. The render callback is not affected — the
-    /// output stream is already started and the owner thread is not in its
-    /// path.
+    /// `open_default_input` blocks this loop: a `Shutdown` queued behind the
+    /// request waits until [`AUDIO_STREAM_SHUTDOWN_TIMEOUT`] gives up on it,
+    /// exactly as a stranded factory did before. Neither the render callback
+    /// nor the liveness verdict is affected — the output stream is already
+    /// started and the owner thread is in neither path (see
+    /// [`spawn_render_stall_watch`]).
     pub(crate) fn request_capture_open(&self) {
         let _ = self.owner_tx.send(OwnerCommand::OpenCapture);
     }
@@ -171,9 +176,11 @@ impl AudioThreadHandle {
 #[cfg(any(test, feature = "command-capture-fixture"))]
 pub(crate) fn detached_audio_thread_handle() -> AudioThreadHandle {
     let (owner_tx, _) = mpsc::channel();
+    let (watch_stop_tx, _) = mpsc::channel();
     let (_, shutdown_complete_rx) = mpsc::channel();
     AudioThreadHandle {
         owner_tx,
+        _watch_stop_tx: watch_stop_tx,
         shutdown_complete_rx,
     }
 }
@@ -186,10 +193,12 @@ pub(crate) fn detached_audio_thread_handle() -> AudioThreadHandle {
 #[cfg(test)]
 pub(crate) fn observed_audio_thread_handle() -> (AudioThreadHandle, Receiver<OwnerCommand>) {
     let (owner_tx, owner_rx) = mpsc::channel();
+    let (watch_stop_tx, _) = mpsc::channel();
     let (_, shutdown_complete_rx) = mpsc::channel();
     (
         AudioThreadHandle {
             owner_tx,
+            _watch_stop_tx: watch_stop_tx,
             shutdown_complete_rx,
         },
         owner_rx,
@@ -243,8 +252,9 @@ where
 }
 
 /// `on_capture` runs on the owner thread, against the stream it owns, every
-/// time a capture open is requested. It is the only work this loop does
-/// besides watching the render counter.
+/// time a capture open is requested. It is the only work that loop does:
+/// the render counter is watched from a thread of its own
+/// ([`spawn_render_stall_watch`]).
 fn spawn_owned_audio_stream_with_timeout<Stream, Factory, OnCapture>(
     factory: Factory,
     mut on_capture: OnCapture,
@@ -259,37 +269,28 @@ where
 {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let (owner_tx, owner_rx) = mpsc::channel();
+    let (watch_stop_tx, watch_stop_rx) = mpsc::channel();
     let (shutdown_complete_tx, shutdown_complete_rx) = mpsc::channel();
     let _owner_thread = thread::Builder::new()
         .name("sourdaw-audio-owner".to_string())
         .spawn(move || match factory() {
             Ok(mut stream) => {
-                if ready_tx.send(Ok(())).is_ok() {
-                    // A watchdog rather than a single wait: an owner command
-                    // still reaches this loop the instant it is sent, but
-                    // between commands this thread polls the render
-                    // callback's own counter and publishes what it sees. See
-                    // `RenderLiveness` and `RenderStallWatch` for why the
-                    // counter, not the error kind, is what decides this.
-                    //
-                    // The loop exists only because the factory returned `Ok`,
-                    // which is what makes the capture open reachable solely
-                    // from a started output. See [`open_pending_capture`].
-                    let mut watch = RenderStallWatch::default();
-                    loop {
-                        match owner_rx.recv_timeout(policy.poll) {
-                            Ok(OwnerCommand::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
-                                break
-                            }
-                            Ok(OwnerCommand::OpenCapture) => on_capture(&mut stream),
-                            Err(RecvTimeoutError::Timeout) => {
-                                let rendering = watch.observe(
-                                    liveness.callbacks_rendered.load(Ordering::Relaxed),
-                                    policy.stall_after_polls,
-                                );
-                                liveness.rendering.store(rendering, Ordering::Relaxed);
-                            }
+                // Started here rather than before the factory ran, because a
+                // stream that never opened has no callback to stall and no
+                // verdict to publish about. The same `Ok` is what makes the
+                // capture open reachable solely from a started output. See
+                // [`open_pending_capture`].
+                match spawn_render_stall_watch(liveness, policy, watch_stop_rx) {
+                    Ok(()) => {
+                        if ready_tx.send(Ok(())).is_ok() {
+                            answer_owner_commands(&owner_rx, &mut on_capture, &mut stream);
                         }
+                    }
+                    // An engine whose liveness nobody publishes reads as
+                    // rendering for as long as it exists, which is worse than
+                    // failing to start.
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error));
                     }
                 }
                 drop(stream);
@@ -304,6 +305,7 @@ where
     match ready_rx.recv_timeout(startup_timeout) {
         Ok(Ok(())) => Ok(AudioThreadHandle {
             owner_tx,
+            _watch_stop_tx: watch_stop_tx,
             shutdown_complete_rx,
         }),
         Ok(Err(error)) => Err(error),
@@ -314,6 +316,76 @@ where
             Err("Audio owner thread exited during startup".to_string())
         }
     }
+}
+
+/// Answer owner commands until a shutdown arrives or the control side goes.
+///
+/// A blocking `recv` rather than a poll: publishing liveness was the only
+/// thing this thread had to do between commands, and that now belongs to
+/// [`spawn_render_stall_watch`], so there is no cadence left to keep.
+fn answer_owner_commands<Stream, OnCapture>(
+    owner_rx: &Receiver<OwnerCommand>,
+    on_capture: &mut OnCapture,
+    stream: &mut Stream,
+) where
+    OnCapture: FnMut(&mut Stream),
+{
+    while let Ok(command) = owner_rx.recv() {
+        match command {
+            OwnerCommand::Shutdown => return,
+            // The capture open is the first foreign device code this thread
+            // has ever run, and a backend that panics inside it would unwind
+            // the loop: the stream would drop mid-session and no shutdown
+            // would ever be answered, leaving every `AudioThreadHandle::drop`
+            // to wait out its timeout. Caught and reported the way
+            // `reclaim_retired` treats the same hazard on the reclaimer
+            // thread.
+            OwnerCommand::OpenCapture => {
+                if catch_unwind(AssertUnwindSafe(|| on_capture(stream))).is_err() {
+                    eprintln!("[Engine] Audio capture open panicked");
+                }
+            }
+        }
+    }
+}
+
+/// Spawn the thread that publishes [`RenderLiveness::rendering`].
+///
+/// Its own thread, and not the owner thread's loop, because the owner thread
+/// runs device code: a capture open is itself what can kill the output stream
+/// on a Bluetooth headset, and a watchdog that stopped observing for the
+/// length of that open — or forever, if the backend hung inside it — would
+/// hold `rendering` at the last thing it saw and never abandon a stream that
+/// really had stopped. Nothing here touches a device, a stream, or a handler.
+///
+/// It ends only when `stop_rx`'s sender is dropped, which is the
+/// [`AudioThreadHandle`] going. The owner thread exiting deliberately does
+/// not end it: a dead owner thread is a dropped stream, and the verdict then
+/// owed is `rendering: false` rather than whatever the last poll saw.
+fn spawn_render_stall_watch(
+    liveness: RenderLiveness,
+    policy: RenderLivenessPolicy,
+    stop_rx: Receiver<()>,
+) -> Result<(), String> {
+    thread::Builder::new()
+        .name("sourdaw-audio-liveness".to_string())
+        .spawn(move || {
+            let mut watch = RenderStallWatch::default();
+            loop {
+                match stop_rx.recv_timeout(policy.poll) {
+                    Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        let rendering = watch.observe(
+                            liveness.callbacks_rendered.load(Ordering::Relaxed),
+                            policy.stall_after_polls,
+                        );
+                        liveness.rendering.store(rendering, Ordering::Relaxed);
+                    }
+                }
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("Failed to spawn audio liveness thread: {error}"))
 }
 
 /// Spawn the thread that frees everything the audio thread hands back.
@@ -743,10 +815,10 @@ pub(crate) struct DeviceRenderer {
     /// block on, and it belongs to the renderer because nothing else sees
     /// every chunk.
     capture_position_frames: u64,
-    /// Advanced on every call to [`Self::render`]. The owner thread's
-    /// watchdog polls this to decide [`RenderLiveness::rendering`] — see
-    /// that type's doc for why the callback itself, not the error kind, is
-    /// what has to answer whether the stream is still calling back.
+    /// Advanced on every call to [`Self::render`]. The liveness thread polls
+    /// this to decide [`RenderLiveness::rendering`] — see that type's doc for
+    /// why the callback itself, not the error kind, is what has to answer
+    /// whether the stream is still calling back.
     callbacks_rendered: Arc<AtomicU64>,
 }
 
@@ -814,8 +886,8 @@ impl DeviceRenderer {
     /// channel layout; the cpal backends pass a constant.
     pub(crate) fn render(&mut self, data: &mut [f32], channels: usize) {
         // One lock-free atomic increment, no allocation, no lock: this is the
-        // one witness the owner thread's watchdog trusts to say the stream is
-        // still calling back. Counted before the channel guard below — a
+        // one witness the liveness thread trusts to say the stream is still
+        // calling back. Counted before the channel guard below — a
         // zero-channel callback is still a callback.
         self.callbacks_rendered.fetch_add(1, Ordering::Relaxed);
 
@@ -2369,13 +2441,13 @@ mod tests {
         );
     }
 
-    /// The owner thread's watchdog loop, not just the pure `RenderStallWatch`
-    /// it drives: `rendering` clears once the poll cadence has seen the
+    /// The liveness thread's loop, not just the pure `RenderStallWatch` it
+    /// drives: `rendering` clears once the poll cadence has seen the
     /// render counter sit still for the configured number of polls, and it
     /// is restored the moment a callback advances the counter again — the
     /// WASAPI-reopen and system-wake case `RENDER_LIVENESS_POLICY` documents.
     /// Mutation: delete the `liveness.rendering.store(rendering, ..)` call in
-    /// the owner loop — the first wait below times out. Deleting
+    /// `spawn_render_stall_watch` — the first wait below times out. Deleting
     /// `RenderStallWatch`'s idle-count reset on an advance does not fail this
     /// test: `observe` returns `true` on any advance regardless of a carried
     /// idle count, so the second wait still passes here. That reset is
@@ -2383,8 +2455,8 @@ mod tests {
     /// `a_stall_watch_reports_not_rendering_after_the_idle_polls_and_recovers_on_the_next_advance`
     /// alone.
     #[test]
-    fn the_owner_thread_clears_rendering_on_a_stalled_stream_and_restores_it_when_callbacks_resume()
-    {
+    fn the_liveness_thread_clears_rendering_on_a_stalled_stream_and_restores_it_when_callbacks_resume(
+    ) {
         let liveness = new_render_liveness();
         let observed = liveness.clone();
         let policy = RenderLivenessPolicy {
@@ -2420,9 +2492,119 @@ mod tests {
         drop(handle);
     }
 
+    /// The reason the watchdog left the owner thread. Opening an input device
+    /// is what forces a Bluetooth headset onto its hands-free profile, which
+    /// is what kills the output stream — so the render callback is at its
+    /// most likely to stop during exactly the call that blocks the owner
+    /// thread, and a backend that hangs in `open_default_input` never returns
+    /// at all. A verdict published from the owner loop would hold `true`
+    /// throughout. Mutation: move the observe-and-store back into the owner
+    /// loop's timeout arm — the first wait below times out, because the loop
+    /// is inside the handler.
+    #[test]
+    fn the_watchdog_keeps_observing_while_a_capture_open_blocks() {
+        let liveness = new_render_liveness();
+        let observed = liveness.clone();
+        let policy = RenderLivenessPolicy {
+            poll: Duration::from_millis(5),
+            stall_after_polls: 2,
+        };
+        let (blocked_tx, blocked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        let handle = spawn_owned_audio_stream_with_timeout(
+            move || Ok::<_, String>(DropNotifier(dropped_tx)),
+            move |_stream: &mut DropNotifier| {
+                blocked_tx
+                    .send(())
+                    .expect("the test should still be listening for the open");
+                release_rx
+                    .recv()
+                    .expect("the test should release the blocked open");
+            },
+            Duration::from_secs(1),
+            liveness,
+            policy,
+        )
+        .expect("owner thread should start");
+
+        handle.request_capture_open();
+        blocked_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the request should reach the handler");
+
+        assert!(
+            wait_until(Duration::from_secs(1), || {
+                !observed.rendering.load(Ordering::Relaxed)
+            }),
+            "the watchdog must clear rendering while a capture open holds the owner thread"
+        );
+
+        observed.callbacks_rendered.fetch_add(1, Ordering::Relaxed);
+        assert!(
+            wait_until(Duration::from_secs(1), || {
+                observed.rendering.load(Ordering::Relaxed)
+            }),
+            "the watchdog must restore rendering while the same open still blocks"
+        );
+
+        release_tx
+            .send(())
+            .expect("the owner thread should still be inside the open");
+        drop(handle);
+        dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the owner thread should tear its stream down once the open returns");
+    }
+
+    /// A panicking device open must not take the owner loop with it: the
+    /// stream it owns would drop mid-session and no shutdown would ever be
+    /// answered again. Mutation: drop the `catch_unwind` around the handler
+    /// call — the stream is dropped by the unwind and the negative wait
+    /// below sees it.
+    #[test]
+    fn a_panicking_capture_handler_leaves_the_owner_loop_answering_shutdown() {
+        let (panicked_tx, panicked_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        let handle = spawn_owned_audio_stream(
+            move || Ok::<_, String>(DropNotifier(dropped_tx)),
+            move |_stream: &mut DropNotifier| {
+                panicked_tx
+                    .send(())
+                    .expect("the test should still be listening for the open");
+                panic!("a device backend panicked inside the capture open");
+            },
+            new_render_liveness(),
+        )
+        .expect("owner thread should start");
+
+        handle.request_capture_open();
+        panicked_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the request should reach the handler");
+
+        // An unwound loop drops the stream on its way out, so the stream
+        // still being the owner thread's to drop is what says the loop
+        // survived the panic.
+        assert!(
+            dropped_rx
+                .recv_timeout(AUDIO_STREAM_SHUTDOWN_TIMEOUT)
+                .is_err(),
+            "a panicking handler must not take the owner thread's stream with it"
+        );
+
+        drop(handle);
+
+        dropped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the owner loop must still answer the shutdown after a panicking open");
+    }
+
     /// Poll `condition` every millisecond up to `timeout`, returning whether
-    /// it was ever seen true. Used only to observe the owner thread's
-    /// watchdog from outside without coupling the test to its poll cadence.
+    /// it was ever seen true. Used only to observe the liveness thread from
+    /// outside without coupling the test to its poll cadence.
     fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool {
         let deadline = std::time::Instant::now() + timeout;
         loop {

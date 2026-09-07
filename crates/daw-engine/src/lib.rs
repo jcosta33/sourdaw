@@ -156,7 +156,7 @@ pub struct EngineHandle {
     /// Its own ring rather than a shared one: the two backends run their
     /// error callbacks on different threads, and `EngineEvent`'s ring is
     /// SPSC, so one `Producer` cannot serve both sides (see
-    /// `audio_thread::capture_beside`). [`Self::drain_engine_events`] merges
+    /// `audio_thread::PendingCapture`). [`Self::drain_engine_events`] merges
     /// the two into one ordered `Vec`, output first.
     capture_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
@@ -613,7 +613,7 @@ impl EngineHandle {
     /// `Vec` here — and draining two rings into it — is safe. Two rings
     /// because the output and input backends run their error callbacks on
     /// different threads and `EngineEvent`'s ring is SPSC (see
-    /// `audio_thread::capture_beside`).
+    /// `audio_thread::PendingCapture`).
     ///
     /// A capture refusal is not on either ring: it is read from
     /// `capture_refusal`, the slot `audio_thread::capture_side` stores into
@@ -1786,6 +1786,46 @@ mod tests {
         );
     }
 
+    /// The owner thread hears about a registration only once the command has
+    /// actually crossed the ring. A refused push leaves the callback with no
+    /// consumer to feed, so an engine that asked anyway would raise the macOS
+    /// permission prompt — and renegotiate a Bluetooth headset's profile —
+    /// on behalf of a consumer that does not exist, and the ledger would hold
+    /// an id the callback was never handed. Mutation: move
+    /// `request_capture_open` ahead of the `command_tx.push` in
+    /// [`EngineHandle::push`] — the owner receiver below then carries an
+    /// `OpenCapture`.
+    #[test]
+    fn a_register_the_ring_refuses_asks_the_owner_thread_for_nothing() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(4);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        // Ordinary commands, so the ring is the only ceiling this reaches:
+        // `AddTrack` spends no effect-table slot and touches no capture
+        // ledger.
+        let mut filled = 0usize;
+        while engine
+            .push(GraphCommand::AddTrack(TimelineTrack::new(filled)))
+            .is_ok()
+        {
+            filled += 1;
+        }
+
+        engine
+            .register_capture_consumer(7)
+            .expect_err("a full command ring refuses the registration");
+
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "a registration the ring refused asks for no input device"
+        );
+        assert!(
+            !engine.capture_consumers.contains(&7),
+            "a registration the ring refused leaves the ledger holding nothing"
+        );
+    }
+
     /// The reserve is a running capacity, not a lifetime budget: a session
     /// that opens and closes recorders one at a time must keep working.
     #[test]
@@ -2728,7 +2768,7 @@ mod tests {
     /// [`EngineHandle::drain_engine_events`] merges two rings — output and
     /// input each run their error callback on a different backend thread, so
     /// one `Producer<EngineEvent>` cannot serve both (see
-    /// `audio_thread::capture_beside`). An output-side event pushed first
+    /// `audio_thread::PendingCapture`). An output-side event pushed first
     /// must still come back before an input-side one pushed after it: the
     /// merge is output-then-input, not push order across the two rings.
     #[test]
