@@ -260,6 +260,70 @@ describe('generateInvite', () => {
         expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', error: null });
     });
 
+    it('keeps the newer invite state when an older same-session offer rejects', async () => {
+        const oldOffer = Promise.withResolvers<string>();
+        createOffer.mockReturnValueOnce(oldOffer.promise).mockResolvedValueOnce('new-offer');
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        const olderSettled = Promise.allSettled([older]);
+        await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
+        await expect(generateInvite()).resolves.toEqual(expect.any(String));
+        const newerPeer = getPeer('joiner-new');
+        const newerState = { ...collaborationStore.value!, error: 'newer invite generation error' };
+        collaborationStore.set(newerState);
+
+        oldOffer.reject(new Error('old offer rejection'));
+
+        const [result] = await olderSettled;
+        expect({
+            result,
+            pendingInviteId: mockRuntime.state.pendingInviteId,
+            peerEntries: [...peers.entries()],
+            state: collaborationStore.value,
+        }).toEqual({
+            result: expect.objectContaining({
+                status: 'rejected',
+                reason: expect.objectContaining({ message: expect.stringContaining('superseded') }),
+            }),
+            pendingInviteId: 'joiner-new',
+            peerEntries: [['joiner-new', newerPeer]],
+            state: newerState,
+        });
+    });
+
+    it('keeps the newer invite state when an older same-session compression rejects', async () => {
+        const oldCompression = Promise.withResolvers<string>();
+        mockRuntime.compressInvite.mockReturnValueOnce(oldCompression.promise);
+        mockRuntime.generatePeerId.mockReturnValueOnce('joiner-old').mockReturnValueOnce('joiner-new');
+
+        const older = generateInvite();
+        const olderSettled = Promise.allSettled([older]);
+        await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
+        await expect(generateInvite()).resolves.toEqual(expect.any(String));
+        const newerPeer = getPeer('joiner-new');
+        const newerState = { ...collaborationStore.value!, error: 'newer invite compression error' };
+        collaborationStore.set(newerState);
+
+        oldCompression.reject(new Error('old compression rejection'));
+
+        const [result] = await olderSettled;
+        expect({
+            result,
+            pendingInviteId: mockRuntime.state.pendingInviteId,
+            peerEntries: [...peers.entries()],
+            state: collaborationStore.value,
+        }).toEqual({
+            result: expect.objectContaining({
+                status: 'rejected',
+                reason: expect.objectContaining({ message: expect.stringContaining('superseded') }),
+            }),
+            pendingInviteId: 'joiner-new',
+            peerEntries: [['joiner-new', newerPeer]],
+            state: newerState,
+        });
+    });
+
     it('does not return an older same-session invite after a newer offer replaces its peer', async () => {
         const oldOffer = Promise.withResolvers<string>();
         createOffer.mockReturnValueOnce(oldOffer.promise).mockResolvedValueOnce('new-offer');

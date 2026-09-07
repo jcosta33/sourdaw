@@ -505,6 +505,54 @@ describe('acceptAnswer', () => {
         ]);
     });
 
+    it('uses the live peer palette when an unrelated peer arrives during SDP acceptance', async () => {
+        const sdpAcceptance = Promise.withResolvers<void>();
+        acceptAnswerOnPeer.mockReturnValueOnce(sdpAcceptance.promise);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        const accepting = acceptAnswer('raw');
+        await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
+        const unrelatedPeer = {
+            id: 'other-peer',
+            name: 'Other',
+            color: '#ef4444',
+            isHost: false,
+            isConnected: true,
+            lastSeen: 41,
+            latencyMs: 7,
+            syncHealth: 'converging' as const,
+        };
+        const liveState = {
+            ...baseState,
+            localColor: '#f59e0b',
+            peers: [unrelatedPeer],
+            connectionStatus: 'connected' as const,
+            error: 'current acceptance warning',
+        };
+        collaborationStore.set(liveState);
+
+        sdpAcceptance.resolve();
+
+        await accepting;
+        expect(mockRuntime.pickPeerColor).toHaveBeenCalledWith(['#f59e0b', '#ef4444']);
+        expect(collaborationStore.value).toEqual({
+            ...liveState,
+            peers: [
+                unrelatedPeer,
+                {
+                    id: 'joiner-1',
+                    name: 'Joiner',
+                    color: '#22c55e',
+                    isHost: false,
+                    isConnected: false,
+                    lastSeen: expect.any(Number),
+                    latencyMs: null,
+                    syncHealth: 'converging',
+                },
+            ],
+        });
+    });
+
     it.each(['removed', 'replaced'] as const)(
         'supersedes a %s confirmed mapping when deferred SDP rejects',
         async (mappingChange) => {
