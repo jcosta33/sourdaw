@@ -75,6 +75,7 @@ export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
+export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
 
 export { getMacroHandlers } from './getMacroHandlers';
 export { getUndoRedoHandlers } from './getUndoRedoHandlers';

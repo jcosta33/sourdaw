@@ -19,6 +19,7 @@ import {
     playCachedAudioBufferPreview,
     releasePreviewAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
+import { isAudioBufferReferencedByUndoHistory } from '#/modules/Command/useCases';
 
 type AiRenderClipPreviewProps = {
     audio: Float32Array;
@@ -55,6 +56,19 @@ function clipReferencesBuffer(bufferId: string): boolean {
         ) ||
         (state.ghostClips?.some((clip) => clip.audioBufferId === bufferId) ?? false)
     );
+}
+
+// Release only what nothing else owns: a handoff still settling (the count), a
+// placed clip still referencing the buffer — the clip gate is what makes the
+// release engine-proof, because the dragend dropEffect is not a trustworthy
+// cancellation signal everywhere (WebKit, #3766) — or an undo entry that could
+// still restore such a clip: undoing a clip removal re-appends its snapshot
+// with the same buffer id, so a release here would resurrect the clip
+// permanently silent.
+function releaseBufferIfUnowned(bufferId: string, handoffCount: number): void {
+    if (handoffCount === 0 && !clipReferencesBuffer(bufferId) && !isAudioBufferReferencedByUndoHistory(bufferId)) {
+        releasePreviewAudioBuffer(bufferId);
+    }
 }
 
 export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRenderClipPreviewProps): ReactElement => {
@@ -99,13 +113,8 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
             activePlayback?.stop();
 
             const bufferId = bufferIdRef.current;
-            // Release only what nothing else owns: a handoff still settling
-            // (the count) or a placed clip still referencing the buffer — the
-            // clip gate is what makes the release engine-proof, because the
-            // dropEffect this count settles on is not a trustworthy
-            // cancellation signal everywhere (WebKit, #3766).
-            if (bufferId && handedOffCountRef.current === 0 && !clipReferencesBuffer(bufferId)) {
-                releasePreviewAudioBuffer(bufferId);
+            if (bufferId) {
+                releaseBufferIfUnowned(bufferId, handedOffCountRef.current);
             }
             bufferIdRef.current = null;
             handedOffCountRef.current = 0;
