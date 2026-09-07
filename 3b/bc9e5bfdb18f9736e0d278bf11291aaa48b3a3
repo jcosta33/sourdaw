@@ -1,0 +1,53 @@
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_9b530f08172a54::t_3ae935a2f086b6 1,13,15,29,456-457,459-467
+src/modules/Fermenter/AGENTS.md
+  s_87ab0a2f60ccf8::t_60107457b4ae49 7
+src/modules/Fermenter/presentations/views/__tests__/fermenterProjectHydration.spec.tsx
+  s_fba5e847d2aaef::t_a9a62d31cab6cb 1-79
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  s_87ab0a2f60ccf8::t_88df839b7a4148 1-164
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  s_81e02cb25bfd4f::t_26e4564f7968df 1-64
+src/modules/Fermenter/useCases/index.ts
+  s_81e02cb25bfd4f::t_5ffe5ba509db00 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3bbc9e5bfdb18f9736e0d278bf11291aaa48b3a3",
+  "prompts": {},
+  "sessions": {
+    "s_81e02cb25bfd4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad3339ed8673c455f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fba5e847d2aaef": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07b3e-94c0-7500-8049-4131fd5e5e0d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
