@@ -1,0 +1,60 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/helpers.spec.ts
+  s_87ab0a2f60ccf8::t_979fa725cdbfc0 241,278
+  s_87ab0a2f60ccf8::t_8a3fa7ee886abf 219,221-223,258,260-262,269-270,276-277,279
+  s_87ab0a2f60ccf8::t_242a17f1bb1565 220,224-240,242-249,251-253,255-257,259,263,268,271-275,280
+  s_87ab0a2f60ccf8::t_fdb2c8b4ce55eb 250,254,264-267
+src/infra/testing/__tests__/installTransactionalIndexedDb.spec.ts
+  s_87ab0a2f60ccf8::t_979fa725cdbfc0 84,223-225,228-236
+  s_87ab0a2f60ccf8::t_1c88b3002f668b 86-90,92-95,97-101
+  s_87ab0a2f60ccf8::t_8518d3e2c37767 5,7-18,23-27,31-32,36-39,41,43-49,53,57,59-60,62-65,71-83,102-134,136-137,139-141,146-148,151-168,170-179,181-182,184,188,191-193,195,199-208,211,213,215-216,238-246,248-250,252-253
+  s_87ab0a2f60ccf8::t_3ced4212e23691 19-22,40
+  s_87ab0a2f60ccf8::t_2d988b6fb06839 194,196-198
+  s_87ab0a2f60ccf8::t_bbfd129f6de9ba 210
+  s_87ab0a2f60ccf8::t_fdb2c8b4ce55eb 135,138,142-143,145
+  s_87ab0a2f60ccf8::t_2e350b894483ab 85
+src/infra/testing/installTransactionalIndexedDb.ts
+  s_87ab0a2f60ccf8::t_fdb2c8b4ce55eb 32-34,220-222,227
+  s_87ab0a2f60ccf8::t_979fa725cdbfc0 1,7-9,12-22,25-26,28-30,36-46,49-63,66-83,86-90,92-104,107-111,113,115-158,160-182,184,186,191-219,223-226,228,232-233,235-244,246-261,264-266
+package.json
+  s_87ab0a2f60ccf8::t_b20b61a80119ca 155
+pnpm-lock.yaml
+  s_87ab0a2f60ccf8::t_abe77324d8e58f 195-197,3708-3711,9089-9090
+public/legal/DEPENDENCY-LICENSES.txt
+  s_87ab0a2f60ccf8::t_9bf25dc0e78fbb 10
+release/dependency-license-proofs.json
+  s_87ab0a2f60ccf8::t_38101122eb0114 64
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_28cb39084ad57c 165-166,276,1690,1702,2568
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.replacementLoad.spec.ts
+  s_87ab0a2f60ccf8::t_76c7854c3eb580 3
+src/modules/CrdtDocument/repositories/__tests__/automergeWorkerTestHarness.ts
+  s_87ab0a2f60ccf8::t_f5dc1ac79d6b82 5
+src/modules/CrdtDocument/testing/transactionalPersistence.ts
+  s_87ab0a2f60ccf8::t_b2344e15edec64 1,182
+src/modules/CrdtDocument/useCases/__tests__/compactProject.offThread.spec.ts
+  s_87ab0a2f60ccf8::t_e4874813944411 10
+src/modules/CrdtDocument/useCases/__tests__/compactProject.spec.ts
+  s_87ab0a2f60ccf8::t_8855ad2b5334e9 7
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceConcurrency.spec.ts
+  s_87ab0a2f60ccf8::t_1759ff73679c4c 6,37,151
+src/modules/CrdtDocument/useCases/__tests__/persistCrdtProject.spec.ts
+  s_87ab0a2f60ccf8::t_f2edc02c82b9db 10,138,143
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranchPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_f1be56e5f718d1 4-5,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5e9ff1a16bd2fcfe6de538129411ab19dea4d995",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
