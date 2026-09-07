@@ -1,12 +1,14 @@
 /**
- * The one-second poll that finds an engine which has stopped rendering, and
- * abandons the session it finds one under (#3635).
+ * The one-second poll that finds an engine which has stopped rendering,
+ * abandons the session it finds one under, and parks an already-abandoned
+ * engine once it renders again (#3635).
  *
  * `refreshEngineRtDiagnostics` is doubled at the use case, per its own module's
  * doc: a second real reader here would split its drain of the engine's event
  * ring with whatever else calls it. What the watch does with a stalled reading
- * is proven against the real `abandonNativeLiveGraphSession`; only its own
- * leaves are doubled, mirroring `nativeLiveGraphSession.spec.ts`.
+ * is proven against the real `abandonNativeLiveGraphSession` and
+ * `parkOrphanedNativeEngine`; only its own leaves are doubled, mirroring
+ * `nativeLiveGraphSession.spec.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,7 +45,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
 
-function fakeBackend(): AudioGraphBackend & { dispose: ReturnType<typeof vi.fn<() => void>> } {
+function fakeBackend(): AudioGraphBackend & {
+    apply: ReturnType<typeof vi.fn<AudioGraphBackend['apply']>>;
+    dispose: ReturnType<typeof vi.fn<() => void>>;
+} {
     return {
         backendId: 'stub-backend',
         apply: vi.fn<AudioGraphBackend['apply']>(),
@@ -59,6 +64,7 @@ beforeEach(() => {
     mocks.notifyUser.mockClear();
     mocks.warn.mockClear();
     nativeLiveGraphSession.backend = fakeBackend();
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = true;
     nativeLiveGraphSession.rolling = true;
     nativeLiveGraphSession.livenessWatch = null;
@@ -68,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
     stopNativeEngineLivenessWatch();
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.orphanedBackend = null;
     vi.useRealTimers();
 });
 
@@ -82,7 +89,8 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
-    it('abandons the session on a stalled reading, and clears the interval behind it', async () => {
+    it('keeps the watch running past the abandon, parks the orphan once the engine renders again, then retires', async () => {
+        const backend = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
         mocks.refreshEngineRtDiagnostics.mockResolvedValue({
             ...notRunningEngineRtDiagnostics,
             running: false,
@@ -91,16 +99,104 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         startNativeEngineLivenessWatch();
 
         await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
 
         expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
         const [message] = mocks.notifyUser.mock.calls[0] as [string, string];
         expect(message).toContain('deviceChanged');
+        // The abandon left the watch running: there is still an orphan for it
+        // to park, so it must not have stopped itself the way it used to when
+        // an abandon dropped the handle outright.
+        expect(nativeLiveGraphSession.livenessWatch).not.toBeNull();
+
+        backend.apply.mockResolvedValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            runtimeRevision: 1,
+            reports: [],
+        });
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({ ...notRunningEngineRtDiagnostics, running: true });
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        expect(backend.apply).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            commands: [{ kind: 'set-transport', playing: false, positionSeconds: 0 }],
+        });
+        expect(backend.dispose).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
 
         mocks.refreshEngineRtDiagnostics.mockClear();
-        await vi.advanceTimersByTimeAsync(5_000);
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
 
-        // The abandon stopped the watch, so nothing here should have polled
-        // again — a live interval would have called this five more times.
+        // Nothing left to watch — no session, no orphan — so the watch
+        // retired itself rather than reading again.
+        expect(nativeLiveGraphSession.livenessWatch).toBeNull();
+        expect(mocks.refreshEngineRtDiagnostics).not.toHaveBeenCalled();
+    });
+
+    it('keeps the orphan when the park is refused, and retries on the next running reading', async () => {
+        const backend = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({
+            ...notRunningEngineRtDiagnostics,
+            running: false,
+            outputStreamFault: 'deviceChanged',
+        });
+        startNativeEngineLivenessWatch();
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+
+        backend.apply.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'command-queue-full',
+        });
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({ ...notRunningEngineRtDiagnostics, running: true });
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        expect(backend.dispose).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(backend.apply).toHaveBeenCalledTimes(1);
+
+        // A later reading that still says the engine renders retries the park.
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        expect(backend.apply).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not park while the orphan’s engine still reports not running', async () => {
+        const backend = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({
+            ...notRunningEngineRtDiagnostics,
+            running: false,
+            outputStreamFault: 'deviceChanged',
+        });
+        startNativeEngineLivenessWatch();
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        expect(backend.apply).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+    });
+
+    it('retires itself when neither a session nor an orphan exists', async () => {
+        nativeLiveGraphSession.backend = null;
+        nativeLiveGraphSession.orphanedBackend = null;
+        startNativeEngineLivenessWatch();
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+
+        expect(nativeLiveGraphSession.livenessWatch).toBeNull();
         expect(mocks.refreshEngineRtDiagnostics).not.toHaveBeenCalled();
     });
 
@@ -124,7 +220,10 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         await nativeLiveGraphSession.pending;
 
         expect(nativeLiveGraphSession.backend).toBeNull();
-        expect(firstSessionBackend.dispose).toHaveBeenCalledTimes(1);
+        // Orphaned, not disposed — the watch keeps this handle to park once
+        // the engine renders again.
+        expect(firstSessionBackend.dispose).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(firstSessionBackend);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
 

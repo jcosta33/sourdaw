@@ -20,7 +20,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
-import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import {
+    type AudioGraphBackend,
+    type AudioGraphCommand,
+    type AudioGraphCommandBatch,
+} from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
@@ -525,6 +529,7 @@ beforeEach(() => {
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
@@ -907,6 +912,23 @@ describe('startNativeLiveGraphSession', () => {
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'bus-1' }),
         ]);
+    });
+
+    it('installing a new session disposes the orphan, which has nothing left to park', async () => {
+        // The new session's `replaceTopology` batch has already torn down and
+        // rebuilt the whole topology a still-orphaned handle was left
+        // rolling, so there is nothing left for that handle to reach.
+        const orphan: AudioGraphBackend & { dispose: ReturnType<typeof vi.fn<() => void>> } = {
+            backendId: 'stub-orphan',
+            apply: vi.fn(),
+            dispose: vi.fn(),
+        };
+        nativeLiveGraphSession.orphanedBackend = orphan;
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(orphan.dispose).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
     });
 
     it('says what the programme could not carry, and still plays everything it could', async () => {
@@ -1928,9 +1950,18 @@ describe('stopNativeLiveGraphSession', () => {
                 'the engine refuses batches until rendering resumes',
         });
         expect(nativeLiveGraphSession.backend).toBeNull();
-        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
+        // Orphaned, not disposed: the engine behind this handle kept the
+        // topology and the `playing` flag this session left it, and only a
+        // resumed stream — `parkOrphanedNativeEngine.ts` — can still stop it.
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([false]);
+        expect(nativeLiveGraphSession.orphanedBackend).not.toBeNull();
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('warning');
+        // The notice a musician reads carries the prose, not the machine
+        // prefix `isEngineNotRenderingRefusal` matches on.
+        const [message] = mocks.notifyUser.mock.calls[0] as [string, string];
+        expect(message).not.toContain('engine-not-rendering:');
+        expect(message).toContain('the output stream stopped calling back after reporting DeviceChanged');
     });
 
     it('keeps the session on an ordinary standing refusal, and shows no abandon notice', async () => {

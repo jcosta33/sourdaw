@@ -85,6 +85,7 @@ beforeEach(() => {
     mocks.notifyUser.mockClear();
     mocks.warn.mockClear();
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.carriedStripIds = new Set(['a', 'b']);
@@ -97,12 +98,13 @@ beforeEach(() => {
 
 afterEach(() => {
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveMidiWriter.pass = null;
     nativeLiveAutomationWriter.pass = null;
 });
 
 describe('abandonNativeLiveGraphSession', () => {
-    it('releases the carrier gate before dropping the handle, and tells the musician once', () => {
+    it('releases the carrier gate before orphaning the handle, and tells the musician once', () => {
         const backend = fakeBackend();
         nativeLiveGraphSession.backend = backend;
         nativeLiveGraphSession.audibleCarrier = true;
@@ -117,14 +119,16 @@ describe('abandonNativeLiveGraphSession', () => {
         abandonNativeLiveGraphSession('the output stream stopped calling back');
 
         expect(mocks.setNativeCarriedTracks).toHaveBeenCalledWith(new Set());
-        // The gate reopens before the handle is dropped, per ADR 0044 — a
-        // reordered release would leave a carried strip silent on no carrier
-        // at all for however long the dispose and the rest below take.
+        // The gate reopens before the handle is dropped from `backend`, per
+        // ADR 0044 — a reordered release would leave a carried strip silent
+        // on no carrier at all for however long the rest below takes.
         const claimOrder = mocks.setNativeCarriedTracks.mock.invocationCallOrder[0];
-        const disposeOrder = backend.dispose.mock.invocationCallOrder[0];
-        expect(claimOrder).toBeLessThan(disposeOrder as number);
+        const notifyOrder = mocks.notifyUser.mock.invocationCallOrder[0];
+        expect(claimOrder).toBeLessThan(notifyOrder as number);
 
         expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(backend.dispose).not.toHaveBeenCalled();
         expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
         expect(nativeLiveGraphSession.rolling).toBe(false);
         expect(nativeLiveGraphSession.carriedStripIds.size).toBe(0);
@@ -140,6 +144,30 @@ describe('abandonNativeLiveGraphSession', () => {
         expect(level).toBe('warning');
     });
 
+    it('retains the handle as the orphan and does not dispose it', () => {
+        const backend = fakeBackend();
+        nativeLiveGraphSession.backend = backend;
+
+        abandonNativeLiveGraphSession('the output stream stopped calling back');
+
+        expect(backend.dispose).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(nativeLiveGraphSession.backend).toBeNull();
+    });
+
+    it('disposes a previous orphan when a second stall abandons', () => {
+        const priorOrphan = fakeBackend();
+        nativeLiveGraphSession.orphanedBackend = priorOrphan;
+        const backend = fakeBackend();
+        nativeLiveGraphSession.backend = backend;
+
+        abandonNativeLiveGraphSession('the output stream stopped calling back');
+
+        expect(priorOrphan.dispose).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
+        expect(backend.dispose).not.toHaveBeenCalled();
+    });
+
     it('does nothing on a second call once the backend is gone', () => {
         const backend = fakeBackend();
         nativeLiveGraphSession.backend = backend;
@@ -153,7 +181,8 @@ describe('abandonNativeLiveGraphSession', () => {
         // the backend guard — not at a remembered notice text, which no
         // longer exists to compare against.
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-        expect(backend.dispose).toHaveBeenCalledTimes(1);
+        expect(backend.dispose).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
     });
 
     it('releases the carrier gate even with no session standing, and does nothing else', () => {

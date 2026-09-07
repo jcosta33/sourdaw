@@ -1,6 +1,6 @@
 /**
- * Poll the native engine for a stall, and abandon the session when it finds one
- * (#3635).
+ * Poll the native engine for a stall, abandon the session when it finds one,
+ * and park an already-abandoned engine once it renders again (#3635).
  *
  * The watch reuses `refreshEngineRtDiagnostics` rather than reading the bridge
  * itself, because that use case drains the engine's event ring: a second
@@ -11,6 +11,18 @@
  * musician sit through more silence than the engine itself needs to declare
  * the stream gone.
  *
+ * A tick has three things it might find, in this order: nothing left to
+ * watch, a live session, or an abandoned session's orphan. The first retires
+ * the watch itself — once both `backend` and `orphanedBackend` are null there
+ * is nothing left this poll could ever act on, and a session end that already
+ * abandoned the engine has no other reason to keep clearing the interval. The
+ * second is the stall this watch was written for: a `running: false` reading
+ * queues the identity-guarded abandon. The third is the mirror case #3635
+ * added — a `running: true` reading on an orphan means the stream this
+ * session abandoned is calling back again with the old topology still
+ * rolling, and `parkOrphanedNativeEngine.ts` is what stops it before that
+ * topology sounds a second time beside Web Audio.
+ *
  * The stop half lives in `stopNativeEngineLivenessWatch.ts`, the same split
  * `startNativeEnginePlayheadFeed.ts` / `stopNativeEnginePlayheadFeed.ts` already
  * use: a use-case file exports at most one function value.
@@ -20,6 +32,8 @@ import { refreshEngineRtDiagnostics } from '../engineAccess/refreshEngineRtDiagn
 
 import { abandonNativeLiveGraphSession } from './abandonNativeLiveGraphSession';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { parkOrphanedNativeEngine } from './parkOrphanedNativeEngine';
+import { stopNativeEngineLivenessWatch } from './stopNativeEngineLivenessWatch';
 
 import type { EngineStreamErrorKind } from '../../models/EngineRtDiagnostics';
 
@@ -42,26 +56,43 @@ async function pollOnce(): Promise<void> {
     }
     inFlight = true;
     try {
-        // The reading describes whichever session stood when it was taken, not
-        // whatever session the queue finds current when its turn comes. A stall
-        // that took a while to read can be queued behind a stop and a fresh
-        // start, and a session the engine has already admitted again is proof
-        // it is rendering — abandoning it on this stale reading would tear down
-        // a session the stall never touched.
+        // The reading describes whichever session or orphan stood when it was
+        // taken, not whatever the queue finds current when its turn comes. A
+        // stall that took a while to read can be queued behind a stop and a
+        // fresh start, and a session the engine has already admitted again is
+        // proof it is rendering — abandoning it on this stale reading would
+        // tear down a session the stall never touched.
         const observed = nativeLiveGraphSession.backend;
-        if (observed === null) {
+        const orphan = nativeLiveGraphSession.orphanedBackend;
+        if (observed === null && orphan === null) {
+            // Nothing left this poll could ever act on: no session to stall,
+            // no orphan to park. The watch retires itself rather than ticking
+            // forever against handles nobody holds any more.
+            stopNativeEngineLivenessWatch();
             return;
         }
         const reading = await refreshEngineRtDiagnostics();
-        if (reading === null || reading.running) {
+        if (reading === null) {
             return;
         }
-        void queueOnNativeLiveGraphSession(async () => {
-            if (nativeLiveGraphSession.backend !== observed) {
+        if (observed !== null) {
+            if (reading.running) {
                 return;
             }
-            abandonNativeLiveGraphSession(describeStall(reading.outputStreamFault));
-        });
+            void queueOnNativeLiveGraphSession(async () => {
+                if (nativeLiveGraphSession.backend !== observed) {
+                    return;
+                }
+                abandonNativeLiveGraphSession(describeStall(reading.outputStreamFault));
+            });
+            return;
+        }
+        // The session already abandoned this backend; a resumed stream is the
+        // one signal that it is time to park the transport that handle left
+        // rolling.
+        if (reading.running) {
+            void parkOrphanedNativeEngine();
+        }
     } finally {
         inFlight = false;
     }

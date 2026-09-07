@@ -19,6 +19,22 @@ import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
     /**
+     * The handle of a session the renderer abandoned on a stall, retained
+     * until the engine is seen rendering again so the transport it left
+     * rolling can be parked.
+     *
+     * A stall abandon (`abandonNativeLiveGraphSession.ts`) is renderer-side
+     * only: the engine keeps the abandoned topology and its `playing` flag,
+     * because nothing tells it otherwise. A stream that resumes callbacks
+     * would then render those strips again from the frozen position, right
+     * beside whatever Web Audio is already sounding — doubled, out-of-phase
+     * audio with no route back, because the watch this session started keeps
+     * running for exactly this reason (`watchNativeEngineLiveness.ts`), and
+     * `parkOrphanedNativeEngine.ts` is what it calls once a reading says the
+     * engine is rendering again.
+     */
+    orphanedBackend: AudioGraphBackend | null;
+    /**
      * Whether this session's engine is the one a musician is actually hearing.
      *
      * Two independent conditions, and both have to hold: the batch has to
@@ -138,6 +154,7 @@ export type NativeLiveGraphSession = {
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
+    orphanedBackend: null,
     audibleCarrier: false,
     // Shadowed until a session says otherwise. This is the initial state, not
     // the default a session starts in — the safe reading before any session has

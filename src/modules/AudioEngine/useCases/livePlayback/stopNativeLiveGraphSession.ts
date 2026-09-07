@@ -23,6 +23,7 @@
 import { abandonNativeLiveGraphSession } from './abandonNativeLiveGraphSession';
 import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
+import { describeEngineNotRenderingRefusal } from './describeEngineNotRenderingRefusal';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
@@ -76,7 +77,10 @@ export function stopNativeLiveGraphSession(
             // one exception — the graph a kept handle would strand is one
             // nothing renders any more, so dropping it strands nothing.
             if (isEngineNotRenderingRefusal(result.reason)) {
-                abandonNativeLiveGraphSession(result.reason);
+                // Described, not raw: the notice this puts in front of a
+                // musician has no business showing the machine prefix
+                // `isEngineNotRenderingRefusal` matched on.
+                abandonNativeLiveGraphSession(describeEngineNotRenderingRefusal(result.reason));
             }
             return { outcome: 'declined', reason: result.reason };
         }
