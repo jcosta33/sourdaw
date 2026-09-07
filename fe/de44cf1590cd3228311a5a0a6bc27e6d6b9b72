@@ -1,0 +1,21 @@
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_87ab0a2f60ccf8::t_07e99090f46f70 508-555
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_87ab0a2f60ccf8::t_07e99090f46f70 263-326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "fede44cf1590cd3228311a5a0a6bc27e6d6b9b72",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
