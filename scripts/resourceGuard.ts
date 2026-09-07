@@ -2,10 +2,23 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { freemem, platform, tmpdir, totalmem } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
+import {
+    GUARD_FAILURES_DIR,
+    canonicalPath,
+    containsPath,
+    guardFailureReceiptPath,
+    isGuardFailureReason,
+    readGuardFailureReceipt,
+    type GuardFailureReceipt,
+} from './prContract.ts';
+
+export { readGuardFailureReceipt };
 
 export const RESOURCE_SESSION_ENV = 'SOURDAW_RESOURCE_SESSION';
 export const RESOURCE_ROOT_ENV = 'SOURDAW_RESOURCE_ROOT';
@@ -1237,20 +1250,96 @@ export function hasExplicitTarget(args: string[]): boolean {
     });
 }
 
+export type DetectedLane = {
+    primaryRoot: string;
+    laneName: string;
+    branch: string;
+    headSha: string;
+    worktreePath: string;
+};
+
+const defaultCapture = (command: string, args: string[], cwd?: string): string => spawnCapture(command, args, { cwd });
+
+export function detectAuthorLane(
+    cwd: string = process.cwd(),
+    capture: (command: string, args: string[], cwd?: string) => string = defaultCapture,
+    resolveExisting: (path: string) => string = realpathSync
+): DetectedLane | undefined {
+    try {
+        const primaryRoot = resolvePrimaryRoot(capture, cwd, resolveExisting);
+        const worktreesDir = canonicalPath(join(primaryRoot, '.agents', 'worktrees'), resolveExisting);
+        const canonicalCwd = canonicalPath(cwd, resolveExisting);
+        if (!containsPath(worktreesDir, canonicalCwd) || canonicalCwd === worktreesDir) {
+            return undefined;
+        }
+        const toplevel = capture('git', ['rev-parse', '--show-toplevel'], cwd).trim();
+        const canonicalToplevel = canonicalPath(toplevel, resolveExisting);
+        if (!containsPath(worktreesDir, canonicalToplevel) || canonicalToplevel === worktreesDir) {
+            return undefined;
+        }
+        const laneName = basename(toplevel);
+        const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd).trim();
+        const headSha = capture('git', ['rev-parse', 'HEAD'], cwd).trim();
+        return {
+            primaryRoot,
+            laneName,
+            branch,
+            headSha,
+            worktreePath: toplevel,
+        };
+    } catch {
+        return undefined;
+    }
+}
+
+export type WriteGuardFailureReceiptPorts = {
+    writeFileSync?: typeof writeFileSync;
+    renameSync?: typeof renameSync;
+};
+
+export function writeGuardFailureReceipt(
+    primaryRoot: string,
+    receipt: GuardFailureReceipt,
+    ports: WriteGuardFailureReceiptPorts = {}
+): void {
+    const dir = join(primaryRoot, GUARD_FAILURES_DIR);
+    mkdirSync(dir, { recursive: true });
+    const receiptPath = guardFailureReceiptPath(primaryRoot, receipt.lane);
+    const candidatePath = `${receiptPath}.candidate-${randomUUID()}`;
+    const write = ports.writeFileSync ?? writeFileSync;
+    const rename = ports.renameSync ?? renameSync;
+    write(candidatePath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    rename(candidatePath, receiptPath);
+}
+
+export function clearGuardFailureReceipt(primaryRoot: string, laneName: string): boolean {
+    const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    try {
+        rmSync(receiptPath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 type CliInput = {
     profile: ResourceProfile;
+    explicitProfile: boolean;
     maxRssBytes?: number;
     requireTarget: boolean;
     showOutput: boolean;
+    recover: boolean;
     command: string;
     args: string[];
 };
 
 export function parseCliArgs(args: string[]): CliInput {
     let profile: ResourceProfile = 'focused';
+    let explicitProfile = false;
     let maxRssBytes: number | undefined;
     let requireTarget = false;
     let showOutput = false;
+    let recover = false;
     let index = 0;
     for (; index < args.length; index += 1) {
         const argument = args[index];
@@ -1258,12 +1347,17 @@ export function parseCliArgs(args: string[]): CliInput {
             index += 1;
             break;
         }
+        if (argument === '--recover') {
+            recover = true;
+            continue;
+        }
         if (argument === '--profile') {
             const value = args[index + 1];
             if (value !== 'focused' && value !== 'broad' && value !== 'extended') {
                 throw new Error('--profile requires focused, broad, or extended');
             }
             profile = value;
+            explicitProfile = true;
             index += 1;
             continue;
         }
@@ -1288,28 +1382,139 @@ export function parseCliArgs(args: string[]): CliInput {
     }
     const command = args[index];
     if (command === undefined) {
+        if (recover) {
+            return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command: '', args: [], recover };
+        }
         throw new Error('missing command after --');
     }
     const commandArgs = args.slice(index + 1);
-    return { profile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs };
+    return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs, recover };
 }
 
-async function main(): Promise<number> {
+export async function main(
+    argv: string[] = process.argv.slice(2),
+    options: {
+        cwd?: string;
+        detectLane?: (cwd: string) => DetectedLane | undefined;
+        runCommand?: typeof runGuardedCommand;
+        log?: (message: string) => void;
+        error?: (message: string) => void;
+    } = {}
+): Promise<number> {
+    const cwd = options.cwd ?? process.cwd();
+    const detectLane = options.detectLane ?? detectAuthorLane;
+    const runCommand = options.runCommand ?? runGuardedCommand;
+    const log = options.log ?? console.log;
+    const error = options.error ?? console.error;
+
     try {
-        const input = parseCliArgs(process.argv.slice(2));
+        const input = parseCliArgs(argv);
+
+        if (input.recover) {
+            const lane = detectLane(cwd);
+            if (lane === undefined) {
+                throw new Error('--recover must be run inside an author worktree');
+            }
+            const receipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+            if (receipt === undefined) {
+                log(`guard: no active guard-failure receipt for lane ${lane.laneName}`);
+                return 0;
+            }
+            log(
+                `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}')`
+            );
+            const result = await runCommand({
+                command: receipt.command,
+                args: receipt.args,
+                profile: input.explicitProfile
+                    ? input.profile
+                    : ((receipt.profile as ResourceProfile) ?? input.profile),
+                maxRssBytes: input.maxRssBytes ?? receipt.maxRssBytes,
+                showOutput: input.showOutput,
+            });
+            if (result.code === 0 && result.reason === undefined) {
+                emitGuardedResult(receipt.command, result, input.showOutput);
+                clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+                log(`guard: recovery succeeded; guard-failure receipt cleared for lane ${lane.laneName}`);
+                return 0;
+            } else {
+                if (isGuardFailureReason(result.reason)) {
+                    writeGuardFailureReceipt(lane.primaryRoot, {
+                        ...receipt,
+                        headSha: lane.headSha,
+                        failedAt: new Date().toISOString(),
+                        reason: result.reason,
+                        peakRssBytes: result.peakRssBytes,
+                        maxRssBytes: result.maxRssBytes,
+                        durationMs: result.durationMs,
+                    });
+                }
+                emitGuardedResult(receipt.command, result, input.showOutput);
+                error(`guard: recovery failed; lane ${lane.laneName} remains stopped`);
+                return 1;
+            }
+        }
+
         if (input.requireTarget && !hasExplicitTarget(input.args)) {
             throw new Error('target required; specify an affected file, crate, or filter');
         }
-        const result = await runGuardedCommand({
+
+        const lane = detectLane(cwd);
+        let existingReceipt: GuardFailureReceipt | undefined;
+        if (lane !== undefined) {
+            existingReceipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+            if (existingReceipt !== undefined && lane.headSha === existingReceipt.headSha) {
+                throw new Error(
+                    `guard: refusing verification: active guard-failure receipt exists for lane ${lane.laneName} (${existingReceipt.reason} at ${existingReceipt.headSha.slice(0, 9)} during '${existingReceipt.command} ${existingReceipt.args.join(' ')}'). A timeout, RSS kill, or memory-monitor failure is a stop. Commit a relevant change or run 'pnpm guard --recover' before re-verifying.`
+                );
+            }
+        }
+
+        const result = await runCommand({
             command: input.command,
             args: input.args,
             profile: input.profile,
             maxRssBytes: input.maxRssBytes,
             showOutput: input.showOutput,
         });
+
+        if (lane !== undefined) {
+            if (result.code === 0 && result.reason === undefined) {
+                const matchesExisting =
+                    existingReceipt !== undefined &&
+                    existingReceipt.command === input.command &&
+                    existingReceipt.args.length === input.args.length &&
+                    existingReceipt.args.every((arg, index) => arg === input.args[index]);
+                if (matchesExisting) {
+                    const cleared = clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+                    if (cleared) {
+                        log(`guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; receipt cleared`);
+                    }
+                }
+            } else if (isGuardFailureReason(result.reason)) {
+                writeGuardFailureReceipt(lane.primaryRoot, {
+                    version: 1,
+                    lane: lane.laneName,
+                    branch: lane.branch,
+                    headSha: lane.headSha,
+                    failedAt: new Date().toISOString(),
+                    reason: result.reason,
+                    command: input.command,
+                    args: input.args,
+                    profile: input.profile,
+                    peakRssBytes: result.peakRssBytes,
+                    maxRssBytes: result.maxRssBytes,
+                    durationMs: result.durationMs,
+                });
+                error(
+                    `guard: recorded guard-failure receipt in ${GUARD_FAILURES_DIR}/${lane.laneName}.json; lane is stopped`
+                );
+            }
+        }
+
         return emitGuardedResult(input.command, result, input.showOutput);
-    } catch (error) {
-        console.error(error instanceof Error ? error.message : error);
+    } catch (error_) {
+        error(error_ instanceof Error ? error_.message : String(error_));
         return 1;
     }
 }

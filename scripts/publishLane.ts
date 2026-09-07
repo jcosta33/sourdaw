@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -28,13 +28,19 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
+    canonicalPath,
     composePublishBody,
+    containsPath,
     fail,
     howToTestFromBody,
     issueRelationshipFromBody,
+    readGuardFailureReceipt,
     whatFromBody,
+    type GuardFailureReceipt,
     type IssueRelationship,
 } from './prContract.ts';
+
+export { canonicalPath, containsPath };
 
 export type PublishWorktree = {
     path: string;
@@ -101,6 +107,7 @@ export type PublishLanePort = {
     createPullRequest: (input: { branch: string; title: string; body: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
     log: (message: string) => void;
+    guardFailure: (laneName: string) => GuardFailureReceipt | undefined;
 };
 
 export function parsePublishLaneArgs(args: string[]): {
@@ -187,20 +194,6 @@ type AuthorizedResolvedLane = PublishingAuthorAuthorization & { legacy: boolean 
 
 export const NO_ISSUE_LANE_FAILURE =
     'not inside a locked author lane: pass its issue number or --lane with its absolute worktree root';
-
-export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {
-    const absolute = resolve(path);
-    try {
-        return resolveExisting(absolute);
-    } catch {
-        return absolute;
-    }
-}
-
-export function containsPath(container: string, candidate: string): boolean {
-    const relation = relative(container, candidate);
-    return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
-}
 
 export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
 
@@ -463,6 +456,15 @@ export function publishLane(
     // Name the resolved selection before anything mutates, so an incorrect target remains visible
     // even when a later gate refuses it.
     port.log(`publishing ${lane.path} on ${lane.branch}`);
+    const laneName = basename(lane.path);
+    const guardFailure = port.guardFailure(laneName);
+    if (guardFailure !== undefined) {
+        fail(
+            `refusing publish: lane ${lane.branch} has an unresolved guard-failure receipt ` +
+                `(${guardFailure.reason} at ${guardFailure.headSha.slice(0, 9)} during '${guardFailure.command} ${guardFailure.args.join(' ')}'): ` +
+                `prove it resolved under pnpm guard or run 'pnpm guard --recover' before publishing`
+        );
+    }
     if (laneIssue !== undefined && !port.issueExists(laneIssue)) {
         fail(`issue #${laneIssue} does not exist in ${REQUIRED_REPOSITORY}`);
     }
@@ -782,6 +784,7 @@ export function shellPort(
         log: (message) => {
             console.log(message);
         },
+        guardFailure: (laneName) => readGuardFailureReceipt(primaryRoot, laneName),
     };
 }
 

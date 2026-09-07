@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
-import { supersessionCommentBody } from '../prContract.ts';
+import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     disposableIgnored,
     isExpectedReviewLaneName,
@@ -36,6 +36,7 @@ import {
     type ShellRunner,
     type Worktree,
 } from '../removeLane';
+import { clearGuardFailureReceipt, writeGuardFailureReceipt } from '../resourceGuard.ts';
 
 const root = '/repo';
 const target = '/repo/.agents/worktrees/feature';
@@ -136,6 +137,10 @@ function fakePort(input: FakeInput = {}) {
             locked = false;
         },
         remove: (path) => calls.push(`remove:${path}`),
+        clearGuardFailure: (laneName) => {
+            calls.push(`clearGuardFailure:${laneName}`);
+            clearGuardFailureReceipt(input.root ?? root, laneName);
+        },
     };
     return { port, calls };
 }
@@ -486,7 +491,13 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
@@ -855,7 +866,14 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `unlock:${target}`,
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('removes an author-locked lane without dropping the lock on failure', () => {
@@ -877,7 +895,7 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`, 'clearGuardFailure:feature']);
     });
 
     it.each([
@@ -898,7 +916,13 @@ describe('lane removal', () => {
 
         removeLane(lanePath, port);
 
-        expect(calls).toEqual(['fetch', `lock:${lanePath}`, `unlock:${lanePath}`, `remove:${lanePath}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${lanePath}`,
+            `unlock:${lanePath}`,
+            `remove:${lanePath}`,
+            `clearGuardFailure:${laneName}`,
+        ]);
     });
 
     it('removes a real detached review worktree with matching merged PR', () => {
@@ -946,6 +970,7 @@ describe('lane removal', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
             };
 
             removeLane(resolvedLane, port);
@@ -1004,6 +1029,7 @@ describe('lane stranding', () => {
             `unlock:${target}`,
             `remove:${target}`,
             'branch:-D:feat/work',
+            'clearGuardFailure:feature',
             'log:stranded feature; receipt in .agents/lane-strands/feature.json',
         ]);
         const receipt = JSON.parse(receipts[0]?.body ?? '{}') as {
@@ -1210,6 +1236,7 @@ describe('lane stranding', () => {
                 deleteBranch: (branch) => {
                     git(['branch', '-D', branch]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
                 log: () => undefined,
             };
 
@@ -1492,6 +1519,7 @@ describe('lane-removal shell boundary', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
             };
 
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
@@ -1508,7 +1536,87 @@ describe('lane-removal shell boundary', () => {
             removeLane(resolvedLane, port);
             expect(existsSync(lane)).toBe(false);
         } finally {
-            rmSync(repository, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         }
+    });
+
+    describe('guard failure receipt cleanup', () => {
+        it('clears guard failure receipt when removing a lane', () => {
+            const repo = mkdtempSync(join(tmpdir(), 'sourdaw-remove-guard-'));
+            const laneName = 'feature';
+            const targetPath = join(repo, '.agents', 'worktrees', laneName);
+            mkdirSync(targetPath, { recursive: true });
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: 'feat/work',
+                headSha: '1111111111111111111111111111111111111111',
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'test.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 500,
+            };
+            writeGuardFailureReceipt(repo, receipt);
+            const receiptFile = guardFailureReceiptPath(repo, laneName);
+            expect(existsSync(receiptFile)).toBe(true);
+
+            const { port, calls } = fakePort({
+                root: repo,
+                lane: worktree({ path: targetPath }),
+            });
+
+            try {
+                removeLane(targetPath, port);
+                expect(calls).toContain(`remove:${targetPath}`);
+                expect(calls).toContain('clearGuardFailure:feature');
+                expect(existsSync(receiptFile)).toBe(false);
+            } finally {
+                rmSync(repo, { recursive: true, force: true });
+            }
+        });
+
+        it('clears guard failure receipt when stranding a lane', () => {
+            const repo = mkdtempSync(join(tmpdir(), 'sourdaw-strand-guard-'));
+            const laneName = 'feature';
+            const targetPath = join(repo, '.agents', 'worktrees', laneName);
+            mkdirSync(targetPath, { recursive: true });
+
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: 'feat/work',
+                headSha: '1111111111111111111111111111111111111111',
+                failedAt: '2026-09-07T12:00:00.000Z',
+                reason: 'timeout',
+                command: 'pnpm',
+                args: ['test:run', 'test.spec.ts'],
+                profile: 'focused',
+                peakRssBytes: 2 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 600_000,
+            };
+            writeGuardFailureReceipt(repo, receipt);
+            const receiptFile = guardFailureReceiptPath(repo, laneName);
+            expect(existsSync(receiptFile)).toBe(true);
+
+            const strand = fakeStrandPort({
+                root: repo,
+                lane: worktree({ path: targetPath, head: '1111111111111111111111111111111111111111' }),
+            });
+
+            try {
+                strandLane(targetPath, 'abandoned due to architectural pivot', strand.port);
+                expect(strand.calls).toContain(`remove:${targetPath}`);
+                expect(strand.calls).toContain('clearGuardFailure:feature');
+                expect(existsSync(receiptFile)).toBe(false);
+            } finally {
+                rmSync(repo, { recursive: true, force: true });
+            }
+        });
     });
 });

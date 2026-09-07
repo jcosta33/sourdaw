@@ -12,6 +12,7 @@
     "scripts": {
         "dev": "vite",
         "guard": "node scripts/resourceGuard.ts",
+        "guard:recover": "node scripts/resourceGuard.ts --recover",
         "dev:no-hmr": "NO_HMR=1 vite",
         "build": "vite build",
         "preview": "vite preview",
