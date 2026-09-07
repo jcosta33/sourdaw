@@ -301,11 +301,10 @@ describe('recordingWorker ring overrun drop policy', () => {
         sendToWorker({ type: 'start' });
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/overrun/i);
-
-        // The main thread terminates the worker on 'error' — no graceful stop
-        // runs — so the abandon path itself must have discarded the temp file.
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
+        // The main thread terminates this worker on 'error', so the worker
+        // cannot remove its own temp file — it must hand the name over for
+        // main-thread removal.
+        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
 
         // The corrupted interval is never written to the OPFS history and no
         // 'wav' is ever produced for the take.
@@ -318,14 +317,31 @@ describe('recordingWorker ring overrun drop policy', () => {
         await waitFor('ready');
 
         sendToWorker({ type: 'stop' });
-        await waitFor('error');
-        await new Promise((resolve) => setTimeout(resolve, 20));
-
-        // Even though stopWorker runs here, the discard belongs to the abandon
-        // path: stop's terminate can land between the error post and any
-        // discard stopWorker would do itself.
-        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
+        const error = await waitFor('error');
+        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
         expect(messages.some((m) => m.type === 'wav')).toBe(false);
+    });
+
+    it('discards its OPFS temp file after delivering the wav on a normal stop', async () => {
+        const sab = new SharedArrayBuffer(4 + 64 * 4);
+        const writeHead = new Int32Array(sab, 0, 1);
+        const ring = new Float32Array(sab, 4);
+        ring[0] = 1;
+        ring[1] = 2;
+        Atomics.store(writeHead, 0, 2);
+
+        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        await waitFor('ready');
+        sendToWorker({ type: 'start' });
+        // Let one drain tick run, then stop.
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        sendToWorker({ type: 'stop' });
+        await waitFor('wav');
+
+        // The worker owns cleanup on the normal path: the temp entry is gone
+        // once the take has been delivered.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
     });
 });
 
