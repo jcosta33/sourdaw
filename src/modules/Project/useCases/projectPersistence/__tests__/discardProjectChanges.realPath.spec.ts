@@ -131,7 +131,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
+    hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
+    restorePluginState: vi.fn(),
     registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));

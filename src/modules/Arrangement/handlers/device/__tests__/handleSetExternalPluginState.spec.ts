@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleSetExternalPluginState } from '../handleSetExternalPluginState';
 
+import type { ExternalPluginStateWrite } from '../../../useCases/device/setExternalPluginState';
+
 const mocks = vi.hoisted(() => ({
-    setExternalPluginState: vi.fn<(deviceId: string, stateChunk: string) => boolean>(),
+    setExternalPluginState: vi.fn<(deviceId: string, stateChunk: string) => ExternalPluginStateWrite>(),
 }));
 
 vi.mock('../../../useCases/device/setExternalPluginState', () => ({
@@ -16,7 +18,7 @@ describe('handleSetExternalPluginState', () => {
     });
 
     it('delegates the chunk write once and reports a write', () => {
-        mocks.setExternalPluginState.mockReturnValue(true);
+        mocks.setExternalPluginState.mockReturnValue({ didWrite: true });
 
         const result = handleSetExternalPluginState.execute({
             type: 'setExternalPluginState',
@@ -29,7 +31,7 @@ describe('handleSetExternalPluginState', () => {
     });
 
     it('reports no-write when no device carries the id', () => {
-        mocks.setExternalPluginState.mockReturnValue(false);
+        mocks.setExternalPluginState.mockReturnValue({ didWrite: false });
 
         const result = handleSetExternalPluginState.execute({
             type: 'setExternalPluginState',
@@ -37,6 +39,25 @@ describe('handleSetExternalPluginState', () => {
         });
 
         expect(result).toEqual({ status: 'no-write' });
+    });
+
+    // A rejected restore left the host on its defaults, so the replacement must
+    // reach it before the capture that follows this action reads the host: the
+    // push rides the post-commit hooks, which executeAppAction awaits.
+    it('wires the replacement push as post-commit work when the write carries one', () => {
+        const pushReplacementToHost = vi.fn<() => Promise<void>>();
+        mocks.setExternalPluginState.mockReturnValue({ didWrite: true, pushReplacementToHost });
+
+        const result = handleSetExternalPluginState.execute({
+            type: 'setExternalPluginState',
+            payload: { deviceId: 'd1', stateChunk: 'YmFzZTY0' },
+        });
+
+        expect(result).toEqual({
+            status: 'written',
+            afterCommit: pushReplacementToHost,
+            afterAmbiguousCommit: pushReplacementToHost,
+        });
     });
 
     it('is not undoable and carries a stable label with no inverse', () => {
