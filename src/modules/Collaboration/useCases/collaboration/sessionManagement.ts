@@ -66,11 +66,11 @@ function captureInstalledSessionOwner(): InstalledSessionOwner | null {
     return installedSessionOwner;
 }
 
-function isInstalledSessionOwner(owner: InstalledSessionOwner | null): boolean {
+function isInstalledSessionOwner(owner: InstalledSessionOwner | null): owner is InstalledSessionOwner {
     return owner !== null && installedSessionOwner === owner;
 }
 
-function canSessionOwnerWrite(owner: InstalledSessionOwner | null): boolean {
+function canSessionOwnerWrite(owner: InstalledSessionOwner | null): owner is InstalledSessionOwner {
     return isInstalledSessionOwner(owner) && !owner.retired;
 }
 
@@ -745,7 +745,10 @@ function initializeSessionRuntime(
 }
 
 /** Tear down all subsystems without changing store state. */
-function cleanupSubsystems(owner?: InstalledSessionOwner | null): boolean {
+function cleanupSubsystems(
+    owner?: InstalledSessionOwner | null,
+    requestWitness = joinAttemptAuthority.capture()
+): boolean {
     const targetOwner = arguments.length === 0 ? installedSessionOwner : (owner ?? null);
     if (targetOwner !== installedSessionOwner) {
         return false;
@@ -754,7 +757,6 @@ function cleanupSubsystems(owner?: InstalledSessionOwner | null): boolean {
         return true;
     }
     retireSessionOwner(targetOwner);
-    const requestWitness = joinAttemptAuthority.capture();
     sessionState.synchronizeAssetOwner = null;
     sessionState.pendingInviteId = null;
     sessionState.sessionSecret = null;

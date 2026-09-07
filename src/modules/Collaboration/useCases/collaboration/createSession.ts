@@ -7,8 +7,10 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export function createSession(name: string): string {
+    const outgoingOwner = runtime.captureOwner();
+    const outgoingRequestWitness = joinAttemptAuthority.capture();
     joinAttemptAuthority.invalidate();
-    runtime.cleanup();
+    runtime.cleanup(outgoingOwner, outgoingRequestWitness);
 
     const peerId = runtime.generatePeerId();
     const sessionId = runtime.generateSessionId();

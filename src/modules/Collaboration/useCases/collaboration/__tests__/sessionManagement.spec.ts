@@ -42,6 +42,7 @@ const peerConnectionMock = vi.hoisted(() => ({
         broadcastPresence: ReturnType<typeof vi.fn>;
         sendCrdtSync: ReturnType<typeof vi.fn>;
         sendCrdtSyncBuffered: Mock<(input: unknown) => Promise<void>>;
+        createPeer: ReturnType<typeof vi.fn>;
         removePeer: ReturnType<typeof vi.fn>;
     }[],
 }));
@@ -167,6 +168,7 @@ vi.mock('../../../repositories/peerConnection', () => ({
             // transport has taken the message.
             sendCrdtSync: vi.fn().mockResolvedValue(undefined),
             sendCrdtSyncBuffered: vi.fn<(input: unknown) => Promise<void>>().mockResolvedValue(undefined),
+            createPeer: vi.fn().mockReturnValue({ acceptOffer: vi.fn().mockResolvedValue('answer-sdp') }),
             removePeer: vi.fn(),
         };
         peerConnectionMock.instances.push(instance);
@@ -870,6 +872,38 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value).toEqual(sessionBState);
         });
 
+        it('preserves a created session when an older pending join finishes decoding', async () => {
+            const decompression = Promise.withResolvers<string>();
+            const decompressInvite = vi
+                .spyOn(sessionRuntimePrimitives, 'decompressInvite')
+                .mockReturnValueOnce(decompression.promise);
+            const joining = joinSession('invite', 'Joining session');
+
+            const sessionBId = createSession('Session B');
+            const sessionBManager = latestPeerManager();
+            decompression.resolve(
+                JSON.stringify({
+                    type: 'offer',
+                    peerId: 'host-peer',
+                    name: 'Host',
+                    sessionId: 'old-session',
+                    sdp: 'offer-sdp',
+                    pendingPeerId: 'old-joiner',
+                    sessionSecret: 'old-secret',
+                })
+            );
+
+            await expect(joining).rejects.toThrow('Join attempt was superseded');
+            expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
+            expect(collaborationStore.value).toMatchObject({
+                isEnabled: true,
+                sessionId: sessionBId,
+                localName: 'Session B',
+                error: null,
+            });
+            decompressInvite.mockRestore();
+        });
+
         it('tears down every subsystem and clears session state', () => {
             const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
             const automergeSync = latestAutomergeSync();
@@ -915,6 +949,30 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('canApplySync (AutomergeSync hooks built at initialize())', () => {
+        it('surfaces a post-persist failure from the current session', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(makeState());
+
+            latestAutomergeSync().hooks.onPostPersistError?.(new Error('handoff failed'));
+
+            expect(collaborationStore.value?.error).toBe(
+                'Could not update ownership of shared audio. Restarting safely retries it.'
+            );
+        });
+
+        it('ignores a retained post-persist failure from a replaced session', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            const oldHooks = latestAutomergeSync().hooks;
+            sessionRuntimePrimitives.cleanup();
+            sessionRuntimePrimitives.initialize('project-owner-2');
+            const sessionBState = makeState({ sessionId: 'session-b', localName: 'Session B' });
+            collaborationStore.set(sessionBState);
+
+            oldHooks.onPostPersistError?.(new Error('old handoff failed'));
+
+            expect(collaborationStore.value).toEqual(sessionBState);
+        });
+
         it('rejects every sync decision made by a replaced session', async () => {
             sessionRuntimePrimitives.initialize('project-owner-1', { rebindToSynchronizedOwner: true });
             const oldHooks = latestAutomergeSync().hooks;
@@ -1884,7 +1942,6 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
             sessionRuntimePrimitives.startBranchSync(true);
-            await leaveSession();
 
             const decompression = Promise.withResolvers<string>();
             const decompressInvite = vi
@@ -1906,6 +1963,26 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             decompression.resolve(JSON.stringify({ type: 'answer' }));
             await expect(joining).rejects.toThrow('expected offer');
             decompressInvite.mockRestore();
+        });
+
+        it('does not surface old cleanup persistence failure into a created session', async () => {
+            collaborationStore.set(makeState());
+            const persistence = Promise.withResolvers<void>();
+            crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+            sessionRuntimePrimitives.startBranchSync(true);
+
+            const sessionBId = createSession('Session B');
+            const sessionBManager = latestPeerManager();
+            persistence.reject(new Error('old cleanup failed'));
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    '[Collaboration] Failed to persist after branch sync cleanup:',
+                    expect.any(Error)
+                )
+            );
+
+            expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
+            expect(collaborationStore.value).toMatchObject({ sessionId: sessionBId, error: null });
         });
     });
 

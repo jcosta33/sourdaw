@@ -7,6 +7,7 @@ import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 export async function leaveSession(): Promise<void> {
     joinAttemptAuthority.invalidate();
     const owner = runtime.captureOwner();
+    const requestWitness = joinAttemptAuthority.capture();
     const peerManager = runtime.state.peerManager;
     runtime.retire(owner);
     if (peerManager) {
@@ -26,7 +27,7 @@ export async function leaveSession(): Promise<void> {
         );
     }
 
-    const removedCurrentRuntime = runtime.cleanup(owner);
+    const removedCurrentRuntime = runtime.cleanup(owner, requestWitness);
     if (!removedCurrentRuntime) {
         return;
     }

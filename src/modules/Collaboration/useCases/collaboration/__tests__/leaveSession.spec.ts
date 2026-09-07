@@ -17,7 +17,7 @@ const mockRuntime = vi.hoisted(() => ({
     },
     captureOwner: vi.fn<() => object | null>(),
     retire: vi.fn<(owner: object | null) => void>(),
-    cleanup: vi.fn<(owner?: object | null) => boolean>(),
+    cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -63,7 +63,7 @@ describe('leaveSession', () => {
         mockRuntime.captureOwner.mockReturnValue(null);
         await leaveSession();
 
-        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null);
+        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null, expect.any(Number));
         expect(collaborationStore.value).toEqual(resetStoreShape);
     });
 

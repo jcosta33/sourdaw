@@ -9,8 +9,10 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function joinSession(inviteString: string, name: string): Promise<string> {
+    const outgoingOwner = runtime.captureOwner();
+    const outgoingRequestWitness = joinAttemptAuthority.capture();
     const joinAttempt = joinAttemptAuthority.begin();
-    runtime.cleanup();
+    runtime.cleanup(outgoingOwner, outgoingRequestWitness);
     const settledAssetOwnerId = collaborationAssetOwnership.getOwnerId();
     collaborationStore.set({
         isEnabled: true,

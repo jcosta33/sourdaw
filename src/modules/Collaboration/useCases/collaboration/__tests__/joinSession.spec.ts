@@ -14,7 +14,7 @@ import { leaveSession } from '../leaveSession';
  * transitions without opening a real peer connection.
  */
 const mockRuntime = vi.hoisted(() => ({
-    cleanup: vi.fn<(owner?: object | null) => boolean>(),
+    cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
     initialize:
         vi.fn<
             (
@@ -34,8 +34,10 @@ const mockRuntime = vi.hoisted(() => ({
     decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
     state: { peerManager: null, sessionSecret: null as string | null },
 }));
+const loggerMock = vi.hoisted(() => ({ warn: vi.fn() }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerMock.warn } }));
 vi.mock('../getCollaborationAssetOwnerId', () => ({
     collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
 }));
@@ -182,6 +184,24 @@ describe('joinSession', () => {
             isEnabled: false,
             isHost: false,
         });
+    });
+
+    it('preserves the join setup error when cleaning its runtime also fails', async () => {
+        const setupError = new Error('offer rejected');
+        const cleanupError = new Error('cleanup failed');
+        acceptOffer.mockRejectedValueOnce(setupError);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeOffer()));
+        mockRuntime.cleanup.mockReturnValueOnce(true).mockImplementationOnce(() => {
+            throw cleanupError;
+        });
+
+        await expect(joinSession('invite', 'Alice')).rejects.toBe(setupError);
+
+        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+            '[Collaboration] Failed to clean up join session setup:',
+            cleanupError
+        );
     });
 
     it('does not let a stale join continuation overwrite a completed leave', async () => {
