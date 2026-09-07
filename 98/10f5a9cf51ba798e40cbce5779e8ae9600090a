@@ -1,0 +1,40 @@
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_87ab0a2f60ccf8::t_d1c7bb6b7293f3 10-11,13
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_87ab0a2f60ccf8::t_d1c7bb6b7293f3 12-13,15
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_87ab0a2f60ccf8::t_1088da4fc87066 14
+  s_87ab0a2f60ccf8::t_3de7f4508da224 25,28,103-126
+  s_87ab0a2f60ccf8::t_f477739ffc746d 127
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_87ab0a2f60ccf8::t_1efe746ca5fa86 45,171,884-894
+  s_87ab0a2f60ccf8::t_ce4e80274c3cea 875-883,895-906,952-975,1967-1986
+src/modules/Collaboration/useCases/collaboration/leaveSession.ts
+  s_87ab0a2f60ccf8::t_d1c7bb6b7293f3 10,30
+src/modules/Collaboration/useCases/collaboration/__tests__/leaveSession.spec.ts
+  s_87ab0a2f60ccf8::t_1088da4fc87066 20,66
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_87ab0a2f60ccf8::t_d1c7bb6b7293f3 69,73,748-751
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_87ab0a2f60ccf8::t_414accbbfde625 37,40,189-204
+  s_87ab0a2f60ccf8::t_1088da4fc87066 17
+  s_87ab0a2f60ccf8::t_f099c189cb245a 205-206
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_87ab0a2f60ccf8::t_c37a569ff83672 14-50,86-87,93,109-110,115-120,126,198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9810f5a9cf51ba798e40cbce5779e8ae9600090a",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
