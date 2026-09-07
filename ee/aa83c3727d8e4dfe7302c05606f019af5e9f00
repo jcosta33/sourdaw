@@ -1,0 +1,39 @@
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_cfadd8abbf0426 12-25,99,260-293
+src/modules/Project/presentations/views/__tests__/TemplateChooser.spec.tsx
+  s_87ab0a2f60ccf8::t_1f5ca617d9344a 1,4-5,8-40,44,62-89
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProjectBeforeReplacement.spec.ts
+  s_87ab0a2f60ccf8::t_651f36679d216e 1-49
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_4f504167e0cbea::t_86e463169ba920 29,73-77,120-127
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_4f504167e0cbea::t_f12cde42df4b32 8,23-26,28
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_4f504167e0cbea::t_289e90485a2573 191-224
+src/modules/Project/useCases/projectPersistence/saveProject/saveProjectBeforeReplacement.ts
+  s_4f504167e0cbea::t_f8bb1188a30942 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "eeaa83c3727d8e4dfe7302c05606f019af5e9f00",
+  "prompts": {},
+  "sessions": {
+    "s_4f504167e0cbea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cdb-0771-7a52-9998-22ed8b8565d9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
