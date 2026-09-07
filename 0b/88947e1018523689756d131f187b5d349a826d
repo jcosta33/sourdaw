@@ -1,0 +1,22 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/crdtPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_b4b8040d1beb43 242-254
+src/modules/CrdtDocument/useCases/__tests__/loadCrdtProject.sanitization.integration.spec.ts
+  s_87ab0a2f60ccf8::t_b4b8040d1beb43 1,90-97,160,162,171,196-197,201,207,217-218
+  s_87ab0a2f60ccf8::t_29b530ba2b307d 98-110,172,215-216,219-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0b88947e1018523689756d131f187b5d349a826d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
