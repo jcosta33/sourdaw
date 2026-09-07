@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { MockBrowserWindow, state } = vi.hoisted(() => {
+    type EventListener = (...args: unknown[]) => void;
     type Deferred = {
         readonly promise: Promise<void>;
         readonly resolve: () => void;
@@ -16,20 +17,20 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
 
     class MockBrowserWindow {
         static fromWebContents = vi.fn(() => state.windows.at(-1) ?? null);
-        private readonly eventListeners = new Map<string, Array<(...args: never[]) => void>>();
-        private readonly onceListeners = new Map<string, Array<(...args: never[]) => void>>();
+        private readonly eventListeners = new Map<string, EventListener[]>();
+        private readonly onceListeners = new Map<string, Array<() => void>>();
         readonly webContents = {
             getURL: () => 'app://sourdaw/',
             on: vi.fn(),
             send: vi.fn(),
             setWindowOpenHandler: vi.fn(),
         };
-        readonly once = vi.fn((event: string, listener: (...args: never[]) => void) => {
+        readonly once = vi.fn((event: string, listener: () => void) => {
             const listeners = this.onceListeners.get(event) ?? [];
             listeners.push(listener);
             this.onceListeners.set(event, listeners);
         });
-        readonly on = vi.fn((event: string, listener: (...args: never[]) => void) => {
+        readonly on = vi.fn((event: string, listener: EventListener) => {
             const listeners = this.eventListeners.get(event) ?? [];
             listeners.push(listener);
             this.eventListeners.set(event, listeners);
@@ -40,7 +41,7 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
         readonly close = vi.fn();
         readonly destroy = vi.fn(() => {
             this.destroyed = true;
-            this.emit('closed');
+            this.emitClosed();
         });
         readonly restore = vi.fn();
         readonly focus = vi.fn();
@@ -55,14 +56,11 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
         isDestroyed = (): boolean => this.destroyed;
         isMinimized = (): boolean => this.minimized;
 
-        emit(event: string, ...args: never[]): void {
-            for (const listener of this.eventListeners.get(event) ?? []) {
-                listener(...args);
-            }
-            const onceListeners = this.onceListeners.get(event) ?? [];
-            this.onceListeners.delete(event);
-            for (const listener of onceListeners) {
-                listener(...args);
+        emitClosed(): void {
+            const listeners = this.onceListeners.get('closed') ?? [];
+            this.onceListeners.delete('closed');
+            for (const listener of listeners) {
+                listener();
             }
         }
     }
@@ -70,7 +68,7 @@ const { MockBrowserWindow, state } = vi.hoisted(() => {
     const state = {
         lockGranted: true,
         ready: deferred(),
-        listeners: new Map<string, (...args: never[]) => void>(),
+        listeners: new Map<string, EventListener>(),
         windows: [] as MockBrowserWindow[],
         order: [] as string[],
         exit: vi.fn(),
@@ -103,7 +101,7 @@ vi.mock('electron', () => ({
             return state.requestLock();
         },
         whenReady: () => state.whenReady(),
-        on: (event: string, listener: (...args: never[]) => void) => {
+        on: (event: string, listener: (...args: unknown[]) => void) => {
             state.listeners.set(event, listener);
         },
         exit: state.exit,
@@ -158,7 +156,7 @@ const emitRendererCrash = (window: InstanceType<typeof MockBrowserWindow>): void
     listener(undefined, {}, { reason: 'crashed', exitCode: 1 });
 };
 
-type ProcessErrorListener = (...args: never[]) => void;
+type ProcessErrorListener = (error: Error) => void;
 
 let stdoutErrorListeners: ProcessErrorListener[] = [];
 let stderrErrorListeners: ProcessErrorListener[] = [];
@@ -173,12 +171,12 @@ describe('Electron single-instance admission', () => {
     });
 
     afterEach(() => {
-        for (const listener of process.stdout.listeners('error') as ProcessErrorListener[]) {
+        for (const listener of process.stdout.listeners('error')) {
             if (!stdoutErrorListeners.includes(listener)) {
                 process.stdout.removeListener('error', listener);
             }
         }
-        for (const listener of process.stderr.listeners('error') as ProcessErrorListener[]) {
+        for (const listener of process.stderr.listeners('error')) {
             if (!stderrErrorListeners.includes(listener)) {
                 process.stderr.removeListener('error', listener);
             }
