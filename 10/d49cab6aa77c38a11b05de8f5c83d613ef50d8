@@ -1,0 +1,72 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_37347001c90552 113-123
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_87ab0a2f60ccf8::t_108266adc5af9b 14,16-17,32-33,42-43,90-99
+  s_87ab0a2f60ccf8::t_ff59e2b96ef21c 100
+src/modules/Collaboration/useCases/collaboration/leaveSession.ts
+  s_87ab0a2f60ccf8::t_ad6517b46c9f99 9,11,29-32
+src/modules/Collaboration/useCases/collaboration/acceptAnswer.ts
+  s_87ab0a2f60ccf8::t_e6ece4a89c83ce 7,11-14,48-52,62-64,108-110,134-136
+src/modules/Collaboration/useCases/collaboration/joinAttemptAuthority.ts
+  s_87ab0a2f60ccf8::t_b7fb3ed9a83815 11-13
+src/modules/Collaboration/useCases/collaboration/__tests__/acceptAnswer.spec.ts
+  s_87ab0a2f60ccf8::t_642e0a86d09b30 283,305
+  s_87ab0a2f60ccf8::t_074624b6c47a47 15-16,46-47,64-65,268-282,284-304,306-308
+src/modules/Collaboration/useCases/collaboration/generateInvite.ts
+  s_87ab0a2f60ccf8::t_f0a04eb60b378b 6,10-13,37-41,60-62,75-79,81-83
+src/modules/Collaboration/useCases/collaboration/__tests__/leaveSession.spec.ts
+  s_87ab0a2f60ccf8::t_2fc561214150aa 18-20,52-53,57-58,63,66,80,124-130
+  s_9b530f08172a54::t_02f4be5aa968ec 131
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_87ab0a2f60ccf8::t_fe2cddb5adf781 1-2,20-34
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_87ab0a2f60ccf8::t_32e893db971b71 28-29,87-88
+  s_87ab0a2f60ccf8::t_85f6496b85926a 17,27,30,59,86,89,176
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_87ab0a2f60ccf8::t_750e5ebd638a0a 44-83,216-219,239-241,250-252,269,278-280,311,343-345
+  s_87ab0a2f60ccf8::t_1d86ff03d68be7 612-620,622-627,629-632,634-643,646-690,692-698,700,702-733,735-744,748-757,763,784-787,798,1159
+  s_87ab0a2f60ccf8::t_7cf743ee3c73c9 808-812,835-837,839-841,844-846,855-857,863-866,868-872,884,906,910,915,952,957,965,967,984,1046-1047,1060-1062
+  s_87ab0a2f60ccf8::t_277531409fa376 427-428,460,463-465,476-478,495-497,506-508,511-513,515,520-522,528-530,533-535,537,540-542
+  s_87ab0a2f60ccf8::t_babaee9ff97efc 1066,1170-1171,1263-1266
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_87ab0a2f60ccf8::t_fe1fce9a3074d6 124-130
+  s_87ab0a2f60ccf8::t_59881ed7fc469a 1-2,12,28,99
+  s_87ab0a2f60ccf8::t_a0d32375c7ec31 105,118,123,132
+  s_87ab0a2f60ccf8::t_1a960e4aca76b5 133
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_87ab0a2f60ccf8::t_fb1e218ee3f4c5 918-941
+  s_87ab0a2f60ccf8::t_f04ebba5e54d5b 1607-1610,1708-1724
+  s_87ab0a2f60ccf8::t_c4e079f408e841 1725,1728,1909,2003-2045
+  s_87ab0a2f60ccf8::t_7a896064e84862 12,15,809-811,813-822,824-838,871-872
+  s_87ab0a2f60ccf8::t_b76ce46277ab64 1871,1881-1908
+  s_87ab0a2f60ccf8::t_b6dccc402162a9 44,169
+  s_87ab0a2f60ccf8::t_f33a4ffb63abb9 14,34,812,823,839-870
+  s_87ab0a2f60ccf8::t_c0f290283319f7 1726-1727
+  s_87ab0a2f60ccf8::t_21a8d3aec746bf 1729
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_87ab0a2f60ccf8::t_3d321a67f9f2d8 16-17,23-24,39-40,144-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "10d49cab6aa77c38a11b05de8f5c83d613ef50d8",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
