@@ -144,7 +144,7 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const loadA = await observeContentLoad(loads, loadObservers, 0);
 
         let waitSettled = false;
-        const waitingForA = engine.waitForDevices(100).then(() => {
+        const waitingForA = engine.waitForDevices().then(() => {
             waitSettled = true;
         });
         engine.resetGraph();
@@ -158,7 +158,7 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         expect(waitSettled).toBe(true);
         expect(readinessFor(engine, 'crumbs-1')).toMatchObject({ status: 'content-pending' });
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(10000);
         await waitingForA;
         expect(loadB.signal.aborted).toBe(false);
         expect(generationB.destroy).not.toHaveBeenCalled();
@@ -176,7 +176,7 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const loadA = await observeContentLoad(loads, loadObservers, 0);
 
         let waitSettled = false;
-        const waitingForA = engine.waitForDevices(100).then(() => {
+        const waitingForA = engine.waitForDevices().then(() => {
             waitSettled = true;
         });
         engine.removeDeviceFromStrip('track-1', 'crumbs-1');
@@ -189,7 +189,7 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         await vi.advanceTimersByTimeAsync(0);
         expect(waitSettled).toBe(true);
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(10000);
         await waitingForA;
         expect(loadB.signal.aborted).toBe(false);
         expect(generationB.destroy).not.toHaveBeenCalled();
@@ -215,8 +215,8 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
             { once: true }
         );
 
-        const waitingForA = engine.waitForDevices(100);
-        await vi.advanceTimersByTimeAsync(100);
+        const waitingForA = engine.waitForDevices();
+        await vi.advanceTimersByTimeAsync(10000);
         await waitingForA;
         await vi.advanceTimersByTimeAsync(0);
 
@@ -250,13 +250,13 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const originalGeneration = createCrumbsGeneration();
         engine.addDeviceToStrip('track-1', 'original', 'builtin-crumbs');
         const originalLoad = await observeContentLoad(loads, loadObservers, 0);
-        const waitingForOriginal = engine.waitForDevices(100);
+        const waitingForOriginal = engine.waitForDevices();
 
         const newGeneration = createCrumbsGeneration();
         engine.addDeviceToStrip('track-1', 'new', 'builtin-crumbs');
         const newLoad = await observeContentLoad(loads, loadObservers, 1);
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(10000);
         await waitingForOriginal;
 
         expect(originalLoad.signal.aborted).toBe(true);
@@ -276,7 +276,7 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const generation = createCrumbsGeneration();
         engine.addDeviceToStrip('track-1', 'crumbs-1', 'builtin-crumbs');
         const load = await observeContentLoad(loads, loadObservers, 0);
-        const waiting = engine.waitForDevices(100);
+        const waiting = engine.waitForDevices();
 
         load.settle('ready');
 
@@ -291,9 +291,9 @@ describe('createWebAudioEngine content-readiness timeout cohort', () => {
         const generation = createCrumbsGeneration();
         engine.addDeviceToStrip('track-1', 'crumbs-1', 'builtin-crumbs');
         const load = await observeContentLoad(loads, loadObservers, 0);
-        const waiting = engine.waitForDevices(100);
+        const waiting = engine.waitForDevices();
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(10000);
 
         await expect(waiting).resolves.toBeUndefined();
         expect(load.signal.aborted).toBe(true);
