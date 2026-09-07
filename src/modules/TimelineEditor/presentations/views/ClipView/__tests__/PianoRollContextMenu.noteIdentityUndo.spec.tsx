@@ -84,7 +84,7 @@ const renderMenu = (): { remove: () => void } => {
     const { unmount } = render(
         <TooltipProvider>
             <PianoRollContextMenu
-                menu={{ x: 100, y: 100, beat: 4, pitch: 60 }}
+                menu={{ x: 100, y: 100, beat: 4 }}
                 clipId="clip-1"
                 notes={[selectedNote, keptNote]}
                 selectedNoteIds={new Set(['n1'])}

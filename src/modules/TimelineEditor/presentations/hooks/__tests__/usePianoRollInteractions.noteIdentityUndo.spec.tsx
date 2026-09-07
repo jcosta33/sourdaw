@@ -271,7 +271,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
     describe('creation, draw, and pencil', () => {
         it('step-input creation redo re-inserts the created note under its original id', async () => {
             seedStore({});
-            const { canvas } = renderRoll({ stepInput: true, stepBeat: 4, notes: [] });
+            const { canvas } = renderRoll({ stepInput: true, stepBeat: 4 });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             const createdId = getNotesForClip('clip-1')[0]?.id;
@@ -288,7 +288,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
         it('draw-stamp creation redo re-inserts the created note under its original id', async () => {
             seedStore({});
-            const { canvas } = renderRoll({ notes: [] });
+            const { canvas } = renderRoll({});
 
             // Click without drag on an empty cell stamps a note.
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
@@ -307,7 +307,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
         it('paint (pencil) redo re-inserts the painted notes under their original ids', async () => {
             seedStore({});
-            const { canvas } = renderRoll({ paintMode: true, notes: [] });
+            const { canvas } = renderRoll({ paintMode: true });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             const painted = getNotesForClip('clip-1');
@@ -327,7 +327,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
         it('accumulates no duplicates over repeated draw/undo/redo cycles', async () => {
             seedStore({});
-            const { canvas } = renderRoll({ notes: [] });
+            const { canvas } = renderRoll({});
 
             for (let cycle = 0; cycle < 3; cycle++) {
                 fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
