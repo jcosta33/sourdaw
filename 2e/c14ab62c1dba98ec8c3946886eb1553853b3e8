@@ -1,0 +1,16 @@
+electron/__tests__/shutdown.spec.ts
+  h_1228e573df1f42 14-17,25,27-28,101-172,194-208,231-317
+electron/shutdown.ts
+  h_1228e573df1f42 35-36,52-91,97,106-109,115,122-123,136,149,167,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2ec14ab62c1dba98ec8c3946886eb1553853b3e8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
