@@ -117,6 +117,8 @@ const {
     executeUserAppActionBinding,
     recordNativeChainReleasesMock,
     registerReleasedStripReportSinkMock,
+    setDurableAudioBufferOwnershipProviderMock,
+    collectDurableOwnedAudioBufferIdsMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -174,6 +176,8 @@ const {
         toasterGrooveExecutorMock: vi.fn(),
         executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
+        setDurableAudioBufferOwnershipProviderMock: vi.fn(),
+        collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -284,6 +288,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
+    setDurableAudioBufferOwnershipProvider: setDurableAudioBufferOwnershipProviderMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -445,6 +450,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
@@ -832,6 +838,20 @@ describe('bootstrap', () => {
      */
     it('wires an unload plugin release report to narrow the native chain session AudioEngine holds', () => {
         expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(recordNativeChainReleasesMock);
+    });
+
+    /**
+     * AudioEngine's cache collectors must ask Project's persisted snapshots for
+     * the durable owned-id set at collection time (#3777), and AudioEngine
+     * cannot import Project, so the composition root is the only place that
+     * binding can be made. Pinned by reference like the other seam wirings:
+     * dropping the registration, or handing the seam some other function,
+     * leaves the collectors sweeping saved projects' PCM as if it were orphans.
+     */
+    it('wires the durable audio ownership provider to the persisted-project enumeration', () => {
+        expect(setDurableAudioBufferOwnershipProviderMock).toHaveBeenCalledExactlyOnceWith(
+            collectDurableOwnedAudioBufferIdsMock
+        );
     });
 
     /**

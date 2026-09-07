@@ -48,5 +48,6 @@ export { verifyAudioBufferReferences } from './projectPersistence/helpers/verify
 
 export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
+export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

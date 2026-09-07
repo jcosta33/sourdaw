@@ -20,6 +20,7 @@ export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
 export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
+export { setDurableAudioBufferOwnershipProvider } from './configureDurableAudioBufferOwnership';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
