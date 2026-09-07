@@ -6,6 +6,7 @@ export { quiesceProjectSession } from './projectPersistence/quiesceProjectSessio
 export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
+export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
 export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
