@@ -839,6 +839,20 @@ describe('default budgets', () => {
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 5.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 5.5 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 5.5 * 1024 ** 3 },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['test:e2e', 'tests/e2e/exportAudioEvidence.spec.ts'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['test:e2e:browser-ai-webgpu-admission'],
+            expected: 5.5 * 1024 ** 3,
+        },
     ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
     });
@@ -862,6 +876,17 @@ describe('default budgets', () => {
             });
             expect(typecheckResult.code).toBe(0);
             expect(typecheckResult.maxRssBytes).toBe(6 * 1024 ** 3);
+
+            const e2eResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['test:e2e', 'tests/e2e/exportAudioEvidence.spec.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(e2eResult.code).toBe(0);
+            expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
 
             const otherResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
