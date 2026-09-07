@@ -1,0 +1,21 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_e96ed3a371bdc1 25,80-89,91-92,135,169-184,189,195-198,200-205,207-220,222-225,227-228
+  s_87ab0a2f60ccf8::t_7482b3d75a5d47 194,199,206
+  s_87ab0a2f60ccf8::t_fedd24d9e9ec97 90,128-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "76d43bd7ea078c983b1ba01e6313a74bb0caf89e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": null
+    }
+  }
+}
