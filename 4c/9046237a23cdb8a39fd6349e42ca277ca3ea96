@@ -1,0 +1,149 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_9b530f08172a54::t_b615a859a683d4 12-13,15,17,31,66-67,123,127-132,150-156,158-159,163,168-169,171-172,178-180,183-187,190-191,195-197,216-222,224-225,229,232-235,237-238,243-244,246-248,253-262,265-266,270-272,291-297,299-300,304,307-310,312-313,319-321,324-328,331-332,336-338,357-363,365-366,370,373-376,378-379,385-387,390-394,397-398,402-404,423-429,431-432,436,439-442,444-445,451-460,467-470,489,491-495,497-498,502,505-508,510-511,516-517,519-521,526-535,538-539,542-545,564-573,577,580-583,585-586,592-601,604-605,608-611,630-639,643,646-649,651-652,658-667,675-677,696-702,704-705,709,712-715,717-718,724-737,740-743,762-771,775,778-781,783-784,790-800,802-803,807-809,828-834,836-837,841,844-847,849-850,856-865,868-869,873-875,894-900,902-903,907,910-913,915-916,921-931,934-935,938-941,960-969,973,978-979,981,987-997,1000-1001,1004-1007,1026-1032,1034-1035,1039,1044-1045,1047,1054-1056,1059-1063,1066-1067,1071-1073,1092-1098,1100-1101,1105,1110-1111,1113,1119-1129,1132-1133,1137-1139,1158-1167,1171,1176-1177,1179-1180,1186-1188,1191-1195,1198-1199,1203-1205,1224-1233,1237,1240-1243,1245-1246,1251-1261,1264-1265,1268-1271,1282,1286,1290-1296,1298-1299,1303,1306-1309,1311-1312,1318-1320,1323-1327,1330-1331,1335-1337,1356-1362,1364-1365,1369,1372-1375,1377-1378,1384-1386,1389-1393,1396-1397,1401-1403,1422,1424-1428,1430-1431,1435,1438-1441,1443-1444,1449-1450,1452-1454,1459-1461,1464-1468,1471-1472,1476-1478
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_9b530f08172a54::t_2150f20c7e9b7d 152-153,155-156,174,204-222,228,235-237,245,250-253,256,277,285-304
+crates/daw-dsp/src/fermenter/mod.rs
+  s_9b530f08172a54::t_a266cbbbba17d9 173-179,201-202,325-326,391-398,405,420-421
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_9b530f08172a54::t_25a0ce3a27a334 34-41,63-64,195-211
+crates/daw-dsp/src/levain/mod.rs
+  s_9b530f08172a54::t_d43cce3ad889d3 28-35,51-52,309-310
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_0e146cada3e72b 55-57,64-65,105,131-141,143-148,152-170,178-179,182-183,188-207,219,235,237,243,247,254-258,260,268,271-272,277-286,289-294,307-308,321-391,563-570,819-822,890-891,1119-1135,1140-1143,1146-1166,1168-1174,1176-1214,1259-1260,1267-1275,1324,1334-1339,1341-1354,1360-1362,1371-1373,1398-1401,1404-1421,1455-1475,1627-1637,1640-1721,1725-1726,1730-1735,1738-1739,1741-1744,1746-1830,1834-1836,1839,1841-1844,1846,2084-2088,2301,2344,2361,2363,2402,2448,2511-2512,2517,2525-2526,2536,2562-2671,2673-2674,3507-3508,4077
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_df4a43b87dc253 92,159,236-243,246-251,254-274,282,619,1240-1249,1371,1441,1744-1831,2774
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_fcf80a871496b4 18-20,25-26,245,256,267,283,905,920,930,936-949,967-974,1067-1072,1129,1146-1147,1200-1410,1415,1433-1437,4533-4538,7053-7114,13350,13370,13378-13379,13385,13410-13428,14011,14018,14136-14574
+crates/daw-engine/src/timeline.rs
+  s_9b530f08172a54::t_7f67c60eb48b1c 142-145,147,149-161,179-180,184,192,195,198,219,230-232,240,248,3393,3395,3397,3408-3409,3415,3422,3428,3435,3439-3440,3442,3456-3457,3460,3465,3470,3475,3480
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_599cf0326263c3 159-160,162,1801-1802,1804,1810-1817,1819-1821,1862-1863,1872,1876,2026-2029,2032-2049,7771,7782,7801-7894,7984,7987,8229-8230,8299-8300,10037-10068,10162-10240,10353
+electron/__tests__/security.spec.ts
+  s_9b530f08172a54::t_9d6f669599667d 57
+electron/__tests__/singleInstanceAdmission.spec.ts
+  s_9b530f08172a54::t_6a3f3869e55918 1-305
+electron/main.ts
+  s_9b530f08172a54::t_6a375ff7afa89f 101-108,145,168-195,752-766,768-789,791-825,827-830,926
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_21a812a7185fe0 1,285-286
+public/wasm/daw-dsp/daw_dsp.js
+  s_9b530f08172a54::t_5e82bb6884ff3c 578-579
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_866260c44df3fb 1
+public/wasm/manifest.json
+  s_9b530f08172a54::t_2e43f82c31c1ab 12,15-18,20-21
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_9b530f08172a54::t_fb9a373ac3e1c0 1591-1592,2163,3276,5214,7671-7792
+scripts/deliverPullRequest.ts
+  s_9b530f08172a54::t_939cacb9885856 2652-2653,2655-2688
+src/modules/Arrangement/handlers/device/__tests__/handleSetExternalPluginState.spec.ts
+  s_9b530f08172a54::t_fbf71b53d3135e 5-6,8,21,34,44-62
+src/modules/Arrangement/handlers/device/handleSetExternalPluginState.ts
+  s_9b530f08172a54::t_8c844401e4a780 7-24
+src/modules/Arrangement/useCases/device/__tests__/setExternalPluginState.spec.ts
+  s_9b530f08172a54::t_660f6737e8d3c3 7-8,10-12,17-21,30-31,39-40,49-112,116-118,120-121,127-129,131-132
+src/modules/Arrangement/useCases/device/setExternalPluginState.ts
+  s_9b530f08172a54::t_ffff01b02a9099 1-7,11-59,66-73,75,78,81-83,88-89,92-97
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9b530f08172a54::t_065d46e03e7f2d 147,624-631,790,795-798,952,955-957,963-968
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_9b530f08172a54::t_e76f88d6fc8da2 1245,1262-1263,1269,1282-1375,1379-1380,1384
+src/modules/AudioEngine/models/GrandBouleDspParamNames.ts
+  s_9b530f08172a54::t_5582ddc2e008f5 1-49
+src/modules/AudioEngine/models/__tests__/grandBouleDspParamNames.spec.ts
+  s_9b530f08172a54::t_a5fe0717bc0d57 1-42
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_9b530f08172a54::t_c8bd3fdba3a5c6 636,641-643,649,653-654
+src/modules/AudioEngine/repositories/__tests__/deviceContentReadinessTimeout.integration.spec.ts
+  s_9b530f08172a54::t_5e736a20c3d0ec 1-306
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_9b530f08172a54::t_e627d6cde12758 2227-2248,2251-2253
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_dbb5d28b45eaa7 26,104-105,107-108,110,119,134,164,193-244
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_bc7c37411a5f73 507
+src/modules/AudioEngine/useCases/livePlayback/__tests__/soundsNativeNotes.spec.ts
+  s_9b530f08172a54::t_9b581ff6a694cc 14-15
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_4e2c708be2b924 42-43,81-101,121-136
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_74264a40a3e7de 1,285-286
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_9b530f08172a54::t_893de453460716 755-756
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.worker.spec.ts
+  s_9b530f08172a54::t_178afb4b418d5f 1,27-115
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_9b530f08172a54::t_d1e435c25bd65a 248,305-309,343,345-347,354-356,370-372,381-383,433-435,440-454,488-490,754,759,767,770-772,840,1017-1018,1021-1024,1063-1065,1087-1089,1101,1123-1126
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  s_9b530f08172a54::t_22a1eb19ca5f1c 1-328
+src/modules/CrdtDocument/useCases/captureProjectRootIdentity.ts
+  s_9b530f08172a54::t_4bdba9ccc6ea12 1-10
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_9b530f08172a54::t_559bbdcf8fbd13 1-182
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_9b530f08172a54::t_77e8a749a2245a 13-14,18
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts
+  s_9b530f08172a54::t_131f0153855436 14,16,42-43,47,70-75,133,139
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranch.spec.ts
+  s_9b530f08172a54::t_8feaa382c264c4 17,19,50-51,55,84-89,97,103,110,114,131-132,139-153
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_9b530f08172a54::t_5e3df7539cc40c 21-22,26
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_9b530f08172a54::t_b9490fae94b3ff 86,88,123-124,128,176-181,187,278,286
+src/modules/CrdtDocument/useCases/crdtBranching/mergeBranch.ts
+  s_9b530f08172a54::t_ffa9ca1dc74ca8 56
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_9b530f08172a54::t_aba9ab14ea7373 37,43-49,73,78,82,115,131
+src/modules/CrdtDocument/useCases/index.ts
+  s_9b530f08172a54::t_306c81e458bf21 6
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_92bb4276a13fd4 351,353,355,359
+src/modules/PluginHost/AGENTS.md
+  s_9b530f08172a54::t_d6cb0128ca0342 12,29-30
+src/modules/PluginHost/useCases/index.ts
+  s_9b530f08172a54::t_7edaaa9dbbe3ee 33-34,36
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_9b530f08172a54::t_b7fed0dd5563a6 8,10-11,13,284-426
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_9b530f08172a54::t_4c00fc53a86e1e 1-521
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_9b530f08172a54::t_a60d7fe104cb88 16,56-65,131-133,139-142,237-239,244-247
+src/modules/PluginHost/useCases/pluginLifecycle/clearExternalPluginRestoreFailure.ts
+  s_9b530f08172a54::t_6855a3ba794a96 1-13
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_9b530f08172a54::t_e8b70fe1f63db5 16,34-36
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginRestoreFailures.ts
+  s_9b530f08172a54::t_93a2d37ba82a65 1-24
+src/modules/PluginHost/useCases/pluginLifecycle/forgetPluginInstance.ts
+  s_9b530f08172a54::t_3569603a012917 18,26-29
+src/modules/PluginHost/useCases/pluginLifecycle/hasUnresolvedExternalPluginRestoreFailure.ts
+  s_9b530f08172a54::t_f6e6464ef57915 1-9
+src/modules/PluginHost/useCases/pluginLifecycle/shouldWarnExternalPluginRestoreFailure.ts
+  s_9b530f08172a54::t_6cdccf5b602d33 1-19
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_9b530f08172a54::t_307f6db167fc95 134,136-137
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_9b530f08172a54::t_85a670533d83bf 11,18-20,28-33,44,82-174
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_42eb97f8944498 206,208-209
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_dc58cf23662815 159,161-162
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_9b530f08172a54::t_bb435c188deca1 3-8,25-34,51,59-71,106-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4c9046237a23cdb8a39fd6349e42ca277ca3ea96",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
