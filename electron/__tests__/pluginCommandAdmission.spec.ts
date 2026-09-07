@@ -14,6 +14,7 @@ const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'retire_native_engine',
     'scan_plugins',
     'set_plugin_bypass',
     'set_plugin_parameter',
@@ -57,6 +58,9 @@ describe('plugin command admission during quit', () => {
         // The engine bootstrap: admitted after the cascade drained the plugin
         // runtimes, it would spawn an audio stream on the way out.
         expect(admission.acceptsCommand('apply_graph_commands')).toBe(false);
+        // The engine retire: it drains those same runtimes and closes their
+        // editors, so it must not race the cascade doing the same.
+        expect(admission.acceptsCommand('retire_native_engine')).toBe(false);
     });
 
     it('still accepts non-runtime commands after quit has begun', () => {

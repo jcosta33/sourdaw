@@ -17,6 +17,12 @@
  * runtimes it feeds, which is the same insertion-after-the-drain hazard a late
  * `load_plugin` is closed for.
  *
+ * `retire_native_engine` is here for both reasons: it drains `engine_plugins`,
+ * closing each instance's editor and retiring its runtime, and it empties the
+ * engine slot so the next `apply_graph_commands` boots a fresh engine. Admitted
+ * after the cascade drained the runtimes, it would tear down instances the
+ * cascade already owns and leave the shell answering a retire mid-exit.
+ *
  * The engine transport commands are deliberately absent. `engine_transport_position`
  * only reads a published snapshot, and `engine_transport_set_maps` refuses outright
  * when no engine is running rather than bootstrapping one — so neither can insert
@@ -30,6 +36,7 @@ export const PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
+    'retire_native_engine',
     'scan_plugins',
     'set_plugin_bypass',
     'set_plugin_parameter',

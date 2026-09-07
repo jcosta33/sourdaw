@@ -36,11 +36,23 @@
 //! drained — `retiredInstanceIds`, the UI instance ids, ascending — so the
 //! renderer knows exactly which plugins it must reload itself.
 
+use std::time::Duration;
+
+use daw_engine::EngineHandle;
+use daw_plugin_host::AudioPlugin;
 use serde::{Deserialize, Serialize};
 
+use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::plugin_window::PluginWindowHost;
+use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 
 use super::crumbs::{self, CrumbsState};
+use super::plugins::{editor_thread, hold_plugin_runtime_gate, remove_plugin_window};
+
+/// How long an editor close may hold the runtime's control seam, the same
+/// budget the unload path gives its own close.
+const EDITOR_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What the retire found, and did.
 ///
@@ -91,46 +103,48 @@ impl RetireNativeEngineResult {
 ///
 /// The order matters and is stated rather than implied:
 ///
-/// 1. the handle leaves the slot, and the slot lock is released — every step
-///    below takes its own locks, and none of them is held across the handle's
-///    drop;
-/// 2. the engine-owned runtimes are retired for reclamation;
-/// 3. every attached crumbs instance goes back to dormant, so the next batch
-///    re-registers it;
-/// 4. the graph registry drops the ledger it kept against the dead engine's
-///    ring;
-/// 5. the handle drops last, because that drop waits on the audio-owner
-///    thread and a lock held across it would park every other claim for the
-///    shutdown timeout;
-/// 6. one sweep, after that drop, because the scheduler releasing its `Arc` is
-///    what makes a retired runtime free-able.
+/// 1. the plugin-runtime gate is taken in read mode, so a load or an unload
+///    cannot be inside a runtime this drain is about to retire;
+/// 2. the graph registry is taken and held for everything that follows,
+///    because `apply_graph_commands` holds it across `start_into_empty_slot`,
+///    its crumbs attach and the batch itself. Without it a batch already past
+///    its own admission would boot a replacement engine and register crumbs
+///    slots on it while this retire was still draining, and the reset below
+///    would then throw away the *new* engine's ledger;
+/// 3. under that guard: the slot lock for the `is_rendering` verdict and the
+///    handle's removal, then the engine-owned runtimes' editors and their
+///    retirement, then every attached crumbs instance back to dormant, then
+///    the registry's own reset;
+/// 4. both the gate and the registry go before the handle drops, because that
+///    drop waits on the audio-owner thread and a lock held across it would
+///    park every other claim for the shutdown timeout;
+/// 5. one sweep, after that drop and outside the gate, because the scheduler
+///    releasing its `Arc` is what makes a retired runtime free-able and the
+///    gate is fair — a sweep under it would make a queued writer wait out
+///    third-party teardown.
 ///
-/// No two of the stores are ever held at once, so this path establishes no
-/// lock order and can invert none: the crate's existing orders (`crumbs`
-/// takes instances then engine, `graph` takes registry then engine) are
-/// untouched. Nothing here runs on the audio thread.
+/// The lock order is gate -> registry -> (engine | engine_plugins |
+/// instances), every leg of which the crate already establishes: `graph` takes
+/// registry then engine, `crumbs::create_crumbs` takes registry then instances
+/// then engine, and `plugins::release_then_retire_engine_plugin` takes registry
+/// then engine under the same gate a keyed unload holds. Nothing is held across
+/// a plugin call or across the handle's drop, and nothing here runs on the audio
+/// thread.
 pub async fn retire_native_engine(
     state: &AppState,
     crumbs: &CrumbsState,
+    windows_host: &dyn PluginWindowHost,
 ) -> RetireNativeEngineResult {
-    let retired_engine = {
-        let mut slot = locked_or_poisoned(&state.engine);
-        let Some(engine) = slot.as_ref() else {
-            return RetireNativeEngineResult::of(RetireOutcome::NoEngine, Vec::new());
+    let (retired_engine, retired_instance_ids) =
+        match drain_the_lost_engine(state, crumbs, windows_host).await {
+            DrainedEngine::NothingToRetire(outcome) => {
+                return RetireNativeEngineResult::of(outcome, Vec::new())
+            }
+            DrainedEngine::Drained {
+                handle,
+                retired_instance_ids,
+            } => (handle, retired_instance_ids),
         };
-        // The watchdog's own verdict, the same one `apply_graph_commands`
-        // admits a batch on: a `DeviceChanged` reroute the callback survived
-        // leaves this true, and retiring on the *kind* of the last fault
-        // would tear down a session that never stopped sounding.
-        if engine.is_rendering() {
-            return RetireNativeEngineResult::of(RetireOutcome::Rendering, Vec::new());
-        }
-        slot.take()
-    };
-
-    let retired_instance_ids = retire_engine_owned_plugins(state);
-    crumbs::detach_from_retired_engine(crumbs);
-    locked_or_poisoned(&state.graph).reset_for_engine_restart();
 
     drop(retired_engine);
 
@@ -143,9 +157,71 @@ pub async fn retire_native_engine(
     RetireNativeEngineResult::of(RetireOutcome::Retired, retired_instance_ids)
 }
 
-/// Empty `engine_plugins` and hand every runtime to the retirement vec.
+/// What the guarded section handed back: a drained handle for the caller to
+/// drop with every lock released, or the outcome that made the retire a no-op.
+enum DrainedEngine {
+    Drained {
+        handle: EngineHandle,
+        retired_instance_ids: Vec<String>,
+    },
+    NothingToRetire(RetireOutcome),
+}
+
+/// Everything the retire does while it holds the gate and the registry.
 ///
-/// `begin_unload` then `retire` then retain, the order `shutdown.rs` keeps
+/// A function of its own so that both guards are released by returning, which
+/// is what keeps the handle's drop and the sweep out of them — see
+/// [`retire_native_engine`]'s own doc for the order and the reasons.
+async fn drain_the_lost_engine(
+    state: &AppState,
+    crumbs: &CrumbsState,
+    windows_host: &dyn PluginWindowHost,
+) -> DrainedEngine {
+    let _runtime_guard = hold_plugin_runtime_gate().await;
+    let mut registry = locked_or_poisoned(&state.graph);
+
+    let handle = {
+        let mut slot = locked_or_poisoned(&state.engine);
+        let Some(engine) = slot.as_ref() else {
+            return DrainedEngine::NothingToRetire(RetireOutcome::NoEngine);
+        };
+        // The watchdog's own verdict, the same one `apply_graph_commands`
+        // admits a batch on: a `DeviceChanged` reroute the callback survived
+        // leaves this true, and retiring on the *kind* of the last fault
+        // would tear down a session that never stopped sounding.
+        if engine.is_rendering() {
+            return DrainedEngine::NothingToRetire(RetireOutcome::Rendering);
+        }
+        let Some(handle) = slot.take() else {
+            return DrainedEngine::NothingToRetire(RetireOutcome::NoEngine);
+        };
+        handle
+    };
+
+    let retired_instance_ids = retire_engine_owned_plugins(state, Some(windows_host));
+    crumbs::detach_from_retired_engine(crumbs);
+    registry.reset_for_engine_restart();
+
+    DrainedEngine::Drained {
+        handle,
+        retired_instance_ids,
+    }
+}
+
+/// Close each engine-owned instance's editor, then hand its runtime to the
+/// retirement vec, leaving `engine_plugins` empty.
+///
+/// The editor close comes first, for the reason `shutdown.rs` states as its
+/// own step ordering: the final drop of a retired runtime runs the format's
+/// teardown, and for an instance whose editor is still open that teardown
+/// reaches CLAP `gui.destroy` and VST3 `removed` — thread-affine calls that
+/// would then run on whichever worker happened to hold the last `Arc`, which
+/// on this path is the napi worker rather than the shell's UI thread.
+/// [`remove_plugin_window`] follows for the same reason it follows in
+/// `unload_plugin_runtime`: a record left in `plugin_windows` names a window
+/// for an instance the renderer has been told to reload.
+///
+/// Then `begin_unload`, `retire`, retain — the order `shutdown.rs` keeps
 /// (`take_live_plugin_instances`, `retire_for_reclamation`): the withdrawal
 /// of the intent to process comes first so the stop is never missed, and the
 /// retention comes before this pass lets go of its own reference, so a
@@ -156,13 +232,16 @@ pub async fn retire_native_engine(
 /// drains, so it would pop nothing. The scheduler's own `Arc` is released
 /// when the owner thread drops the scheduler behind the handle instead.
 ///
-/// The plugin calls happen outside the store's critical section, because both
-/// of them reach into third-party code and a store held across one parks
-/// every other plugin command for its duration.
+/// Every plugin call happens outside `engine_plugins`' critical section,
+/// because each of them reaches into third-party code and a store held across
+/// one parks every other plugin command for its duration.
 ///
 /// Returns the drained records' UI instance ids, sorted ascending: the
 /// renderer has no other way to learn which plugins it must reload.
-fn retire_engine_owned_plugins(state: &AppState) -> Vec<String> {
+fn retire_engine_owned_plugins(
+    state: &AppState,
+    windows_host: Option<&dyn PluginWindowHost>,
+) -> Vec<String> {
     let instances: Vec<(String, EnginePluginInstanceData)> = {
         let mut engine_plugins = locked_or_poisoned(&state.engine_plugins);
         std::mem::take(&mut *engine_plugins).into_iter().collect()
@@ -170,6 +249,7 @@ fn retire_engine_owned_plugins(state: &AppState) -> Vec<String> {
 
     let mut retired_instance_ids = Vec::with_capacity(instances.len());
     for (instance_id, instance) in instances {
+        close_editor_before_retiring(&instance_id, &instance.runtime, windows_host, state);
         instance.runtime.begin_unload();
         instance.runtime.retire();
         state.retain_retired_engine_plugin(instance.runtime);
@@ -179,9 +259,37 @@ fn retire_engine_owned_plugins(state: &AppState) -> Vec<String> {
     retired_instance_ids
 }
 
+/// Give one retiring instance's editor its close on the shell's UI thread, and
+/// forget the window that held it.
+///
+/// The same pair `unload_plugin_runtime` performs, reached through the same
+/// helpers rather than re-derived: `with_unload_control` takes the runtime's
+/// control seam without asking the lifecycle for permission — the instance is
+/// on its way out — and [`lend_on_ui_thread`] is what carries the call to the
+/// thread the format binds it to. A refusal is logged and the retire carries
+/// on, because a third-party editor must not be able to keep a dead engine in
+/// its slot.
+fn close_editor_before_retiring(
+    instance_id: &str,
+    runtime: &SharedHostedPlugin,
+    windows_host: Option<&dyn PluginWindowHost>,
+    state: &AppState,
+) {
+    if let Err(error) = runtime.with_unload_control(EDITOR_CLOSE_TIMEOUT, |plugin| {
+        lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
+            plugin.close_gui()
+        })
+    }) {
+        eprintln!("[Plugin] GUI cleanup failed during engine retire: {error}");
+    }
+
+    remove_plugin_window(instance_id, windows_host, state);
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::thread::ThreadId;
 
     use daw_engine::engine_events::StreamErrorKind;
     use daw_engine::scheduler::GraphCommand;
@@ -191,9 +299,67 @@ mod tests {
     use crate::block_on_test;
     use crate::commands::graph::apply_graph_commands;
     use crate::host::native_bridge::SharedHostedPlugin;
+    use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
+    use crate::host::ui_thread::UiThread;
     use crate::state::{EnginePluginInstanceData, PluginInstanceData};
 
     use super::*;
+
+    /// How long the registry-contention test lets the retire thread try to
+    /// take a registry this thread is holding.
+    ///
+    /// Only a *negative* claim rests on it — that the engine is still in its
+    /// slot — so a machine too loaded to schedule the retire thread within the
+    /// window weakens the test rather than failing it, and the join below
+    /// proves the thread ran at all.
+    const CONTENTION_WINDOW: Duration = Duration::from_millis(50);
+
+    /// A window host that records the labels it was asked to destroy.
+    ///
+    /// Runs editor calls inline — the default [`UiThread`], the same answer
+    /// [`NoWindowHost`] gives — because a test thread is the only thread there
+    /// is here. What it adds over `NoWindowHost` is the record.
+    #[derive(Default)]
+    struct DestroyRecordingWindowHost {
+        destroyed: Mutex<Vec<String>>,
+    }
+
+    impl DestroyRecordingWindowHost {
+        fn destroyed_labels(&self) -> Vec<String> {
+            self.destroyed
+                .lock()
+                .expect("the destroy log is readable")
+                .clone()
+        }
+    }
+
+    impl UiThread for DestroyRecordingWindowHost {}
+
+    impl PluginWindowHost for DestroyRecordingWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("This host cannot create plugin editor windows".to_string())
+        }
+
+        fn destroy_window(&self, label: &str) {
+            self.destroyed
+                .lock()
+                .expect("the destroy log is writable")
+                .push(label.to_string());
+        }
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
 
     /// A batch that carries no commands at all: enough to fence, attach every
     /// dormant instance and report a number, and nothing else. What these
@@ -291,15 +457,45 @@ mod tests {
             .len()
     }
 
-    fn retire(state: &AppState, crumbs: &CrumbsState) -> RetireNativeEngineResult {
-        block_on_test(retire_native_engine(state, crumbs))
+    /// An engine-owned runtime whose editor is already open, plus the log
+    /// every editor lifecycle call on it writes its thread to.
+    ///
+    /// The log is taken from the wrapper before the access seam closes over
+    /// it, and emptied of the open's own entry, so anything in it afterwards
+    /// is a call the retire made.
+    fn engine_owned_runtime_with_an_open_editor(
+        name: &str,
+    ) -> (Arc<SharedHostedPlugin>, Arc<Mutex<Vec<ThreadId>>>) {
+        let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(name, Vec::new(), true);
+        wrapper
+            .open_gui(std::ptr::null_mut())
+            .expect("the fixture's editor opens");
+        let editor_calls = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("the fixture logs its editor calls");
+        editor_calls
+            .lock()
+            .expect("the editor call log is writable")
+            .clear();
+        (
+            Arc::new(SharedHostedPlugin::new(wrapper.into())),
+            editor_calls,
+        )
+    }
+
+    fn retire(
+        state: &AppState,
+        crumbs: &CrumbsState,
+        windows_host: &dyn PluginWindowHost,
+    ) -> RetireNativeEngineResult {
+        block_on_test(retire_native_engine(state, crumbs, windows_host))
     }
 
     #[test]
     fn an_empty_slot_reports_no_engine() {
         let state = AppState::default();
 
-        let result = retire(&state, &CrumbsState::default());
+        let result = retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
@@ -321,7 +517,7 @@ mod tests {
         let _commands = fill_slot_with_capture_engine(&state);
         insert_engine_owned_plugin(&state, "engine-instance", engine_owned_runtime("Live"));
 
-        let result = retire(&state, &CrumbsState::default());
+        let result = retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
@@ -350,7 +546,7 @@ mod tests {
         let _commands = fill_slot_with_capture_engine(&state);
         stall_the_engine_in_the_slot(&state);
 
-        let result = retire(&state, &CrumbsState::default());
+        let result = retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
@@ -383,7 +579,7 @@ mod tests {
         );
 
         stall_the_engine_in_the_slot(&state);
-        retire(&state, &CrumbsState::default());
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         let registry = state.graph.lock().expect("the registry is readable");
         assert!(
@@ -403,7 +599,7 @@ mod tests {
         insert_engine_owned_plugin(&state, "engine-instance", runtime);
         stall_the_engine_in_the_slot(&state);
 
-        retire(&state, &CrumbsState::default());
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert!(
             state
@@ -429,6 +625,111 @@ mod tests {
         );
     }
 
+    /// The other half of the sweep contract: with no scheduler clone left, the
+    /// retire's own sweep is the reclamation point and there is no later one
+    /// on this path.
+    #[test]
+    fn a_retire_frees_a_runtime_nothing_else_still_holds() {
+        let state = AppState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        insert_engine_owned_plugin(
+            &state,
+            "engine-instance",
+            engine_owned_runtime("Retire Fixture"),
+        );
+        stall_the_engine_in_the_slot(&state);
+
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
+
+        assert_eq!(
+            retired_runtime_count(&state),
+            0,
+            "no other Arc holds this runtime, so the retire's own sweep is what has to free it"
+        );
+    }
+
+    /// What a retired runtime must report about itself: the intent to process
+    /// withdrawn, and the control path closed as *retired* rather than merely
+    /// unloading.
+    #[test]
+    fn a_retired_runtime_stops_wanting_to_process_and_refuses_control_as_retired() {
+        let state = AppState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        let runtime = engine_owned_runtime("Retire Fixture");
+        // Kept so the sweep cannot free the runtime before it is read.
+        let observed = Arc::clone(&runtime);
+        insert_engine_owned_plugin(&state, "engine-instance", runtime);
+        stall_the_engine_in_the_slot(&state);
+        assert!(
+            observed.processing_gate().wants_processing(),
+            "the fixture starts in the state a loaded plugin reaches: wanted, and processing"
+        );
+
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
+
+        assert!(
+            !observed.processing_gate().wants_processing(),
+            "without the withdrawal the audio thread is never told to leave the processing state"
+        );
+        assert_eq!(
+            observed
+                .ensure_public_control_allowed()
+                .expect_err("a retired runtime admits no public control"),
+            "Engine-owned plugin instance 'Retire Fixture' has been retired",
+            "a runtime left merely unloading reads as an operation still in flight, not as one whose instance is gone"
+        );
+    }
+
+    /// A runtime whose editor is still open must get its `close_gui` here,
+    /// on the shell's UI thread. Left to the final drop, the format's teardown
+    /// runs `gui.destroy` on whichever worker held the last `Arc`.
+    ///
+    /// The scheduler's clone is held for the whole test, which is both what a
+    /// live audio thread does and what makes the claim discriminating: the
+    /// wrapper's own `Drop` closes an editor it still finds open, so a runtime
+    /// this test let the sweep free would record the very call whose absence is
+    /// the defect.
+    #[test]
+    fn a_retire_closes_an_open_editor_and_forgets_its_window() {
+        let state = AppState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        let (runtime, editor_calls) = engine_owned_runtime_with_an_open_editor("Editor Fixture");
+        let _scheduler_clone = Arc::clone(&runtime);
+        insert_engine_owned_plugin(&state, "engine-instance", runtime);
+        state
+            .plugin_windows
+            .lock()
+            .expect("the window records are writable")
+            .insert("engine-instance".to_string(), "plugin-window-1".to_string());
+        stall_the_engine_in_the_slot(&state);
+
+        let windows_host = DestroyRecordingWindowHost::default();
+        retire(&state, &CrumbsState::default(), &windows_host);
+
+        assert_eq!(
+            editor_calls
+                .lock()
+                .expect("the editor call log is readable")
+                .len(),
+            1,
+            "the editor's close must reach the plugin while the retire still owns the call"
+        );
+        assert!(
+            state
+                .plugin_windows
+                .lock()
+                .expect("the window records are readable")
+                .get("engine-instance")
+                .is_none(),
+            "a record left behind names a window for an instance the renderer was told to reload"
+        );
+        assert_eq!(
+            windows_host.destroyed_labels(),
+            vec!["plugin-window-1".to_string()],
+            "the shell's window has to go with the editor it held"
+        );
+    }
+
     #[test]
     fn a_retire_reports_the_engine_owned_instances_it_drained_in_ascending_order() {
         let state = AppState::default();
@@ -437,7 +738,7 @@ mod tests {
         insert_engine_owned_plugin(&state, "a", engine_owned_runtime("Retire Fixture"));
         stall_the_engine_in_the_slot(&state);
 
-        let result = retire(&state, &CrumbsState::default());
+        let result = retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert_eq!(
             result.retired_instance_ids,
@@ -458,7 +759,7 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
-        retire(&state, &CrumbsState::default());
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
 
         assert!(
             state
@@ -487,7 +788,7 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
-        retire(&state, &crumbs_state);
+        retire(&state, &crumbs_state, &NoWindowHost);
 
         assert!(
             !crumbs::instance_is_attached(&crumbs_state, "instance-1"),
@@ -542,7 +843,7 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
-        retire(&state, &CrumbsState::default());
+        retire(&state, &CrumbsState::default(), &NoWindowHost);
         let _replacement_commands = fill_slot_with_capture_engine(&state);
         let applied = block_on_test(apply_graph_commands(
             empty_batch(),
@@ -559,23 +860,71 @@ mod tests {
         );
     }
 
-    /// The handle's own drop, on a real engine, waits on the audio-owner
-    /// thread. This is the fixture handle, so the wait returns at once — what
-    /// the assertion is about is that nothing here holds a store across it.
+    /// The registry guard is what makes the retire atomic against the batch
+    /// path. `apply_graph_commands` holds it across `start_into_empty_slot`,
+    /// its crumbs attach and the batch, so while it is held nothing may be
+    /// taken out from under it — not the engine handle, and not the
+    /// engine-owned records a batch is about to map devices onto.
+    ///
+    /// Held here from the test thread, which is the batch path's stand-in: the
+    /// retire runs on its own thread and must get no further than the registry
+    /// until this thread lets go.
     #[test]
-    fn a_retire_leaves_every_store_unlocked() {
+    fn a_retire_takes_nothing_while_a_batch_holds_the_registry() {
         let state = AppState::default();
         let crumbs_state = CrumbsState::default();
         let _commands = fill_slot_with_capture_engine(&state);
+        insert_engine_owned_plugin(
+            &state,
+            "engine-instance",
+            engine_owned_runtime("Retire Fixture"),
+        );
         stall_the_engine_in_the_slot(&state);
 
-        retire(&state, &crumbs_state);
+        let registry_guard = state.graph.lock().expect("the registry is free");
+        let (retire_started, retire_starting) = mpsc::channel();
 
-        assert!(state.engine.try_lock().is_ok());
-        assert!(state.engine_plugins.try_lock().is_ok());
-        assert!(state.plugins.try_lock().is_ok());
-        assert!(state.graph.try_lock().is_ok());
-        assert!(crumbs_state.instances.try_lock().is_ok());
-        assert!(state.retired_engine_plugins.try_lock().is_ok());
+        let retiring_state = &state;
+        let retiring_crumbs = &crumbs_state;
+        let result = std::thread::scope(|scope| {
+            let retiring = scope.spawn(move || {
+                retire_started
+                    .send(())
+                    .expect("the test thread waits for this");
+                retire(retiring_state, retiring_crumbs, &NoWindowHost)
+            });
+
+            retire_starting.recv().expect("the retire thread starts");
+            std::thread::sleep(CONTENTION_WINDOW);
+
+            assert!(
+                slot_holds_an_engine(&state),
+                "a retire that takes the handle without the registry lets a batch boot a replacement into the slot it is about to drain"
+            );
+            assert_eq!(
+                state
+                    .engine_plugins
+                    .lock()
+                    .expect("engine_plugins lock")
+                    .len(),
+                1,
+                "the drain must wait too: a batch holding the registry is mapping devices onto these records"
+            );
+
+            drop(registry_guard);
+            retiring.join().expect("the retire thread finishes")
+        });
+
+        assert_eq!(
+            result.outcome,
+            RetireOutcome::Retired,
+            "releasing the registry is what lets the retire through, so it must have run"
+        );
+        assert!(!slot_holds_an_engine(&state));
+        assert!(state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .is_empty());
     }
 }

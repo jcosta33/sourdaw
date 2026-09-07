@@ -92,7 +92,7 @@ static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const
 /// Production holds the bare guard — outside `cfg(test)` this name is the
 /// guard's own type and [`observe_gate_release`] is the identity.
 #[cfg(test)]
-struct ObservedGateGuard<G>(Option<G>);
+pub(crate) struct ObservedGateGuard<G>(Option<G>);
 
 #[cfg(test)]
 impl<G> Drop for ObservedGateGuard<G> {
@@ -105,7 +105,7 @@ impl<G> Drop for ObservedGateGuard<G> {
 }
 
 #[cfg(not(test))]
-type ObservedGateGuard<G> = G;
+pub(crate) type ObservedGateGuard<G> = G;
 
 #[cfg(test)]
 fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
@@ -115,6 +115,23 @@ fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
 #[cfg(not(test))]
 fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
     guard
+}
+
+/// Hold the plugin-runtime gate in read mode for a caller outside this module.
+///
+/// The gate is what serialises every body that touches a live runtime against
+/// every other one, and it stays private here so no caller can take it in a
+/// mode this module did not sanction. A retire drains `engine_plugins` and
+/// reaches into third-party editor code, so it needs exactly the mode a keyed
+/// unload takes: shared with other drains, excluded by the quit cascade's
+/// writer.
+///
+/// The caller must let the guard go before it sweeps the retirement vec. The
+/// gate is fair, so a queued writer would otherwise wait out third-party
+/// teardown of unbounded length.
+pub(crate) async fn hold_plugin_runtime_gate(
+) -> ObservedGateGuard<tokio::sync::RwLockReadGuard<'static, ()>> {
+    observe_gate_release(PLUGIN_RUNTIME_GATE.read().await)
 }
 
 struct PluginLifecycleLease {
@@ -2123,7 +2140,7 @@ fn attach_one_dormant_plugin(
     }
 }
 
-fn remove_plugin_window(
+pub(crate) fn remove_plugin_window(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
@@ -2228,12 +2245,12 @@ async fn unload_all_plugin_runtimes(
     Ok(reply)
 }
 
-/// The thread this unload's editor teardown must run on.
+/// The thread an instance's editor teardown must run on.
 ///
-/// An unload can run with no window host at all — a shell may lose its windows
+/// A teardown can run with no window host at all — a shell may lose its windows
 /// before its last instance — and [`NoWindowHost`] says so: the editor calls then
 /// run on this thread, which is the only one left to run them on.
-fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+pub(crate) fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
     windows_host.unwrap_or(&NoWindowHost)
 }
 
