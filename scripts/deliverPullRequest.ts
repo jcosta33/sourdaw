@@ -2649,24 +2649,43 @@ function deliverPullRequestWithCiAdmission(
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
-        if (receiptAuthority === undefined) {
-            fail(`PR #${number} delivery receipt authority cannot be proven`);
-        }
-        const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
-        const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+        let receipt: DeliveryReceiptComment;
+        let receiptPayload: DeliveryReceiptPayload;
         let recoveryPostMergeValidation: PersistedPreparedPostMergeValidation | undefined;
-        if (receiptAuthority.phase === 'legacy') {
-            recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
-                initial,
-                receiptPayload.closingIssue ?? undefined
-            );
-        } else if (receiptAuthority.phase !== 'released') {
-            recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+        let remaining: StackedPullRequest[];
+
+        if (receiptAuthority !== undefined) {
+            receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+            receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+            if (receiptAuthority.phase === 'legacy') {
+                recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
+                    initial,
+                    receiptPayload.closingIssue ?? undefined
+                );
+            } else if (receiptAuthority.phase !== 'released') {
+                recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+            }
+            if (receiptAuthority.phase !== 'terminal') {
+                persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
+            }
+            remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
+        } else {
+            const comments = provenDeliveryReceiptComments(initial, port);
+            const receiptsForHead = deliveryReceiptsForHead(comments, initial);
+            if (receiptsForHead.length === 0) {
+                remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
+                const target = trackerCompletionTarget(initial);
+                if (remaining.length === 0 && target === undefined) {
+                    port.log(`PR #${number} was already merged; repaired 0 remaining dependent(s)`);
+                    return;
+                }
+                receipt = ensureDeliveryReceipt(initial, target, port, ciAdmissionMode);
+                receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+                persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, undefined, port);
+            } else {
+                fail(`PR #${number} delivery receipt authority cannot be proven`);
+            }
         }
-        if (receiptAuthority.phase !== 'terminal') {
-            persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
-        }
-        const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
         retargetAllRemainingDependents(
             initial.headRefName,

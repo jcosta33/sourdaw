@@ -1588,8 +1588,8 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(0);
-        expect(calls).not.toContain('receipt-proof:42:1:IC_seeded_x');
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-proof:42:1:IC_seeded_x');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_seeded_x');
         expect(calls).not.toContain('merge:42:head');
         expect(calls).not.toContain('retarget:43:main');
@@ -2160,7 +2160,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
-        expect(calls).not.toContain('receipt-proof:42:1:IC_v2_only');
+        expect(calls).toContain('receipt-proof:42:1:IC_v2_only');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('receipt-authority:write:'))).toHaveLength(0);
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
@@ -3273,7 +3273,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
-        expect(calls).not.toContain('receipt-proof:42:2:IC_trailing_v1');
+        expect(calls).toContain('receipt-proof:42:2:IC_trailing_v1');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_trailing_v1');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
@@ -5211,7 +5211,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
-        expect(calls).not.toContain('receipt-proof:42:2:IC_second');
+        expect(calls).toContain('receipt-proof:42:2:IC_second');
         expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_second');
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_second');
         expect(calls).not.toContain('complete:2373');
@@ -7667,6 +7667,72 @@ describe('pull-request delivery', () => {
 
         expect(() => deliverPullRequest(42, port)).toThrow(/body/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    describe('already-merged repair without persisted receipt authority', () => {
+        it('tolerates missing receipt authority and absent receipt on GitHub when no tracker action remains', () => {
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: relationshipBody('None.'),
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
+        });
+
+        it('mints missing delivery receipt and completes issue when merged with missing receipt authority and an open closing issue', () => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain('add-receipt:42');
+            expect(calls).toContain('complete:2372');
+            expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+            expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+            expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+        });
+
+        it('mints missing delivery receipt and retargets remaining dependents when merged with missing receipt authority and stacked children', () => {
+            const child = stacked();
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: relationshipBody('None.'),
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[child], []],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain('add-receipt:42');
+            expect(calls).toContain('retarget:43:main');
+            expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        });
     });
 });
 
