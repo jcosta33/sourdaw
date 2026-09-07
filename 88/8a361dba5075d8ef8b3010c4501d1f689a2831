@@ -1,0 +1,113 @@
+src/modules/AudioEngine/useCases/livePlayback/retireOrphanedNativeEngine.ts
+  s_9b530f08172a54::t_e10d174ebd4bfb 89
+  s_9b530f08172a54::t_d5ae250bdd0f4f 86-88
+  s_9b530f08172a54::t_18e08bdc6d52f2 90-92
+  s_48fc98bc532471::t_fd2e6100627ff9 1-85,93-100
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_573be41625bf31 112
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_27db2884c6ae8d 2,12-13
+  s_9b530f08172a54::t_8cac1e270d8ec3 59
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_7d737da26529dc 111
+  s_9b530f08172a54::t_7528bb10bce7da 155-157
+  s_9b530f08172a54::t_e0fc10631e66bc 55,57-77
+  s_9b530f08172a54::t_31451fd6c5e829 141-143
+  s_9b530f08172a54::t_813b70deffa194 129-133
+  s_87ab0a2f60ccf8::t_65656fa474a2b8 1-54,56,78-110,112-128,134-140,144-154,158-160
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/projectSessionPluginRetirement.integration.spec.ts
+  s_9b530f08172a54::t_40c9a870d7757d 48-55
+src/modules/Transport/useCases/index.ts
+  s_9b530f08172a54::t_27d373b371196b 49
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_fb88a8a847bd58 67-74
+  s_9b530f08172a54::t_4f3c2398e9abc9 34
+  s_9b530f08172a54::t_d52116d6c6abb5 31-33
+  s_9b530f08172a54::t_97c75b02b625d9 35-37,64-66
+  s_9b530f08172a54::t_39b256f97b0db6 75-77
+  s_48fc98bc532471::t_1e4b6d72732896 1-30,38-63
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_9a7e446adb3b90 48-50
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_40354f2f7fa9df 69
+src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts
+  s_9b530f08172a54::t_ada10e88c54087 77
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_331926a2df00e0 193
+  s_9b530f08172a54::t_67152248b6248f 146-160
+  s_87ab0a2f60ccf8::t_40d388f761825a 145
+src/modules/AudioEngine/useCases/livePlayback/watchNativeEngineLiveness.ts
+  s_9b530f08172a54::t_82cc150f3d9e4f 95,97-98,101
+  s_9b530f08172a54::t_b0ccee73a78f01 21-28
+  s_9b530f08172a54::t_11e43131417747 103
+  s_9b530f08172a54::t_7979b0d56b194b 3-4
+  s_9b530f08172a54::t_2612c8d8eff6ef 40
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_9b530f08172a54::t_4e0c1986f33650 36-42,45
+  s_9b530f08172a54::t_236a76e0e319d1 23-28
+  s_9b530f08172a54::t_d107d548551d46 103-106
+  s_9b530f08172a54::t_a4d1fffc0b17bd 64-65
+  s_9b530f08172a54::t_2f1b453443b5c3 54
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_9b530f08172a54::t_51f99a8e04c8ac 93
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_d65201d6b046a9 21
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_e36ee1c97cc004 233
+src/modules/AudioEngine/useCases/livePlayback/__tests__/watchNativeEngineLiveness.spec.ts
+  s_9b530f08172a54::t_801e31d72d9fe3 25-26,36-41
+  s_9b530f08172a54::t_d83f6e6641cbdb 70-74
+  s_9b530f08172a54::t_db6d5242743f7a 220,231-233,238-239,241-242
+src/modules/PluginHost/useCases/index.ts
+  s_9b530f08172a54::t_e08132a64605db 17
+src/modules/AudioEngine/stores/index.ts
+  s_9b530f08172a54::t_70da2952574791 16-18
+src/modules/AudioEngine/stores/nativeEngineRearmStore.ts
+  s_9b530f08172a54::t_da2add52efde07 1-25
+src/modules/AudioEngine/useCases/livePlayback/__tests__/claimNativeSessionRearm.spec.ts
+  s_9b530f08172a54::t_01ca2ae02466c8 1-45
+src/modules/AudioEngine/useCases/livePlayback/__tests__/retireOrphanedNativeEngine.spec.ts
+  s_9b530f08172a54::t_128927ced1eb90 1-124
+src/modules/AudioEngine/useCases/livePlayback/claimNativeSessionRearm.ts
+  s_9b530f08172a54::t_e7e3cee9c782fd 1-18
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/forgetRetiredPluginInstances.spec.ts
+  s_9b530f08172a54::t_04a255162b3725 1-80
+src/modules/PluginHost/useCases/pluginLifecycle/forgetPluginInstance.ts
+  s_9b530f08172a54::t_35c8da10000e1d 1-40
+src/modules/PluginHost/useCases/pluginLifecycle/forgetRetiredPluginInstances.ts
+  s_9b530f08172a54::t_9db6b8ff4d8768 1-25
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_54f8641a4556c4 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "888a361dba5075d8ef8b3010c4501d1f689a2831",
+  "prompts": {},
+  "sessions": {
+    "s_48fc98bc532471": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9fc3bb6a8b4e2d7f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
