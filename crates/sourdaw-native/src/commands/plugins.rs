@@ -134,6 +134,20 @@ pub(crate) async fn hold_plugin_runtime_gate(
     observe_gate_release(PLUGIN_RUNTIME_GATE.read().await)
 }
 
+/// Hold the gate in the exclusive mode [`unload_all_plugin_runtimes`] takes,
+/// for a test outside this module.
+///
+/// `cfg(test)` only, and deliberately not a production seam: the gate stays
+/// private precisely so no body elsewhere can choose its own mode. What a test
+/// gets from it is a stand-in for the load or unload a reader must wait for,
+/// which is the only way a test in another module can observe that a caller of
+/// [`hold_plugin_runtime_gate`] really waits.
+#[cfg(test)]
+pub(crate) async fn hold_plugin_runtime_gate_exclusively(
+) -> tokio::sync::RwLockWriteGuard<'static, ()> {
+    PLUGIN_RUNTIME_GATE.write().await
+}
+
 struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,

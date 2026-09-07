@@ -591,13 +591,16 @@ pub fn attach_dormant_crumbs(
 /// slot being replaced, so a queued [`PendingRecordingCommit`] left there is a
 /// recording the musician performed and the session then silently lost. The
 /// drain lands it in `samples`, which is the command-side authority the next
-/// attach refills the new engine's pool from; its mirror pushes go onto the
-/// dead ring and park in `pending_mirror`, where the next attached drain
-/// retries them.
+/// attach refills the new engine's pool from. Its mirror pushes are lost with
+/// the ring they land on: an rtrb push fails only on a full ring, and this one
+/// has no consumer left to fill it, so both halves report `Ok` and nothing
+/// parks in `pending_mirror`. Losing them costs nothing, because the pool they
+/// were mirroring into died with the slot and [`replay_parked_writes`] rebuilds
+/// the *new* engine's pool from `samples` on the next attach.
 ///
-/// Takes the instances lock beneath the registry guard the retire holds across
-/// the whole operation, which is the registry -> instances order
-/// `apply_graph_commands` and [`create_crumbs`] already establish.
+/// Takes the instances lock beneath the registry guard the retire's drain
+/// holds, which is the registry -> instances order `apply_graph_commands` and
+/// [`create_crumbs`] already establish.
 pub(crate) fn detach_from_retired_engine(state: &CrumbsState) {
     let mut instances = crate::state::locked_or_poisoned(&state.instances);
 

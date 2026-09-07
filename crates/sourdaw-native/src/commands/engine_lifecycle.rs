@@ -103,48 +103,65 @@ impl RetireNativeEngineResult {
 ///
 /// The order matters and is stated rather than implied:
 ///
-/// 1. the plugin-runtime gate is taken in read mode, so a load or an unload
-///    cannot be inside a runtime this drain is about to retire;
-/// 2. the graph registry is taken and held for everything that follows,
+/// 1. the plugin-runtime gate in read mode, then the graph registry, and under
+///    those two guards only the takes: the `is_rendering` verdict and the
+///    handle's removal from the slot, the engine-owned plugin records out of
+///    `engine_plugins`, every attached crumbs instance back to dormant, and
+///    the registry's own reset. [`drain_the_lost_engine`] is that whole
+///    section, so returning from it is what releases both guards;
+/// 2. the registry is what makes that section atomic against the batch path,
 ///    because `apply_graph_commands` holds it across `start_into_empty_slot`,
 ///    its crumbs attach and the batch itself. Without it a batch already past
 ///    its own admission would boot a replacement engine and register crumbs
-///    slots on it while this retire was still draining, and the reset below
-///    would then throw away the *new* engine's ledger;
-/// 3. under that guard: the slot lock for the `is_rendering` verdict and the
-///    handle's removal, then the engine-owned runtimes' editors and their
-///    retirement, then every attached crumbs instance back to dormant, then
-///    the registry's own reset;
-/// 4. both the gate and the registry go before the handle drops, because that
-///    drop waits on the audio-owner thread and a lock held across it would
-///    park every other claim for the shutdown timeout;
-/// 5. one sweep, after that drop and outside the gate, because the scheduler
-///    releasing its `Arc` is what makes a retired runtime free-able and the
-///    gate is fair — a sweep under it would make a queued writer wait out
-///    third-party teardown.
+///    slots on it while this retire was still draining, and the reset would
+///    then throw away the *new* engine's ledger. The gate is what keeps a
+///    concurrent load or unload out of a runtime this drain is about to take;
+/// 3. outside both guards, on the records the drain took: each one's editor
+///    close, `begin_unload`, `retire`, and its retention. Every one of those
+///    reaches third-party code through `with_unload_control`, whose
+///    per-instance non-RT control wait is unbounded — an `open_gui` in flight
+///    holds that lock for however long the editor takes to build. Under the
+///    registry that wait would park every `apply_graph_commands`,
+///    `create_crumbs` and `set_transport_maps`, the batch booting the
+///    replacement engine among them, and under the fair gate it would make a
+///    queued writer wait behind it as well. Nothing races these records once
+///    they are out: `engine_plugins` no longer names them, so no batch can map
+///    a device onto one, and the registry is reset, so a batch that fills the
+///    empty slot boots an engine this pass never touches;
+/// 4. the handle's drop, after that loop and with both guards long gone,
+///    because the drop waits on the audio-owner thread and a lock held across
+///    it would park every other claim for the shutdown timeout;
+/// 5. one sweep, after that drop, because the scheduler releasing its `Arc` is
+///    what makes a retired runtime free-able.
 ///
 /// The lock order is gate -> registry -> (engine | engine_plugins |
 /// instances), every leg of which the crate already establishes: `graph` takes
 /// registry then engine, `crumbs::create_crumbs` takes registry then instances
 /// then engine, and `plugins::release_then_retire_engine_plugin` takes registry
-/// then engine under the same gate a keyed unload holds. Nothing is held across
-/// a plugin call or across the handle's drop, and nothing here runs on the audio
-/// thread.
+/// then engine under the same gate a keyed unload holds. One site takes the two
+/// the other way round: `apply_graph_commands` holds the registry and then
+/// calls `plugins::attach_dormant_plugins`, which takes the gate. That
+/// inversion closes no cycle only because the acquisition there is `try_read`
+/// — it refuses, and leaves the instance dormant for the next batch, rather
+/// than waiting on a gate whose holder may be waiting for the registry.
+/// Nothing here runs on the audio thread.
 pub async fn retire_native_engine(
     state: &AppState,
     crumbs: &CrumbsState,
     windows_host: &dyn PluginWindowHost,
 ) -> RetireNativeEngineResult {
-    let (retired_engine, retired_instance_ids) =
-        match drain_the_lost_engine(state, crumbs, windows_host).await {
-            DrainedEngine::NothingToRetire(outcome) => {
-                return RetireNativeEngineResult::of(outcome, Vec::new())
-            }
-            DrainedEngine::Drained {
-                handle,
-                retired_instance_ids,
-            } => (handle, retired_instance_ids),
-        };
+    let (retired_engine, engine_owned_plugins) = match drain_the_lost_engine(state, crumbs).await {
+        DrainedEngine::NothingToRetire(outcome) => {
+            return RetireNativeEngineResult::of(outcome, Vec::new())
+        }
+        DrainedEngine::Drained {
+            handle,
+            engine_owned_plugins,
+        } => (handle, engine_owned_plugins),
+    };
+
+    let retired_instance_ids =
+        retire_engine_owned_plugins(state, engine_owned_plugins, Some(windows_host));
 
     drop(retired_engine);
 
@@ -157,26 +174,24 @@ pub async fn retire_native_engine(
     RetireNativeEngineResult::of(RetireOutcome::Retired, retired_instance_ids)
 }
 
-/// What the guarded section handed back: a drained handle for the caller to
-/// drop with every lock released, or the outcome that made the retire a no-op.
+/// What the guarded section handed back: the drained handle and the records it
+/// took out of `engine_plugins`, both for the caller to finish with every lock
+/// released, or the outcome that made the retire a no-op.
 enum DrainedEngine {
     Drained {
         handle: EngineHandle,
-        retired_instance_ids: Vec<String>,
+        engine_owned_plugins: Vec<(String, EnginePluginInstanceData)>,
     },
     NothingToRetire(RetireOutcome),
 }
 
-/// Everything the retire does while it holds the gate and the registry.
+/// Everything the retire does while it holds the gate and the registry: the
+/// verdict, and the takes that follow it.
 ///
 /// A function of its own so that both guards are released by returning, which
-/// is what keeps the handle's drop and the sweep out of them — see
-/// [`retire_native_engine`]'s own doc for the order and the reasons.
-async fn drain_the_lost_engine(
-    state: &AppState,
-    crumbs: &CrumbsState,
-    windows_host: &dyn PluginWindowHost,
-) -> DrainedEngine {
+/// is what keeps every plugin call, the handle's drop and the sweep out of them
+/// — see [`retire_native_engine`]'s own doc for the order and the reasons.
+async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> DrainedEngine {
     let _runtime_guard = hold_plugin_runtime_gate().await;
     let mut registry = locked_or_poisoned(&state.graph);
 
@@ -198,18 +213,32 @@ async fn drain_the_lost_engine(
         handle
     };
 
-    let retired_instance_ids = retire_engine_owned_plugins(state, Some(windows_host));
+    let engine_owned_plugins = take_engine_owned_plugins(state);
     crumbs::detach_from_retired_engine(crumbs);
     registry.reset_for_engine_restart();
 
     DrainedEngine::Drained {
         handle,
-        retired_instance_ids,
+        engine_owned_plugins,
     }
 }
 
-/// Close each engine-owned instance's editor, then hand its runtime to the
-/// retirement vec, leaving `engine_plugins` empty.
+/// Empty `engine_plugins`, handing its records to the caller.
+///
+/// The take is the whole of what the drain owes these records: once they are
+/// out of the map no batch can map a device onto one, so their retirement runs
+/// with every guard released.
+fn take_engine_owned_plugins(state: &AppState) -> Vec<(String, EnginePluginInstanceData)> {
+    let mut engine_plugins = locked_or_poisoned(&state.engine_plugins);
+    std::mem::take(&mut *engine_plugins).into_iter().collect()
+}
+
+/// Close each drained instance's editor, then hand its runtime to the
+/// retirement vec.
+///
+/// Runs on the records [`drain_the_lost_engine`] already took, with the gate,
+/// the registry and every state lock released, because each call below reaches
+/// third-party code behind a per-instance control wait of unbounded length.
 ///
 /// The editor close comes first, for the reason `shutdown.rs` states as its
 /// own step ordering: the final drop of a retired runtime runs the format's
@@ -232,21 +261,13 @@ async fn drain_the_lost_engine(
 /// drains, so it would pop nothing. The scheduler's own `Arc` is released
 /// when the owner thread drops the scheduler behind the handle instead.
 ///
-/// Every plugin call happens outside `engine_plugins`' critical section,
-/// because each of them reaches into third-party code and a store held across
-/// one parks every other plugin command for its duration.
-///
 /// Returns the drained records' UI instance ids, sorted ascending: the
 /// renderer has no other way to learn which plugins it must reload.
 fn retire_engine_owned_plugins(
     state: &AppState,
+    instances: Vec<(String, EnginePluginInstanceData)>,
     windows_host: Option<&dyn PluginWindowHost>,
 ) -> Vec<String> {
-    let instances: Vec<(String, EnginePluginInstanceData)> = {
-        let mut engine_plugins = locked_or_poisoned(&state.engine_plugins);
-        std::mem::take(&mut *engine_plugins).into_iter().collect()
-    };
-
     let mut retired_instance_ids = Vec::with_capacity(instances.len());
     for (instance_id, instance) in instances {
         close_editor_before_retiring(&instance_id, &instance.runtime, windows_host, state);
@@ -298,6 +319,7 @@ mod tests {
 
     use crate::block_on_test;
     use crate::commands::graph::apply_graph_commands;
+    use crate::commands::plugins::hold_plugin_runtime_gate_exclusively;
     use crate::host::native_bridge::SharedHostedPlugin;
     use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
     use crate::host::ui_thread::UiThread;
@@ -305,12 +327,12 @@ mod tests {
 
     use super::*;
 
-    /// How long the registry-contention test lets the retire thread try to
-    /// take a registry this thread is holding.
+    /// How long a contention test lets the retire thread try to take a guard
+    /// this thread is holding.
     ///
     /// Only a *negative* claim rests on it — that the engine is still in its
     /// slot — so a machine too loaded to schedule the retire thread within the
-    /// window weakens the test rather than failing it, and the join below
+    /// window weakens the test rather than failing it, and each test's join
     /// proves the thread ran at all.
     const CONTENTION_WINDOW: Duration = Duration::from_millis(50);
 
@@ -919,6 +941,71 @@ mod tests {
             result.outcome,
             RetireOutcome::Retired,
             "releasing the registry is what lets the retire through, so it must have run"
+        );
+        assert!(!slot_holds_an_engine(&state));
+        assert!(state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock")
+            .is_empty());
+    }
+
+    /// The plugin-runtime gate is what keeps the retire out of a runtime a
+    /// load or an unload is inside. The quit cascade takes it exclusively, and
+    /// so does an unload of every instance; this thread stands in for one of
+    /// them, holding the gate in that same mode while the retire runs on its
+    /// own thread and must get no further than the gate until this thread lets
+    /// go.
+    #[test]
+    fn a_retire_takes_nothing_while_a_load_or_unload_holds_the_gate() {
+        let state = AppState::default();
+        let crumbs_state = CrumbsState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        insert_engine_owned_plugin(
+            &state,
+            "engine-instance",
+            engine_owned_runtime("Retire Fixture"),
+        );
+        stall_the_engine_in_the_slot(&state);
+
+        let gate_guard = block_on_test(hold_plugin_runtime_gate_exclusively());
+        let (retire_started, retire_starting) = mpsc::channel();
+
+        let retiring_state = &state;
+        let retiring_crumbs = &crumbs_state;
+        let result = std::thread::scope(|scope| {
+            let retiring = scope.spawn(move || {
+                retire_started
+                    .send(())
+                    .expect("the test thread waits for this");
+                retire(retiring_state, retiring_crumbs, &NoWindowHost)
+            });
+
+            retire_starting.recv().expect("the retire thread starts");
+            std::thread::sleep(CONTENTION_WINDOW);
+
+            assert!(
+                slot_holds_an_engine(&state),
+                "a retire that skips the gate empties the slot while a load or unload is still working on this engine's runtimes"
+            );
+            assert_eq!(
+                state
+                    .engine_plugins
+                    .lock()
+                    .expect("engine_plugins lock")
+                    .len(),
+                1,
+                "the records must wait too: an unload holding the gate is inside one of these very runtimes"
+            );
+
+            drop(gate_guard);
+            retiring.join().expect("the retire thread finishes")
+        });
+
+        assert_eq!(
+            result.outcome,
+            RetireOutcome::Retired,
+            "releasing the gate is what lets the retire through, so it must have run"
         );
         assert!(!slot_holds_an_engine(&state));
         assert!(state
