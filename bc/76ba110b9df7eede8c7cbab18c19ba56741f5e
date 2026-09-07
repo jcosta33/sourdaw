@@ -1,0 +1,41 @@
+src/modules/MIDI/workers/midiImportWorker.ts
+  s_87ab0a2f60ccf8::t_4df196ca6a3589 17-25,31,213,304,308-319,343,353
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  s_319256274fd551::t_3e380d2fc02324 96,193-233,266,390-391,424,436,447,457-458,468
+src/modules/Arrangement/useCases/importMidiFile.ts
+  s_d74f54a8b208af::t_c3159116b84e17 118,145,163
+src/modules/MIDI/useCases/importMidiFile.ts
+  s_319256274fd551::t_7973dd29e7d45c 2,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "bc76ba110b9df7eede8c7cbab18c19ba56741f5e",
+  "prompts": {},
+  "sessions": {
+    "s_319256274fd551": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac4d6dc49f90ab777",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d74f54a8b208af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07ab0-9cd7-7ef1-afed-7477fdacad52",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
