@@ -1,0 +1,21 @@
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_91c42f914c33d5::t_7a641f7ff83c40 120-136,178-184,186-189,191,202,214,218-318
+src/modules/AudioEngine/workers/recordingWorker.ts
+  s_91c42f914c33d5::t_9484bc8d5819d0 17-20,57-67,78-85,87-88,90,95-101,115,123-125,141,151,164-169,178-197,205-208,224,230-236,259-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b1a1f6ce147b39b187694c96e7326543dd4499ae",
+  "prompts": {},
+  "sessions": {
+    "s_91c42f914c33d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a079ff-49e6-7c10-b17f-52830413335f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
