@@ -1,0 +1,19 @@
+electron/__tests__/singleInstanceAdmission.spec.ts
+  s_87ab0a2f60ccf8::t_fb024d4cd0674f 4,20-21,28,33,44,59-63,71,104,159,174,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "db50a2b1e29d83090f7267d0b3b8f3e304f27ede",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
