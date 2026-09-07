@@ -937,9 +937,12 @@ export class TrackNode {
         });
     }
 
-    public timeoutPendingDeviceLoads(): void {
+    public timeoutPendingDeviceLoads(loadPromises: ReadonlySet<Promise<unknown>>): void {
         let graphChanged = false;
         for (const [deviceId, pendingLoad] of this._pendingDeviceLoads) {
+            if (!pendingLoad.loadPromise || !loadPromises.has(pendingLoad.loadPromise)) {
+                continue;
+            }
             let failureStage: DeviceReadinessFailureStage = 'node';
             if (pendingLoad.resolved) {
                 failureStage = this._pendingGraphReadinessTokens.has(pendingLoad.readinessToken) ? 'graph' : 'content';

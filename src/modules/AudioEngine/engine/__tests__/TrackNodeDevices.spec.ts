@@ -1242,7 +1242,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'levain');
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
 
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
             expect(pendingDevicePromises.size).toBe(0);
@@ -1259,13 +1259,14 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('aborts a timed-out content load after publishing its node', async () => {
             const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
             await Promise.resolve();
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
             await Promise.resolve();
 
             expect(deferred.signal?.aborted).toBe(true);
@@ -1281,11 +1282,12 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('classifies a timeout before the published node joins the graph', () => {
             const deferred = installDeferredWasmDevice({ deviceType: 'builtin-crumbs' });
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'builtin-crumbs');
             deferred.resolve(createLoadedDevice().device);
 
-            track.timeoutPendingDeviceLoads();
+            track.timeoutPendingDeviceLoads(pendingDevicePromises);
 
             expect(deferred.signal?.aborted).toBe(true);
             expect(readinessDiagnostics.snapshot()).toMatchObject({
