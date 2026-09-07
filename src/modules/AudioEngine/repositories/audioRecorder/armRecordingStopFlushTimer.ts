@@ -1,14 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
+import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { activeSessions, STOP_FLUSH_TIMEOUT_MS, type RecordingSession } from './recordingSession';
-import { terminateRecordingWorker } from './terminateRecordingWorker';
 
 export function armRecordingStopFlushTimer(session: RecordingSession): void {
     const { trackId } = session;
     session.stopFlushTimer = setTimeout(() => {
         const stalled = activeSessions.get(trackId);
-        if (!stalled) {
+        if (stalled !== session) {
             return;
         }
         logger.error(
@@ -17,8 +16,6 @@ export function armRecordingStopFlushTimer(session: RecordingSession): void {
             )
         );
         stalled.onRecordingComplete = null;
-        terminateRecordingWorker(stalled);
-        activeSessions.delete(trackId);
-        checkAllRecordingsStopped();
+        cleanupRecordingNode({ expectedSession: session, trackId });
     }, STOP_FLUSH_TIMEOUT_MS);
 }

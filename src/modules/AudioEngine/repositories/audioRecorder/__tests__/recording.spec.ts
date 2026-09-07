@@ -68,11 +68,16 @@ describe('startAudioRecording', () => {
 
 describe('startAudioRecording', () => {
     let media_track_stop: ReturnType<typeof vi.fn>;
+    let worklet_nodes: Array<{
+        port: { postMessage: ReturnType<typeof vi.fn>; onmessage: ((event: { data: unknown }) => void) | null };
+        emit: (data: unknown) => void;
+    }>;
 
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         media_track_stop = vi.fn();
+        worklet_nodes = [];
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockResolvedValue({
@@ -99,9 +104,18 @@ describe('startAudioRecording', () => {
         vi.stubGlobal(
             'AudioWorkletNode',
             class {
-                port = { postMessage: vi.fn() };
+                port: {
+                    postMessage: ReturnType<typeof vi.fn>;
+                    onmessage: ((event: { data: unknown }) => void) | null;
+                } = { postMessage: vi.fn(), onmessage: null };
                 connect = vi.fn();
                 disconnect = vi.fn();
+                constructor() {
+                    worklet_nodes.push(this);
+                }
+                emit(data: unknown): void {
+                    this.port.onmessage?.({ data });
+                }
             }
         );
         vi.stubGlobal('URL', class {});
@@ -226,6 +240,9 @@ describe('startAudioRecording', () => {
         await expect(second).resolves.toBe(true);
 
         stopAudioRecording();
+        for (const worklet of worklet_nodes) {
+            worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
+        }
         expect(media_track_stop).toHaveBeenCalledTimes(1);
 
         await expect(startAudioRecording('track-both-c', vi.fn())).resolves.toBe(true);
