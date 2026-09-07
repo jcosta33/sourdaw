@@ -334,12 +334,13 @@ fn answer_owner_commands<Stream, OnCapture>(
         match command {
             OwnerCommand::Shutdown => return,
             // The capture open is the first foreign device code this thread
-            // has ever run, and a backend that panics inside it would unwind
-            // the loop: the stream would drop mid-session and no shutdown
-            // would ever be answered, leaving every `AudioThreadHandle::drop`
-            // to wait out its timeout. Caught and reported the way
-            // `reclaim_retired` treats the same hazard on the reclaimer
-            // thread.
+            // has ever run. `open_requested_capture` already catches a panic
+            // from the open itself, so this catch is the backstop for
+            // anything else in `on_capture` that unwinds: an uncaught unwind
+            // here would drop the stream mid-session and no shutdown would
+            // ever be answered, leaving every `AudioThreadHandle::drop` to
+            // wait out its timeout — the same hazard `reclaim_retired`
+            // guards against on the reclaimer thread.
             OwnerCommand::OpenCapture => {
                 if catch_unwind(AssertUnwindSafe(|| on_capture(stream))).is_err() {
                     eprintln!("[Engine] Audio capture open panicked");
@@ -1180,6 +1181,17 @@ fn open_pending_capture<B: InputBackend>(
 /// do before this became a request — the open happened once, while the engine
 /// started — and closing the input again when the last consumer leaves is a
 /// separate change.
+///
+/// A panic inside `open_pending_capture` — a backend panicking in
+/// `open_default_input` or `open.start` — is caught here rather than left to
+/// unwind: unwinding past this call would skip `capture_side` entirely, so
+/// the refusal slot a normal refusal fills would stay at its zero sentinel
+/// and the registered consumer would sit reading silence with no
+/// `EngineEvent::StreamError` ever explaining why. A panicking open is
+/// therefore reported as `StreamErrorKind::BackendSpecific` through that same
+/// slot, so the consumer's `StreamError` event still fires. The loop-level
+/// `catch_unwind` in `answer_owner_commands` stays as the backstop that keeps
+/// the owner thread itself alive either way.
 fn open_requested_capture<B: InputBackend>(
     capture: &mut Option<<B::Open as OpenInput>::Stream>,
     pending: &mut Option<PendingCapture>,
@@ -1188,7 +1200,18 @@ fn open_requested_capture<B: InputBackend>(
         return;
     };
 
-    *capture = open_pending_capture::<B>(request);
+    let capture_refusal_slot = Arc::clone(&request.capture_refusal_slot);
+
+    match catch_unwind(AssertUnwindSafe(|| open_pending_capture::<B>(request))) {
+        Ok(stream) => *capture = stream,
+        Err(_) => {
+            capture_refusal_slot.store(
+                StreamErrorKind::BackendSpecific.to_slot(),
+                Ordering::Relaxed,
+            );
+            *capture = None;
+        }
+    }
 }
 
 /// The wait-free error sink a backend's error callback is handed.
@@ -1435,6 +1458,18 @@ mod capture_seam_tests {
         fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
             OPENS_ATTEMPTED.fetch_add(1, Ordering::Relaxed);
             AbsentInput::open_default_input(request)
+        }
+    }
+
+    /// A machine whose backend panics inside the open itself, the way a
+    /// misbehaving driver can, rather than returning a refusal.
+    struct PanickingInput;
+
+    impl InputBackend for PanickingInput {
+        type Open = OpenTestInput;
+
+        fn open_default_input(_request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            panic!("a device backend panicked inside open_default_input");
         }
     }
 
@@ -1760,6 +1795,38 @@ mod capture_seam_tests {
             StreamErrorKind::from_slot(ready.refusal_slot.load(Ordering::Relaxed)),
             Some(StreamErrorKind::DeviceNotAvailable),
             "the refusal is named once, in the slot the drain reads"
+        );
+    }
+
+    /// A backend that panics inside the open — rather than returning a
+    /// refusal — must still be named in the slot the drain reads. A panic
+    /// unwinds past `capture_side`, which is the only place a normal refusal
+    /// gets stored, so `open_requested_capture` has to catch this one itself
+    /// or the registered consumer is left reading silence with no
+    /// `StreamError` event ever explaining why.
+    ///
+    /// Mutation: drop the `store` on the `Err` arm in `open_requested_capture`
+    /// — the slot stays at its zero sentinel and this test goes red.
+    #[test]
+    fn a_panicking_open_is_reported_as_backend_specific() {
+        let ready = pending_capture();
+        let mut capture: Option<()> = None;
+        let mut pending = Some(ready.pending);
+
+        open_requested_capture::<PanickingInput>(&mut capture, &mut pending);
+
+        assert!(
+            capture.is_none(),
+            "a panicking open must not leave a stream behind"
+        );
+        assert!(
+            pending.is_none(),
+            "one attempt is spent even when the open panics"
+        );
+        assert_eq!(
+            StreamErrorKind::from_slot(ready.refusal_slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::BackendSpecific),
+            "a panicking open is reported the way any other unnamed refusal is"
         );
     }
 

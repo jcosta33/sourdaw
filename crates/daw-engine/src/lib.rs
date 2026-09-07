@@ -260,11 +260,14 @@ impl EngineHandle {
             // it no longer happens while the engine starts: it runs on the
             // owner thread's command loop instead. A backend that hangs
             // inside `open_default_input` therefore blocks that loop rather
-            // than engine start — the liveness watchdog stops observing and a
-            // shutdown waits out `AUDIO_STREAM_SHUTDOWN_TIMEOUT`, exactly as
-            // a stranded factory did — while the render callback goes on
-            // rendering, because the output stream is already started and the
-            // owner thread is not in its path. On macOS a denied microphone
+            // than engine start — a `Shutdown` queued behind the request
+            // waits until `AUDIO_STREAM_SHUTDOWN_TIMEOUT` gives up on it,
+            // exactly as a stranded factory did. Neither the render callback
+            // nor the liveness verdict is affected: the output stream is
+            // already started, and the liveness verdict is published from
+            // its own thread (`spawn_render_stall_watch`), which stays
+            // outside the owner thread's path and survives a hung open. On
+            // macOS a denied microphone
             // permission does not surface as a refusal at all — CoreAudio
             // opens the stream and delivers silence in place of real input
             // rather than an error, so a denial reads as capture that opened
