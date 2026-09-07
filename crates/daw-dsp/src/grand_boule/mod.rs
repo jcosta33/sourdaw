@@ -31,8 +31,14 @@ use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
 use wasm_bindgen::prelude::*;
 
-/// Pre-allocated maximum block size exposed to hosts.
-const MAX_BLOCK_SIZE: usize = 4096;
+/// Frames one [`GrandBouleInstance::process`] call renders at most, and the
+/// length of both channel buffers.
+///
+/// `process` clamps its argument to this without saying so, so a longer ask
+/// renders this many frames and leaves the remainder of the caller's block
+/// untouched. A host reading the returned pointers may therefore read at most
+/// `min(asked, GRAND_BOULE_BLOCK_FRAMES)` frames out of either channel.
+pub const GRAND_BOULE_BLOCK_FRAMES: usize = 4096;
 
 /// Grand Boule host instance for native and WASM integration.
 #[wasm_bindgen]
@@ -54,8 +60,8 @@ impl GrandBouleInstance {
         };
         Self {
             engine: GrandBouleEngine::new(sample_rate, count),
-            left_buf: vec![0.0; MAX_BLOCK_SIZE],
-            right_buf: vec![0.0; MAX_BLOCK_SIZE],
+            left_buf: vec![0.0; GRAND_BOULE_BLOCK_FRAMES],
+            right_buf: vec![0.0; GRAND_BOULE_BLOCK_FRAMES],
             nan_flush_count: 0,
         }
     }
@@ -183,6 +189,23 @@ impl GrandBouleInstance {
     /// Pointer to the right channel buffer (call after `process`).
     pub fn get_right_ptr(&self) -> *const f32 {
         self.right_buf.as_ptr()
+    }
+}
+
+/// Host-side facts about the instance that no JavaScript caller needs.
+///
+/// Deliberately outside the `#[wasm_bindgen]` block: an accessor added there
+/// rewrites the generated glue and with it the committed wasm artifacts, and
+/// nothing about the size of a buffer belongs on the worklet's wire.
+impl GrandBouleInstance {
+    /// Frames this instance's channel buffers hold — the ceiling
+    /// [`Self::process`] silently clamps an ask down to.
+    ///
+    /// Read off the buffers rather than restating
+    /// [`GRAND_BOULE_BLOCK_FRAMES`], so a native host can prove the constant
+    /// it bounds its runs by is the size the instance was actually built at.
+    pub fn block_frames(&self) -> usize {
+        self.left_buf.len()
     }
 }
 
