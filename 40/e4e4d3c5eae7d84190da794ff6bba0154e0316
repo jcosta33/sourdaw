@@ -1,0 +1,16 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.noteIdentityUndo.spec.tsx
+  h_1228e573df1f42 274,291,310,330
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.noteIdentityUndo.spec.tsx
+  h_1228e573df1f42 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "40e4e4d3c5eae7d84190da794ff6bba0154e0316",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
