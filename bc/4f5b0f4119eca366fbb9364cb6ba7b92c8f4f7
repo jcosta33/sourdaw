@@ -1,0 +1,60 @@
+crates/scoring/src/lib.rs
+  h_1228e573df1f42 454,466,561-566,604,607-611,1218-1266
+crates/scoring/src/preprocess.rs
+  h_1228e573df1f42 2
+crates/scoring/src/scala.rs
+  h_1228e573df1f42 30-40
+public/wasm/manifest.json
+  h_1228e573df1f42 40,43-46,48-49
+public/wasm/scoring/scoring.d.ts
+  h_1228e573df1f42 1,51,86
+public/wasm/scoring/scoring.js
+  h_1228e573df1f42 171-185
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_1228e573df1f42 1,24
+release/open-source-inventory.json
+  h_1228e573df1f42 1197-1198,1334,1337,1718
+src/modules/AudioEngine/engine/ScoringNode.ts
+  h_1228e573df1f42 62-63,71-135,180,195-196,225
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  h_1228e573df1f42 298-394
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  h_1228e573df1f42 1462-1463,1480-1488
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_1228e573df1f42 1555-1558,1584
+src/modules/AudioEngine/models/AudioEngineState.ts
+  h_1228e573df1f42 384-388
+src/modules/AudioEngine/services/scoringProcessor.ts
+  h_1228e573df1f42 26-28,78-88
+src/modules/AudioEngine/useCases/deviceControls/__tests__/importScoringTuning.spec.ts
+  h_1228e573df1f42 1-73
+src/modules/AudioEngine/useCases/deviceControls/importScoringTuning.ts
+  h_1228e573df1f42 1-15
+src/modules/AudioEngine/useCases/index.ts
+  h_1228e573df1f42 74
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_1228e573df1f42 1,51,86
+src/modules/AudioEngine/wasm/scoring.js
+  h_1228e573df1f42 348-362
+src/modules/Tuner/models/TunerState.ts
+  h_1228e573df1f42 25
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  h_1228e573df1f42 3,22,113-114,233-289,386-394
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  h_1228e573df1f42 8,25,96-99,190-193,211,501-578
+src/modules/Tuner/useCases/__tests__/importTuningScale.spec.ts
+  h_1228e573df1f42 1-60
+src/modules/Tuner/useCases/importTuningScale.ts
+  h_1228e573df1f42 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "bc4f5b0f4119eca366fbb9364cb6ba7b92c8f4f7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
