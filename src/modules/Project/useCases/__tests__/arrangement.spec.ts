@@ -19,6 +19,7 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     claimNativeSessionRearm: vi.fn(() => false),
+    nativeSessionRearmClaimHolds: vi.fn(() => false),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

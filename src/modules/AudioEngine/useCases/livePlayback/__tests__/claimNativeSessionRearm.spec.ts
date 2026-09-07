@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { claimNativeSessionRearm } from '../claimNativeSessionRearm';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
+import { nativeSessionRearmClaimHolds } from '../nativeSessionRearmClaimHolds';
 import { stopNativeLiveGraphSession } from '../stopNativeLiveGraphSession';
 
 vi.mock('../../trackAudioControls/setNativeCarriedTracks', () => ({ setNativeCarriedTracks: vi.fn() }));
@@ -26,20 +27,34 @@ describe('claimNativeSessionRearm', () => {
         nativeLiveGraphSession.backend = null;
         nativeLiveGraphSession.orphanedBackend = null;
         nativeLiveGraphSession.rearmClaimed = false;
+        nativeLiveGraphSession.rearmEpoch = 0;
         nativeLiveGraphSession.pending = Promise.resolve();
     });
 
-    it('answers the first caller of a play and refuses every one after it', () => {
-        expect(claimNativeSessionRearm()).toBe(true);
-        expect(claimNativeSessionRearm()).toBe(false);
-        expect(claimNativeSessionRearm()).toBe(false);
+    it('answers the first caller of a play with the play epoch and refuses every one after it', () => {
+        expect(claimNativeSessionRearm()).toBe(0);
+        expect(claimNativeSessionRearm()).toBe(null);
+        expect(claimNativeSessionRearm()).toBe(null);
     });
 
     it('hands the claim back on the stop that ends the play', async () => {
-        expect(claimNativeSessionRearm()).toBe(true);
+        expect(claimNativeSessionRearm()).toBe(0);
 
         await stopNativeLiveGraphSession({ positionSeconds: 4 });
 
-        expect(claimNativeSessionRearm()).toBe(true);
+        expect(claimNativeSessionRearm()).toBe(1);
+    });
+
+    it('a claim taken before the stop no longer holds after it', async () => {
+        const claim = claimNativeSessionRearm();
+        expect(claim).toBe(0);
+
+        await stopNativeLiveGraphSession({ positionSeconds: 4 });
+
+        expect(nativeSessionRearmClaimHolds(claim as number)).toBe(false);
+
+        const nextClaim = claimNativeSessionRearm();
+        expect(nextClaim).toBe(1);
+        expect(nativeSessionRearmClaimHolds(nextClaim as number)).toBe(true);
     });
 });

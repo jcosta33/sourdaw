@@ -32,7 +32,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 import { nativeEngineRearmStore } from '#/modules/AudioEngine/stores';
-import { claimNativeSessionRearm } from '#/modules/AudioEngine/useCases';
+import { claimNativeSessionRearm, nativeSessionRearmClaimHolds } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -40,7 +40,7 @@ import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 
-async function rearmNativeSession(tempo: number): Promise<void> {
+async function rearmNativeSession(claim: number): Promise<void> {
     const strips = ensureTrackStrips({ collectExternalPluginActivations: true });
     if (strips.status === 'failed') {
         logger.warn(`Native session re-arm found no usable strips to rebuild: ${strips.reason}`);
@@ -51,15 +51,18 @@ async function rearmNativeSession(tempo: number): Promise<void> {
     // later batch reloads a plugin the projection already believes is live.
     await Promise.allSettled(strips.externalPluginActivations);
     // The reload spans seconds, one round trip per instance, and the transport
-    // keeps running across it — a Stop that lands inside must win. Without
-    // this re-read, a settled activation would still start a session, booting
-    // an engine rolling from beat 0 with the transport stopped and nothing
-    // left to park it.
-    if (!getTransportState()?.isPlaying) {
-        logger.info('The play ended while the native session reloaded; the re-arm stays down.');
+    // keeps running across it. A stop inside it invalidates the claim, and a
+    // play begun after that stop owns its own session, so neither the shared
+    // isPlaying flag nor the tempo captured at the offer may be trusted past
+    // the await: this claim's epoch must still be the one running, and the
+    // tempo has to be read fresh, or a Stop-then-Play landing inside the
+    // reload would let this claim dispose and restart the new play's engine.
+    const state = getTransportState();
+    if (!nativeSessionRearmClaimHolds(claim) || !state?.isPlaying) {
+        logger.info('The play that lost its engine ended while the native session reloaded; the re-arm stays down.');
         return;
     }
-    startNativeSessionAtBeat(playheadPositionRef.current, tempo);
+    startNativeSessionAtBeat(playheadPositionRef.current, state.tempo);
 }
 
 /**
@@ -75,12 +78,13 @@ export function rearmNativeSessionAfterEngineRetire(): () => void {
             // boots an engine of its own on the current default device.
             return;
         }
-        if (!claimNativeSessionRearm()) {
+        const claim = claimNativeSessionRearm();
+        if (claim === null) {
             logger.info(
                 'A second native engine loss in the same play; the transport stays on Web Audio until the next play.'
             );
             return;
         }
-        void rearmNativeSession(state.tempo);
+        void rearmNativeSession(claim);
     });
 }

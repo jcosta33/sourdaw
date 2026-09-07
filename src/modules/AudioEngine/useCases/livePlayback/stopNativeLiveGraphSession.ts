@@ -46,8 +46,11 @@ export function stopNativeLiveGraphSession(
         // First, and unconditionally — see the header.
         claimCarriedStrips(new Set());
         // The stop is what ends a play, so the next one gets its own automatic
-        // re-arm (#3960); a start must never hand this guard back.
+        // re-arm (#3960); a start must never hand this guard back. The epoch
+        // bump is what invalidates a claim taken before this stop, so a reload
+        // still in flight can never start a session for the play that follows.
         nativeLiveGraphSession.rearmClaimed = false;
+        nativeLiveGraphSession.rearmEpoch += 1;
         // Stopped before the command, and whatever the command answers: the
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.

@@ -110,6 +110,7 @@ export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSi
 export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
+export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
