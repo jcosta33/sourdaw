@@ -1,0 +1,18 @@
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_1228e573df1f42 456-460
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_1228e573df1f42 7,117-157
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_1228e573df1f42 24-39,58-65,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1534e6eac4f1c9442b1114e9d00155f84832b4a1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
