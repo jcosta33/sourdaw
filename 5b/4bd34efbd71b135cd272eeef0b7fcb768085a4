@@ -1,0 +1,51 @@
+src/modules/Arrangement/handlers/device/__tests__/handleSetExternalPluginState.spec.ts
+  s_9b530f08172a54::t_e73edc36291593 5-6,8,21,34,44-62
+src/modules/Arrangement/useCases/device/__tests__/setExternalPluginState.spec.ts
+  s_9b530f08172a54::t_c11a80240b3353 10-11,18-19,30-31,39-40,49-53,57,59-70,74-102,105-109,116-118,120,127-129,131
+src/modules/Arrangement/useCases/device/setExternalPluginState.ts
+  s_87ab0a2f60ccf8::t_7ed7db3b1044ae 1-6,15-33,44-59,66-69,71-73,75,78,83,92-95,97
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_9b530f08172a54::t_c054e5a0890449 11,19,31,86-92,103-106,115,123,136-137
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_9b530f08172a54::t_e874c1a08cf7dd 4,25-27,45,55-57,59,97-103
+src/modules/Arrangement/handlers/device/handleSetExternalPluginState.ts
+  s_9b530f08172a54::t_b6d2be2855e056 7-24
+src/modules/PluginHost/AGENTS.md
+  s_4a2a6e92921fa4::t_be60d934e28e9d 29
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_4a2a6e92921fa4::t_3eb3b454246451 13,375,379-410,413-424
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_4a2a6e92921fa4::t_838a13ee49449f 27,299-300,306,309-320,324-326,332,334-336,338,341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5b4bd34efbd71b135cd272eeef0b7fcb768085a4",
+  "prompts": {},
+  "sessions": {
+    "s_4a2a6e92921fa4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a402cd7d3d59ccd08",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
