@@ -23,6 +23,8 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
         action: Extract<AppAction, { type: ActionType }>,
         context?: HandlerValidationContext
     ) => boolean;
+    /** See `ActionHandlerCommon.canReportConflict`; only set it once `execute` has a genuine conflict path. */
+    canReportConflict?: boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     validateSessionActionArguments?: (payload: unknown) => boolean;
@@ -73,6 +75,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         describe: config.describe,
         validate: config.validate ?? (() => true),
         canReapplyAfterDivergence: config.canReapplyAfterDivergence,
+        canReportConflict: config.canReportConflict ?? false,
         materializeCommandArguments: config.materializeCommandArguments,
         validateMaterializedCommandArguments: config.validateMaterializedCommandArguments,
         validateSessionActionArguments: config.validateSessionActionArguments,

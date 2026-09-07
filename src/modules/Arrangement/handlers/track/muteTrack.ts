@@ -6,6 +6,10 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleMuteTrack = createHandler<'muteTrack'>({
     canReapplyAfterDivergence: () => true,
+    // Conflicts when `expectedMuted` no longer matches the live track. Proven
+    // by the `canReportConflict` registry honesty spec; undo step-over (#2881)
+    // relies on it.
+    canReportConflict: true,
     validate: (action, context) => {
         const currentMuted = getPlannedTrackState(context, action.payload.trackId)?.muted;
         return currentMuted === action.payload.expectedMuted;
