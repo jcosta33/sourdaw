@@ -22,7 +22,7 @@ use crate::timeline::{
     TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
-use daw_dsp::fermenter::FermenterInstance;
+use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
@@ -948,15 +948,6 @@ impl PluginCore {
     }
 }
 
-/// Frames a [`FermenterInstance`] renders per `process` call.
-///
-/// Its channel buffers are exactly this long and `process` clamps its argument
-/// to them without saying so, so a longer ask renders this many frames and
-/// leaves the rest of the block silent. The host is what splits a callback
-/// into runs this size; the number is the instrument's, not a choice made
-/// here.
-const FERMENTER_BLOCK_FRAMES: usize = 128;
-
 /// Note-voices one hosted Fermenter can sound at once.
 ///
 /// The figure the web runtime builds its own instance with
@@ -973,6 +964,14 @@ const MIDI_CHANNELS: i16 = 16;
 /// Boxed inside [`PluginCore`] because a `GraphCommand` is moved through a
 /// fixed-size ring: inline, this body's voice pool would set the size of every
 /// command the engine sends.
+///
+/// [`FERMENTER_BLOCK_FRAMES`] is [`FermenterInstance`]'s own constant, imported
+/// from `daw-dsp` rather than redeclared here so the two crates cannot drift:
+/// its channel buffers are exactly this long and `process` clamps its argument
+/// to them without saying so, so a longer ask renders this many frames and
+/// leaves the rest of the block silent. The host — [`FermenterBody::process`]
+/// below — is what splits a callback into runs this size; the number is the
+/// instrument's, not a choice made here.
 pub struct FermenterBody {
     instance: FermenterInstance,
 }
@@ -1065,11 +1064,12 @@ impl FermenterBody {
         let rendered_right = self.instance.get_right_ptr();
         // SAFETY: both pointers were derived after the render and name the
         // instrument's own channel buffers, which `FermenterInstance::new`
-        // sizes at FERMENTER_BLOCK_FRAMES and no method resizes; `frames` is
-        // bounded by that size in `process` above, so each slice is inside
-        // the allocation it names. The two buffers are separate heap
-        // allocations, so the pair of slices aliases nothing. Nothing mutates
-        // the instrument between the render and this copy.
+        // sizes at daw-dsp's own `FERMENTER_BLOCK_FRAMES` (imported above) and
+        // no method resizes; `frames` is bounded by that same constant in
+        // `process` above, so each slice is inside the allocation it names.
+        // The two buffers are separate heap allocations, so the pair of
+        // slices aliases nothing. Nothing mutates the instrument between the
+        // render and this copy.
         let (rendered_left, rendered_right) = unsafe {
             (
                 std::slice::from_raw_parts(rendered_left, frames),
@@ -13384,6 +13384,25 @@ mod timeline_tests {
     fn rms(samples: &[f32]) -> f32 {
         let sum: f32 = samples.iter().map(|sample| sample * sample).sum();
         (sum / samples.len() as f32).sqrt()
+    }
+
+    /// A [`FermenterInstance`] buffers exactly [`FERMENTER_BLOCK_FRAMES`], the
+    /// size `render_run`'s `from_raw_parts` slices trust without checking.
+    ///
+    /// `FermenterInstance::new` and this file's `FERMENTER_BLOCK_FRAMES`
+    /// import both live in daw-dsp now, but nothing stops a future edit to
+    /// daw-dsp's constructor from sizing the buffers off a separate literal
+    /// again; this test is what would catch that.
+    #[test]
+    fn a_fermenter_instance_buffers_exactly_the_frames_a_run_reads() {
+        let instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        assert_eq!(
+            instance.channel_buffer_frames(),
+            (FERMENTER_BLOCK_FRAMES, FERMENTER_BLOCK_FRAMES),
+            "FermenterInstance's left and right channel buffers must both be \
+             exactly FERMENTER_BLOCK_FRAMES long, or render_run's from_raw_parts \
+             slices read past the allocation"
+        );
     }
 
     /// A note scheduled for a Fermenter sounds from the frame it was written

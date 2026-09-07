@@ -25,6 +25,14 @@ use crate::primitives::sanitize_block;
 use engine::LevainEngine;
 use wasm_bindgen::prelude::*;
 
+/// Frames one `process` call renders, and the length of both channel buffers.
+///
+/// A host reading the pointers `process` returns may read at most this many
+/// frames per call — `LevainInstance::new` sizes `left_buf` and `right_buf` at
+/// exactly this length, and `process` clamps its requested size to it to
+/// avoid audio-thread allocation.
+pub const LEVAIN_BLOCK_FRAMES: usize = 4096;
+
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct LevainInstance {
@@ -38,11 +46,10 @@ pub struct LevainInstance {
 impl LevainInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32, max_voices: u32) -> Self {
-        let max_block = 4096; // pre-allocate for max supported block size
         Self {
             engine: LevainEngine::new(sample_rate, max_voices as usize),
-            left_buf: vec![0.0; max_block],
-            right_buf: vec![0.0; max_block],
+            left_buf: vec![0.0; LEVAIN_BLOCK_FRAMES],
+            right_buf: vec![0.0; LEVAIN_BLOCK_FRAMES],
             nan_flush_count: 0,
         }
     }
@@ -299,8 +306,8 @@ impl LevainInstance {
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
         let size = block_size as usize;
-        // Clamp to max 4096 to avoid audio-thread allocation.
-        let size = size.min(4096);
+        // Clamp to avoid audio-thread allocation.
+        let size = size.min(LEVAIN_BLOCK_FRAMES);
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 
