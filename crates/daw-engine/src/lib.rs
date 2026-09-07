@@ -682,14 +682,13 @@ impl EngineHandle {
                  insert chain"
             ));
         }
-        // A built-in that sounds notes is scheduled against like any hosted
-        // instrument, so it is registered holding a store wherever it is
-        // registered from — built here, because the callback may not.
-        let notes = plugin_type.sounds_notes().then(MidiNoteStore::new);
+        // A built-in that sounds notes was already refused above, so a
+        // built-in reaching this push never sounds notes and carries no
+        // store.
         self.push(GraphCommand::AddEffect(
             id,
             PluginCore::builtin(plugin_type, self.sample_rate),
-            notes,
+            None,
         ))
     }
 
@@ -958,8 +957,10 @@ impl EngineHandle {
         })
     }
 
-    /// Take an effect out of a track's chain, returning it to the master
-    /// insert chain without unloading it.
+    /// Take an effect out of a track's chain without unloading it. An effect
+    /// body returns to the master insert chain; an instrument body runs
+    /// nowhere until a chain takes it again, because the master chain runs
+    /// effects only.
     pub fn remove_track_device(&mut self, track_id: usize, effect_id: usize) -> Result<(), String> {
         self.push(GraphCommand::RemoveTrackDevice {
             track_id,

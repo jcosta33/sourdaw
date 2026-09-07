@@ -558,10 +558,12 @@ pub enum GraphCommand {
         hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
-    /// returns to its home placement — the master insert chain for everything
-    /// the engine owns end to end, and detached for a hosted plugin, whose
-    /// lifetime belongs to the load that registered it and which must not land
-    /// on the whole mix because the user took it off one track.
+    /// returns to its home placement — the master insert chain for an effect
+    /// body, and detached for an instrument body and for a hosted plugin: an
+    /// instrument runs nowhere until a chain takes it again, because the
+    /// master chain runs effects only, and a hosted plugin's lifetime belongs
+    /// to the load that registered it and must not land on the whole mix
+    /// because the user took it off one track.
     RemoveTrackDevice {
         track_id: usize,
         effect_id: usize,
@@ -953,18 +955,29 @@ impl PluginCore {
         Self::GrandBoule(Box::new(body))
     }
 
+    /// The registry entry this instance was built from — the inverse of
+    /// [`Self::builtin`] — or `None` for a native plugin, which has no
+    /// registry entry.
+    pub const fn builtin_type(&self) -> Option<BuiltinEffectType> {
+        match self {
+            Self::Knead(_) => Some(BuiltinEffectType::Knead),
+            Self::Fermenter(_) => Some(BuiltinEffectType::Fermenter),
+            Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
+            Self::Native(_) => None,
+        }
+    }
+
     /// The instance-side reading of [`BuiltinEffectType::sounds_notes`]: true
-    /// for a built-in body that turns notes into audio.
+    /// for a built-in body that turns notes into audio, read through
+    /// [`Self::builtin_type`] so the two cannot disagree.
     ///
     /// A native plugin answers `false` here regardless of what it actually
     /// plays, because its note handling is the plugin's own — `AddPlugin`
     /// carries the store decision for it, made where the plugin is loaded,
     /// not by this instance-side match.
     pub fn sounds_notes(&self) -> bool {
-        match self {
-            Self::Fermenter(_) | Self::GrandBoule(_) => true,
-            Self::Knead(_) | Self::Native(_) => false,
-        }
+        self.builtin_type()
+            .is_some_and(BuiltinEffectType::sounds_notes)
     }
 }
 
@@ -2118,7 +2131,10 @@ impl ActiveEffect {
 
     /// An effect placed somewhere other than the master chain, but still homed
     /// there: a built-in the graph registers detached is the engine's own, and
-    /// the master chain is where it belongs once no strip holds it.
+    /// the master chain is where it belongs once no strip holds it. That
+    /// holds for an effect body only — an instrument body is homed detached
+    /// instead (see [`Self::detached`]), because the master chain runs
+    /// effects only.
     fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
         Self::homed(id, instance, placement, EffectPlacement::MasterChain)
     }
@@ -3301,9 +3317,9 @@ impl AudioScheduler {
                     effect_id,
                 } => {
                     if self.timeline.remove_track_device(track_id, effect_id) {
-                        // Return it to the master chain only when its
-                        // placement is the one this track owns, for the reason
-                        // given on `RemoveTrack`.
+                        // Return it to its home only when its placement is
+                        // the one this track owns, for the reason given on
+                        // `RemoveTrack`.
                         self.release_effect(effect_id, EffectPlacement::Track(track_id));
                     }
                     None
@@ -3629,8 +3645,24 @@ impl AudioScheduler {
         // Built holding the store on every path, refusals included, so a
         // refused registration retires the whole effect rather than freeing
         // the box the command carried.
-        let effect =
-            ActiveEffect::with_placement(id, instance, placement).holding_midi_notes(notes);
+        //
+        // A note-sink built-in is homed detached rather than at the caller's
+        // placement: the master chain runs effects only, so an instrument
+        // body must never be what a release hands back. `AddEffect` already
+        // refuses a sink before it reaches here, so a sink's `placement` is
+        // always `Detached` already — the assert below is the invariant, not
+        // a live branch.
+        let sounds_notes = instance.sounds_notes();
+        debug_assert!(
+            !(sounds_notes && placement == EffectPlacement::MasterChain),
+            "a note-sink built-in must never be registered onto the master chain"
+        );
+        let effect = if sounds_notes {
+            ActiveEffect::detached(id, instance)
+        } else {
+            ActiveEffect::with_placement(id, instance, placement)
+        }
+        .holding_midi_notes(notes);
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
             return Some(RetiredGraphObjects::effect(effect));
@@ -5936,14 +5968,18 @@ mod tests {
         let retired = retired_rx
             .pop()
             .expect("the refused instrument must hand its carried instance off");
+        let retired_effect = retired
+            .effect
+            .as_ref()
+            .expect("the refusal retires an effect");
         assert_eq!(
-            retired
-                .effect
-                .as_ref()
-                .expect("the refusal retires an effect")
-                .id,
-            7,
+            retired_effect.id, 7,
             "the retired effect must be the one the refused command carried"
+        );
+        assert!(
+            retired_effect.midi_notes.is_some(),
+            "the note store must cross the retirement channel with its effect, not drop on the \
+             refusal callback"
         );
 
         command_tx
@@ -9434,6 +9470,60 @@ mod timeline_tests {
             .pop()
             .expect("the removed effect must be handed off for reclamation");
         assert!(retired.effect.is_some());
+    }
+
+    /// A note-sink built-in released from a track chain must run nowhere,
+    /// never land back on the master chain: `add_builtin_effect` homes it
+    /// detached (`ActiveEffect::detached`), so `release_effect` returns it to
+    /// that home instead of to `EffectPlacement::MasterChain` — the same
+    /// defect `AddEffect` already refuses when a sink registers directly, now
+    /// closed at the release path too. An effect body released the same way
+    /// still returns to the master chain, so the second half proves the
+    /// branch is the note-sink and not every release.
+    #[test]
+    fn a_released_note_sink_built_in_runs_nowhere_rather_than_on_the_master_chain() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_fermenter(&mut harness, 1, 7);
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+        });
+
+        let slot = harness
+            .scheduler
+            .effect_index
+            .lookup(7)
+            .expect("a released effect stays registered");
+        assert_eq!(
+            harness.scheduler.effects[slot].placement,
+            EffectPlacement::Detached,
+            "a released note-sink built-in must run nowhere, not on the master chain"
+        );
+        assert!(
+            !harness.scheduler.master_work.links[slot].member,
+            "the master insert chain must not walk a released instrument body"
+        );
+
+        // An ordinary effect body, released the same way, still returns home
+        // to the master chain.
+        harness.send(GraphCommand::AddDetachedEffect(8, knead_instance(), None));
+        harness.send(insert_track_device(1, effect(8), 0));
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 8,
+        });
+        let effect_slot = harness
+            .scheduler
+            .effect_index
+            .lookup(8)
+            .expect("a released effect stays registered");
+        assert_eq!(
+            harness.scheduler.effects[effect_slot].placement,
+            EffectPlacement::MasterChain,
+            "an effect body's release must be unaffected by the note-sink branch"
+        );
     }
 
     #[test]
