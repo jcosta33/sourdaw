@@ -3597,16 +3597,24 @@ pub async fn apply_graph_commands(
         ));
     };
 
-    // An engine object existing is not the same as it rendering: a fatal
-    // output-stream error leaves this slot filled with a handle whose render
-    // callback has stopped, and a batch pushed past that point queues into a
-    // ring nobody drains. Checked before anything is mapped or pushed, so a
-    // lost engine refuses cleanly rather than accepting a batch that can
-    // never land.
-    if let Some(kind) = engine.output_stream_loss() {
+    // An engine object existing is not the same as it rendering: a stalled
+    // render callback leaves this slot filled with a handle nothing is
+    // driving, and a batch pushed past that point queues into a ring nobody
+    // drains. Checked before anything is mapped or pushed, so a stalled
+    // engine refuses cleanly rather than accepting a batch that can never
+    // land. `is_rendering` is the watchdog's own verdict (daw-engine issue
+    // #3635) rather than an inference from the last error's *kind* — a
+    // `DeviceChanged` reroute or a recovered WASAPI invalidation both leave
+    // the callback running, so a batch against either must still be
+    // admitted.
+    if !engine.is_rendering() {
+        let fault = match engine.output_stream_fault() {
+            Some(kind) => format!(" after reporting {kind:?}"),
+            None => String::new(),
+        };
         return result_json(&GraphApplyResultPayload::rejected(format!(
-            "engine-stream-lost: the output stream reported {kind:?}; the engine renders \
-             nothing until it is restarted"
+            "engine-not-rendering: the output stream stopped calling back{fault}; the engine \
+             renders nothing until the stream resumes or it is restarted"
         )));
     }
 
@@ -6111,19 +6119,21 @@ mod tests {
     }
 
     /// The honesty slice (#3635): an `EngineHandle` can outlive its output
-    /// stream. A fatal output-stream error leaves the render callback dead
-    /// while `state.engine` still holds `Some`, so a batch reaching this
-    /// engine must be refused before anything is mapped or pushed — the
-    /// ring nobody is left to drain. Mutation: delete the
-    /// `engine.output_stream_loss()` guard in `apply_graph_commands` — this
-    /// goes red because the batch would then apply and push its fence onto
-    /// a ring the engine will never drain again.
+    /// stream. A stalled render callback leaves `state.engine` still holding
+    /// `Some`, so a batch reaching this engine must be refused before
+    /// anything is mapped or pushed — the ring nobody is left to drain.
+    /// Mutation: delete the `engine.is_rendering()` guard in
+    /// `apply_graph_commands` — this goes red because the batch would then
+    /// apply and push its fence onto a ring the engine will never drain
+    /// again.
     #[test]
-    fn a_batch_for_a_lost_engine_is_refused_before_anything_is_pushed() {
+    fn a_batch_for_a_stalled_engine_is_refused_before_anything_is_pushed() {
         let state = AppState::default();
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
-        engine.mark_output_stream_lost(daw_engine::engine_events::StreamErrorKind::DeviceChanged);
+        engine.mark_render_stalled(Some(
+            daw_engine::engine_events::StreamErrorKind::DeviceChanged,
+        ));
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         let result = block_on_test(apply_graph_commands(
@@ -6138,13 +6148,17 @@ mod tests {
             .as_str()
             .expect("a rejection names a reason");
         assert!(
-            reason.starts_with("engine-stream-lost:"),
+            reason.starts_with("engine-not-rendering:"),
             "unexpected reason: {reason}"
+        );
+        assert!(
+            reason.contains("DeviceChanged"),
+            "the refusal should name the fault the stream last reported: {reason}"
         );
         assert_eq!(
             drain_counting_fences(&mut command_rx),
             0,
-            "a lost engine's ring must never receive this batch's fence"
+            "a stalled engine's ring must never receive this batch's fence"
         );
     }
 

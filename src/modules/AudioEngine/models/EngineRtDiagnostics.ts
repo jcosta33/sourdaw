@@ -50,13 +50,17 @@ export type EngineRtDiagnostics = {
      */
     inputLatencyFrames: number;
     /**
-     * The kind of fatal error the output stream reported, or `null` if it has
-     * not. `running: false` with this non-null is a different condition than
+     * The kind of the last non-xrun error the output stream reported, or
+     * `null` if it has not reported one. Detail beside `running`, not a
+     * substitute for it: a `deviceChanged` reroute or a recovered WASAPI
+     * invalidation can leave this non-null while `running` is still `true`,
+     * because the render callback kept being called through it.
+     * `running: false` with this non-null is a different condition than
      * `running: false` with no engine ever started: an engine object exists
-     * and its other counters are real readings, but its output stream ended
-     * and nothing renders until the engine is restarted.
+     * and its other counters are real readings, but no render callback is
+     * running and nothing renders until the engine is restarted.
      */
-    outputStreamLoss: EngineStreamErrorKind | null;
+    outputStreamFault: EngineStreamErrorKind | null;
     /**
      * Events drained by this read. The engine hands each event out exactly
      * once, so a reader that discards them loses them.
@@ -76,6 +80,6 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     captureBlocksDropped: 0,
     captureInputUnderruns: 0,
     inputLatencyFrames: 0,
-    outputStreamLoss: null,
+    outputStreamFault: null,
     events: [],
 };

@@ -29,15 +29,16 @@ function readCounter(payload: Record<string, unknown>, key: keyof EngineRtDiagno
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function readOutputStreamLoss(value: unknown): EngineStreamErrorKind | null {
+function readOutputStreamFault(value: unknown): EngineStreamErrorKind | null {
     if (value === null || typeof value !== 'string') {
         return null;
     }
 
-    // An unrecognized kind still means the stream ended — the same fallback
-    // `toEngineEvent` uses for an event kind this build does not know, and
-    // for the same reason: reporting the loss as backend-specific is honest,
-    // dropping it silently recreates the defect this surface exists to fix.
+    // An unrecognized kind still means the stream reported something — the
+    // same fallback `toEngineEvent` uses for an event kind this build does
+    // not know, and for the same reason: reporting the fault as
+    // backend-specific is honest, dropping it silently recreates the defect
+    // this surface exists to fix.
     return streamErrorKinds.includes(value as EngineStreamErrorKind)
         ? (value as EngineStreamErrorKind)
         : 'backendSpecific';
@@ -94,7 +95,7 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         captureBlocksDropped: readCounter(payload, 'captureBlocksDropped'),
         captureInputUnderruns: readCounter(payload, 'captureInputUnderruns'),
         inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
-        outputStreamLoss: readOutputStreamLoss(payload.outputStreamLoss),
+        outputStreamFault: readOutputStreamFault(payload.outputStreamFault),
         events,
     };
 }

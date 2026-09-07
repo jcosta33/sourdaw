@@ -30,7 +30,7 @@ const nativePayload = {
     captureBlocksDropped: 12,
     captureInputUnderruns: 13,
     inputLatencyFrames: 14,
-    outputStreamLoss: 'deviceChanged',
+    outputStreamFault: 'deviceChanged',
     events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };
 
@@ -72,50 +72,67 @@ describe('getEngineRtDiagnostics', () => {
 
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.unmappedSetParamCalls).toBe(5);
-        // A lost output stream is exactly this shape: `running: false` on an
-        // engine that still has a real loss to report, not the all-zeros
+        // A stalled output stream is exactly this shape: `running: false` on
+        // an engine that still has a real fault to report, not the all-zeros
         // not-running default.
-        expect(diagnostics.outputStreamLoss).toBe('deviceChanged');
+        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
     });
 
-    it('reads a recognized output-stream-loss kind', async () => {
+    it('reads a recognized output-stream-fault kind', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: 'deviceChanged' });
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: 'deviceChanged' });
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(diagnostics.outputStreamLoss).toBe('deviceChanged');
+        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
     });
 
-    it('reads a null output-stream-loss as no loss', async () => {
+    it('reads a null output-stream-fault as no fault', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: null });
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: null });
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(diagnostics.outputStreamLoss).toBeNull();
+        expect(diagnostics.outputStreamFault).toBeNull();
     });
 
-    it('reads a missing output-stream-loss as no loss', async () => {
+    it('reads a missing output-stream-fault as no fault', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        const { outputStreamLoss: _omitted, ...payloadWithoutLoss } = nativePayload;
-        vi.mocked(desktopInvoke).mockResolvedValue(payloadWithoutLoss);
+        const { outputStreamFault: _omitted, ...payloadWithoutFault } = nativePayload;
+        vi.mocked(desktopInvoke).mockResolvedValue(payloadWithoutFault);
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(diagnostics.outputStreamLoss).toBeNull();
+        expect(diagnostics.outputStreamFault).toBeNull();
     });
 
-    it('keeps an output-stream-loss kind it does not recognize', async () => {
+    it('keeps an output-stream-fault kind it does not recognize', async () => {
         // The same honesty the event-kind fallback exists for: an unmapped
-        // kind still means the stream ended, so it must not be reported as
-        // no loss at all.
+        // kind still means the stream reported something, so it must not be
+        // reported as no fault at all.
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: 'somethingNew' });
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamFault: 'somethingNew' });
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(diagnostics.outputStreamLoss).toBe('backendSpecific');
+        expect(diagnostics.outputStreamFault).toBe('backendSpecific');
+    });
+
+    it('keeps running true beside a recorded fault', async () => {
+        // A `deviceChanged` reroute or a recovered WASAPI invalidation can
+        // leave a fault recorded while the render callback never actually
+        // stopped — the fault and the running flag are independent readings.
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...nativePayload,
+            running: true,
+            outputStreamFault: 'deviceChanged',
+        });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.running).toBe(true);
+        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
     });
 
     it('keeps a stream error whose kind it does not recognize', async () => {

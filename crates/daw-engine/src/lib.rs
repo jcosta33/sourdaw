@@ -30,7 +30,7 @@ use scheduler::{
     MasterMeterSnapshot, PluginCore, RetiredGraphObjects, TransportPositionReader,
     TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
@@ -166,7 +166,7 @@ pub struct EngineHandle {
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
     /// The kind of the capture-side refusal `capture_side` last stored, or
-    /// zero for none, encoded as `kind as u8 + 1`.
+    /// zero for none, encoded as `kind.to_slot()`.
     ///
     /// A refusal cannot cross the capture ring the way a mid-stream error
     /// does: whichever route produced it — a refused open, or a refused
@@ -177,16 +177,22 @@ pub struct EngineHandle {
     /// [`Self::drain_engine_events`] swaps it back to zero on every drain and
     /// turns a non-zero read into one `EngineEvent::StreamError`.
     capture_refusal: Arc<AtomicU8>,
-    /// The kind of a fatal output-stream error the audio thread's error sink
-    /// stored, or zero for none, encoded as `kind as u8 + 1`.
+    /// Whether the output stream's render callback is still being called,
+    /// as decided by the audio thread's watchdog — see
+    /// `audio_thread::RenderLiveness`. This is the verdict
+    /// [`Self::is_rendering`] reads; a handle existing is not the same
+    /// thing, because a fatal output-stream error leaves this slot filled
+    /// with a handle whose callback stopped.
+    rendering: Arc<AtomicBool>,
+    /// The kind of the last non-xrun error the output stream reported, or
+    /// zero for none, encoded as `kind.to_slot()`.
     ///
-    /// Unlike `capture_refusal`, this is state rather than a one-shot event:
-    /// once the output stream has ended nothing renders again until the
-    /// engine is restarted, so every read after the first loss must keep
-    /// seeing it. [`Self::output_stream_loss`] therefore loads it rather than
-    /// swapping it back to zero. See
-    /// `audio_thread::new_output_stream_loss_slot`.
-    output_stream_loss: Arc<AtomicU8>,
+    /// Detail beside `rendering`, not the verdict itself: it may be `Some`
+    /// while `rendering` is still `true` (a survived `DeviceChanged` reroute,
+    /// or a recovered WASAPI invalidation), and it is never cleared back to
+    /// zero, so [`Self::output_stream_fault`] always reports the newest
+    /// report the stream made. See `audio_thread::new_output_stream_fault_slot`.
+    output_stream_fault: Arc<AtomicU8>,
 }
 
 impl EngineHandle {
@@ -289,7 +295,8 @@ impl EngineHandle {
             sample_rate: spawned.sample_rate,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
-            output_stream_loss: spawned.output_stream_loss,
+            rendering: spawned.liveness.rendering,
+            output_stream_fault: spawned.output_stream_fault,
         })
     }
 
@@ -321,26 +328,47 @@ impl EngineHandle {
         self.input_latency_frames.load(Ordering::Relaxed)
     }
 
-    /// The kind of fatal error the output stream reported, if it has stopped
-    /// rendering.
+    /// Whether the output stream's render callback is still being called.
     ///
-    /// `None` means the output stream is still rendering, never that this
-    /// handle is otherwise healthy — a capture refusal or a scheduler
-    /// counter is read separately. `Some` means no render callback is
-    /// running for this engine: nothing pushed onto its command ring will be
-    /// heard until it is restarted. This is state, not a drained event, so
-    /// it is a plain `load` — every read after the first loss keeps seeing
-    /// it, unlike `drain_engine_events`'s one-shot reports.
-    pub fn output_stream_loss(&self) -> Option<StreamErrorKind> {
-        StreamErrorKind::from_slot(self.output_stream_loss.load(Ordering::Relaxed))
+    /// This is the watchdog's verdict (`audio_thread::RenderLiveness`), not
+    /// an inference from the *kind* of error the stream last reported: a
+    /// `DeviceChanged` reroute or a recovered WASAPI invalidation both leave
+    /// this `true`, because the callback kept running through them. `false`
+    /// means no render callback has advanced its counter for the watchdog's
+    /// stall window: nothing pushed onto this engine's command ring will be
+    /// heard until it renders again. This is state, not a drained event, so
+    /// it is a plain `load` — every read after a stall keeps seeing it,
+    /// unlike `drain_engine_events`'s one-shot reports.
+    pub fn is_rendering(&self) -> bool {
+        self.rendering.load(Ordering::Relaxed)
     }
 
-    /// Record an output-stream loss without a device, for a fixture that
-    /// needs to drive the code that reads [`Self::output_stream_loss`].
+    /// The kind of the last non-xrun error the output stream reported, if
+    /// any.
+    ///
+    /// Detail beside [`Self::is_rendering`], not a substitute for it: a
+    /// fault can be `Some` while the stream still renders, so a caller that
+    /// wants to know whether the engine hears anything reads
+    /// `is_rendering`, and reads this only to explain a stall it already
+    /// found.
+    pub fn output_stream_fault(&self) -> Option<StreamErrorKind> {
+        StreamErrorKind::from_slot(self.output_stream_fault.load(Ordering::Relaxed))
+    }
+
+    /// Force the render-liveness verdict without a device, for a fixture
+    /// that needs to drive the code that reads [`Self::is_rendering`] and
+    /// [`Self::output_stream_fault`].
+    ///
+    /// `fault` is stored beside the stall rather than implied by it: a
+    /// caller can simulate a stall with no error to report, or attach the
+    /// kind the stream last reported before it stalled.
     #[cfg(any(test, feature = "command-capture-fixture"))]
-    pub fn mark_output_stream_lost(&self, kind: StreamErrorKind) {
-        self.output_stream_loss
-            .store(kind as u8 + 1, Ordering::Relaxed);
+    pub fn mark_render_stalled(&self, fault: Option<StreamErrorKind>) {
+        self.rendering.store(false, Ordering::Relaxed);
+        if let Some(kind) = fault {
+            self.output_stream_fault
+                .store(kind.to_slot(), Ordering::Relaxed);
+        }
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -1323,7 +1351,8 @@ fn engine_handle_fixture(
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
     capture_refusal: Arc<AtomicU8>,
-    output_stream_loss: Arc<AtomicU8>,
+    rendering: Arc<AtomicBool>,
+    output_stream_fault: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
         command_tx,
@@ -1343,7 +1372,8 @@ fn engine_handle_fixture(
         sample_rate: 48_000.0,
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
-        output_stream_loss,
+        rendering,
+        output_stream_fault,
     }
 }
 
@@ -1383,7 +1413,8 @@ pub fn engine_handle_for_command_capture(
             engine_event_rx,
             capture_event_rx,
             audio_thread::new_capture_refusal_slot(),
-            audio_thread::new_output_stream_loss_slot(),
+            audio_thread::new_render_liveness().rendering,
+            audio_thread::new_output_stream_fault_slot(),
         ),
         command_rx,
         retired_adoption_rx,
@@ -2443,7 +2474,8 @@ mod tests {
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
-                crate::audio_thread::new_output_stream_loss_slot(),
+                crate::audio_thread::new_render_liveness().rendering,
+                crate::audio_thread::new_output_stream_fault_slot(),
             ),
             command_rx,
             diagnostics_tx,
@@ -2628,7 +2660,8 @@ mod tests {
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
-                crate::audio_thread::new_output_stream_loss_slot(),
+                crate::audio_thread::new_render_liveness().rendering,
+                crate::audio_thread::new_output_stream_fault_slot(),
             ),
             engine_event_tx,
             capture_event_tx,
@@ -2700,7 +2733,7 @@ mod tests {
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
         let capture_refusal = crate::audio_thread::new_capture_refusal_slot();
         capture_refusal.store(
-            StreamErrorKind::DeviceNotAvailable as u8 + 1,
+            StreamErrorKind::DeviceNotAvailable.to_slot(),
             std::sync::atomic::Ordering::Relaxed,
         );
 
@@ -2715,7 +2748,8 @@ mod tests {
             engine_event_rx,
             capture_event_rx,
             capture_refusal,
-            crate::audio_thread::new_output_stream_loss_slot(),
+            crate::audio_thread::new_render_liveness().rendering,
+            crate::audio_thread::new_output_stream_fault_slot(),
         );
 
         assert_eq!(
@@ -2732,23 +2766,25 @@ mod tests {
         );
     }
 
-    /// [`EngineHandle::output_stream_loss`] reads the same slot the audio
-    /// thread's error sink writes — proven here via
-    /// `mark_output_stream_lost`, the fixture route to it — and a handle
-    /// that has recorded no loss reads `None` rather than some stale
-    /// default.
+    /// A fresh fixture starts rendering with no fault recorded — the same
+    /// baseline a freshly opened stream has — and `mark_render_stalled`
+    /// clears both, proving [`EngineHandle::is_rendering`] and
+    /// [`EngineHandle::output_stream_fault`] read the fixture's own slots
+    /// rather than some independent default. Mutation: have
+    /// `mark_render_stalled` skip storing the fault when one is given, and
+    /// this goes red on the second assertion.
     #[test]
-    fn output_stream_loss_reads_the_slot_the_sink_wrote() {
+    fn is_rendering_reads_the_flag_the_fixture_clears() {
         let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
-        engine.mark_output_stream_lost(StreamErrorKind::DeviceChanged);
+        assert!(engine.is_rendering());
+        assert_eq!(engine.output_stream_fault(), None);
 
+        engine.mark_render_stalled(Some(StreamErrorKind::DeviceChanged));
+
+        assert!(!engine.is_rendering());
         assert_eq!(
-            engine.output_stream_loss(),
+            engine.output_stream_fault(),
             Some(StreamErrorKind::DeviceChanged)
         );
-
-        let (fresh, _fresh_command_rx, _fresh_retired_adoption_rx) =
-            engine_handle_for_command_capture(64);
-        assert_eq!(fresh.output_stream_loss(), None);
     }
 }
