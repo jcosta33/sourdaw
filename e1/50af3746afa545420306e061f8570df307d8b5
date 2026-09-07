@@ -1,0 +1,20 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurableOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_c6cdf4d7f960c5 287,292-296
+  s_87ab0a2f60ccf8::t_c71c595c0bfdd3 286,288-291,297-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e150af3746afa545420306e061f8570df307d8b5",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
