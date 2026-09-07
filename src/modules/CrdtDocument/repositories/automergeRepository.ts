@@ -340,14 +340,20 @@ class AutomergeRepository {
 
     /** Create a new empty project with a root document. */
     createProject(_name: string): DocId {
+        const removedInstalledRoot = this.docs.has(this.rootId);
         this.docs.clear();
+        if (removedInstalledRoot) {
+            this.markRootIdentityMutation();
+        }
         // The worker replica is deliberately NOT dropped here. saveAllOffThread's
         // ancestry check already reseeds the new root, which keeps the next full
         // save off-thread; nulling would force it back onto the main thread at
         // exactly the moment compaction is most likely to run.
         this.rootId = DOC_PREFIX_ROOT;
         this.docs.set(this.rootId, init<AnyDoc>());
-        this.markRootIdentityMutation();
+        if (!removedInstalledRoot) {
+            this.markRootIdentityMutation();
+        }
         this.markDocumentIdentityMutation();
 
         return this.rootId;

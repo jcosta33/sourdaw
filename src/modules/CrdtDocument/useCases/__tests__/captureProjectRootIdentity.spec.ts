@@ -6,6 +6,22 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectIdentity } from '../captureProjectIdentity';
 import { captureProjectRootIdentity } from '../captureProjectRootIdentity';
 
+const automergeInitFault = vi.hoisted(() => ({ throwNext: false }));
+
+vi.mock('@automerge/automerge', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@automerge/automerge')>();
+    return {
+        ...actual,
+        init: (actor?: string) => {
+            if (automergeInitFault.throwNext) {
+                automergeInitFault.throwNext = false;
+                throw new Error('forced Automerge init failure');
+            }
+            return actual.init(actor);
+        },
+    };
+});
+
 class UnavailableWorker {
     constructor() {
         throw new Error('worker unavailable in synchronous repository test');
@@ -41,6 +57,7 @@ function expectRootIdentityToMove(previous: string): string {
 
 describe('captureProjectRootIdentity', () => {
     beforeEach(() => {
+        automergeInitFault.throwNext = false;
         automergeRepository.reset();
         automergeRepository.createProject('root identity');
     });
@@ -108,6 +125,48 @@ describe('captureProjectRootIdentity', () => {
         expectMonotonicMove();
         automergeRepository.mergeRemoteDoc('root', save(createDocument('ffffffffffffffff', { installed: 'remote' })));
         expectMonotonicMove();
+    });
+
+    it('invalidates root identity when replacement initialization fails after clearing the installed root', () => {
+        const rootIdentity = captureProjectRootIdentity();
+        const projectIdentity = captureProjectIdentity();
+        const mutationEpoch = automergeRepository.getMutationEpoch();
+        expect(automergeRepository.hasDoc('root')).toBe(true);
+        automergeInitFault.throwNext = true;
+
+        expect(() => automergeRepository.createProject('replacement')).toThrow('forced Automerge init failure');
+
+        expect(automergeRepository.hasDoc('root')).toBe(false);
+        expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
+        expect(captureProjectIdentity()).toBe(projectIdentity);
+        expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch);
+    });
+
+    it('preserves every identity when initialization fails without an installed root to remove', () => {
+        automergeRepository.removeDoc('root');
+        const rootIdentity = captureProjectRootIdentity();
+        const projectIdentity = captureProjectIdentity();
+        const mutationEpoch = automergeRepository.getMutationEpoch();
+        automergeInitFault.throwNext = true;
+
+        expect(() => automergeRepository.createProject('replacement')).toThrow('forced Automerge init failure');
+
+        expect(automergeRepository.hasDoc('root')).toBe(false);
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+        expect(captureProjectIdentity()).toBe(projectIdentity);
+        expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch);
+    });
+
+    it('advances root identity exactly once for successful creation with or without an installed root', () => {
+        let rootEpoch = captureEpoch();
+
+        automergeRepository.createProject('replace installed root');
+        expect(captureEpoch()).toBe(rootEpoch + 1);
+
+        automergeRepository.removeDoc('root');
+        rootEpoch = captureEpoch();
+        automergeRepository.createProject('install absent root');
+        expect(captureEpoch()).toBe(rootEpoch + 1);
     });
 
     it('preserves the installed-root identity for ordinary root content and lineage merges', () => {
