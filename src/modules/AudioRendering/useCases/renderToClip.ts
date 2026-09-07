@@ -69,7 +69,9 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
                 type: 'audio',
                 audioBufferId,
             });
-        }
+        },
+        // The redo closure re-creates the rendered clip with this buffer id.
+        { restoresBufferIds: [audioBufferId] }
     );
 
     return { trackId, clipId: clip.id, audioBufferId };

@@ -7,6 +7,8 @@ type PushUndoEntryOptions = {
     groupId?: string;
     groupLabel?: string;
     source?: UndoSource;
+    /** Audio buffer ids the closures can restore. See `CallbackUndoEntry`. */
+    restoresBufferIds?: readonly string[];
 };
 
 export function pushUndoEntry(
@@ -20,6 +22,7 @@ export function pushUndoEntry(
         undo: undoFn,
         redo: redoFn,
         source: options?.source ?? 'manual',
+        restoresBufferIds: options?.restoresBufferIds,
     });
     if (options?.groupId) {
         entry.groupId = options.groupId;

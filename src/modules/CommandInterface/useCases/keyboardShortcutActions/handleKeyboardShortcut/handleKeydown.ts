@@ -180,7 +180,9 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
     if (!transaction) {
         return;
     }
-    pushUndoEntry('Duplicate Time Range', transaction.undo, transaction.redo);
+    pushUndoEntry('Duplicate Time Range', transaction.undo, transaction.redo, {
+        restoresBufferIds: transaction.restoresBufferIds,
+    });
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
@@ -409,7 +411,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (!transaction) {
                         return true;
                     }
-                    pushUndoEntry('Insert Silence', transaction.undo, transaction.redo);
+                    pushUndoEntry('Insert Silence', transaction.undo, transaction.redo, {
+                        restoresBufferIds: transaction.restoresBufferIds,
+                    });
                     return true;
                 }
                 case 'duplicateTimeRange': {

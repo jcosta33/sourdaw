@@ -23,6 +23,11 @@ export type CallbackUndoEntry = UndoEntryBase & {
     kind: 'callback';
     undo: () => void;
     redo: () => unknown;
+    /** Audio buffer ids the undo/redo closures can restore, declared by the
+     * producing module at push time while its state is in hand. Buffer-ownership
+     * queries read this declaration instead of interpreting the closures; an
+     * entry without it is treated as restoring no audio. */
+    restoresBufferIds?: readonly string[];
 };
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;

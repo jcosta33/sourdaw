@@ -933,13 +933,18 @@ describe('handleKeydown', () => {
             ];
             clipSelectionStoreMock.value.marqueeSelection = { startBeat: 2, endBeat: 5, trackIds: ['t1'] };
             trackStoreMock.value.tracks = [{ id: 't1', clips: [] }];
-            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true) };
+            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true), restoresBufferIds: [] as const };
             vi.mocked(executeUndoableInsertTime).mockReturnValueOnce(undoTransaction);
 
             const withMarquee = handleKeydown(descriptor({ key: 'F1' }));
             expect(withMarquee).toBe(true);
             expect(executeUndoableInsertTime).toHaveBeenCalledWith(2, 3);
-            expect(pushUndoEntry).toHaveBeenCalledWith('Insert Silence', expect.any(Function), expect.any(Function));
+            expect(pushUndoEntry).toHaveBeenCalledWith(
+                'Insert Silence',
+                expect.any(Function),
+                expect.any(Function),
+                expect.objectContaining({ restoresBufferIds: expect.any(Array) })
+            );
             const undoEntryCall = vi.mocked(pushUndoEntry).mock.calls[0];
             if (!undoEntryCall) {
                 throw new Error('expected Insert Silence undo callback');
@@ -970,7 +975,7 @@ describe('handleKeydown', () => {
                 { id: 't1', clips: [] },
                 { id: 't2', clips: [] },
             ];
-            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true) };
+            const undoTransaction = { undo: vi.fn(), redo: vi.fn(() => true), restoresBufferIds: [] as const };
             vi.mocked(executeUndoableDuplicateTimeRange).mockReturnValueOnce(undoTransaction);
 
             handleKeydown(descriptor({ key: 'F1' }));
