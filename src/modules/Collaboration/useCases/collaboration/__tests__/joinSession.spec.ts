@@ -214,6 +214,7 @@ describe('joinSession', () => {
 
         const joining = joinSession('invite', 'Alice');
         expect(canExecuteCommandBatch()).toBe(false);
+        mockRuntime.captureOwner.mockReturnValue(null);
         await leaveSession();
         resolveInvite(JSON.stringify(makeOffer()));
 

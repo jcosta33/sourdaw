@@ -5,8 +5,14 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function leaveSession(): Promise<void> {
-    joinAttemptAuthority.invalidate();
     const owner = runtime.captureOwner();
+    const state = collaborationStore.value;
+    if (!owner && !state?.isEnabled) {
+        return;
+    }
+    if (!owner || runtime.canWrite(owner)) {
+        joinAttemptAuthority.invalidate();
+    }
     const requestWitness = joinAttemptAuthority.capture();
     const peerManager = runtime.state.peerManager;
     runtime.retire(owner);

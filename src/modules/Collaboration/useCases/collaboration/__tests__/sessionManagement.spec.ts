@@ -840,6 +840,69 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
         });
 
+        it.each([
+            ['first', 0],
+            ['second', 1],
+        ] as const)(
+            'surfaces cleanup persistence failure when the %s buffered leave completes first',
+            async (_label, firstCompletionIndex) => {
+                createSession('Session A');
+                const sessionAManager = latestPeerManager();
+                sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
+                const sendEntered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+                const sends = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+                let sendIndex = 0;
+                sessionAManager.sendCrdtSyncBuffered.mockImplementation(async () => {
+                    const index = sendIndex;
+                    sendIndex += 1;
+                    sendEntered[index]!.resolve();
+                    await sends[index]!.promise;
+                });
+                const persistence = Promise.withResolvers<void>();
+                crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+
+                const firstLeave = leaveSession();
+                await sendEntered[0].promise;
+                const secondLeave = leaveSession();
+                await sendEntered[1].promise;
+
+                const secondCompletionIndex = firstCompletionIndex === 0 ? 1 : 0;
+                sends[firstCompletionIndex].resolve();
+                await [firstLeave, secondLeave][firstCompletionIndex];
+                sends[secondCompletionIndex].resolve();
+                await [firstLeave, secondLeave][secondCompletionIndex];
+                persistence.reject(new Error('cleanup failed'));
+                await vi.waitFor(() =>
+                    expect(loggerMock.warn).toHaveBeenCalledWith(
+                        '[Collaboration] Failed to persist after branch sync cleanup:',
+                        expect.any(Error)
+                    )
+                );
+
+                expect(collaborationStore.value?.error).toBe(
+                    'Failed to save project locally after leaving the session.'
+                );
+            }
+        );
+
+        it('keeps cleanup persistence failure reportable when leave is repeated after cleanup', async () => {
+            createSession('Session A');
+            const persistence = Promise.withResolvers<void>();
+            crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+
+            await leaveSession();
+            await leaveSession();
+            persistence.reject(new Error('cleanup failed'));
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    '[Collaboration] Failed to persist after branch sync cleanup:',
+                    expect.any(Error)
+                )
+            );
+
+            expect(collaborationStore.value?.error).toBe('Failed to save project locally after leaving the session.');
+        });
+
         it('ignores retained callbacks from a replaced session', () => {
             createSession('Session A');
             const sessionAManager = latestPeerManager();
