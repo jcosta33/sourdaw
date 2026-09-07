@@ -1,0 +1,29 @@
+public/wasm/manifest.json
+  s_9b530f08172a54::t_668e0761372187 12,15-18,20-21
+release/open-source-inventory.json
+  s_4f504167e0cbea::t_d91f7d36dda77e 1331,1337,1718
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e18d42601df09367523faa328c5d7bb43ad2e32c",
+  "prompts": {},
+  "sessions": {
+    "s_4f504167e0cbea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cdb-0771-7a52-9998-22ed8b8565d9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
