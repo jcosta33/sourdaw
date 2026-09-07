@@ -33,6 +33,7 @@ function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiag
         captureBlocksDropped: 0,
         captureInputUnderruns: 0,
         inputLatencyFrames: 0,
+        outputStreamFault: null,
         events: [],
         ...overrides,
     };

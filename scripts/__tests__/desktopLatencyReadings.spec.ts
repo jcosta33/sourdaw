@@ -225,9 +225,10 @@ describe('describeAudibleFloor', () => {
 
 describe('MONOTONIC_COUNTER_NAMES and GAUGE_NAMES', () => {
     it('together name every numeric field engine_rt_diagnostics reports, so a field added later cannot fall through uncovered', () => {
-        const { running, events, ...numericFields } = notRunningEngineRtDiagnostics;
+        const { running, events, outputStreamFault, ...numericFields } = notRunningEngineRtDiagnostics;
         expect(running).toBe(false);
         expect(events).toEqual([]);
+        expect(outputStreamFault).toBeNull();
         expect(new Set([...MONOTONIC_COUNTER_NAMES, ...GAUGE_NAMES])).toEqual(new Set(Object.keys(numericFields)));
     });
 });

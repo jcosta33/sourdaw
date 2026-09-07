@@ -110,6 +110,21 @@ pub struct EngineRtDiagnostics {
     /// capture is not serving — see `daw_engine::EngineHandle::input_latency_frames`
     /// for what zero does and does not mean.
     pub input_latency_frames: u64,
+    /// The kind of the last non-xrun error the output stream reported, or
+    /// `null` if it has not reported one.
+    ///
+    /// Detail beside `running`, not a substitute for it: a `DeviceChanged`
+    /// reroute or a recovered WASAPI invalidation can leave this non-null
+    /// while `running` is still `true`, because the render callback kept
+    /// being called through it. `running: false` with this non-null names
+    /// the condition a host actually needs to act on — an engine object
+    /// exists, its other counters are real readings rather than the zeroed
+    /// not-running default, but no render callback is running and nothing
+    /// renders until the engine is restarted (restart is a later slice).
+    /// Never `#[serde(skip_serializing_if)]` — a reader must be able to tell
+    /// "healthy" from "not asked" from the key's own presence, the same
+    /// reason every other counter here is unconditional.
+    pub output_stream_fault: Option<StreamErrorKindPayload>,
     pub events: Vec<EngineEventPayload>,
 }
 
@@ -123,9 +138,15 @@ fn running_engine_diagnostics(
     snapshot: ActiveMidiRtDiagnosticsSnapshot,
     events: Vec<EngineEvent>,
     input_latency_frames: usize,
+    rendering: bool,
+    output_stream_fault: Option<StreamErrorKind>,
 ) -> EngineRtDiagnostics {
     EngineRtDiagnostics {
-        running: true,
+        // An engine object existing is not the same as it rendering: the
+        // output stream's error callback runs the render thread down without
+        // dropping the `EngineHandle`, so `running` reads the watchdog's
+        // render-liveness verdict rather than whether a handle exists.
+        running: rendering,
         scheduler_event_buffer_overflows: snapshot.scheduler_event_buffer_overflows,
         arpeggiator_active_note_exhaustions: snapshot.arpeggiator_active_note_exhaustions,
         effect_id_collisions: snapshot.effect_id_collisions,
@@ -135,6 +156,7 @@ fn running_engine_diagnostics(
         capture_blocks_dropped: snapshot.capture_blocks_dropped,
         capture_input_underruns: snapshot.capture_input_underruns,
         input_latency_frames: input_latency_frames as u64,
+        output_stream_fault: output_stream_fault.map(StreamErrorKindPayload::from),
         events: events.into_iter().map(EngineEventPayload::from).collect(),
     }
 }
@@ -164,11 +186,15 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
     let snapshot = engine.midi_rt_diagnostics_snapshot();
     let events = engine.drain_engine_events();
     let input_latency_frames = engine.input_latency_frames();
+    let rendering = engine.is_rendering();
+    let output_stream_fault = engine.output_stream_fault();
 
     Ok(running_engine_diagnostics(
         snapshot,
         events,
         input_latency_frames,
+        rendering,
+        output_stream_fault,
     ))
 }
 
@@ -191,6 +217,7 @@ mod tests {
             capture_blocks_dropped: 12,
             capture_input_underruns: 13,
             input_latency_frames: 14,
+            output_stream_fault: Some(StreamErrorKindPayload::DeviceChanged),
             events: vec![EngineEventPayload::StreamError {
                 side: StreamSidePayload::Input,
                 kind: StreamErrorKindPayload::DeviceNotAvailable,
@@ -207,7 +234,7 @@ mod tests {
                 r#""unsupportedEffectAdditions":4,"unmappedSetParamCalls":5,"#,
                 r#""captureConsumerRefusals":11,"#,
                 r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
-                r#""inputLatencyFrames":14,"#,
+                r#""inputLatencyFrames":14,"outputStreamFault":"deviceChanged","#,
                 r#""events":[{"type":"streamError","side":"input","#,
                 r#""kind":"deviceNotAvailable"}]}"#
             )
@@ -227,7 +254,7 @@ mod tests {
                 r#""unsupportedEffectAdditions":0,"unmappedSetParamCalls":0,"#,
                 r#""captureConsumerRefusals":0,"#,
                 r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
-                r#""inputLatencyFrames":0,"events":[]}"#
+                r#""inputLatencyFrames":0,"outputStreamFault":null,"events":[]}"#
             )
         );
     }
@@ -288,6 +315,8 @@ mod tests {
                 kind: StreamErrorKind::DeviceBusy,
             }],
             14,
+            true,
+            None,
         );
 
         assert!(diagnostics.running);
@@ -300,6 +329,7 @@ mod tests {
         assert_eq!(diagnostics.capture_blocks_dropped, 12);
         assert_eq!(diagnostics.capture_input_underruns, 13);
         assert_eq!(diagnostics.input_latency_frames, 14);
+        assert_eq!(diagnostics.output_stream_fault, None);
         assert_eq!(
             diagnostics.events,
             vec![EngineEventPayload::StreamError {
@@ -307,6 +337,108 @@ mod tests {
                 kind: StreamErrorKindPayload::DeviceBusy,
             }]
         );
+    }
+
+    /// `running` reports the watchdog's render-liveness verdict, not merely
+    /// whether an `EngineHandle` exists: a stalled render callback leaves an
+    /// engine object standing, and this is the one payload a host reads to
+    /// tell the two apart. Mutation: hardcode `running: true` in
+    /// `running_engine_diagnostics` — this test goes red because a stalled
+    /// stream would then report healthy.
+    #[test]
+    fn a_stalled_engine_reports_not_running_with_its_last_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            Vec::new(),
+            0,
+            false,
+            Some(StreamErrorKind::DeviceChanged),
+        );
+
+        assert!(
+            !diagnostics.running,
+            "an engine whose render callback stalled renders nothing"
+        );
+        assert_eq!(
+            diagnostics.output_stream_fault,
+            Some(StreamErrorKindPayload::DeviceChanged)
+        );
+    }
+
+    /// A `DeviceChanged` reroute or a recovered WASAPI invalidation can leave
+    /// a fault recorded while the render callback never actually stopped —
+    /// `running` must track the watchdog's verdict, not merely whether a
+    /// fault was ever reported. Mutation: derive `running` from
+    /// `output_stream_fault.is_none()` instead of the `rendering` argument —
+    /// this test goes red because a recorded-but-survived fault would then
+    /// report not running.
+    #[test]
+    fn a_rendering_engine_reports_running_even_with_a_recorded_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(
+            snapshot,
+            Vec::new(),
+            0,
+            true,
+            Some(StreamErrorKind::DeviceChanged),
+        );
+
+        assert!(
+            diagnostics.running,
+            "a survived reroute must not be read as the stream having stopped"
+        );
+        assert_eq!(
+            diagnostics.output_stream_fault,
+            Some(StreamErrorKindPayload::DeviceChanged)
+        );
+    }
+
+    /// The ordinary case: a healthy output stream reports running with no
+    /// fault recorded.
+    #[test]
+    fn a_healthy_engine_reports_running_with_no_fault() {
+        let snapshot = ActiveMidiRtDiagnosticsSnapshot {
+            scheduler_event_buffer_overflows: 0,
+            arpeggiator_active_note_exhaustions: 0,
+            effect_id_collisions: 0,
+            unsupported_effect_additions: 0,
+            unmapped_set_param_calls: 0,
+            capture_consumer_refusals: 0,
+            capture_blocks_dropped: 0,
+            capture_input_underruns: 0,
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
+        };
+
+        let diagnostics = running_engine_diagnostics(snapshot, Vec::new(), 0, true, None);
+
+        assert!(diagnostics.running);
+        assert_eq!(diagnostics.output_stream_fault, None);
     }
 
     /// A capture failure and a playback failure reach the frontend as the

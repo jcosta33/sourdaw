@@ -60,9 +60,8 @@ impl From<&cpal::Error> for StreamErrorKind {
 }
 
 impl StreamErrorKind {
-    /// Decode the value `audio_thread::capture_side` stores into the capture
-    /// refusal slot, where zero means "no refusal" and every kind is stored
-    /// as `kind as u8 + 1`.
+    /// Decode a value a fault or refusal slot stores, where zero means
+    /// "nothing stored" and every kind is stored as [`Self::to_slot`].
     ///
     /// An explicit match rather than the arithmetic inverse of the encode: a
     /// slot that was never written, or corrupted, decodes to `None` instead
@@ -79,6 +78,12 @@ impl StreamErrorKind {
             6 => Some(Self::BackendSpecific),
             _ => None,
         }
+    }
+
+    /// Encode this kind for a `u8` fault or refusal slot, where zero is
+    /// reserved to mean "nothing stored". The inverse of [`Self::from_slot`].
+    pub(crate) const fn to_slot(self) -> u8 {
+        self as u8 + 1
     }
 }
 
@@ -260,9 +265,9 @@ mod tests {
         );
     }
 
-    /// `from_slot` is the inverse of `capture_side`'s `kind as u8 + 1`
-    /// encoding, over every variant, and zero — the slot's "no refusal"
-    /// state — decodes to `None` rather than to a variant.
+    /// `from_slot` is the inverse of `to_slot`'s encoding, over every
+    /// variant, and zero — the slot's "nothing stored" state — decodes to
+    /// `None` rather than to a variant.
     #[test]
     fn from_slot_round_trips_every_stream_error_kind() {
         for kind in [
@@ -273,7 +278,7 @@ mod tests {
             StreamErrorKind::Xrun,
             StreamErrorKind::BackendSpecific,
         ] {
-            assert_eq!(StreamErrorKind::from_slot(kind as u8 + 1), Some(kind));
+            assert_eq!(StreamErrorKind::from_slot(kind.to_slot()), Some(kind));
         }
 
         assert_eq!(StreamErrorKind::from_slot(0), None);
