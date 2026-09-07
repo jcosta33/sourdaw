@@ -71,6 +71,23 @@ function seedOrdinaryEntry(
     controls.committedMeta.set(id, { lastAccessed, sizeInBytes });
 }
 
+function seedFreezeEntry(controls: FakeAudioIndexedDbControls, id: string, freezeProjectId: number): void {
+    controls.committed.set(id, ordinaryRecord(NOW));
+    controls.committedMeta.set(id, { lastAccessed: NOW, sizeInBytes: 100, freezeProjectId });
+}
+
+function makeResidentAudioBuffer(): AudioBuffer {
+    return {
+        copyFromChannel: () => undefined,
+        copyToChannel: () => undefined,
+        duration: 1 / 48_000,
+        getChannelData: () => new Float32Array(1),
+        length: 1,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+    };
+}
+
 describe('audioBufferCache durable ownership', () => {
     let controls: FakeAudioIndexedDbControls;
     let routes: ProductionRoutes;
@@ -91,9 +108,8 @@ describe('audioBufferCache durable ownership', () => {
     });
 
     describe('production age sweep', () => {
-        // Mutation probe for #3777: dropping `durableOwnedIds.has(key)` from the
-        // age collector's guard reds this immediately — the owned entry goes out
-        // with the unowned one and `deleted` reads 2 instead of 1.
+        // The two entries are identical except for durable ownership, so only
+        // the ownership guard can produce the split this asserts.
         it('keeps an ordinary entry a saved project owns and collects an unowned one in the same run', async () => {
             routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned-a']));
             seedOrdinaryEntry(controls, 'owned-a', THIRTY_ONE_DAYS_AGO);
@@ -160,6 +176,51 @@ describe('audioBufferCache durable ownership', () => {
             expect(deleted).toBe(1);
             expect(controls.committed.has('ancient')).toBe(false);
             expect(controls.committed.has('fresh')).toBe(true);
+        });
+    });
+
+    describe('production freeze sweep', () => {
+        // cleanupUnusedFreezeFiles runs this sweep first in the unload chain,
+        // before the age and size collectors — a freeze render the persisted
+        // snapshot still references must survive it when the live track
+        // reference is already gone.
+        it('keeps a persisted freeze render a saved project owns and collects an unowned one in the same run', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['freeze-owned']));
+            seedFreezeEntry(controls, 'freeze-owned', 200);
+            seedFreezeEntry(controls, 'freeze-orphan', 200);
+
+            await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set<string>(), projectId: 200 });
+
+            expect(controls.committed.has('freeze-owned')).toBe(true);
+            expect(controls.committedMeta.has('freeze-owned')).toBe(true);
+            expect(controls.committed.has('freeze-orphan')).toBe(false);
+            expect(controls.committedMeta.has('freeze-orphan')).toBe(false);
+        });
+
+        it('keeps a resident freeze render the saved project owns and collects the unowned resident one', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['freeze-resident-owned']));
+            routes.audioBufferCache.set('freeze-resident-owned', makeResidentAudioBuffer(), { freezeProjectId: 200 });
+            routes.audioBufferCache.set('freeze-resident-orphan', makeResidentAudioBuffer(), { freezeProjectId: 200 });
+            await flushIndexedDbTasks();
+
+            await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set<string>(), projectId: 200 });
+
+            expect(routes.audioBufferCache.has('freeze-resident-owned')).toBe(true);
+            expect(routes.audioBufferCache.has('freeze-resident-orphan')).toBe(false);
+        });
+
+        it('deletes nothing and warns when the ownership enumeration fails', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.reject(new Error('enumeration down')));
+            seedFreezeEntry(controls, 'freeze-orphan', 200);
+
+            await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set<string>(), projectId: 200 });
+
+            expect(controls.committed.has('freeze-orphan')).toBe(true);
+            expect(controls.committedMeta.has('freeze-orphan')).toBe(true);
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(
+                '[audioBufferCache] Durable ownership enumeration failed; collection aborted without deleting',
+                expect.objectContaining({ error: expect.anything() })
+            );
         });
     });
 

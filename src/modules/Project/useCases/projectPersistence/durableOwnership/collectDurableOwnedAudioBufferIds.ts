@@ -1,5 +1,6 @@
 import { readNamedProjectJson } from '../../../repositories/project/readNamedProjectJson';
 import { getRecentProjects } from '../../recentProjects/helpers';
+import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -57,10 +58,13 @@ function collectTrackListBufferIds(tracks: unknown, ids: Set<string>): void {
 }
 
 /** Buffer ids one persisted snapshot references, read from the exact sections
- * `buildProjectData` writes them to. A snapshot without the arrangement
- * section cannot be interpreted, and collecting nothing from it would expose
- * its audio to collection — so it fails the enumeration, which the collector
- * answers by deleting nothing. */
+ * `buildProjectData` writes them to. The snapshot arrives already run through
+ * `normalizeLegacyProjectData`, the same interpreter every loader uses, so
+ * supported v1 shapes (flat, top-level tracks) read exactly as they do on
+ * load. A snapshot that still has no arrangement section cannot be
+ * interpreted, and collecting nothing from it would expose its audio to
+ * collection — so it fails the enumeration, which the collector answers by
+ * deleting nothing. */
 function collectSnapshotBufferIds(snapshot: unknown, ids: Set<string>): void {
     if (!isRecord(snapshot) || !isRecord(snapshot.arrangement) || !Array.isArray(snapshot.arrangement.tracks)) {
         throw new Error('Persisted project snapshot is missing its arrangement tracks.');
@@ -96,7 +100,7 @@ export async function collectDurableOwnedAudioBufferIds(): Promise<readonly stri
         if (raw === null) {
             continue;
         }
-        collectSnapshotBufferIds(JSON.parse(raw), ids);
+        collectSnapshotBufferIds(normalizeLegacyProjectData(JSON.parse(raw)), ids);
     }
     return [...ids];
 }

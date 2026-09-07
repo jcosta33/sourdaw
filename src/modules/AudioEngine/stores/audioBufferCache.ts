@@ -2283,6 +2283,10 @@ export const audioBufferCache = {
 
     async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
         try {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return;
+            }
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
@@ -2313,6 +2317,7 @@ export const audioBufferCache = {
                 if (
                     typeof key !== 'string' ||
                     !key.startsWith('freeze-') ||
+                    durableOwnedIds.has(key) ||
                     activeIds.has(key) ||
                     freezeProjectId !== projectId
                 ) {
@@ -2324,6 +2329,7 @@ export const audioBufferCache = {
                 if (
                     key.startsWith('freeze-') &&
                     !activeIds.has(key) &&
+                    !durableOwnedIds.has(key) &&
                     !protectedKeys.has(key) &&
                     !checkpointRetainedIds.has(key) &&
                     !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&

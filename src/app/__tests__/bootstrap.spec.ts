@@ -117,7 +117,7 @@ const {
     executeUserAppActionBinding,
     recordNativeChainReleasesMock,
     registerReleasedStripReportSinkMock,
-    setDurableAudioBufferOwnershipProviderMock,
+    configureDurableAudioBufferOwnershipMock,
     collectDurableOwnedAudioBufferIdsMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
@@ -176,7 +176,7 @@ const {
         toasterGrooveExecutorMock: vi.fn(),
         executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
-        setDurableAudioBufferOwnershipProviderMock: vi.fn(),
+        configureDurableAudioBufferOwnershipMock: vi.fn(),
         collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
@@ -288,7 +288,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
-    setDurableAudioBufferOwnershipProvider: setDurableAudioBufferOwnershipProviderMock,
+    configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -849,7 +849,7 @@ describe('bootstrap', () => {
      * leaves the collectors sweeping saved projects' PCM as if it were orphans.
      */
     it('wires the durable audio ownership provider to the persisted-project enumeration', () => {
-        expect(setDurableAudioBufferOwnershipProviderMock).toHaveBeenCalledExactlyOnceWith(
+        expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
         );
     });

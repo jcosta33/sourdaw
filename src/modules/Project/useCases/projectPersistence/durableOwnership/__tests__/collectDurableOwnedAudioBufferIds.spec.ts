@@ -314,6 +314,42 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
     });
 
+    it('reads a supported v1 flat snapshot through the same interpreter the loaders use', async () => {
+        // MIN_SUPPORTED_PROJECT_VERSION is 1 and v1 saves were flat: top-level
+        // `tracks`, no `arrangement`. Interpreting them without
+        // `normalizeLegacyProjectData` — the interpreter every load path runs
+        // first — would reject the provider on such an install and abort every
+        // collection run forever.
+        const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
+        await modules.writeNamedProjectJsonByKey(
+            key,
+            JSON.stringify({
+                version: 1,
+                name: 'Legacy Song',
+                createdAt: PROJECT_A_CREATED_AT,
+                updatedAt: PROJECT_A_CREATED_AT,
+                transport: { tempo: 120 },
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            name: 'Audio',
+                            clips: [
+                                { id: 'clip-1', bufferId: 'buffer-v1' },
+                                { id: 'clip-2', audioBufferId: 'buffer-v1-legacy' },
+                            ],
+                            freezeState: { status: 'frozen', frozenBufferId: 'buffer-v1-frozen' },
+                        },
+                    ],
+                },
+            })
+        );
+        modules.addToRecentProjects('Legacy Song', key);
+
+        const owned = await modules.collectDurableOwnedAudioBufferIds();
+        expect([...owned].sort()).toEqual(['buffer-v1', 'buffer-v1-frozen', 'buffer-v1-legacy']);
+    });
+
     it('fails the enumeration when a persisted snapshot cannot be parsed, so the collector can delete nothing', async () => {
         const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
         await modules.writeNamedProjectJsonByKey(key, '{"arrangement":');

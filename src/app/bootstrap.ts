@@ -53,7 +53,7 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
-    setDurableAudioBufferOwnershipProvider,
+    configureDurableAudioBufferOwnership,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -343,7 +343,7 @@ setProjectIdentityTransitionDependencies({
 // (issue #3777), so ordinary PCM a saved project still references survives the
 // age/budget sweeps while it is inactive. Enumeration stays a pull from the
 // persisted snapshots — no second ownership table to drift.
-setDurableAudioBufferOwnershipProvider(collectDurableOwnedAudioBufferIds);
+configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
 
 function disposeYeastRealtimeBridge(): void {
     disposeWebMidiRealtimeProcessor();
