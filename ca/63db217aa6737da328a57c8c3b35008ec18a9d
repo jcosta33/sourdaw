@@ -1,0 +1,26 @@
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  s_87ab0a2f60ccf8::t_d53fa07aea7513 9-24,60,130-131,134-140
+  s_87ab0a2f60ccf8::t_c28e29ffa18012 132-133,141-170
+  s_87ab0a2f60ccf8::t_6eca7005418b56 171
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_87ab0a2f60ccf8::t_a6ca194d4b4939 40-42,44
+  s_87ab0a2f60ccf8::t_c28e29ffa18012 1-39,43,45-182
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_87ab0a2f60ccf8::t_0022843b0fffd9 343,345-347,354-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ca63db217aa6737da328a57c8c3b35008ec18a9d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
