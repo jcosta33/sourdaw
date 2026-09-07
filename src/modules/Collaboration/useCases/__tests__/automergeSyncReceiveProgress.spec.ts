@@ -61,14 +61,21 @@ async function createEndpoint({
     peerIds,
     initialDocument,
     outbound,
+    connectedPeerIds,
+    persistProject,
+    prepareSyncPersistence,
 }: {
     id: string;
     peerIds: readonly string[];
     initialDocument: Doc<ProjectDocument>;
     outbound: (input: { from: string; to: string; data: string }) => Promise<void>;
+    connectedPeerIds?: () => readonly string[];
+    persistProject?: () => Promise<void>;
+    prepareSyncPersistence?: () => Promise<undefined>;
 }): Promise<Endpoint> {
     let document = initialDocument;
     const subscribers = new Set<(docId?: string) => void>();
+    const persistCurrentProject = persistProject ?? (async () => undefined);
 
     vi.resetModules();
     vi.doMock('#/modules/Command/useCases', () => ({
@@ -97,10 +104,10 @@ async function createEndpoint({
         },
         hasCrdtDoc: () => false,
         getCrdtDocIds: () => [],
-        persistCrdtProject: async () => undefined,
+        persistCrdtProject: persistCurrentProject,
         runCrdtPersistenceBarrier: async (
             operation: (input: { persistCurrentProject: () => Promise<void> }) => Promise<void>
-        ) => operation({ persistCurrentProject: async () => undefined }),
+        ) => operation({ persistCurrentProject }),
         sanitizeIncomingCrdtDocument: (incoming: Doc<ProjectDocument>) => incoming,
         waitForCrdtDocumentTransition: () => null,
         DOC_PREFIX_ROOT: ROOT_DOCUMENT_ID,
@@ -108,15 +115,18 @@ async function createEndpoint({
     }));
 
     const { AutomergeSync } = await import('../automergeSync');
-    const sync = new AutomergeSync({
-        getConnectedPeerIds: () => [...peerIds],
-        sendCrdtSync: ({ peerId: recipient, message }) => {
-            if (message.type !== 'crdt-sync' || message.docId !== ROOT_DOCUMENT_ID) {
-                throw new Error('unexpected outbound collaboration message');
-            }
-            return outbound({ from: id, to: recipient, data: message.data });
+    const sync = new AutomergeSync(
+        {
+            getConnectedPeerIds: () => [...(connectedPeerIds?.() ?? peerIds)],
+            sendCrdtSync: ({ peerId: recipient, message }) => {
+                if (message.type !== 'crdt-sync' || message.docId !== ROOT_DOCUMENT_ID) {
+                    throw new Error('unexpected outbound collaboration message');
+                }
+                return outbound({ from: id, to: recipient, data: message.data });
+            },
         },
-    });
+        { prepareSyncPersistence }
+    );
     sync.start();
 
     return {
@@ -240,6 +250,115 @@ describe('AutomergeSync receive progress', () => {
         } finally {
             left.sync.stop();
             right.sync.stop();
+        }
+    });
+
+    it('relays a persisted sender edit to a survivor after the sender disconnects', async () => {
+        const { wire, events, outbound } = createTestWire();
+        const genesis = change(automergeInit<ProjectDocument>('aaaaaaaaaaaaaaaa'), (draft) => {
+            draft.edits = [];
+        });
+        let hostPeerIds = ['sender', 'survivor'];
+        const hostPersistenceEntered = Promise.withResolvers<void>();
+        const releaseHostPersistence = Promise.withResolvers<void>();
+        const host = await createEndpoint({
+            id: 'host',
+            peerIds: ['sender', 'survivor'],
+            connectedPeerIds: () => hostPeerIds,
+            initialDocument: clone(genesis, 'bbbbbbbbbbbbbbbb'),
+            persistProject: async () => {
+                if (host.readDocument().edits.includes('sender edit')) {
+                    hostPersistenceEntered.resolve();
+                    await releaseHostPersistence.promise;
+                }
+            },
+            prepareSyncPersistence: async () => undefined,
+            outbound,
+        });
+        const survivor = await createEndpoint({
+            id: 'survivor',
+            peerIds: ['host'],
+            initialDocument: clone(genesis, 'cccccccccccccccc'),
+            outbound,
+        });
+        const sender = await createEndpoint({
+            id: 'sender',
+            peerIds: ['host'],
+            initialDocument: change(clone(genesis, 'dddddddddddddddd'), (draft) => {
+                draft.edits.push('sender edit');
+            }),
+            outbound,
+        });
+
+        try {
+            host.sync.addPeer('survivor');
+            survivor.sync.addPeer('host');
+            await drainTransport({ endpoints: [host, survivor], wire, events });
+            expect(sortedHeads(host.readDocument())).toEqual(sortedHeads(survivor.readDocument()));
+
+            host.sync.addPeer('sender');
+            sender.sync.addPeer('host');
+            let senderEditDelivered = false;
+            for (let delivery = 0; delivery < TRANSPORT_SAFETY_CEILING; delivery++) {
+                await Promise.all([
+                    host.sync.flushPersistence(),
+                    survivor.sync.flushPersistence(),
+                    sender.sync.flushPersistence(),
+                ]);
+                await setImmediate();
+                const next = wire.shift();
+                if (!next) {
+                    throw new Error(`sender edit never reached host: ${describeWireLog(events)}`);
+                }
+                next.complete();
+                await next.completed;
+                const recipient = new Map([
+                    [host.id, host],
+                    [survivor.id, survivor],
+                    [sender.id, sender],
+                ]).get(next.to);
+                if (!recipient) {
+                    throw new Error(`wire addressed an unknown endpoint: ${next.to}`);
+                }
+                const changes = decodeSyncMessage(base64ToBytes(next.data)).changes.length;
+                events.push({ direction: `${next.from}->${next.to}`, phase: 'sent', changes });
+                events.push({ direction: `${next.from}->${next.to}`, phase: 'delivered', changes });
+                if (next.from === 'sender' && next.to === 'host' && changes > 0) {
+                    senderEditDelivered = true;
+                }
+                recipient.sync.receiveSync({
+                    peerId: next.from,
+                    docId: ROOT_DOCUMENT_ID,
+                    syncMessageBase64: next.data,
+                });
+                await setImmediate();
+                if (senderEditDelivered && host.readDocument().edits.includes('sender edit')) {
+                    break;
+                }
+            }
+            expect(senderEditDelivered, `wire events: ${describeWireLog(events)}`).toBe(true);
+            await hostPersistenceEntered.promise;
+
+            hostPeerIds = ['survivor'];
+            host.sync.removePeer('sender');
+            const eventCountAtRelease = events.length;
+            releaseHostPersistence.resolve();
+            await drainTransport({ endpoints: [host, survivor, sender], wire, events });
+
+            expect(sortedHeads(host.readDocument()), `wire events: ${describeWireLog(events)}`).toEqual(
+                sortedHeads(survivor.readDocument())
+            );
+            expect(host.readDocument().edits).toEqual(['sender edit']);
+            expect(survivor.readDocument().edits).toEqual(['sender edit']);
+            expect(
+                events
+                    .slice(eventCountAtRelease)
+                    .filter((event) => event.direction === 'host->sender' && event.phase === 'queued')
+            ).toEqual([]);
+        } finally {
+            host.sync.stop();
+            survivor.sync.stop();
+            sender.sync.stop();
         }
     });
 
