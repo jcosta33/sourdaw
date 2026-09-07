@@ -239,6 +239,19 @@ describe('crdtPersistence repository', () => {
             expect(mockStore.put).toHaveBeenCalledWith(new Uint8Array([2]), 'doc2');
         });
 
+        it('preserves the transaction error object identity', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            const failure = new Error('distinctive save-all transaction failure');
+
+            const promise = saveAllToIdb(new Map([['root', new Uint8Array([1])]]));
+            await Promise.resolve();
+            await Promise.resolve();
+            mockTx.error = failure;
+            mockTx.onerror();
+
+            await expect(promise).rejects.toBe(failure);
+        });
+
         it('rejects an abort-only transaction and allows a later retry to write once', async () => {
             vi.mocked(openDatabase).mockResolvedValue(mockDb);
             const firstStore = createMockStore();
