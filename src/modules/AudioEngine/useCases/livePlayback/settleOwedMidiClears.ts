@@ -15,6 +15,14 @@
  * early by splitting it out. A batch is refused whole, and an owed clear
  * refused for a device the engine has already released must not cost the
  * opening batch its own clears and notes alongside it.
+ *
+ * The round trip awaited here can suspend across another arm entirely — one
+ * that re-adopts or re-abandons the very same target and reads or rewrites
+ * `owedClears` while this call is still out. The caller's epoch says whether
+ * this reply is still the one to trust: discharged only while it is still the
+ * live epoch, and left standing otherwise, because deleting a key a later
+ * arm's own settle is still tracking would discharge a debt this call was
+ * never sent for.
  */
 
 import { logger } from '#/infra/logger/appLogger';
@@ -26,7 +34,7 @@ import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
 import { readNativeChain } from './readNativeChain';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
-export async function settleOwedMidiClears(): Promise<void> {
+export async function settleOwedMidiClears(epoch: number): Promise<void> {
     const owed = nativeLiveMidiWriter.owedClears;
     if (owed.size === 0) {
         return;
@@ -58,6 +66,13 @@ export async function settleOwedMidiClears(): Promise<void> {
         reportAttachedPlugins(result);
         if (result.application !== 'applied') {
             logger.warn(`[AudioEngine] owed live MIDI clears refused: ${result.reason}`);
+            return;
+        }
+        // Discharge only under the epoch this send went out for. A newer arm
+        // that ran its own settle while this one was in flight owns the map
+        // now — its own reply is what should decide these keys, and a later
+        // arm retries a key this reply leaves standing, so nothing is lost.
+        if (nativeLiveMidiWriter.epoch !== epoch) {
             return;
         }
         for (const [key] of entries) {

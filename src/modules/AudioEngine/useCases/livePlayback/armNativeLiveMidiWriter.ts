@@ -41,7 +41,11 @@
  * of this one ({@link settleOwedMidiClears}), retried by every later arm until
  * the engine takes it, and forgotten once the chain record no longer lists the
  * device — naming one it has already released refuses a batch whole
- * (`graph.rs`'s `midi_device_plugin_id`).
+ * (`graph.rs`'s `midi_device_plugin_id`). The settle spans an await a newer
+ * arm or a disarm can run behind, so this arm pins the epoch it bumped before
+ * that await and checks it again after: a superseded arm discharges nothing
+ * and sends no opening batch, leaving both to whichever arm now owns the
+ * writer.
  *
  * ── Before the roll, never after it ───────────────────────────────────────
  *
@@ -207,6 +211,10 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
 
     const trackNameById = new Map(input.stripTracks.map((track): [string, string] => [track.id, track.name]));
     nativeLiveMidiWriter.epoch += 1;
+    // Captured in the same statement as the bump, and used for everything
+    // this arm does from here on: a re-read after the settle await below
+    // would answer with a newer arm's epoch instead of this one's.
+    const epoch = nativeLiveMidiWriter.epoch;
     // Any arm answers a re-read the outgoing pass owed: this one re-projects
     // every strip's notes, so a request still standing would re-arm again for
     // an edit this pass already carries.
@@ -252,16 +260,25 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     // clear exists to close. `applyMidiBatch` restates the same claim once it
     // runs and releases it in its `finally`, so the pass stays claimed for
     // this whole sequence rather than only for the batch that ends it.
-    nativeLiveMidiWriter.inFlightEpoch = nativeLiveMidiWriter.epoch;
+    nativeLiveMidiWriter.inFlightEpoch = epoch;
 
     // Ahead of this pass's own batch: a target the outgoing pass abandoned is
     // owed a clear this pass's own targets say nothing about, and it gets its
     // own visibility rather than riding in on this pass's.
-    await settleOwedMidiClears();
+    await settleOwedMidiClears(epoch);
+
+    // A newer arm or a disarm owns the writer now: this pass's opening batch
+    // belongs to a world that no longer exists, and `applyMidiBatch` sends
+    // before it checks. Nothing to release either — the newer arm already
+    // overwrote `inFlightEpoch` with its own claim when it ran this same
+    // statement, so a stale claim of `epoch` here is already gone.
+    if (nativeLiveMidiWriter.epoch !== epoch) {
+        return;
+    }
 
     await applyMidiBatch({
         pass,
         batch: openingBatch(pass, input.positionSeconds),
-        epoch: nativeLiveMidiWriter.epoch,
+        epoch,
     });
 }
