@@ -155,19 +155,6 @@ describe('abandonNativeLiveGraphSession', () => {
         expect(nativeLiveGraphSession.backend).toBeNull();
     });
 
-    it('disposes a previous orphan when a second stall abandons', () => {
-        const priorOrphan = fakeBackend();
-        nativeLiveGraphSession.orphanedBackend = priorOrphan;
-        const backend = fakeBackend();
-        nativeLiveGraphSession.backend = backend;
-
-        abandonNativeLiveGraphSession('the output stream stopped calling back');
-
-        expect(priorOrphan.dispose).toHaveBeenCalledTimes(1);
-        expect(nativeLiveGraphSession.orphanedBackend).toBe(backend);
-        expect(backend.dispose).not.toHaveBeenCalled();
-    });
-
     it('does nothing on a second call once the backend is gone', () => {
         const backend = fakeBackend();
         nativeLiveGraphSession.backend = backend;

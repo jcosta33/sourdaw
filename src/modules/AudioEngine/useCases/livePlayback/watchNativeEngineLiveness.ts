@@ -14,8 +14,8 @@
  * A tick has three things it might find, in this order: nothing left to
  * watch, a live session, or an abandoned session's orphan. The first retires
  * the watch itself — once both `backend` and `orphanedBackend` are null there
- * is nothing left this poll could ever act on, and a session end that already
- * abandoned the engine has no other reason to keep clearing the interval. The
+ * is nothing left this poll could ever act on, and `stopNativeEngineLivenessWatch`
+ * is that self-retirement, idempotent, with no other production caller. The
  * second is the stall this watch was written for: a `running: false` reading
  * queues the identity-guarded abandon. The third is the mirror case #3635
  * added — a `running: true` reading on an orphan means the stream this

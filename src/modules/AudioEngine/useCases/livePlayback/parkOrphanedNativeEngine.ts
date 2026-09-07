@@ -13,14 +13,19 @@
  * one moment it must, or those strips sound a second time beside whatever
  * Web Audio is already carrying them.
  *
- * Queued on the session's own command chain like every other write this
- * handle's engine could still be mid-processing a batch from before the
- * stall, and the chain is what keeps two writers from racing it.
+ * Queued on the session's own command chain so it orders after any start or
+ * stop already queued on it.
  */
+
+import { logger } from '#/infra/logger/appLogger';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 import type { AudioGraphBackend } from '../../models/AudioGraphBackend';
+
+function reasonOf(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
 
 /** Dispose `orphan` only if it is still the one this session is tracking. */
 function retireOrphanIfCurrent(orphan: AudioGraphBackend): void {
@@ -59,11 +64,15 @@ export function parkOrphanedNativeEngine(): Promise<void> {
             // Any other application — the engine stalled again between the
             // reading and this batch — leaves the orphan in place. The next
             // `running: true` reading retries.
-        } catch {
-            // The bridge itself rejected the call: there is no engine left to
-            // park, so retaining the handle would only poll forever for one
-            // that is gone.
-            retireOrphanIfCurrent(orphan);
+        } catch (error) {
+            // `apply` already turns a transport rejection into `rejected`
+            // (`createNativeLiveGraphBackend.ts`), so a thrown error here can
+            // only be `readAppliedResult` finding an unknown outcome: the
+            // engine answered, unreadably, and may well still be rolling.
+            // Disposing the orphan on that would abandon the very engine this
+            // park exists to stop, so the handle is kept. The next
+            // `running: true` reading retries.
+            logger.warn(`[AudioEngine] native transport answered the orphan park unreadably: ${reasonOf(error)}`);
         }
     });
 }

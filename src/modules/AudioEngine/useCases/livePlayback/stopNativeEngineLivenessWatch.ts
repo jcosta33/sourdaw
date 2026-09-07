@@ -1,8 +1,9 @@
 /**
  * End the liveness watch `startNativeEngineLivenessWatch` (`watchNativeEngineLiveness.ts`) began.
  *
- * A no-op when no watch is running, which is every session end that already
- * abandoned the engine on its own.
+ * Idempotent: a no-op when no watch is running. The only production caller is
+ * the watch's own `pollOnce`, retiring itself once neither a session nor an
+ * orphan remains for it to act on.
  */
 
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';

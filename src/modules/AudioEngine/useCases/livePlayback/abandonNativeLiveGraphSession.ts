@@ -54,10 +54,6 @@ export function abandonNativeLiveGraphSession(reason: string): void {
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
     stopNativeEnginePlayheadFeed();
-    // A second stall abandoning before the first orphan's park landed: that
-    // first handle is now unreachable from anywhere else, so it is disposed
-    // here rather than leaked.
-    nativeLiveGraphSession.orphanedBackend?.dispose();
     nativeLiveGraphSession.orphanedBackend = backend;
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.rolling = false;

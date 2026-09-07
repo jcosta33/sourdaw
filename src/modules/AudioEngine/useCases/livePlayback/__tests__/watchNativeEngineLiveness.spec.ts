@@ -170,6 +170,68 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         expect(backend.apply).toHaveBeenCalledTimes(2);
     });
 
+    it('retains the orphan when the transport answers the park unreadably, and retries on the next running reading', async () => {
+        const orphan = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({
+            ...notRunningEngineRtDiagnostics,
+            running: false,
+            outputStreamFault: 'deviceChanged',
+        });
+        startNativeEngineLivenessWatch();
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(orphan);
+
+        orphan.apply.mockRejectedValueOnce(new Error('unreadable'));
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({ ...notRunningEngineRtDiagnostics, running: true });
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        // A thrown apply is an unreadable answer, not a rejection the bridge
+        // reported — the engine may still be rolling, so the orphan is kept
+        // rather than disposed.
+        expect(nativeLiveGraphSession.orphanedBackend).toBe(orphan);
+        expect(orphan.dispose).not.toHaveBeenCalled();
+        expect(nativeLiveGraphSession.livenessWatch).not.toBeNull();
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        await nativeLiveGraphSession.pending;
+
+        expect(orphan.apply).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retire an orphan a second time once a new session already cleared it', async () => {
+        const orphan = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
+        nativeLiveGraphSession.backend = null;
+        nativeLiveGraphSession.orphanedBackend = orphan;
+        let resolveApply: (result: Awaited<ReturnType<AudioGraphBackend['apply']>>) => void = () => undefined;
+        orphan.apply.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveApply = resolve;
+                })
+        );
+        mocks.refreshEngineRtDiagnostics.mockResolvedValue({ ...notRunningEngineRtDiagnostics, running: true });
+        startNativeEngineLivenessWatch();
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+
+        // A new session installs while the park's apply is still in flight —
+        // `installRolledSession` disposes and nulls the orphan itself.
+        orphan.dispose();
+        nativeLiveGraphSession.orphanedBackend = null;
+
+        resolveApply({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] });
+        await vi.advanceTimersByTimeAsync(0);
+        await nativeLiveGraphSession.pending;
+
+        // The park's own retire must see the field already cleared and stand
+        // down, not dispose an already-disposed handle a second time.
+        expect(orphan.dispose).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
+    });
+
     it('does not park while the orphan’s engine still reports not running', async () => {
         const backend = nativeLiveGraphSession.backend as ReturnType<typeof fakeBackend>;
         mocks.refreshEngineRtDiagnostics.mockResolvedValue({

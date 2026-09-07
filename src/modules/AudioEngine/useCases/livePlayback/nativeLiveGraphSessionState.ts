@@ -32,6 +32,11 @@ export type NativeLiveGraphSession = {
      * running for exactly this reason (`watchNativeEngineLiveness.ts`), and
      * `parkOrphanedNativeEngine.ts` is what it calls once a reading says the
      * engine is rendering again.
+     *
+     * At most one of {@link backend} and this field is ever set: an abandon
+     * moves the handle from `backend` to here, and installing a rolled
+     * session (`installRolledSession` in `startNativeLiveGraphSession.ts`)
+     * nulls this field before it adopts a new one into `backend`.
      */
     orphanedBackend: AudioGraphBackend | null;
     /**
@@ -117,9 +122,9 @@ export type NativeLiveGraphSession = {
      * The running liveness poll this session started, or `null` when none is
      * running.
      *
-     * Held so `startNativeEngineLivenessWatch` can stay idempotent and so a
-     * session end can always find the interval to clear, whatever else it
-     * forgot along the way.
+     * Held so `startNativeEngineLivenessWatch` can stay idempotent, and so the
+     * watch's own `pollOnce` can find and clear the interval when it retires
+     * itself — the only production caller of `stopNativeEngineLivenessWatch`.
      */
     livenessWatch: ReturnType<typeof setInterval> | null;
     /**
