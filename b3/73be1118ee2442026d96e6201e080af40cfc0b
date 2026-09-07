@@ -1,0 +1,26 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  h_1228e573df1f42 180-233
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  h_1228e573df1f42 6,206-229
+src/modules/AudioEngine/repositories/audioRecorder/acquireSharedMediaStream.ts
+  h_1228e573df1f42 4-15,17-35
+src/modules/AudioEngine/repositories/audioRecorder/cleanupNodesForRecordingSession.ts
+  h_1228e573df1f42 16
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  h_1228e573df1f42 74,161
+src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts
+  h_1228e573df1f42 35-46
+src/modules/AudioEngine/repositories/audioRecorder/releaseSharedMediaStream.ts
+  h_1228e573df1f42 3-12,14-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b373be1118ee2442026d96e6201e080af40cfc0b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
