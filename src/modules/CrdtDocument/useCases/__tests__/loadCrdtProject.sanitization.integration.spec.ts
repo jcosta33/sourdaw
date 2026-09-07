@@ -157,6 +157,26 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         });
     });
 
+    it('preserves a sanitation-save refusal and the installed root document', async () => {
+        let installed = init<PersistedRootDocument>();
+        installed = change(installed, (draft) => {
+            draft.project = 'Current';
+            draft.actionHistory = { entries: [] };
+        });
+        automergeRepository.replaceDoc('root', installed);
+
+        const failure = new Error('CRDT persistence is unavailable');
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: authority(4),
+            bundle: create_persisted_bundle({ legacy: true, project: 'Incoming' }),
+        });
+        mocks.saveAllToIdb.mockRejectedValue(failure);
+
+        await expect(loadCrdtProject()).rejects.toBe(failure);
+
+        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('Current');
+    });
+
     it('should sanitize the conflicting latest snapshot and retry the compare-and-swap', async () => {
         const first_bundle = create_persisted_bundle({ legacy: true, project: 'B' });
         const latest_bundle = create_persisted_bundle({ legacy: true, project: 'C' });

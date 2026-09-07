@@ -140,24 +140,21 @@ describe('saveIncrementalsToIdb', () => {
     });
 
     describe('unavailable persistence', () => {
-        it('returns committed with an ADVANCED authority when IndexedDB is unavailable', async () => {
+        it('rejects a non-empty append when IndexedDB is unavailable', async () => {
             vi.mocked(openDatabase).mockResolvedValue(null);
 
-            const result = await saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }], {
-                expectedAuthority: auth('e1', 4),
-            });
-
-            // No durable store, but the write is acknowledged with a bumped
-            // revision so in-memory authority stays ahead of any later reload.
-            expect(result).toEqual({ status: 'committed', authority: auth('e1', 5) });
+            await expect(
+                saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }], {
+                    expectedAuthority: auth('e1', 4),
+                })
+            ).rejects.toThrow('CRDT persistence is unavailable');
         });
 
-        it('advances the EMPTY authority when IDB is unavailable and no expected authority was supplied', async () => {
-            vi.mocked(openDatabase).mockResolvedValue(null);
+        it('preserves the database-open rejection identity', async () => {
+            const failure = new Error('IndexedDB permission denied');
+            vi.mocked(openDatabase).mockRejectedValue(failure);
 
-            const result = await saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }]);
-
-            expect(result).toEqual({ status: 'committed', authority: auth('', 1) });
+            await expect(saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }])).rejects.toBe(failure);
         });
     });
 
@@ -316,10 +313,11 @@ describe('saveIncrementalsToIdb', () => {
 
             const promise = saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }]);
             await Promise.resolve();
-            tx.error = new Error('aborted by queue');
+            const failure = new Error('aborted by queue');
+            tx.error = failure;
             tx.onabort!();
 
-            await expect(promise).rejects.toThrow('aborted by queue');
+            await expect(promise).rejects.toBe(failure);
         });
 
         it('rejects with a fallback message when the transaction aborts without an error', async () => {

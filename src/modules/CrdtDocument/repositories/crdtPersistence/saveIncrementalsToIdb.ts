@@ -49,11 +49,7 @@ export async function saveIncrementalsToIdb(
 
     const database = await openDatabase();
     if (!database) {
-        const current = options.expectedAuthority ?? EMPTY_PERSISTENCE_AUTHORITY;
-        return {
-            status: 'committed',
-            authority: advancePersistenceAuthority(current),
-        };
+        throw new Error('CRDT persistence is unavailable');
     }
 
     const orderedChunks = [...nonEmptyChunks].sort((alpha, bravo) => {

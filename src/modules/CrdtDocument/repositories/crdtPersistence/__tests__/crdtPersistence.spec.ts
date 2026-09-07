@@ -196,13 +196,20 @@ describe('crdtPersistence repository', () => {
     });
 
     describe('saveAllToIdb', () => {
-        it('should return early with the requested authority transition if DB fails to open', async () => {
+        it('rejects an empty replacement when IndexedDB is unavailable', async () => {
             vi.mocked(openDatabase).mockResolvedValue(null);
-            await expect(saveAllToIdb(new Map(), { nextRootLineage: 'feature' })).resolves.toEqual({
-                status: 'committed',
-                authority: { epoch: '', revision: 1, rootLineage: 'feature' },
-            });
+
+            await expect(saveAllToIdb(new Map(), { nextRootLineage: 'feature' })).rejects.toThrow(
+                'CRDT persistence is unavailable'
+            );
             expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
+        it('preserves the database-open rejection identity', async () => {
+            const failure = new Error('IndexedDB permission denied');
+            vi.mocked(openDatabase).mockRejectedValue(failure);
+
+            await expect(saveAllToIdb(new Map())).rejects.toBe(failure);
         });
 
         it('should clear store and put all documents', async () => {
