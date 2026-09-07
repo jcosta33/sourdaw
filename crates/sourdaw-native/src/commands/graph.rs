@@ -156,10 +156,10 @@ use daw_engine::scheduler::{
     TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
-    AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
-    ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, FermenterParamName, RampShape,
+    AutomationEvent, AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipFade,
+    ClipPlacement, ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, RampShape,
     RouteTarget, TimelineBus, TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack,
-    AUTOMATION_QUEUE_CAPACITY, DEVICE_PARAM_QUEUE_CAPACITY, FERMENTER_PARAM_NAME_CAPACITY,
+    AUTOMATION_QUEUE_CAPACITY, BUILTIN_PARAM_NAME_CAPACITY, DEVICE_PARAM_QUEUE_CAPACITY,
     MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES,
     MAX_TRACK_SENDS,
 };
@@ -1798,20 +1798,27 @@ fn builtin_device_type(device_type: &str) -> Option<BuiltinEffectType> {
     BuiltinEffectType::from_name(&device_type.to_ascii_lowercase())
 }
 
-/// Resolve a fermenter parameter key onto the name the instrument answers to.
+/// Resolve one built-in instrument's parameter key onto the name that
+/// instrument answers to.
 ///
-/// The key *is* the name: a fermenter's patch is a flat record of the
+/// The key *is* the name: such a body's patch is a flat record of the
 /// instrument's own snake_case names, and the engine keeps no copy of that
 /// vocabulary to check one against. So the refusal here is by shape alone — a
 /// key shaped unlike one of those names was never one of them, while a
 /// well-shaped name the instrument happens not to have is answered by the
 /// instrument doing nothing, exactly as it is under the web worklet.
-fn fermenter_parameter(key: &str, device_id: &str) -> Result<FermenterParamName, String> {
-    FermenterParamName::parse(key).ok_or_else(|| {
+///
+/// One function for every such body rather than one per instrument: the shape
+/// rule is the whole of the check and it belongs to the carrier
+/// ([`BuiltinParamName`]) rather than to any one vocabulary, so the refusal
+/// names the device and the key it read and never the instrument, which it has
+/// nothing instrument-specific to say about.
+fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamName, String> {
+    BuiltinParamName::parse(key).ok_or_else(|| {
         format!(
-            "device '{device_id}' carries parameter '{key}', which is not a fermenter parameter \
-             name: a name is 1 to {FERMENTER_PARAM_NAME_CAPACITY} bytes of lowercase ASCII \
-             letters, digits and underscores"
+            "device '{device_id}' carries parameter '{key}', which is not an instrument \
+             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of lowercase \
+             ASCII letters, digits and underscores"
         )
     })
 }
@@ -1852,8 +1859,8 @@ fn builtin_parameter(
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
-        BuiltinEffectType::Fermenter => {
-            fermenter_parameter(key, device_id).map(DeviceParam::FermenterNamed)
+        BuiltinEffectType::Fermenter | BuiltinEffectType::GrandBoule => {
+            builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
 }
@@ -1862,11 +1869,11 @@ fn builtin_parameter(
 /// comparison the layer-routing law makes.
 ///
 /// An address the engine names itself belongs to no instrument's vocabulary,
-/// and [`FermenterParamName::parse`] admits no empty name, so the empty string
+/// and [`BuiltinParamName::parse`] admits no empty name, so the empty string
 /// can never be read as a routing key.
 fn addressed_parameter_name(param: &DeviceParam) -> &str {
     match param {
-        DeviceParam::FermenterNamed(name) => name.as_str(),
+        DeviceParam::BuiltinNamed(name) => name.as_str(),
         _ => "",
     }
 }
@@ -2016,18 +2023,30 @@ fn map_device(
     // that cannot be written are the same missing device.
     //
     // Which side of the ring a patch is applied on is a property of the body.
-    // A fermenter's patch is dozens of the instrument's own parameters per
-    // strip and the command ring is finite, so it is written into the instance
-    // on this thread; knead's handful travel as commands behind the
-    // registration.
+    // A built-in instrument's patch is dozens of the instrument's own
+    // parameters per strip and the command ring is finite, so it is written
+    // into the instance on this thread; knead's handful travel as commands
+    // behind the registration.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
-            resolved_param_writes(device, |key| fermenter_parameter(key, &device.id)).map(|patch| {
-                (
-                    PluginCore::fermenter_with_patch(sample_rate, &patch),
-                    Vec::new(),
-                )
-            })
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::fermenter_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::GrandBoule => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::grand_boule_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
         }
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
@@ -7749,7 +7768,7 @@ mod tests {
         )
         .expect("one of the instrument's own names is a fermenter parameter address");
 
-        let cutoff = FermenterParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
+        let cutoff = BuiltinParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
         let addressed: Vec<DeviceParamTarget> = mapped
             .ops
             .iter()
@@ -7760,7 +7779,7 @@ mod tests {
             .collect();
         assert_eq!(
             addressed,
-            vec![DeviceParamTarget::Builtin(DeviceParam::FermenterNamed(
+            vec![DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
                 cutoff
             ))],
             "the stamp must carry the instrument's own name"
@@ -7776,6 +7795,100 @@ mod tests {
         assert!(
             refusal.contains("has no native address"),
             "refusal must mention missing native address, got: {refusal}"
+        );
+    }
+
+    /// A `write-device-parameter` aimed at a grand boule carries the piano's
+    /// own parameter name, and the camelCase spelling of that same parameter
+    /// refuses.
+    ///
+    /// The camelCase spelling is the one a panel and an automation lane author,
+    /// so it is the spelling that reaches this route when the renderer's
+    /// translation is missing or wrong. The instrument answers a name it does
+    /// not know by doing nothing at all, so admitting it would be a write the
+    /// producer believes landed and the mix never heard; the refusal names the
+    /// key it read.
+    #[test]
+    fn write_device_parameter_at_a_grand_boule_carries_the_instruments_own_name() {
+        let track_id = "t1".to_string();
+        let device_id = "d-gb".to_string();
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            track_id.clone(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.clone()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.clone(),
+            DeviceEntry {
+                native_effect_id: 1,
+                strip_id: track_id.clone(),
+                builtin: Some(BuiltinEffectType::GrandBoule),
+            },
+        );
+        let samples = TimelineSamplePool::default();
+
+        let write_batch = |parameter_id: &str| GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            replace_topology: false,
+            commands: vec![GraphCommandPayload::WriteDeviceParameter {
+                target: DeviceParameterTargetPayload::DeviceParameter {
+                    track_id: track_id.clone(),
+                    device_id: device_id.clone(),
+                    parameter_id: parameter_id.to_string(),
+                },
+                write: StepWritePayload::Step {
+                    value: 0.2,
+                    time: 0.0,
+                },
+            }],
+        };
+
+        let mapped = map_unbound_batch(
+            &write_batch("master_gain"),
+            &mut registry.clone(),
+            &samples,
+            48_000.0,
+        )
+        .expect("one of the instrument's own names is a parameter address");
+
+        let master_gain =
+            BuiltinParamName::parse("master_gain").expect("'master_gain' is a well-shaped name");
+        let addressed: Vec<DeviceParamTarget> = mapped
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                GraphCommand::AutomateDeviceParam { param, .. } => Some(*param),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            addressed,
+            vec![DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+                master_gain
+            ))],
+            "the stamp must carry the instrument's own name"
+        );
+
+        let refusal = map_unbound_batch(
+            &write_batch("masterGain"),
+            &mut registry.clone(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("the camelCase spelling is not one of the instrument's names");
+        assert!(
+            refusal.contains("masterGain") && refusal.contains("has no native address"),
+            "the refusal must name the key it read, got: {refusal}"
         );
     }
 
@@ -7868,10 +7981,10 @@ mod tests {
     }
 
     fn fermenter_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
-        let name = FermenterParamName::parse(key).expect("the fixture keys are well-shaped names");
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
         (
             IMMEDIATE_PARAM_EFFECT_ID,
-            DeviceParam::FermenterNamed(name),
+            DeviceParam::BuiltinNamed(name),
             value,
         )
     }
@@ -8113,7 +8226,8 @@ mod tests {
             "refusal must name the count and the ceiling, got: {refusal}"
         );
         assert!(
-            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            !refusal.contains("filterCutoff")
+                && !refusal.contains("is not an instrument parameter"),
             "the ceiling must be charged before any key is resolved, got: {refusal}"
         );
     }
@@ -8182,7 +8296,8 @@ mod tests {
             "refusal must name the running count and the batch ceiling, got: {refusal}"
         );
         assert!(
-            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            !refusal.contains("filterCutoff")
+                && !refusal.contains("is not an instrument parameter"),
             "the batch charge must precede parsing, got: {refusal}"
         );
     }
@@ -9919,6 +10034,38 @@ mod tests {
         );
     }
 
+    /// A grand-boule device is registered as a built-in instrument on the same
+    /// two counts as the fermenter above: it carries a note store of its own,
+    /// and it splices onto the chain as a `Generator`.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads, so a piano registered as an insert
+    /// is a piano nothing can be scheduled at *and* one that processes the
+    /// strip's signal instead of feeding it.
+    #[test]
+    fn a_grand_boule_device_registers_holding_a_note_store_and_splices_as_a_generator() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-gb", "grand-boule", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a grand-boule device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::GrandBoule(_), Some(_))
+            )),
+            "the grand boule is not registered as a built-in body holding a note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "an instrument spliced as an effect processes the strip instead of feeding it"
+        );
+    }
+
     /// A device type the engine can build nothing for refuses a contributing
     /// strip, and the refusal names both the device and the type it read.
     ///
@@ -10008,6 +10155,85 @@ mod tests {
         assert_ne!(
             render_patched_fermenter(json!({ "cutoff": 0.2 })),
             render_patched_fermenter(json!({})),
+            "the patch never reached the instance the mapper built"
+        );
+    }
+
+    /// A grand boule on a contributing strip, handed one note at the top of
+    /// the render, built with `parameter_values` as its patch.
+    ///
+    /// The keys are the instrument's own snake_case names because that is what
+    /// reaches the wire: the renderer translates the `masterGain`-style
+    /// descriptor ids a panel authors before it sends a chain, so by the time a
+    /// device record is mapped here the vocabulary is already the
+    /// instrument's.
+    fn render_patched_grand_boule(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+
+        render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Piano",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-gb", "type": "grand-boule", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-midi",
+                    "trackId": "t1",
+                    "deviceId": "d-gb",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED,
+                    "notes": [ note_at(0.0, 60, 0) ],
+                }
+            ])),
+            &sample_pool(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a grand boule renders offline")
+    }
+
+    /// A grand boule's patch is written into the instance on the mapping
+    /// thread and no `SetParam` command carries any of it.
+    ///
+    /// The same law the fermenter is held to above, and for the same reason: a
+    /// patch is dozens of the instrument's own parameters per strip and the
+    /// command ring is finite. The render is what says the patch was applied
+    /// rather than merely not sent — `master_gain` scales the instrument's
+    /// output, so a patch that reached nothing renders the samples an
+    /// unpatched piano does.
+    #[test]
+    fn a_grand_boule_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-gb",
+                "grand-boule",
+                json!({ "master_gain": 0.2 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the instrument's own names is a parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the grand boule's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+        let patched = render_patched_grand_boule(json!({ "master_gain": 0.2 }));
+        assert!(
+            patched.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so the inequality below proves nothing"
+        );
+        assert_ne!(
+            patched,
+            render_patched_grand_boule(json!({})),
             "the patch never reached the instance the mapper built"
         );
     }
@@ -10124,7 +10350,7 @@ mod tests {
     /// buffer would be truncated into a different word.
     #[test]
     fn a_fermenter_parameter_key_shaped_unlike_a_name_refuses_naming_the_device_and_key() {
-        let too_long = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY + 1);
+        let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
 
         for key in ["Cutoff", too_long.as_str()] {
             let refusal = map_unbound_batch(

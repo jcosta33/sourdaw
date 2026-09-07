@@ -11,6 +11,8 @@ describe('soundsNativeNotes', () => {
     it('answers true for a built-in whose body sounds notes, case-folded like the mapper', () => {
         expect(soundsNativeNotes('fermenter')).toBe(true);
         expect(soundsNativeNotes('Fermenter')).toBe(true);
+        expect(soundsNativeNotes('grand-boule')).toBe(true);
+        expect(soundsNativeNotes('Grand-Boule')).toBe(true);
     });
 
     it('answers false for a built-in effect, and for a type with no body at all', () => {

@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
+import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
 import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
@@ -100,11 +101,13 @@ function bodyOf(deviceType: string): NativeBuiltinBody {
 }
 
 /**
- * `FermenterParamName::parse` in `crates/daw-engine/src/timeline.rs`: one to
- * `FERMENTER_PARAM_NAME_CAPACITY` bytes of lowercase ASCII letters, digits and
+ * `BuiltinParamName::parse` in `crates/daw-engine/src/timeline.rs`: one to
+ * `BUILTIN_PARAM_NAME_CAPACITY` bytes of lowercase ASCII letters, digits and
  * underscores. A name outside it is refused by shape, taking its batch with it.
+ * The carrier is body-neutral, so it is the shape every named built-in's
+ * vocabulary has to satisfy — the Fermenter's and Grand Boule's alike.
  */
-const FERMENTER_PARAM_NAME = /^[a-z0-9_]{1,32}$/;
+const BUILTIN_PARAM_NAME = /^[a-z0-9_]{1,32}$/;
 
 /** `FermenterPatch['macros']` (`#/modules/Fermenter/models`) is an 8-slot tuple. */
 const FERMENTER_MACRO_COUNT = 8;
@@ -113,6 +116,7 @@ describe('nativeBuiltinBody', () => {
     it('answers for every type the engine registers, and for nothing else', () => {
         expect(nativeBuiltinBody('knead')).not.toBeNull();
         expect(nativeBuiltinBody('fermenter')).not.toBeNull();
+        expect(nativeBuiltinBody('grand-boule')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -127,6 +131,7 @@ describe('nativeBuiltinBody', () => {
     // the engine gives the body a note store.
     it('states which bodies sound notes', () => {
         expect(bodyOf('fermenter').soundsNotes).toBe(true);
+        expect(bodyOf('grand-boule').soundsNotes).toBe(true);
         expect(bodyOf('knead').soundsNotes).toBe(false);
     });
 });
@@ -156,7 +161,7 @@ describe('the fermenter body', () => {
     it('spells every id the projection can emit as a name the engine can parse', () => {
         const macroIds = Array.from({ length: FERMENTER_MACRO_COUNT }, (_, index) => `macro${index}`);
         for (const paramId of [...FERMENTER_PARAMS.map((param) => param.id), ...macroIds]) {
-            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(FERMENTER_PARAM_NAME);
+            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
         }
     });
 
@@ -182,6 +187,58 @@ describe('the fermenter body', () => {
         }
         expect(bodyOf('fermenter').addressesParameter('macro0')).toBe(false);
         expect(bodyOf('fermenter').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Grand Boule's vocabulary is welded in a chain rather than restated here.
+ * `descriptorEngineParamWeld.spec.ts` holds every `GRAND_BOULE_DESCRIPTOR`
+ * parameter id to an entry in the worklet's `PARAM_MAP`;
+ * `models/__tests__/grandBouleDspParamNames.spec.ts` holds
+ * `GRAND_BOULE_DSP_PARAM_NAMES` equal to that map. What is left for this file is
+ * the last link: that the registry entry actually answers through that table,
+ * rather than through identity or a private copy of it.
+ */
+describe('the grand boule body', () => {
+    it('spells a project id in the instrument vocabulary the engine matches on', () => {
+        expect(bodyOf('grand-boule').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('grand-boule').projectPatch({ masterGain: 0.2, lidPosition: 1 })).toEqual({
+            master_gain: 0.2,
+            lid_position: 1,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // morph state, whatever a panel has persisted there — and a key the engine
+    // cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the instrument does not address or the wire cannot send', () => {
+        expect(
+            bodyOf('grand-boule').projectPatch({ masterGain: 0.2, presetName: 'Concert', morphEnabled: true })
+        ).toEqual({ master_gain: 0.2 });
+    });
+
+    it('spells every id in the table as a name the engine parameter carrier admits', () => {
+        const paramIds = Object.keys(GRAND_BOULE_DSP_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('grand-boule').parameterName(paramId)).toBe(GRAND_BOULE_DSP_PARAM_NAMES[paramId]);
+            expect(bodyOf('grand-boule').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+        }
+        expect(new Set(paramIds).size).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
+    });
+
+    // The instrument is addressed in camelCase and answers in snake_case, so the
+    // engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        for (const paramId of Object.keys(GRAND_BOULE_DSP_PARAM_NAMES)) {
+            expect(bodyOf('grand-boule').addressesParameter(paramId)).toBe(true);
+        }
+        expect(bodyOf('grand-boule').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('grand-boule').addressesParameter('filterCutoff')).toBe(false);
+        expect(bodyOf('grand-boule').addressesParameter('bogus')).toBe(false);
     });
 });
 
