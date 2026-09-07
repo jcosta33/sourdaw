@@ -10,6 +10,7 @@ import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalPluginRestoreFailures } from '../externalPluginRestoreFailures';
 import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExternalPluginRestoreFailure';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { readPluginState } from '../readPluginState';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { unloadPlugin } from '../unloadPlugin';
 
@@ -371,12 +372,56 @@ describe('activateExternalPlugin', () => {
         expect(externalPluginRestoreFailures.size).toBe(0);
     });
 
-    it('resolves the marker only through the explicit clear, not through a state read', () => {
+    it('resolves the marker only through the explicit clear, not through a state read', async () => {
         externalPluginRestoreFailures.add('inst-1');
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        // A get-state read over the marked instance must not clear it: the
+        // plugin still holds its defaults, so what it reports stays
+        // non-authoritative.
+        await expect(readPluginState('inst-1')).resolves.toBe('');
         expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
 
         clearExternalPluginRestoreFailure('inst-1');
         expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+    });
+
+    // Issue 3693 review round 1: a deliberate replacement (explicit
+    // setExternalPluginState) clears the marker once the host accepted the
+    // pushed chunk. If a later rebuild retry is rejected again, the marker must
+    // come back — deleting the retry's re-add lets the next save commit the
+    // plugin's defaults over the replacement.
+    it('re-marks the restore as failed when a retry is rejected after the marker was cleared', async () => {
+        mocks.setPluginStateRepo
+            .mockRejectedValueOnce(new Error('state chunk rejected'))
+            .mockRejectedValueOnce(new Error('replacement rejected again'));
+
+        await expect(
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
+        ).resolves.toEqual({ status: 'failed', stage: 'restore', reason: 'Error: state chunk rejected' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
+
+        // The deliberate replacement path cleared the marker after its push to
+        // the host succeeded.
+        clearExternalPluginRestoreFailure('inst-1');
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(false);
+
+        // A rebuild retry restores the replacement from project truth and the
+        // plugin rejects it again.
+        await expect(
+            activateExternalPlugin({
+                engineSampleRate: ENGINE_SAMPLE_RATE,
+                pluginId: 'p',
+                instanceId: 'inst-1',
+                stateChunk: SAVED_CHUNK,
+            })
+        ).resolves.toEqual({ status: 'failed', stage: 'restore', reason: 'Error: replacement rejected again' });
+        expect(hasUnresolvedExternalPluginRestoreFailure('inst-1')).toBe(true);
     });
 
     it('reports the activation latency in milliseconds to the injected sink', async () => {

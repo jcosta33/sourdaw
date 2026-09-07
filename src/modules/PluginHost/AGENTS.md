@@ -26,7 +26,7 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 
 ## Invariants & Traps
 
-- **A rejected state restore makes the runtime state non-authoritative**: when a plugin rejects its saved chunk at activation, the instance is marked as a failed restore here, and state capture must preserve the stored project chunk until a successful restore or an explicit `setExternalPluginState` replacement clears the marker. Reading plugin state never clears it (Decision 0003).
+- **A rejected state restore makes the runtime state non-authoritative**: when a plugin rejects its saved chunk at activation, the instance is marked as a failed restore here, and state capture must preserve the stored project chunk until authoritative state exists again. An explicit `setExternalPluginState` replacement pushes the new chunk to the host through `restorePluginState` and clears the marker only once the host accepts it; a rejected push keeps the marker standing so the next activation retries the replacement from project truth. Reading plugin state never clears the marker (Decision 0003).
 - **Native scan root security**: Plugin scanner enforces strict platform scan roots (macOS, Windows, Linux default directories). Custom roots require native authorization; symlinks and symlinked ancestor directories are rejected to prevent path traversal.
 - **No leaked native handles**: Raw library handles, plugin pointers, and OS window handles stay behind the native desktop boundary; only serializable DTOs and instance IDs cross IPC.
 - **Faust synchronization**: Faust is wired in PluginHost and AudioEngine; updates to Faust DSP types or node interfaces must remain synchronized across both modules.

@@ -353,6 +353,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     observeExternalPluginParameterEdits: vi.fn(),
     readPluginState: vi.fn(),
     registerFaustDSP: vi.fn(),
+    restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
     unloadPlugin: vi.fn(),
     watchPluginStateDirty: vi.fn(),

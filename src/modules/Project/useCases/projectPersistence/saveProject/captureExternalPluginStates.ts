@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { hasUnresolvedExternalPluginRestoreFailure, readPluginState } from '#/modules/PluginHost/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { capturedNativePluginStateCache } from './capturedNativePluginStateCache';
 
@@ -21,7 +22,9 @@ import { capturedNativePluginStateCache } from './capturedNativePluginStateCache
  * its own defaults, so its get-state is not the user's data either. While that
  * failure stands unresolved, the stored chunk stays authoritative for the slot
  * and the host is not read at all; a later successful restore or an explicit
- * `setExternalPluginState` replacement clears the marker and capture resumes.
+ * `setExternalPluginState` replacement (which pushes the chunk to the host)
+ * clears the marker and capture resumes. The skip is never silent: each save
+ * or export that suppresses a slot names the plugin and says so.
  *
  * The write is gated on whether THIS peer's own host state changed since its last
  * capture (`capturedNativePluginStateCache`), not on whether the stored chunk
@@ -39,6 +42,7 @@ export async function captureExternalPluginStates(): Promise<void> {
         return;
     }
 
+    const preservedPlugins: string[] = [];
     for (const track of state.tracks) {
         for (const device of track.devices) {
             const instanceId = device.externalInstanceId;
@@ -48,8 +52,11 @@ export async function captureExternalPluginStates(): Promise<void> {
 
             // The plugin rejected its saved state, so its current runtime state
             // is defaults. Preserve the stored original chunk by leaving the
-            // slot untouched until authoritative state exists again.
+            // slot untouched until authoritative state exists again — and say
+            // so, because a save that silently drops the plugin's edits reads
+            // as success to the musician.
             if (hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
+                preservedPlugins.push(device.externalPluginId ?? device.name);
                 continue;
             }
 
@@ -86,5 +93,12 @@ export async function captureExternalPluginStates(): Promise<void> {
                 { skipMacroRecording: true }
             );
         }
+    }
+
+    if (preservedPlugins.length > 0) {
+        notifyUser(
+            `Saved state was preserved for ${preservedPlugins.join(', ')} after a failed restore — edits made in the plugin since were not captured.`,
+            'warning'
+        );
     }
 }

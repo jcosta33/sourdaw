@@ -1,4 +1,9 @@
-import { clearExternalPluginRestoreFailure } from '#/modules/PluginHost/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import {
+    clearExternalPluginRestoreFailure,
+    hasUnresolvedExternalPluginRestoreFailure,
+    restorePluginState,
+} from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
@@ -6,6 +11,25 @@ import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import type { Track } from '../../models/Track';
 
 type Device = Track['devices'][number];
+
+/**
+ * What one `setExternalPluginState` dispatch did.
+ */
+export type ExternalPluginStateWrite = {
+    /** Project truth carries the chunk; false aborts the CRDT transaction as a no-write. */
+    didWrite: boolean;
+    /**
+     * Present only when project truth was written AND the instance still carries
+     * a failed-restore marker: the host still holds the defaults the plugin fell
+     * back to, so the replacement must reach it before the next capture reads
+     * the host. Run it after the owning transaction commits; it resolves once
+     * the host accepted the chunk (the marker clears then). A rejected push is
+     * logged and leaves the marker standing, so capture keeps preserving the
+     * chunk in project truth and the next activation retry restores the
+     * replacement from there.
+     */
+    pushReplacementToHost?: () => Promise<void>;
+};
 
 function findDeviceById(tracks: readonly Track[], deviceId: string): Device | undefined {
     for (const track of tracks) {
@@ -17,30 +41,46 @@ function findDeviceById(tracks: readonly Track[], deviceId: string): Device | un
     return undefined;
 }
 
+function pushReplacementToHost(instanceId: string, stateChunk: string): () => Promise<void> {
+    return async () => {
+        try {
+            await restorePluginState(instanceId, stateChunk);
+        } catch (error) {
+            // The plugin rejected the replacement just as it may have rejected
+            // the original chunk: the marker stays, capture keeps preserving
+            // project truth, and the next activation retry restores the
+            // replacement from there.
+            logger.warn(`Could not push replaced state to external plugin instance ${instanceId}: ${String(error)}`);
+            return;
+        }
+        clearExternalPluginRestoreFailure(instanceId);
+    };
+}
+
 /**
  * Persist a native plugin's opaque state chunk (base64) onto its device in
  * project truth. The authoritative mutation behind the `setExternalPluginState`
  * action: dispatched from the save flow so the chunk rides the CRDT write path
  * and is restored on the next load.
  *
- * A write here is a deliberate replacement: whatever a failed state restore
- * marked about the instance no longer holds, because project truth now carries
- * state that was chosen on purpose. The marker is cleared here — in the use
- * case that owns the mutation — so capture reads the host again on the next
- * save.
+ * When the instance still carries a failed-restore marker, the returned
+ * `pushReplacementToHost` must run after the owning transaction commits (see
+ * `ExternalPluginStateWrite`): a marker clear without the host push would leave
+ * the plugin on its defaults while capture reads the host again.
  *
- * Returns false when no device carries the id, so the handler reports a
- * no-write and the CRDT transaction aborts instead of committing an empty diff.
+ * Returns `didWrite: false` when no device carries the id, so the handler
+ * reports a no-write and the CRDT transaction aborts instead of committing an
+ * empty diff.
  */
-export function setExternalPluginState(deviceId: string, stateChunk: string): boolean {
+export function setExternalPluginState(deviceId: string, stateChunk: string): ExternalPluginStateWrite {
     const state = getTrackState();
     if (!state) {
-        return false;
+        return { didWrite: false };
     }
 
     const device = findDeviceById(state.tracks, deviceId);
     if (!device) {
-        return false;
+        return { didWrite: false };
     }
 
     mapAllTracks((track) => ({
@@ -49,8 +89,10 @@ export function setExternalPluginState(deviceId: string, stateChunk: string): bo
             candidate.id === deviceId ? { ...candidate, externalStateChunk: stateChunk } : candidate
         ),
     }));
-    if (device.externalInstanceId) {
-        clearExternalPluginRestoreFailure(device.externalInstanceId);
+
+    const instanceId = device.externalInstanceId;
+    if (instanceId && hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
+        return { didWrite: true, pushReplacementToHost: pushReplacementToHost(instanceId, stateChunk) };
     }
-    return true;
+    return { didWrite: true };
 }

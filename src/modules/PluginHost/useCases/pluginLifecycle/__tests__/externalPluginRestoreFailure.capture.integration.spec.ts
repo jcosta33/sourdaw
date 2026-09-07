@@ -24,6 +24,7 @@ import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modu
 import { exportProjectFile, saveProject } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
@@ -75,7 +76,6 @@ const bytesOf = (value: string): Uint8Array => new TextEncoder().encode(value);
 const ORIGINAL_CHUNK = bytesToBase64(bytesOf('original-saved-state'));
 const ACCEPTED_CHUNK = bytesToBase64(bytesOf('accepted-runtime-state'));
 const REPLACED_CHUNK = bytesToBase64(bytesOf('deliberately-replaced'));
-const FRESH_CHUNK = bytesToBase64(bytesOf('fresh-host-state'));
 const FRESH_EDIT_CHUNK = bytesToBase64(bytesOf('fresh-host-state-edited'));
 
 /**
@@ -296,32 +296,49 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         // host is not even read, and the stored chunk keeps the original bytes.
         expect(mocks.getPluginStateRepo).not.toHaveBeenCalled();
         expect(persistedDeviceChunk()).toBe(ORIGINAL_CHUNK);
+        // The suppression is not silent: the save names the plugin.
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(expect.stringContaining('serum'), 'warning');
 
         await exportProjectFile();
         expect(storedDeviceChunk()).toBe(ORIGINAL_CHUNK);
     });
 
-    it('captures fresh state after an explicit set-state replacement clears the marker', async () => {
+    it('pushes a deliberate replacement to the host, and capture commits what the host then reports', async () => {
         const instanceId = 'inst-replaced';
         seedSavedProject(instanceId, ORIGINAL_CHUNK);
-        mocks.setPluginStateRepo.mockRejectedValue(new Error('state chunk rejected'));
+
+        // The controlled bridge doubles as the host: set-state writes it and
+        // get-state reads it back, so the spec observes the real push path. The
+        // activation restore is rejected once, leaving the host on its defaults.
+        let hostState = bytesOf('plugin-defaults');
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+        mocks.setPluginStateRepo.mockImplementation((_instanceId: string, state: Uint8Array) => {
+            hostState = state;
+            return Promise.resolve();
+        });
+        mocks.getPluginStateRepo.mockImplementation(() => Promise.resolve(hostState));
+
         await activateInstance(instanceId, ORIGINAL_CHUNK);
         expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(true);
 
-        // Deliberate replacement through the real command path.
+        // Deliberate replacement through the real command path: the chunk is
+        // pushed to the host after the commit, and the marker clears on
+        // acceptance.
         await executeAppAction(
             { type: 'setExternalPluginState', payload: { deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK } },
             { skipMacroRecording: true }
         );
         expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(false);
+        expect(bytesToBase64(hostState)).toBe(REPLACED_CHUNK);
 
-        // The plugin now holds fresh authoritative state; capture reads it again.
-        mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-state'));
+        // Capture-after-replacement commits what the host now reports — if the
+        // replacement never reached the host, this would commit its defaults
+        // over the replacement instead.
         await exportProjectFile();
-        expect(storedDeviceChunk()).toBe(FRESH_CHUNK);
+        expect(storedDeviceChunk()).toBe(REPLACED_CHUNK);
 
         // And subsequent edits capture normally.
-        mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-state-edited'));
+        hostState = bytesOf('fresh-host-state-edited');
         await exportProjectFile();
         expect(storedDeviceChunk()).toBe(FRESH_EDIT_CHUNK);
     });

@@ -8,6 +8,7 @@ type MockDevice = {
     type: string;
     externalInstanceId?: string;
     externalStateChunk?: string;
+    externalPluginId?: string;
 };
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<(action: unknown, options?: unknown) => Promise<void>>(),
     readPluginState: vi.fn<(instanceId: string) => Promise<string>>(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
+    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
@@ -26,6 +28,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     readPluginState: mocks.readPluginState,
     hasUnresolvedExternalPluginRestoreFailure: mocks.hasUnresolvedExternalPluginRestoreFailure,
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 function setTrackDevices(devices: MockDevice[]): void {
     mocks.trackStore.value = { tracks: [{ id: 't1', devices }] };
@@ -80,7 +83,13 @@ describe('captureExternalPluginStates', () => {
     // loss on the first Save or Export after the failed restore.
     it('preserves the stored chunk while a failed restore is unresolved (host is not read)', async () => {
         setTrackDevices([
-            { id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1', externalStateChunk: 'original' },
+            {
+                id: 'd1',
+                type: 'external-plugin',
+                externalInstanceId: 'inst-1',
+                externalStateChunk: 'original',
+                externalPluginId: 'serum',
+            },
         ]);
         mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
         // The plugin's default state is exactly what must NOT be committed.
@@ -91,6 +100,10 @@ describe('captureExternalPluginStates', () => {
         expect(mocks.readPluginState).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(capturedNativePluginStateCache.has('inst-1')).toBe(false);
+        // The suppression is not silent: the save names the plugin.
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('serum'), 'warning');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('preserved'), 'warning');
     });
 
     it('captures normally again once the failed-restore marker resolves', async () => {
@@ -99,6 +112,7 @@ describe('captureExternalPluginStates', () => {
             type: 'external-plugin',
             externalInstanceId: 'inst-1',
             externalStateChunk: 'original',
+            externalPluginId: 'serum',
         };
         setTrackDevices([device]);
         mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
@@ -106,6 +120,7 @@ describe('captureExternalPluginStates', () => {
 
         await captureExternalPluginStates();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
 
         // A successful re-restore or explicit replacement cleared the marker;
         // the host now reports fresh authoritative state.
@@ -118,6 +133,8 @@ describe('captureExternalPluginStates', () => {
             { type: 'setExternalPluginState', payload: { deviceId: 'd1', stateChunk: 'fresh' } },
             { skipMacroRecording: true }
         );
+        // Resolved capture is business as usual — no suppression warning.
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
 
     it('skips a chunk that is unchanged from what is already stored', async () => {
