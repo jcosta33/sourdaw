@@ -36,6 +36,12 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 - When a set or bitmap models the state of another thing one bit per key, ask what the model cannot
   represent — two of one key, an order, a count — and whether the contract says so where a producer
   of that state will read it.
+- When a diff closes one door onto a state — a placement, a chain, a mode, an owner — enumerate on
+  the live head every route that sets that state: the constructors' defaults (a `home` a release
+  returns to), every release or return path, every removal arm, and every command that re-derives
+  it; then drive the smallest project through each route the diff did not guard. A door the diff
+  leaves open while its doc says the state is unreachable is the finding, and the doc is what
+  blocks.
 
 ## Lessons from escapes
 
