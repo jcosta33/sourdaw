@@ -29,11 +29,15 @@ import type { EnsureTrackStripsResult } from '../../ensureTrackStrips';
 
 const mocks = vi.hoisted(() => ({
     /**
-     * The real guard's contract: an epoch once per play, `null` after that,
-     * and a controllable `holds` answer standing in for `nativeSessionRearmClaimHolds`
-     * so a case can simulate a stop invalidating the claim mid-reload.
+     * The real guard's contract: an epoch once per play, `null` after that.
+     * `claimed`/`epoch` mirror `nativeLiveGraphSession.rearmClaimed` and
+     * `.rearmEpoch`, so a case simulates a stop invalidating the claim
+     * mid-reload the same way the real stop does — clearing `claimed` and
+     * bumping `epoch` — and `nativeSessionRearmClaimHolds` below observes
+     * that relation instead of a scripted answer.
      */
-    rearm: { claimed: false, epoch: 0, holds: true },
+    rearm: { claimed: false, epoch: 0 },
+    logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('#/modules/AudioEngine/stores', async () => {
@@ -48,12 +52,13 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         mocks.rearm.claimed = true;
         return mocks.rearm.epoch;
     },
-    nativeSessionRearmClaimHolds: (): boolean => mocks.rearm.holds,
+    nativeSessionRearmClaimHolds: (claim: number): boolean => mocks.rearm.claimed && claim === mocks.rearm.epoch,
     startNativeLiveGraphSession: vi.fn(),
     getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
 }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({ getTransportState: vi.fn() }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
 function offerRearm(): void {
     nativeEngineRearmStore.update((state) => ({ offers: (state?.offers ?? 0) + 1 }));
@@ -87,7 +92,10 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         vi.mocked(startNativeLiveGraphSession).mockResolvedValue({ outcome: 'declined', reason: 'no desktop bridge' });
         mocks.rearm.claimed = false;
         mocks.rearm.epoch = 0;
-        mocks.rearm.holds = true;
+        mocks.logger.warn.mockClear();
+        mocks.logger.info.mockClear();
+        mocks.logger.debug.mockClear();
+        mocks.logger.error.mockClear();
         playheadPositionRef.current = 0;
         nativeEngineRearmStore.set({ offers: 0 });
         unsubscribe = rearmNativeSessionAfterEngineRetire();
@@ -137,9 +145,10 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         offerRearm();
         await flushMicrotasks();
 
-        // The Stop lands while the reload is still in the air: it invalidates
-        // the claim, exactly as the real stop bumping the epoch would.
-        mocks.rearm.holds = false;
+        // The Stop lands while the reload is still in the air: it clears the
+        // claim and bumps the epoch, exactly as the real stop does.
+        mocks.rearm.claimed = false;
+        mocks.rearm.epoch += 1;
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false, tempo: 120 });
         settleActivation();
         await flushMicrotasks();
@@ -149,24 +158,46 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
 
     it("leaves a new play's session alone when the claiming play stopped during the reload", async () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
-        let settleActivation = (): void => undefined;
-        const activation = new Promise<{ status: 'active' }>((resolve) => {
-            settleActivation = () => resolve({ status: 'active' });
+        let settleActivationA = (): void => undefined;
+        const activationA = new Promise<{ status: 'active' }>((resolve) => {
+            settleActivationA = () => resolve({ status: 'active' });
         });
-        vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activation]));
+        vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activationA]));
 
+        // Play A claims epoch 0 and starts its reload.
         offerRearm();
         await flushMicrotasks();
 
-        // A stop landed inside the reload, invalidating this claim, and a new
-        // play started before the reload settled: the shared isPlaying flag
-        // reads true again, but it now belongs to the new play's own session.
-        mocks.rearm.holds = false;
+        // A stop lands inside A's reload: it clears the claim and bumps the
+        // epoch, exactly as the real stop does, so A's claim can never hold
+        // again.
+        mocks.rearm.claimed = false;
+        mocks.rearm.epoch += 1;
+
+        // A new play starts before A's reload settles: the shared isPlaying
+        // flag reads true again, but it now belongs to play B.
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
-        settleActivation();
+        let settleActivationB = (): void => undefined;
+        const activationB = new Promise<{ status: 'active' }>((resolve) => {
+            settleActivationB = () => resolve({ status: 'active' });
+        });
+        vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activationB]));
+
+        // Play B claims epoch 1 and starts its own reload.
+        offerRearm();
+        await flushMicrotasks();
+
+        // A's reload settles after B has already claimed the epoch: A's
+        // claim no longer holds, so it must not start a session — least of
+        // all B's.
+        settleActivationA();
         await flushMicrotasks();
 
         expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+
+        // B's own reload settling is what starts B's session.
+        settleActivationB();
+        await vi.waitFor(() => expect(startNativeLiveGraphSession).toHaveBeenCalledTimes(1));
     });
 
     it('starts at the tempo the transport holds when the reload settles', async () => {
@@ -229,5 +260,21 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
 
         expect(ensureTrackStrips).toHaveBeenCalledTimes(1);
         expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+    });
+
+    it('warns and stays down when the strip projection throws', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        vi.mocked(ensureTrackStrips).mockImplementation(() => {
+            throw new Error('Project tracks are unavailable');
+        });
+
+        offerRearm();
+        await flushMicrotasks();
+
+        // A throw out of the strip projection must land on the subscriber's
+        // own catch, not become an unhandled rejection inside the store
+        // notification.
+        expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledOnce();
     });
 });

@@ -85,6 +85,8 @@ export function rearmNativeSessionAfterEngineRetire(): () => void {
             );
             return;
         }
-        void rearmNativeSession(claim);
+        rearmNativeSession(claim).catch((error: unknown) => {
+            logger.warn(new Error('Native session re-arm failed', { cause: error }));
+        });
     });
 }
