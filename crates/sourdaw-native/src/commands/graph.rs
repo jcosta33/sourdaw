@@ -968,11 +968,12 @@ pub struct GraphRegistry {
     /// and this module is that fence's only producer, so batch `n` here is
     /// batch `n` in the engine's echo. That identity is an assumption, not a
     /// guarantee: this counter and the ledger stamps numbered from it are only
-    /// comparable to `batches_applied` while both count the same stream, so any
-    /// future engine-restart path must reset the registry's ledger and this
-    /// counter together with the engine's — a counter left ahead of a restarted
-    /// echo only over-refuses, but the invariant belongs where the counter
-    /// lives.
+    /// comparable to `batches_applied` while both count the same stream, so an
+    /// engine-restart path must reset the registry's ledger and this counter
+    /// together with the engine's — a counter left ahead of a restarted echo
+    /// only over-refuses, but the invariant belongs where the counter lives.
+    /// [`GraphRegistry::reset_for_engine_restart`] is where a restart
+    /// discharges it.
     batches_sent: u64,
     automation_pending: HashMap<AutomationTarget, Vec<PendingStamp>>,
     device_param_pending: HashMap<usize, Vec<DeviceParamStamp>>,
@@ -1102,7 +1103,9 @@ impl GraphRegistry {
     /// correlation law is about this registry's history, not its contents. And
     /// `batches_sent` keeps counting because it numbers fences against the
     /// engine's own applied count: that stream is not restarting here, only the
-    /// graph it carries.
+    /// graph it carries. The restart that *does* replace the engine goes
+    /// through [`Self::reset_for_engine_restart`], which zeroes the counter
+    /// alongside this teardown.
     ///
     /// The queue ledgers do go, with the strips they describe: every stamp
     /// addresses a node or an effect this teardown removes, and a removed
@@ -1134,6 +1137,28 @@ impl GraphRegistry {
         self.automation_pending.clear();
         self.device_param_pending.clear();
         ops
+    }
+
+    /// Drop everything this registry holds against one engine's ring, for a
+    /// restart that replaces the engine itself.
+    ///
+    /// [`Self::take_topology_down`] is exactly the contents half — it clears
+    /// the strips, the devices, their counts and both queue ledgers — and its
+    /// three deliberate survivors are still right here: the node and effect
+    /// allocators keep counting so no id is reused, and `runtime_revision`
+    /// keeps counting because the correlation law is about this registry's
+    /// history. Its ops are dropped rather than sent, because the nodes they
+    /// address belong to an engine that no longer exists.
+    ///
+    /// `batches_sent` is the one field a restart treats differently, and it is
+    /// why this is not just a teardown: the counter numbers fences against the
+    /// engine's own `batches_applied`, and the replacing engine starts that
+    /// count at zero. A counter left ahead of it holds every later batch's
+    /// stamps against a horizon the new echo never reaches, so the ledger
+    /// would over-refuse for the rest of the session.
+    pub(crate) fn reset_for_engine_restart(&mut self) {
+        let _ops_for_an_engine_that_is_gone = self.take_topology_down();
+        self.batches_sent = 0;
     }
 
     /// Take every chain entry naming `engine_plugin_id` out of the graph,
@@ -1200,6 +1225,23 @@ impl GraphRegistry {
     #[cfg(test)]
     pub(crate) fn holds_device(&self, device_id: &str) -> bool {
         self.devices.contains_key(device_id)
+    }
+
+    /// Whether this registry still holds `strip_id`.
+    #[cfg(test)]
+    pub(crate) fn holds_strip(&self, strip_id: &str) -> bool {
+        self.strips.contains_key(strip_id)
+    }
+
+    /// The allocators and the revision, for a test pinning what an engine
+    /// restart deliberately leaves alone.
+    #[cfg(test)]
+    pub(crate) fn allocator_state(&self) -> (usize, usize, u64) {
+        (
+            self.next_node_id,
+            self.next_effect_id,
+            self.runtime_revision,
+        )
     }
 
     /// A strip's realized insert chain, in chain order. Empty for a strip this
@@ -6044,6 +6086,65 @@ mod tests {
             charged,
             vec![registry.batches_sent],
             "the reported number and the ledger's stamps are one number"
+        );
+    }
+
+    /// An engine restart replaces the ring the ledger is kept against, so the
+    /// ledger and the fence count go with it — while the allocators and the
+    /// revision, which are about this registry's own history rather than any
+    /// engine's, keep counting. Reusing a node or effect id the engine has not
+    /// finished with is what `take_topology_down` already refuses to risk, and
+    /// a restart does not change that: `AddTrack` answers a colliding id by
+    /// silently retiring the track it was handed.
+    ///
+    /// Mutation: drop the `batches_sent = 0` line — this goes red, because the
+    /// stamps the next batch writes would be numbered from a count the
+    /// replacing engine's echo never reaches.
+    #[test]
+    fn an_engine_restart_clears_the_ledger_and_keeps_the_allocators() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                track_strip("t2"),
+                pan_step("t1", 0.1, 1.0)
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        registry.record_fenced_batch();
+        registry.record_fenced_batch();
+        registry.runtime_revision = 7;
+        registry.next_node_id = 9;
+        registry.next_effect_id = FIRST_GRAPH_EFFECT_ID + 2;
+        assert_eq!(registry.batches_sent, 3);
+        assert_eq!(registry.strips.len(), 2);
+        assert!(
+            !registry.automation_pending.is_empty(),
+            "the setup must leave a stamp charged, or the clear below proves nothing"
+        );
+
+        registry.reset_for_engine_restart();
+
+        assert!(registry.strips.is_empty());
+        assert!(registry.devices.is_empty());
+        assert_eq!(registry.track_count, 0);
+        assert_eq!(registry.bus_count, 0);
+        assert!(registry.automation_pending.is_empty());
+        assert!(registry.device_param_pending.is_empty());
+        assert_eq!(
+            registry.batches_sent, 0,
+            "the replacing engine drains its own fences from zero"
+        );
+        assert_eq!(
+            registry.allocator_state(),
+            (9, FIRST_GRAPH_EFFECT_ID + 2, 7),
+            "the allocators and the revision are this registry's history, not the engine's"
         );
     }
 

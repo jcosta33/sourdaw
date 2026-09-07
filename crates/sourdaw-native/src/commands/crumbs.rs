@@ -567,6 +567,47 @@ pub fn attach_dormant_crumbs(
     Ok(refusals)
 }
 
+/// Put every attached instance back to dormant, because the engine holding
+/// their slots has been retired (`commands::engine_lifecycle`).
+///
+/// An `Attached` slot holds the command side of rings whose slot side went
+/// with the retired engine's scheduler, so a write parked there reaches
+/// nothing and the next [`attach_dormant_crumbs`] would skip the instance
+/// entirely. Dormant is the state that instance was created in before any
+/// engine existed, and it is the one the next graph batch re-registers from —
+/// at the *new* device's sample rate, which is the whole reason the engine is
+/// being replaced rather than restarted.
+///
+/// The parked-write table starts empty, because the params, the mode and the
+/// active sample the panel set after the attach live only inside the engine's
+/// own [`CrumbsEngine`] — [`CrumbsInstanceData`] mirrors none of them, so
+/// there is nothing here to seed them from. The sample map is mirrored
+/// command-side, so [`replay_parked_writes`] still refills the new engine's
+/// pool from it; only the settings are lost, and the panel rewrites those on
+/// its next write.
+///
+/// Takes the instances lock and nothing else, so it establishes no order
+/// against the engine lock the retire has already released.
+pub(crate) fn detach_from_retired_engine(state: &CrumbsState) {
+    let mut instances = crate::state::locked_or_poisoned(&state.instances);
+
+    for instance in instances.values_mut() {
+        if matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }) {
+            instance.engine_slot = CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default());
+        }
+    }
+}
+
+/// Whether `instance_id` holds a slot on the live engine. For tests outside
+/// this module that drive an attach or a detach.
+#[cfg(test)]
+pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bool {
+    let instances = crate::state::locked_or_poisoned(&state.instances);
+    instances
+        .get(instance_id)
+        .is_some_and(|instance| matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }))
+}
+
 /// Create a new crumbs engine instance.
 ///
 /// Takes no sample rate: the sampler records the engine's own input tap and
