@@ -205,11 +205,20 @@ describe('crdtPersistence repository', () => {
             expect(mockDb.transaction).not.toHaveBeenCalled();
         });
 
+        it('rejects a nonempty replacement when IndexedDB is unavailable', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(null);
+
+            await expect(saveAllToIdb(new Map([['root', new Uint8Array([1])]]))).rejects.toThrow(
+                'CRDT persistence is unavailable'
+            );
+            expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
         it('preserves the database-open rejection identity', async () => {
             const failure = new Error('IndexedDB permission denied');
             vi.mocked(openDatabase).mockRejectedValue(failure);
 
-            await expect(saveAllToIdb(new Map())).rejects.toBe(failure);
+            await expect(saveAllToIdb(new Map([['root', new Uint8Array([1])]]))).rejects.toBe(failure);
         });
 
         it('should clear store and put all documents', async () => {

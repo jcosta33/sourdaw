@@ -150,6 +150,14 @@ describe('saveIncrementalsToIdb', () => {
             ).rejects.toThrow('CRDT persistence is unavailable');
         });
 
+        it('rejects a non-empty append without an expected authority when IndexedDB is unavailable', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(null);
+
+            await expect(saveIncrementalsToIdb([{ id: 'root', chunk: new Uint8Array([1]) }])).rejects.toThrow(
+                'CRDT persistence is unavailable'
+            );
+        });
+
         it('preserves the database-open rejection identity', async () => {
             const failure = new Error('IndexedDB permission denied');
             vi.mocked(openDatabase).mockRejectedValue(failure);
