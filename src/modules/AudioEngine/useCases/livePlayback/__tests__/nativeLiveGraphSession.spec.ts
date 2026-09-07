@@ -535,7 +535,6 @@ beforeEach(() => {
     nativeLiveGraphSession.lastDeclineNotice = null;
     nativeLiveGraphSession.lastSilentPluginNotice = null;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
-    nativeLiveGraphSession.lastStreamLossNotice = null;
     // The chain record is module state too, and a case inheriting the previous
     // one's would read a strip as built that this session never built.
     nativeLiveGraphSession.nativeChainByStripId = new Map();
@@ -1657,7 +1656,7 @@ describe('startNativeLiveGraphSession', () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.startLivenessWatch).toHaveBeenCalledTimes(1);
-        expect(nativeLiveGraphSession.lastStreamLossNotice).toBeNull();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });
 

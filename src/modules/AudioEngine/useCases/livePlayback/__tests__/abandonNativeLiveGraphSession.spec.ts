@@ -3,8 +3,8 @@
  * (#3635, ADR 0044).
  *
  * The gate release, the writer and feed shutdown, the handle drop, and the
- * dedup'd notice are all proven here against the real function; the mocks
- * below stand in only for the leaves it calls into, mirroring
+ * notice are all proven here against the real function; the mocks below
+ * stand in only for the leaves it calls into, mirroring
  * `nativeLiveGraphSession.spec.ts`'s own doubles for the same modules.
  */
 
@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphBackend } from '../../../models/AudioGraphBackend';
 import { abandonNativeLiveGraphSession } from '../abandonNativeLiveGraphSession';
+import { type LiveAutomationWriterPass, nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveMidiWriterPass, nativeLiveMidiWriter } from '../nativeLiveMidiWriterState';
 
@@ -52,6 +53,24 @@ function armedMidiPass(): LiveMidiWriterPass {
     };
 }
 
+/** A minimal armed automation pass — only `pass` and `epoch` are read by this spec. */
+function armedAutomationPass(): LiveAutomationWriterPass {
+    return {
+        stripTracks: [],
+        sampleRate: 48_000,
+        programmeEndSeconds: 0,
+        entrySeconds: 0,
+        provenAfterBatch: null,
+        looping: false,
+        targets: [],
+        loopTargets: null,
+        lastLoopWraps: null,
+        wrapFloorFrame: null,
+        standingRefusalReported: false,
+        saturatedGroups: new Set(),
+    };
+}
+
 function fakeBackend(): AudioGraphBackend & { dispose: ReturnType<typeof vi.fn<() => void>> } {
     return {
         backendId: 'stub-backend',
@@ -68,16 +87,18 @@ beforeEach(() => {
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.rolling = false;
-    nativeLiveGraphSession.lastStreamLossNotice = null;
     nativeLiveGraphSession.carriedStripIds = new Set(['a', 'b']);
     nativeLiveGraphSession.nativeChainByStripId = new Map([['a', ['eq']]]);
     nativeLiveMidiWriter.epoch = 0;
     nativeLiveMidiWriter.pass = null;
+    nativeLiveAutomationWriter.epoch = 0;
+    nativeLiveAutomationWriter.pass = null;
 });
 
 afterEach(() => {
     nativeLiveGraphSession.backend = null;
     nativeLiveMidiWriter.pass = null;
+    nativeLiveAutomationWriter.pass = null;
 });
 
 describe('abandonNativeLiveGraphSession', () => {
@@ -89,6 +110,9 @@ describe('abandonNativeLiveGraphSession', () => {
         const armedEpoch = 5;
         nativeLiveMidiWriter.epoch = armedEpoch;
         nativeLiveMidiWriter.pass = armedMidiPass();
+        const armedAutomationEpoch = 7;
+        nativeLiveAutomationWriter.epoch = armedAutomationEpoch;
+        nativeLiveAutomationWriter.pass = armedAutomationPass();
 
         abandonNativeLiveGraphSession('the output stream stopped calling back');
 
@@ -106,6 +130,9 @@ describe('abandonNativeLiveGraphSession', () => {
         expect(nativeLiveGraphSession.carriedStripIds.size).toBe(0);
         expect(nativeLiveMidiWriter.pass).toBeNull();
         expect(nativeLiveMidiWriter.epoch).toBe(armedEpoch + 1);
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
+        expect(nativeLiveAutomationWriter.epoch).toBe(armedAutomationEpoch + 1);
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([]);
         expect(mocks.stopPlayheadFeed).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         const [message, level] = mocks.notifyUser.mock.calls[0] as [string, string];
@@ -113,25 +140,29 @@ describe('abandonNativeLiveGraphSession', () => {
         expect(level).toBe('warning');
     });
 
-    it('shows one notice and disposes once across two calls with the same reason', () => {
+    it('does nothing on a second call once the backend is gone', () => {
         const backend = fakeBackend();
         nativeLiveGraphSession.backend = backend;
 
         expect(() => {
             abandonNativeLiveGraphSession('the output stream stopped calling back');
-            abandonNativeLiveGraphSession('the output stream stopped calling back');
+            abandonNativeLiveGraphSession('a different reason entirely');
         }).not.toThrow();
 
+        // The first call already nulled the handle, so the second returns at
+        // the backend guard — not at a remembered notice text, which no
+        // longer exists to compare against.
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(backend.dispose).toHaveBeenCalledTimes(1);
     });
 
-    it('does nothing when no session is standing', () => {
+    it('releases the carrier gate even with no session standing, and does nothing else', () => {
         nativeLiveGraphSession.backend = null;
 
         abandonNativeLiveGraphSession('the output stream stopped calling back');
 
+        expect(mocks.setNativeCarriedTracks).toHaveBeenCalledWith(new Set());
         expect(mocks.notifyUser).not.toHaveBeenCalled();
-        expect(mocks.setNativeCarriedTracks).not.toHaveBeenCalled();
+        expect(mocks.stopPlayheadFeed).not.toHaveBeenCalled();
     });
 });

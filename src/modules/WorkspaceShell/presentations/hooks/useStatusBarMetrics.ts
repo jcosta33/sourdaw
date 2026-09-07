@@ -109,10 +109,15 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const masterLevel = getMasterPeakLevel();
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 // The native engine publishes stream errors into a bounded ring
-                // that only this command drains. Nothing else calls it in the
-                // running app, so without this the ring fills once and every
-                // later report is dropped at the push. Fire-and-forget: the tick
-                // is synchronous and the payload is read from the store.
+                // that only this command drains. Two callers share that drain
+                // while a native session stands — this tick and the live
+                // session's liveness watch (`watchNativeEngineLiveness.ts`) —
+                // both through this same use case and into the one store it
+                // publishes to, so neither loses events to the other. Without
+                // at least one of them running, the ring fills once and every
+                // later report is dropped at the push. Fire-and-forget:
+                // the tick is synchronous and the payload is read from the
+                // store.
                 void refreshEngineRtDiagnostics();
                 const diagnostics = getEngineDiagnostics();
                 const health = getEngineHealth();

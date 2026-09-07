@@ -42,11 +42,24 @@ async function pollOnce(): Promise<void> {
     }
     inFlight = true;
     try {
+        // The reading describes whichever session stood when it was taken, not
+        // whatever session the queue finds current when its turn comes. A stall
+        // that took a while to read can be queued behind a stop and a fresh
+        // start, and a session the engine has already admitted again is proof
+        // it is rendering — abandoning it on this stale reading would tear down
+        // a session the stall never touched.
+        const observed = nativeLiveGraphSession.backend;
+        if (observed === null) {
+            return;
+        }
         const reading = await refreshEngineRtDiagnostics();
         if (reading === null || reading.running) {
             return;
         }
         void queueOnNativeLiveGraphSession(async () => {
+            if (nativeLiveGraphSession.backend !== observed) {
+                return;
+            }
             abandonNativeLiveGraphSession(describeStall(reading.outputStreamFault));
         });
     } finally {

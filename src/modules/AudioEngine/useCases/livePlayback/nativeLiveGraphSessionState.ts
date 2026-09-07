@@ -98,14 +98,6 @@ export type NativeLiveGraphSession = {
      */
     lastDeferredChainNotice: string | null;
     /**
-     * The stream-loss abandon notice this session last showed, under the same
-     * dedup rule as {@link lastDeclineNotice}: the engine that stopped
-     * rendering fails the same way on every stalled tick, and a musician who
-     * has already been told does not need to hear it again for a reason that
-     * has not changed.
-     */
-    lastStreamLossNotice: string | null;
-    /**
      * The running liveness poll this session started, or `null` when none is
      * running.
      *
@@ -158,7 +150,6 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     lastDeclineNotice: null,
     lastSilentPluginNotice: null,
     lastDeferredChainNotice: null,
-    lastStreamLossNotice: null,
     livenessWatch: null,
     nativeChainByStripId: new Map(),
     carriedStripIds: new Set(),

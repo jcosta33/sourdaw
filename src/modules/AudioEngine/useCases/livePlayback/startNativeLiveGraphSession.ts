@@ -794,7 +794,6 @@ async function installRolledSession(input: {
     nativeLiveGraphSession.backend?.dispose();
     nativeLiveGraphSession.backend = backend;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
-    nativeLiveGraphSession.lastStreamLossNotice = null;
     const shadowed = monitor === 'shadowed';
     nativeLiveGraphSession.monitorShadowed = shadowed;
     // The batch the engine actually holds, not the session's own claimed set:

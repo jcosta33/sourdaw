@@ -13,9 +13,13 @@
  * notice — a musician told about a silence this call has not yet fixed would
  * still be hearing it.
  *
- * No re-arm here. The next play starts a fresh session, which is free to
- * decline again with this same notice while the engine still does not render;
- * retrying the *same* handle is #3960.
+ * No re-arm here, and no dedup key either: this call already nulls the
+ * handle before it can show the notice, so a second call for the same
+ * backend returns at the guard below and never reaches `notifyUser` again —
+ * one notice per abandoned backend, without anything held to compare
+ * against. The next play starts a fresh session, which is free to show this
+ * same notice again while the engine still does not render; retrying the
+ * *same* handle is #3960.
  */
 
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -29,14 +33,16 @@ import { stopNativeEngineLivenessWatch } from './stopNativeEngineLivenessWatch';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export function abandonNativeLiveGraphSession(reason: string): void {
+    // First, and unconditionally — see the header, and ADR 0044's own wording:
+    // the gate releases whether or not a backend exists, so a call that finds
+    // no session still leaves nothing gated shut on its account.
+    claimCarriedStrips(new Set());
     const backend = nativeLiveGraphSession.backend;
     if (!backend) {
-        // Nothing to abandon: no session, no gate to release, no notice to show.
+        // Nothing else to abandon: no session, no writers to disarm, no handle
+        // to drop, no notice to show.
         return;
     }
-    // First, and unconditionally — see the header. Web Audio sounds every
-    // carried strip again before anything else here happens.
-    claimCarriedStrips(new Set());
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
     stopNativeEnginePlayheadFeed();
@@ -49,9 +55,5 @@ export function abandonNativeLiveGraphSession(reason: string): void {
     const message =
         `Native audio engine stopped rendering: ${reason}. ` +
         'Playing through Web Audio; external plugins are silent until the engine restarts.';
-    if (nativeLiveGraphSession.lastStreamLossNotice === message) {
-        return;
-    }
-    nativeLiveGraphSession.lastStreamLossNotice = message;
     notifyUser(message, 'warning');
 }

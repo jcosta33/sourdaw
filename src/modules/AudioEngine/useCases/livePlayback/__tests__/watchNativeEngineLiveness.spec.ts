@@ -43,8 +43,12 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
 
-function fakeBackend(): AudioGraphBackend {
-    return { backendId: 'stub-backend', apply: vi.fn<AudioGraphBackend['apply']>(), dispose: vi.fn() };
+function fakeBackend(): AudioGraphBackend & { dispose: ReturnType<typeof vi.fn<() => void>> } {
+    return {
+        backendId: 'stub-backend',
+        apply: vi.fn<AudioGraphBackend['apply']>(),
+        dispose: vi.fn<() => void>(),
+    };
 }
 
 beforeEach(() => {
@@ -57,7 +61,6 @@ beforeEach(() => {
     nativeLiveGraphSession.backend = fakeBackend();
     nativeLiveGraphSession.audibleCarrier = true;
     nativeLiveGraphSession.rolling = true;
-    nativeLiveGraphSession.lastStreamLossNotice = null;
     nativeLiveGraphSession.livenessWatch = null;
     nativeLiveGraphSession.pending = Promise.resolve();
 });
@@ -99,6 +102,58 @@ describe('startNativeEngineLivenessWatch / stopNativeEngineLivenessWatch', () =>
         // The abandon stopped the watch, so nothing here should have polled
         // again — a live interval would have called this five more times.
         expect(mocks.refreshEngineRtDiagnostics).not.toHaveBeenCalled();
+    });
+
+    it('abandons the session the reading described', async () => {
+        const firstSessionBackend = fakeBackend();
+        nativeLiveGraphSession.backend = firstSessionBackend;
+        let resolveRead = (_reading: EngineRtDiagnostics | null): void => undefined;
+        mocks.refreshEngineRtDiagnostics.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+        startNativeEngineLivenessWatch();
+
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+
+        // Still the same session when the reading settles.
+        resolveRead({ ...notRunningEngineRtDiagnostics, running: false, outputStreamFault: 'deviceChanged' });
+        await vi.advanceTimersByTimeAsync(0);
+        await nativeLiveGraphSession.pending;
+
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(firstSessionBackend.dispose).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a session installed after the reading untouched', async () => {
+        let resolveRead = (_reading: EngineRtDiagnostics | null): void => undefined;
+        mocks.refreshEngineRtDiagnostics.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+        startNativeEngineLivenessWatch();
+
+        // The tick's reading is taken while the first session's backend still
+        // stands, and is still in flight when a second session replaces it.
+        await vi.advanceTimersByTimeAsync(NATIVE_ENGINE_LIVENESS_POLL_MS);
+        const secondSessionBackend = fakeBackend();
+        nativeLiveGraphSession.backend = secondSessionBackend;
+
+        resolveRead({ ...notRunningEngineRtDiagnostics, running: false, outputStreamFault: 'deviceChanged' });
+        await vi.advanceTimersByTimeAsync(0);
+        await nativeLiveGraphSession.pending;
+
+        // The stale reading describes the session that stood when it was
+        // taken, not the one the queue finds current — the second session is
+        // proof the engine rendered again, and this tick must not tear it down.
+        expect(nativeLiveGraphSession.backend).toBe(secondSessionBackend);
+        expect(secondSessionBackend.dispose).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('leaves the session standing on a failed read, which answers null', async () => {
