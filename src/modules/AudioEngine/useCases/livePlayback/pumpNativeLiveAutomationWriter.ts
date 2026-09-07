@@ -559,22 +559,39 @@ function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: n
 }
 
 /**
- * Say a refusal once per pass when it is a full queue, and every time when it
- * is anything else.
+ * Whether a refusal reason is standing: still true, unchanged, on the very
+ * next pump, so logging it again says nothing new.
  *
  * Both of the engine's capacity refusals count: a strip position is charged
  * against `automation-queue-capacity` and a hosted plugin's parameters against
- * their effect's shared `device-param-queue-capacity`. Either arrives on every
- * animation frame for as long as the queue stays full, which is a log nobody
- * can read past — while a refusal of any other kind is news each time it
- * happens.
+ * their effect's shared `device-param-queue-capacity`. So does an engine that
+ * has stopped rendering (`engine-not-rendering:`, from `apply_graph_commands`
+ * refusing every batch for as long as the stall lasts) — none of the three
+ * clears itself between one animation frame and the next.
+ */
+function isStandingRefusal(reason: string): boolean {
+    return (
+        reason.includes('automation-queue-capacity') ||
+        reason.includes('device-param-queue-capacity') ||
+        reason.startsWith('engine-not-rendering:')
+    );
+}
+
+/**
+ * Say a refusal once per pass when it is standing — a full queue, or an
+ * engine that has stopped rendering — and every time when it is anything
+ * else.
+ *
+ * A standing refusal repeats every frame until something outside the pump
+ * changes it, which is a log nobody can read past; anything else is news
+ * each time it happens.
  */
 function reportRefusal(pass: LiveAutomationWriterPass, reason: string): void {
-    const queueFull = reason.includes('automation-queue-capacity') || reason.includes('device-param-queue-capacity');
-    if (queueFull && pass.queueFullReported) {
+    const standing = isStandingRefusal(reason);
+    if (standing && pass.standingRefusalReported) {
         return;
     }
-    pass.queueFullReported = pass.queueFullReported || queueFull;
+    pass.standingRefusalReported = pass.standingRefusalReported || standing;
     logger.warn(`[AudioEngine] live automation batch refused: ${reason}`);
 }
 

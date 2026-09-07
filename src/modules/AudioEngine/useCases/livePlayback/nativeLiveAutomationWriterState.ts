@@ -201,8 +201,11 @@ export type LiveAutomationWriterPass = {
      * engine's does and never one it would not.
      */
     wrapFloorFrame: number | null;
-    /** Whether this pass has already reported the engine's queue full. */
-    queueFullReported: boolean;
+    /**
+     * Whether this pass has already reported a standing refusal — a full
+     * queue, or an engine that has stopped rendering.
+     */
+    standingRefusalReported: boolean;
     /**
      * The ledger groups this pass has already reported saturated.
      *

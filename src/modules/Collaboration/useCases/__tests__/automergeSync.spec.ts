@@ -1,3 +1,5 @@
+import { setImmediate } from 'node:timers/promises';
+
 import {
     init as automergeInit,
     initSyncState,
@@ -246,6 +248,10 @@ describe('AutomergeSync', () => {
 
     it('journals a converged owner handoff before persistence and commits it afterward', async () => {
         const order: string[] = [];
+        const persistenceEntered = Promise.withResolvers<void>();
+        const releasePersistence = Promise.withResolvers<void>();
+        const commitEntered = Promise.withResolvers<void>();
+        const releaseCommit = Promise.withResolvers<void>();
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
@@ -255,13 +261,19 @@ describe('AutomergeSync', () => {
         });
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
             order.push('persist-project');
+            persistenceEntered.resolve();
+            await releasePersistence.promise;
         });
-        const sync = new AutomergeSync(makePeerManager(), {
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+        const sync = new AutomergeSync(peerManager, {
             prepareSyncPersistence: async () => {
                 order.push('prepare-handoff');
                 return {
                     commit: async () => {
                         order.push('commit-handoff');
+                        commitEntered.resolve();
+                        await releaseCommit.promise;
                     },
                     abort: async () => undefined,
                 };
@@ -272,12 +284,28 @@ describe('AutomergeSync', () => {
             draft.peerProbe = 'host-root-advanced';
         });
 
-        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
-            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
-        }
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+
+        await persistenceEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releasePersistence.resolve();
+        await commitEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releaseCommit.resolve();
         await sync.flushPersistence();
 
-        expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
+        expect(order).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalled();
+        });
     });
 
     it('finishes a persisted owner handoff after session teardown before reopening the authoritative asset', async () => {
@@ -340,6 +368,10 @@ describe('AutomergeSync', () => {
     });
 
     it('adopts the settled owner from an authoritative converged root without rewriting project state', async () => {
+        const persistenceEntered = Promise.withResolvers<void>();
+        const releasePersistence = Promise.withResolvers<void>();
+        const commitEntered = Promise.withResolvers<void>();
+        const releaseCommit = Promise.withResolvers<void>();
         const canonical = change(seedAmDoc(), (draft) => {
             draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
         });
@@ -349,19 +381,41 @@ describe('AutomergeSync', () => {
         vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
-        const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-        const prepareSyncPersistence = vi.fn().mockResolvedValue({
-            commit: commitHandoff,
-            abort: vi.fn().mockResolvedValue(undefined),
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            persistenceEntered.resolve();
+            await releasePersistence.promise;
         });
-        const sync = new AutomergeSync(makePeerManager(), {
+        const commitHandoff = vi.fn(async () => {
+            commitEntered.resolve();
+            await releaseCommit.promise;
+        });
+        const prepareSyncPersistence = vi.fn(async () => ({
+            commit: commitHandoff,
+            abort: async () => undefined,
+        }));
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+        const sync = new AutomergeSync(peerManager, {
             captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
             prepareSyncPersistence,
         });
 
-        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
-            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
-        }
+        const noChangeMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length === 0
+        );
+        expect(noChangeMessage).toBeDefined();
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: noChangeMessage! });
+
+        await persistenceEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releasePersistence.resolve();
+        await commitEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releaseCommit.resolve();
         await sync.flushPersistence();
 
         expect(prepareSyncPersistence).toHaveBeenCalledWith({
@@ -374,6 +428,141 @@ describe('AutomergeSync', () => {
         expect(commitHandoff).toHaveBeenCalledOnce();
         expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
         expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith([...getHeads(canonical)].map(String).toSorted());
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalled();
+        });
+    });
+
+    it.each(['persistence', 'commit'] as const)(
+        'does not reply after a changed root owner handoff %s failure',
+        async (failurePoint) => {
+            const { live: initialLive, remoteSeed } = forkPeerDocs();
+            let live: Doc<unknown> = initialLive;
+            vi.mocked(getCrdtDoc).mockImplementation(() => live);
+            vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+                live = doc;
+            });
+            const failure = new Error(`${failurePoint} failed`);
+            vi.mocked(persistCrdtProject).mockImplementation(async () => {
+                if (failurePoint === 'persistence') {
+                    throw failure;
+                }
+            });
+            const onPersistError = vi.fn();
+            const onPostPersistError = vi.fn();
+            const peerManager = makePeerManager();
+            peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+            const sync = new AutomergeSync(peerManager, {
+                onPersistError,
+                onPostPersistError,
+                prepareSyncPersistence: async () => ({
+                    commit: async () => {
+                        if (failurePoint === 'commit') {
+                            throw failure;
+                        }
+                    },
+                    abort: async () => undefined,
+                }),
+            });
+            const remote = change(remoteSeed, (draft) => {
+                draft.projectId = 'project:host-authoritative';
+                draft.peerProbe = 'host-root-advanced';
+            });
+            const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+                (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+            );
+            expect(editBearingMessage).toBeDefined();
+
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+            await sync.flushPersistence();
+
+            expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+            if (failurePoint === 'persistence') {
+                expect(onPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+                expect(onPostPersistError).not.toHaveBeenCalled();
+            } else {
+                expect(onPersistError).not.toHaveBeenCalled();
+                expect(onPostPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+            }
+        }
+    );
+
+    it.each(['persistence', 'commit'] as const)(
+        'does not reply after a no-op root owner handoff %s failure',
+        async (failurePoint) => {
+            const canonical = change(seedAmDoc(), (draft) => {
+                draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            });
+            const live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+            const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
+            vi.mocked(getCrdtDoc).mockReturnValue(live);
+            const failure = new Error(`${failurePoint} failed`);
+            vi.mocked(persistCrdtProject).mockImplementation(async () => {
+                if (failurePoint === 'persistence') {
+                    throw failure;
+                }
+            });
+            const onPersistError = vi.fn();
+            const onPostPersistError = vi.fn();
+            const peerManager = makePeerManager();
+            peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+            const sync = new AutomergeSync(peerManager, {
+                captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+                onPersistError,
+                onPostPersistError,
+                prepareSyncPersistence: async () => ({
+                    commit: async () => {
+                        if (failurePoint === 'commit') {
+                            throw failure;
+                        }
+                    },
+                    abort: async () => undefined,
+                }),
+            });
+            const noChangeMessage = createPeerSyncMessages({ remote, local: live }).find(
+                (message) => decodeSyncMessage(base64ToBytes(message)).changes.length === 0
+            );
+            expect(noChangeMessage).toBeDefined();
+
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: noChangeMessage! });
+            await sync.flushPersistence();
+
+            expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+            if (failurePoint === 'persistence') {
+                expect(onPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+                expect(onPostPersistError).not.toHaveBeenCalled();
+            } else {
+                expect(onPersistError).not.toHaveBeenCalled();
+                expect(onPostPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+            }
+        }
+    );
+
+    it('replies after a no-change prepared branch sync commits its peer state', async () => {
+        const { live: initialLive } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['editor']);
+        const sync = new AutomergeSync(peerManager, { prepareSyncPersistence: async () => undefined });
+        const unchangedPeer = clone(initialLive, 'cccccccccccccccc');
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: unchangedPeer, local: live })) {
+            sync.receiveSync({ peerId: 'editor', docId: 'branch_feature', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    peerId: 'editor',
+                    message: expect.objectContaining({ docId: 'branch_feature' }),
+                })
+            );
+        });
     });
 
     it('abandons a no-op root owner handoff when the session stops before adoption', async () => {
@@ -397,7 +586,9 @@ describe('AutomergeSync', () => {
         transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
         const prepared = Promise.withResolvers<void>();
         const releasePreparation = Promise.withResolvers<void>();
-        const sync = new AutomergeSync(makePeerManager(), {
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+        const sync = new AutomergeSync(peerManager, {
             captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
             prepareSyncPersistence: async ({ projectId }) => {
                 const transition = await transfer.prepareDurableOwnerRebind(projectId!);
@@ -702,7 +893,9 @@ describe('AutomergeSync', () => {
         const prepareBlocked = new Promise<void>((resolve) => {
             releasePrepare = resolve;
         });
-        const sync = new AutomergeSync(makePeerManager(), {
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+        const sync = new AutomergeSync(peerManager, {
             prepareSyncPersistence: async () => {
                 await prepareBlocked;
                 return undefined;
@@ -716,11 +909,106 @@ describe('AutomergeSync', () => {
         for (const message of createPeerSyncMessages({ remote, local: live })) {
             sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: message });
         }
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalled();
+        });
+        peerManager.sendCrdtSync.mockClear();
         sync.stop();
         releasePrepare?.();
         await sync.flushPersistence();
 
         expect((live as Doc<SeededDoc>).peerProbe).not.toBe('must-not-publish');
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+    });
+
+    it('does not revive an accepted sync generation queued before session stop', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockReturnValue(['editor']);
+        const sync = new AutomergeSync(peerManager);
+        const remote = change(remoteSeed, (draft) => {
+            draft.peerProbe = 'remote edit';
+        });
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+
+        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: editBearingMessage! });
+        sync.stop();
+        await sync.flushPersistence();
+
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+    });
+
+    it('does not reply when the source disconnects while a root persistence barrier is pending', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const prepared = Promise.withResolvers<void>();
+        const releasePreparation = Promise.withResolvers<void>();
+        let connectedPeerIds: PeerId[] = ['editor'];
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockImplementation(() => connectedPeerIds);
+        const sync = new AutomergeSync(peerManager, {
+            prepareSyncPersistence: async () => {
+                prepared.resolve();
+                await releasePreparation.promise;
+                return undefined;
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.peerProbe = 'remote edit';
+        });
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+
+        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: editBearingMessage! });
+        await prepared.promise;
+        connectedPeerIds = [];
+        sync.removePeer('editor');
+        releasePreparation.resolve();
+        await sync.flushPersistence();
+
+        expect((live as Doc<SeededDoc>).peerProbe).toBe('remote edit');
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+    });
+
+    it('does not revive an accepted sync generation queued before its source disconnects', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        let connectedPeerIds: PeerId[] = ['editor'];
+        const peerManager = makePeerManager();
+        peerManager.getConnectedPeerIds.mockImplementation(() => connectedPeerIds);
+        const sync = new AutomergeSync(peerManager);
+        const remote = change(remoteSeed, (draft) => {
+            draft.peerProbe = 'remote edit';
+        });
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+
+        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: editBearingMessage! });
+        connectedPeerIds = [];
+        sync.removePeer('editor');
+        await sync.flushPersistence();
+
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
     });
 
     it('retries against a local root mutation instead of overwriting it after deferred preparation', async () => {
@@ -1310,13 +1598,9 @@ describe('AutomergeSync', () => {
             }
             const decoded = decodeSyncMessage(message);
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
-            // A live session keeps editing while it syncs, and it is the
-            // repository's change notification that generates the reply.
-            // `sendDocSyncToPeer` sends nothing when it has nothing new to
-            // offer, so this waits for that generation attempt to reach its
-            // synchronous send (or its synchronous decision not to), not for
-            // an outbound message that may never come.
-            change_cb?.(doc_id);
+            // A successful receive schedules its own protocol reply. This
+            // waits until that queued generation has reached the transport or
+            // its settled no-message decision.
             await waitForQueuedGenerationStart();
             return decoded;
         }
@@ -1478,6 +1762,21 @@ describe('AutomergeSync', () => {
             await deliverResend();
         }
 
+        /** A real peer payload that carries the prepared peer edit. */
+        function editBearingPeerMessage(): string {
+            const current = live;
+            if (!current) {
+                throw new Error('no local document to compare against the peer edit');
+            }
+            const message = createPeerSyncMessages({ remote: peer.document(), local: current }).find(
+                (candidate) => decodeSyncMessage(base64ToBytes(candidate)).changes.length > 0
+            );
+            if (!message) {
+                throw new Error('the peer handshake did not produce an edit-bearing payload');
+            }
+            return message;
+        }
+
         /** The repository announcing a local edit, and the sends it triggers. */
         async function notifyLocalChange(): Promise<void> {
             change_cb?.(doc_id);
@@ -1503,6 +1802,7 @@ describe('AutomergeSync', () => {
             deliverResend,
             deliverOneAndWaitForReply,
             deliverResendAndWaitForReply,
+            editBearingPeerMessage,
             waitForOutbound,
             waitForQueuedGenerationStart,
             notifyLocalChange,
@@ -1627,19 +1927,9 @@ describe('AutomergeSync', () => {
             throw new Error('sanitation failed');
         });
 
-        // Under CI load the first delivery can be an empty negotiation round that
-        // has not merged the peer edit yet; re-deliver (each round still fails
-        // sanitation, staying under MAX_SANITATION_FAILURES) until the sanitizer
-        // records a document that actually moved.
-        const areHeadsEqual = (left: Heads, right: Heads): boolean =>
-            JSON.stringify(left.map(String).toSorted()) === JSON.stringify(right.map(String).toSorted());
-        for (
-            let delivery = 0;
-            delivery < 3 && (merged_heads === null || areHeadsEqual(merged_heads, heads_before_failure));
-            delivery++
-        ) {
-            await exchange.deliverOne();
-        }
+        const edit_bearing_message = exchange.editBearingPeerMessage();
+        expect(decodeSyncMessage(base64ToBytes(edit_bearing_message)).changes.length).toBeGreaterThan(0);
+        exchange.sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: edit_bearing_message });
 
         // The delivery genuinely merged the peer's edit — this is not an
         // empty handshake round that never moved the document.

@@ -113,6 +113,10 @@ pub struct TransportMapsApplied {
 ///
 /// `running` distinguishes a stopped engine from an engine parked at frame
 /// zero: every number reads zero in both cases and only this flag says which.
+/// It is also false for an engine that exists but whose output stream has
+/// produced no render callback within the engine's stall window — a handle
+/// existing is not the same as the device rendering it, and a caller that
+/// only checked "does an engine exist" would call a stalled stream running.
 /// `loopWraps` counts how many times the playhead crossed the loop end since
 /// the engine started; a consumer that sees it change knows the position went
 /// backwards on purpose rather than jumping.
@@ -149,18 +153,29 @@ pub struct EngineTransportPosition {
     /// The engine's held master peak, linear and non-negative. Zero for an
     /// engine that is not running, which is also what a running engine
     /// handing the device silence reports — `running` is what tells them
-    /// apart, exactly as it does for every other number here.
+    /// apart, exactly as it does for every other number here. When `running`
+    /// is false because the render callback has stalled, this and the other
+    /// position fields on the payload are the last values that callback
+    /// published, not what anyone is currently hearing.
     pub master_peak: f64,
 }
 
 /// The engine's own snapshot, in the wire's units.
+///
+/// `rendering` is the render-callback liveness verdict
+/// ([`daw_engine::EngineHandle::is_rendering`]), taken by the caller while it
+/// still holds the engine lock this snapshot was read under. `running` on the
+/// returned payload is exactly that verdict: an engine that exists but has
+/// stopped rendering is not running, even though every other field here still
+/// carries the last position the callback published before it stalled.
 fn transport_position_payload(
     snapshot: TransportPositionSnapshot,
     master_peak: f32,
     sample_rate: f64,
+    rendering: bool,
 ) -> EngineTransportPosition {
     EngineTransportPosition {
-        running: true,
+        running: rendering,
         playing: snapshot.playing,
         position_seconds: snapshot.playhead_frame as f64 / sample_rate,
         playhead_frame: snapshot.playhead_frame as f64,
@@ -329,6 +344,7 @@ pub async fn engine_transport_position(
     };
 
     let sample_rate = f64::from(engine.sample_rate());
+    let rendering = engine.is_rendering();
     // One read, deliberately. The batch count that dates this reading rides on
     // the transport snapshot itself, so the pairing is the engine's own single
     // publish rather than an ordering this side could only hope for.
@@ -343,6 +359,7 @@ pub async fn engine_transport_position(
         snapshot,
         master_peak,
         sample_rate,
+        rendering,
     ))
 }
 
@@ -484,7 +501,7 @@ mod tests {
             ..TransportPositionSnapshot::default()
         };
 
-        let position = transport_position_payload(snapshot, 0.25, 48_000.0);
+        let position = transport_position_payload(snapshot, 0.25, 48_000.0, true);
 
         assert_eq!(position.master_peak, 0.25);
     }
@@ -506,12 +523,37 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 0.0, 48_000.0);
+        let position = transport_position_payload(snapshot, 0.0, 48_000.0, true);
 
         assert_eq!(position.batches_applied, 11.0);
         assert_eq!(position.playhead_frame, 72_000.0);
         assert_eq!(position.position_seconds, 1.5);
         assert_eq!(position.loop_wraps, 2.0);
+    }
+
+    /// Mutation this guards: hardcoding `running: true` again. A stalled
+    /// engine still has a snapshot — the last one its render callback
+    /// published — and the payload must carry those counters through
+    /// unchanged while reporting `running: false`, because `running` is the
+    /// liveness verdict, not "does a snapshot exist".
+    #[test]
+    fn a_stalled_engine_answers_running_false_with_its_last_counters() {
+        let snapshot = TransportPositionSnapshot {
+            playing: true,
+            playhead_frame: 72_000,
+            loop_wraps: 2,
+            batches_applied: 11,
+            tempo: 128.0,
+            time_sig_num: 5,
+            time_sig_denom: 4,
+        };
+
+        let position = transport_position_payload(snapshot, 0.5, 48_000.0, false);
+
+        assert!(!position.running);
+        assert!(position.playing);
+        assert_eq!(position.playhead_frame, 72_000.0);
+        assert_eq!(position.batches_applied, 11.0);
     }
 
     #[test]

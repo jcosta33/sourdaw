@@ -141,6 +141,17 @@ const DEVICE_QUEUE_FULL: AudioGraphApplyResult = {
     reason: "device-param-queue-capacity — this device's pending window is full",
 };
 
+/**
+ * `apply_graph_commands`'s refusal for as long as the output stream has
+ * stopped calling back — standing exactly like the two capacity refusals
+ * above, but naming a stalled engine rather than a full ledger.
+ */
+const ENGINE_NOT_RENDERING: AudioGraphApplyResult = {
+    acceptance: 'rejected',
+    application: 'not-applied',
+    reason: 'engine-not-rendering: the output stream stopped calling back after reporting DeviceChanged; the engine refuses batches until rendering resumes',
+};
+
 const backend: AudioGraphBackend = {
     backendId: 'writer-spec',
     apply: (batch) => mocks.apply(batch),
@@ -1381,6 +1392,22 @@ describe('the live automation writer — hosted device parameters', () => {
         await flush();
 
         mocks.apply.mockResolvedValue(DEVICE_QUEUE_FULL);
+        await pump(0.95, 0);
+        await pump(0.95, 0);
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toHaveLength(1);
+    });
+
+    // A stalled engine refuses every batch for as long as the stall lasts
+    // (`apply_graph_commands`), which is standing exactly like a full queue:
+    // said once per pass, not once per animation frame.
+    it('logs an engine-not-rendering refusal once per pass', async () => {
+        mocks.curve = [{ target: FADER, writes: [step(1, 0.6)] }];
+        arm(0);
+        await flush();
+
+        mocks.apply.mockResolvedValue(ENGINE_NOT_RENDERING);
         await pump(0.95, 0);
         await pump(0.95, 0);
 

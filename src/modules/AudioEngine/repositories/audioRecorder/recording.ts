@@ -71,7 +71,7 @@ export const startAudioRecording = inject({ logger })(
 
                 mediaStream = await acquireSharedMediaStream(audioConstraints);
                 if (startGeneration !== recordingLifecycleState.startGeneration || activeSessions.has(trackId)) {
-                    releaseSharedMediaStream();
+                    releaseSharedMediaStream(mediaStream);
                     mediaStream = null;
                     return false;
                 }
@@ -119,7 +119,9 @@ export const startAudioRecording = inject({ logger })(
                 // Wire up the PCM-complete handler before sending 'start'.
                 recordingWorker.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as
-                        { type: 'ready' } | { type: 'wav'; buffer: ArrayBuffer } | { type: 'error'; message: string };
+                        | { type: 'ready' }
+                        | { type: 'wav'; buffer: ArrayBuffer }
+                        | { type: 'error'; message: string; tempFile?: string };
 
                     if (msg.type === 'ready') {
                         if (activeSessions.get(trackId) !== session || session.status !== 'starting') {
@@ -136,6 +138,21 @@ export const startAudioRecording = inject({ logger })(
                     } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
                         cleanupRecordingNode({ expectedSession: session, trackId });
+                        // The worker names the abandoned take's temp file because
+                        // it cannot remove the file itself: cleanupRecordingNode
+                        // terminated it, and a terminated worker never resumes its
+                        // in-flight removeEntry — this thread outlives it. A
+                        // missing entry is fine: the file may never have been
+                        // created or may already be gone.
+                        if (msg.tempFile !== undefined) {
+                            const tempFile = msg.tempFile;
+                            void navigator.storage
+                                .getDirectory()
+                                .then((root) => root.removeEntry(tempFile))
+                                .catch((error: unknown) =>
+                                    logger.debug(`Abandoned recording temp file ${tempFile} not removed`, error)
+                                );
+                        }
                     }
                 };
 
@@ -158,7 +175,7 @@ export const startAudioRecording = inject({ logger })(
                     recordingWorker?.terminate();
                     recordingNode?.disconnect();
                     sourceNode?.disconnect();
-                    releaseSharedMediaStream();
+                    releaseSharedMediaStream(mediaStream);
                 }
                 return false;
             }

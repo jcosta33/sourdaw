@@ -121,6 +121,22 @@ successor session, then prove the outgoing cleanup cannot close or reset the suc
 asset, timer, branch-transition, and decode callbacks and invoke or settle them after replacement; they must neither
 read successor state nor write project, runtime, or panel state, while current-owner callbacks remain effective.
 
+### Receive-side sync progress must be real, fenced transport work
+
+Commit `78060bccd0bcc3d8f41637c7403443826f9de355` suppressed repository change notifications while applying a remote
+document, but left no protocol reply or fan-out at the accepted receive boundary. PR #2256 commit
+`3ea24786531a602a6ff4a57f7d597266f9d7ed57` masked that product defect by having `setupLiveExchange` fabricate a
+local change notification after every receive; PR #3897 commit `703c7c497` later hid empty rounds behind three
+deliveries. Treat the first change as the defect and the later fixtures as masking, not as compatibility behavior.
+
+Collaboration review must use isolated production endpoints, actual transport messages, and one shared initialized
+genesis before separate offline edits. Settle each send before delivering its response so the sender records the
+generated SyncState first. Prove a sanitizer sees an edit-bearing payload before asserting rollback. Fixed delivery
+counts are never convergence proof. After a successful accepted receive, schedule the reply to its connected source
+and changed-content fan-out through the existing per-peer queue; defer only behind completed owner/persistence work,
+and fence both scheduling and queued execution against stop or source disconnect. A stopped or disconnected runtime
+must never revive a queue, while a live host still relays accepted content to its other connected peers.
+
 ### CRITICAL — Direct store write against a CRDT-backed store
 
 ❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".

@@ -3533,6 +3533,41 @@ pub async fn apply_graph_commands(
         };
     }
 
+    // An engine object existing is not the same as it rendering: a stalled
+    // render callback leaves this slot filled with a handle nothing is
+    // driving, and both the dormant-crumbs attach below and the batch that
+    // follows would land on a ring nobody drains. Checked here, before the
+    // attach takes the instance's fence and before anything is mapped or
+    // pushed, so a stalled engine refuses cleanly with the instance still
+    // `Dormant` rather than attaching it to a handle that will never render
+    // it. `is_rendering` is the watchdog's own verdict (daw-engine issue
+    // #3635) rather than an inference from the last error's *kind* — a
+    // `DeviceChanged` reroute or a recovered WASAPI invalidation both leave
+    // the callback running, so a batch against either must still be
+    // admitted. Locked and dropped in its own scope so the attach below can
+    // take its own lock on the engine.
+    {
+        let engine_guard = state
+            .engine
+            .lock()
+            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        if let Some(engine) = engine_guard.as_ref() {
+            if !engine.is_rendering() {
+                let fault = match engine.output_stream_fault() {
+                    Some(kind) => format!(" after reporting {kind:?}"),
+                    None => String::new(),
+                };
+                return result_json(&GraphApplyResultPayload::rejected(format!(
+                    "engine-not-rendering: the output stream stopped calling back{fault}; the \
+                     engine renders nothing until the stream resumes or it is restarted"
+                )));
+            }
+        }
+        // `None` here falls through to the later `engine_guard` below, whose
+        // "engine was released while this batch was admitted" refusal
+        // already covers the process shutting down between locks.
+    }
+
     // An engine exists from here on, so this is where a crumbs instance
     // created before it ran takes its slot (#2265). Instances then engine —
     // the order every path holding both takes them in — and both released
@@ -6095,6 +6130,83 @@ mod tests {
             "each applied batch reports the next fence, never the one before it"
         );
         assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
+    /// The honesty slice (#3635): an `EngineHandle` can outlive its output
+    /// stream. A stalled render callback leaves `state.engine` still holding
+    /// `Some`, so a batch reaching this engine must be refused before the
+    /// dormant-crumbs attach runs and before anything is mapped or pushed —
+    /// otherwise the attach would take the dormant instance's fence onto a
+    /// ring nobody is left to drain, and hand it a slot the stream will never
+    /// render through.
+    /// Mutation: move the `engine.is_rendering()` guard back below
+    /// `crumbs::attach_dormant_crumbs` in `apply_graph_commands` — this goes
+    /// red because the attach's fence would land and the instance's slot
+    /// would read `Attached` instead of `Dormant`.
+    #[test]
+    fn a_batch_for_a_stalled_engine_is_refused_before_anything_is_pushed() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        engine.mark_render_stalled(Some(
+            daw_engine::engine_events::StreamErrorKind::DeviceChanged,
+        ));
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let crumbs = CrumbsState::default();
+        crumbs
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .insert(
+                "instance-1".to_string(),
+                crumbs::CrumbsInstanceData {
+                    samples: HashMap::new(),
+                    metering: Arc::new(daw_dsp::crumbs::engine::CrumbsMetering::default()),
+                    engine_slot: crumbs::CrumbsEngineSlot::Dormant(
+                        crumbs::DormantCrumbsWrites::default(),
+                    ),
+                    next_sample_id: 1,
+                    pending_mirror: Vec::new(),
+                },
+            );
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(result["acceptance"], "rejected");
+        let reason = result["reason"]
+            .as_str()
+            .expect("a rejection names a reason");
+        assert!(
+            reason.starts_with("engine-not-rendering:"),
+            "unexpected reason: {reason}"
+        );
+        assert!(
+            reason.contains("DeviceChanged"),
+            "the refusal should name the fault the stream last reported: {reason}"
+        );
+        assert_eq!(
+            drain_counting_fences(&mut command_rx),
+            0,
+            "a stalled engine's ring must never receive this batch's fence"
+        );
+
+        let instances = crumbs
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances
+            .get("instance-1")
+            .expect("the dormant instance should still own its map entry");
+        assert!(
+            matches!(instance.engine_slot, crumbs::CrumbsEngineSlot::Dormant(_)),
+            "a refused batch must not attach the dormant instance to a stalled engine"
+        );
     }
 
     /// Issue #2265: the engine starts here, on the first batch, so this is the

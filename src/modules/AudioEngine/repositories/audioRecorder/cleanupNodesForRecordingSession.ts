@@ -13,7 +13,7 @@ export function cleanupNodesForRecordingSession(session: RecordingSession): void
         session.sourceNode = null;
     }
     if (session.mediaStream) {
-        releaseSharedMediaStream();
+        releaseSharedMediaStream(session.mediaStream);
         session.mediaStream = null;
     }
 }

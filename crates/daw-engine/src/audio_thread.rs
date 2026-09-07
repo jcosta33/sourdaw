@@ -24,7 +24,7 @@ use crate::scheduler::{
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -42,6 +42,91 @@ pub(crate) const PREFERRED_BUFFER_FRAMES: u32 = 512;
 const AUDIO_STREAM_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const AUDIO_STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 const RETIREMENT_RECLAIMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Whether the output stream's render callback is still being called, plus
+/// the counter the owner thread watches to decide that.
+///
+/// This engine used to infer that from the *kind* of the last error the
+/// backend reported, but cpal's own docs say `DeviceChanged` is a stream the
+/// OS rerouted and kept running — and the WASAPI backend fires it after a
+/// successful reopen, with the stream still rendering — so a kind alone
+/// cannot say whether callbacks continued. The render callback itself is the
+/// only honest witness: [`DeviceRenderer::render`] advances
+/// `callbacks_rendered` on every call, and the owner thread's watchdog
+/// (`spawn_owned_audio_stream_with_timeout`) is what turns a stalled counter
+/// into `rendering: false`.
+#[derive(Clone)]
+pub(crate) struct RenderLiveness {
+    /// Advanced by [`DeviceRenderer::render`] on every callback, whatever the
+    /// channel count — a zero-channel callback is still a callback.
+    pub callbacks_rendered: Arc<AtomicU64>,
+    /// Whether the stream is presently believed to be rendering. Starts
+    /// `true`: the stream has just been opened, and only the watchdog below
+    /// may clear it once a stall is observed.
+    pub rendering: Arc<AtomicBool>,
+}
+
+/// Build a fresh liveness pair for a stream that is about to start.
+pub(crate) fn new_render_liveness() -> RenderLiveness {
+    RenderLiveness {
+        callbacks_rendered: Arc::new(AtomicU64::new(0)),
+        rendering: Arc::new(AtomicBool::new(true)),
+    }
+}
+
+/// A pure stall detector: has the render counter advanced since the last
+/// poll, and if not, for how many consecutive polls running.
+///
+/// Kept free of `Duration` and atomics so the decision itself — advance
+/// clears the idle count, no advance grows it, and the stream is rendering
+/// only below the configured threshold — is provable without a thread or a
+/// clock.
+#[derive(Default)]
+pub(crate) struct RenderStallWatch {
+    last_seen: u64,
+    idle_polls: u32,
+}
+
+impl RenderStallWatch {
+    /// Observe the current counter reading and report whether the stream
+    /// should still be considered rendering.
+    pub(crate) fn observe(&mut self, callbacks_rendered: u64, stall_after_polls: u32) -> bool {
+        if callbacks_rendered != self.last_seen {
+            self.last_seen = callbacks_rendered;
+            self.idle_polls = 0;
+            return true;
+        }
+
+        self.idle_polls = self.idle_polls.saturating_add(1);
+        self.idle_polls < stall_after_polls
+    }
+}
+
+/// How often the owner thread polls the render counter, and how many
+/// consecutive idle polls declare a stall.
+pub(crate) struct RenderLivenessPolicy {
+    pub poll: Duration,
+    pub stall_after_polls: u32,
+}
+
+/// A one-second stall window. It assumes no device period the engine ever
+/// runs approaches `poll × stall_after_polls`, and both outcomes of
+/// negotiation hold that assumption. A negotiated `Fixed` period
+/// ([`negotiated_buffer_size`]) is clamped to at most `MAX_CALLBACK_FRAMES` —
+/// 4096 frames, about 93 ms at 44.1 kHz — an order of magnitude short of the
+/// window. A `Default` period is chosen by the device, and this engine does
+/// not bound it — cpal itself imposes no ceiling on an advertised buffer
+/// range — so the window is a judgement about the periods real devices run
+/// rather than a limit derived from the code: the longest in common use are
+/// tens of milliseconds, still well short of a second. WASAPI's own reopen
+/// campaign for a device-invalidation recovery (`device::wasapi::backend`)
+/// budgets 20 attempts at 250 ms apart — 5 s total — so a recovered
+/// invalidation reads as a stall that clears itself once callbacks resume —
+/// which is the truth: the stream really did stop rendering for that long.
+pub(crate) const RENDER_LIVENESS_POLICY: RenderLivenessPolicy = RenderLivenessPolicy {
+    poll: Duration::from_millis(250),
+    stall_after_polls: 4,
+};
 
 pub struct AudioThreadHandle {
     shutdown_tx: Sender<()>,
@@ -90,17 +175,27 @@ impl Drop for AudioThreadHandle {
     }
 }
 
-fn spawn_owned_audio_stream<Stream, Factory>(factory: Factory) -> Result<AudioThreadHandle, String>
+fn spawn_owned_audio_stream<Stream, Factory>(
+    factory: Factory,
+    liveness: RenderLiveness,
+) -> Result<AudioThreadHandle, String>
 where
     Stream: 'static,
     Factory: FnOnce() -> Result<Stream, String> + Send + 'static,
 {
-    spawn_owned_audio_stream_with_timeout(factory, AUDIO_STREAM_STARTUP_TIMEOUT)
+    spawn_owned_audio_stream_with_timeout(
+        factory,
+        AUDIO_STREAM_STARTUP_TIMEOUT,
+        liveness,
+        RENDER_LIVENESS_POLICY,
+    )
 }
 
 fn spawn_owned_audio_stream_with_timeout<Stream, Factory>(
     factory: Factory,
     startup_timeout: Duration,
+    liveness: RenderLiveness,
+    policy: RenderLivenessPolicy,
 ) -> Result<AudioThreadHandle, String>
 where
     Stream: 'static,
@@ -114,7 +209,25 @@ where
         .spawn(move || match factory() {
             Ok(stream) => {
                 if ready_tx.send(Ok(())).is_ok() {
-                    let _ = shutdown_rx.recv();
+                    // A watchdog rather than a single wait: the shutdown
+                    // channel still ends this loop the instant it fires, but
+                    // between shutdowns this thread polls the render
+                    // callback's own counter and publishes what it sees. See
+                    // `RenderLiveness` and `RenderStallWatch` for why the
+                    // counter, not the error kind, is what decides this.
+                    let mut watch = RenderStallWatch::default();
+                    loop {
+                        match shutdown_rx.recv_timeout(policy.poll) {
+                            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                            Err(RecvTimeoutError::Timeout) => {
+                                let rendering = watch.observe(
+                                    liveness.callbacks_rendered.load(Ordering::Relaxed),
+                                    policy.stall_after_polls,
+                                );
+                                liveness.rendering.store(rendering, Ordering::Relaxed);
+                            }
+                        }
+                    }
                 }
                 drop(stream);
                 let _ = shutdown_complete_tx.send(());
@@ -240,6 +353,13 @@ pub(crate) struct SpawnedAudioThread {
     /// The slot a refused capture open or start stores its kind into. See
     /// [`new_capture_refusal_slot`].
     pub capture_refusal: Arc<AtomicU8>,
+    /// Whether the output stream's render callback is still being called,
+    /// and the counter it advances. See [`RenderLiveness`].
+    pub liveness: RenderLiveness,
+    /// The slot the last non-xrun error the output stream reported stores
+    /// its kind into — detail beside `liveness.rendering`, not the verdict
+    /// itself. See [`new_output_stream_fault_slot`].
+    pub output_stream_fault: Arc<AtomicU8>,
     pub retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
 }
 
@@ -271,9 +391,14 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let input_latency_slot = Arc::clone(&input_latency_frames);
     let capture_refusal = new_capture_refusal_slot();
     let capture_refusal_slot = Arc::clone(&capture_refusal);
+    let output_stream_fault = new_output_stream_fault_slot();
+    let output_stream_fault_slot = Arc::clone(&output_stream_fault);
+    let liveness = new_render_liveness();
+    let build_liveness = liveness.clone();
+    let owner_liveness = liveness.clone();
 
-    let handle = spawn_owned_audio_stream(move || {
-        match build_audio_stream(
+    let handle = spawn_owned_audio_stream(
+        move || match build_audio_stream(
             command_rx,
             retired_tx,
             midi_rt_diagnostics_tx,
@@ -287,6 +412,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &sample_rate_slot,
             &input_latency_slot,
             &capture_refusal_slot,
+            &output_stream_fault_slot,
+            &build_liveness,
         ) {
             Ok(streams) => Ok(StreamWithReclaimerShutdown(
                 Some(streams),
@@ -296,8 +423,9 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
                 let _ = reclaimer_shutdown_tx.send(());
                 Err(error)
             }
-        }
-    })?;
+        },
+        owner_liveness,
+    )?;
 
     // The factory fills the cell before the stream is built, and the ready
     // handshake the spawn waited on happens after the factory returned, so a
@@ -310,6 +438,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         sample_rate,
         input_latency_frames,
         capture_refusal,
+        liveness,
+        output_stream_fault,
         retired_adoption_tx,
     })
 }
@@ -427,12 +557,29 @@ pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
 /// written the same way at the same points.
 ///
 /// Zero means "no refusal" and is never a valid encoding of a kind: a
-/// refusal stores `kind as u8 + 1`, so the reader — `drain_engine_events`,
+/// refusal stores `kind.to_slot()`, so the reader — `drain_engine_events`,
 /// via [`crate::engine_events::StreamErrorKind::from_slot`] — can tell an
 /// unwritten slot from a stored `DeviceNotAvailable` (which is `0 + 1`).
 /// `drain_engine_events` swaps this back to zero on every read, so a refusal
 /// is reported exactly once, on the first drain after it is stored.
 pub(crate) fn new_capture_refusal_slot() -> Arc<AtomicU8> {
+    Arc::new(AtomicU8::new(0))
+}
+
+/// The slot the last non-xrun error the output stream reported publishes
+/// into — detail beside [`RenderLiveness::rendering`], not the verdict on
+/// whether the stream is still rendering.
+///
+/// Zero means "nothing stored" and is never a valid encoding of a kind: a
+/// fault stores `kind.to_slot()`, the same encoding [`new_capture_refusal_slot`]
+/// uses and [`crate::engine_events::StreamErrorKind::from_slot`] decodes.
+/// Unlike the capture refusal slot this one is never swapped back to zero:
+/// once the stream has reported a fault, every read keeps seeing it until a
+/// newer one replaces it. `stream_error_sink` stores into it with a plain
+/// `store`, last-wins, rather than a compare-exchange: WASAPI reports
+/// `DeviceNotAvailable` and then `DeviceChanged` on a recovery, and the
+/// newest report is the one that describes the stream as it now exists.
+pub(crate) fn new_output_stream_fault_slot() -> Arc<AtomicU8> {
     Arc::new(AtomicU8::new(0))
 }
 
@@ -525,10 +672,19 @@ pub(crate) struct DeviceRenderer {
     /// block on, and it belongs to the renderer because nothing else sees
     /// every chunk.
     capture_position_frames: u64,
+    /// Advanced on every call to [`Self::render`]. The owner thread's
+    /// watchdog polls this to decide [`RenderLiveness::rendering`] — see
+    /// that type's doc for why the callback itself, not the error kind, is
+    /// what has to answer whether the stream is still calling back.
+    callbacks_rendered: Arc<AtomicU64>,
 }
 
 impl DeviceRenderer {
-    pub(crate) fn new(scheduler: AudioScheduler, capture_rx: Consumer<CaptureFeed>) -> Self {
+    pub(crate) fn new(
+        scheduler: AudioScheduler,
+        capture_rx: Consumer<CaptureFeed>,
+        callbacks_rendered: Arc<AtomicU64>,
+    ) -> Self {
         Self {
             scheduler,
             left_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
@@ -536,6 +692,7 @@ impl DeviceRenderer {
             capture_rx,
             capture_feed: None,
             capture_position_frames: 0,
+            callbacks_rendered,
         }
     }
 
@@ -585,6 +742,12 @@ impl DeviceRenderer {
     /// recovery may resume this same callback on an endpoint with a different
     /// channel layout; the cpal backends pass a constant.
     pub(crate) fn render(&mut self, data: &mut [f32], channels: usize) {
+        // One lock-free atomic increment, no allocation, no lock: this is the
+        // one witness the owner thread's watchdog trusts to say the stream is
+        // still calling back. Counted before the channel guard below — a
+        // zero-channel callback is still a callback.
+        self.callbacks_rendered.fetch_add(1, Ordering::Relaxed);
+
         if channels == 0 {
             return;
         }
@@ -751,7 +914,7 @@ fn attach_capture<B: InputBackend>(
 /// leaves the musician with no playback either, which is strictly worse than
 /// starting without a record feed. So a refusal is named on the way past, the
 /// latency slot is left at zero (how the layer above reads "no capture"), and
-/// the kind is stored into `capture_refusal_slot` as `kind as u8 + 1` — the
+/// the kind is stored into `capture_refusal_slot` as `kind.to_slot()` — the
 /// encoding [`crate::engine_events::StreamErrorKind::from_slot`] decodes.
 /// This runs synchronously on the owner thread in both of this function's
 /// `Err` branches, which is what lets it report a refusal `attach_capture`
@@ -786,7 +949,7 @@ fn capture_side<Stream>(
             // stderr lock here and would be forbidden inside the callback.
             eprintln!("[Engine] Audio capture unavailable: {refusal:?}");
             input_latency_slot.store(0, Ordering::Relaxed);
-            capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1, Ordering::Relaxed);
+            capture_refusal_slot.store(refusal.stream_error_kind().to_slot(), Ordering::Relaxed);
             return None;
         }
     };
@@ -800,7 +963,7 @@ fn capture_side<Stream>(
         eprintln!("[Engine] Audio capture unavailable: the render feed slot was already taken");
         input_latency_slot.store(0, Ordering::Relaxed);
         capture_refusal_slot.store(
-            StreamErrorKind::BackendSpecific as u8 + 1,
+            StreamErrorKind::BackendSpecific.to_slot(),
             Ordering::Relaxed,
         );
         return None;
@@ -831,13 +994,14 @@ fn capture_beside<Output, B: InputBackend>(
     input_latency_slot: &Arc<AtomicUsize>,
     feed_tx: &mut Producer<CaptureFeed>,
     capture_refusal_slot: &Arc<AtomicU8>,
+    output_stream_fault_slot: &Arc<AtomicU8>,
 ) -> Result<(Option<<B::Open as OpenInput>::Stream>, Output), String> {
     let output = output?;
     let capture = capture_event_tx.and_then(|tx| {
         capture_side(
             attach_capture::<B>(
                 engine_sample_rate,
-                stream_error_sink(StreamSide::Input, tx),
+                stream_error_sink(StreamSide::Input, tx, Arc::clone(output_stream_fault_slot)),
                 Arc::clone(input_latency_slot),
             ),
             feed_tx,
@@ -862,12 +1026,32 @@ fn capture_beside<Output, B: InputBackend>(
 /// The side is bound here, where the stream it belongs to is known, because
 /// nothing downstream can recover it: the event is drained long after the
 /// callback that pushed it.
+///
+/// `output_stream_fault_slot` is threaded into both sides' sink rather than
+/// only the output's, because `build_audio_stream` builds this closure from
+/// one function for both streams. The input side is simply never the one
+/// that writes it below — a lost capture stream costs the take being
+/// recorded, not the engine's ability to render, so it stays on the ring
+/// like any other input-side event. Giving the input sink a clone it never
+/// writes is simpler than splitting this function in two for one `if`.
+///
+/// This slot is detail beside [`RenderLiveness::rendering`], not the verdict
+/// on whether the stream renders: an xrun never lands here (it is a report
+/// from a stream that keeps running), and every other kind overwrites
+/// whatever the slot held, last-wins, with a plain `store`. WASAPI reports
+/// `DeviceNotAvailable` and then `DeviceChanged` on a recovery, and the
+/// newest report is the one that still describes the stream.
 fn stream_error_sink(
     side: StreamSide,
     mut engine_event_tx: Producer<EngineEvent>,
+    output_stream_fault_slot: Arc<AtomicU8>,
 ) -> StreamErrorFn {
     Box::new(move |kind: StreamErrorKind| {
         let _ = engine_event_tx.push(EngineEvent::StreamError { side, kind });
+
+        if side == StreamSide::Output && kind != StreamErrorKind::Xrun {
+            output_stream_fault_slot.store(kind.to_slot(), Ordering::Relaxed);
+        }
     })
 }
 
@@ -896,6 +1080,8 @@ fn build_audio_stream(
     sample_rate_out: &OnceLock<f32>,
     input_latency_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
+    output_stream_fault_slot: &Arc<AtomicU8>,
+    liveness: &RenderLiveness,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -927,7 +1113,11 @@ fn build_audio_stream(
     // Built before the renderer, because the renderer takes the consumer with
     // it into the output stream and nothing can reach it afterwards.
     let (mut capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
-    let mut renderer = DeviceRenderer::new(scheduler, capture_feed_rx);
+    let mut renderer = DeviceRenderer::new(
+        scheduler,
+        capture_feed_rx,
+        Arc::clone(&liveness.callbacks_rendered),
+    );
     let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
         renderer.render(data, channels);
     });
@@ -935,13 +1125,18 @@ fn build_audio_stream(
     capture_beside::<_, PlatformInputBackend>(
         open.start(
             render,
-            stream_error_sink(StreamSide::Output, engine_event_tx),
+            stream_error_sink(
+                StreamSide::Output,
+                engine_event_tx,
+                Arc::clone(output_stream_fault_slot),
+            ),
         ),
         capture_event_tx,
         sample_rate,
         input_latency_slot,
         &mut capture_feed_tx,
         capture_refusal_slot,
+        output_stream_fault_slot,
     )
 }
 
@@ -949,7 +1144,7 @@ fn build_audio_stream(
 mod capture_seam_tests {
     use super::{
         attach_capture, capture_beside, capture_side, new_capture_refusal_slot,
-        new_input_latency_slot, CaptureFeed,
+        new_input_latency_slot, new_output_stream_fault_slot, CaptureFeed,
     };
     use crate::capture::target_depth_frames;
     use crate::device::{
@@ -1045,7 +1240,7 @@ mod capture_seam_tests {
 
     fn error_sink() -> StreamErrorFn {
         let (tx, _rx) = engine_event_channel();
-        super::stream_error_sink(StreamSide::Input, tx)
+        super::stream_error_sink(StreamSide::Input, tx, new_output_stream_fault_slot())
     }
 
     /// The one-slot handoff `build_audio_stream` builds, in the shape a test
@@ -1190,6 +1385,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_fault_slot(),
         );
 
         assert!(built.is_err(), "a failed output build stays failed");
@@ -1218,6 +1414,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_fault_slot(),
         )
         .expect("a started output build stays started");
 
@@ -1242,6 +1439,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_fault_slot(),
         )
         .expect("a started output build stays started");
 
@@ -1273,7 +1471,7 @@ mod capture_seam_tests {
     /// cannot be trusted un-consumed once a refusal can also come from
     /// `open.start` (see `attach_capture`'s doc). Nothing crosses the ring
     /// for either refusal route. Mutation: delete the
-    /// `capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1,
+    /// `capture_refusal_slot.store(refusal.stream_error_kind().to_slot(),
     /// Ordering::Relaxed)` call in `capture_side`'s open-refusal branch —
     /// the slot then reads zero and this goes red.
     #[test]
@@ -1286,7 +1484,7 @@ mod capture_seam_tests {
         let capture = capture_side(
             attach_capture::<AbsentInput>(
                 ENGINE_RATE,
-                super::stream_error_sink(StreamSide::Input, tx),
+                super::stream_error_sink(StreamSide::Input, tx, new_output_stream_fault_slot()),
                 Arc::clone(&slot),
             ),
             &mut feed_tx,
@@ -1341,7 +1539,7 @@ mod capture_seam_tests {
     /// A start-route refusal is stored exactly like an open-route one:
     /// `capture_side` does not, and does not need to, distinguish which
     /// route produced the `Err` it was handed. Mutation: delete the
-    /// `capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1,
+    /// `capture_refusal_slot.store(refusal.stream_error_kind().to_slot(),
     /// Ordering::Relaxed)` call in `capture_side`'s open-refusal branch —
     /// this goes red.
     #[test]
@@ -1375,7 +1573,8 @@ mod capture_seam_tests {
     #[test]
     fn the_capture_error_sink_reports_on_the_input_side() {
         let (tx, mut rx) = engine_event_channel();
-        let mut sink = super::stream_error_sink(StreamSide::Input, tx);
+        let mut sink =
+            super::stream_error_sink(StreamSide::Input, tx, new_output_stream_fault_slot());
 
         sink(StreamErrorKind::Xrun);
 
@@ -1387,14 +1586,90 @@ mod capture_seam_tests {
             })
         );
     }
+
+    /// The Bluetooth-headset failure this slice exists for: the output
+    /// stream reports more than once on its way down — WASAPI reports
+    /// `DeviceNotAvailable` and then `DeviceChanged` on a recovery — and the
+    /// slot must read the newest report, the one that still describes the
+    /// stream, while every report still crosses the event ring. Mutation:
+    /// swap the sink's `store` for `compare_exchange(0, ..)` — this goes red
+    /// because the first report would then survive instead of the second.
+    #[test]
+    fn an_output_fault_is_stored_last_wins() {
+        let (tx, mut rx) = engine_event_channel();
+        let slot = new_output_stream_fault_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Output, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::DeviceNotAvailable);
+        sink(StreamErrorKind::DeviceChanged);
+
+        assert_eq!(
+            StreamErrorKind::from_slot(slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceChanged),
+            "the newest report must survive an older one"
+        );
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Output,
+                kind: StreamErrorKind::DeviceNotAvailable
+            }),
+            "both reports must still cross the event ring"
+        );
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Output,
+                kind: StreamErrorKind::DeviceChanged
+            })
+        );
+    }
+
+    /// An xrun is a report from a stream that keeps running, so it must not
+    /// be read as a fault worth recording.
+    #[test]
+    fn an_output_xrun_records_no_fault() {
+        let (tx, _rx) = engine_event_channel();
+        let slot = new_output_stream_fault_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Output, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::Xrun);
+
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            0,
+            "an xrun does not end the stream it was reported on"
+        );
+    }
+
+    /// A lost capture stream costs the take being recorded, not the engine's
+    /// ability to render, so it must never be mistaken for an output fault —
+    /// the one condition that stops a batch from applying.
+    #[test]
+    fn an_input_stream_invalidation_records_no_output_fault() {
+        let (tx, mut rx) = engine_event_channel();
+        let slot = new_output_stream_fault_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Input, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::StreamInvalidated);
+
+        assert_eq!(slot.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::StreamInvalidated
+            })
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
-        spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
-        AUDIO_STREAM_SHUTDOWN_TIMEOUT,
+        new_render_liveness, spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
+        spawn_retirement_reclaimer, AudioThreadHandle, RenderLivenessPolicy, RenderStallWatch,
+        StreamWithReclaimerShutdown, AUDIO_STREAM_SHUTDOWN_TIMEOUT, RENDER_LIVENESS_POLICY,
     };
     use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
@@ -1613,13 +1888,16 @@ mod tests {
     #[test]
     fn owned_stream_is_created_and_dropped_on_its_owner_thread() {
         let (dropped_tx, dropped_rx) = mpsc::channel();
-        let handle = spawn_owned_audio_stream(move || {
-            Ok(ThreadBoundResource {
-                created_on: thread::current().id(),
-                dropped_tx,
-                _not_send: Rc::new(()),
-            })
-        })
+        let handle = spawn_owned_audio_stream(
+            move || {
+                Ok(ThreadBoundResource {
+                    created_on: thread::current().id(),
+                    dropped_tx,
+                    _not_send: Rc::new(()),
+                })
+            },
+            new_render_liveness(),
+        )
         .expect("owner thread should start");
 
         assert_eq!(dropped_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
@@ -1653,12 +1931,15 @@ mod tests {
         assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
 
         let (dropped_tx, dropped_rx) = mpsc::channel();
-        let handle = spawn_owned_audio_stream(move || {
-            Ok(NotifyingStream {
-                _stream: StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx),
-                _notifier: DropNotifier(dropped_tx),
-            })
-        })
+        let handle = spawn_owned_audio_stream(
+            move || {
+                Ok(NotifyingStream {
+                    _stream: StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx),
+                    _notifier: DropNotifier(dropped_tx),
+                })
+            },
+            new_render_liveness(),
+        )
         .expect("audio owner should start");
         drop(handle);
         // The reclaimer is still blocked here, because its release is sent only
@@ -1673,9 +1954,10 @@ mod tests {
 
     #[test]
     fn owner_thread_reports_stream_startup_failure() {
-        let result = spawn_owned_audio_stream::<ThreadBoundResource, _>(|| {
-            Err("audio device unavailable".to_string())
-        });
+        let result = spawn_owned_audio_stream::<ThreadBoundResource, _>(
+            || Err("audio device unavailable".to_string()),
+            new_render_liveness(),
+        );
         let error = match result {
             Ok(_) => panic!("startup failure should not return a handle"),
             Err(error) => error,
@@ -1713,6 +1995,8 @@ mod tests {
                 })
             },
             STALLED_STARTUP_TIMEOUT,
+            new_render_liveness(),
+            RENDER_LIVENESS_POLICY,
         );
         let error = match result {
             Ok(handle) => {
@@ -1747,13 +2031,16 @@ mod tests {
     fn stalled_stream_teardown_cannot_block_handle_drop_indefinitely() {
         let (release_tx, release_rx) = mpsc::channel();
         let (dropped_tx, dropped_rx) = mpsc::channel();
-        let handle = spawn_owned_audio_stream(move || {
-            Ok(BlockingDropResource {
-                release_rx,
-                dropped_tx,
-                _not_send: Rc::new(()),
-            })
-        })
+        let handle = spawn_owned_audio_stream(
+            move || {
+                Ok(BlockingDropResource {
+                    release_rx,
+                    dropped_tx,
+                    _not_send: Rc::new(()),
+                })
+            },
+            new_render_liveness(),
+        )
         .expect("owner thread should start");
         let released = Arc::new(AtomicBool::new(false));
         let release_flag = Arc::clone(&released);
@@ -1775,6 +2062,109 @@ mod tests {
         dropped_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("detached owner should finish after teardown unblocks");
+    }
+
+    /// Pure decision table for [`RenderStallWatch`]: an unchanged counter
+    /// grows the idle count until it reaches the threshold, at which point
+    /// `observe` reports the stream as no longer rendering, and a single
+    /// advance resets the idle count and reports rendering again immediately.
+    ///
+    /// The baseline reading is `1`, not `0`: a fresh `RenderStallWatch`
+    /// defaults `last_seen` to `0`, so probing with a counter of `0` would
+    /// collide with that sentinel and read as an already-idle poll instead
+    /// of the first real observation — an ambiguity this test sidesteps
+    /// rather than exercises. Mutation: invert the `<` in
+    /// `RenderStallWatch::observe` — the third `observe(1, 2)` below would
+    /// then read `true`; drop the idle-count reset on an advance — the final
+    /// `observe(2, 2)` would then still read `false` from carried-over idle
+    /// polls.
+    #[test]
+    fn a_stall_watch_reports_not_rendering_after_the_idle_polls_and_recovers_on_the_next_advance() {
+        let mut watch = RenderStallWatch::default();
+
+        assert!(watch.observe(1, 2), "an advancing counter is never a stall");
+        assert!(
+            watch.observe(1, 2),
+            "one idle poll is still short of the threshold"
+        );
+        assert!(
+            !watch.observe(1, 2),
+            "a second consecutive idle poll reaches the threshold"
+        );
+        assert!(
+            watch.observe(2, 2),
+            "an advance reports rendering again on the very next poll"
+        );
+        assert!(
+            watch.observe(2, 2),
+            "the idle count reset by the advance must not still count toward a new stall"
+        );
+    }
+
+    /// The owner thread's watchdog loop, not just the pure `RenderStallWatch`
+    /// it drives: `rendering` clears once the poll cadence has seen the
+    /// render counter sit still for the configured number of polls, and it
+    /// is restored the moment a callback advances the counter again — the
+    /// WASAPI-reopen and system-wake case `RENDER_LIVENESS_POLICY` documents.
+    /// Mutation: delete the `liveness.rendering.store(rendering, ..)` call in
+    /// the owner loop — the first wait below times out. Deleting
+    /// `RenderStallWatch`'s idle-count reset on an advance does not fail this
+    /// test: `observe` returns `true` on any advance regardless of a carried
+    /// idle count, so the second wait still passes here. That reset is
+    /// pinned by
+    /// `a_stall_watch_reports_not_rendering_after_the_idle_polls_and_recovers_on_the_next_advance`
+    /// alone.
+    #[test]
+    fn the_owner_thread_clears_rendering_on_a_stalled_stream_and_restores_it_when_callbacks_resume()
+    {
+        let liveness = new_render_liveness();
+        let observed = liveness.clone();
+        let policy = RenderLivenessPolicy {
+            poll: Duration::from_millis(5),
+            stall_after_polls: 2,
+        };
+
+        let handle = spawn_owned_audio_stream_with_timeout(
+            move || Ok::<(), String>(()),
+            Duration::from_secs(1),
+            liveness,
+            policy,
+        )
+        .expect("owner thread should start");
+
+        assert!(
+            wait_until(Duration::from_secs(1), || {
+                !observed.rendering.load(Ordering::Relaxed)
+            }),
+            "the watchdog must clear rendering once the render counter stalls"
+        );
+
+        observed.callbacks_rendered.fetch_add(1, Ordering::Relaxed);
+
+        assert!(
+            wait_until(Duration::from_secs(1), || {
+                observed.rendering.load(Ordering::Relaxed)
+            }),
+            "the watchdog must restore rendering once the counter advances again"
+        );
+
+        drop(handle);
+    }
+
+    /// Poll `condition` every millisecond up to `timeout`, returning whether
+    /// it was ever seen true. Used only to observe the owner thread's
+    /// watchdog from outside without coupling the test to its poll cadence.
+    fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if condition() {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 }
 
@@ -1799,7 +2189,7 @@ mod capture_render_tests {
     use crate::timeline::timeline_rt_diagnostics_channel;
     use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     const SAMPLE_RATE: f32 = 48_000.0;
@@ -1867,6 +2257,7 @@ mod capture_render_tests {
         feed_tx: Producer<CaptureFeed>,
         renderer: DeviceRenderer,
         diagnostics: ActiveMidiRtDiagnosticsReader,
+        callbacks_rendered: Arc<AtomicU64>,
     }
 
     impl RenderHarness {
@@ -1889,12 +2280,14 @@ mod capture_render_tests {
                 master_meter_tx,
             );
             let (feed_tx, feed_rx) = RingBuffer::new(1);
+            let callbacks_rendered = Arc::new(AtomicU64::new(0));
             Self {
                 command_tx,
                 retired_rx,
                 feed_tx,
-                renderer: DeviceRenderer::new(scheduler, feed_rx),
+                renderer: DeviceRenderer::new(scheduler, feed_rx, Arc::clone(&callbacks_rendered)),
                 diagnostics,
+                callbacks_rendered,
             }
         }
 
@@ -1921,6 +2314,24 @@ mod capture_render_tests {
         fn rt_diagnostics(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
             self.diagnostics.snapshot()
         }
+
+        fn callbacks_rendered(&self) -> u64 {
+            self.callbacks_rendered.load(Ordering::Relaxed)
+        }
+    }
+
+    /// The one witness the owner thread's watchdog trusts: every call to
+    /// `render` advances the counter, whatever the block asked it to do.
+    /// Mutation: remove the `fetch_add` at the top of `DeviceRenderer::render`
+    /// — this goes red at zero after two callbacks.
+    #[test]
+    fn a_render_callback_advances_the_liveness_counter() {
+        let mut harness = RenderHarness::new();
+
+        harness.render(CALLBACK_FRAMES);
+        harness.render(CALLBACK_FRAMES);
+
+        assert_eq!(harness.callbacks_rendered(), 2);
     }
 
     /// A feed on a ring nothing has written yet, plus the writer that stands
@@ -2231,6 +2642,8 @@ mod device_output_tests {
     };
     use crate::transport_map::{LoopRegion, MIN_LOOP_FRAMES};
     use rtrb::{Consumer, Producer, RingBuffer};
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const DEVICE_CHANNELS: usize = 2;
@@ -2283,7 +2696,11 @@ mod device_output_tests {
             Self {
                 command_tx,
                 retired_rx,
-                renderer: DeviceRenderer::new(scheduler, capture_feed_rx),
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    capture_feed_rx,
+                    Arc::new(AtomicU64::new(0)),
+                ),
                 progress,
                 meter,
             }
@@ -2614,7 +3031,11 @@ mod compensation_render_alloc_guards {
             Self {
                 command_tx,
                 retired_rx,
-                renderer: DeviceRenderer::new(scheduler, capture_feed_rx),
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    capture_feed_rx,
+                    Arc::new(AtomicU64::new(0)),
+                ),
             }
         }
 

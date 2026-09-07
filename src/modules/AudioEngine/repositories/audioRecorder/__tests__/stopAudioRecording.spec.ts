@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { audioRecordingStore } from '../../../stores/audioRecordingStore';
 import { audioEngine } from '../../createWebAudioEngine';
 import { startAudioRecording } from '../recording';
+import { sharedStreamState } from '../recordingSession';
 import { stopAudioRecording } from '../stopAudioRecording';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -201,5 +202,29 @@ describe('stopAudioRecording', () => {
         const calls_after_flush = worker.terminate.mock.calls.length;
         vi.advanceTimersByTime(5_000);
         expect(worker.terminate.mock.calls.length).toBe(calls_after_flush);
+    });
+
+    it('stops each of two distinct streams exactly once when both sessions end', async () => {
+        const firstTrackStop = vi.fn();
+        const secondTrackStop = vi.fn();
+        const firstStream = { getTracks: () => [{ stop: firstTrackStop }] } as unknown as MediaStream;
+        const secondStream = { getTracks: () => [{ stop: secondTrackStop }] } as unknown as MediaStream;
+        vi.mocked(globalThis.navigator.mediaDevices.getUserMedia)
+            .mockResolvedValueOnce(firstStream)
+            .mockResolvedValueOnce(secondStream);
+
+        await expect(startAudioRecording('track-distinct-a', vi.fn())).resolves.toBe(true);
+        // Decouple the cached pointer from the still-owned first stream — the
+        // ownership shape concurrent pre-fix acquisition left behind, where a
+        // global count stopped only whichever stream the pointer held last.
+        sharedStreamState.stream = null;
+        await expect(startAudioRecording('track-distinct-b', vi.fn())).resolves.toBe(true);
+
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+
+        stopAudioRecording();
+
+        expect(firstTrackStop).toHaveBeenCalledTimes(1);
+        expect(secondTrackStop).toHaveBeenCalledTimes(1);
     });
 });

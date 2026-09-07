@@ -77,7 +77,7 @@ function passInFlight(): LiveAutomationWriterPass {
         loopTargets: null,
         lastLoopWraps: null,
         wrapFloorFrame: null,
-        queueFullReported: false,
+        standingRefusalReported: false,
         saturatedGroups: new Set(),
     };
 }
