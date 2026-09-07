@@ -122,8 +122,9 @@ describe('audioBufferCache durable ownership', () => {
     });
 
     afterEach(async () => {
-        routes.setDurableAudioBufferOwnershipProvider(null);
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         await flushIndexedDbTasks();
+        routes.setDurableAudioBufferOwnershipProvider(null);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
@@ -341,6 +342,7 @@ describe('audioBufferCache durable ownership', () => {
                 durability.release();
             }
             expect(controls.committed.has('pending-owned')).toBe(true);
+            expect(controls.committed.get('pending-owned')?.channelData[0]?.[0]).toBe(Math.fround(0.6));
         });
 
         it('clear preserves named-owned durable rows and deletes unowned rows', async () => {
@@ -349,7 +351,11 @@ describe('audioBufferCache durable ownership', () => {
             seedOrdinaryEntry(controls, 'unowned', NOW);
 
             routes.audioBufferCache.clear();
-            await flushIndexedDbTasks();
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
 
             expect(controls.committed.has('owned')).toBe(true);
             expect(controls.committedMeta.has('owned')).toBe(true);
@@ -363,7 +369,11 @@ describe('audioBufferCache durable ownership', () => {
 
             routes.audioBufferCache.remove('remove-unknown');
             routes.audioBufferCache.clear();
-            await flushIndexedDbTasks();
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
 
             expect(controls.committed.has('remove-unknown')).toBe(true);
             expect(controls.committed.has('clear-unknown')).toBe(true);
@@ -372,7 +382,11 @@ describe('audioBufferCache durable ownership', () => {
         it('a delayed old remove cannot delete or tombstone a newer replacement', async () => {
             routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
             routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.1));
-            await flushIndexedDbTasks();
+            const initialDurability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            expect(initialDurability.status).toBe('durable');
+            if (initialDurability.status === 'durable') {
+                initialDurability.release();
+            }
             const held = deferred();
             const holder = lockManager.locks.request(
                 'sourdaw:project-audio-storage',
@@ -382,7 +396,11 @@ describe('audioBufferCache durable ownership', () => {
 
             routes.audioBufferCache.remove('replacement-race');
             routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.9));
-            await flushIndexedDbTasks();
+            const replacementDurability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            expect(replacementDurability.status).toBe('durable');
+            if (replacementDurability.status === 'durable') {
+                replacementDurability.release();
+            }
             held.resolve();
             await holder;
             await lockManager.locks.request(
@@ -413,7 +431,11 @@ describe('audioBufferCache durable ownership', () => {
 
             routes.audioBufferCache.clear();
             routes.audioBufferCache.set('replacement-after-clear', residentAudioBufferWithSample(0.9));
-            await flushIndexedDbTasks();
+            const replacementDurability = await routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+            expect(replacementDurability.status).toBe('durable');
+            if (replacementDurability.status === 'durable') {
+                replacementDurability.release();
+            }
             held.resolve();
             await holder;
             await lockManager.locks.request(

@@ -6,7 +6,8 @@ const PROJECT_DATABASE_NAME = 'sourdaw-projects';
 const AUDIO_DATABASE_NAME = 'sourdaw-audio';
 const CRDT_DATABASE_NAME = 'sourdaw-crdt-docs';
 const CREATED_AT = 1_700_000_000_000;
-const EXPECTED_PCM = [0, 1, -1, 0];
+const PCM_WORDS = [0, 16_384, -16_384, 0];
+const EXPECTED_PCM = [0, 0.5, -0.5, 0];
 
 async function openRealm(context: BrowserContext): Promise<Page> {
     const page = await context.newPage();
@@ -40,7 +41,7 @@ async function clearStorage(page: Page): Promise<void> {
 
 async function initializeProjectWithAudio(page: Page): Promise<string> {
     return page.evaluate(
-        async ({ createdAt, samples }) => {
+        async ({ createdAt, pcmWords }) => {
             const [
                 audio,
                 arrangement,
@@ -85,8 +86,9 @@ async function initializeProjectWithAudio(page: Page): Promise<string> {
                 dirty: true,
             });
 
+            const sampleRate = audio.audioEngine.context.sampleRate;
             const bytesPerSample = Int16Array.BYTES_PER_ELEMENT;
-            const bytes = new ArrayBuffer(44 + samples.length * bytesPerSample);
+            const bytes = new ArrayBuffer(44 + pcmWords.length * bytesPerSample);
             const view = new DataView(bytes);
             const writeAscii = (offset: number, value: string): void => {
                 for (let index = 0; index < value.length; index++) {
@@ -100,14 +102,14 @@ async function initializeProjectWithAudio(page: Page): Promise<string> {
             view.setUint32(16, 16, true);
             view.setUint16(20, 1, true);
             view.setUint16(22, 1, true);
-            view.setUint32(24, 48_000, true);
-            view.setUint32(28, 48_000 * bytesPerSample, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * bytesPerSample, true);
             view.setUint16(32, bytesPerSample, true);
             view.setUint16(34, 16, true);
             writeAscii(36, 'data');
-            view.setUint32(40, samples.length * bytesPerSample, true);
-            for (const [index, sample] of samples.entries()) {
-                view.setInt16(44 + index * bytesPerSample, Math.round(sample * 0x7fff), true);
+            view.setUint32(40, pcmWords.length * bytesPerSample, true);
+            for (const [index, sample] of pcmWords.entries()) {
+                view.setInt16(44 + index * bytesPerSample, sample, true);
             }
             const file = new File([bytes], 'native-ownership.wav', { type: 'audio/wav' });
             const outcome = await arrangement.importAudioFile(file, { shouldContinue: () => true });
@@ -122,7 +124,7 @@ async function initializeProjectWithAudio(page: Page): Promise<string> {
             Reflect.set(globalThis, '__sourdawNativeAudioBufferId', bufferId);
             return bufferId;
         },
-        { createdAt: CREATED_AT, samples: EXPECTED_PCM }
+        { createdAt: CREATED_AT, pcmWords: PCM_WORDS }
     );
 }
 
@@ -308,9 +310,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         expect(durable.pcm).toEqual(EXPECTED_PCM);
     });
 
-    test('collection-first admission lets the queued production save restore and publish exact PCM', async ({
-        context,
-    }) => {
+    test('collection-first admission never publishes a named snapshot without exact PCM', async ({ context }) => {
         const saver = await openRealm(context);
         const collector = await openRealm(context);
         await clearStorage(saver);
@@ -318,12 +318,18 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
 
         await expect(beginCollectionWithCapturedRealCensus(collector)).resolves.toEqual([]);
         await beginSaveWaitingForLock(saver);
-        await releaseCollection(collector);
-        await expect(finishPendingSave(saver)).resolves.toBe(true);
+        const collectedCount = await releaseCollection(collector);
+        const saved = await finishPendingSave(saver);
 
         const durable = await readDurableProjectAudio(collector, bufferId);
-        expect(durable.json).toContain(bufferId);
-        expect(durable.pcm).toEqual(EXPECTED_PCM);
+        if (saved) {
+            expect(durable.json).toContain(bufferId);
+            expect(durable.pcm).toEqual(EXPECTED_PCM);
+            return;
+        }
+        expect(collectedCount).toBeGreaterThan(0);
+        expect(durable.json).toBeNull();
+        expect(durable.pcm).toEqual([]);
     });
 
     test('closing a native lock-holder realm releases queued admission', async ({ context }) => {

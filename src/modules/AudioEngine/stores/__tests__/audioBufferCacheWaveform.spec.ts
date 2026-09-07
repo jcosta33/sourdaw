@@ -7,15 +7,14 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 
 beforeEach(async () => {
     vi.resetModules();
     vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
-    [{ audioBufferCache }, { setDurableAudioBufferOwnershipProvider }] = await Promise.all([
-        import('../audioBufferCache'),
-        import('../durableAudioBufferOwnership'),
-    ]);
+    [{ audioBufferCache, clearRuntimeAudioBufferCache }, { setDurableAudioBufferOwnershipProvider }] =
+        await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -192,7 +191,7 @@ function installFakeIndexedDb(): FakeBacking {
 
 describe('audioBufferCache waveform peaks', () => {
     afterEach(() => {
-        audioBufferCache.clear();
+        clearRuntimeAudioBufferCache();
         vi.unstubAllGlobals();
     });
 
@@ -254,7 +253,7 @@ describe('audioBufferCache waveform peaks', () => {
 
 describe('audioBufferCache exportBuffers IDB fallback', () => {
     afterEach(() => {
-        audioBufferCache.clear();
+        clearRuntimeAudioBufferCache();
         vi.unstubAllGlobals();
     });
 
@@ -298,7 +297,7 @@ describe('audioBufferCache exportBuffers IDB fallback', () => {
 
 describe('audioBufferCache prepareFromIdb cancellation + getAllKeys', () => {
     afterEach(() => {
-        audioBufferCache.clear();
+        clearRuntimeAudioBufferCache();
         vi.unstubAllGlobals();
     });
 
@@ -423,7 +422,7 @@ describe('audioBufferCache prepareFromIdb cancellation + getAllKeys', () => {
 
 describe('audioBufferCache garbage collection', () => {
     afterEach(() => {
-        audioBufferCache.clear();
+        clearRuntimeAudioBufferCache();
         vi.unstubAllGlobals();
     });
 
@@ -495,6 +494,14 @@ describe('audioBufferCache garbage collection', () => {
         audioBufferCache.set('freeze-project-200-track-kept-2', createAudioBuffer({ length: 1 }), {
             freezeProjectId: 200,
         });
+        const durability = await audioBufferCache.ensureDurable([
+            'freeze-project-200-track-stale-1',
+            'freeze-project-200-track-kept-2',
+        ]);
+        expect(durability.status).toBe('durable');
+        if (durability.status === 'durable') {
+            durability.release();
+        }
 
         await audioBufferCache.garbageCollectFreezeFiles({
             activeIds: new Set(['freeze-project-200-track-kept-2']),
@@ -507,7 +514,7 @@ describe('audioBufferCache garbage collection', () => {
 
 describe('audioBufferCache exportBuffers encoding', () => {
     afterEach(() => {
-        audioBufferCache.clear();
+        clearRuntimeAudioBufferCache();
         vi.unstubAllGlobals();
     });
 

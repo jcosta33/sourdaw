@@ -1904,11 +1904,9 @@ export const audioBufferCache = {
         // the page. That leak is the whole reason, and it is sufficient on its
         // own.
         //
-        // Ordering is *not* part of the reason, whatever an earlier draft of
-        // this comment claimed. IDB 3.0 §2.7.2 orders overlapping-scope
-        // "readwrite" transactions by creation order across the *database* —
-        // there is no same-connection qualifier — so a `clear()` and a `set()`
-        // right after it commit in that order even on two connections.
+        // The lock and census wait can let a later `set()` establish a new
+        // durability source before deletion starts. The transaction retains
+        // every current source, so clearing cannot erase that replacement.
         void withProjectAudioStorageLock(async () => {
             const durableOwnedIds = await readDurableOwnedIdsOrAbort();
             if (durableOwnedIds === null) {
