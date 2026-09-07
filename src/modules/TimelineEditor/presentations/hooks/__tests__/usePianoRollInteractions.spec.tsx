@@ -904,12 +904,18 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
             expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, 100);
+            const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
-            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', mocks.addMidiNote.mock.results[0]?.value.id);
+            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', createdId);
             const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
             redoFn();
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-2', 70, 4, 1, 100);
+            // Redo re-inserts the created note object itself — same id, not a
+            // fresh reconstruction (#3664).
+            expect(mocks.setNotesForClip).toHaveBeenCalledWith(
+                'clip-2',
+                expect.arrayContaining([expect.objectContaining({ id: createdId, pitch: 70, startBeat: 4 })])
+            );
         });
 
         it('chord stamp lands the chord in the focused clip and undoes and redoes there', () => {
@@ -924,7 +930,12 @@ describe('usePianoRollInteractions', () => {
             expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-2', ['ch1', 'ch2']);
             const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
             redoFn();
-            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-2', 70, 1, 1, 100, 'min7');
+            // Redo re-inserts the created chord notes themselves — same ids,
+            // not a fresh re-stamp (#3664).
+            expect(mocks.setNotesForClip).toHaveBeenCalledWith(
+                'clip-2',
+                expect.arrayContaining([expect.objectContaining({ id: 'ch1' }), expect.objectContaining({ id: 'ch2' })])
+            );
         });
 
         it('click without drag stamps into the focused clip and undoes and redoes there', () => {
@@ -934,12 +945,18 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
             expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
+            const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
-            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', mocks.addMidiNote.mock.results[0]?.value.id);
+            expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', createdId);
             const redoFn = mocks.pushUndoEntry.mock.calls[0]?.[2];
             redoFn();
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-2', 70, 1, 1, 100);
+            // Redo re-inserts the created note object itself — same id, not a
+            // fresh reconstruction (#3664).
+            expect(mocks.setNotesForClip).toHaveBeenCalledWith(
+                'clip-2',
+                expect.arrayContaining([expect.objectContaining({ id: createdId, pitch: 70, startBeat: 1 })])
+            );
         });
 
         it('paint adds each crossed cell once to the focused clip, deduping against its list, and undoes and redoes there', () => {
@@ -982,13 +999,16 @@ describe('usePianoRollInteractions', () => {
             for (const id of paintedIds) {
                 expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-2', id);
             }
-            // The gesture phase already recorded these tuples, so the mock is
-            // cleared here: the assertions below observe only what the redo
-            // closure re-adds.
-            mocks.addMidiNote.mockClear();
+            // Redo re-inserts the painted note objects themselves — same ids,
+            // same beats, not fresh reconstructions (#3664).
             paintEntry[2]();
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 3, 1, 100);
+            expect(mocks.setNotesForClip).toHaveBeenCalledWith(
+                'clip-2',
+                expect.arrayContaining([
+                    expect.objectContaining({ id: paintedIds[0], pitch: 70, startBeat: 1 }),
+                    expect.objectContaining({ id: paintedIds[1], pitch: 70, startBeat: 3 }),
+                ])
+            );
         });
 
         it('a focused clip that is no longer open falls back to the primary clip', () => {
