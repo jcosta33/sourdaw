@@ -346,6 +346,21 @@ export class ScoringInstance {
         return ret >>> 0;
     }
     /**
+     * @returns {string}
+     */
+    scale_description() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.scoringinstance_scale_description(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {string} name
      * @param {number} value
      */
