@@ -3,12 +3,19 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { createClipSatelliteTransitionPlan } from '../../stores/clipSatelliteState';
+import {
+    type ClipSatelliteEntry,
+    type ClipSatelliteStateRestorePlan,
+    createClipSatelliteTransitionPlan,
+} from '../../stores/clipSatelliteState';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
+import { type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
+
+import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
 type MidiReplayPlan = MidiPreparation['replayPlan'];
@@ -87,6 +94,17 @@ type ValidatedInput = {
 type NormalizedStore = Extract<ReturnType<typeof createClipWriteTargetIndex>, { status: 'valid' }>;
 type NormalizedOwner = NormalizedStore['tracks'][number];
 
+/** A clip the deletion splits into a surviving left half (which keeps its id)
+ *  and a surviving right fragment under a fresh id — the delete-spanning split.
+ *  The record carries the three axes `prepareClipSplitSatellites` splits along. */
+type SpanningClipRecord = {
+    sourceClipId: string;
+    fragmentClipId: string;
+    clipRelativeSplitBeats: number;
+    contentSplitBeats: number;
+    absoluteSplitBeats: number;
+};
+
 type PlannedLocalState = {
     trackState: TrackState;
     midiOperation: {
@@ -101,6 +119,7 @@ type PlannedLocalState = {
         }[];
         removeClipIds: readonly string[];
     };
+    spanningClips: readonly SpanningClipRecord[];
 };
 
 type LocalTransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
@@ -585,7 +604,8 @@ function planTrack(
         splitBeat: number;
         discardBeforeBeat?: number;
     }>,
-    removeClipIds: string[]
+    removeClipIds: string[],
+    spanningClips: SpanningClipRecord[]
 ): { track: Track; identityIndex: number } | null {
     const finalClips: Clip[] = [];
     let changed = false;
@@ -626,6 +646,13 @@ function planTrack(
                     discardBeforeBeat: operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
                 });
             }
+            spanningClips.push({
+                sourceClipId: clip.id,
+                fragmentClipId: identity.targetClipId,
+                clipRelativeSplitBeats: operation.endBeat - clip.startBeat,
+                contentSplitBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                absoluteSplitBeats: operation.endBeat,
+            });
             changed = true;
             continue;
         }
@@ -679,6 +706,7 @@ function prepareLocalState(
         discardBeforeBeat?: number;
     }> = [];
     const removeClipIds: string[] = [];
+    const spanningClips: SpanningClipRecord[] = [];
     let identityIndex = 0;
     let hasTrackChanges = false;
 
@@ -691,7 +719,7 @@ function prepareLocalState(
         if (!owner) {
             return null;
         }
-        const planned = planTrack(owner, operation, identities, identityIndex, splits, removeClipIds);
+        const planned = planTrack(owner, operation, identities, identityIndex, splits, removeClipIds, spanningClips);
         if (!planned) {
             return null;
         }
@@ -718,6 +746,7 @@ function prepareLocalState(
             splits,
             removeClipIds,
         },
+        spanningClips,
     };
 }
 
@@ -1177,6 +1206,35 @@ export function executeSelectedTimeRangeDeletion(
         return rejectResult();
     }
 
+    // The right fragment of a clip the range splits inherits the source's
+    // satellites, geometry-clamped — the same convention an ordinary split
+    // follows (ledger #2108): the fragment is the same audio continuing, and
+    // established DAWs keep clip expression data playing across a split
+    // (Logic's region automation splits with the region; Pro Tools clip gain
+    // and clip automation belong to the clip, so both halves keep them). The
+    // left half keeps its id and its satellites untouched, so only the fresh
+    // fragment id needs entries. Everything below reads the stores BEFORE any
+    // handle applies.
+    const fragmentSatelliteEntries: { expected: ClipSatelliteEntry; replacement: ClipSatelliteEntry }[] = [];
+    const fragmentLaneCopies: AutomationLaneValue[] = [];
+    for (const record of local.spanningClips) {
+        const satellites = prepareClipSplitSatellites({
+            clipId: record.sourceClipId,
+            rightClipId: record.fragmentClipId,
+            clipRelativeSplitBeats: record.clipRelativeSplitBeats,
+            contentSplitBeats: record.contentSplitBeats,
+            absoluteSplitBeats: record.absoluteSplitBeats,
+        });
+        const fragmentEntry = satellites.next[1]!;
+        if (fragmentEntry.gainEnvelope !== null || fragmentEntry.warpState !== null) {
+            fragmentSatelliteEntries.push({
+                expected: { clipId: record.fragmentClipId, gainEnvelope: null, warpState: null },
+                replacement: fragmentEntry,
+            });
+        }
+        fragmentLaneCopies.push(...satellites.rightAutomationLanes);
+    }
+
     let midiPreparationInput: Parameters<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>[0] = {
         operation: local.midiOperation,
         owners: createMidiOwners(normalized),
@@ -1193,20 +1251,41 @@ export function executeSelectedTimeRangeDeletion(
     }
 
     // The clips this deletion removes take their satellites with them, inside
-    // the same transaction, so undo restores every one of them.
+    // the same transaction, so undo restores every one of them. The split
+    // fragments' inherited lanes join the same automation transaction, so the
+    // inverse plan restores the store without them.
     const removedClipIds = local.midiOperation.removeClipIds;
     const automationPreparation = deps.prepareAutomationTimeOperation({
         operation: { type: 'delete', startBeat: validated.operation.startBeat, endBeat: validated.operation.endBeat },
         owners: createAutomationOwners(normalized),
         removedClipIds,
+        clipLaneCopies: fragmentLaneCopies,
     });
     if (automationPreparation.status !== 'ready') {
         return rejectResult();
     }
-    const clipSatellitePlan = createClipSatelliteTransitionPlan({ removedClipIds, migrations: [] });
-    if (!clipSatellitePlan) {
+    const baseSatellitePlan = createClipSatelliteTransitionPlan({ removedClipIds, migrations: [] });
+    if (!baseSatellitePlan) {
         return rejectResult();
     }
+    // Append the fragment legs after the retirement legs — both sides in the
+    // same order, which is the shape `prepareClipSatelliteStateRestore`'s
+    // validator requires. The expected side asserts the fresh fragment id is
+    // bare; the replacement side writes what it inherited.
+    const clipSatellitePlan: ClipSatelliteStateRestorePlan = {
+        version: 1,
+        expected: {
+            version: 1,
+            entries: [...baseSatellitePlan.expected.entries, ...fragmentSatelliteEntries.map((pair) => pair.expected)],
+        },
+        replacement: {
+            version: 1,
+            entries: [
+                ...baseSatellitePlan.replacement.entries,
+                ...fragmentSatelliteEntries.map((pair) => pair.replacement),
+            ],
+        },
+    };
     const clipSatellitePreparation = prepareClipSatelliteStateRestore(clipSatellitePlan);
     if (clipSatellitePreparation.status !== 'ready') {
         return rejectResult();

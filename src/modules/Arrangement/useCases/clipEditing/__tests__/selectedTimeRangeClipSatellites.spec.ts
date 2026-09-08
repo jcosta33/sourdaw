@@ -196,4 +196,97 @@ describe('Delete Time Range retires per-clip satellite data', () => {
         expect(getEnvelope('automated')).toBeUndefined();
         expect(warpStates.has('automated')).toBe(false);
     });
+
+    it('gives the surviving right fragment of a split clip the inherited satellites, undoably', async () => {
+        // A clip the deleted range cuts in two: the left half keeps its id, the
+        // right half continues under a fresh id — and must not start bare, or
+        // the same audio silently loses its expression data past the cut.
+        setTracks([
+            createClip({ id: 'spanning', startBeat: 0, endBeat: 8 }),
+            createClip({ id: 'keeper', startBeat: 10, endBeat: 12 }),
+        ]);
+        setEnvelope('spanning', {
+            clipId: 'spanning',
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: 0, gainDb: 0 },
+                { id: 'p4', beatOffset: 4, gainDb: -12 },
+            ],
+        });
+        setWarpState('spanning', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-left', originalBeat: 1, warpedBeat: 1 },
+                { id: 'w-right', originalBeat: 6, warpedBeat: 6.5 },
+            ],
+        });
+        restoreAutomationSnapshot({ lanes: [createLane({ id: 'lane-clip', clipId: 'spanning', beat: 7 })] });
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const fragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        expect(clipIds()).toEqual(['spanning', fragmentId, 'keeper']);
+
+        // The left half keeps its id and its satellites untouched: nothing it
+        // played changed, and inert points beyond its new edge survive.
+        expect(getEnvelope('spanning')?.points).toEqual([
+            { id: 'p0', beatOffset: 0, gainDb: 0 },
+            { id: 'p4', beatOffset: 4, gainDb: -12 },
+        ]);
+        expect(warpStates.get('spanning')?.markers).toHaveLength(2);
+        expect(laneIds()).toEqual(['lane-clip', `auto-split-${fragmentId}-0`]);
+
+        // The right fragment inherits geometry-clamped copies: the envelope
+        // re-based by the cut (seam value at beat 6 is -12 dB), the warp
+        // markers at or past the content cut, and the automation points that
+        // fall in its window, verbatim.
+        expect(getEnvelope(fragmentId ?? '')).toEqual({
+            clipId: fragmentId,
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: -6, gainDb: 0 },
+                { id: 'p4', beatOffset: -2, gainDb: -12 },
+                { id: `gep-split-${fragmentId}-right`, beatOffset: 0, gainDb: -12 },
+            ],
+        });
+        expect(warpStates.get(fragmentId ?? '')?.markers).toEqual([
+            { id: 'w-right', originalBeat: 6, warpedBeat: 6.5 },
+        ]);
+        const fragmentLane = getAutomationLanes().find((lane) => lane.id === `auto-split-${fragmentId}-0`);
+        expect(fragmentLane?.clipId).toBe(fragmentId);
+        expect(fragmentLane?.points.map((point) => point.beat)).toEqual([7]);
+        // The source lane is untouched.
+        expect(
+            getAutomationLanes()
+                .find((lane) => lane.id === 'lane-clip')
+                ?.points.map((p) => p.beat)
+        ).toEqual([7]);
+
+        await undo();
+
+        expect(clipIds()).toEqual(['spanning', 'keeper']);
+        expect(laneIds()).toEqual(['lane-clip']);
+        expect(getEnvelope('spanning')?.points).toEqual([
+            { id: 'p0', beatOffset: 0, gainDb: 0 },
+            { id: 'p4', beatOffset: 4, gainDb: -12 },
+        ]);
+        expect(warpStates.get('spanning')?.markers).toHaveLength(2);
+        expect(getEnvelope(fragmentId ?? '')).toBeUndefined();
+        expect(warpStates.has(fragmentId ?? '')).toBe(false);
+
+        await redo();
+
+        const redoneFragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        expect(redoneFragmentId).toBeDefined();
+        expect(getEnvelope(redoneFragmentId ?? '')).not.toBeUndefined();
+        expect(warpStates.has(redoneFragmentId ?? '')).toBe(true);
+        expect(laneIds()).toContain(`auto-split-${redoneFragmentId}-0`);
+
+        // The fragment lanes are keyed to live clip ids, so later time
+        // operations keep working (no orphan jam).
+        const inserted = executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 0, durationBeats: 2 } });
+        expect(inserted.status).toBe('applied');
+    });
 });
