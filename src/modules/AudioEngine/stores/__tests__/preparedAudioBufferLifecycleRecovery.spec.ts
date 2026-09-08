@@ -403,13 +403,16 @@ describe('prepared audio-buffer recovery and project admission', () => {
         });
         shouldContinue = false;
 
-        const reopenAfterCancellation = audioBufferCache.reopenPreparedBuffer({
+        const reopenWhileCancellationIsPending = audioBufferCache.reopenPreparedBuffer({
             id,
             leaseId: `${id}-lease`,
             context: createTestContext(vi.fn()),
         });
+        await expect(reopenWhileCancellationIsPending).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
         await expect(preparation).resolves.toBeNull();
-        await expect(reopenAfterCancellation).resolves.toEqual({ status: 'missing' });
         await expect(
             audioBufferCache.reopenPreparedBuffer({
                 id: existingId,
