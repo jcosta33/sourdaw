@@ -3830,20 +3830,22 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
-    it('rejects an unflushed sidechain target-device identity drift through production fingerprints', async () => {
+    it('invalidates an unflushed sidechain target-device identity drift through the fingerprint guard', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         settleFixtureProjectWrites();
         // Every state this case asserts stays projection-only: the collaborator
-        // rename below must never reach the document, or the confirmation would
-        // observe a project change and invalidate instead of failing the
-        // fingerprint preflight. A CRDT-backed store write lands in the document
-        // on a deferred animation frame, so whether that frame fires inside
-        // confirm's await window decides the transition — under shard load it
-        // does, and the case observed 'invalidated' where an idle run observes
-        // 'failed'. Hold frames for the whole case so the document is frozen by
-        // construction; the pending write belongs to no document after the next
-        // authority reset releases it, and onTestFinished restores the timers.
+        // rename below must never reach the document, so the revision gate stays
+        // silent and the fingerprint guard is the one that detects the stale
+        // proposal. A CRDT-backed store write lands in the document on a
+        // deferred animation frame, so an unheld frame can fire inside confirm's
+        // await window and move the run onto the revision gate mid-flight. Hold
+        // frames for the whole case so the document is frozen by construction;
+        // the pending write belongs to no document after the next authority
+        // reset releases it, and onTestFinished restores the timers. Both stale
+        // routes must settle identically — `invalidated` with the same
+        // actionable sentence — and the internal detail below proves this run
+        // took the fingerprint guard rather than the revision gate.
         const scheduledFrames = new Map<number, FrameRequestCallback>();
         let nextFrameId = 1;
         const requestAnimationFrameSpy = vi
@@ -3900,17 +3902,25 @@ describe('drum bus prompt workflow', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toMatchObject({
+            status: 'invalidated',
+            detail: 'The approved target fingerprints no longer match.',
+        });
         expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
         expect(trackStore.value).toEqual(collaboratorState);
         expect(sidechainStore.value).toEqual(routesBeforePlanning);
         expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
         expect(undoStore.value).toEqual(undoBeforePlanning);
-        expect(getPendingActionConfirmation(confirmation?.id ?? '')?.executedActions).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toContain('The approved target fingerprints no longer match.');
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('reduces kick/bass masking without replacing either sound through the complete WebLLM workflow', async () => {

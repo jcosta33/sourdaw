@@ -399,6 +399,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected the changed target to invalidate approval');
         }
         expect(targetMismatch.reason).toContain('target fingerprints');
+        expect(targetMismatch.stale).toBe(true);
         targetFingerprint = 'track-vocal:v1';
         const hashMismatch = validateAgentRiskApproval({
             approval: { ...approval, actionHashes: ['fnv1a32:tampered'] },
@@ -410,6 +411,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected the changed action hash to invalidate approval');
         }
         expect(hashMismatch.reason).toContain('action hashes');
+        expect(hashMismatch.stale).toBe(false);
         const consequenceMismatch = validateAgentRiskApproval({
             approval: {
                 ...approval,
@@ -446,5 +448,6 @@ describe('agent risk approval', () => {
             throw new Error('Expected a changed source revision to invalidate approval');
         }
         expect(revisionMismatch.reason).toContain('source revision');
+        expect(revisionMismatch.stale).toBe(true);
     });
 });

@@ -28,7 +28,7 @@ type ConfirmPendingChatActionsResult =
     | { status: 'executed' }
     | CommittedEffectFailureResult
     | CommittedFinalizationEvidenceFailureResult
-    | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
+    | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence; detail?: string }
     | { status: 'reapproval_required'; divergence: ApprovalDivergence }
     | { status: 'cancelled' }
     | { status: 'failed'; reason: string };

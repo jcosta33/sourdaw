@@ -56,13 +56,18 @@ function getProtectedAffectedIds(
     ];
 }
 
-function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): string | null {
+type ApprovalPreflightFailure = {
+    reason: string;
+    stale: boolean;
+};
+
+function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): ApprovalPreflightFailure | null {
     const approved = confirmation.approvalSnapshot;
     if (!approved.commandBatch) {
-        return 'The confirmation has no approved command batch.';
+        return { reason: 'The confirmation has no approved command batch.', stale: false };
     }
     if (!approved.agentApproval) {
-        return 'The command batch has no exact risk approval binding.';
+        return { reason: 'The command batch has no exact risk approval binding.', stale: false };
     }
     const currentRevision = projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
         ? confirmation.projectRevision
@@ -73,11 +78,14 @@ function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation)
         currentRevision,
     });
     if (validation.status === 'invalid') {
-        return validation.reason;
+        return { reason: validation.reason, stale: validation.stale };
     }
     const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
     if (protectedAffectedIds.length > 0) {
-        return `The executable action batch targets protected IDs: ${protectedAffectedIds.join(', ')}.`;
+        return {
+            reason: `The executable action batch targets protected IDs: ${protectedAffectedIds.join(', ')}.`,
+            stale: false,
+        };
     }
 
     const currentApproval = JSON.stringify({
@@ -91,15 +99,34 @@ function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation)
         protectedUnchanged: approved.protectedUnchanged,
     });
     if (currentApproval !== immutableApproval) {
-        return 'The executable action batch no longer matches the approved proposal.';
+        return { reason: 'The executable action batch no longer matches the approved proposal.', stale: false };
     }
 
     const approvedProtectedAffectedIds = getProtectedAffectedIds(approved.actions, approved.protectedUnchanged);
     if (approvedProtectedAffectedIds.length > 0) {
-        return `The approved action batch targets protected IDs: ${approvedProtectedAffectedIds.join(', ')}.`;
+        return {
+            reason: `The approved action batch targets protected IDs: ${approvedProtectedAffectedIds.join(', ')}.`,
+            stale: false,
+        };
     }
 
     return null;
+}
+
+function settleApprovalPreflightRejection(
+    confirmation: PendingAppActionConfirmation,
+    failure: ApprovalPreflightFailure
+): BeginConfirmedCommandExecutionResult {
+    // Both preflight guards detect the same event — a confirmed proposal whose
+    // project moved on after it was created — so whichever guard fires first
+    // settles it identically: `invalidated` with the actionable instruction.
+    // The guard's own reason stays on the internal result and in the logs.
+    return {
+        status: 'settled',
+        result: failure.stale
+            ? confirmationTerminalSettlement.invalidateForProjectChange(confirmation, failure.reason)
+            : confirmationTerminalSettlement.failApprovalPreflight(confirmation, failure.reason, 'authorization'),
+    };
 }
 
 export function beginConfirmedCommandExecution(
@@ -109,14 +136,7 @@ export function beginConfirmedCommandExecution(
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
     const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
     if (approvalPreflightFailure) {
-        return {
-            status: 'settled',
-            result: confirmationTerminalSettlement.failApprovalPreflight(
-                confirmation,
-                approvalPreflightFailure,
-                'authorization'
-            ),
-        };
+        return settleApprovalPreflightRejection(confirmation, approvalPreflightFailure);
     }
 
     const commandBatch = confirmation.approvalSnapshot.commandBatch;
