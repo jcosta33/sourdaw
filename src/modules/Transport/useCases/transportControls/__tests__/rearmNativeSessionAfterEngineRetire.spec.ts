@@ -54,7 +54,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     nativeSessionRearmClaimHolds: (claim: number): boolean => mocks.rearm.claimed && claim === mocks.rearm.epoch,
     startNativeLiveGraphSession: vi.fn(),
-    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
+    getAudioContext: (): { sampleRate: number; currentTime: number } => ({ sampleRate: 48_000, currentTime: 7.25 }),
 }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({ getTransportState: vi.fn() }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
@@ -111,7 +111,12 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         expect(ensureTrackStrips).toHaveBeenCalledWith({ collectExternalPluginActivations: true });
         // Beat 8 at 120 BPM is four seconds in: the beat is read at the start,
         // not at the offer, so the engine opens where the transport actually is.
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 4 }));
+        // The context clock is anchored to that same reading, so the re-armed
+        // session projects its own start-up wait onto the roll rather than
+        // opening the engine behind the transport that never stopped.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({ positionSeconds: 4, anchoredAtContextSeconds: 7.25 })
+        );
     });
 
     it('waits for the forgotten plugins to reload before it starts the session', async () => {
