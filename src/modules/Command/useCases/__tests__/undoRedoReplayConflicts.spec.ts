@@ -28,6 +28,10 @@ import type { ActionUndoEntry, CallbackUndoEntry, UndoEntry } from '../../models
 // that unit's inverse resolves to a handler flagged `canReportConflict`, so the
 // production handler maps are registered here exactly as bootstrap registers
 // them and the gate reads real capability flags.
+//
+// #2878 mirrors the step-over for redo, where the replay is a recorded forward
+// action (`redoAction ?? action`) rather than undo's guarded inverse; the gate
+// resolves the handler of that replay action instead.
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -53,7 +57,13 @@ vi.mock('../../stores/undoStore', () => ({
         get value() {
             return mocks.undoStoreValue.value;
         },
-        set: mocks.undoStoreSet,
+        // Records the call like any mock and also applies the state, so
+        // successive undo()/redo() calls in one test read the stacks the
+        // previous call committed — the way the real store behaves.
+        set: (state: import('../../stores/undoStore').UndoStoreState) => {
+            mocks.undoStoreSet(state);
+            mocks.undoStoreValue.value = state;
+        },
     },
 }));
 
@@ -118,6 +128,26 @@ const conflictCapableFadeInverse = {
 const conflictCapableGainInverse = {
     type: 'setTrackGain',
     payload: { trackId: 'track-1', gain: 0.5, expectedGain: 0.8 },
+} as const;
+
+/** Replays resolving to handlers flagged `canReportConflict` — steppable redo targets (#2878). */
+const conflictCapableGainReplay = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-1', gain: 0.9, expectedGain: 0.5 },
+} as const;
+const conflictCapableFadeReplay = {
+    type: 'setClipFade',
+    payload: {
+        clipId: 'clip-1',
+        fadeInBeats: 0.5,
+        fadeOutBeats: 0.25,
+        expectedFadeInBeats: 0,
+        expectedFadeOutBeats: 0,
+    },
+} as const;
+const conflictCapableColorReplay = {
+    type: 'setClipColor',
+    payload: { clipId: 'clip-1', color: '#123456' },
 } as const;
 
 describe('undo/redo replay conflict handling (audit CC-6)', () => {
@@ -556,6 +586,237 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             await expect(redo()).resolves.toBeUndefined();
 
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        });
+
+        it('steps over a conflicted redo onto a conflict-capable entry behind it (#2878)', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                action: conflictCapableFadeReplay,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, older] };
+            conflictOn('setTrackGain');
+
+            await redo();
+            await redo();
+
+            // The issue's shape, two presses. Under the step-over contract the
+            // first press already does what undo's does: the newest entry is
+            // attempted and refuses, reported by name, and the step lands on
+            // the older entry behind it — whose replay handler can genuinely
+            // refuse, so the replay either matches the document it meets or
+            // refuses; it can never silently overwrite the divergence that
+            // caused the conflict. The second press re-attempts the conflicted
+            // entry first. On the unfixed code both presses re-attempt the
+            // conflicted entry and the older one is never reached.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(3);
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+                'setTrackGain',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [conflicting] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('older-1');
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot redo "Cut Clip": project state has changed',
+                'Skipped "Cut Clip": project state has changed; redid "First Action"',
+                'Cannot redo "Cut Clip": project state has changed',
+            ]);
+        });
+
+        it('keeps the conflicted entry at the head of future, retryable after stepping over it', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                action: conflictCapableFadeReplay,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, older] };
+            conflictOn('setTrackGain');
+
+            await redo();
+            vi.clearAllMocks();
+
+            await redo();
+
+            // The conflicted entry was retained, not dropped: the next press
+            // re-attempts it first — it may have become redoable — and it is
+            // still there to refuse, still heading `future`.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableGainReplay, expect.anything());
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot redo "Cut Clip": project state has changed',
+                'warning'
+            );
+        });
+
+        it('makes progress on every press while a conflicted head sits above clean entries (#2878)', async () => {
+            const oldest = actionEntry({ id: 'oldest-1', label: 'Oldest', action: conflictCapableColorReplay });
+            const middle = actionEntry({ id: 'middle-1', label: 'Middle', action: conflictCapableFadeReplay });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, middle, oldest] };
+            conflictOn('setTrackGain');
+
+            await redo();
+            await redo();
+            await redo();
+
+            // Each press retries the conflicted head, then applies exactly one
+            // clean entry behind it. The third press has nothing clean left and
+            // only reports the conflicted one — the history never wedges, and
+            // one keystroke never touches more than two units.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+                'setTrackGain',
+                'setClipColor',
+                'setTrackGain',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledTimes(2);
+            expect(mocks.undoStoreSet).toHaveBeenLastCalledWith({ past: [middle, oldest], future: [conflicting] });
+            expect(mocks.notifyUser.mock.calls.filter(([message]) => message.startsWith('Skipped'))).toHaveLength(2);
+        });
+
+        it('never steps onto an entry whose replay handler is not flagged conflict-capable', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                // `soloTrack` is registered through the Arrangement handler map —
+                // the gate RESOLVES this handler — but carries no
+                // `canReportConflict` flag: it writes unconditionally and cannot
+                // refuse. Resolvable-yet-unflagged is the distinction the gate
+                // exists to draw; a gate that only checked resolvability would
+                // step here.
+                action: { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, older] };
+            conflictOn('setTrackGain');
+
+            await redo();
+            await redo();
+
+            // The handler resolved, read its flag, and the flag said no: the
+            // replay cannot refuse, so running it over a document that never
+            // received the conflicted entry's changes could silently overwrite
+            // the diverging edit. Only the head is attempted, once per press,
+            // and nothing moves.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setTrackGain',
+            ]);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(2);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot redo "Cut Clip": project state has changed',
+                'warning'
+            );
+        });
+
+        it('never steps onto a callback entry beneath a conflicted redo', async () => {
+            const callback = callbackEntry({ id: 'cb-1', label: 'Inline Note Move' });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, callback] };
+            conflictOn('setTrackGain');
+
+            await redo();
+            await redo();
+
+            // A callback redo reports success unconditionally unless it returns
+            // REDO_NOT_APPLIED — it has no handler that could refuse — so the
+            // gate must leave it untouched rather than run it over the diverged
+            // document.
+            expect(callback.redo).not.toHaveBeenCalled();
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setTrackGain',
+            ]);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(2);
+        });
+
+        it('steps over a conflicted redo group onto a conflict-capable entry behind it', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                action: conflictCapableFadeReplay,
+            });
+            const first = actionEntry({
+                id: 'g-first',
+                groupId: 'group-1',
+                groupLabel: 'Grouped Edit',
+                action: conflictCapableGainReplay,
+            });
+            const second = actionEntry({
+                id: 'g-second',
+                groupId: 'group-1',
+                groupLabel: 'Grouped Edit',
+                // `muteTrack` declares `validate`, so the group survives
+                // `normalizeSingletonUndoGroups` (a member without `validate`
+                // would mark the group singleton and be ungrouped before the
+                // scan) — and its handler is flagged `canReportConflict`.
+                action: { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
+            });
+            mocks.undoStoreValue.value = { past: [], future: [first, second, older] };
+            mocks.executeAppActionBatch.mockResolvedValue({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setTrackGain',
+                actions: [],
+            });
+
+            await redo();
+
+            // The group is batched as one unit, refuses as one unit, and is
+            // reported and retained whole; the step lands on the flagged single
+            // entry behind it.
+            expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([first.action, second.action], {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+                onCommitted: expect.any(Function),
+            });
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableFadeReplay, expect.anything());
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [first, second] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('older-1');
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot redo "Grouped Edit": project state has changed',
+                'Skipped "Grouped Edit": project state has changed; redid "First Action"',
+            ]);
+
+            await redo();
+
+            // The group stays whole at the head of `future`; the second press
+            // retries it as one unit and reports it again — nothing clean is
+            // left behind it.
+            expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(2);
+            expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(3);
         });
     });
 });

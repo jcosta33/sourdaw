@@ -7,6 +7,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getCommandHandler } from './getCommandHandler';
 import { recordAction } from './macro/recording/recordAction';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { REDO_NOT_APPLIED } from './redoResult';
@@ -20,6 +21,10 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
 
 function redoEntryLabel(entry: UndoEntry): string {
     return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
+}
+
+function notifySkippedRedoConflict(skippedLabel: string, redoneLabel: string): void {
+    notifyUser(`Skipped "${skippedLabel}": project state has changed; redid "${redoneLabel}"`, 'warning');
 }
 
 function commitRedoTransition(
@@ -140,6 +145,134 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     }
 }
 
+/** One member of a redo step target: an action entry whose replay resolves to
+ *  a handler that declares `canReportConflict`. The handler resolved is the one
+ *  the redo replay will actually run — `redoAction ?? action`, not the
+ *  inverse's. */
+function isRedoStepOverCapableMember(entry: UndoEntry): boolean {
+    if (!isActionEntry(entry)) {
+        return false;
+    }
+    return getCommandHandler(entry.redoAction ?? entry.action)?.canReportConflict === true;
+}
+
+/** The next redoable unit at the head of `future`: one entry, or the whole
+ *  contiguous run of entries sharing its `groupId`. */
+type RedoCandidate = {
+    /** The unit's head entry; its label names the unit to the user. */
+    readonly head: UndoEntry;
+    /** The unit's entries. */
+    readonly entries: readonly UndoEntry[];
+    /** What remains of `future` behind the unit. */
+    readonly behind: readonly UndoEntry[];
+};
+
+function takeRedoCandidate(future: readonly UndoEntry[]): RedoCandidate | null {
+    if (future.length === 0) {
+        return null;
+    }
+    const head = future[0]!;
+    if (!head.groupId) {
+        return { head, entries: [head], behind: future.slice(1) };
+    }
+
+    let index = 0;
+    while (index < future.length && future[index]!.groupId === head.groupId) {
+        index++;
+    }
+    return { head, entries: future.slice(0, index), behind: future.slice(index) };
+}
+
+/** Nothing was redone. Conflicted entries stay exactly where they were; only a
+ *  purge of not-applied entries made earlier in the scan needs persisting. */
+function settleWithoutRedo({
+    initialFuture,
+    futureAtConflict,
+}: {
+    readonly initialFuture: readonly UndoEntry[];
+    readonly futureAtConflict: readonly UndoEntry[];
+}): void {
+    if (futureAtConflict.length !== initialFuture.length) {
+        commitRedoTransition(initialFuture, futureAtConflict, []);
+    }
+}
+
+type StepOverRedoInput = {
+    readonly initialFuture: readonly UndoEntry[];
+    /** The running `future`, positioned at the conflicted unit's first entry. */
+    readonly futureAtConflict: readonly UndoEntry[];
+    /** The conflicted unit's entries, which stay at the head of `future`, retryable. */
+    readonly conflictedEntries: readonly UndoEntry[];
+};
+
+/**
+ * One conflicted redo unit no longer wedges every redo behind it (#2878): the
+ * unit is reported by name, kept at the head of `future` for a later retry,
+ * and one keystroke steps onto the unit directly behind it — gated, no
+ * recursion, at most two notifications per press. This mirrors undo's #2881
+ * contract, and the symmetry is deliberate, not assumed, because redo's
+ * replay surface is not the one undo's safety argument covered: a redo
+ * replays a recorded FORWARD action (`redoAction ?? action`), not a guarded
+ * inverse.
+ *
+ * The reasoning transfers because the guard lives in the HANDLER the replay
+ * runs, not in inverse-vs-forward. For a `canReportConflict` handler,
+ * `describe()` records the replay payload with the `expected*` snapshot
+ * captured when the entry was made — `handleSetTrackGain`, for one, whose
+ * paired redo carries `expectedGain` — and its `execute` compares that
+ * expectation against the live document, returning `{ status: 'conflict' }`
+ * and writing nothing on mismatch. Replays are also self-contained: each
+ * action names its entities and carries full arguments, so a replay whose
+ * dependency is absent (a track only the conflicted entry would have
+ * restored) refuses through that same guard rather than applying wrongly. A
+ * gated step therefore ends either in a correct application or a refused one
+ * — never a silently wrong one — which is what made stepping over safe in
+ * undo.
+ *
+ * The gate is still what draws the line: `executeAppAction` never calls
+ * `validate` on the single dispatch, and handlers routed through
+ * `toHandlerExecutionResult` (`no-write` | `written`) can never refuse, so
+ * replaying one over a document that never received the conflicted unit's
+ * changes could silently overwrite the very divergence that caused the
+ * conflict. Between a blocked redo and a clobbered edit, blocked is
+ * recoverable.
+ */
+async function stepOverConflictedRedoOrSettle({
+    initialFuture,
+    futureAtConflict,
+    conflictedEntries,
+}: StepOverRedoInput): Promise<void> {
+    const next = takeRedoCandidate(futureAtConflict.slice(conflictedEntries.length));
+    if (!next || !next.entries.every(isRedoStepOverCapableMember)) {
+        settleWithoutRedo({ initialFuture, futureAtConflict });
+        return;
+    }
+
+    const outcome = next.head.groupId ? await executeActionGroupRedo(next.entries) : await executeRedo(next.head);
+
+    if (outcome.status === 'conflict') {
+        // The step target refused too. Nothing was written by either unit,
+        // both stay redoable at the head of `future`, and the conflict
+        // notification already reported the blocked redo. No third unit is
+        // touched.
+        settleWithoutRedo({ initialFuture, futureAtConflict });
+        return;
+    }
+    if (outcome.status === 'not-applied') {
+        // Unreachable — the gate admits only action entries whose replay runs
+        // a flagged handler — but settling keeps everything in place rather
+        // than guess at a purge.
+        settleWithoutRedo({ initialFuture, futureAtConflict });
+        return;
+    }
+
+    notifySkippedRedoConflict(redoEntryLabel(conflictedEntries[0]!), redoEntryLabel(next.head));
+    commitRedoTransition(initialFuture, [...conflictedEntries, ...next.behind], next.entries);
+    if (outcome.status === 'committed') {
+        throw outcome.error;
+    }
+}
+
 async function redoImpl(): Promise<void> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
@@ -174,9 +307,11 @@ async function redoImpl(): Promise<void> {
                 if (outcome.status === 'conflict') {
                     const label = redoEntryLabel(entry);
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
-                    if (future.length !== state.future.length) {
-                        commitRedoTransition(state.future, future, []);
-                    }
+                    await stepOverConflictedRedoOrSettle({
+                        initialFuture: state.future,
+                        futureAtConflict: future,
+                        conflictedEntries: groupEntries,
+                    });
                     return;
                 }
 
@@ -195,11 +330,13 @@ async function redoImpl(): Promise<void> {
             const label = redoEntryLabel(entry);
             notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
             // Nothing was written, so the entry stays at the head of `future`
-            // and remains redoable. Only a purge of not-applied entries made
-            // earlier in this scan needs persisting.
-            if (future.length !== state.future.length) {
-                commitRedoTransition(state.future, future, []);
-            }
+            // and remains redoable; #2878 steps onto the unit behind it when
+            // the gate admits that replay.
+            await stepOverConflictedRedoOrSettle({
+                initialFuture: state.future,
+                futureAtConflict: future,
+                conflictedEntries: [entry],
+            });
             return;
         }
 
