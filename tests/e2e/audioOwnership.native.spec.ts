@@ -1,5 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
+import type { ConfirmPayload, NotifyPayload, PromptPayload } from '../../src/utils/Notification/notificationEventBus';
+
 const MODULE_DOCUMENT = '/src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts';
 const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
 const PROJECT_DATABASE_NAME = 'sourdaw-projects';
@@ -7,7 +9,10 @@ const AUDIO_DATABASE_NAME = 'sourdaw-audio';
 const CRDT_DATABASE_NAME = 'sourdaw-crdt-docs';
 const CREATED_AT = 1_700_000_000_000;
 const PCM_WORDS = [0, 16_384, -16_384, 0];
-const EXPECTED_PCM = [0, 0.5, -0.5, 0];
+const SAVE_FAILURE_NOTIFICATION = {
+    message: 'Save failed — your latest changes could not be persisted.',
+    level: 'error' as const,
+};
 
 async function openRealm(context: BrowserContext): Promise<Page> {
     const page = await context.newPage();
@@ -39,7 +44,36 @@ async function clearStorage(page: Page): Promise<void> {
     }
 }
 
-async function initializeProjectWithAudio(page: Page): Promise<string> {
+async function configureNotificationCapture(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        const [{ createEventBus }, { setNotificationEventBus }] = await Promise.all([
+            import('/src/infra/events/createEventBus.ts'),
+            import('/src/utils/Notification/notificationEventBus.ts'),
+        ]);
+        type NotificationEvents = {
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        };
+        const eventBus = createEventBus<NotificationEvents>();
+        const notifications: NotificationEvents['ui.notify'][] = [];
+        eventBus.on('ui.notify', (payload) => {
+            notifications.push(payload);
+        });
+        setNotificationEventBus(eventBus);
+        Reflect.set(globalThis, '__sourdawNotifications', notifications);
+    });
+}
+
+async function readNotifications(page: Page): Promise<ReadonlyArray<{ message: string; level: string }>> {
+    return page.evaluate(() => {
+        const notifications = Reflect.get(globalThis, '__sourdawNotifications');
+        return Array.isArray(notifications) ? notifications : [];
+    });
+}
+
+async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: string; decodedPcm: number[] }> {
+    await configureNotificationCapture(page);
     return page.evaluate(
         async ({ createdAt, pcmWords }) => {
             const [
@@ -121,8 +155,21 @@ async function initializeProjectWithAudio(page: Page): Promise<string> {
             if (!bufferId) {
                 throw new Error('The production import did not publish an audio clip');
             }
+            const cachedBuffer = audio.getCachedAudioBuffer({ bufferId });
+            if (!cachedBuffer) {
+                throw new Error('The production import did not retain the decoded audio buffer');
+            }
+            const decodedPcm = Array.from(cachedBuffer.getChannelData(0));
+            if (
+                decodedPcm.length !== pcmWords.length ||
+                decodedPcm.some((sample) => !Number.isFinite(sample)) ||
+                !decodedPcm.some((sample) => sample > 0) ||
+                !decodedPcm.some((sample) => sample < 0)
+            ) {
+                throw new Error('The decoded PCM did not contain four finite frames with both polarities');
+            }
             Reflect.set(globalThis, '__sourdawNativeAudioBufferId', bufferId);
-            return bufferId;
+            return { bufferId, decodedPcm };
         },
         { createdAt: CREATED_AT, pcmWords: PCM_WORDS }
     );
@@ -300,21 +347,21 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         const saver = await openRealm(context);
         const collector = await openRealm(context);
         await clearStorage(saver);
-        const bufferId = await initializeProjectWithAudio(saver);
+        const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
 
         await expect(saveProject(saver)).resolves.toBe(true);
         await expect(collectWithRealProvider(collector)).resolves.toBe(0);
 
         const durable = await readDurableProjectAudio(collector, bufferId);
         expect(durable.json).toContain(bufferId);
-        expect(durable.pcm).toEqual(EXPECTED_PCM);
+        expect(durable.pcm).toEqual(decodedPcm);
     });
 
     test('collection-first admission never publishes a named snapshot without exact PCM', async ({ context }) => {
         const saver = await openRealm(context);
         const collector = await openRealm(context);
         await clearStorage(saver);
-        const bufferId = await initializeProjectWithAudio(saver);
+        const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
 
         await expect(beginCollectionWithCapturedRealCensus(collector)).resolves.toEqual([]);
         await beginSaveWaitingForLock(saver);
@@ -324,12 +371,14 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         const durable = await readDurableProjectAudio(collector, bufferId);
         if (saved) {
             expect(durable.json).toContain(bufferId);
-            expect(durable.pcm).toEqual(EXPECTED_PCM);
+            expect(durable.pcm).toEqual(decodedPcm);
+            expect(await readNotifications(saver)).not.toContainEqual(SAVE_FAILURE_NOTIFICATION);
             return;
         }
         expect(collectedCount).toBeGreaterThan(0);
         expect(durable.json).toBeNull();
         expect(durable.pcm).toEqual([]);
+        expect(await readNotifications(saver)).toEqual([SAVE_FAILURE_NOTIFICATION]);
     });
 
     test('closing a native lock-holder realm releases queued admission', async ({ context }) => {
