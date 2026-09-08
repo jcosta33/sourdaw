@@ -1,0 +1,21 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginPendingRestore.capture.integration.spec.ts
+  s_87ab0a2f60ccf8::t_6dccf6f67e22ac 400-487
+  s_87ab0a2f60ccf8::t_c4471583b020a8 15-16
+  s_87ab0a2f60ccf8::t_4f8a9e692f0084 17-18,69,76,135,153,172,488-490
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "36f39f9261382399eb0f541f51716d179d521c59",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
