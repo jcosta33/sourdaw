@@ -1,0 +1,22 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  h_1228e573df1f42 292-329
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  h_1228e573df1f42 25,490,518-522,529-532,537-543
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  h_1228e573df1f42 3,19-25,32-37,194-228
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  h_1228e573df1f42 653-659
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  h_1228e573df1f42 1-2,10-12,137-178,191-193,221-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a9deee9fe2fd21b1fb91218dfa60d97e82bc36cf",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
