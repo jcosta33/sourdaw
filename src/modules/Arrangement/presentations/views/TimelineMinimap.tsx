@@ -354,23 +354,28 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             case 'ArrowLeft':
             case 'ArrowDown':
                 event.preventDefault();
+                event.stopPropagation();
                 setTimelineMinimapScrollX(scrollX - stepPx);
                 break;
             case 'ArrowRight':
             case 'ArrowUp':
                 event.preventDefault();
+                event.stopPropagation();
                 setTimelineMinimapScrollX(scrollX + stepPx);
                 break;
             case 'PageUp':
                 event.preventDefault();
+                event.stopPropagation();
                 setTimelineMinimapScrollX(scrollX - pagePx);
                 break;
             case 'PageDown':
                 event.preventDefault();
+                event.stopPropagation();
                 setTimelineMinimapScrollX(scrollX + pagePx);
                 break;
             case 'Home':
                 event.preventDefault();
+                event.stopPropagation();
                 setTimelineMinimapScrollX(0);
                 break;
             default:

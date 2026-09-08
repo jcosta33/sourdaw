@@ -173,6 +173,24 @@ describe('TimelineMinimap', () => {
         expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(0);
     });
 
+    it('stops propagation when Home is pressed so global transport shortcuts are not triggered', () => {
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        const windowListener = vi.fn();
+        window.addEventListener('keydown', windowListener);
+        try {
+            const event = new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true });
+            const stopPropagationSpy = vi.spyOn(event, 'stopPropagation');
+            slider.dispatchEvent(event);
+
+            expect(stopPropagationSpy).toHaveBeenCalled();
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledWith(0);
+            expect(windowListener).not.toHaveBeenCalled();
+        } finally {
+            window.removeEventListener('keydown', windowListener);
+        }
+    });
+
     it('should route playback auto-scroll disabling through the minimap auto-scroll use case', () => {
         transportStoreMock.value = { isPlaying: true };
         renderWithTooltip(<TimelineMinimap />);

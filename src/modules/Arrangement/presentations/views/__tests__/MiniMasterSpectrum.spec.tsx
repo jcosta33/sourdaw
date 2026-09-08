@@ -155,10 +155,16 @@ describe('MiniMasterSpectrum', () => {
         expect(selectTrack).toHaveBeenCalledWith('master');
     });
 
-    it('should call selectTrack when Enter key is pressed', () => {
+    it('should call selectTrack and prevent bubbling when Enter key is pressed', () => {
         renderWithTooltip(<MiniMasterSpectrum />);
         const spectrum = screen.getByLabelText('Master Track Spectrum');
-        fireEvent.keyDown(spectrum, { key: 'Enter' });
+        const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+        const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+        const stopPropagationSpy = vi.spyOn(event, 'stopPropagation');
+        spectrum.dispatchEvent(event);
+
+        expect(preventDefaultSpy).toHaveBeenCalled();
+        expect(stopPropagationSpy).toHaveBeenCalled();
         expect(selectTrack).toHaveBeenCalledWith('master');
     });
 
@@ -180,10 +186,16 @@ describe('MiniMasterSpectrum', () => {
         );
     });
 
-    it('should call selectTrack when Space key is pressed', () => {
+    it('should call selectTrack and prevent bubbling when Space key is pressed', () => {
         renderWithTooltip(<MiniMasterSpectrum />);
         const spectrum = screen.getByLabelText('Master Track Spectrum');
-        fireEvent.keyDown(spectrum, { key: ' ' });
+        const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+        const stopPropagationSpy = vi.spyOn(event, 'stopPropagation');
+        spectrum.dispatchEvent(event);
+
+        expect(preventDefaultSpy).toHaveBeenCalled();
+        expect(stopPropagationSpy).toHaveBeenCalled();
         expect(selectTrack).toHaveBeenCalledWith('master');
     });
 
@@ -192,6 +204,23 @@ describe('MiniMasterSpectrum', () => {
         const spectrum = screen.getByLabelText('Master Track Spectrum');
         fireEvent.keyDown(spectrum, { key: 'Escape' });
         expect(selectTrack).not.toHaveBeenCalled();
+    });
+
+    it('stops propagation so Enter and Space do not bubble to window listeners', () => {
+        renderWithTooltip(<MiniMasterSpectrum />);
+        const spectrum = screen.getByLabelText('Master Track Spectrum');
+        const windowListener = vi.fn();
+        window.addEventListener('keydown', windowListener);
+        try {
+            const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+            spectrum.dispatchEvent(enterEvent);
+            const spaceEvent = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+            spectrum.dispatchEvent(spaceEvent);
+
+            expect(windowListener).not.toHaveBeenCalled();
+        } finally {
+            window.removeEventListener('keydown', windowListener);
+        }
     });
 
     it('paints frequency bars on each scheduled redraw when the master is selected', () => {
