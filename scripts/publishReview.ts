@@ -53,10 +53,16 @@ export type ReviewComment = {
     done: string;
 };
 
+export type ApprovalEvidence = {
+    headSha: string;
+    claims: { observable: string; verification: string; observed: string }[];
+};
+
 export type ReviewDocument = {
     event: ReviewEvent;
     body: string;
     comments: ReviewComment[];
+    evidence?: ApprovalEvidence;
 };
 
 export type PublishReviewPort = {
@@ -137,7 +143,63 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     if (record.event === 'APPROVE' && body.trim() === '') {
         fail('APPROVE requires a body stating what was attacked and held');
     }
+    if ('evidence' in record && record.evidence !== undefined) {
+        if (record.event !== 'APPROVE') {
+            fail('REQUEST_CHANGES must not carry approval evidence');
+        }
+        const evidence = parseApprovalEvidence(record.evidence);
+        const appendix = `\n\nVerification for ${evidence.headSha}\n\n${evidence.claims
+            .map((claim) => `Expected: ${claim.observable}\nCheck: ${claim.verification}\nObserved: ${claim.observed}`)
+            .join('\n\n')}`;
+        return { event: record.event, body: body.endsWith(appendix) ? body : body + appendix, comments, evidence };
+    }
     return { event: record.event, body, comments };
+}
+
+function evidenceRecord(value: unknown, label: string): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail(`${label} must be an object`);
+    }
+    return value as Record<string, unknown>;
+}
+
+function evidenceLine(value: unknown, label: string): string {
+    if (
+        typeof value !== 'string' ||
+        value.trim() === '' ||
+        value !== value.trim() ||
+        /[\r\n\u2028\u2029]/u.test(value)
+    ) {
+        fail(`${label} must be a nonblank single-line trimmed string`);
+    }
+    return value;
+}
+
+function parseApprovalEvidence(value: unknown): ApprovalEvidence {
+    const record = evidenceRecord(value, 'review.json evidence');
+    const headSha = evidenceLine(record.headSha, 'review.json evidence.headSha');
+    if (!Array.isArray(record.claims) || record.claims.length === 0) {
+        fail('review.json evidence.claims must contain at least one claim');
+    }
+    const claims = record.claims.map((value: unknown, index: number) => {
+        const label = `review.json evidence.claims[${index}]`;
+        const claim = evidenceRecord(value, label);
+        return {
+            observable: evidenceLine(claim.observable, `${label}.observable`),
+            verification: evidenceLine(claim.verification, `${label}.verification`),
+            observed: evidenceLine(claim.observed, `${label}.observed`),
+        };
+    });
+    return { headSha, claims };
+}
+
+function assertPublicationEvidence(document: ReviewDocument, head: string): void {
+    if (document.event === 'APPROVE' && document.evidence === undefined) {
+        fail('new APPROVE publication requires evidence');
+    }
+    if (document.evidence !== undefined && document.evidence.headSha !== head) {
+        fail('approval evidence.headSha does not match the pull-request head');
+    }
 }
 
 export function reviewPublicationPayload(input: {
@@ -179,6 +241,7 @@ function prepareReviewPublication(number: number, port: PublishReviewPort): Prep
         fail(`missing review.json at ${join(bundle, 'review.json')}`);
     }
     const document = parseReviewDocument(parsed);
+    assertPublicationEvidence(document, head);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     return {
         head,
@@ -207,6 +270,19 @@ export function publishPreparedReview(
     if (pullRequest.head !== prepared.head) {
         fail('pull-request head moved; refusing to post a stale review');
     }
+    const document = parseReviewDocument(prepared.document);
+    assertPublicationEvidence(document, pullRequest.head);
+    const payloadDigest = reviewPublicationPayloadDigest(
+        reviewPublicationPayload({
+            commitId: prepared.head,
+            event: document.event,
+            body: document.body,
+            comments: document.comments,
+        })
+    );
+    if (payloadDigest !== prepared.payloadDigest) {
+        fail('review-publication payload does not match the prepared digest');
+    }
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
         payloadDigest: prepared.payloadDigest,
@@ -215,9 +291,9 @@ export function publishPreparedReview(
     const posted = port.postReview({
         number,
         commitId: prepared.head,
-        event: prepared.document.event,
-        body: prepared.document.body,
-        comments: prepared.document.comments,
+        event: document.event,
+        body: document.body,
+        comments: document.comments,
     });
     if (!isReviewerBotNodeId(posted.actorNodeId)) {
         fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);

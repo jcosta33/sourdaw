@@ -392,9 +392,10 @@ actual validation interface. Exclude session diaries, unpublished rounds, and mu
 `pr.md`, and merge-base `contracts/`. `baseSha` and `diff.patch` use the merge-base of `origin/main`
 and PR head so advancing `main` is not shown as PR deletions. The caller adds head-specific
 `review.json` and later `discarded.json`. Paths are keyed by head sha; re-preparing the same head
-replaces only generated files, preserving caller files. Give reviewers the bundle, not author
-transcripts. `review:publish` prints the review id and posts as reviewer App only if GitHub's head
-still matches the bundle.
+replaces only generated files, preserving caller files. Give reviewers the bundle and neutral
+acceptance conditions from the request or governing contract, not author transcripts or conclusions.
+`review:publish` prints the review id and posts as reviewer App only if GitHub's head still matches
+the bundle.
 
 Read every changed line and surrounding code as needed. Comment on the defective line with one
 problem, discussing code rather than author. Use literal fields `defect`, `consequence`, and `done`
@@ -409,6 +410,16 @@ summary is a short pointer to those comments, not a report.
 Approve when the change improves the system, even if it is not perfect. Do not approve a change that
 makes it worse. Style-guide and code-craft violations block; personal style does not. An approval is
 never empty: its body states what the reviewer attacked and what held.
+
+New APPROVE publication requires `evidence: { headSha, claims: [{ observable, verification, observed }] }`
+in `review.json`. Bind `headSha` to the reviewed bundle head. Supply at least one claim, with every
+value a nonblank, trimmed, single-line string: `observable` is expected behavior from the request or
+contract, `verification` is the exact command, check URL, or source comparison, and `observed` is the
+decisive result or excerpt. `review:publish` appends this readable record to the public approval body
+before journaling its payload digest. Record completeness and head binding do not prove truthful
+execution; the orchestrator remains responsible for verifying the claims. REQUEST_CHANGES must not
+carry approval evidence. Historical documents remain readable for exact publication recovery;
+existing approvals are not invalidated, but new publication requires this record.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
 Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
@@ -434,7 +445,9 @@ base compatibility: delivery retries one transient `UNKNOWN`, refusing conflicts
 `UNKNOWN`. CI's aggregate merge-state label cannot substitute.
 
 Every consequential claim needs discriminating proof, such as a test failing on revert or a
-measurement at the user boundary; approval alone is weak. Keep proof in the session, not the GitHub review.
+measurement at the user boundary; approval alone is weak. Keep detailed logs in the session and put
+the concise head-bound verification record in the approval. Never include secrets or sensitive log
+data in the public review.
 
 `pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after BOTH validation points
 confirm the immutable reviewer actor `APPROVED` the current head and all threads are resolved. Head, head

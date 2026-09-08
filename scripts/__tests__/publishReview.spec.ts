@@ -47,6 +47,23 @@ const validComment = {
     done: 'Require reviewer APPROVED on this head',
 };
 
+function approvalEvidence(headSha = 'headsha') {
+    return {
+        headSha,
+        claims: [
+            {
+                observable: 'Missing evidence prevents posting',
+                verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
+                observed: 'Missing evidence: no POST and no journal',
+            },
+        ],
+    };
+}
+
+function approvalBody(headSha = 'headsha', summary = 'ok') {
+    return `${summary}\n\nVerification for ${headSha}\n\nExpected: Missing evidence prevents posting\nCheck: pnpm test:run scripts/__tests__/publishReview.spec.ts\nObserved: Missing evidence: no POST and no journal`;
+}
+
 function removeTemporaryDirectory(root: string): void {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
 }
@@ -127,7 +144,7 @@ function fakePort(
             if (input.missing === true) {
                 throw new Error('ENOENT');
             }
-            return input.json ?? { event: 'APPROVE', body: 'ok', comments: [] };
+            return input.json ?? { event: 'APPROVE', body: 'ok', comments: [], evidence: approvalEvidence(input.head) };
         },
         readBundleDiff: () =>
             input.diff ??
@@ -220,7 +237,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
     mkdirSync(bundle, { recursive: true });
     writeFileSync(
         join(bundle, 'review.json'),
-        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence: approvalEvidence(head) })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
     const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined };
@@ -343,6 +360,168 @@ function recoveryDependencies(
 }
 
 describe('review publish', () => {
+    it.each([
+        undefined,
+        null,
+        {},
+        { headSha: 'old', claims: approvalEvidence().claims },
+        { headSha: 'headsha', claims: [] },
+        { headSha: 'headsha', claims: [{ observable: ' ', verification: 'check', observed: 'result' }] },
+        { headSha: 'headsha', claims: [{ observable: 'expected', verification: 'check\nnext', observed: 'result' }] },
+        { headSha: 'headsha', claims: [{ observable: 'expected', verification: 'check', observed: 1 }] },
+    ])('approval evidence rejects invalid or stale record %j before mutation', (evidence) => {
+        const { port, posted } = fakePort({ json: { event: 'APPROVE', body: 'ok', evidence } });
+        const journal = vi.fn();
+        const boundary = {
+            ownerOid: 'owner',
+            journalReviewPublication: journal,
+            markRemoteMutationAttempt: vi.fn(),
+            markDefinitiveNoMutationHttpStatus: vi.fn(),
+            registerSuccessfulCompletion: vi.fn(),
+        };
+        expect(() => publishReview(42, port, boundary)).toThrow(/evidence/);
+        expect(journal).not.toHaveBeenCalled();
+        expect(posted.review).toBeUndefined();
+    });
+
+    it('approval evidence is required by the exported prepared publication route', () => {
+        const { port, posted } = fakePort();
+        expect(() =>
+            publishPreparedReview(
+                42,
+                { head: 'headsha', document: { event: 'APPROVE', body: 'ok', comments: [] }, payloadDigest: 'unused' },
+                port
+            )
+        ).toThrow(/evidence/);
+        expect(posted.review).toBeUndefined();
+    });
+
+    it('approval evidence renders into the journaled payload and reparses without duplication', () => {
+        const raw = { event: 'APPROVE', body: 'ok', evidence: approvalEvidence() };
+        const { port, posted } = fakePort({ json: raw });
+        const journal = vi.fn();
+        publishReview(42, port, {
+            ownerOid: 'owner',
+            journalReviewPublication: journal,
+            markRemoteMutationAttempt: vi.fn(),
+            markDefinitiveNoMutationHttpStatus: vi.fn(),
+            registerSuccessfulCompletion: vi.fn(),
+        });
+        expect(posted.review?.body).toBe(approvalBody());
+        if (posted.review === undefined) {
+            throw new Error('missing post');
+        }
+        expect(journal).toHaveBeenCalledWith({
+            expectedHead: 'headsha',
+            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+            payloadDigest: reviewPublicationPayloadDigest(reviewPublicationPayload(posted.review)),
+        });
+        const parsed = parseReviewDocument(raw);
+        expect(parseReviewDocument(parsed)).toEqual(parsed);
+    });
+
+    it('approval evidence cannot be altered after preparation before journaling', () => {
+        const document = parseReviewDocument({ event: 'APPROVE', body: 'ok', evidence: approvalEvidence() });
+        const payloadDigest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({ commitId: 'headsha', ...document })
+        );
+        const claim = document.evidence?.claims[0];
+        if (claim === undefined) {
+            throw new Error('missing evidence claim');
+        }
+        claim.observed = 'Altered after preparation';
+        const { port, posted } = fakePort();
+        const journal = vi.fn();
+        expect(() =>
+            publishPreparedReview(42, { head: 'headsha', document, payloadDigest }, port, {
+                ownerOid: 'owner',
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: vi.fn(),
+                markDefinitiveNoMutationHttpStatus: vi.fn(),
+                registerSuccessfulCompletion: vi.fn(),
+            })
+        ).toThrow(/prepared digest/);
+        expect(journal).not.toHaveBeenCalled();
+        expect(posted.review).toBeUndefined();
+    });
+
+    it('approval evidence preserves legacy parse bytes and rejects blocker assertions', () => {
+        const legacy = { event: 'APPROVE', body: 'Historical summary.\n', comments: [] };
+        expect(JSON.stringify(parseReviewDocument(legacy))).toBe(JSON.stringify(legacy));
+        expect(() =>
+            parseReviewDocument({
+                event: 'REQUEST_CHANGES',
+                body: 'Fix',
+                comments: [validComment],
+                evidence: approvalEvidence(),
+            })
+        ).toThrow(/evidence/);
+    });
+
+    it.each([false, true])(
+        'approval evidence recovery checks actual publication digest, altered=%s',
+        async (altered) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-evidence-recovery-'));
+            const head = 'a'.repeat(40);
+            const number = 42;
+            runGit(root, ['init']);
+            const restorePs = writeTrustedPsFixture(root);
+            try {
+                await runFailingReviewPublication(root, number, head, 'socket hang up');
+                const ownerOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+                if (ownerOid === undefined) {
+                    throw new Error('missing publication owner');
+                }
+                if (altered) {
+                    const evidence = approvalEvidence(head);
+                    const claim = evidence.claims[0];
+                    if (claim === undefined) {
+                        throw new Error('missing evidence claim');
+                    }
+                    claim.observed = 'Changed result';
+                    writeFileSync(
+                        join(root, '.agents', 'review-bundles', `${number}-${head}`, 'review.json'),
+                        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence })
+                    );
+                }
+                const inspect = vi.fn(() => ({
+                    state: 'OPEN',
+                    head,
+                    reviews: [
+                        {
+                            id: 99,
+                            state: 'APPROVED',
+                            body: approvalBody(head, 'Attacked; held.'),
+                            commitId: head,
+                            actorNodeId: REVIEWER_BOT_NODE_ID,
+                            comments: [],
+                        },
+                    ],
+                }));
+                const recovery = runRecoverPublishReviewLockCli(
+                    [String(number), '--owner', ownerOid],
+                    recoveryDependencies(root, inspect)
+                );
+                if (altered) {
+                    await expect(recovery).rejects.toThrow(/payload does not match the retained lock/);
+                    expect(inspect).not.toHaveBeenCalled();
+                    expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBe(
+                        ownerOid
+                    );
+                } else {
+                    await expect(recovery).resolves.toBe(0);
+                    expect(inspect).toHaveBeenCalledTimes(2);
+                    expect(
+                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
+                    ).toBeUndefined();
+                }
+            } finally {
+                restorePs();
+                removeTemporaryDirectory(root);
+            }
+        }
+    );
+
     it('holds the per-PR mutation fence across head validation and review creation', async () => {
         expect(defaultPublishReviewCoordinatorDependencies().serializeMutation).toBe(
             withPullRequestReviewPublicationMutationLock
@@ -371,7 +550,7 @@ describe('review publish', () => {
                             reviewPublicationPayload({
                                 commitId: 'headsha',
                                 event: 'APPROVE',
-                                body: 'ok',
+                                body: approvalBody(),
                                 comments: [],
                             })
                         ),
@@ -522,7 +701,12 @@ describe('review publish', () => {
                 reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
                     primaryRoot: () => root,
                     pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40) }),
-                    readReviewJson: () => ({ event: 'APPROVE', body: 'Attacked; held.', comments: [] }),
+                    readReviewJson: () => ({
+                        event: 'APPROVE',
+                        body: 'Attacked; held.',
+                        comments: [],
+                        evidence: approvalEvidence('a'.repeat(40)),
+                    }),
                     readBundleDiff: () => '',
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
@@ -560,7 +744,7 @@ describe('review publish', () => {
                         reviewPublicationPayload({
                             commitId: 'a'.repeat(40),
                             event: 'APPROVE',
-                            body: 'Attacked; held.',
+                            body: approvalBody('a'.repeat(40), 'Attacked; held.'),
                             comments: [],
                         })
                     ),
@@ -688,7 +872,7 @@ describe('review publish', () => {
 
         expect(publishReview(42, port)).toBe(99);
         expect(calls[0]).toBe('read:/repo/.agents/review-bundles/42-headsha/review.json');
-        expect(calls[1]).toBe('post:headsha:APPROVE:ok');
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
         expect(logs.at(-1)).toBe('99');
     });
 
@@ -1447,14 +1631,19 @@ describe('review publish', () => {
         expect(() => publishReview(42, port)).toThrow(/APPROVE requires a body/);
     });
 
-    it('still posts an APPROVE document that has a body and no comments', () => {
+    it('posts an APPROVE document with evidence and no comments', () => {
         const { port, calls } = fakePort({
-            json: { event: 'APPROVE', body: 'Attacked the merge gate; it held.', comments: [] },
+            json: {
+                event: 'APPROVE',
+                body: 'Attacked the merge gate; it held.',
+                comments: [],
+                evidence: approvalEvidence(),
+            },
         });
 
         publishReview(42, port);
 
-        expect(calls[1]).toBe('post:headsha:APPROVE:Attacked the merge gate; it held.');
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody('headsha', 'Attacked the merge gate; it held.')}`);
     });
 
     it('does not post when review.json is missing', () => {
