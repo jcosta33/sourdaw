@@ -1,0 +1,14 @@
+tests/e2e/tracks.spec.ts
+  h_1228e573df1f42 42-44,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d6ebe394f2a0e99cdee9872cd46a7d0f1cb8f670",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
