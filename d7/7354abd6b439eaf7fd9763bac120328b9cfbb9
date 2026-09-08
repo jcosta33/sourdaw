@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_1228e573df1f42 235-236,610-690,695-698,723,726-727,730,761,764-765
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  h_1228e573df1f42 205-208,216-237,241-258,260,264-268,270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d77354abd6b439eaf7fd9763bac120328b9cfbb9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
