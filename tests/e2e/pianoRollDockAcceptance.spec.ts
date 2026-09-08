@@ -659,9 +659,15 @@ async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): P
     });
 }
 
-async function assertAutomationLaneValueChange(selector: Locator): Promise<void> {
-    await selector.selectOption('probability');
-    await expect(selector).toHaveValue('probability');
+async function assertAutomationLaneValueChange(frame: Frame, selector: Locator): Promise<void> {
+    const currentValue = await selector.inputValue();
+    expect(['velocity', 'probability']).toContain(currentValue);
+    const nextValue = currentValue === 'velocity' ? 'probability' : 'velocity';
+    expect(nextValue).not.toBe(currentValue);
+    await selector.selectOption(nextValue);
+    await expect(selector).toHaveValue(nextValue);
+    const laneLabel = nextValue === 'velocity' ? 'Velocity' : 'Probability';
+    await expect(frame.getByTestId('clip-editor-tray').getByRole('group', { name: `${laneLabel} lane` })).toBeVisible();
 }
 
 async function assertAutomationTray(frame: Frame): Promise<void> {
@@ -700,7 +706,7 @@ async function assertAutomationTray(frame: Frame): Promise<void> {
         { key: 'Enter', defaultPrevented: false, selectRetainedFocus: true },
     ]);
     await expect(playhead).toHaveText(playheadAtClipEnd);
-    await assertAutomationLaneValueChange(selector);
+    await assertAutomationLaneValueChange(frame, selector);
     await pressBetweenPianoRollAndTray(frame, 'Shift+Tab', pianoRoll);
     await expect(pianoRoll).toBeFocused();
     await expect.poll(() => workspaceMode(frame)).toBe(initialWorkspaceMode);
