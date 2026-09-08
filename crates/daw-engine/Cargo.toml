@@ -45,11 +45,3 @@ windows = { workspace = true, features = [
     "Win32_System_Threading",
     "Win32_System_Variant",
 ] }
-
-[target.'cfg(target_vendor = "apple")'.dependencies]
-# Already linked transitively through cpal's own CoreAudio bindings on this
-# target; declared directly so `default_output_device_latency_frames`
-# (`device/cpal_backend.rs`) can read `kAudioDevicePropertyLatency` and
-# `kAudioDevicePropertySafetyOffset` off the default output device, which
-# cpal's own `Device` type has no way to expose.
-objc2-core-audio = { version = "0.3.2", features = ["std", "AudioHardware"] }

@@ -59,25 +59,20 @@ pub(crate) struct DeviceOpenRequest {
 pub(crate) struct NegotiatedOutput {
     pub sample_rate: f32,
     pub channels: usize,
-    /// Frames the output device reports it adds after the stream's own
-    /// buffer — on CoreAudio, `kAudioDevicePropertyLatency` plus
-    /// `kAudioDevicePropertySafetyOffset`, output scope, main element.
-    ///
-    /// Zero means no figure, not no delay — the same reading rule
-    /// `EngineHandle::input_latency_frames` documents for the capture side:
-    /// a backend that cannot read the property (Windows, today) or a device
-    /// the read fails against reports zero rather than a guess.
-    pub device_latency_frames: usize,
 }
 
 /// The engine's render callback: fill `data` — interleaved f32, whose
 /// length is a whole number of frames — for a device currently running
 /// `channels` channels. The channel count travels per call because a
 /// device-invalidation recovery may resume the same callback on an
-/// endpoint with a different layout. Runs on the audio thread: it must
-/// not allocate, lock, or block, and neither may the backend code around
-/// its invocation.
-pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize) + Send + 'static>;
+/// endpoint with a different layout. `output_path_frames` is the frames
+/// between this callback's invocation and the instant its first sample
+/// reaches the device, as the backend reports it for *this* callback — on
+/// cpal, the playback timestamp minus the callback timestamp — or zero when
+/// the backend has no figure. Runs on the audio thread: it must not
+/// allocate, lock, or block, and neither may the backend code around its
+/// invocation.
+pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize, usize) + Send + 'static>;
 
 /// Mid-stream error notification — device invalidation included. Backends
 /// map their native error codes onto [`StreamErrorKind`] before calling

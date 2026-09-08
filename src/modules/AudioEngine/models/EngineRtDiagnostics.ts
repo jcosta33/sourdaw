@@ -62,8 +62,8 @@ export type EngineRtDiagnostics = {
     outputBufferFrames: number;
     /**
      * Frames the output device reports it adds after the stream's own
-     * buffer, decided once when the stream opened. Zero means no figure, not
-     * no delay — see `daw_engine::EngineHandle::output_device_latency_frames`
+     * buffer, as of the most recent callback. Zero means no figure, not no
+     * delay — see `daw_engine::EngineHandle::output_device_latency_frames`
      * (`crates/daw-engine`) for the same rule on the Rust side.
      */
     outputDeviceLatencyFrames: number;

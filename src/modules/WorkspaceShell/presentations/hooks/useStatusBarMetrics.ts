@@ -79,6 +79,22 @@ type OutputLatencyDescription = {
 };
 
 /**
+ * The output-latency tooltip's fixed shape: a total, split into the buffer
+ * term (labeled per carrier — the native engine's own buffer, or Web Audio's
+ * context) and the device term, with the standing caveat that this path
+ * excludes plug-in delay compensation.
+ */
+function outputLatencyTitle(bufferLabel: string, bufferMs: number, deviceMs: number): string {
+    const totalMs = bufferMs + deviceMs;
+    return (
+        `Output latency ${totalMs.toFixed(1)} ms` +
+        ` = ${bufferLabel} ${bufferMs.toFixed(1)} ms` +
+        ` + device ${deviceMs.toFixed(1)} ms.` +
+        ' Hardware output path only — excludes plug-in delay compensation.'
+    );
+}
+
+/**
  * The output-latency readout and its tooltip breakdown, from whichever side
  * is actually the audible carrier.
  *
@@ -94,26 +110,16 @@ function describeOutputLatency({ native, engineInfo }: DescribeOutputLatencyInpu
     if (native) {
         const contextMs = native.contextSeconds * 1000;
         const deviceMs = native.deviceSeconds * 1000;
-        const outputLatencyMs = contextMs + deviceMs;
         return {
-            outputLatencyMs,
-            title:
-                `Output latency ${outputLatencyMs.toFixed(1)} ms` +
-                ` = native engine buffer ${contextMs.toFixed(1)} ms` +
-                ` + device ${deviceMs.toFixed(1)} ms.` +
-                ' Hardware output path only — excludes plug-in delay compensation.',
+            outputLatencyMs: contextMs + deviceMs,
+            title: outputLatencyTitle('native engine buffer', contextMs, deviceMs),
         };
     }
     const baseLatencyMs = engineInfo.baseLatency * 1000;
     const deviceLatencyMs = engineInfo.outputLatency * 1000;
-    const outputLatencyMs = baseLatencyMs + deviceLatencyMs;
     return {
-        outputLatencyMs,
-        title:
-            `Output latency ${outputLatencyMs.toFixed(1)} ms` +
-            ` = context ${baseLatencyMs.toFixed(1)} ms` +
-            ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
-            ' Hardware output path only — excludes plug-in delay compensation.',
+        outputLatencyMs: baseLatencyMs + deviceLatencyMs,
+        title: outputLatencyTitle('context', baseLatencyMs, deviceLatencyMs),
     };
 }
 

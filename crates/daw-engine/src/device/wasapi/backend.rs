@@ -683,9 +683,6 @@ impl StreamRuntime {
         NegotiatedOutput {
             sample_rate: self.format.rate as f32,
             channels: usize::from(self.format.channels),
-            // IAudioClient3/WASAPI device-latency reporting is out of scope
-            // here — Windows is ADR 0027's D4 slice, not this one.
-            device_latency_frames: 0,
         }
     }
 
@@ -759,7 +756,9 @@ impl StreamRuntime {
             // A panicking render callback must end the stream audibly —
             // through the error path and its taxonomy — not by silently
             // killing this thread while the engine believes audio flows.
-            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels))).is_err() {
+            // WASAPI publishes no output-path figure until ADR 0027 D4; this
+            // backend reports zero, the seam's "no figure" reading.
+            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels, 0))).is_err() {
                 return LoopExit::Error(E_FAIL);
             }
 

@@ -186,11 +186,11 @@ export type EngineCounters = Readonly<Record<string, number>>;
  * `crates/sourdaw-native/src/commands/engine_diagnostics.rs` and its TS
  * mirror `src/modules/AudioEngine/models/EngineRtDiagnostics.ts` at this
  * head — every numeric field except the gauges named in `GAUGE_NAMES`,
- * which are deliberately excluded: each is a snapshot of current state (the
- * capture path's current added latency, the output device's current buffer
- * size, its current added latency), not a running total, and differencing
- * one would read like a counter increment when it is really two unrelated
- * snapshots. `desktopLatencyReadings.spec.ts`'s
+ * which are deliberately excluded: each is a snapshot of current state —
+ * fixed at open (`sampleRate`) or free to move with the device or capture
+ * path between callbacks — never a running total, so differencing one would
+ * read like a counter increment when it is really two unrelated snapshots.
+ * `desktopLatencyReadings.spec.ts`'s
  * `MONOTONIC_COUNTER_NAMES ∪ GAUGE_NAMES` spec asserts this set against
  * `notRunningEngineRtDiagnostics`'s own numeric keys, so a field added to
  * either side later cannot fall through uncovered.

@@ -124,8 +124,9 @@ pub struct EngineRtDiagnostics {
     /// `input_latency_frames` documents.
     pub output_buffer_frames: u64,
     /// Frames the output device reports it adds after the stream's own
-    /// buffer — see `daw_engine::EngineHandle::output_device_latency_frames`.
-    /// Zero means no figure, not no delay.
+    /// buffer, as of the most recent callback — see
+    /// `daw_engine::EngineHandle::output_device_latency_frames`. Zero means
+    /// no figure, not no delay.
     pub output_device_latency_frames: u64,
     /// The kind of the last non-xrun error the output stream reported, or
     /// `null` if it has not reported one.
