@@ -95,6 +95,9 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         captureBlocksDropped: readCounter(payload, 'captureBlocksDropped'),
         captureInputUnderruns: readCounter(payload, 'captureInputUnderruns'),
         inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
+        sampleRate: readCounter(payload, 'sampleRate'),
+        outputBufferFrames: readCounter(payload, 'outputBufferFrames'),
+        outputPathFrames: readCounter(payload, 'outputPathFrames'),
         outputStreamFault: readOutputStreamFault(payload.outputStreamFault),
         events,
     };

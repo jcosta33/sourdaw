@@ -203,16 +203,34 @@ describe('computeCounterDeltas', () => {
     });
 });
 
+const zeroedGaugeReadings = Object.fromEntries(GAUGE_NAMES.map((name) => [name, { first: 0, last: 0 }]));
+
 describe('computeGaugeReadings', () => {
     it('records a gauge as its first and last reading rather than a difference', () => {
         expect(computeGaugeReadings({ inputLatencyFrames: 128 }, { inputLatencyFrames: 256 })).toEqual({
+            ...zeroedGaugeReadings,
             inputLatencyFrames: { first: 128, last: 256 },
         });
     });
 
     it('treats a gauge absent from a reading as zero at that end', () => {
         expect(computeGaugeReadings({}, { inputLatencyFrames: 64 })).toEqual({
+            ...zeroedGaugeReadings,
             inputLatencyFrames: { first: 0, last: 64 },
+        });
+    });
+
+    it('records the output-device gauges as first/last readings alongside the capture gauge', () => {
+        expect(
+            computeGaugeReadings(
+                { sampleRate: 48_000, outputBufferFrames: 512, outputPathFrames: 71 },
+                { sampleRate: 48_000, outputBufferFrames: 256, outputPathFrames: 71 }
+            )
+        ).toEqual({
+            ...zeroedGaugeReadings,
+            sampleRate: { first: 48_000, last: 48_000 },
+            outputBufferFrames: { first: 512, last: 256 },
+            outputPathFrames: { first: 71, last: 71 },
         });
     });
 });

@@ -79,6 +79,7 @@ export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { getEngineHealth } from './engineAccess/getEngineHealth';
 export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
+export { readNativeOutputLatency } from './engineAccess/readNativeOutputLatency';
 export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
 export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';
 export { resumeEngine } from './engineAccess/resumeEngine';
