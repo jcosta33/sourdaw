@@ -1,0 +1,19 @@
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_87ab0a2f60ccf8::t_1779c86e69b83d 2304,2592,2602,5051-5059,5397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ef68ca19fdb72fb88a4616998bcb5312290c098e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
