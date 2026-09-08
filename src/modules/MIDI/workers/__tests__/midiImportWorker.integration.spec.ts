@@ -23,8 +23,8 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
-import { type MidiStoreState, midiStore } from '../../stores';
-import { downloadMidiFile } from '../../useCases';
+import { type MidiStoreState, midiStore } from '../../stores/midiStore';
+import { downloadMidiFile } from '../../useCases/exportMidiFile';
 
 import '../midiImportWorker';
 
