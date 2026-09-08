@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     readPluginStateForCaptureEntry: vi.fn<(instanceId: string) => void>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
-    unloadPluginRepo: vi.fn<() => Promise<{ unloadedInstanceIds: string[]; errors: string[]; reports: never[] }>>(),
+    unloadPluginRepo:
+        vi.fn<
+            (instanceId?: string) => Promise<{ unloadedInstanceIds: string[]; errors: string[]; reports: never[] }>
+        >(),
 }));
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mocks.loadPluginRepo }));
@@ -63,13 +66,14 @@ const TRACK_ID = 'track-pending-restore';
 const DEVICE_ID = 'device-pending-restore';
 const SAVE_INSTANCE_ID = 'instance-pending-restore-save';
 const EXPORT_INSTANCE_ID = 'instance-pending-restore-export';
+const REVOKED_INSTANCE_ID = 'instance-final-native-revocation';
 const ENGINE_SAMPLE_RATE = 44_100;
 const RESTORE_ERROR = 'Error: state chunk rejected during retry';
 
 const bytesOf = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 type PersistedSnapshot = {
-    arrangement?: { tracks?: { devices?: { externalStateChunk?: string }[] }[] };
+    arrangement?: { tracks?: { name?: string; devices?: { externalStateChunk?: string }[] }[] };
 };
 
 type Deferred<Value> = {
@@ -128,6 +132,7 @@ async function loadContracts() {
         activation,
         lifecycleReset,
         restoreFailure,
+        unloading,
     ] = await Promise.all([
         import('#/infra/di/Container'),
         import('#/infra/store/storage/createAutomergeStorage'),
@@ -145,6 +150,7 @@ async function loadContracts() {
         import('../activateExternalPlugin'),
         import('../clearLoadedExternalPlugins'),
         import('../hasUnresolvedExternalPluginRestoreFailure'),
+        import('../unloadPlugin'),
     ]);
     return {
         Container,
@@ -163,6 +169,7 @@ async function loadContracts() {
         ...activation,
         ...lifecycleReset,
         ...restoreFailure,
+        ...unloading,
     };
 }
 
@@ -389,5 +396,96 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         const chunk = serializedDeviceChunk(exported);
         expect(chunk).toBe(originalChunk);
         expectNoAutomaticReplacement(EXPORT_INSTANCE_ID);
+    }, 20_000);
+
+    it('rolls back capture when native authority is revoked after the handler writes, then retries', async () => {
+        const originalChunk = contracts.bytesToBase64(bytesOf('original-revocation-state'));
+        const freshChunk = contracts.bytesToBase64(bytesOf('fresh-native-state'));
+        const unrelatedTrackName = 'Lead with preserved edit';
+        seedSavedProject(REVOKED_INSTANCE_ID, originalChunk);
+        const openingState = contracts.trackStore.value;
+        if (!openingState) {
+            throw new Error('Expected a live track store');
+        }
+        contracts.trackStore.set({
+            ...openingState,
+            tracks: openingState.tracks.map((track) =>
+                track.id === TRACK_ID ? { ...track, name: unrelatedTrackName } : track
+            ),
+        });
+        contracts.flushAutomergeStorageWrites();
+
+        await expect(activateInstance(REVOKED_INSTANCE_ID, originalChunk)).resolves.toEqual({ status: 'active' });
+        mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-native-state'));
+        mocks.unloadPluginRepo.mockResolvedValueOnce({
+            unloadedInstanceIds: [REVOKED_INSTANCE_ID],
+            errors: [],
+            reports: [],
+        });
+
+        const observedChunks: (string | undefined)[] = [];
+        const lifecycle = { unloading: null as Promise<void> | null };
+        const unsubscribe = contracts.trackStore.subscribe(() => {
+            const chunk = contracts.trackStore.value?.tracks[0]?.devices[0]?.externalStateChunk;
+            observedChunks.push(chunk);
+            if (chunk === freshChunk && !lifecycle.unloading) {
+                lifecycle.unloading = contracts.unloadPlugin(REVOKED_INSTANCE_ID);
+            }
+        });
+        let firstSave: boolean;
+        try {
+            firstSave = await contracts.saveProject();
+        } finally {
+            unsubscribe();
+        }
+        if (!lifecycle.unloading) {
+            throw new Error('Expected the pending capture write to revoke native authority');
+        }
+        await lifecycle.unloading;
+
+        expect(firstSave).toBe(true);
+        expect(observedChunks).toContain(freshChunk);
+        expect(observedChunks.at(-1)).toBe(originalChunk);
+        expect(contracts.trackStore.value?.tracks[0]?.devices[0]?.externalStateChunk).toBe(originalChunk);
+        expect(contracts.trackStore.value?.tracks[0]?.name).toBe(unrelatedTrackName);
+        expect(contracts.projectStore.value?.dirty).toBe(true);
+
+        const rejectedDocument = contracts.getCrdtDoc<{
+            tracks?: { tracks?: { name?: string; devices?: { externalStateChunk?: string }[] }[] };
+        }>('root');
+        expect(rejectedDocument?.tracks?.tracks?.[0]?.devices?.[0]?.externalStateChunk).toBe(originalChunk);
+        expect(rejectedDocument?.tracks?.tracks?.[0]?.name).toBe(unrelatedTrackName);
+
+        const rejectedJson = await readIndexedDbValue('sourdaw-projects', 'projects', RECENT_KEY);
+        if (rejectedJson === undefined) {
+            throw new Error('Expected Save to commit the named project snapshot');
+        }
+        const rejectedSnapshot = JSON.parse(rejectedJson) as PersistedSnapshot;
+        expect(serializedDeviceChunk(rejectedSnapshot)).toBe(originalChunk);
+        expect(rejectedSnapshot.arrangement?.tracks?.[0]?.name).toBe(unrelatedTrackName);
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledExactlyOnceWith(REVOKED_INSTANCE_ID);
+        expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(1);
+
+        await expect(activateInstance(REVOKED_INSTANCE_ID, originalChunk)).resolves.toEqual({ status: 'active' });
+        await expect(contracts.saveProject()).resolves.toBe(true);
+
+        expect(contracts.trackStore.value?.tracks[0]?.devices[0]?.externalStateChunk).toBe(freshChunk);
+        expect(contracts.trackStore.value?.tracks[0]?.name).toBe(unrelatedTrackName);
+        expect(contracts.projectStore.value?.dirty).toBe(false);
+        const retriedDocument = contracts.getCrdtDoc<{
+            tracks?: { tracks?: { name?: string; devices?: { externalStateChunk?: string }[] }[] };
+        }>('root');
+        expect(retriedDocument?.tracks?.tracks?.[0]?.devices?.[0]?.externalStateChunk).toBe(freshChunk);
+        expect(retriedDocument?.tracks?.tracks?.[0]?.name).toBe(unrelatedTrackName);
+
+        const retriedJson = await readIndexedDbValue('sourdaw-projects', 'projects', RECENT_KEY);
+        if (retriedJson === undefined) {
+            throw new Error('Expected retry to update the named project snapshot');
+        }
+        const retriedSnapshot = JSON.parse(retriedJson) as PersistedSnapshot;
+        expect(serializedDeviceChunk(retriedSnapshot)).toBe(freshChunk);
+        expect(retriedSnapshot.arrangement?.tracks?.[0]?.name).toBe(unrelatedTrackName);
+        expect(mocks.getPluginStateRepo).toHaveBeenCalledTimes(2);
+        expect(mocks.setPluginStateRepo).toHaveBeenCalledTimes(2);
     }, 20_000);
 });
