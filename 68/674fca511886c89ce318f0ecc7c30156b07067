@@ -1,0 +1,16 @@
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  h_1228e573df1f42 31-34,60-66,133-152,590-820
+src/modules/Command/useCases/redo.ts
+  h_1228e573df1f42 10,26-29,148-275,310-314,333-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "68674fca511886c89ce318f0ecc7c30156b07067",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
