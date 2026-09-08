@@ -202,6 +202,10 @@ export const useTimelineFileDrop = ({
                     );
                 }
 
+                // The sample must survive read → decode → stage before anything is
+                // written to the project (#3756): any failure here explains itself
+                // and leaves the timeline untouched instead of placing a clip with
+                // no audio behind it.
                 try {
                     if (!audioBufferId) {
                         const resolvedSampleFile = await resolveDroppedSampleFile({
@@ -209,58 +213,61 @@ export const useTimelineFileDrop = ({
                             relativePath: sample.path,
                             fallbackName: sample.name,
                         });
-                        if (resolvedSampleFile.status === 'resolved') {
+                        if (resolvedSampleFile.status !== 'resolved') {
+                            if (authority.isCurrent()) {
+                                notifyUser(
+                                    `Could not access "${sample.name}" — its library folder is no longer available.`,
+                                    'error'
+                                );
+                            }
+                            return;
+                        }
+                        if (!authority.isCurrent()) {
+                            return;
+                        }
+                        const { file } = resolvedSampleFile;
+                        try {
+                            const result = await decodeAudioFile(file);
+                            audioBufferId = result.id;
+                            decodedAudioBufferId = result.id;
+                            durationBeats = Math.max(
+                                1,
+                                Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
+                            );
+                        } catch {
                             if (!authority.isCurrent()) {
                                 return;
                             }
-                            const { file } = resolvedSampleFile;
-                            try {
-                                const result = await decodeAudioFile(file);
-                                audioBufferId = result.id;
-                                decodedAudioBufferId = result.id;
-                                durationBeats = Math.max(
-                                    1,
-                                    Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
-                                );
-                                if (!authority.isCurrent()) {
-                                    discardPreparedSampleResources();
-                                    return;
-                                }
-                                try {
-                                    const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
-                                    assetHash = stagedAsset?.hash;
-                                    assetLeaseId = stagedAsset?.leaseId;
-                                } catch {
-                                    discardPreparedSampleResources();
-                                    if (authority.isCurrent()) {
-                                        notifyUser(
-                                            `Failed to import "${sample.name}" — asset registration failed`,
-                                            'error'
-                                        );
-                                    }
-                                    return;
-                                }
-                            } catch {
-                                if (!authority.isCurrent()) {
-                                    discardPreparedSampleResources();
-                                    return;
-                                }
-                                notifyUser(
-                                    `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
-                                    'warning'
-                                );
+                            notifyUser(
+                                `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
+                                'error'
+                            );
+                            return;
+                        }
+                        if (!authority.isCurrent()) {
+                            discardPreparedSampleResources();
+                            return;
+                        }
+                        try {
+                            const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
+                            assetHash = stagedAsset?.hash;
+                            assetLeaseId = stagedAsset?.leaseId;
+                        } catch {
+                            discardPreparedSampleResources();
+                            if (authority.isCurrent()) {
+                                notifyUser(`Failed to import "${sample.name}" — asset registration failed`, 'error');
                             }
+                            return;
                         }
                     }
                 } catch {
-                    if (!authority.isCurrent()) {
-                        discardPreparedSampleResources();
-                        return;
+                    if (authority.isCurrent()) {
+                        notifyUser(
+                            `Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`,
+                            'error'
+                        );
                     }
-                    notifyUser(
-                        `Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`,
-                        'warning'
-                    );
+                    return;
                 }
 
                 if (!authority.isCurrent()) {
