@@ -12,6 +12,7 @@ import {
     moveWarpMarker,
     normalizeClip,
     normalizeTrack,
+    relinkClipAudioSource,
     removeWarpMarker,
     replaceClipAudioBuffer,
     reverseClip,
@@ -163,6 +164,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     replaceClipAudioBuffer: vi.fn(),
+    relinkClipAudioSource: vi.fn(),
     normalizeClip: vi.fn(),
     reverseClip: vi.fn(),
     moveWarpMarker: vi.fn(),
@@ -276,6 +278,16 @@ describe('WaveformEditor', () => {
     const defaultProps = {
         clipId: 'clip-1',
     };
+
+    const decodedAudioBuffer = (): AudioBuffer => ({
+        numberOfChannels: 1,
+        length: 4,
+        sampleRate: 48_000,
+        getChannelData: () => new Float32Array(4),
+        copyFromChannel: () => {},
+        copyToChannel: () => {},
+        duration: 4 / 48_000,
+    });
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -752,18 +764,33 @@ describe('WaveformEditor', () => {
         expect(vi.mocked(replaceClipAudioBuffer)).not.toHaveBeenCalled();
     });
 
-    it('should replace the clip audio buffer when an audio file is dropped', async () => {
-        const decodedBuffer = {
-            numberOfChannels: 1,
-            length: 4,
-            sampleRate: 48_000,
-            getChannelData: () => new Float32Array(4),
-            copyFromChannel: () => {},
-            copyToChannel: () => {},
-            duration: 4 / 48_000,
-        } as AudioBuffer;
-        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedBuffer });
+    it('relinks the missing source of every clip sharing it when an audio file is dropped', async () => {
+        // defaultProps carries no audioBufferId, so the drop's source key is
+        // the clip id; the mocked cache answers null — the missing-media
+        // repair flow, which must not fall into the per-clip swap.
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedAudioBuffer() });
         render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+        const audioFile = new File(['data'], 'loop.wav', { type: 'audio/wav' });
+
+        fireEvent.drop(dropZone, { dataTransfer: { files: [audioFile] } });
+
+        await waitFor(() => {
+            expect(vi.mocked(relinkClipAudioSource)).toHaveBeenCalledWith({
+                sourceBufferId: 'clip-1',
+                replacementBufferId: 'audio-dropped',
+            });
+        });
+        expect(vi.mocked(replaceClipAudioBuffer)).not.toHaveBeenCalled();
+        expect(vi.mocked(decodeAudioFile)).toHaveBeenCalledWith(audioFile);
+    });
+
+    it('swaps only the dropped clip audio when its source is present in the cache', async () => {
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({} as AudioBuffer);
+        vi.mocked(replaceClipAudioBuffer).mockReturnValue(true);
+        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedAudioBuffer() });
+        render(<WaveformEditor clipId="clip-1" audioBufferId="audio-present" />);
         const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
         const audioFile = new File(['data'], 'loop.wav', { type: 'audio/wav' });
 
@@ -772,23 +799,14 @@ describe('WaveformEditor', () => {
         await waitFor(() => {
             expect(vi.mocked(replaceClipAudioBuffer)).toHaveBeenCalledWith('clip-1', 'audio-dropped');
         });
+        expect(vi.mocked(relinkClipAudioSource)).not.toHaveBeenCalled();
         expect(vi.mocked(decodeAudioFile)).toHaveBeenCalledWith(audioFile);
     });
 
-    it('re-scans missing media after a successful relink, so the panel stops counting the fixed clip', async () => {
-        vi.mocked(replaceClipAudioBuffer).mockReturnValue(true);
-        vi.mocked(decodeAudioFile).mockResolvedValue({
-            id: 'audio-dropped',
-            buffer: {
-                sampleRate: 48_000,
-                length: 4,
-                numberOfChannels: 1,
-                getChannelData: () => new Float32Array(4),
-                copyFromChannel: () => {},
-                copyToChannel: () => {},
-                duration: 4 / 48_000,
-            },
-        });
+    it('re-scans missing media after a successful relink, so the panel stops counting the fixed file', async () => {
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+        vi.mocked(relinkClipAudioSource).mockReturnValue({ status: 'relinked', relinkedClipIds: ['clip-1'] });
+        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedAudioBuffer() });
         render(<WaveformEditor {...defaultProps} />);
         const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
 
@@ -797,24 +815,18 @@ describe('WaveformEditor', () => {
         });
 
         await waitFor(() => {
-            expect(vi.mocked(verifyAudioBufferReferences)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(relinkClipAudioSource)).toHaveBeenCalledWith({
+                sourceBufferId: 'clip-1',
+                replacementBufferId: 'audio-dropped',
+            });
         });
+        expect(vi.mocked(verifyAudioBufferReferences)).toHaveBeenCalledTimes(1);
     });
 
-    it('does not re-scan when the relink is rejected', async () => {
-        vi.mocked(replaceClipAudioBuffer).mockReturnValue(false);
-        vi.mocked(decodeAudioFile).mockResolvedValue({
-            id: 'audio-dropped',
-            buffer: {
-                sampleRate: 48_000,
-                length: 4,
-                numberOfChannels: 1,
-                getChannelData: () => new Float32Array(4),
-                copyFromChannel: () => {},
-                copyToChannel: () => {},
-                duration: 4 / 48_000,
-            },
-        });
+    it('does not re-scan and discards the decode when the relink is rejected', async () => {
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+        vi.mocked(relinkClipAudioSource).mockReturnValue({ status: 'rejected' });
+        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedAudioBuffer() });
         render(<WaveformEditor {...defaultProps} />);
         const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
 
@@ -823,7 +835,10 @@ describe('WaveformEditor', () => {
         });
 
         await waitFor(() => {
-            expect(vi.mocked(replaceClipAudioBuffer)).toHaveBeenCalledWith('clip-1', 'audio-dropped');
+            expect(vi.mocked(relinkClipAudioSource)).toHaveBeenCalledWith({
+                sourceBufferId: 'clip-1',
+                replacementBufferId: 'audio-dropped',
+            });
         });
         expect(vi.mocked(verifyAudioBufferReferences)).not.toHaveBeenCalled();
         expect(vi.mocked(discardDecodedAudioFile)).toHaveBeenCalledWith('audio-dropped');
@@ -855,6 +870,9 @@ describe('WaveformEditor', () => {
 
         vi.mocked(decodeAudioFile).mockResolvedValueOnce({ id: 'audio-successor', buffer: {} as AudioBuffer });
         vi.mocked(replaceClipAudioBuffer).mockReturnValueOnce(true);
+        // The successor drop targets a clip whose source the cache resolves, so
+        // it exercises the per-clip swap rather than the repair flow.
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({} as AudioBuffer);
         fireEvent.drop(dropZone, {
             dataTransfer: { files: [new File(['data'], 'successor.wav', { type: 'audio/wav' })] },
         });

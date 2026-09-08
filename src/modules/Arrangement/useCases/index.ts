@@ -61,6 +61,7 @@ export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
+export { relinkClipAudioSource } from './relinkClipAudioSource';
 
 // ── Clip Editing ──────────────────────────────────────────────────────────────
 
