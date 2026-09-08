@@ -1,0 +1,69 @@
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_9b530f08172a54::t_7f0e0060cc9aeb 100
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_6e200183d5adc3 722-724,728-736
+  s_9b530f08172a54::t_d68812fe5f934c 3321,3326,3332
+  s_9b530f08172a54::t_433a510ef0b009 3385-3389
+  s_9b530f08172a54::t_557bfeaa1f4a90 879
+  s_9b530f08172a54::t_61abadf2ab91c4 537-538
+  s_9b530f08172a54::t_2ec5ccba9be626 3793-3798,3800-3803,3805,3809-3815,3818,3820-3821,3823-3824
+  s_9b530f08172a54::t_93e74056f598f4 715-717
+  s_9b530f08172a54::t_183887228a9a13 3295
+  s_9b530f08172a54::t_a3905fa8ee9ca0 598
+  s_9b530f08172a54::t_753d1a0b1438b5 1423
+  s_9b530f08172a54::t_618cbad5811af8 1383
+  s_9b530f08172a54::t_a145bd6f008aa4 989-997,999-1002
+  s_9b530f08172a54::t_2f5060285522f4 562
+  s_9b530f08172a54::t_7112fb03087f7a 874-878,880-882
+  s_9b530f08172a54::t_d5f9582ea9fddf 492-495
+  s_9b530f08172a54::t_0fe680a7c214f6 998
+  s_9b530f08172a54::t_0f45cce05d90e2 891,902-903
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_9b530f08172a54::t_fe1bb88b0446f1 251
+  s_9b530f08172a54::t_fa6bdf63ab95bb 292
+  s_9b530f08172a54::t_ec05562a2e0a3a 216,226
+  s_9b530f08172a54::t_1b62c66c0b5de5 270
+  s_9b530f08172a54::t_9d759fe70e342a 126-129
+  s_9b530f08172a54::t_2802d54d9bf951 181
+  s_9b530f08172a54::t_6d45ad67b49529 162
+  s_9b530f08172a54::t_38c0114c918c72 373
+  s_9b530f08172a54::t_4df6d71480b7ae 358
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_9b530f08172a54::t_754badf365ffd7 226-227,233
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  s_9b530f08172a54::t_3f4950ce5d2a0c 64-67,69
+  s_9b530f08172a54::t_81a13a866226f9 103
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_30a0c148b5416e 38
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_d274f565f47281 205-209
+  s_9b530f08172a54::t_17fb766b661d56 1453
+  s_9b530f08172a54::t_358e99d9fadf11 317
+  s_9b530f08172a54::t_e6291f30d8a983 357-362,366-372
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_10114f1587eb4e 35
+src/modules/AudioEngine/useCases/engineAccess/readNativeOutputLatency.ts
+  s_9b530f08172a54::t_3fa9eed91b0b32 27-29,32-36,46,50-53,56
+  s_9b530f08172a54::t_9af443461a2fcd 47
+src/modules/AudioEngine/useCases/engineAccess/__tests__/readNativeOutputLatency.spec.ts
+  s_9b530f08172a54::t_e4167de53da540 37-49,51-52,55,58
+  s_9b530f08172a54::t_996bfda3507d66 23
+scripts/desktopLatencyReadings.ts
+  s_9b530f08172a54::t_db7107a3bda5c0 210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "60a7f5176ff36bb90982ec3241e3f6e76ef4a23a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
