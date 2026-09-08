@@ -15,6 +15,7 @@ import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipS
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
+import { consumedStretchFactor } from './consumedStretchFactor';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
@@ -373,10 +374,11 @@ function isValidComputedOffset(value: number): boolean {
     return Number.isFinite(value);
 }
 
-/** Content beats consumed by `timelineBeats` of a stretched clip — the same
+/** Content beats consumed by `timelineBeats` of a clip — what the runtimes
+ *  play (1x unless stretch is on, the bounded ratio when it is), the same
  *  conversion the ordinary split applies to both the audio and warp axes. */
 function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
-    return timelineBeats * (clip.stretchRatio ?? 1);
+    return timelineBeats * consumedStretchFactor(clip);
 }
 
 function isValidComputedBeat(value: number): boolean {
@@ -661,13 +663,13 @@ function planTrack(
                 sourceClipId: clip.id,
                 fragmentClipId: identity.targetClipId,
                 clipRelativeSplitBeats: operation.endBeat - clip.startBeat,
-                // Content beats are timeline beats times the ratio under
-                // stretch (reversedClipAudioOffsetBeats) — the same conversion
-                // the ordinary split's warp axis performs. Without the factor
-                // the cut lands short by the ratio and the fragment inherits
-                // markers for audio the deleted span carried.
+                // Content beats are timeline beats times the consumed stretch
+                // law (reversedClipAudioOffsetBeats) — the same conversion the
+                // ordinary split's warp axis performs. Without it the cut
+                // lands short by the ratio and the fragment inherits markers
+                // for audio the deleted span carried.
                 contentSplitBeats:
-                    (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat) * (clip.stretchRatio ?? 1),
+                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
                 absoluteSplitBeats: operation.endBeat,
             });
             changed = true;

@@ -145,12 +145,20 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  *
  * The value comes from the runtime's own evaluator on the live source lane,
  * so linked-lane resolution, curve shapes, and lane-range clamping are
- * exactly what played a moment earlier. A point already sitting on the cut IS
- * that seam — a second point beside it would make the interpolation span
- * zero-width. No strictly-left point means the runtime held the first value
+ * exactly what played a moment earlier — including the drawn-then-held shape,
+ * whose ramps end mid-clip: the held value IS the curve at the cut, and the
+ * seam pins it onto the fragment. A point already sitting on the cut IS that
+ * seam — a second point beside it would make the interpolation span
+ * zero-width. No point left of the cut means the runtime held the first value
  * before its point anyway, which the verbatim copy reproduces for free.
- * Segment shapes and the id derive from the right clip id, so a redo re-split
- * reproduces exactly the point the original split's undo retired.
+ *
+ * The seam inherits the straddling segment's `curve`/`tension`/`stairSteps`
+ * from its left point — segment shape is owned by the segment's left point
+ * (`evaluateAutomationCurve` branches on it), so a copied `linear`/`step`
+ * seam reproduces the played segment exactly and a shaped one stays in the
+ * curve family it was drawn with instead of flattening to a straight ramp.
+ * The id derives from the right clip id, so a redo re-split reproduces
+ * exactly the point the original split's undo retired.
  */
 function seamPointFor(
     lane: AutomationLaneValue,
@@ -161,7 +169,8 @@ function seamPointFor(
     if (lane.points.some((point) => point.beat === absoluteSplitBeats)) {
         return null;
     }
-    if (!lane.points.some((point) => point.beat < absoluteSplitBeats)) {
+    const lastLeft = [...lane.points].reverse().find((point) => point.beat < absoluteSplitBeats);
+    if (lastLeft === undefined) {
         return null;
     }
     const seamValue = getAutomationValueAtBeat(lane.id, absoluteSplitBeats);
@@ -172,8 +181,9 @@ function seamPointFor(
         id: `asp-split-${rightClipId}-${laneIndex}`,
         beat: absoluteSplitBeats,
         value: seamValue,
-        curve: 'linear',
-        tension: 0,
+        curve: lastLeft.curve,
+        tension: lastLeft.tension,
+        ...(lastLeft.stairSteps === undefined ? {} : { stairSteps: lastLeft.stairSteps }),
     };
 }
 
@@ -191,19 +201,22 @@ function seamPointFor(
  * follow the right fragment. Re-basing them would move the curve off the
  * audio it was drawn against. A straddling segment gets a seam point at the
  * cut (`seamPointFor`) so the fragment continues the curve instead of
- * holding the first copied value.
+ * holding the first copied value — and a lane whose ramps END left of the
+ * cut (drawn-then-held, the common shape) travels too: the runtime holds the
+ * last point's value for every beat after it, so the lane is still driving
+ * its parameter over the right span, and the seam carries that held value.
  *
  * Linked (follower) lanes travel by their RESOLVED source, not their own
  * points: a follower's played curve is its link target's (`resolveLinkedLane`
  * — its own points are ignored), so a follower whose own arrays are empty or
  * all left of the cut would otherwise be skipped and the driven parameter
  * would fall back to base over the right span. A follower whose resolved
- * source reaches the right span copies too, keeping `linkedLaneId` and
+ * source has a curve at the cut copies too, keeping `linkedLaneId` and
  * `linkScale` as clip duplication does; when the direct leader is itself
  * copied onto the fragment, the follower copy follows the leader's copy, so
  * the chain stays inside the fragment and survives undo/redo on the same
- * deterministic ids. A follower whose chain end never reaches the right span
- * copies as nothing, exactly as before.
+ * deterministic ids. A follower whose chain end has no curve there copies as
+ * nothing, exactly as before.
  *
  * Automation objects are bounded containers whose ids must stay unique, and
  * the source lane outlives the split — so objects stay with the left half
@@ -212,8 +225,9 @@ function seamPointFor(
  * later edit re-extends the left edge; the point curves, which carry the
  * common cases, do travel.
  *
- * A lane with no content at or right of the cut copies as nothing: the
- * source lane already keeps that parameter alive over the left half.
+ * A lane with no played curve at the cut at all — no points of its own, and
+ * a follower whose chain end has none — copies as nothing: the source lane
+ * already keeps that parameter alive over the left half.
  * Copy ids derive from the right clip id, so a redo re-split reproduces
  * exactly the lanes the original split's undo retired.
  */
@@ -230,12 +244,15 @@ function splitAutomationLanes(
         const resolvedLink =
             lane.linkedLaneId === undefined ? null : resolveLinkedLane(lane.id, (id) => laneById.get(id));
         const resolvedSource = resolvedLink === null ? undefined : laneById.get(resolvedLink.sourceLaneId);
-        const linkedSourceReachesRightSpan = resolvedSource !== undefined && resolvedSource.points.some(atOrAfterCut);
-        const hasOwnRightContent =
-            lane.points.some(atOrAfterCut) ||
-            (lane.trimPoints?.some(atOrAfterCut) ?? false) ||
-            (lane.ghostPoints?.some(atOrAfterCut) ?? false);
-        if (!hasOwnRightContent && !linkedSourceReachesRightSpan) {
+        // The runtime holds a lane's last value for every beat after it, so
+        // ANY point — including one strictly left of the cut — leaves the
+        // curve defined at the cut. A follower plays its chain end's curve,
+        // never its own points.
+        const linkedSourceReachesRightSpan = resolvedSource !== undefined && resolvedSource.points.length > 0;
+        const hasOwnPlayedCurve = lane.points.length > 0;
+        const hasOwnOverlayRightContent =
+            (lane.trimPoints?.some(atOrAfterCut) ?? false) || (lane.ghostPoints?.some(atOrAfterCut) ?? false);
+        if (!hasOwnPlayedCurve && !hasOwnOverlayRightContent && !linkedSourceReachesRightSpan) {
             continue;
         }
         const copy = buildLaneCopy(lane, index, rightClipId, absoluteSplitBeats, resolvedLink === null);
@@ -261,7 +278,10 @@ function splitAutomationLanes(
 /**
  * The copy of one source lane, clamped to the fragment's window. `includeSeam`
  * marks a self-standing lane — a follower plays its leader's curve (the seam
- * that copy carries) and its own points are never evaluated.
+ * that copy carries) and its own points are never evaluated. A lane with any
+ * main point gets the seam: for a straddling segment it continues the curve,
+ * and for a drawn-then-held shape it pins the held value at the fragment's
+ * first beat.
  */
 function buildLaneCopy(
     lane: AutomationLaneValue,
@@ -274,7 +294,7 @@ function buildLaneCopy(
     const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
     const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
     const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
-    if (includeSeam && points.length > 0) {
+    if (includeSeam && lane.points.length > 0) {
         const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats);
         if (seamPoint !== null) {
             points.unshift(seamPoint);

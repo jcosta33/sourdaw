@@ -402,6 +402,7 @@ describe('splitClip', () => {
                     startBeat: 0,
                     endBeat: 8,
                     audioOffsetBeats: 2,
+                    stretchMode: 'timestretch',
                     stretchRatio: 0.5,
                 }),
             ])
@@ -438,6 +439,7 @@ describe('splitClip', () => {
                     startBeat: 0,
                     endBeat: 4,
                     audioOffsetBeats: 1,
+                    stretchMode: 'timestretch',
                     stretchRatio: 2,
                 }),
             ])
@@ -448,6 +450,49 @@ describe('splitClip', () => {
         const clips = newTrackState().tracks[0]?.clips ?? [];
         const right = clips.find((candidate) => candidate.id === 'new-clip-right');
         expect(right?.audioOffsetBeats).toBe(5);
+    });
+
+    it('advances a mode-off clip by the plain timeline delta, ignoring its dormant ratio', () => {
+        // The runtimes consume 1x unless stretch is on: a mode-off clip holding
+        // ratio 2 must split as if unstretched, or the fragment plays twice
+        // the consumed content.
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    stretchMode: 'off',
+                    stretchRatio: 2,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const right = newTrackState().tracks[0]?.clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(4);
+    });
+
+    it('bounds an out-of-range ratio instead of producing an infinite offset', () => {
+        // A hydrate-admissible finite ratio is not guaranteed in range; the
+        // schedulable bound (100) caps the consumed conversion.
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 1e308,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const right = newTrackState().tracks[0]?.clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(400);
     });
 
     it('continues to use 1:1 scaling for audioOffsetBeats when splitting an unstretched clip', () => {
@@ -608,6 +653,69 @@ describe('splitClip', () => {
         // The originals survive on the left half and still follow each other.
         expect(lanes.find((lane) => lane.id === 'lane-follower')?.linkedLaneId).toBe('lane-leader');
         expect(getAutomationValueAtBeat('lane-follower', 2)).toBeCloseTo(-requiredValue('lane-leader', 2), 10);
+    });
+
+    it('keeps a drawn-then-held lane and its follower driving over the right span', () => {
+        // The common shape: ramps ending mid-clip. The runtime holds the last
+        // value for every beat after it, so both lanes were still driving over
+        // [4, 8) before the split — the fragment must keep that, not step the
+        // parameters back to base at the cut.
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-held',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 3, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+                {
+                    id: 'lane-held-follower',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    linkedLaneId: 'lane-held',
+                    linkScale: -1,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        const heldBeforeSplit = requiredValue('lane-held', 4.5);
+        expect(heldBeforeSplit).toBeCloseTo(0.8, 10);
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        const heldCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        const followerCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-1');
+        expect(heldCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.linkedLaneId).toBe('auto-split-new-clip-right-0');
+        // The seam pins the held value at the fragment's first beat, and the
+        // follower keeps its inverted drive over the right span.
+        expect(heldCopy?.points[0]?.value).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-0', 4.5)).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-0', 7)).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-1', 4.5)).toBeCloseTo(-heldBeforeSplit, 10);
     });
 });
 

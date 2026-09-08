@@ -358,6 +358,7 @@ describe('Delete Time Range retires per-clip satellite data', () => {
                 startBeat: 0,
                 endBeat: 8,
                 type: 'audio',
+                stretchMode: 'timestretch',
                 stretchRatio: 2,
             }),
             // Starts inside the deleted range: the right-trim branch shares
@@ -369,6 +370,7 @@ describe('Delete Time Range retires per-clip satellite data', () => {
                 startBeat: 4,
                 endBeat: 9,
                 type: 'audio',
+                stretchMode: 'timestretch',
                 stretchRatio: 2,
             }),
             createClip({ id: 'keeper', startBeat: 10, endBeat: 12 }),
@@ -403,5 +405,67 @@ describe('Delete Time Range retires per-clip satellite data', () => {
             startBeat: 6,
             audioOffsetBeats: 4,
         });
+    });
+
+    it('advances a mode-off clip by the plain timeline delta, ignoring its dormant ratio', () => {
+        // The runtimes consume 1x unless stretch is on, so a mode-off clip
+        // holding a dormant ratio must split as if unstretched — the pre-fix
+        // plain delta was scheduler-correct for exactly this population.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchMode: 'off',
+                stretchRatio: 2,
+            }),
+            ClipDummy.create({
+                id: 'right-trimmed',
+                trackId: TRACK_ID,
+                startBeat: 4,
+                endBeat: 9,
+                type: 'audio',
+                stretchMode: 'off',
+                stretchRatio: 2,
+            }),
+        ]);
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        const fragmentId = clips.find((clip) => clip.id.startsWith('clip-dtr-'))?.id;
+        expect(clips.find((clip) => clip.id === fragmentId)?.audioOffsetBeats).toBe(6);
+        expect(clips.find((clip) => clip.id === 'right-trimmed')).toMatchObject({
+            startBeat: 6,
+            audioOffsetBeats: 2,
+        });
+    });
+
+    it('bounds an out-of-range ratio instead of rejecting the deletion on an infinite offset', () => {
+        // A hydrate-admissible finite ratio is not guaranteed in range; the
+        // schedulable bound (100) caps the consumed conversion so the offset
+        // stays finite and the deletion applies.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchMode: 'timestretch',
+                stretchRatio: 1e308,
+            }),
+        ]);
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        const fragmentId = clips.find((clip) => clip.id.startsWith('clip-dtr-'))?.id;
+        expect(fragmentId).toBeDefined();
+        // The fragment starts where the range ends: 6 timeline beats consumed,
+        // bounded to x100.
+        expect(clips.find((clip) => clip.id === fragmentId)?.audioOffsetBeats).toBe(600);
     });
 });

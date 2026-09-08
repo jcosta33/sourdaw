@@ -7,6 +7,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
+import { consumedStretchFactor } from './consumedStretchFactor';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type PrepareClipSplitInput = {
@@ -69,8 +70,10 @@ export function prepareClipSplit({
         return null;
     }
     const timelineSplitDelta = adjustedSplitBeat - clip.startBeat;
-    const stretchRatio = clip.stretchRatio ?? 1;
-    const contentSplitDelta = timelineSplitDelta * stretchRatio;
+    // The consumed content is what the runtimes play: 1x unless stretch is on,
+    // the bounded ratio when it is — the shared law, not the raw stored ratio
+    // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
+    const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
     const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
 
     const satellites = prepareClipSplitSatellites({
