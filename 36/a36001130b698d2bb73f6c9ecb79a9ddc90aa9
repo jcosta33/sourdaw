@@ -1,0 +1,16 @@
+src/modules/Onboarding/presentations/views/OnboardingTour.tsx
+  h_1228e573df1f42 225,227-232,234,236-240
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  h_1228e573df1f42 225-226,230-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "36a36001130b698d2bb73f6c9ecb79a9ddc90aa9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
