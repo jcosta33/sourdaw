@@ -49,12 +49,12 @@ const getCanvas = (container: HTMLElement): HTMLCanvasElement => {
 // pad=6, plotW=188, plotH=38 (see DelayTaps.tsx lines 67-102):
 //   maxTaps = min(12, max(2, floor(2000/250))) = 8
 //   firstTapX = pad + plotW/maxTaps = 6 + 188/8 = 29.5
-//   firstTapAmplitude = mix*feedback = 0.25
-//   envelopeY = pad + plotH*(1-0.25) = 6 + 28.5 = 34.5
+//   firstTapAmplitude = mix = 0.5
+//   envelopeY = pad + plotH*(1-0.5) = 6 + 19 = 25
 // jsdom's getBoundingClientRect is all-zero so client coords map 1:1 to canvas coords.
 const defaultProps = { time: 250, feedback: 0.5, mix: 0.5 };
 const FIRST_TAP_X = 29.5;
-const ENVELOPE_Y = 34.5;
+const ENVELOPE_Y = 25;
 
 describe('DelayTaps', () => {
     it('should render canvas', () => {
@@ -139,8 +139,29 @@ describe('DelayTaps', () => {
         expect(onParamChange).toHaveBeenCalledWith('delay-feedback', 0);
     });
 
+    it('targets feedback near the envelope line even when feedback is zero', () => {
+        // When feedback is 0 and mix is 0.8:
+        // firstTapX = 6 + (250 / 2000) * 188 = 29.5
+        // firstTapAmplitude = mix = 0.8 (envelopeY = 6 + 38 - 30.4 = 13.6).
+        // If mutated to mix * feedback: firstTapAmplitude = 0 (envelopeY = 44).
+        // At clientX = 50, clientY = 14:
+        //   distToTap = |50 - 29.5| = 20.5 (>= 20)
+        //   distToEnvelope = |14 - 13.6| = 0.4 (< 20)
+        // Correct code selects 'feedback'.
+        // Mutated code has distToEnvelope = |14 - 44| = 30 (>= 20); tie-breaker 20.5 < 30 selects 'time'.
+        const onParamChange = vi.fn();
+        const { container } = render(<DelayTaps time={250} feedback={0} mix={0.8} onParamChange={onParamChange} />);
+        const canvas = getCanvas(container);
+
+        fireEvent.pointerDown(canvas, { clientX: 50, clientY: 14, pointerId: 10 });
+        fireEvent.pointerMove(canvas, { clientX: 50, clientY: 20, pointerId: 10 });
+
+        const lastCall = onParamChange.mock.calls.at(-1);
+        expect(lastCall?.[0]).toBe('delay-feedback');
+    });
+
     it('falls back to whichever axis is closer when the press lands far from both hit zones', () => {
-        // mx=70 -> distToTap=|70-29.5|=40.5; my=90 -> distToEnvelope=|90-34.5|=55.5.
+        // mx=70 -> distToTap=|70-29.5|=40.5; my=90 -> distToEnvelope=|90-25|=65.
         // Neither is within the 20px hit radius, so the tie-break picks the closer axis (time).
         const timeOnParamChange = vi.fn();
         const { container: timeContainer } = render(<DelayTaps {...defaultProps} onParamChange={timeOnParamChange} />);
@@ -149,7 +170,7 @@ describe('DelayTaps', () => {
         fireEvent.pointerMove(timeCanvas, { clientX: 100, clientY: 90, pointerId: 3 });
         expect(timeOnParamChange.mock.calls.at(-1)?.[0]).toBe('delay-time');
 
-        // mx=90 -> distToTap=60.5; my=60 -> distToEnvelope=25.5. Feedback is the closer axis.
+        // mx=90 -> distToTap=60.5; my=60 -> distToEnvelope=35. Feedback is the closer axis.
         const feedbackOnParamChange = vi.fn();
         const { container: feedbackContainer } = render(
             <DelayTaps {...defaultProps} onParamChange={feedbackOnParamChange} />
@@ -158,6 +179,64 @@ describe('DelayTaps', () => {
         fireEvent.pointerDown(feedbackCanvas, { clientX: 90, clientY: 60, pointerId: 4 });
         fireEvent.pointerMove(feedbackCanvas, { clientX: 90, clientY: 30, pointerId: 4 });
         expect(feedbackOnParamChange.mock.calls.at(-1)?.[0]).toBe('delay-feedback');
+    });
+
+    it('draws the first wet tap at mix amplitude when feedback is zero', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0} mix={0.8} />);
+
+        // Dry bar is drawn with dryBarH = 38 * 0.9 = 34.2.
+        // Tap 1 is drawn with barH = 0.8 * 38 = 30.4, plus 1px top highlight.
+        // When feedback is 0, no subsequent wet taps are drawn.
+        const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
+        expect(wetBarCalls).toHaveLength(1);
+        const firstWetBar = wetBarCalls[0];
+        if (!firstWetBar) {
+            throw new TypeError('Expected at least one wet bar');
+        }
+        expect(firstWetBar[3]).toBeCloseTo(30.4, 2);
+
+        vi.restoreAllMocks();
+    });
+
+    it('decays subsequent taps by feedback while keeping first tap at mix amplitude', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0.5} mix={0.8} />);
+
+        // Dry bar height = 34.2. Tap highlights have height = 1.
+        // Tap 1: amplitude 0.8 -> barH = 30.4
+        // Tap 2: amplitude 0.4 -> barH = 15.2
+        // Tap 3: amplitude 0.2 -> barH = 7.6
+        const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
+        const [tap1, tap2, tap3] = wetBarCalls;
+        if (!tap1 || !tap2 || !tap3) {
+            throw new TypeError('Expected at least three wet bars');
+        }
+        expect(tap1[3]).toBeCloseTo(30.4, 2);
+        expect(tap2[3]).toBeCloseTo(15.2, 2);
+        expect(tap3[3]).toBeCloseTo(7.6, 2);
+
+        vi.restoreAllMocks();
+    });
+
+    it('connects the decay envelope line to the first wet tap when feedback is zero', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const lineToSpy = vi.spyOn(ctx, 'lineTo');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0} mix={0.8} />);
+
+        // When feedback is 0, tap 1 is drawn at xPos = 29.5, yPos = pad + plotH - 0.8 * plotH = 13.6.
+        // If amplitude was computed as mix * feedback, tap 1 has amplitude 0 < 0.01 and breaks before calling lineTo.
+        expect(lineToSpy).toHaveBeenCalledWith(29.5, expect.closeTo(13.6, 1));
+
+        vi.restoreAllMocks();
     });
 
     it('stops reporting param changes once the pointer is released', () => {

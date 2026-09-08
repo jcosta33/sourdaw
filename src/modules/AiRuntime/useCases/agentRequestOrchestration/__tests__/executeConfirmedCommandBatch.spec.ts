@@ -25,12 +25,14 @@ type NarrowBatchResult<Result, Status> = Result extends { status: infer Candidat
         : never
     : never;
 type CancelledBatchResult = NarrowBatchResult<ExecuteBatchResult, 'cancelled'>;
+type RejectedBatchResult = NarrowBatchResult<ExecuteBatchResult, 'rejected'>;
 type PreviewedBatchResult = Pick<Extract<ExecuteBatchResult, { status: 'previewed' }>, 'status' | 'resource'>;
 type TestBatchExecutorResultByStatus = {
     committed: CommittedBatchResult;
     'committed-with-warning': CommittedWarningBatchResult;
     cancelled: CancelledBatchResult;
     previewed: PreviewedBatchResult;
+    rejected: RejectedBatchResult;
 };
 type TestBatchExecutorResult = TestBatchExecutorResultByStatus[keyof TestBatchExecutorResultByStatus];
 type TestBatchExecutor = (input: Parameters<ExecuteBatch>[0]) => Promise<TestBatchExecutorResult>;
@@ -584,10 +586,12 @@ describe('executeConfirmedCommandBatch', () => {
             abortSignal: expect.objectContaining({ aborted: false }),
         });
         expect(mocks.prepareResourceLease).toHaveBeenCalledWith('confirmation-1', commandBatch);
-        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith({
-            approval: confirmation.approvalSnapshot.agentApproval,
-            commandBatch,
-        });
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith(
+            expect.objectContaining({
+                approval: confirmation.approvalSnapshot.agentApproval,
+                commandBatch,
+            })
+        );
         expect(mocks.executeBatch).toHaveBeenCalledWith({
             authority: commandBatch.authority,
             approvalBinding: expect.any(Object),
@@ -621,6 +625,53 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenNthCalledWith(1, true);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('carries a stale-shaped binding rejection on the completed flight when the batch matches it', async () => {
+        const rejectionReason = 'The approved target fingerprints no longer match.';
+        mocks.issueApprovalBinding.mockImplementation(({ onRejection }) => {
+            onRejection?.({ reason: rejectionReason, stale: true });
+            return issueCommandApprovalBinding({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+                validate: () => ({ status: 'valid' }),
+            });
+        });
+        mocks.executeBatch.mockResolvedValue({
+            status: 'rejected',
+            reason: rejectionReason,
+            actions: [] as [],
+        } satisfies RejectedBatchResult);
+
+        const result = await execute();
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            approvalBindingRejection: { reason: rejectionReason, stale: true },
+        });
+    });
+
+    it('keeps the binding rejection off the flight when the batch rejected for another reason', async () => {
+        mocks.issueApprovalBinding.mockImplementation(({ onRejection }) => {
+            onRejection?.({ reason: 'The approved target fingerprints no longer match.', stale: true });
+            return issueCommandApprovalBinding({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+                validate: () => ({ status: 'valid' }),
+            });
+        });
+        mocks.executeBatch.mockResolvedValue({
+            status: 'rejected',
+            reason: 'Command batch preflight state is unavailable',
+            actions: [] as [],
+        } satisfies RejectedBatchResult);
+
+        const result = await execute();
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            approvalBindingRejection: null,
+        });
     });
 
     it('keeps fresh render artifacts unrebound when Command denies finalization after a foreign project mutation', async () => {

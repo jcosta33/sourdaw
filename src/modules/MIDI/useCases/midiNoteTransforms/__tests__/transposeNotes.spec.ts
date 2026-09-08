@@ -31,6 +31,11 @@ describe('transposeNotes', () => {
         expect(midiStore.value?.notesByClipId.clip1?.every((node) => node.pitch <= 127)).toBe(true);
     });
 
+    it('should shift only selected notes when noteIds is provided', () => {
+        transposeNotes('clip1', 12, ['b']);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.pitch)).toEqual([60, 76]);
+    });
+
     it('should not mutate when the clip or store is missing', () => {
         transposeNotes('missing', 5);
         transposeNotes('clip1', 0);

@@ -8,6 +8,11 @@ import {
 
 import { getExactAgentActionHash } from './getExactAgentActionHash';
 
+// Thrown when the active project no longer matches the batch's project, which
+// is the project-changed event class, not an execution failure: the revalidator
+// classifies it as a stale proposal rather than a rejection.
+export const COMMAND_BATCH_PROJECT_IDENTITY_STALE_REASON = 'The command batch project identity is stale.';
+
 type PendingCommandBatch = {
     serialized: string;
     authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1];
@@ -45,7 +50,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         throw new Error('Command target fingerprint capture is unavailable.');
     }
     if (preflight.projectId !== envelope.projectId) {
-        throw new Error('The command batch project identity is stale.');
+        throw new Error(COMMAND_BATCH_PROJECT_IDENTITY_STALE_REASON);
     }
     const consequences = {
         audioUpload: envelope.grants.audioUpload,

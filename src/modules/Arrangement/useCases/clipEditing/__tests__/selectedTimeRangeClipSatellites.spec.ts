@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     getAutomationLanes,
+    getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
     restoreAutomationSnapshot,
@@ -106,6 +107,13 @@ function laneIds(): string[] {
     return getAutomationLanes().map((lane) => lane.id);
 }
 
+/** The runtime evaluator reads `number | null`; these lanes must evaluate. */
+function evaluatedValue(laneId: string, beat: number): number {
+    const value = getAutomationValueAtBeat(laneId, beat);
+    expect(value).not.toBeNull();
+    return value ?? Number.NaN;
+}
+
 function clipIds(): string[] {
     return (trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id);
 }
@@ -195,5 +203,269 @@ describe('Delete Time Range retires per-clip satellite data', () => {
         expect(laneIds()).toEqual([]);
         expect(getEnvelope('automated')).toBeUndefined();
         expect(warpStates.has('automated')).toBe(false);
+    });
+
+    it('gives the surviving right fragment of a split clip the inherited satellites, undoably', async () => {
+        // A clip the deleted range cuts in two: the left half keeps its id, the
+        // right half continues under a fresh id — and must not start bare, or
+        // the same audio silently loses its expression data past the cut.
+        setTracks([
+            createClip({ id: 'spanning', startBeat: 0, endBeat: 8 }),
+            createClip({ id: 'keeper', startBeat: 10, endBeat: 12 }),
+        ]);
+        setEnvelope('spanning', {
+            clipId: 'spanning',
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: 0, gainDb: 0 },
+                { id: 'p4', beatOffset: 4, gainDb: -12 },
+            ],
+        });
+        setWarpState('spanning', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-left', originalBeat: 1, warpedBeat: 1 },
+                { id: 'w-right', originalBeat: 6, warpedBeat: 6.5 },
+            ],
+        });
+        restoreAutomationSnapshot({
+            lanes: [
+                createLane({ id: 'lane-clip', clipId: 'spanning', beat: 7 }),
+                {
+                    id: 'lane-follower',
+                    trackId: TRACK_ID,
+                    clipId: 'spanning',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    linkedLaneId: 'lane-clip',
+                    linkScale: -1,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const fragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        expect(clipIds()).toEqual(['spanning', fragmentId, 'keeper']);
+
+        // The left half keeps its id and its satellites untouched: nothing it
+        // played changed, and inert points beyond its new edge survive.
+        expect(getEnvelope('spanning')?.points).toEqual([
+            { id: 'p0', beatOffset: 0, gainDb: 0 },
+            { id: 'p4', beatOffset: 4, gainDb: -12 },
+        ]);
+        expect(warpStates.get('spanning')?.markers).toHaveLength(2);
+        expect(laneIds()).toEqual([
+            'lane-clip',
+            'lane-follower',
+            `auto-split-${fragmentId}-0`,
+            `auto-split-${fragmentId}-1`,
+        ]);
+
+        // The right fragment inherits geometry-clamped copies: the envelope
+        // re-based by the cut (seam value at beat 6 is -12 dB), the warp
+        // markers at or past the content cut, and the automation points that
+        // fall in its window, verbatim.
+        expect(getEnvelope(fragmentId ?? '')).toEqual({
+            clipId: fragmentId,
+            enabled: true,
+            points: [
+                { id: 'p0', beatOffset: -6, gainDb: 0 },
+                { id: 'p4', beatOffset: -2, gainDb: -12 },
+                { id: `gep-split-${fragmentId}-right`, beatOffset: 0, gainDb: -12 },
+            ],
+        });
+        expect(warpStates.get(fragmentId ?? '')?.markers).toEqual([
+            { id: 'w-right', originalBeat: 6, warpedBeat: 6.5 },
+        ]);
+        const fragmentLane = getAutomationLanes().find((lane) => lane.id === `auto-split-${fragmentId}-0`);
+        expect(fragmentLane?.clipId).toBe(fragmentId);
+        expect(fragmentLane?.points.map((point) => point.beat)).toEqual([7]);
+        // The source lane is untouched.
+        expect(
+            getAutomationLanes()
+                .find((lane) => lane.id === 'lane-clip')
+                ?.points.map((p) => p.beat)
+        ).toEqual([7]);
+        // The linked follower travels by its RESOLVED source — its own points
+        // are empty — and the copy follows the leader's copy, so the driven
+        // parameter keeps following over the right span.
+        const fragmentFollower = getAutomationLanes().find((lane) => lane.id === `auto-split-${fragmentId}-1`);
+        expect(fragmentFollower?.clipId).toBe(fragmentId);
+        expect(fragmentFollower?.linkedLaneId).toBe(`auto-split-${fragmentId}-0`);
+        expect(fragmentFollower?.linkScale).toBe(-1);
+        const leaderValueAtSeven = evaluatedValue(`auto-split-${fragmentId}-0`, 7);
+        expect(leaderValueAtSeven).toBeCloseTo(0.5, 10);
+        expect(getAutomationValueAtBeat(`auto-split-${fragmentId}-1`, 7)).toBeCloseTo(-leaderValueAtSeven, 10);
+
+        await undo();
+
+        expect(clipIds()).toEqual(['spanning', 'keeper']);
+        expect(laneIds()).toEqual(['lane-clip', 'lane-follower']);
+        expect(getEnvelope('spanning')?.points).toEqual([
+            { id: 'p0', beatOffset: 0, gainDb: 0 },
+            { id: 'p4', beatOffset: 4, gainDb: -12 },
+        ]);
+        expect(warpStates.get('spanning')?.markers).toHaveLength(2);
+        expect(getEnvelope(fragmentId ?? '')).toBeUndefined();
+        expect(warpStates.has(fragmentId ?? '')).toBe(false);
+        // The originals still follow each other over the restored left half.
+        expect(getAutomationValueAtBeat('lane-follower', 7)).toBeCloseTo(-evaluatedValue('lane-clip', 7), 10);
+
+        await redo();
+
+        const redoneFragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        expect(redoneFragmentId).toBeDefined();
+        expect(getEnvelope(redoneFragmentId ?? '')).not.toBeUndefined();
+        expect(warpStates.has(redoneFragmentId ?? '')).toBe(true);
+        expect(laneIds()).toContain(`auto-split-${redoneFragmentId}-0`);
+        // The redo reproduces the link on the same deterministic ids.
+        const redoneFollower = getAutomationLanes().find((lane) => lane.id === `auto-split-${redoneFragmentId}-1`);
+        expect(redoneFollower?.linkedLaneId).toBe(`auto-split-${redoneFragmentId}-0`);
+        expect(getAutomationValueAtBeat(`auto-split-${redoneFragmentId}-1`, 7)).toBeCloseTo(
+            -evaluatedValue(`auto-split-${redoneFragmentId}-0`, 7),
+            10
+        );
+
+        // The fragment lanes are keyed to live clip ids, so later time
+        // operations keep working (no orphan jam).
+        const inserted = executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 0, durationBeats: 2 } });
+        expect(inserted.status).toBe('applied');
+    });
+
+    it('cuts the spanning fragment warp axis at content beats under stretch', () => {
+        // Clip 0..8 stretched 2x consumes 2 content beats per timeline beat:
+        // the deleted range [2, 6) spans content [4, 12), and the fragment at
+        // timeline [6, 8) plays content [12, 16). The warp cut must land at
+        // content 12 — the ordinary split's conversion — or the fragment
+        // inherits the deleted span's marker and warps audio it does not
+        // contain. The audio axis must advance by the same conversion, or the
+        // fragment replays the deleted span's audio under the corrected warp
+        // grid.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            }),
+            // Starts inside the deleted range: the right-trim branch shares
+            // the offset conversion, so pin it on the same operation — its
+            // head [4, 6) is 2 timeline beats = 4 content beats.
+            ClipDummy.create({
+                id: 'right-trimmed',
+                trackId: TRACK_ID,
+                startBeat: 4,
+                endBeat: 9,
+                type: 'audio',
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            }),
+            createClip({ id: 'keeper', startBeat: 10, endBeat: 12 }),
+        ]);
+        setWarpState('spanning', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-deleted', originalBeat: 8, warpedBeat: 8 },
+                { id: 'w-right', originalBeat: 12, warpedBeat: 12.5 },
+            ],
+        });
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const fragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        // The left half is untouched; the deleted span's marker (sounding at
+        // timeline 4, inside the deleted range) retires with the left half's
+        // inert edge instead of reaching the fragment.
+        expect(warpStates.get('spanning')?.markers.map((marker) => marker.id)).toEqual(['w-deleted', 'w-right']);
+        expect(warpStates.get(fragmentId ?? '')?.markers.map((marker) => marker.id)).toEqual(['w-right']);
+
+        // The audio axis agrees with the warp axis: the fragment's offset
+        // advances by the consumed content beats (6 timeline beats x 2), so it
+        // plays content [12, 16) — not the deleted span it now claims to skip.
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        expect(clips.find((clip) => clip.id === fragmentId)?.audioOffsetBeats).toBe(12);
+        // The right-trimmed clip lost its head to the deleted range: 2
+        // timeline beats x 2 = 4 content beats consumed.
+        expect(clips.find((clip) => clip.id === 'right-trimmed')).toMatchObject({
+            startBeat: 6,
+            audioOffsetBeats: 4,
+        });
+    });
+
+    it('advances a mode-off clip by the plain timeline delta, ignoring its dormant ratio', () => {
+        // The runtimes consume 1x unless stretch is on, so a mode-off clip
+        // holding a dormant ratio must split as if unstretched — the pre-fix
+        // plain delta was scheduler-correct for exactly this population.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchMode: 'off',
+                stretchRatio: 2,
+            }),
+            ClipDummy.create({
+                id: 'right-trimmed',
+                trackId: TRACK_ID,
+                startBeat: 4,
+                endBeat: 9,
+                type: 'audio',
+                stretchMode: 'off',
+                stretchRatio: 2,
+            }),
+        ]);
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        const fragmentId = clips.find((clip) => clip.id.startsWith('clip-dtr-'))?.id;
+        expect(clips.find((clip) => clip.id === fragmentId)?.audioOffsetBeats).toBe(6);
+        expect(clips.find((clip) => clip.id === 'right-trimmed')).toMatchObject({
+            startBeat: 6,
+            audioOffsetBeats: 2,
+        });
+    });
+
+    it('bounds an out-of-range ratio instead of rejecting the deletion on an infinite offset', () => {
+        // A hydrate-admissible finite ratio is not guaranteed in range; the
+        // schedulable bound (100) caps the consumed conversion so the offset
+        // stays finite and the deletion applies.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchMode: 'timestretch',
+                stretchRatio: 1e308,
+            }),
+        ]);
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        const fragmentId = clips.find((clip) => clip.id.startsWith('clip-dtr-'))?.id;
+        expect(fragmentId).toBeDefined();
+        // The fragment starts where the range ends: 6 timeline beats consumed,
+        // bounded to x100.
+        expect(clips.find((clip) => clip.id === fragmentId)?.audioOffsetBeats).toBe(600);
     });
 });

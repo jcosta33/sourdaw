@@ -98,12 +98,12 @@ export const DelayTaps = ({
         // Store first tap position for hit testing
         const firstTapTime = time * 1;
         firstTapXRef.current = pad + (firstTapTime / totalDuration) * plotW;
-        const firstTapAmplitude = mix * feedback ** 1;
+        const firstTapAmplitude = mix;
         envelopeYRef.current = pad + plotH - firstTapAmplitude * plotH;
 
         // Delay taps
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * feedback ** tap;
+            const amplitude = mix * feedback ** (tap - 1);
             if (amplitude < 0.01) {
                 break;
             }
@@ -135,7 +135,7 @@ export const DelayTaps = ({
         ctx.beginPath();
         ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * feedback ** tap;
+            const amplitude = mix * feedback ** (tap - 1);
             if (amplitude < 0.01) {
                 break;
             }
@@ -152,7 +152,7 @@ export const DelayTaps = ({
         ctx.beginPath();
         ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * feedback ** tap;
+            const amplitude = mix * feedback ** (tap - 1);
             if (amplitude < 0.01) {
                 break;
             }

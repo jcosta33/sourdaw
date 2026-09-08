@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type refreshVersionedCommandBatchForApproval } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
@@ -20,7 +21,7 @@ type ApprovalDivergence = Extract<
 
 type TerminalConfirmationResult =
     | { status: 'failed'; reason: string }
-    | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence }
+    | { status: 'invalidated'; reason: string; divergence?: ApprovalDivergence; detail?: string }
     | { status: 'cancelled' };
 
 const RENDER_RETRY_PROOF_MISMATCH_REASON =
@@ -89,9 +90,20 @@ async function failApprovalPreflight(
 }
 
 async function invalidateForProjectChange(
-    confirmation: PendingAppActionConfirmation
+    confirmation: PendingAppActionConfirmation,
+    detail?: string
 ): Promise<TerminalConfirmationResult> {
     const reason = new AiProposalInvalidatedError().message;
+    // The musician sees the unified invalidation whichever guard detected the
+    // project change; the detecting guard's own reason stays internal, for the
+    // correction planner and diagnostics, never in user-facing text.
+    if (detail) {
+        logger.info('Confirmed proposal invalidated because the project changed after it was created', {
+            confirmationId: confirmation.id,
+            detail,
+            runId: confirmation.runId,
+        });
+    }
     await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
@@ -105,7 +117,7 @@ async function invalidateForProjectChange(
             'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
     });
     await pendingActionResourceSettlement.settleBestEffort({ confirmationId: confirmation.id, disposition: 'discard' });
-    return { status: 'invalidated', reason };
+    return { status: 'invalidated', reason, ...(detail ? { detail } : {}) };
 }
 
 async function invalidateForDivergence(

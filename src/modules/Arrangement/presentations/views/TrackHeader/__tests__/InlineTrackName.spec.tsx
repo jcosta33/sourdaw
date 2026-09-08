@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TrackDummy } from '../../../../__tests__/TrackDummy';
@@ -80,5 +80,40 @@ describe('InlineTrackName', () => {
         fireEvent.change(input, { target: { value: '' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(renameTrack).not.toHaveBeenCalled();
+    });
+
+    it('commits rename with preventDefault and stopPropagation on Enter', () => {
+        render(<InlineTrackName track={mockTrack} />);
+        const name = screen.getByText('Test Track');
+        fireEvent.doubleClick(name);
+        const input = screen.getByLabelText('Rename track Test Track');
+        fireEvent.change(input, { target: { value: 'New Name' } });
+        const enterEvent = createEvent.keyDown(input, { key: 'Enter', cancelable: true });
+        const preventDefaultSpy = vi.spyOn(enterEvent, 'preventDefault');
+        const stopPropagationSpy = vi.spyOn(enterEvent, 'stopPropagation');
+        fireEvent(input, enterEvent);
+
+        expect(renameTrack).toHaveBeenCalledWith('track1', 'New Name');
+        expect(preventDefaultSpy).toHaveBeenCalledTimes(1);
+        expect(stopPropagationSpy).toHaveBeenCalledTimes(1);
+        expect(enterEvent.defaultPrevented).toBe(true);
+    });
+
+    it('cancels rename with preventDefault and stopPropagation on Escape', () => {
+        render(<InlineTrackName track={mockTrack} />);
+        const name = screen.getByText('Test Track');
+        fireEvent.doubleClick(name);
+        const input = screen.getByLabelText('Rename track Test Track');
+        fireEvent.change(input, { target: { value: 'New Name' } });
+        const escapeEvent = createEvent.keyDown(input, { key: 'Escape', cancelable: true });
+        const preventDefaultSpy = vi.spyOn(escapeEvent, 'preventDefault');
+        const stopPropagationSpy = vi.spyOn(escapeEvent, 'stopPropagation');
+        fireEvent(input, escapeEvent);
+
+        expect(renameTrack).not.toHaveBeenCalled();
+        expect(preventDefaultSpy).toHaveBeenCalledTimes(1);
+        expect(stopPropagationSpy).toHaveBeenCalledTimes(1);
+        expect(escapeEvent.defaultPrevented).toBe(true);
+        expect(screen.getByText('Test Track')).toBeInTheDocument();
     });
 });

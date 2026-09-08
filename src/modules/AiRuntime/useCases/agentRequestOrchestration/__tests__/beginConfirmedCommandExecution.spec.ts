@@ -9,6 +9,8 @@ import type { PendingAppActionConfirmation } from '../../../stores/pendingAction
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type FailApprovalPreflight =
     typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.failApprovalPreflight;
+type InvalidateForProjectChange =
+    typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.invalidateForProjectChange;
 type ValidateAgentRiskApproval = typeof import('../../validateAgentRiskApproval').validateAgentRiskApproval;
 type GetPlannedActionAffectedIds = typeof import('../../getPlannedActionAffectedIds').getPlannedActionAffectedIds;
 type PendingProtectedTarget = PendingAppActionConfirmation['protectedUnchanged'][number];
@@ -19,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     failPreflight: vi.fn<FailApprovalPreflight>(),
     getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
     getRun: vi.fn(),
+    invalidate: vi.fn<InvalidateForProjectChange>(),
     parseBatch: vi.fn(),
     revisionMatches: vi.fn<(revision: string) => boolean>(),
     reserveBudget: vi.fn(),
@@ -50,7 +53,10 @@ vi.mock('../agentRunExecutionSettlement', () => ({
     agentRunExecutionSettlement: { transitionToExecuting: mocks.transitionToExecuting },
 }));
 vi.mock('../confirmationTerminalSettlement', () => ({
-    confirmationTerminalSettlement: { failApprovalPreflight: mocks.failPreflight },
+    confirmationTerminalSettlement: {
+        failApprovalPreflight: mocks.failPreflight,
+        invalidateForProjectChange: mocks.invalidate,
+    },
 }));
 
 const commandBatch = {
@@ -263,11 +269,19 @@ beforeEach(() => {
     mocks.reserveBudget.mockReturnValue({ status: 'reserved', estimates: [{ category: 'maxCommands', amount: 1 }] });
     mocks.claimLease.mockReturnValue({ status: 'claimed', lease });
     mocks.failPreflight.mockResolvedValue({ status: 'failed', reason: 'preflight failed' });
+    mocks.invalidate.mockResolvedValue({
+        status: 'invalidated',
+        reason: 'The project changed after this proposal was created. Review and submit the command again.',
+    });
 });
 
 describe('beginConfirmedCommandExecution', () => {
     it('should settle approval failures before parsing, budget reservation, lease claim, or accepted writes', async () => {
-        mocks.validateApproval.mockReturnValueOnce({ status: 'invalid', reason: 'approval is stale' });
+        mocks.validateApproval.mockReturnValueOnce({
+            status: 'invalid',
+            reason: 'approval is stale',
+            stale: false,
+        });
 
         const result = execute();
 
@@ -277,10 +291,55 @@ describe('beginConfirmedCommandExecution', () => {
         }
         await expect(result.result).resolves.toEqual({ status: 'failed', reason: 'preflight failed' });
         expect(mocks.failPreflight).toHaveBeenCalledWith(confirmation, 'approval is stale', 'authorization');
+        expect(mocks.invalidate).not.toHaveBeenCalled();
         expect(mocks.parseBatch).not.toHaveBeenCalled();
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('settles a stale-proposal approval rejection as invalidated with the guard reason kept as internal detail', async () => {
+        mocks.validateApproval.mockReturnValueOnce({
+            status: 'invalid',
+            reason: 'The approved source revision is stale.',
+            stale: true,
+        });
+        mocks.invalidate.mockResolvedValueOnce({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            detail: 'The approved source revision is stale.',
+        });
+
+        const result = execute();
+
+        expect(result.status).toBe('settled');
+        if (result.status !== 'settled') {
+            throw new Error('Expected the stale-proposal rejection to settle.');
+        }
+        await expect(result.result).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            detail: 'The approved source revision is stale.',
+        });
+        expect(mocks.invalidate).toHaveBeenCalledWith(confirmation, 'The approved source revision is stale.');
+        expect(mocks.failPreflight).not.toHaveBeenCalled();
+        expect(mocks.parseBatch).not.toHaveBeenCalled();
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.claimLease).not.toHaveBeenCalled();
+        expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+        expect(mocks.transitionToExecuting).not.toHaveBeenCalled();
+        expect(mocks.updateMessage).not.toHaveBeenCalled();
+    });
+
+    it('keeps a genuine approval rejection that is not stale-shaped on the failed preflight disposition', async () => {
+        mocks.validateApproval.mockReturnValueOnce({
+            status: 'invalid',
+            reason: 'The approved action hashes no longer match.',
+            stale: false,
+        });
+
+        await expectAuthorizationPreflightFailure(confirmation, 'The approved action hashes no longer match.');
+        expect(mocks.invalidate).not.toHaveBeenCalled();
     });
 
     it('validates approval against the confirmed revision when only the command checkpoint drifted', () => {

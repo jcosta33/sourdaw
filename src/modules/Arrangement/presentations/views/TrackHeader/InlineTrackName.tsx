@@ -42,9 +42,13 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
                 onBlur={commit}
                 onKeyDown={(event) => {
                     if (event.key === 'Enter') {
+                        event.preventDefault();
+                        event.stopPropagation();
                         commit();
                     }
                     if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
                         cancel();
                     }
                 }}

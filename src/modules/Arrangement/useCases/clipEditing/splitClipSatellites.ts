@@ -1,8 +1,15 @@
+import { getAutomationLanes, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { resolveLinkedLane } from '#/utils/automationLaneLink';
+
 import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 import { isDefaultWarpState } from '../../stores/warpStates';
+import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelopePoints';
+
+/** Derived rather than imported: Automation owns the point model. */
+type AutomationLanePoint = AutomationLaneValue['points'][number];
 
 /**
  * The satellite half of a split plan: `previous` is what the stores hold before
@@ -12,6 +19,13 @@ import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelope
 export type ClipSplitSatellitePlan = {
     previous: ClipSatelliteEntry[];
     next: ClipSatelliteEntry[];
+    /**
+     * Copies of the source's clip-scoped automation lanes clamped to the right
+     * fragment's window, keyed to the right clip id. The left half's lanes are
+     * deliberately absent — the left keeps its id and its lanes untouched, so
+     * there is nothing to capture or restore on that side.
+     */
+    rightAutomationLanes: AutomationLaneValue[];
 };
 
 type PrepareClipSplitSatellitesInput = {
@@ -21,6 +35,8 @@ type PrepareClipSplitSatellitesInput = {
     clipRelativeSplitBeats: number;
     /** Cut position in source content beats — the warp marker axis. */
     contentSplitBeats: number;
+    /** Cut position on the absolute timeline — the clip automation axis. */
+    absoluteSplitBeats: number;
 };
 
 type SplitGainEnvelopes = {
@@ -120,6 +136,187 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
 }
 
 /**
+ * The seam point that pins the curve's interpolated value at the cut — the
+ * lane analogue of `splitGainEnvelope`'s seam. Without it a segment straddling
+ * the cut collapses to hold-first-value on the fragment: between the cut and
+ * the first copied point the fragment would jump straight to that point's
+ * value instead of continuing the curve, an audible change a split must not
+ * make (Pro Tools inserts a breakpoint at the split for the same reason).
+ *
+ * The value comes from the runtime's own evaluator on the live source lane,
+ * so linked-lane resolution, curve shapes, and lane-range clamping are
+ * exactly what played a moment earlier — including the drawn-then-held shape,
+ * whose ramps end mid-clip: the held value IS the curve at the cut, and the
+ * seam pins it onto the fragment. A point already sitting on the cut IS that
+ * seam — a second point beside it would make the interpolation span
+ * zero-width. No point left of the cut means the runtime held the first value
+ * before its point anyway, which the verbatim copy reproduces for free.
+ *
+ * The seam inherits the straddling segment's `curve`/`tension`/`stairSteps`
+ * from its left point — segment shape is owned by the segment's left point
+ * (`evaluateAutomationCurve` branches on it), so a copied `linear`/`step`
+ * seam reproduces the played segment exactly and a shaped one stays in the
+ * curve family it was drawn with instead of flattening to a straight ramp.
+ * The id derives from the right clip id, so a redo re-split reproduces
+ * exactly the point the original split's undo retired.
+ */
+function seamPointFor(
+    lane: AutomationLaneValue,
+    rightClipId: string,
+    laneIndex: number,
+    absoluteSplitBeats: number
+): AutomationLanePoint | null {
+    if (lane.points.some((point) => point.beat === absoluteSplitBeats)) {
+        return null;
+    }
+    const lastLeft = [...lane.points].reverse().find((point) => point.beat < absoluteSplitBeats);
+    if (lastLeft === undefined) {
+        return null;
+    }
+    const seamValue = getAutomationValueAtBeat(lane.id, absoluteSplitBeats);
+    if (seamValue === null) {
+        return null;
+    }
+    return {
+        id: `asp-split-${rightClipId}-${laneIndex}`,
+        beat: absoluteSplitBeats,
+        value: seamValue,
+        curve: lastLeft.curve,
+        tension: lastLeft.tension,
+        ...(lastLeft.stairSteps === undefined ? {} : { stairSteps: lastLeft.stairSteps }),
+    };
+}
+
+/**
+ * The right fragment's share of the source's clip-scoped automation lanes —
+ * the split-automation convention (Logic splits region automation with the
+ * region; REAPER take envelopes travel with each split item, and Pro Tools
+ * clip automation belongs to the clip, so both halves keep playing what they
+ * played before the cut).
+ *
+ * Lane points live in the ABSOLUTE timeline frame, so the copy keeps them
+ * verbatim and is only clamped to the fragment's window — points left of the
+ * cut stay on the source lane (inert beyond its shrunken edge, and alive
+ * again if that edge is extended back out), points at or right of the cut
+ * follow the right fragment. Re-basing them would move the curve off the
+ * audio it was drawn against. A straddling segment gets a seam point at the
+ * cut (`seamPointFor`) so the fragment continues the curve instead of
+ * holding the first copied value — and a lane whose ramps END left of the
+ * cut (drawn-then-held, the common shape) travels too: the runtime holds the
+ * last point's value for every beat after it, so the lane is still driving
+ * its parameter over the right span, and the seam carries that held value.
+ *
+ * Linked (follower) lanes travel by their RESOLVED source, not their own
+ * points: a follower's played curve is its link target's (`resolveLinkedLane`
+ * — its own points are ignored), so a follower whose own arrays are empty or
+ * all left of the cut would otherwise be skipped and the driven parameter
+ * would fall back to base over the right span. A follower whose resolved
+ * source has a curve at the cut copies too, keeping `linkedLaneId` and
+ * `linkScale` as clip duplication does; when the direct leader is itself
+ * copied onto the fragment, the follower copy follows the leader's copy, so
+ * the chain stays inside the fragment and survives undo/redo on the same
+ * deterministic ids. A follower whose chain end has no curve there copies as
+ * nothing, exactly as before.
+ *
+ * Automation objects are bounded containers whose ids must stay unique, and
+ * the source lane outlives the split — so objects stay with the left half
+ * whole rather than being duplicated onto the copy. An object reaching into
+ * the right fragment keeps playing there through the source lane only if a
+ * later edit re-extends the left edge; the point curves, which carry the
+ * common cases, do travel.
+ *
+ * A lane with no played curve at the cut at all — no points of its own, and
+ * a follower whose chain end has none — copies as nothing: the source lane
+ * already keeps that parameter alive over the left half.
+ * Copy ids derive from the right clip id, so a redo re-split reproduces
+ * exactly the lanes the original split's undo retired.
+ */
+function splitAutomationLanes(
+    sourceClipId: string,
+    rightClipId: string,
+    absoluteSplitBeats: number
+): AutomationLaneValue[] {
+    const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
+    const laneById = new Map(getAutomationLanes().map((lane) => [lane.id, lane]));
+    const copyIdBySourceLaneId = new Map<string, string>();
+    const copies: AutomationLaneValue[] = [];
+    for (const [index, lane] of readClipScopedAutomationLanes([sourceClipId]).entries()) {
+        const resolvedLink =
+            lane.linkedLaneId === undefined ? null : resolveLinkedLane(lane.id, (id) => laneById.get(id));
+        const resolvedSource = resolvedLink === null ? undefined : laneById.get(resolvedLink.sourceLaneId);
+        // The runtime holds a lane's last value for every beat after it, so
+        // ANY point — including one strictly left of the cut — leaves the
+        // curve defined at the cut. A follower plays its chain end's curve,
+        // never its own points.
+        const linkedSourceReachesRightSpan = resolvedSource !== undefined && resolvedSource.points.length > 0;
+        const hasOwnPlayedCurve = lane.points.length > 0;
+        const hasOwnOverlayRightContent =
+            (lane.trimPoints?.some(atOrAfterCut) ?? false) || (lane.ghostPoints?.some(atOrAfterCut) ?? false);
+        if (!hasOwnPlayedCurve && !hasOwnOverlayRightContent && !linkedSourceReachesRightSpan) {
+            continue;
+        }
+        const copy = buildLaneCopy(lane, index, rightClipId, absoluteSplitBeats, resolvedLink === null);
+        copyIdBySourceLaneId.set(lane.id, copy.id);
+        copies.push(copy);
+    }
+    // A follower whose direct leader also copied follows the leader's copy, so
+    // the fragment's chain is self-contained; a leader that stayed behind (its
+    // own points never reach the right span, or it lives outside this clip)
+    // survives the split untouched and the link keeps resolving to it.
+    for (const copy of copies) {
+        if (copy.linkedLaneId === undefined) {
+            continue;
+        }
+        const leaderCopyId = copyIdBySourceLaneId.get(copy.linkedLaneId);
+        if (leaderCopyId !== undefined) {
+            copy.linkedLaneId = leaderCopyId;
+        }
+    }
+    return copies;
+}
+
+/**
+ * The copy of one source lane, clamped to the fragment's window. `includeSeam`
+ * marks a self-standing lane — a follower plays its leader's curve (the seam
+ * that copy carries) and its own points are never evaluated. A lane with any
+ * main point gets the seam: for a straddling segment it continues the curve,
+ * and for a drawn-then-held shape it pins the held value at the fragment's
+ * first beat.
+ */
+function buildLaneCopy(
+    lane: AutomationLaneValue,
+    laneIndex: number,
+    rightClipId: string,
+    absoluteSplitBeats: number,
+    includeSeam: boolean
+): AutomationLaneValue {
+    const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
+    const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
+    const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+    const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+    if (includeSeam && lane.points.length > 0) {
+        const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats);
+        if (seamPoint !== null) {
+            points.unshift(seamPoint);
+        }
+    }
+    const copy: AutomationLaneValue = {
+        ...lane,
+        id: `auto-split-${rightClipId}-${laneIndex}`,
+        clipId: rightClipId,
+        points,
+        objects: [],
+    };
+    if (trimPoints !== undefined) {
+        copy.trimPoints = trimPoints;
+    }
+    if (ghostPoints !== undefined) {
+        copy.ghostPoints = ghostPoints;
+    }
+    return copy;
+}
+
+/**
  * Repartition the source clip's gain envelope and warp state across the two
  * halves of a split.
  *
@@ -134,7 +331,7 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  * exactly the entries the original split's undo captured.
  */
 export function prepareClipSplitSatellites(input: PrepareClipSplitSatellitesInput): ClipSplitSatellitePlan {
-    const { clipId, rightClipId, contentSplitBeats } = input;
+    const { clipId, rightClipId, contentSplitBeats, absoluteSplitBeats } = input;
     const source = readClipSatelliteEntry(clipId);
     const gainEnvelopes =
         source.gainEnvelope !== null && source.gainEnvelope.points.length > 0
@@ -148,5 +345,6 @@ export function prepareClipSplitSatellites(input: PrepareClipSplitSatellitesInpu
             { clipId, gainEnvelope: gainEnvelopes.left, warpState: warpStates.left },
             { clipId: rightClipId, gainEnvelope: gainEnvelopes.right, warpState: warpStates.right },
         ],
+        rightAutomationLanes: splitAutomationLanes(clipId, rightClipId, absoluteSplitBeats),
     };
 }

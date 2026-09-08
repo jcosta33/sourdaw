@@ -7,16 +7,28 @@ import { quantizeNoteLengths } from '../../useCases/midiNoteTransforms/quantizeN
 import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 function prepareQuantizeNoteLengths(action: Extract<AppAction, { type: 'quantizeNoteLengths' }>) {
+    const label =
+        action.payload.noteIds && action.payload.noteIds.length > 0
+            ? 'Quantize selected note lengths'
+            : 'Quantize note lengths';
     return prepareMidiNoteTransformUndo({
         clipId: action.payload.clipId,
-        label: 'Quantize note lengths',
-        transform: (notes) => quantizeMidiNoteLengths({ notes, gridSize: action.payload.gridSize }),
+        label,
+        transform: (notes) =>
+            quantizeMidiNoteLengths({
+                notes,
+                gridSize: action.payload.gridSize,
+                noteIds: action.payload.noteIds,
+            }),
     });
 }
 
 export const handleQuantizeNoteLengths = createHandler<'quantizeNoteLengths'>({
     execute: (action) => {
-        const written = quantizeNoteLengths(action.payload.clipId, action.payload.gridSize);
+        const written =
+            action.payload.noteIds !== undefined
+                ? quantizeNoteLengths(action.payload.clipId, action.payload.gridSize, action.payload.noteIds)
+                : quantizeNoteLengths(action.payload.clipId, action.payload.gridSize);
         return { status: written ? 'written' : 'no-write' };
     },
     describe: (action) => prepareQuantizeNoteLengths(action).description,

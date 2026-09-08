@@ -34,4 +34,22 @@ describe('transposeMidiNotes', () => {
         const result = transposeMidiNotes({ notes: [note('a', 60)], semitones: -12 });
         expect(result[0]?.pitch).toBe(48);
     });
+
+    it('transposes only matching notes when noteIds is provided', () => {
+        const result = transposeMidiNotes({
+            notes: [note('a', 60), note('b', 64), note('c', 67)],
+            semitones: 5,
+            noteIds: ['b'],
+        });
+        expect(result).toEqual([note('a', 60), note('b', 69), note('c', 67)]);
+    });
+
+    it('transposes all notes when noteIds is empty array', () => {
+        const result = transposeMidiNotes({
+            notes: [note('a', 60), note('b', 64)],
+            semitones: 5,
+            noteIds: [],
+        });
+        expect(result).toEqual([note('a', 65), note('b', 69)]);
+    });
 });

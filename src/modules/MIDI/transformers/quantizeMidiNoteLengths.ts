@@ -3,6 +3,7 @@ import { type MidiNote } from '../models/MidiNote';
 type QuantizeMidiNoteLengthsInput = {
     notes: readonly MidiNote[];
     gridSize: number;
+    noteIds?: readonly string[];
 };
 
 const MIN_NOTE_LENGTH_GRID_SIZE = 0.03125;
@@ -11,7 +12,11 @@ export function quantizeMidiNoteLengths(input: QuantizeMidiNoteLengthsInput): Mi
     if (!Number.isFinite(input.gridSize) || input.gridSize < MIN_NOTE_LENGTH_GRID_SIZE) {
         return input.notes.map((note) => ({ ...note }));
     }
+    const targetIds = input.noteIds && input.noteIds.length > 0 ? new Set(input.noteIds) : null;
     return input.notes.map((note) => {
+        if (targetIds && !targetIds.has(note.id)) {
+            return note;
+        }
         const multiples = Math.round(note.duration / input.gridSize);
         const snappedDuration = multiples * input.gridSize;
         const duration = multiples < 1 || !Number.isFinite(snappedDuration) ? note.duration : snappedDuration;

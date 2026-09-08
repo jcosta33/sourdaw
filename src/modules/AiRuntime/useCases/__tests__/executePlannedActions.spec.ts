@@ -698,6 +698,53 @@ describe('executePlannedActions', () => {
         expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
     });
 
+    it('settles a stale-shaped binding rejection as invalidated with the unified sentence', async () => {
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'rejected',
+            reason: 'The approved target fingerprints no longer match.',
+            actions: [],
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+            getApprovalBindingRejection: () => ({
+                reason: 'The approved target fingerprints no longer match.',
+                stale: true,
+            }),
+        });
+
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(vi.mocked(recordAiActionGroup)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+    });
+
+    it('keeps a genuine binding rejection failed on the planned-action route', async () => {
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'rejected',
+            reason: 'The approved action hashes no longer match.',
+            actions: [],
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+            getApprovalBindingRejection: () => ({
+                reason: 'The approved action hashes no longer match.',
+                stale: false,
+            }),
+        });
+
+        expect(result).toEqual({ status: 'failed', reason: 'The approved action hashes no longer match.' });
+    });
+
     it('reports user cancellation separately from project invalidation', async () => {
         const controller = new AbortController();
         controller.abort();

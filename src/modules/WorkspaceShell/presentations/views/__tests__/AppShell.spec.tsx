@@ -820,6 +820,23 @@ describe('AppShell', () => {
             expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
         });
 
+        it('makes the shell root inert while the onboarding tour is active, and restores it when inactive', () => {
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            const shellRoot = screen.getByTestId('app-shell');
+            expect(shellRoot).not.toHaveAttribute('inert');
+
+            onboardingState = { active: true, stepIndex: 0 };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(shellRoot).toHaveAttribute('inert');
+            expect(shellRoot).not.toContainElement(screen.getByRole('dialog', { name: /onboarding tour/i }));
+
+            onboardingState = { active: false, stepIndex: 0 };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(shellRoot).not.toHaveAttribute('inert');
+        });
+
         it('makes the shell root inert while the cheat sheet is open, and restores it on close', () => {
             render(<AppShell>Content</AppShell>);
             const shellRoot = screen.getByTestId('app-shell');

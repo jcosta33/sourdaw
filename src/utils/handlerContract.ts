@@ -469,6 +469,15 @@ export type ClipSplitActionSnapshot = {
      * clears the right half's satellites rather than leaving them behind.
      */
     readonly clipSatellites?: readonly ClipSatelliteEntrySnapshot[];
+    /**
+     * The right fragment's clip-scoped automation lanes, copied from the
+     * source and clamped to its window. Scoped to the RIGHT clip id only —
+     * the left half keeps its id and its lanes untouched. Optional so split
+     * actions captured before lanes joined this snapshot still decode; the
+     * pre-split side carries an explicit empty list, so restoring it retires
+     * the copies rather than leaving them behind.
+     */
+    readonly clipAutomationLanes?: readonly ClipAutomationLaneSnapshot[];
 };
 export type RippleShiftSnapshot = {
     readonly clipId: string;
@@ -1528,7 +1537,16 @@ export type AppAction =
               cp2?: { x: number; y: number };
           };
       }
-    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
+    | {
+          type: 'quantizeNotes';
+          payload: {
+              clipId: string;
+              gridSize: number;
+              strength?: number;
+              swing?: number;
+              noteIds?: string[];
+          };
+      }
     | {
           type: 'removeShortMidiOverlaps';
           payload: {
@@ -1597,8 +1615,8 @@ export type AppAction =
               };
           };
       }
-    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
-    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
+    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number; noteIds?: string[] } }
+    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number; noteIds?: string[] } }
     | {
           type: 'humanizeNotes';
           // `seed`/`velocityAmount` are optional and captured by the handler on

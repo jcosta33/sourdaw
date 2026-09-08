@@ -1466,6 +1466,7 @@ const schemaDefinitions = [
             sourceMidi: 187,
             rightMidi: 187,
             clipSatellites: 69,
+            clipAutomationLanes: 112,
         },
         required: ['trackId', 'leftClip', 'rightClip', 'rightClipIndex', 'sourceMidi', 'rightMidi'],
         additionalProperties: false,
@@ -2325,6 +2326,7 @@ const schemaDefinitions = [
             gridSize: 1,
             strength: 1,
             swing: 1,
+            noteIds: 20,
         },
         required: ['clipId', 'gridSize'],
         additionalProperties: false,
@@ -2612,6 +2614,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             gridSize: 1,
+            noteIds: 20,
         },
         required: ['clipId', 'gridSize'],
         additionalProperties: false,
@@ -2621,6 +2624,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             semitones: 1,
+            noteIds: 20,
         },
         required: ['clipId', 'semitones'],
         additionalProperties: false,
@@ -5069,6 +5073,15 @@ const schemaDefinitions = [
         required: ['clipId', 'algorithm'],
         additionalProperties: false,
     },
+    {
+        type: 'object',
+        properties: {
+            clipId: 0,
+            semitones: 1,
+        },
+        required: ['clipId', 'semitones'],
+        additionalProperties: false,
+    },
 ] as const satisfies readonly SchemaDefinition[];
 
 const schemaIdByActionType = {
@@ -5406,7 +5419,7 @@ const schemaIdByActionType = {
     setRaveBlend: 619,
     enableWarping: 170,
     setWarpAlgorithm: 620,
-    setWarpPitchShift: 314,
+    setWarpPitchShift: 621,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

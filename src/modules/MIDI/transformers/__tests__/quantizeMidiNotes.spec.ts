@@ -116,4 +116,35 @@ describe('quantizeMidiNotes', () => {
         expect(result[0]?.startBeat).toBe(1.0);
         expect(result[1]?.startBeat).toBe(2.0);
     });
+
+    it('quantizes only matching notes when noteIds is provided, leaving other notes untouched', () => {
+        const n1 = note(0.1);
+        const n2 = note(0.6);
+        const n3 = note(1.15);
+
+        const result = quantizeMidiNotes({
+            notes: [n1, n2, n3],
+            gridSize: 0.25,
+            noteIds: [n2.id],
+        });
+
+        // n1 untouched (0.1), n2 quantized to 0.5, n3 untouched (1.15)
+        expect(result[0]?.startBeat).toBe(0.1);
+        expect(result[1]?.startBeat).toBe(0.5);
+        expect(result[2]?.startBeat).toBe(1.15);
+    });
+
+    it('quantizes all notes when noteIds is empty array', () => {
+        const n1 = note(0.1);
+        const n2 = note(0.6);
+
+        const result = quantizeMidiNotes({
+            notes: [n1, n2],
+            gridSize: 0.25,
+            noteIds: [],
+        });
+
+        expect(result[0]?.startBeat).toBe(0);
+        expect(result[1]?.startBeat).toBe(0.5);
+    });
 });

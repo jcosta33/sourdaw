@@ -50,6 +50,7 @@ type ExecuteConfirmedCommandBatchResult =
           finalizationEvidenceFailure: string | null;
           canRebindSectionRenderArtifacts: boolean;
           isProjectMutationAuthorized: () => boolean;
+          approvalBindingRejection: { reason: string; stale: boolean } | null;
           renderJobAttempts: number;
           cancellationTriggeredByInvalidation: boolean;
           abortSignal: AbortSignal;
@@ -336,9 +337,19 @@ export async function executeConfirmedCommandBatch(
         if (!hasPriorVerifiedBatchReceipt && !approved) {
             throw new Error('The command batch has no exact risk approval binding.');
         }
+        // The validator classifies a rejection during the batch's own
+        // authorization, so the observation is written from a callback; a ref
+        // box defeats control-flow narrowing that cannot see the callback run.
+        const bindingRejectionRef: { current: { reason: string; stale: boolean } | null } = { current: null };
         const approvalBinding =
             !hasPriorVerifiedBatchReceipt && approved
-                ? issueAgentCommandApprovalBinding({ approval: approved, commandBatch })
+                ? issueAgentCommandApprovalBinding({
+                      approval: approved,
+                      commandBatch,
+                      onRejection: (rejection) => {
+                          bindingRejectionRef.current = rejection;
+                      },
+                  })
                 : undefined;
         await preparePendingActionResourceLeaseForCommit(confirmation.id, commandBatch);
         const batchResult = await executeVersionedCommandBatchEnvelope({
@@ -350,6 +361,16 @@ export async function executeConfirmedCommandBatch(
         });
         const failedBeforeCommit =
             batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
+        // A rejection the binding's own validator classified as stale-shaped is
+        // the project-moved-on event the preflight guard detects; keep it on the
+        // flight so settlement can unify the disposition. The reason match
+        // guards against an unrelated rejection shape after the same await.
+        const observedBindingRejection =
+            bindingRejectionRef.current &&
+            batchResult.status === 'rejected' &&
+            batchResult.reason === bindingRejectionRef.current.reason
+                ? bindingRejectionRef.current
+                : null;
         if (
             (!recoveringPendingEffects && batchResult.status === 'cancelled') ||
             (!recoveringPendingEffects && failedBeforeCommit && !isProjectMutationAuthorized())
@@ -369,6 +390,7 @@ export async function executeConfirmedCommandBatch(
             finalizationEvidenceFailure,
             canRebindSectionRenderArtifacts,
             isProjectMutationAuthorized,
+            approvalBindingRejection: observedBindingRejection,
             renderJobAttempts,
             cancellationTriggeredByInvalidation,
             abortSignal: aborter.signal,

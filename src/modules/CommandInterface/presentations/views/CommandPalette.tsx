@@ -13,6 +13,50 @@ import { cn } from '#/utils/Styles/cn';
 
 import { searchCommands, type CommandEntry } from './commandRegistry';
 
+type CommandOptionProps = {
+    cmd: CommandEntry;
+    index: number;
+    activeIndex: number;
+    onSelect: () => void;
+    onHover: () => void;
+};
+
+const CommandOption = ({ cmd, index, activeIndex, onSelect, onHover }: CommandOptionProps): ReactElement => {
+    const isSelected = index === activeIndex;
+
+    return (
+        <Button
+            variant="bare"
+            size="bare"
+            type="button"
+            id={`command-palette-option-${cmd.id}`}
+            role="option"
+            aria-selected={isSelected}
+            className={cn(
+                'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
+                isSelected
+                    ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]'
+                    : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
+            )}
+            onClick={onSelect}
+            // Use pointermove (real cursor motion), not mouseenter:
+            // mouseenter fires when filtering shifts an option under a
+            // stationary cursor, clobbering keyboard nav with a stale index.
+            onPointerMove={onHover}
+        >
+            <div>
+                <span className="text-foreground">{cmd.label}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{cmd.description}</span>
+            </div>
+            {cmd.shortcut ? (
+                <DawKeycap compact className="bg-muted">
+                    {cmd.shortcut}
+                </DawKeycap>
+            ) : null}
+        </Button>
+    );
+};
+
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
@@ -24,6 +68,9 @@ export const CommandPalette = (): ReactElement | null => {
     // Keep selection in range when results filter; a stale hover index here used
     // to fall out of bounds and swallow Enter (palette stayed open).
     const activeIndex = results.length > 0 ? Math.min(selectedIndex, results.length - 1) : -1;
+    const listboxId = 'command-palette-listbox';
+    const activeOptionId =
+        activeIndex >= 0 && results[activeIndex] ? `command-palette-option-${results[activeIndex].id}` : undefined;
 
     const [prevOpen, setPrevOpen] = useState(commandPaletteOpen);
     if (prevOpen !== commandPaletteOpen) {
@@ -73,6 +120,12 @@ export const CommandPalette = (): ReactElement | null => {
                     <span className="text-sm text-muted-foreground mr-2">&gt;</span>
                     <Input
                         ref={inputRef}
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={commandPaletteOpen}
+                        aria-haspopup="listbox"
+                        aria-controls={listboxId}
+                        aria-activedescendant={activeOptionId}
                         value={query}
                         onChange={(event) => {
                             setQuery(event.target.value);
@@ -86,36 +139,21 @@ export const CommandPalette = (): ReactElement | null => {
                     />
                 </Row>
 
-                <div className="max-h-72 overflow-y-auto bg-surface-base py-1" role="listbox">
+                <div
+                    id={listboxId}
+                    role="listbox"
+                    aria-label="Commands"
+                    className="max-h-72 overflow-y-auto bg-surface-base py-1"
+                >
                     {results.map((cmd, index) => (
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
+                        <CommandOption
                             key={cmd.id}
-                            role="option"
-                            aria-selected={index === activeIndex}
-                            className={cn(
-                                'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
-                                index === activeIndex
-                                    ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]'
-                                    : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
-                            )}
-                            onClick={() => execute(cmd)} // Use pointermove (real cursor motion), not mouseenter:
-                            // mouseenter fires when filtering shifts an option under a
-                            // stationary cursor, clobbering keyboard nav with a stale index.
-                            onPointerMove={() => setSelectedIndex(index)}
-                        >
-                            <div>
-                                <span className="text-foreground">{cmd.label}</span>
-                                <span className="ml-2 text-xs text-muted-foreground">{cmd.description}</span>
-                            </div>
-                            {cmd.shortcut ? (
-                                <DawKeycap compact className="bg-muted">
-                                    {cmd.shortcut}
-                                </DawKeycap>
-                            ) : null}
-                        </Button>
+                            cmd={cmd}
+                            index={index}
+                            activeIndex={activeIndex}
+                            onSelect={() => execute(cmd)}
+                            onHover={() => setSelectedIndex(index)}
+                        />
                     ))}
 
                     {results.length === 0 ? (

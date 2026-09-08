@@ -182,6 +182,8 @@ type BottomTabState = {
     selectedClipId: string | null;
 };
 
+const EDITOR_MIN_HEIGHT = 280;
+
 /**
  * The shell proper. `MobileGate` sits *above* this component, in the root route, so on
  * a sub-768px viewport AppShell never mounts and none of the effects below run: no
@@ -636,7 +638,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <Stack
                 className="h-full w-full overflow-hidden bg-surface-app"
                 data-testid="app-shell"
-                inert={projectLoadFailure !== null || cheatSheetOpen}
+                inert={projectLoadFailure !== null || cheatSheetOpen || onboarding.active}
             >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
@@ -674,9 +676,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
                     {/* Center: vertical split — arrangement over mixer */}
-                    <Stack grow className="min-w-0 overflow-hidden" style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}>
+                    <Stack
+                        grow
+                        className="min-w-0 overflow-x-hidden overflow-y-auto"
+                        style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}
+                    >
                         {/* Main arrangement area */}
-                        <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
+                        <main id="main-content" className="contain-content flex-1 min-h-min overflow-hidden">
                             {children}
                         </main>
 
@@ -882,16 +888,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     side="top"
                                     onResize={(d) => {
                                         if (activeBottomTab === 'editor') {
-                                            setEditorHeight((h) => Math.max(280, h + d));
+                                            setEditorHeight((h) => Math.max(EDITOR_MIN_HEIGHT, h + d));
                                         } else {
                                             setMixerHeight((h) => Math.max(120, h + d));
                                         }
                                     }}
                                 />
                                 <Stack
-                                    shrink={false}
+                                    shrink={activeBottomTab === 'editor'}
                                     className="contain-strict bg-surface-base overflow-hidden"
-                                    style={{ height: activeBottomTab === 'editor' ? editorHeight : mixerHeight }}
+                                    style={{
+                                        height: activeBottomTab === 'editor' ? editorHeight : mixerHeight,
+                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : undefined,
+                                    }}
                                 >
                                     {/* Bottom panel tab bar */}
                                     <Row
@@ -1039,8 +1048,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
-
-                <OnboardingTour />
             </Stack>
 
             {/* Siblings of the shell root, not children, because the root goes
@@ -1059,6 +1066,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 it declares `aria-modal="true"`, so the shell root goes `inert`
                 while it is open and it cannot be inside that subtree. */}
             <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
+            {onboarding.active ? <OnboardingTour /> : null}
 
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the

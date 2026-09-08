@@ -55,3 +55,7 @@ View models shape data for display. Validation, persistence, cross-feature mutat
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — presentation layer placement.
 - `.dependency-cruiser.cjs` — `components-no-*`, `presentation-no-*`, `react-only-in-presentation`.
 - `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively`.
+
+## Dock allocation review
+
+When reviewing dock allocation, exercise the editor and virtual keyboard together and inspect the rendered main and editor viewports. Individual pane state or class assertions cannot prove that the remaining canvas stays usable; this escaped #4027.

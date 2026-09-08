@@ -371,4 +371,13 @@ describe('validateActions', () => {
 
         expect(validateActions(actions)).toEqual(actions);
     });
+
+    it('should preserve quantizeNotes and transposeNotes with noteIds', () => {
+        const actions: RuntimeAction[] = [
+            { type: 'quantizeNotes', payload: { clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] } },
+            { type: 'transposeNotes', payload: { clipId: 'clip-1', semitones: 5, noteIds: ['n1'] } },
+        ];
+
+        expect(validateActions(actions)).toEqual(actions);
+    });
 });
