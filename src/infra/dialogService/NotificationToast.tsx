@@ -31,7 +31,7 @@ export const NotificationToast = (): ReactElement | null => {
     return (
         <div
             className={cn(
-                'fixed bottom-16 left-4 z-[10000] w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
+                'pointer-events-none fixed top-14 right-4 z-[10000] w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-top-2',
                 levelSurface
             )}
             role="alert"
@@ -47,7 +47,13 @@ export const NotificationToast = (): ReactElement | null => {
                     )}
                 />
                 <p className="flex-1 text-xs text-foreground">{current.message}</p>
-                <Button variant="ghost" size="xs" onClick={dismissCurrent} aria-label="Dismiss notification">
+                <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={dismissCurrent}
+                    aria-label="Dismiss notification"
+                    className="pointer-events-auto"
+                >
                     <X className="size-3" />
                 </Button>
             </Row>
