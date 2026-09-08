@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -19,7 +19,7 @@ async function openEditorDock(page: Page): Promise<void> {
     await page.getByRole('tab', { name: 'Editor' }).click();
 }
 
-async function getBox(locator: import('@playwright/test').Locator): Promise<{ width: number; height: number }> {
+async function getBox(locator: Locator): Promise<{ width: number; height: number }> {
     const box = await locator.boundingBox();
     if (!box) {
         throw new Error('Expected a rendered element box');
