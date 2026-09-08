@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -6,7 +7,7 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function add_device(page: import('@playwright/test').Page, name: RegExp): Promise<void> {
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
     await inspector.getByRole('button', { name: 'Add device' }).click();
-    await page.getByRole('menuitem', { name: name }).click();
+    await page.getByRole('menuitem', { name }).click();
     await expect(inspector.getByText(name)).toBeVisible({ timeout: 5000 });
 }
 
@@ -49,7 +50,6 @@ test.describe('Instrument Panels — Effects', () => {
 
         const remove = inspector.getByRole('button', { name: /Remove Gluten/i });
         await remove.click();
-        await page.waitForTimeout(500);
 
         await expect(inspector.getByText(/Gluten/i)).toHaveCount(0);
     });

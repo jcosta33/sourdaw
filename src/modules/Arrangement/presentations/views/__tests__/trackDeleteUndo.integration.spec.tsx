@@ -140,6 +140,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     pickFiles: vi.fn(),
     saveProject: vi.fn(),
+    saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),

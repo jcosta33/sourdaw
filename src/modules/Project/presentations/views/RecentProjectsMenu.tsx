@@ -26,6 +26,7 @@ import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/expo
 import { pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile';
 import { newProject } from '../../useCases/projectPersistence/newProject';
 import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
+import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
 import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
@@ -69,9 +70,11 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleNewProject = () => {
         void (async () => {
-            // Abort on a failed save (already notified) so the current
-            // project stays open with its unsaved work.
-            if (!(await saveProject())) {
+            // Abort on a failed save or on a save that resolved with the
+            // project still dirty — a plugin capture rejected before commit
+            // keeps that edit uncaptured, and a new project would destroy it.
+            // Both refusal surfaces already notified; the project stays open.
+            if (!(await saveProjectBeforeReplacement())) {
                 return;
             }
             void newProject();
@@ -114,10 +117,14 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleLoad = (entry: RecentProjectEntry) => {
         void (async () => {
             // Await the pre-switch save (audit #568 F2) and abort on its
-            // failure; react to the load outcome by reason (audit #568 F3):
-            // prune only a definitively missing entry, notify on transient
-            // failure, and do nothing when a newer transition superseded.
-            if (!(await saveProject())) {
+            // failure or on a save that resolved with the project still dirty
+            // — a plugin capture rejected before commit keeps that edit
+            // uncaptured, and loading over it would destroy it; both refusal
+            // surfaces already notified. Then react to the load outcome by
+            // reason (audit #568 F3): prune only a definitively missing
+            // entry, notify on transient failure, and do nothing when a newer
+            // transition superseded.
+            if (!(await saveProjectBeforeReplacement())) {
                 return;
             }
             const outcome = await loadRecentProject(entry.key);

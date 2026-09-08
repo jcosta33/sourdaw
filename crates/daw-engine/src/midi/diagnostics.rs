@@ -12,12 +12,22 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// counter, so a refusal observed here returns the slot the ledger
     /// counted for it.
     pub effect_id_collisions: u64,
-    /// An `AddEffect` command named a `plugin_type` with no built-in mapping.
-    /// Unreachable from this engine since the command's payload became the
-    /// fixed-size `BuiltinEffectType` address: an unmapped name is refused
-    /// control-side by `BuiltinEffectType::from_name`. The field stays
-    /// published because the diagnostics surface is a contract; this engine
-    /// reads zero on it.
+    /// An `AddEffect` the master insert chain does not support: a built-in
+    /// that sounds notes ([`crate::scheduler::PluginCore::sounds_notes`]),
+    /// which belongs on a track chain's generator pass instead. Refused on
+    /// the callback and counted here rather than installed.
+    ///
+    /// The control-side `EngineHandle::add_effect` refuses the same
+    /// registration first, where the caller hears it, so this counter is
+    /// the last line for a command pushed raw through `push`/
+    /// `send_graph_batch`. The control-side effect-table ledger reconciles
+    /// against it exactly as it does against `effect_id_collisions`: a
+    /// refusal observed here returns the slot the ledger counted for it.
+    ///
+    /// An `AddEffect` naming a `plugin_type` with no built-in mapping is
+    /// still unreachable from this engine, since the command's payload is
+    /// the fixed-size `BuiltinEffectType` address: an unmapped name is
+    /// refused control-side by `BuiltinEffectType::from_name`.
     pub unsupported_effect_additions: u64,
     /// A parameter write the engine could not deliver. Three routes feed it:
     ///

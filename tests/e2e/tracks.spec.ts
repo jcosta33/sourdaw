@@ -45,10 +45,8 @@ test.describe('Track Management', () => {
         await expect(duplicateItem).toBeVisible();
         await duplicateItem.click();
 
-        // Wait for duplicated track
-        await page.waitForTimeout(500);
         await expect(synthLeadTrackNames).toHaveCount(2);
-        
+
         // Find the duplicate row by checking the parent row of the second name
         const duplicatedTrackName = synthLeadTrackNames.nth(1);
         await expect(duplicatedTrackName).toBeVisible();

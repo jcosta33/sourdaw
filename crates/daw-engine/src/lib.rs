@@ -5,6 +5,7 @@ pub(crate) mod device;
 /// its refusal is the one part of it a host has to be able to name.
 pub use device::InputOpenRefusal;
 pub mod engine_events;
+mod meter;
 pub mod midi;
 pub mod midi_fx;
 pub mod offline;
@@ -25,10 +26,10 @@ use pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
-    graph_progress_channel, master_meter_channel, transport_position_channel, BuiltinEffectType,
-    GraphCommand, GraphProgressReader, GraphProgressSnapshot, MasterMeterReader,
-    MasterMeterSnapshot, PluginCore, RetiredGraphObjects, TransportPositionReader,
-    TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+    graph_progress_channel, meter_channel, transport_position_channel, BuiltinEffectType,
+    GraphCommand, GraphProgressReader, GraphProgressSnapshot, MeterReader, MeterSnapshot,
+    PluginCore, RetiredGraphObjects, TransportPositionReader, TransportPositionSnapshot,
+    CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -115,11 +116,15 @@ pub struct EngineHandle {
     /// admission refuses early — the safe side of a prediction, never
     /// headroom the table does not have.
     effect_registrations: usize,
-    /// The cumulative `effect_id_collisions` count whose slots the ledger has
-    /// already returned. The callback's counter is cumulative and never
-    /// resets, so slots are returned by diffing against this baseline rather
-    /// than by consuming the raw snapshot.
-    reconciled_effect_id_collisions: u64,
+    /// The cumulative `effect_id_collisions` and `unsupported_effect_additions`
+    /// count, summed, whose slots the ledger has already returned. Both
+    /// counters are cumulative refusals the callback counts after this
+    /// ledger incremented — a colliding id and a note-sink built-in refused
+    /// onto the master chain alike — and both never reset, so slots are
+    /// returned by diffing their sum against this baseline rather than by
+    /// consuming the raw snapshot. Cumulative counters sum to a cumulative
+    /// counter, so summing them and diffing once is exact.
+    reconciled_effect_refusals: u64,
     /// Plugin ids this handle has put on the scheduler's input tap and not
     /// taken off again.
     ///
@@ -148,7 +153,7 @@ pub struct EngineHandle {
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
-    master_meter: MasterMeterReader,
+    meter: MeterReader,
     /// Stream errors the engine's output device reported.
     engine_events: Consumer<EngineEvent>,
     /// Stream errors the engine's input device reported.
@@ -222,7 +227,7 @@ impl EngineHandle {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (meter_tx, meter_reader) = meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let spawned = spawn_audio_thread_with_diagnostics(
@@ -231,7 +236,7 @@ impl EngineHandle {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
-            master_meter_tx,
+            meter_tx,
             engine_event_tx,
             // Handing an event ring over here is the whole of asking for
             // capture, and it no longer opens anything: the ends an input
@@ -285,13 +290,13 @@ impl EngineHandle {
             // The zero baseline is exact: the diagnostics pair this handle
             // reads is built in this same `spawn` call, and both its ends
             // start from a zeroed snapshot.
-            reconciled_effect_id_collisions: 0,
+            reconciled_effect_refusals: 0,
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
-            master_meter: master_meter_reader,
+            meter: meter_reader,
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
@@ -520,14 +525,23 @@ impl EngineHandle {
     /// the seam.
     pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
         let snapshot = self.midi_rt_diagnostics.snapshot();
-        self.return_refused_effect_slots(snapshot.effect_id_collisions);
+        self.return_refused_effect_slots(
+            snapshot
+                .effect_id_collisions
+                .saturating_add(snapshot.unsupported_effect_additions),
+        );
         snapshot
     }
 
     /// Return to the ledger the slots whose registrations the callback
-    /// refused on id collision, by diffing the cumulative
-    /// `effect_id_collisions` counter against the part of it whose slots have
-    /// already been returned.
+    /// refused, by diffing the sum of the cumulative `effect_id_collisions`
+    /// and `unsupported_effect_additions` counters against the part of that
+    /// sum whose slots have already been returned.
+    ///
+    /// Both are cumulative refusals the callback counts after this ledger
+    /// incremented — a colliding id, and a note-sink built-in refused onto
+    /// the master chain — so summing them and diffing once is exact: a
+    /// cumulative counter's sum with another is itself cumulative.
     ///
     /// Why the diagnostics read is the seam and not a message from the
     /// callback: the command ring runs control → audio, so it cannot carry a
@@ -535,7 +549,7 @@ impl EngineHandle {
     /// already runs audio → control and the render callback publishes it
     /// every block.
     ///
-    /// Every collision the callback counts was a registration that crossed
+    /// Every refusal the callback counts was a registration that crossed
     /// [`Self::push`] and incremented the ledger first — only this handle
     /// pushes — so the diff is exact and the ledger returns to the table
     /// population the callback actually holds. The subtraction saturates
@@ -548,14 +562,13 @@ impl EngineHandle {
     /// pair is built in the same spawn as the scheduler that publishes into
     /// it, both ends start zeroed, and one handle owns one pair — a second
     /// handle is a second engine with its own scheduler and its own
-    /// collisions.
-    fn return_refused_effect_slots(&mut self, effect_id_collisions: u64) {
-        let refused = effect_id_collisions.saturating_sub(self.reconciled_effect_id_collisions);
+    /// refusals.
+    fn return_refused_effect_slots(&mut self, effect_refusals: u64) {
+        let refused = effect_refusals.saturating_sub(self.reconciled_effect_refusals);
         if refused == 0 {
             return;
         }
-        self.reconciled_effect_id_collisions =
-            self.reconciled_effect_id_collisions.saturating_add(refused);
+        self.reconciled_effect_refusals = self.reconciled_effect_refusals.saturating_add(refused);
         self.effect_registrations = self
             .effect_registrations
             .saturating_sub(usize::try_from(refused).unwrap_or(usize::MAX));
@@ -593,18 +606,19 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
-    /// Read what the engine's master output measured, outside the callback.
+    /// Read what the engine's master output, and every timeline track's own
+    /// strip, measured, outside the callback.
     ///
     /// Its own channel rather than a field on the transport snapshot, for the
-    /// reason [`MasterMeterSnapshot`] gives: a level makes none of the
+    /// reason [`MeterSnapshot`] gives: a level makes none of the
     /// happens-before claims the position's fields make, and pairing it with
     /// them would say it did.
     ///
-    /// The peak is already held at the engine, so a poll at UI rate reads the
-    /// loudest thing the device was handed inside the hold window rather than
+    /// Every peak is already held at the engine, so a poll at UI rate reads
+    /// the loudest thing each was handed inside the hold window rather than
     /// whichever callback the poll happened to land after.
-    pub fn master_meter_snapshot(&mut self) -> MasterMeterSnapshot {
-        self.master_meter.snapshot()
+    pub fn meter_snapshot(&mut self) -> MeterSnapshot {
+        self.meter.snapshot()
     }
 
     /// Take every engine event published since the last drain, output-side
@@ -656,17 +670,27 @@ impl EngineHandle {
     /// after the stream build reported it, so there is no handle to call this
     /// on before the negotiation, exactly as there is no handle to push an
     /// `AddPlugin` onto before one exists.
+    ///
+    /// A built-in that sounds notes is refused here too: the master insert
+    /// chain this method registers onto is effects-only, so an instrument
+    /// body belongs on a track chain's generator pass instead of here.
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
             .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
-        // A built-in that sounds notes is scheduled against like any hosted
-        // instrument, so it is registered holding a store wherever it is
-        // registered from — built here, because the callback may not.
-        let notes = plugin_type.sounds_notes().then(MidiNoteStore::new);
+        if plugin_type.sounds_notes() {
+            let name = plugin_type.name();
+            return Err(format!(
+                "built-in '{name}' sounds notes and belongs on a track chain, not the master \
+                 insert chain"
+            ));
+        }
+        // A built-in that sounds notes was already refused above, so a
+        // built-in reaching this push never sounds notes and carries no
+        // store.
         self.push(GraphCommand::AddEffect(
             id,
             PluginCore::builtin(plugin_type, self.sample_rate),
-            notes,
+            None,
         ))
     }
 
@@ -935,8 +959,11 @@ impl EngineHandle {
         })
     }
 
-    /// Take an effect out of a track's chain, returning it to the master
-    /// insert chain without unloading it.
+    /// Take an effect out of a track's chain without unloading it. A built-in
+    /// effect body returns to the master insert chain; a hosted plugin and an
+    /// instrument body run nowhere until a chain takes them again, because a
+    /// hosted plugin belongs to the load that created it and the master chain
+    /// runs effects only.
     pub fn remove_track_device(&mut self, track_id: usize, effect_id: usize) -> Result<(), String> {
         self.push(GraphCommand::RemoveTrackDevice {
             track_id,
@@ -1358,7 +1385,7 @@ fn engine_handle_fixture(
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
-    master_meter: MasterMeterReader,
+    meter: MeterReader,
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
     capture_refusal: Arc<AtomicU8>,
@@ -1371,13 +1398,13 @@ fn engine_handle_fixture(
         audio_thread: audio_thread::detached_audio_thread_handle(),
         next_plugin_id: 1000,
         effect_registrations: 0,
-        reconciled_effect_id_collisions: 0,
+        reconciled_effect_refusals: 0,
         capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
         midi_rt_diagnostics,
         timeline_rt_diagnostics,
         graph_progress,
         transport_position,
-        master_meter,
+        meter,
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
@@ -1407,7 +1434,7 @@ pub fn engine_handle_for_command_capture(
     let (_timeline_diagnostics_tx, timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-    let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+    let (_meter_tx, meter_reader) = meter_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
     let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
@@ -1420,7 +1447,7 @@ pub fn engine_handle_for_command_capture(
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
-            master_meter_reader,
+            meter_reader,
             engine_event_rx,
             capture_event_rx,
             audio_thread::new_capture_refusal_slot(),
@@ -1443,9 +1470,10 @@ mod tests {
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
     };
+    use crate::midi::note_store::MidiNoteStore;
     use crate::plugin_slot::NativePlugin;
     use crate::scheduler::{
-        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
         BuiltinEffectType, GraphCommand, PluginCore,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
@@ -1637,6 +1665,44 @@ mod tests {
             command_rx.pop(),
             Ok(GraphCommand::SetParam(id, DeviceParam::ShiftSemitones, value))
                 if id == 7 && value == 3.0
+        ));
+    }
+
+    /// A built-in that sounds notes is refused control-side, before anything
+    /// crosses the ring: the master insert chain [`EngineHandle::add_effect`]
+    /// registers onto is effects-only, and an instrument body under its
+    /// dry-line contract would shift the chain signal by its declared
+    /// latency on every bypass toggle. The refused registration touches
+    /// neither the ring nor the ledger, and a plain built-in still lands.
+    #[test]
+    fn add_effect_refuses_a_built_in_that_sounds_notes() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        let before = engine.registered_effect_count();
+        let error = engine
+            .add_effect(7, "fermenter")
+            .expect_err("a note-sink built-in must not register on the master chain");
+        assert!(
+            error.contains("master insert chain"),
+            "the error must name why the built-in was refused, got: {error}"
+        );
+        assert_eq!(
+            engine.registered_effect_count(),
+            before,
+            "a refused registration must not touch the ledger"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "a refused built-in must not cross the ring"
+        );
+
+        engine
+            .add_effect(7, "knead")
+            .expect("knead does not sound notes and still registers");
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_), None)) if id == 7
         ));
     }
 
@@ -2557,7 +2623,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2570,7 +2636,7 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
-                master_meter_reader,
+                meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
@@ -2640,6 +2706,58 @@ mod tests {
             .expect("the freed slot admits a fresh registration");
         scheduler.update_graph();
         assert_eq!(scheduler.effect_table_len(), 2);
+    }
+
+    /// A note-sink built-in refused onto the master chain must give its
+    /// ledger slot back too, on the same seam a collision does: a raw
+    /// `AddEffect` pushed through `push`/`send_graph_batch` (bypassing
+    /// [`crate::EngineHandle::add_effect`]'s own control-side refusal, as a
+    /// producer sending a `GraphCommand` batch directly would) still counts
+    /// against the ledger as a prediction, and the callback refuses it after
+    /// the fact — so without a route back the counted slot would be
+    /// permanent.
+    #[test]
+    fn a_refused_master_chain_sink_returns_its_ledger_slot_on_the_next_observation() {
+        let (mut engine, command_rx, diagnostics_tx) = handle_with_live_diagnostics_input(16);
+        let (retired_tx, _retired_rx) = RingBuffer::new(16);
+        let mut scheduler = AudioScheduler::with_midi_rt_diagnostics(
+            command_rx,
+            retired_tx,
+            48_000.0,
+            diagnostics_tx,
+        );
+
+        let before = engine.registered_effect_count();
+        engine
+            .push(GraphCommand::AddEffect(
+                7,
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .expect("the raw registration crosses the ring");
+        assert_eq!(
+            engine.registered_effect_count(),
+            before + 1,
+            "before the callback answers, the prediction stands"
+        );
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            0,
+            "the note-sink took no table slot"
+        );
+
+        // The refusal record crosses as diagnostics, exactly as a collision's
+        // does, and the handle's regular diagnostics read is the observation
+        // that returns the slot.
+        scheduler.publish_midi_rt_diagnostics();
+        let snapshot = engine.midi_rt_diagnostics_snapshot();
+        assert_eq!(snapshot.unsupported_effect_additions, 1);
+        assert_eq!(
+            engine.registered_effect_count(),
+            before,
+            "the refused registration's slot must return to the ledger"
+        );
     }
 
     /// Repeated collisions, observed round by round, leave the ledger exactly
@@ -2743,7 +2861,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
         let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2756,7 +2874,7 @@ mod tests {
                 timeline_diagnostics_reader,
                 graph_progress_reader,
                 transport_position_reader,
-                master_meter_reader,
+                meter_reader,
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
@@ -2827,7 +2945,7 @@ mod tests {
             timeline_rt_diagnostics_channel();
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
-        let (_master_meter_tx, master_meter_reader) = master_meter_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
         let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
@@ -2844,7 +2962,7 @@ mod tests {
             timeline_diagnostics_reader,
             graph_progress_reader,
             transport_position_reader,
-            master_meter_reader,
+            meter_reader,
             engine_event_rx,
             capture_event_rx,
             capture_refusal,

@@ -33,18 +33,20 @@
 //! reader taking one field from each can pair a count with a playhead the
 //! engine never held at the same moment.
 //!
-//! The master peak on the same reply is the one field drawn from elsewhere,
-//! and it is allowed to be because it claims nothing about the position beside
-//! it — see [`EngineTransportPosition`]. A field that did make such a claim
-//! would have to arrive on the transport channel or not at all.
+//! The master peak, and every strip peak, on the same reply are the fields
+//! drawn from elsewhere, and it is allowed to be because they claim nothing
+//! about the position beside them — see [`EngineTransportPosition`]. A field
+//! that did make such a claim would have to arrive on the transport channel
+//! or not at all.
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
-use daw_engine::scheduler::{GraphCommand, TransportPositionSnapshot};
+use daw_engine::scheduler::{GraphCommand, StripPeak, TransportPositionSnapshot};
 use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 
 /// One tempo segment of the arrangement's map, in seconds on the engine clock.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -138,7 +140,7 @@ pub struct TransportMapsApplied {
 /// economy, not a statement that the level and the position belong to one
 /// callback. Anything that needed them to would have to ask for a channel that
 /// publishes them together, and nothing does.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
     pub running: bool,
@@ -158,6 +160,13 @@ pub struct EngineTransportPosition {
     /// position fields on the payload are the last values that callback
     /// published, not what anyone is currently hearing.
     pub master_peak: f64,
+    /// Every timeline track strip's own held peak, keyed by the strip id the
+    /// renderer knows it by — one entry per track strip the registry holds,
+    /// held at the engine like the master. A strip the registry has not
+    /// registered is absent from the map, never zero: zero would claim a
+    /// reading the engine never published for it, while an absent key says
+    /// plainly that none exists yet.
+    pub strip_peaks: BTreeMap<String, f64>,
 }
 
 /// The engine's own snapshot, in the wire's units.
@@ -171,6 +180,7 @@ pub struct EngineTransportPosition {
 fn transport_position_payload(
     snapshot: TransportPositionSnapshot,
     master_peak: f32,
+    strip_peaks: BTreeMap<String, f64>,
     sample_rate: f64,
     rendering: bool,
 ) -> EngineTransportPosition {
@@ -185,7 +195,30 @@ fn transport_position_payload(
         time_sig_num: snapshot.time_sig_num,
         time_sig_denom: snapshot.time_sig_denom,
         master_peak: f64::from(master_peak),
+        strip_peaks,
     }
+}
+
+/// Every strip in `strips` the registry's own map names, keyed by the strip
+/// id rather than the native id the engine measured it under.
+///
+/// A strip the map does not name is dropped rather than kept under its native
+/// id: a caller reading this payload knows only strip ids, and a numeric
+/// fallback would read as a strip id that happens to look like a number
+/// instead of as what it is — a track the registry has not (or no longer)
+/// registered.
+fn strip_peaks_payload(
+    strips: &[StripPeak],
+    track_strip_ids: &HashMap<usize, &str>,
+) -> BTreeMap<String, f64> {
+    strips
+        .iter()
+        .filter_map(|strip| {
+            track_strip_ids
+                .get(&strip.track_id)
+                .map(|strip_id| ((*strip_id).to_string(), f64::from(strip.peak)))
+        })
+        .collect()
 }
 
 fn tempo_segments(
@@ -334,6 +367,16 @@ pub async fn set_transport_maps(
 pub async fn engine_transport_position(
     state: &AppState,
 ) -> Result<EngineTransportPosition, String> {
+    // Registry before engine, the order `set_transport_maps` takes them in:
+    // the strip-peak map below is keyed by native ids the registry hands out
+    // and read against a meter snapshot taken from the engine, so both locks
+    // are held here to keep the two agreeing on which strip a native id names
+    // at the moment this snapshot is taken.
+    let registry_guard = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -349,15 +392,17 @@ pub async fn engine_transport_position(
     // the transport snapshot itself, so the pairing is the engine's own single
     // publish rather than an ordering this side could only hope for.
     let snapshot = engine.transport_position_snapshot();
-    // A second read, deliberately. The level is its own channel at the engine
-    // because it makes none of the pairing claims the position's fields make,
-    // and reading it here rather than on a command of its own only spares the
-    // bridge a wakeup — see [`EngineTransportPosition`].
-    let master_peak = engine.master_meter_snapshot().peak;
+    // A second read, deliberately, and read once: the master peak and every
+    // strip peak below both come from this one snapshot, because the level is
+    // its own channel at the engine and makes none of the pairing claims the
+    // position's fields make — see [`EngineTransportPosition`].
+    let meter = engine.meter_snapshot();
+    let strip_peaks = strip_peaks_payload(meter.strips(), &registry_guard.track_strip_ids());
 
     Ok(transport_position_payload(
         snapshot,
-        master_peak,
+        meter.master_peak,
+        strip_peaks,
         sample_rate,
         rendering,
     ))
@@ -475,6 +520,9 @@ mod tests {
             time_sig_num: 5,
             time_sig_denom: 4,
             master_peak: 0.5,
+            strip_peaks: [("strip-a".to_string(), 0.25), ("strip-b".to_string(), 0.5)]
+                .into_iter()
+                .collect(),
         })
         .expect("position should serialize");
 
@@ -483,9 +531,40 @@ mod tests {
             concat!(
                 r#"{"running":true,"playing":true,"positionSeconds":1.5,"#,
                 r#""playheadFrame":72000.0,"loopWraps":2.0,"batchesApplied":11.0,"#,
-                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4,"masterPeak":0.5}"#
+                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4,"masterPeak":0.5,"#,
+                r#""stripPeaks":{"strip-a":0.25,"strip-b":0.5}}"#
             )
         );
+    }
+
+    /// A strip is keyed by the strip id the app knows it under, not by the
+    /// native id the engine measured it with, and a strip the registry has
+    /// not named is dropped rather than surfacing under its numeric id.
+    #[test]
+    fn strip_peaks_are_keyed_by_the_strip_id_that_owns_the_native_track() {
+        let strips = [
+            StripPeak {
+                track_id: 3,
+                peak: 0.25,
+            },
+            StripPeak {
+                track_id: 9,
+                peak: 0.5,
+            },
+            StripPeak {
+                track_id: 12,
+                peak: 0.75,
+            },
+        ];
+        let track_strip_ids: HashMap<usize, &str> = HashMap::from([(3, "strip-a"), (9, "strip-b")]);
+
+        let payload = strip_peaks_payload(&strips, &track_strip_ids);
+
+        let expected: BTreeMap<String, f64> =
+            [("strip-a".to_string(), 0.25), ("strip-b".to_string(), 0.5)]
+                .into_iter()
+                .collect();
+        assert_eq!(payload, expected);
     }
 
     /// The level the renderer's meter draws comes from the engine's own master
@@ -501,7 +580,7 @@ mod tests {
             ..TransportPositionSnapshot::default()
         };
 
-        let position = transport_position_payload(snapshot, 0.25, 48_000.0, true);
+        let position = transport_position_payload(snapshot, 0.25, BTreeMap::new(), 48_000.0, true);
 
         assert_eq!(position.master_peak, 0.25);
     }
@@ -523,7 +602,7 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 0.0, 48_000.0, true);
+        let position = transport_position_payload(snapshot, 0.0, BTreeMap::new(), 48_000.0, true);
 
         assert_eq!(position.batches_applied, 11.0);
         assert_eq!(position.playhead_frame, 72_000.0);
@@ -548,7 +627,7 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 0.5, 48_000.0, false);
+        let position = transport_position_payload(snapshot, 0.5, BTreeMap::new(), 48_000.0, false);
 
         assert!(!position.running);
         assert!(position.playing);

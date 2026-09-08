@@ -32,6 +32,8 @@
  * at all.
  */
 
+import { Worker } from 'node:worker_threads';
+
 import { systemTimers, type Timers } from './timers.js';
 
 import type { RendererSessionQuiesceOutcome } from './channels.js';
@@ -47,11 +49,52 @@ export type ShutdownOutcome =
     /** The deadline passed first. The caller force-quits. */
     | { readonly status: 'timed-out'; readonly deadlineMs: number };
 
+export type Watchdog = {
+    readonly disarm: () => void;
+};
+
+export type WatchdogSpawner = (deadlineMs: number, targetPid?: number) => Watchdog;
+
+export const spawnShutdownWatchdog: WatchdogSpawner = (
+    deadlineMs: number,
+    targetPid: number = process.pid
+): Watchdog => {
+    const workerCode = `
+        const { workerData } = require('node:worker_threads');
+        const timer = setTimeout(() => {
+            try {
+                process.kill(workerData.targetPid, 'SIGKILL');
+            } catch {
+                process.exit(1);
+            }
+        }, workerData.deadlineMs);
+    `;
+    let worker: Worker | undefined;
+    try {
+        worker = new Worker(workerCode, {
+            eval: true,
+            workerData: { deadlineMs, targetPid },
+        });
+        worker.unref();
+    } catch {
+        // If worker threads cannot be spawned in the environment, degrade gracefully
+    }
+    return {
+        disarm: () => {
+            if (worker !== undefined) {
+                void worker.terminate();
+                worker = undefined;
+            }
+        },
+    };
+};
+
 export type RunShutdownInput = {
     /** The addon's `shutdown()`. May return a value or a promise of one. */
     readonly shutdown: () => unknown;
     readonly deadlineMs?: number;
     readonly timers: Timers;
+    readonly armWatchdog?: WatchdogSpawner;
 };
 
 /**
@@ -60,21 +103,23 @@ export type RunShutdownInput = {
  * Resolves rather than rejects on every path: the caller's next act is to end
  * the process, and a rejection there would be an unhandled one on the way out.
  *
- * The bound holds for any shutdown that yields the JS thread. It cannot bound
- * one that blocks it — a timer cannot fire on a thread that is inside a native
- * call — and the CLAP contract puts editor teardown on that thread on purpose.
- * Bounding that case needs a watchdog outside the blocked thread, tracked as
- * issue 2096.
+ * The bound holds for any shutdown that yields the JS thread as well as one
+ * that blocks it synchronously: an out-of-thread watchdog worker is armed before
+ * the cascade begins and forcefully kills the process if the deadline passes,
+ * bounding synchronous native CLAP editor hangs on the main thread.
  */
 export const runShutdownWithDeadline = async ({
     shutdown,
     deadlineMs = SHUTDOWN_DEADLINE_MS,
     timers,
+    armWatchdog = spawnShutdownWatchdog,
 }: RunShutdownInput): Promise<ShutdownOutcome> => {
     let deadlineTimer: { readonly cancel: () => void } | undefined;
     const deadline = new Promise<ShutdownOutcome>((resolve) => {
         deadlineTimer = timers.setTimer(() => resolve({ status: 'timed-out', deadlineMs }), deadlineMs);
     });
+
+    const watchdog = armWatchdog(deadlineMs);
 
     const cascade = (async (): Promise<ShutdownOutcome> => {
         try {
@@ -88,6 +133,7 @@ export const runShutdownWithDeadline = async ({
         return await Promise.race([cascade, deadline]);
     } finally {
         deadlineTimer?.cancel();
+        watchdog.disarm();
     }
 };
 
@@ -100,6 +146,7 @@ export type BeforeQuitCascadeInput = {
     readonly host: { readonly shutdown: () => unknown } | undefined;
     readonly timers: Timers;
     readonly deadlineMs?: number;
+    readonly armWatchdog?: WatchdogSpawner;
 };
 
 /**
@@ -117,13 +164,14 @@ export const runBeforeQuitCascade = async ({
     host,
     timers,
     deadlineMs,
+    armWatchdog,
 }: BeforeQuitCascadeInput): Promise<ShutdownOutcome> => {
     refusePluginCommands();
     disposeScanSupervisor?.();
     if (host === undefined) {
         return { status: 'completed', report: undefined };
     }
-    return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers, deadlineMs });
+    return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers, deadlineMs, armWatchdog });
 };
 
 /** The one member of `before-quit`'s event the handler uses. */

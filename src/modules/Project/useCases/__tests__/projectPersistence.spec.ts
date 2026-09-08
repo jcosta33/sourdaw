@@ -13,6 +13,7 @@ import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
 import type { ProjectStoreState } from '../../stores/projectStore';
 import type { BuiltProjectData } from '../projectPersistence/fileIO/buildProjectData';
+import type { ExternalPluginCaptureOutcome } from '../projectPersistence/saveProject/captureExternalPluginStates';
 
 const { emit } = vi.hoisted(() => ({
     emit: vi.fn(),
@@ -46,7 +47,9 @@ const mocks = vi.hoisted(() => ({
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
-    captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    captureExternalPluginStates: vi
+        .fn<() => Promise<ExternalPluginCaptureOutcome>>()
+        .mockResolvedValue({ rejectedPlugins: [] }),
     buildProjectData: vi.fn<() => Promise<BuiltProjectData | null>>(),
     getDurableProjectOwnerId: vi.fn<() => string>(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
     migrateAbsoluteMidiNotes: vi.fn<() => void>(),
@@ -355,6 +358,27 @@ describe('Project Persistence Use Cases', () => {
             // by the stable per-project createdAt (sourdaw:project:<createdAt>), not
             // the mutable display name.
             expect(mocks.addToRecentProjects).toHaveBeenCalledWith('My Song', 'sourdaw:project:1700000000000');
+        });
+
+        // Regression companion (issue 3694): a capture rejected before commit
+        // leaves the plugin's live edit out of the persisted truth. The save
+        // still persists everything else, but it must not read as a clean
+        // success for that edit — dirty stays set so the next save retries.
+        it('keeps the project dirty when a plugin capture was rejected precommit', async () => {
+            mocks.projectStoreValue.value = {
+                ...mocks.projectStoreValue.value,
+                name: 'My Song',
+                createdAt: 1700000000000,
+                dirty: true,
+            };
+            mocks.captureExternalPluginStates.mockResolvedValue({ rejectedPlugins: ['serum'] });
+
+            const saved = await saveProject();
+
+            expect(saved).toBe(true);
+            expect(mocks.captureExternalPluginStates).toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).toHaveBeenCalled();
+            expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true }));
         });
     });
 

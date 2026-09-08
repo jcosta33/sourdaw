@@ -16,7 +16,7 @@ async function open_midi_editor(page: import('@playwright/test').Page): Promise<
     const timeline = page.getByLabel('Timeline editor surface');
     await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
     await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
     await timeline.dblclick({ position: { x: 300, y: 30 } });
     await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
 }

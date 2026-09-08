@@ -26,8 +26,6 @@ test.describe('Inspector track pan — keyboard response', () => {
         await pan.focus();
         const before = Number(await pan.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowRight');
-        await page.waitForTimeout(200);
-        const after = Number(await pan.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await pan.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { capturedNativePluginStateCache } from '../capturedNativePluginStateCache';
 import { captureExternalPluginStates } from '../captureExternalPluginStates';
+import { warnedExternalPluginCaptureRejections } from '../warnedExternalPluginCaptureRejections';
 
 type MockDevice = {
     id: string;
@@ -14,6 +15,7 @@ type MockDevice = {
 const mocks = vi.hoisted(() => ({
     trackStore: { value: null as { tracks: { id: string; devices: unknown[] }[] } | null },
     executeAppAction: vi.fn<(action: unknown, options?: unknown) => Promise<void>>(),
+    isAppActionCommittedError: vi.fn<(error: unknown) => boolean>(() => false),
     readPluginState: vi.fn<(instanceId: string) => Promise<string>>(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
     shouldWarnExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
@@ -24,6 +26,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore })
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: vi.fn(),
+    isAppActionCommittedError: mocks.isAppActionCommittedError,
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     readPluginState: mocks.readPluginState,
@@ -41,8 +44,10 @@ describe('captureExternalPluginStates', () => {
         vi.clearAllMocks();
         mocks.trackStore.value = null;
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(false);
         capturedNativePluginStateCache.clear();
+        warnedExternalPluginCaptureRejections.clear();
     });
 
     it('commits a fresh chunk for a loaded external plugin', async () => {
@@ -183,6 +188,40 @@ describe('captureExternalPluginStates', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
+    // The store-equal skip must still seed the self-read baseline (issue 3694,
+    // collab contract): the first capture enters the skip branch with the host
+    // read equal to the stored chunk, and when a collaboration sync later
+    // replaces the stored chunk with a peer's value, the unchanged host must
+    // keep skipping instead of re-committing our chunk over the peer's.
+    // Deleting the recordAcceptedCapture call in that skip branch reds exactly
+    // this test.
+    it('keeps skipping an unchanged host after a sync replaces the stored chunk, when the first capture took the store-equal skip', async () => {
+        const device: MockDevice = {
+            id: 'd1',
+            type: 'external-plugin',
+            externalInstanceId: 'inst-store-equal',
+            externalStateChunk: 'same',
+        };
+        setTrackDevices([device]);
+        mocks.readPluginState.mockResolvedValue('same');
+
+        // First capture enters the store-equal skip: nothing to write, but the
+        // read must become the baseline.
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(capturedNativePluginStateCache.get('inst-store-equal')).toBe('same');
+
+        // A sync replaces the stored chunk with the peer's value while the
+        // host is untouched: no recapture loop.
+        device.externalStateChunk = 'peer-B';
+
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.readPluginState).toHaveBeenCalledTimes(2);
+    });
+
     it('ignores built-in devices and external devices without an instance id', async () => {
         setTrackDevices([
             { id: 'builtin', type: 'builtin-synth' },
@@ -234,6 +273,96 @@ describe('captureExternalPluginStates', () => {
             { type: 'setExternalPluginState', payload: { deviceId: 'd1', stateChunk: 'edit-B' } },
             { skipMacroRecording: true }
         );
+    });
+
+    // Regression (issue 3694): the self-read baseline used to advance BEFORE
+    // the command was accepted, so a precommit rejection left the old chunk in
+    // project truth while the cache claimed the fresh chunk was captured — the
+    // next save skipped the write and the plugin edit was lost for good.
+    it('retries the capture on the next save after a precommit rejection, with the host unchanged', async () => {
+        setTrackDevices([{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1' }]);
+        mocks.readPluginState.mockResolvedValue('bmV3');
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('command rejected before commit'));
+
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        // Nothing was written, so the baseline must not claim the fresh chunk.
+        expect(capturedNativePluginStateCache.has('inst-1')).toBe(false);
+
+        // The rejection is gone; the next save retries without touching the plugin.
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith(
+            { type: 'setExternalPluginState', payload: { deviceId: 'd1', stateChunk: 'bmV3' } },
+            { skipMacroRecording: true }
+        );
+    });
+
+    it('names the plugin whose capture was rejected, once per failed-capture episode', async () => {
+        setTrackDevices([
+            { id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1', externalPluginId: 'serum' },
+        ]);
+        mocks.readPluginState.mockResolvedValue('bmV3');
+        mocks.executeAppAction.mockRejectedValue(new Error('command rejected before commit'));
+
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('serum'), 'warning');
+
+        // The autosave retries while the rejection stands: no second nag.
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+
+        // A capture the machinery accepts ends the episode; a fresh failure warns again.
+        mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.readPluginState.mockResolvedValue('bmV4');
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+
+        mocks.executeAppAction.mockRejectedValue(new Error('command rejected before commit'));
+        mocks.readPluginState.mockResolvedValue('bmV5');
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports the rejected plugins to the caller so the save cannot read as clean success', async () => {
+        setTrackDevices([
+            { id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1', externalPluginId: 'serum' },
+            { id: 'd2', type: 'external-plugin', externalInstanceId: 'inst-2', externalPluginId: 'falcon' },
+            { id: 'd3', type: 'external-plugin', externalInstanceId: 'inst-3', externalPluginId: 'diva' },
+        ]);
+        mocks.readPluginState.mockImplementation((instanceId: string) =>
+            Promise.resolve(instanceId === 'inst-3' ? '' : `chunk-${instanceId}`)
+        );
+        mocks.executeAppAction
+            .mockRejectedValueOnce(new Error('command rejected before commit'))
+            .mockResolvedValueOnce(undefined);
+
+        const outcome = await captureExternalPluginStates();
+
+        expect(outcome.rejectedPlugins).toEqual(['serum']);
+    });
+
+    // A committed-but-observer-error means truth holds the chunk; only
+    // post-commit processing failed. The baseline must advance so the
+    // unchanged-host skip still holds — otherwise every following save would
+    // re-commit the same chunk forever.
+    it('records the baseline when the command commits but post-commit processing fails', async () => {
+        setTrackDevices([{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst-1' }]);
+        mocks.readPluginState.mockResolvedValue('bmV3');
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('post-commit failure'));
+        mocks.isAppActionCommittedError.mockReturnValueOnce(true);
+
+        await captureExternalPluginStates();
+
+        expect(capturedNativePluginStateCache.get('inst-1')).toBe('bmV3');
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+
+        // Truth holds the chunk, so an unchanged host must not re-commit.
+        await captureExternalPluginStates();
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('no-ops without a live project', async () => {

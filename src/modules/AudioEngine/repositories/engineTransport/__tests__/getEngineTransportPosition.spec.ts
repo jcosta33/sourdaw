@@ -25,6 +25,7 @@ const NATIVE_PAYLOAD = {
     timeSigNum: 5,
     timeSigDenom: 4,
     masterPeak: 0.5,
+    stripPeaks: { 'strip-a': 0.25, 'strip-b': 0.75 },
 };
 
 describe('getEngineTransportPosition', () => {
@@ -62,5 +63,26 @@ describe('getEngineTransportPosition', () => {
         expect(position.loopWraps).toBe(0);
         expect(position.batchesApplied).toBe(0);
         expect(position.masterPeak).toBe(0);
+        expect(position.stripPeaks).toEqual({});
+    });
+
+    it('keeps only finite-number strip peaks, on their own keys', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            stripPeaks: { 'strip-a': 0.25, 'strip-b': 'loud', 'strip-c': Number.NaN, 'strip-d': null },
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.stripPeaks).toEqual({ 'strip-a': 0.25 });
+    });
+
+    it('reports no strip peaks when the field is missing or not an object', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ running: true, playing: true, stripPeaks: 'not-an-object' });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.stripPeaks).toEqual({});
     });
 });

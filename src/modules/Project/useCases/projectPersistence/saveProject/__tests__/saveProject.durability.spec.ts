@@ -6,6 +6,7 @@ import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 
 import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import type { ProjectStoreState } from '../../../../stores/projectStore';
+import type { ExternalPluginCaptureOutcome } from '../captureExternalPluginStates';
 
 type AudioDurabilityResult = Awaited<ReturnType<typeof ensureCachedAudioBuffersDurable>>;
 
@@ -36,7 +37,7 @@ const mocks = vi.hoisted(() => ({
             snapshotRevision: string;
         } | null>
     >(),
-    captureExternalPluginStates: vi.fn<() => Promise<void>>(),
+    captureExternalPluginStates: vi.fn<() => Promise<ExternalPluginCaptureOutcome>>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
     ensureCachedAudioBuffersDurable: vi.fn<(ids: readonly string[], scope?: unknown) => Promise<AudioDurabilityResult>>(
@@ -141,7 +142,7 @@ describe('saveProject durability', () => {
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
-        mocks.captureExternalPluginStates.mockResolvedValue(undefined);
+        mocks.captureExternalPluginStates.mockResolvedValue({ rejectedPlugins: [] });
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } },
             requiredAudioBufferIds: [],
@@ -275,6 +276,21 @@ describe('saveProject durability', () => {
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
+    it('keeps the project dirty after durable persistence when plugin capture was rejected', async () => {
+        installFakeIndexedDb();
+        mocks.captureExternalPluginStates.mockResolvedValue({ rejectedPlugins: ['Serum'] });
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledTimes(2);
+        expect(mocks.persistCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.addToRecentProjects).toHaveBeenCalledOnce();
+        expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ dirty: true, identityPersistencePending: false })
+        );
     });
 
     it('releases the receipt and refuses completion when audio changes during document persistence', async () => {

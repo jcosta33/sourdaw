@@ -7,6 +7,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
+import { collectTracksClipBufferIds } from '../timeOperations/collectTracksClipBufferIds';
 
 import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
@@ -216,6 +217,11 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     // once the write is durable — see `BounceOptions.deferUndoEntry`.
     const fileUndoEntry = () => {
         const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+        // Undo restores the pre-bounce tracks, redo the post-bounce ones; both
+        // carry clips referencing audio buffers the history must keep alive.
+        const restoresBufferIds = [
+            ...new Set([...collectTracksClipBufferIds(tracksBefore), ...collectTracksClipBufferIds(tracksAfter)]),
+        ];
         pushUndoEntry(
             'Bounce Track',
             () => {
@@ -229,7 +235,8 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
                 if (state1) {
                     trackStore.set({ ...state1, tracks: tracksAfter });
                 }
-            }
+            },
+            { restoresBufferIds }
         );
     };
     if (options.deferUndoEntry) {

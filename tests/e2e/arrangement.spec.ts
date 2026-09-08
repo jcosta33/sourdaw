@@ -33,8 +33,7 @@ test.describe('Arranger & Timeline', () => {
         await expect(addClipItem).toBeVisible();
         await addClipItem.click();
 
-        // Wait a tiny bit for the clip to be created in the CRDT
-        await page.waitForTimeout(500);
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
 
         // 3. Right-click the newly created clip to rename it
         await canvas.click({ button: 'right', position: { x: 200, y: 30 } });
@@ -47,7 +46,7 @@ test.describe('Arranger & Timeline', () => {
         // The inline rename editor should appear
         const renameInput = page.getByRole('menu').getByRole('textbox');
         await expect(renameInput).toBeVisible();
-        
+
         await renameInput.fill('My New Clip');
         await renameInput.press('Enter');
 

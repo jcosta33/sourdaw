@@ -17,8 +17,8 @@ use crate::midi::diagnostics::{
 };
 use crate::plugin_slot::CaptureInputBlock;
 use crate::scheduler::{
-    graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
-    GraphCommand, GraphProgressSnapshot, MasterMeterSnapshot, RetiredGraphObjects,
+    graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
+    GraphCommand, GraphProgressSnapshot, MeterSnapshot, RetiredGraphObjects,
     TransportPositionSnapshot, RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
@@ -462,7 +462,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
     let (transport_position_tx, _transport_position_reader) = transport_position_channel();
-    let (master_meter_tx, _master_meter_reader) = master_meter_channel();
+    let (meter_tx, _meter_reader) = meter_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
     spawn_audio_thread_with_diagnostics(
         command_rx,
@@ -470,7 +470,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         timeline_diagnostics_tx,
         graph_progress_tx,
         transport_position_tx,
-        master_meter_tx,
+        meter_tx,
         engine_event_tx,
         None,
         false,
@@ -514,7 +514,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
-    master_meter_tx: Input<MasterMeterSnapshot>,
+    meter_tx: Input<MeterSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
@@ -541,7 +541,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             timeline_rt_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
-            master_meter_tx,
+            meter_tx,
             engine_event_tx,
             capture_event_tx,
             force_default_buffer,
@@ -983,7 +983,7 @@ impl DeviceRenderer {
         // measured in frames the device consumed, not in blocks this loop
         // happened to split them into.
         self.scheduler
-            .publish_master_meter(callback_peak, callback_frames as u64);
+            .publish_meters(callback_peak, callback_frames as u64);
     }
 }
 
@@ -1282,7 +1282,7 @@ fn build_audio_stream(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
-    master_meter_tx: Input<MasterMeterSnapshot>,
+    meter_tx: Input<MeterSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
@@ -1316,7 +1316,7 @@ fn build_audio_stream(
         timeline_rt_diagnostics_tx,
         graph_progress_tx,
         transport_position_tx,
-        master_meter_tx,
+        meter_tx,
     );
 
     // Built before the renderer, because the renderer takes the consumer with
@@ -2701,7 +2701,7 @@ mod capture_render_tests {
     };
     use crate::plugin_slot::{CaptureInputBlock, NativePlugin};
     use crate::scheduler::{
-        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
         GraphCommand, RetiredGraphObjects,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
@@ -2786,7 +2786,7 @@ mod capture_render_tests {
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, _progress_reader) = graph_progress_channel();
             let (transport_position_tx, _position_reader) = transport_position_channel();
-            let (master_meter_tx, _meter_reader) = master_meter_channel();
+            let (meter_tx, _meter_reader) = meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
                 retired_tx,
@@ -2795,7 +2795,7 @@ mod capture_render_tests {
                 timeline_diagnostics_tx,
                 graph_progress_tx,
                 transport_position_tx,
-                master_meter_tx,
+                meter_tx,
             );
             let (feed_tx, feed_rx) = RingBuffer::new(1);
             let callbacks_rendered = Arc::new(AtomicU64::new(0));
@@ -3151,12 +3151,13 @@ mod device_output_tests {
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
     use crate::plugin_slot::TransportState;
     use crate::scheduler::{
-        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
-        GraphCommand, GraphProgressReader, GraphProgressSnapshot, MasterMeterReader,
-        RetiredGraphObjects, PEAK_HOLD_RELEASES_PER_SECOND,
+        graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
+        GraphCommand, GraphProgressReader, GraphProgressSnapshot, MeterReader, RetiredGraphObjects,
+        PEAK_HOLD_RELEASES_PER_SECOND,
     };
     use crate::timeline::{
-        timeline_rt_diagnostics_channel, ClipPlacement, ClipPlayback, TimelineClip, TimelineTrack,
+        timeline_rt_diagnostics_channel, AutomationEvent, AutomationTarget, AutomationWrite,
+        ClipPlacement, ClipPlayback, RampShape, TimelineClip, TimelineTrack,
     };
     use crate::transport_map::{LoopRegion, MIN_LOOP_FRAMES};
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -3186,7 +3187,7 @@ mod device_output_tests {
         retired_rx: Consumer<RetiredGraphObjects>,
         renderer: DeviceRenderer,
         progress: GraphProgressReader,
-        meter: MasterMeterReader,
+        meter: MeterReader,
     }
 
     impl DeviceHarness {
@@ -3197,7 +3198,7 @@ mod device_output_tests {
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, progress) = graph_progress_channel();
             let (transport_position_tx, _position_reader) = transport_position_channel();
-            let (master_meter_tx, meter) = master_meter_channel();
+            let (meter_tx, meter) = meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
                 retired_tx,
@@ -3206,7 +3207,7 @@ mod device_output_tests {
                 timeline_diagnostics_tx,
                 graph_progress_tx,
                 transport_position_tx,
-                master_meter_tx,
+                meter_tx,
             );
             // No capture side: this module drives the monitor gate, and the
             // renderer with no feed delivers no input at all.
@@ -3257,21 +3258,50 @@ mod device_output_tests {
         /// The master peak the last callback published — what a UI poll
         /// landing between callbacks would read.
         fn master_peak(&mut self) -> f32 {
-            self.meter.snapshot().peak
+            self.meter.snapshot().master_peak
+        }
+
+        /// The strip peak the last callback published for `track_id`, or
+        /// `None` when the snapshot names no strip with that id.
+        fn strip_peak(&mut self, track_id: usize) -> Option<f32> {
+            self.meter
+                .snapshot()
+                .strips()
+                .iter()
+                .find(|strip| strip.track_id == track_id)
+                .map(|strip| strip.peak)
+        }
+
+        /// How many strips the last callback published, for a caller proving
+        /// a removed track's strip is gone rather than merely unreachable by
+        /// id.
+        fn strip_count(&mut self) -> usize {
+            self.meter.snapshot().strips().len()
         }
     }
 
-    /// A track holding one clip with asymmetric material from frame zero, and a
-    /// rolling transport — the smallest schedule whose device output is
-    /// unmistakably non-zero. The left and right channels differ in magnitude and
-    /// sign so that a fold missing either channel, dropping abs(), or averaging
-    /// would produce a different peak than the true maximum.
-    fn schedule_rolling_material(harness: &mut DeviceHarness, frames: usize) {
-        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+    /// A track holding one clip with asymmetric material from frame zero —
+    /// the smallest schedule whose device output is unmistakably non-zero.
+    /// The left and right channels differ in magnitude and sign so that a
+    /// fold missing either channel, dropping abs(), or averaging would
+    /// produce a different peak than the true maximum.
+    ///
+    /// Takes its own track and clip id so a multi-track spec can put more
+    /// than one strip on the master without colliding ids; unlike
+    /// [`schedule_rolling_material`] it does not touch the transport, so a
+    /// caller adding a second track onto an already-rolling schedule does
+    /// not resend a command the first track already sent.
+    fn schedule_rolling_material_on(
+        harness: &mut DeviceHarness,
+        track_id: usize,
+        clip_id: usize,
+        frames: usize,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
         harness.send(GraphCommand::AddClip(
-            1,
+            track_id,
             TimelineClip::new(
-                7,
+                clip_id,
                 vec![LEFT_SAMPLE; frames].into(),
                 vec![RIGHT_SAMPLE; frames].into(),
                 ClipPlacement {
@@ -3282,6 +3312,11 @@ mod device_output_tests {
                 ClipPlayback::at_gain(1.0),
             ),
         ));
+    }
+
+    /// Track 1 with the rolling material, and a rolling transport.
+    fn schedule_rolling_material(harness: &mut DeviceHarness, frames: usize) {
+        schedule_rolling_material_on(harness, 1, 7, frames);
         harness.send(GraphCommand::SetTransport(TransportState {
             is_playing: true,
             ..TransportState::default()
@@ -3477,6 +3512,122 @@ mod device_output_tests {
         assert_eq!(heard[0], FOLDED_SAMPLE);
         assert_eq!(harness.master_peak(), FOLDED_SAMPLE.abs());
     }
+
+    /// A strip's own claim: it meters what it hands its route, after its own
+    /// fader — not the master's sum, and not its pre-fader material. Two
+    /// tracks land on the master, one at unity and one gained down, so a
+    /// meter reading the pre-fader signal or the wrong track's strip would
+    /// disagree with the numbers this test checks.
+    #[test]
+    fn a_track_strip_meters_its_own_output_after_the_fader() {
+        const FRAMES: usize = 512;
+        const TRACK_2_GAIN: f32 = 0.5;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES);
+        schedule_rolling_material_on(&mut harness, 2, 8, FRAMES);
+        harness.send(GraphCommand::AutomateParam {
+            target: AutomationTarget::TrackGain(2),
+            write: AutomationWrite::Append(AutomationEvent {
+                at_frame: 0,
+                duration_frames: 0,
+                value: TRACK_2_GAIN,
+                shape: RampShape::Step,
+            }),
+        });
+
+        harness.render(FRAMES);
+
+        assert_eq!(harness.strip_peak(1), Some(MATERIAL_PEAK));
+        let strip_2 = harness
+            .strip_peak(2)
+            .expect("track 2 must publish a strip peak");
+        assert!(
+            (strip_2 - TRACK_2_GAIN * MATERIAL_PEAK).abs() < 1e-6,
+            "strip 2 must meter its own gained output, got {strip_2}"
+        );
+        assert_eq!(harness.strip_peak(3), None);
+    }
+
+    /// A strip's meter holds a transient exactly as the master's does: a peak
+    /// stands for the hold window and falls only once it has passed, never on
+    /// the next quiet block, so a UI poll landing between callbacks still
+    /// sees the loudest thing the strip actually rendered.
+    #[test]
+    fn a_strip_peak_stands_through_the_hold_window_and_falls_after_it() {
+        const FRAMES: usize = 512;
+
+        let mut harness = DeviceHarness::new();
+        // Material for exactly one callback: every callback after the first
+        // renders past the clip and hands the strip silence.
+        schedule_rolling_material(&mut harness, FRAMES);
+        harness.render(FRAMES);
+        assert_eq!(harness.strip_peak(1), Some(MATERIAL_PEAK));
+
+        harness.render(FRAMES);
+        assert_eq!(
+            harness.strip_peak(1),
+            Some(MATERIAL_PEAK),
+            "one callback of silence is well inside the hold window; a strip meter that fell \
+             here would read zero for every transient a poll did not happen to land on"
+        );
+
+        // The hold releases on a callback boundary, so the fall lands on the
+        // first callback whose accumulated silence has passed the window —
+        // within one further callback of it, never before it.
+        let mut silent_frames = FRAMES;
+        while harness.strip_peak(1) != Some(0.0) {
+            assert!(
+                silent_frames < peak_hold_frames() + 2 * FRAMES,
+                "the hold must release: the strip peak still stood after {silent_frames} \
+                 silent frames"
+            );
+            harness.render(FRAMES);
+            silent_frames += FRAMES;
+        }
+
+        assert!(
+            silent_frames > peak_hold_frames(),
+            "the strip peak fell after {silent_frames} silent frames, short of the hold window"
+        );
+    }
+
+    /// The strip meters the render, the master meters the device. A shadowed
+    /// monitor writes true zeros to the device, so the master reads zero —
+    /// but the timeline still rendered the strip's material into its own
+    /// output before that gate ever ran, so the strip meters it exactly as
+    /// the unshadowed schedule would.
+    #[test]
+    fn a_shadowed_callback_still_meters_the_strips_it_rendered() {
+        const FRAMES: usize = 512;
+
+        let mut shadowed = DeviceHarness::new();
+        schedule_rolling_material(&mut shadowed, FRAMES);
+        shadowed.send(GraphCommand::SetMonitorShadow(true));
+        shadowed.render(FRAMES);
+
+        assert_eq!(shadowed.master_peak(), 0.0);
+        assert_eq!(shadowed.strip_peak(1), Some(MATERIAL_PEAK));
+    }
+
+    /// A removed track leaves nothing behind on the meter: the next callback
+    /// after the removal publishes a snapshot that no longer names it, rather
+    /// than a stale entry sitting at whatever level it last held.
+    #[test]
+    fn a_removed_track_leaves_the_strip_meter() {
+        const FRAMES: usize = 512;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES);
+        harness.render(FRAMES);
+        assert!(harness.strip_peak(1).is_some());
+
+        harness.send(GraphCommand::RemoveTrack(1));
+        harness.render(FRAMES);
+
+        assert_eq!(harness.strip_peak(1), None);
+        assert_eq!(harness.strip_count(), 0);
+    }
 }
 
 /// Compensation's real-time contract, driven through the production render
@@ -3500,13 +3651,12 @@ mod compensation_render_alloc_guards {
     use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
     use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
     use crate::scheduler::{
-        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
         BuiltinEffectType, GraphCommand, PluginCore, RetiredGraphObjects,
     };
     use crate::timeline::{
-        timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
-        DeviceParam, FermenterParamName, RouteTarget, SendTap, TimelineBus, TimelineClip,
-        TimelineTrack,
+        timeline_rt_diagnostics_channel, BuiltinParamName, ChainEntry, ClipPlacement, ClipPlayback,
+        DeviceKind, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
     };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -3534,7 +3684,7 @@ mod compensation_render_alloc_guards {
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, _progress_reader) = graph_progress_channel();
             let (transport_position_tx, _position_reader) = transport_position_channel();
-            let (master_meter_tx, _meter_reader) = master_meter_channel();
+            let (meter_tx, _meter_reader) = meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
                 retired_tx,
@@ -3543,7 +3693,7 @@ mod compensation_render_alloc_guards {
                 timeline_diagnostics_tx,
                 graph_progress_tx,
                 transport_position_tx,
-                master_meter_tx,
+                meter_tx,
             );
             let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
             Self {
@@ -4075,7 +4225,7 @@ mod compensation_render_alloc_guards {
         /// The filter cutoff, written while the instrument is already sounding
         /// so the write lands on a drain the guard wraps.
         const CUTOFF: DeviceParam =
-            DeviceParam::FermenterNamed(match FermenterParamName::parse("cutoff") {
+            DeviceParam::BuiltinNamed(match BuiltinParamName::parse("cutoff") {
                 Some(name) => name,
                 None => panic!("'cutoff' is shaped like one of the instrument's names"),
             });

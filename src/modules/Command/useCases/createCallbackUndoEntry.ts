@@ -5,6 +5,8 @@ type CreateCallbackUndoEntryInput = {
     undo: () => void;
     redo: () => unknown;
     source?: UndoSource;
+    /** Audio buffer ids the closures can restore. See `CallbackUndoEntry`. */
+    restoresBufferIds?: readonly string[];
 };
 
 export function createCallbackUndoEntry({
@@ -12,6 +14,7 @@ export function createCallbackUndoEntry({
     undo,
     redo,
     source = 'manual',
+    restoresBufferIds,
 }: CreateCallbackUndoEntryInput): CallbackUndoEntry {
     return {
         id: `undo-${crypto.randomUUID().slice(0, 8)}`,
@@ -21,5 +24,6 @@ export function createCallbackUndoEntry({
         redo,
         timestamp: Date.now(),
         source,
+        ...(restoresBufferIds ? { restoresBufferIds } : {}),
     };
 }

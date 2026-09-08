@@ -73,9 +73,13 @@ export async function saveProject(): Promise<boolean> {
         // before serialization, so a reopened project restores editor-driven state
         // (presets, oversampling, internal routing) instead of plugin defaults
         // (PH-3). A capture failure must not abort the save — the rest of the
-        // project still persists.
+        // project still persists. A PRECOMMIT rejection is reported back instead
+        // of thrown: that plugin's live edit is not in project truth, so this
+        // save must not read as a clean success for it.
+        let rejectedCapturePlugins: readonly string[] = [];
         try {
-            await captureExternalPluginStates();
+            const capture = await captureExternalPluginStates();
+            rejectedCapturePlugins = capture.rejectedPlugins;
         } catch (error) {
             logger.warn('[saveProject] Native plugin state capture failed:', error);
         }
@@ -175,9 +179,15 @@ export async function saveProject(): Promise<boolean> {
                     assertSnapshotContinuation(audioDurabilityReceipt);
 
                     // The CRDT snapshot and named project file establish the same
-                    // durable project identity and exact PCM set.
+                    // durable project identity and exact PCM set. A rejected
+                    // plugin capture left that plugin's live edit out of project
+                    // truth, so keep the project dirty for the next save attempt.
                     const latest = projectStore.value!;
-                    projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
+                    projectStore.set({
+                        ...latest,
+                        dirty: rejectedCapturePlugins.length > 0,
+                        identityPersistencePending: false,
+                    });
                     return true;
                 } finally {
                     audioDurabilityReceipt?.release();

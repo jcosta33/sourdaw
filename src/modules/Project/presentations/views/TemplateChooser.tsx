@@ -6,7 +6,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 
-import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
+import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
 import { getTemplates } from '../../useCases/projectTemplates/templateDefinitions/getTemplates';
 
@@ -345,9 +345,12 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
 
         void (async () => {
             try {
-                // Await the pre-switch save (audit #568 F2); abort on failure
-                // so the current project stays open.
-                if (!(await saveProject())) {
+                // Await the pre-switch save (audit #568 F2); abort on a failed
+                // save or on a save that resolved with the project still dirty
+                // — a plugin capture rejected before commit keeps that edit
+                // uncaptured, and the template would destroy it. Both refusal
+                // surfaces already notified; the current project stays open.
+                if (!(await saveProjectBeforeReplacement())) {
                     return;
                 }
                 await createFromTemplate(templateId);

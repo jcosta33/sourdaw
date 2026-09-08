@@ -295,4 +295,101 @@ describe('createScoringNode', () => {
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
+
+    it('importScala posts an import-scala message and resolves with result on response', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+
+        const promise = node.importScala('! scala scale\n12\n100.0\n');
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'import-scala',
+            id: expect.stringMatching(/^scl-\d+$/),
+            text: '! scala scale\n12\n100.0\n',
+        });
+
+        const callArg = postMessage.mock.calls[0]?.[0] as { id: string };
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: callArg.id, ok: true, name: 'My Scale' },
+        } as MessageEvent);
+
+        await expect(promise).resolves.toEqual({ ok: true, name: 'My Scale' });
+    });
+
+    it('importTun posts an import-tun message and resolves with ok: false when rejected', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+
+        const promise = node.importTun('[Tuning]\n');
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'import-tun',
+            id: expect.stringMatching(/^tun-\d+$/),
+            text: '[Tuning]\n',
+        });
+
+        const callArg = postMessage.mock.calls[0]?.[0] as { id: string };
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: callArg.id, ok: false },
+        } as MessageEvent);
+
+        await expect(promise).resolves.toEqual({ ok: false, name: undefined });
+    });
+
+    it('destroy resolves pending import requests with ok: false', async () => {
+        const node = await createScoringNode(makeCtx());
+        const scalaPromise = node.importScala('...');
+        const tunPromise = node.importTun('...');
+
+        node.destroy();
+
+        await expect(scalaPromise).resolves.toEqual({ ok: false });
+        await expect(tunPromise).resolves.toEqual({ ok: false });
+    });
+
+    it('ignores scale-import-result messages with unknown or unmatched id', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+        let resolved = false;
+        const promise = node.importScala('...').then((res) => {
+            resolved = true;
+            return res;
+        });
+
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: 'unmatched-id', ok: true, name: 'Ignored' },
+        } as MessageEvent);
+
+        await Promise.resolve();
+        expect(resolved).toBe(false);
+
+        const callArg = postMessage.mock.calls[0]?.[0] as { id: string };
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: callArg.id, ok: true, name: 'Matched' },
+        } as MessageEvent);
+
+        await expect(promise).resolves.toEqual({ ok: true, name: 'Matched' });
+    });
+
+    it('resolves concurrent in-flight requests to corresponding callers when responses arrive out of order', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+
+        const promise1 = node.importScala('scale 1');
+        const promise2 = node.importTun('scale 2');
+
+        const call1 = postMessage.mock.calls[0]?.[0] as { id: string };
+        const call2 = postMessage.mock.calls[1]?.[0] as { id: string };
+
+        expect(call1.id).not.toEqual(call2.id);
+
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: call2.id, ok: true, name: 'Scale 2' },
+        } as MessageEvent);
+
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: call1.id, ok: true, name: 'Scale 1' },
+        } as MessageEvent);
+
+        await expect(promise1).resolves.toEqual({ ok: true, name: 'Scale 1' });
+        await expect(promise2).resolves.toEqual({ ok: true, name: 'Scale 2' });
+    });
 });

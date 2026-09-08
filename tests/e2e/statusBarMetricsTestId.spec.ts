@@ -12,7 +12,6 @@ test.describe('Status bar metrics — live readout formats', () => {
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
         await wait_for_workspace_ready(page);
-        await page.waitForTimeout(1000);
     });
 
     test('Rate readout shows a real sample-rate value after boot', async ({ page }) => {

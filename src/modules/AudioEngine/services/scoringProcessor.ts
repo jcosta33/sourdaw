@@ -23,7 +23,9 @@ type ScoringMsg =
     | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
-    | { type: 'bypass'; bypassed: boolean };
+    | { type: 'bypass'; bypassed: boolean }
+    | { type: 'import-scala'; id: string; text: string }
+    | { type: 'import-tun'; id: string; text: string };
 
 class ScoringProcessor extends AudioWorkletProcessor {
     _instance: ScoringInstance | null = null;
@@ -73,6 +75,17 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     this._bypassed = msg.bypassed;
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
+                } else if (msg.type === 'import-scala' || msg.type === 'import-tun') {
+                    if (!this._instance || this._faulted) {
+                        this.port.postMessage({ type: 'scale-import-result', id: msg.id, ok: false });
+                        return;
+                    }
+                    const ok =
+                        msg.type === 'import-scala'
+                            ? this._instance.import_scala(msg.text)
+                            : this._instance.import_tun(msg.text);
+                    const name = ok ? this._instance.scale_description() : undefined;
+                    this.port.postMessage({ type: 'scale-import-result', id: msg.id, ok, name });
                 }
             } catch (error) {
                 // Same policy as the process() catch below. A throw at the wasm

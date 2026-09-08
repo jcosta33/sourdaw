@@ -91,6 +91,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
