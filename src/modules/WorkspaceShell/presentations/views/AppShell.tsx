@@ -638,7 +638,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <Stack
                 className="h-full w-full overflow-hidden bg-surface-app"
                 data-testid="app-shell"
-                inert={projectLoadFailure !== null || cheatSheetOpen}
+                inert={projectLoadFailure !== null || cheatSheetOpen || onboarding.active}
             >
                 {/* Skip-link is removed from the DOM while a modal dialog is open:
                     a focused skip-link targeting #main-content would otherwise
@@ -1048,8 +1048,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
-
-                <OnboardingTour />
             </Stack>
 
             {/* Siblings of the shell root, not children, because the root goes
@@ -1068,6 +1066,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 it declares `aria-modal="true"`, so the shell root goes `inert`
                 while it is open and it cannot be inside that subtree. */}
             <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
+            <OnboardingTour />
 
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the

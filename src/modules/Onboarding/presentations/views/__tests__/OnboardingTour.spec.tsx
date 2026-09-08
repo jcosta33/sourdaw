@@ -1,6 +1,10 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
+import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+
 import { OnboardingTour } from '../OnboardingTour';
 
 const storeState = { active: true, stepIndex: 0 };
@@ -169,5 +173,111 @@ describe('OnboardingTour', () => {
         fireEvent.click(screen.getByRole('button', { name: /skip tour/i }));
         const { dismissOnboardingTour } = await import('../../../useCases/dismissOnboardingTour');
         expect(dismissOnboardingTour).toHaveBeenCalled();
+    });
+
+    it('moves initial focus to the dialog on open, and restores focus to previously active element on dismissal', () => {
+        const triggerButton = document.createElement('button');
+        triggerButton.textContent = 'Trigger';
+        document.body.appendChild(triggerButton);
+        triggerButton.focus();
+        expect(document.activeElement).toBe(triggerButton);
+
+        storeState.active = true;
+        const { rerender } = render(<OnboardingTour />);
+        const dialog = screen.getByRole('dialog', { name: /onboarding tour/i });
+        expect(dialog).toHaveFocus();
+
+        storeState.active = false;
+        rerender(<OnboardingTour />);
+        expect(document.activeElement).toBe(triggerButton);
+
+        triggerButton.remove();
+    });
+
+    it('wraps focus from the last button to the first on Tab, and from first to last on Shift+Tab', () => {
+        storeState.stepIndex = 1;
+        render(<OnboardingTour />);
+
+        const skipButton = screen.getByRole('button', { name: /skip tour/i });
+        const nextButton = screen.getByRole('button', { name: 'Next' });
+
+        nextButton.focus();
+        expect(nextButton).toHaveFocus();
+
+        fireEvent.keyDown(window, { key: 'Tab' });
+        expect(skipButton).toHaveFocus();
+
+        fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+        expect(nextButton).toHaveFocus();
+    });
+
+    it('skips disabled buttons (like Back on step 0) during Tab traversal', () => {
+        storeState.stepIndex = 0;
+        render(<OnboardingTour />);
+
+        const backButton = screen.getByRole('button', { name: 'Back' });
+        const skipButton = screen.getByRole('button', { name: /skip tour/i });
+        const nextButton = screen.getByRole('button', { name: 'Next' });
+
+        expect(backButton).toBeDisabled();
+
+        skipButton.focus();
+        fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+        expect(nextButton).toHaveFocus();
+        expect(backButton).not.toHaveFocus();
+
+        fireEvent.keyDown(window, { key: 'Tab' });
+        expect(skipButton).toHaveFocus();
+        expect(backButton).not.toHaveFocus();
+    });
+
+    it('proves global shortcuts do not fire actions while focus is trapped inside the tour dialog', async () => {
+        const togglePlayback = vi.fn();
+        registerHandlerMap({
+            togglePlayback: {
+                undoable: false,
+                execute: togglePlayback,
+                describe: () => ({ label: 'togglePlayback' }),
+            },
+        });
+        projectLoadFailureStore.set(null);
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            loading: false,
+            initialized: true,
+        });
+
+        const TourWithShortcuts = () => {
+            useGlobalKeyboardShortcuts();
+            return <OnboardingTour />;
+        };
+
+        try {
+            render(<TourWithShortcuts />);
+            const dialog = screen.getByRole('dialog', { name: /onboarding tour/i });
+            expect(dialog).toHaveFocus();
+
+            // Space shortcut (togglePlayback) does not fire when focus is on dialog
+            fireEvent.keyDown(dialog, { key: ' ' });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(togglePlayback).not.toHaveBeenCalled();
+
+            // Space shortcut does not fire when focus is on a button inside the dialog
+            const skipButton = screen.getByRole('button', { name: /skip tour/i });
+            skipButton.focus();
+            fireEvent.keyDown(skipButton, { key: ' ' });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(togglePlayback).not.toHaveBeenCalled();
+
+            // Keydown originating outside any modal surface DOES fire the global shortcut
+            const outsideTarget = document.createElement('button');
+            document.body.appendChild(outsideTarget);
+            fireEvent.keyDown(outsideTarget, { key: ' ' });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(togglePlayback).toHaveBeenCalledTimes(1);
+            outsideTarget.remove();
+        } finally {
+            clearHandlerRegistry();
+        }
     });
 });
