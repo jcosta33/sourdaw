@@ -1,0 +1,33 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginPendingRestore.capture.integration.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 263
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 16
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 49,89
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 360-362
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 41
+scripts/resourceGuard.ts
+  s_87ab0a2f60ccf8::t_4a4f7d7509dad4 106
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 64
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/externalPluginStateCaptureLateRevocation.integration.spec.ts
+  s_87ab0a2f60ccf8::t_6320a4b86cc57c 196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9792cc821c6f320570eaa3815df4920340e1e06b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
