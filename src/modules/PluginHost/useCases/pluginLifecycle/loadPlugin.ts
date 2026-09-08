@@ -1,5 +1,6 @@
 import { loadPlugin as loadPluginRepo } from '../../repositories/pluginBridge/loadPlugin';
 
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 /**
@@ -11,5 +12,6 @@ export function loadPlugin(
     instanceId: string,
     sampleRate: number
 ): ReturnType<typeof loadPluginRepo> {
+    externalPluginStateCaptureAuthority.invalidate(instanceId);
     return serializePluginLifecycle(instanceId, () => loadPluginRepo(pluginId, instanceId, sampleRate));
 }
