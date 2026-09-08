@@ -1,0 +1,14 @@
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_1228e573df1f42 536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7fed7b4b88b50fb823517813e92377e65af186a4",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
