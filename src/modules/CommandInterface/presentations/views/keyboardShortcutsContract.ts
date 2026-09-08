@@ -29,12 +29,35 @@ function isWithinModalSurface(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest(MODAL_SURFACE_SELECTOR) !== null;
 }
 
+function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
+    if (event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target instanceof HTMLCanvasElement) {
+        return false;
+    }
+    return (
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLAnchorElement && target.hasAttribute('href')) ||
+        target.isContentEditable ||
+        target.getAttribute('contenteditable') === 'true' ||
+        target.tabIndex >= 0
+    );
+}
+
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
+            if (preservesNativeTabTraversal(event)) {
+                return;
+            }
             // A load that replaced the CRDT authority and then failed leaves the
             // stores holding an empty project while `projectStore` still carries
             // the *previous* project's `name`/`createdAt` — the metadata write

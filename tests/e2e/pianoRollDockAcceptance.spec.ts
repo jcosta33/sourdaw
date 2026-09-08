@@ -12,6 +12,25 @@ const BEAT_WIDTH = 40;
 const GRID_SNAP = 1;
 const MIN_USABLE_VIEWPORT_HEIGHT = RULER_HEIGHT + 3 * ROW_HEIGHT;
 const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
+const CONTROL_VISIBILITY_TOLERANCE = 0.5;
+const TOOLBAR_CONTROLS = [
+    '1',
+    '1/2',
+    '1/4',
+    '1/8',
+    'Scale root note',
+    'Scale type',
+    'Toggle fold to scale',
+    'Constrain notes to scale',
+    'Toggle step input mode',
+    'Toggle ghost notes',
+    'Toggle note hover preview',
+    'Toggle chord stamp mode',
+    'Toggle paint mode',
+    'Toggle magic lasso selection',
+    'Toggle Expression View (I4)',
+    'Piano roll zoom',
+] as const;
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Note = { id: string; pitch: number; startBeat: number; duration: number };
@@ -25,22 +44,18 @@ type ElementDiagnostic = {
     scroll: { left: number; top: number; width: number; height: number; clientWidth: number; clientHeight: number };
 };
 type CanvasDiagnostic = { canvas: ElementDiagnostic; ancestors: ElementDiagnostic[] };
-type ToolbarControlDiagnostic = {
-    label: string;
-    tagName: string;
-    disabled: boolean;
-    rect: Rect;
-    withinToolbarViewport: boolean;
-    centerHit: string | null;
+type ToolbarControl = { name: string; rect: Rect };
+type ToolbarState = {
+    activeName: string | null;
+    controls: ToolbarControl[];
+    gridScrollLeft: number;
+    rootScrollLeft: number;
+    toolbarScrollLeft: number;
+    toolbarScrollWidth: number;
+    toolbarClientWidth: number;
+    visibleViewport: Rect;
 };
-type ToolbarDiagnostic = {
-    stage: string;
-    root: ElementDiagnostic;
-    toolbarViewport: ElementDiagnostic;
-    toolbar: ElementDiagnostic;
-    controls: ToolbarControlDiagnostic[];
-    activeElement: string | null;
-};
+type AutomationTrayState = { selector: Rect; tray: Rect; visibleTray: Rect };
 type PianoRollGeometry = {
     canvas: Rect;
     dockHeight: number;
@@ -349,58 +364,26 @@ async function exportProject(frame: Frame, page: Page): Promise<ProjectSnapshot>
     return JSON.parse(await readFile(path, 'utf8')) as ProjectSnapshot;
 }
 
-async function toolbarDiagnostic(frame: Frame, stage: string): Promise<ToolbarDiagnostic> {
-    return frame.evaluate((diagnosticStage) => {
+async function toolbarState(frame: Frame): Promise<ToolbarState> {
+    return frame.evaluate(() => {
         const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="Piano roll editor"]');
         if (canvas === null) {
-            throw new Error('Piano roll canvas is unavailable for toolbar diagnostic');
+            throw new Error('Piano roll canvas is unavailable for toolbar state');
         }
-        const copyRect = (rect: DOMRect): Rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-        const describeElement = (element: Element): ElementDiagnostic => {
-            const htmlElement = element as HTMLElement;
-            const style = window.getComputedStyle(element);
-            return {
-                tagName: element.tagName,
-                id: htmlElement.id,
-                className: element.getAttribute('class') ?? '',
-                rect: copyRect(htmlElement.getBoundingClientRect()),
-                styles: {
-                    contain: style.contain,
-                    display: style.display,
-                    flex: style.flex,
-                    flexBasis: style.flexBasis,
-                    flexShrink: style.flexShrink,
-                    left: style.left,
-                    minWidth: style.minWidth,
-                    overflow: style.overflow,
-                    overflowX: style.overflowX,
-                    overflowY: style.overflowY,
-                    position: style.position,
-                    transform: style.transform,
-                    width: style.width,
-                },
-                scroll: {
-                    left: htmlElement.scrollLeft,
-                    top: htmlElement.scrollTop,
-                    width: htmlElement.scrollWidth,
-                    height: htmlElement.scrollHeight,
-                    clientWidth: htmlElement.clientWidth,
-                    clientHeight: htmlElement.clientHeight,
-                },
-            };
-        };
-        const intersects = (first: DOMRect, second: DOMRect): boolean =>
-            first.left < second.right &&
-            first.right > second.left &&
-            first.top < second.bottom &&
-            first.bottom > second.top;
+        let grid: HTMLElement | null = canvas.parentElement;
+        while (grid !== null && window.getComputedStyle(grid).overflowY !== 'auto') {
+            grid = grid.parentElement;
+        }
+        if (grid === null) {
+            throw new Error('Piano roll grid scroll viewport is unavailable');
+        }
         let root: HTMLElement | null = canvas.parentElement;
         let toolbarViewport: HTMLElement | null = null;
         while (root !== null) {
-            const matchingViewport = Array.from(root.children).find((child) =>
+            const candidate = Array.from(root.children).find((child) =>
                 child.querySelector(':scope > .daw-control-strip')
             );
-            toolbarViewport = matchingViewport instanceof HTMLElement ? matchingViewport : null;
+            toolbarViewport = candidate instanceof HTMLElement ? candidate : null;
             if (toolbarViewport !== null) {
                 break;
             }
@@ -413,135 +396,190 @@ async function toolbarDiagnostic(frame: Frame, stage: string): Promise<ToolbarDi
         if (toolbar === null) {
             throw new Error('Piano roll toolbar is unavailable');
         }
-        const toolbarViewportRect = toolbarViewport.getBoundingClientRect();
-        const controls = Array.from(toolbar.querySelectorAll<HTMLElement>('button, select, input')).map((control) => {
-            const rect = control.getBoundingClientRect();
-            const centerX = rect.x + rect.width / 2;
-            const centerY = rect.y + rect.height / 2;
-            const hit =
-                centerX >= toolbarViewportRect.left &&
-                centerX <= toolbarViewportRect.right &&
-                centerY >= toolbarViewportRect.top &&
-                centerY <= toolbarViewportRect.bottom
-                    ? document.elementFromPoint(centerX, centerY)
-                    : null;
-            return {
-                label: control.getAttribute('aria-label') ?? control.textContent?.trim() ?? '',
-                tagName: control.tagName,
-                disabled: control.matches(':disabled'),
-                rect: copyRect(rect),
-                withinToolbarViewport: intersects(rect, toolbarViewportRect),
-                centerHit:
-                    hit === null ? null : (hit.getAttribute('aria-label') ?? hit.textContent?.trim() ?? hit.tagName),
-            };
-        });
+        const copy = (rect: DOMRect): Rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+        const intersect = (first: Rect, second: Rect): Rect => {
+            const left = Math.max(first.x, second.x);
+            const top = Math.max(first.y, second.y);
+            const right = Math.min(first.x + first.width, second.x + second.width);
+            const bottom = Math.min(first.y + first.height, second.y + second.height);
+            return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+        };
+        let visibleViewport = copy(toolbarViewport.getBoundingClientRect());
+        for (let ancestor = toolbarViewport.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+            const style = window.getComputedStyle(ancestor);
+            if (/(auto|scroll|hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+                visibleViewport = intersect(visibleViewport, copy(ancestor.getBoundingClientRect()));
+            }
+        }
+        const nameOf = (element: HTMLElement): string =>
+            element.getAttribute('aria-label') ?? element.textContent?.trim() ?? element.tagName;
         const active = document.activeElement;
         return {
-            stage: diagnosticStage,
-            root: describeElement(root),
-            toolbarViewport: describeElement(toolbarViewport),
-            toolbar: describeElement(toolbar),
-            controls,
-            activeElement:
-                active instanceof HTMLElement
-                    ? (active.getAttribute('aria-label') ?? active.textContent?.trim() ?? active.tagName)
-                    : null,
+            activeName: active instanceof HTMLElement ? nameOf(active) : null,
+            controls: Array.from(toolbar.querySelectorAll<HTMLElement>('button, select, [role="slider"]')).map(
+                (control) => ({ name: nameOf(control), rect: copy(control.getBoundingClientRect()) })
+            ),
+            gridScrollLeft: grid.scrollLeft,
+            rootScrollLeft: root.scrollLeft,
+            toolbarScrollLeft: toolbarViewport.scrollLeft,
+            toolbarScrollWidth: toolbarViewport.scrollWidth,
+            toolbarClientWidth: toolbarViewport.clientWidth,
+            visibleViewport,
         };
-    }, stage);
-}
-
-async function attachToolbarDiagnostics(
-    page: Page,
-    testInfo: TestInfo,
-    diagnostics: ToolbarDiagnostic[]
-): Promise<void> {
-    await testInfo.attach('piano-roll-toolbar-scroll-diagnostic', {
-        body: JSON.stringify(diagnostics, null, 2),
-        contentType: 'application/json',
-    });
-    const screenshotPath = testInfo.outputPath('piano-roll-toolbar-scroll-diagnostic.png');
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    await testInfo.attach('piano-roll-toolbar-scroll-diagnostic-screenshot', {
-        path: screenshotPath,
-        contentType: 'image/png',
     });
 }
 
-async function assertToolbarScrollIsolation(
+function isFullyVisible(inner: Rect, outer: Rect): boolean {
+    return (
+        inner.x >= outer.x - CONTROL_VISIBILITY_TOLERANCE &&
+        inner.y >= outer.y - CONTROL_VISIBILITY_TOLERANCE &&
+        inner.x + inner.width <= outer.x + outer.width + CONTROL_VISIBILITY_TOLERANCE &&
+        inner.y + inner.height <= outer.y + outer.height + CONTROL_VISIBILITY_TOLERANCE
+    );
+}
+
+function expectedToolbarControls(expressionVisible: boolean): string[] {
+    const zoom = requireValue(TOOLBAR_CONTROLS.at(-1), 'Piano roll Zoom control');
+    return [...TOOLBAR_CONTROLS.slice(0, -1), ...(expressionVisible ? ['Active expression lane'] : []), zoom];
+}
+
+function assertToolbarFocus(state: ToolbarState, expectedName: string): void {
+    expect(state.activeName).toBe(expectedName);
+    const control = requireValue(
+        state.controls.find((candidate) => candidate.name === expectedName),
+        expectedName
+    );
+    expect(isFullyVisible(control.rect, state.visibleViewport)).toBe(true);
+    expect(state.rootScrollLeft).toBe(0);
+    expect(state.gridScrollLeft).toBe(0);
+}
+
+async function pressFromActiveControl(frame: Frame, key: 'Tab' | 'Shift+Tab'): Promise<void> {
+    const active = frame.locator(':focus');
+    await expect(active).toHaveCount(1);
+    await active.press(key);
+}
+
+async function assertToolbarKeyboardTraversal(
     page: Page,
     frame: Frame,
     scale: number,
-    testInfo: TestInfo
+    expressionVisible: boolean
 ): Promise<void> {
-    const diagnostics = [await toolbarDiagnostic(frame, 'toolbar-initial')];
-    let initial = diagnostics[0];
-    if (initial === undefined) {
-        throw new Error('Initial toolbar diagnostic is unavailable');
+    let state = await toolbarState(frame);
+    if (state.toolbarScrollLeft > 0) {
+        await mouseWheelInFrame(
+            page,
+            scale,
+            {
+                x: state.visibleViewport.x + state.visibleViewport.width / 2,
+                y: state.visibleViewport.y + state.visibleViewport.height / 2,
+            },
+            -2_000,
+            0
+        );
+        await expect.poll(async () => (await toolbarState(frame)).toolbarScrollLeft).toBe(0);
+        state = await toolbarState(frame);
     }
-    if (initial.toolbarViewport.scroll.left > 0) {
-        const toolbarCenter = {
-            x: initial.toolbarViewport.rect.x + initial.toolbarViewport.rect.width / 2,
-            y: initial.toolbarViewport.rect.y + initial.toolbarViewport.rect.height / 2,
-        };
-        await mouseWheelInFrame(page, scale, toolbarCenter, -2_000, 0);
-        await expect
-            .poll(
-                async () => (await toolbarDiagnostic(frame, 'toolbar-initial-after-wheel')).toolbarViewport.scroll.left
-            )
-            .toBe(0);
-        initial = await toolbarDiagnostic(frame, 'toolbar-initial-after-wheel');
-        diagnostics.push(initial);
+    const expected = expectedToolbarControls(expressionVisible);
+    for (const name of expected) {
+        expect(state.controls.map((control) => control.name)).toContain(name);
     }
-    expect(initial.root.scroll.left).toBe(0);
-    const toolbarOverflows = initial.toolbarViewport.scroll.width > initial.toolbarViewport.scroll.clientWidth;
-    const controlLabels = initial.controls.map((control) => control.label);
-    expect(controlLabels).toContain('1');
-    expect(controlLabels).toContain('Toggle paint mode');
+    expect(state.rootScrollLeft).toBe(0);
+    expect(state.gridScrollLeft).toBe(0);
 
-    const snapControl = initial.controls.find((control) => control.label === '1');
-    if (snapControl === undefined) {
-        throw new Error('Snap control is unavailable');
+    const anchor = frame.getByRole('button', { name: 'Toggle automation lane' });
+    await anchor.focus();
+    await expect(anchor).toBeFocused();
+    for (const name of expected) {
+        await pressFromActiveControl(frame, 'Tab');
+        state = await toolbarState(frame);
+        assertToolbarFocus(state, name);
     }
-    await mouseClickInFrame(page, scale, {
-        x: snapControl.rect.x + snapControl.rect.width / 2,
-        y: snapControl.rect.y + snapControl.rect.height / 2,
-    });
-    for (const control of initial.controls) {
-        if (control.tagName === 'BUTTON') {
-            await frame.getByRole('button', { name: control.label, exact: true }).focus();
-        } else {
-            await frame.getByLabel(control.label, { exact: true }).focus();
+
+    if (state.toolbarScrollWidth > state.toolbarClientWidth) {
+        expect(state.toolbarScrollLeft).toBeGreaterThan(0);
+        await mouseWheelInFrame(
+            page,
+            scale,
+            {
+                x: state.visibleViewport.x + state.visibleViewport.width / 2,
+                y: state.visibleViewport.y + state.visibleViewport.height / 2,
+            },
+            -2_000,
+            0
+        );
+        await expect.poll(async () => (await toolbarState(frame)).toolbarScrollLeft).toBe(0);
+        state = await toolbarState(frame);
+        const firstControl = requireValue(
+            state.controls.find((control) => control.name === expected[0]),
+            'Snap control'
+        );
+        expect(isFullyVisible(firstControl.rect, state.visibleViewport)).toBe(true);
+        expect(state.rootScrollLeft).toBe(0);
+        expect(state.gridScrollLeft).toBe(0);
+    }
+
+    for (const name of expected.slice(0, -1).reverse()) {
+        await pressFromActiveControl(frame, 'Shift+Tab');
+        state = await toolbarState(frame);
+        assertToolbarFocus(state, name);
+    }
+    await pressFromActiveControl(frame, 'Shift+Tab');
+    await expect(anchor).toBeFocused();
+    state = await toolbarState(frame);
+    expect(state.rootScrollLeft).toBe(0);
+    expect(state.gridScrollLeft).toBe(0);
+
+    const snap = frame.getByRole('button', { name: '1', exact: true });
+    await snap.click();
+    await expect(snap).toHaveAttribute('aria-pressed', 'true');
+}
+
+async function automationTrayState(frame: Frame): Promise<AutomationTrayState> {
+    return frame.evaluate(() => {
+        const tray = document.querySelector<HTMLElement>('[data-testid="clip-editor-tray"]');
+        const selector = document.querySelector<HTMLElement>('#lane-selector');
+        if (tray === null || selector === null) {
+            throw new Error('Automation tray or lane selector is unavailable');
         }
-        const diagnostic = await toolbarDiagnostic(frame, `toolbar-focus-${control.label}`);
-        diagnostics.push(diagnostic);
-        expect(diagnostic.activeElement).toBe(control.label);
-        const focusedControl = diagnostic.controls.find((candidate) => candidate.label === control.label);
-        expect(focusedControl?.withinToolbarViewport).toBe(true);
-        expect(diagnostic.root.scroll.left).toBe(0);
-        expect((await pianoRollGeometry(frame)).scrollLeft).toBe(0);
-    }
-
-    const afterFocus = diagnostics.at(-1);
-    if (afterFocus === undefined) {
-        throw new Error('Focused toolbar diagnostic is unavailable');
-    }
-    if (toolbarOverflows) {
-        expect(afterFocus.toolbarViewport.scroll.left).toBeGreaterThan(0);
-        const toolbarCenter = {
-            x: afterFocus.toolbarViewport.rect.x + afterFocus.toolbarViewport.rect.width / 2,
-            y: afterFocus.toolbarViewport.rect.y + afterFocus.toolbarViewport.rect.height / 2,
+        const copy = (rect: DOMRect): Rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+        const intersect = (first: Rect, second: Rect): Rect => {
+            const left = Math.max(first.x, second.x);
+            const top = Math.max(first.y, second.y);
+            const right = Math.min(first.x + first.width, second.x + second.width);
+            const bottom = Math.min(first.y + first.height, second.y + second.height);
+            return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
         };
-        await mouseWheelInFrame(page, scale, toolbarCenter, -2_000, 0);
-        await expect
-            .poll(async () => (await toolbarDiagnostic(frame, 'toolbar-after-wheel')).toolbarViewport.scroll.left)
-            .toBe(0);
-        const afterWheel = await toolbarDiagnostic(frame, 'toolbar-after-wheel');
-        diagnostics.push(afterWheel);
-        expect(afterWheel.root.scroll.left).toBe(0);
-        expect((await pianoRollGeometry(frame)).scrollLeft).toBe(0);
-        expect(afterWheel.controls.find((control) => control.label === '1')?.withinToolbarViewport).toBe(true);
-    }
-    await attachToolbarDiagnostics(page, testInfo, diagnostics);
+        let visibleTray = copy(tray.getBoundingClientRect());
+        for (let ancestor = tray.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+            const style = window.getComputedStyle(ancestor);
+            if (/(auto|scroll|hidden|clip)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+                visibleTray = intersect(visibleTray, copy(ancestor.getBoundingClientRect()));
+            }
+        }
+        return {
+            selector: copy(selector.getBoundingClientRect()),
+            tray: copy(tray.getBoundingClientRect()),
+            visibleTray,
+        };
+    });
+}
+
+async function assertAutomationTray(frame: Frame, expressionVisible: boolean): Promise<void> {
+    const toggle = frame.getByRole('button', { name: 'Toggle automation lane' });
+    const selector = frame.getByRole('combobox', { name: 'Automation lane type' });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(selector).toBeVisible();
+    const state = await automationTrayState(frame);
+    expect(state.visibleTray.width).toBeGreaterThan(CONTROL_VISIBILITY_TOLERANCE);
+    expect(state.visibleTray.height).toBeGreaterThan(CONTROL_VISIBILITY_TOLERANCE);
+    expect(isFullyVisible(state.selector, state.visibleTray)).toBe(true);
+    await selector.focus();
+    await expect(selector).toBeFocused();
+    const value = expressionVisible ? 'velocity' : 'probability';
+    await selector.selectOption(value);
+    await expect(selector).toHaveValue(value);
 }
 
 function noteById(snapshot: ProjectSnapshot, id: string): Note {
@@ -563,7 +601,7 @@ function latestNote(snapshot: ProjectSnapshot): Note {
     return note;
 }
 
-async function openPianoRoll(page: Page, frame: Frame, scale: number, testInfo: TestInfo): Promise<void> {
+async function openPianoRoll(page: Page, frame: Frame, scale: number): Promise<void> {
     await frame.getByRole('button', { name: /Add blank MIDI track/i }).click();
     const timeline = await frame.evaluate(() => {
         const surface = document.querySelector<HTMLElement>('[aria-label="Timeline editor surface"]');
@@ -578,30 +616,25 @@ async function openPianoRoll(page: Page, frame: Frame, scale: number, testInfo: 
     await expect(frame.getByText(/New midi clip/i).first()).toBeVisible();
     await mouseClickInFrame(page, scale, timeline, { clickCount: 2 });
     await expect(frame.getByLabel('Piano roll editor')).toBeVisible();
-    const diagnostics = [await toolbarDiagnostic(frame, 'before-toggle-paint')];
-    const beforePaint = requireValue(diagnostics[0], 'toolbar diagnostic before Paint');
+    const beforePaint = await toolbarState(frame);
     const paintControl = requireValue(
-        beforePaint.controls.find((control) => control.label === 'Toggle paint mode'),
+        beforePaint.controls.find((control) => control.name === 'Toggle paint mode'),
         'Paint control before activation'
     );
     const paintStartsOutsideToolbarViewport =
-        paintControl.rect.x < beforePaint.toolbarViewport.rect.x ||
+        paintControl.rect.x < beforePaint.visibleViewport.x ||
         paintControl.rect.x + paintControl.rect.width >
-            beforePaint.toolbarViewport.rect.x + beforePaint.toolbarViewport.rect.width;
+            beforePaint.visibleViewport.x + beforePaint.visibleViewport.width;
     await frame.getByRole('button', { name: 'Toggle paint mode' }).click();
-    diagnostics.push(await toolbarDiagnostic(frame, 'after-toggle-paint'));
-    for (const diagnostic of diagnostics) {
-        expect(diagnostic.root.scroll.left).toBe(0);
-    }
-    const afterPaint = requireValue(diagnostics.at(-1), 'toolbar diagnostic after Paint');
+    const afterPaint = await toolbarState(frame);
+    expect(beforePaint.rootScrollLeft).toBe(0);
+    expect(afterPaint.rootScrollLeft).toBe(0);
     if (paintStartsOutsideToolbarViewport) {
-        expect(afterPaint.toolbarViewport.scroll.left).toBeGreaterThan(0);
+        expect(afterPaint.toolbarScrollLeft).toBeGreaterThan(0);
     } else {
-        expect(afterPaint.toolbarViewport.scroll.left).toBe(0);
+        expect(afterPaint.toolbarScrollLeft).toBe(0);
     }
     expect((await pianoRollGeometry(frame)).scrollLeft).toBe(0);
-    await assertToolbarScrollIsolation(page, frame, scale, testInfo);
-    await attachToolbarDiagnostics(page, testInfo, diagnostics);
     await expect(frame.getByRole('button', { name: 'Toggle paint mode' })).toHaveAttribute('aria-pressed', 'true');
 }
 
@@ -640,6 +673,9 @@ async function assertCondition(
             await expect(expressionToggle).toHaveAttribute('aria-pressed', 'false');
             await expect(expressionLane).toHaveCount(0);
         }
+
+        await assertAutomationTray(frame, expressionVisible);
+        await assertToolbarKeyboardTraversal(page, frame, scale, expressionVisible);
 
         const geometry = await pianoRollGeometry(frame);
         evidence.geometry = geometry;
@@ -752,7 +788,7 @@ for (const scale of [0.5, 1, 1.25, 2]) {
         await frame.locator('#launch-new-project').click();
         await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
         await setDisplayScale(frame, scale);
-        await openPianoRoll(page, frame, scale, testInfo);
+        await openPianoRoll(page, frame, scale);
 
         await assertCondition(page, frame, scale, false, testInfo, 'default-expression-hidden');
         await assertCondition(page, frame, scale, true, testInfo, 'default-expression-visible');

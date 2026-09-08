@@ -68,6 +68,12 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     }
 
+    function dispatchKey(target: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
+        const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+        target.dispatchEvent(event);
+        return event;
+    }
+
     function openSessionWithCommandHandlers(): void {
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
@@ -174,6 +180,75 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         const textarea = mount(document.createElement('textarea'));
         textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
         expect(lastIsInput()).toBe(true);
+    });
+
+    describe('native Tab traversal', () => {
+        it.each([
+            ['Tab', false],
+            ['Shift+Tab', true],
+        ])('leaves %s on an interactive control for native focus traversal', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+
+            const event = dispatchKey(button, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('leaves Tab on native form, link, contenteditable, and tabindex controls for native traversal', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const contentEditable = document.createElement('div');
+            contentEditable.setAttribute('contenteditable', 'true');
+            const controls = [
+                document.createElement('input'),
+                document.createElement('select'),
+                document.createElement('textarea'),
+                Object.assign(document.createElement('a'), { href: '#toolbar' }),
+                contentEditable,
+                Object.assign(document.createElement('span'), { tabIndex: 0 }),
+            ];
+
+            for (const control of controls) {
+                mount(control);
+                const event = dispatchKey(control, { key: 'Tab' });
+                expect(event.defaultPrevented, control.outerHTML).toBe(false);
+            }
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+        });
+
+        it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const canvas = mount(document.createElement('canvas'));
+
+            const bodyEvent = dispatchKey(document.body, { key: 'Tab' });
+            const canvasEvent = dispatchKey(canvas, { key: 'Tab' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
+            expect(bodyEvent.defaultPrevented).toBe(true);
+            expect(canvasEvent.defaultPrevented).toBe(true);
+        });
+
+        it('still delegates non-Tab and modified Tab shortcuts from controls', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+
+            const spaceEvent = dispatchKey(button, { key: ' ' });
+            const modifiedTabEvent = dispatchKey(button, { key: 'Tab', ctrlKey: true });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
+            expect(spaceEvent.defaultPrevented).toBe(true);
+            expect(modifiedTabEvent.defaultPrevented).toBe(true);
+        });
     });
 
     describe('modal and menu portal surfaces (#3618)', () => {

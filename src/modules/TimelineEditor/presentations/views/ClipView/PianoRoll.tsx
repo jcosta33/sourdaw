@@ -11,6 +11,7 @@
  */
 import {
     type ReactElement,
+    type FocusEvent,
     type Dispatch,
     type SetStateAction,
     useEffect,
@@ -153,6 +154,23 @@ export const PianoRoll = ({
     const [activeExpressionLane, setActiveExpressionLane] = useState<'velocity' | 'pressure' | 'slide' | 'pitchBend'>(
         'velocity'
     );
+
+    const revealFocusedToolbarControl = (event: FocusEvent<HTMLDivElement>): void => {
+        const focusedControl = event.target;
+        if (!(focusedControl instanceof HTMLElement)) {
+            return;
+        }
+        const viewport = event.currentTarget;
+        const viewportRect = viewport.getBoundingClientRect();
+        const controlRect = focusedControl.getBoundingClientRect();
+        if (controlRect.left < viewportRect.left) {
+            viewport.scrollLeft += controlRect.left - viewportRect.left;
+            return;
+        }
+        if (controlRect.right > viewportRect.right) {
+            viewport.scrollLeft += controlRect.right - viewportRect.right;
+        }
+    };
 
     const beatWidth = Math.max(1, 40 * zoom);
     /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
@@ -367,7 +385,10 @@ export const PianoRoll = ({
 
     return (
         <Stack grow className="min-w-0 overflow-hidden">
-            <div className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden">
+            <div
+                className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden"
+                onFocusCapture={revealFocusedToolbarControl}
+            >
                 <PianoRollToolbar
                     gridSnap={gridSnap}
                     onGridSnapChange={setGridSnap}
