@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx
+  h_1228e573df1f42 119-120
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  h_1228e573df1f42 357,363,368,373,378
+src/modules/Arrangement/presentations/views/__tests__/MiniMasterSpectrum.spec.tsx
+  h_1228e573df1f42 158,161-167,189,192-198,209-225
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  h_1228e573df1f42 176-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1a45912451366d204b66c3cbf984396ea1d695cb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
