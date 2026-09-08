@@ -399,7 +399,10 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
     it('bounds adjacent output-amplitude changes across the full live Nyquist taper', async () => {
         const sampleRate = 48_000;
         const blockSize = 128;
-        const segmentSamples = sampleRate;
+        // Swept frequencies are divisible by 4 Hz, so quarter-second projections contain whole cycles; holds round up to full 128-frame blocks.
+        const measurementSamples = sampleRate / 4;
+        const heldSegmentFrames = Math.ceil(measurementSamples / blockSize) * blockSize;
+        const firstHeldSegmentFrames = 2 * sampleRate;
         const firstFundamental = 10_800;
         const lastTaperFundamental = 11_760;
         const fundamentalStep = 4;
@@ -412,7 +415,7 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
 
         const points = fundamentals.map((frequency, index) => ({
             frequency,
-            startSample: index === 0 ? 0 : (index + 1) * segmentSamples,
+            startSample: index === 0 ? 0 : firstHeldSegmentFrames + (index - 1) * heldSegmentFrames,
         }));
         const settingsByStartSample = new Map(
             points.map(({ startSample, frequency }) => [startSample, { freq: frequency }])
@@ -421,7 +424,7 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
             generator,
             sampleRate,
             { freq: firstFundamental, rolloff: 0.5, gate: 1, gain: 1 },
-            points.length + 1,
+            Math.ceil(((points.at(-1)?.startSample ?? 0) + heldSegmentFrames) / sampleRate),
             blockSize,
             (startSample) => settingsByStartSample.get(startSample)
         );
@@ -429,8 +432,8 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
         assertFiniteOutput(output);
         const normalizedWeights: number[] = [];
         for (const [index, point] of points.entries()) {
-            const startSample = index === 0 ? segmentSamples : point.startSample;
-            const endSample = startSample + segmentSamples;
+            const endSample = index === 0 ? firstHeldSegmentFrames : point.startSample + heldSegmentFrames;
+            const startSample = endSample - measurementSamples;
             const fundamental = computeSinusoidalAmplitude(output, sampleRate, point.frequency, startSample, endSample);
             const secondPartial = computeSinusoidalAmplitude(
                 output,
