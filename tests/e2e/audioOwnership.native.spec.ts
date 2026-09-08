@@ -212,10 +212,14 @@ async function loadSavedProjectInFreshRealm(
                 const clip = arrangementStores.trackStore.value?.tracks
                     .flatMap((track) => track.clips)
                     .find((candidate) => candidate.type === 'audio');
-                const restoredBuffer = clip ? audio.getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : undefined;
+                const restoredBufferId = clip?.audioBufferId;
+                if (restoredBufferId === undefined) {
+                    throw new Error('The loaded project did not restore an audio clip reference');
+                }
+                const restoredBuffer = audio.getCachedAudioBuffer({ bufferId: restoredBufferId });
                 return {
                     outcome,
-                    clipBufferId: clip?.audioBufferId ?? null,
+                    clipBufferId: restoredBufferId,
                     pcm: restoredBuffer ? Array.from(restoredBuffer.getChannelData(0)) : null,
                 };
             },
