@@ -1,0 +1,42 @@
+src/modules/Automation/useCases/automation/prepareAutomationTimeOperation.ts
+  s_c11a282f92cb14::t_494b937d5bf4d3 1,41-48,274-308,392-393,468-472,513-515,517-518,520-534
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_c11a282f92cb14::t_40a1990155f045 1-2,93-95
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_87ab0a2f60ccf8::t_3f7960772ad92f 6-10,12,18,97-107,122,607-608,649-655,709,722,749,1209-1237,1254-1256,1262,1267-1268,1271-1288
+  s_c2fca615e81f34::t_6d447be775d1ae 19
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  s_87ab0a2f60ccf8::t_239e34a7802cd1 199-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b17634a7fc6fb48aec21ec6494145c7001a14a21",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c11a282f92cb14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0818d-16b8-7cb1-b2a5-ce94c57d4d89",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
