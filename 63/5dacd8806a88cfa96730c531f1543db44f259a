@@ -1,0 +1,20 @@
+src/modules/MIDI/workers/__tests__/midiImportWorker.integration.spec.ts
+  s_87ab0a2f60ccf8::t_0185973d7cb98c 8-9
+  s_87ab0a2f60ccf8::t_93cb1d0f44a26d 26-27,29,35,85,90,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "635dacd8806a88cfa96730c531f1543db44f259a",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
