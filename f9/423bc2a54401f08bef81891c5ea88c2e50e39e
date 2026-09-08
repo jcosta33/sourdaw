@@ -1,0 +1,23 @@
+tests/e2e/audioOwnership.native.spec.ts
+  s_87ab0a2f60ccf8::t_2cb451cd3234b2 336,350
+  s_87ab0a2f60ccf8::t_7aec67cf2b79ac 345-347
+  s_87ab0a2f60ccf8::t_73f161c160efd4 348
+  s_87ab0a2f60ccf8::t_8a47ca9ec5293e 331-335,339-344,349,351-359,386,404
+  s_87ab0a2f60ccf8::t_32f2900f5b9dcd 337-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f9423bc2a54401f08bef81891c5ea88c2e50e39e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
