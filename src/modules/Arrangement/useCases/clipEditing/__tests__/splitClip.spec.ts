@@ -22,7 +22,7 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
-import { getAutomationLanes, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -487,7 +487,7 @@ describe('splitClip', () => {
         expect(right?.audioOffsetBeats).toBe(3);
     });
 
-    it('installs the clamped lane copy on the right fragment of the split', () => {
+    it('installs the clamped lane copy with its seam on the right fragment of the split', () => {
         mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
         restoreAutomationSnapshot({ lanes: [] });
 
@@ -515,16 +515,31 @@ describe('splitClip', () => {
             ],
         });
 
+        // The curve's value at the cut, per the runtime evaluator — the seam
+        // point must carry exactly this so the fragment continues the curve.
+        const seamValue = getAutomationValueAtBeat('lane-source', 4);
+        expect(seamValue).toBeCloseTo(0.56, 10);
+
         expect(splitClip('c1', 4)).toBe('new-clip-right');
 
         const lanes = getAutomationLanes();
         expect(lanes).toHaveLength(2);
         const copy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
         expect(copy?.clipId).toBe('new-clip-right');
-        expect(copy?.points.map((point) => point.beat)).toEqual([6]);
+        expect(copy?.points).toEqual([
+            { id: 'asp-split-new-clip-right-0', beat: 4, value: seamValue, curve: 'linear', tension: 0 },
+            { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+        ]);
         // The source lane keeps its id, its whole point set, and its object.
         const source = lanes.find((lane) => lane.id === 'lane-source');
         expect(source?.clipId).toBe('c1');
         expect(source?.points.map((point) => point.beat)).toEqual([1, 6]);
+
+        // Playback continuity: a beat inside the straddling segment plays the
+        // same value before and after the split — the fragment continues the
+        // curve through the seam instead of holding the first copied value.
+        const valueBeforeSplit = getAutomationValueAtBeat('lane-source', 4.5);
+        expect(valueBeforeSplit).toBeCloseTo(0.62, 10);
+        expect(getAutomationValueAtBeat('auto-split-new-clip-right-0', 4.5)).toBe(valueBeforeSplit);
     });
 });

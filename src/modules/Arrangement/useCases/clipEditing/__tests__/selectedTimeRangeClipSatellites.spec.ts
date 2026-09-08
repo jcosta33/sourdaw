@@ -289,4 +289,42 @@ describe('Delete Time Range retires per-clip satellite data', () => {
         const inserted = executeGlobalTimeOperation({ operation: { type: 'insert', atBeat: 0, durationBeats: 2 } });
         expect(inserted.status).toBe('applied');
     });
+
+    it('cuts the spanning fragment warp axis at content beats under stretch', () => {
+        // Clip 0..8 stretched 2x consumes 2 content beats per timeline beat:
+        // the deleted range [2, 6) spans content [4, 12), and the fragment at
+        // timeline [6, 8) plays content [12, 16). The warp cut must land at
+        // content 12 — the ordinary split's conversion — or the fragment
+        // inherits the deleted span's marker and warps audio it does not
+        // contain.
+        setTracks([
+            ClipDummy.create({
+                id: 'spanning',
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                type: 'audio',
+                stretchRatio: 2,
+            }),
+            createClip({ id: 'keeper', startBeat: 10, endBeat: 12 }),
+        ]);
+        setWarpState('spanning', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-deleted', originalBeat: 8, warpedBeat: 8 },
+                { id: 'w-right', originalBeat: 12, warpedBeat: 12.5 },
+            ],
+        });
+
+        deleteTimeRange(2, 6, [TRACK_ID]);
+
+        const fragmentId = clipIds().find((id) => id.startsWith('clip-dtr-'));
+        // The left half is untouched; the deleted span's marker (sounding at
+        // timeline 4, inside the deleted range) retires with the left half's
+        // inert edge instead of reaching the fragment.
+        expect(warpStates.get('spanning')?.markers.map((marker) => marker.id)).toEqual(['w-deleted', 'w-right']);
+        expect(warpStates.get(fragmentId ?? '')?.markers.map((marker) => marker.id)).toEqual(['w-right']);
+    });
 });

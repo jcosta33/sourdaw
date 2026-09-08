@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { getAutomationLanes, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
 
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
@@ -16,14 +16,25 @@ function planFor(clipRelativeSplitBeats: number, contentSplitBeats = clipRelativ
     });
 }
 
-function createClipLane(input: { id: string; beats: number[]; trimBeats?: number[]; ghostBeats?: number[] }) {
+function createClipLane(input: {
+    id: string;
+    beats: number[];
+    values?: number[];
+    trimBeats?: number[];
+    ghostBeats?: number[];
+}) {
     return {
         id: input.id,
         trackId: 'track-1',
         clipId: 'c1',
         parameterId: 'gain',
         parameterName: 'Gain',
-        points: input.beats.map((beat) => ({ beat, value: 0.5, curve: 'linear' as const, tension: 0 })),
+        points: input.beats.map((beat, index) => ({
+            beat,
+            value: input.values?.[index] ?? 0.5,
+            curve: 'linear' as const,
+            tension: 0,
+        })),
         ...(input.trimBeats === undefined
             ? {}
             : {
@@ -179,5 +190,40 @@ describe('prepareClipSplitSatellites', () => {
         expect(plan.rightAutomationLanes[0]?.id).toBe('auto-split-c2-1');
         expect(plan.rightAutomationLanes[0]?.trimPoints?.map((point) => point.beat)).toEqual([4, 6]);
         expect(plan.rightAutomationLanes[0]?.ghostPoints?.map((point) => point.beat)).toEqual([5]);
+    });
+
+    it('prepends a seam point at the cut so a straddling segment keeps its shape on the fragment', () => {
+        // Segment 1→6 straddles the cut at 4: without a seam the fragment would
+        // hold 0.8 from the cut, jumping off the curve the source was playing.
+        restoreAutomationSnapshot({ lanes: [createClipLane({ id: 'lane-1', beats: [1, 6], values: [0.2, 0.8] })] });
+        const seamValue = getAutomationValueAtBeat('lane-1', 4);
+        expect(seamValue).toBeCloseTo(0.56, 10);
+
+        const plan = planFor(4);
+
+        expect(plan.rightAutomationLanes).toHaveLength(1);
+        expect(plan.rightAutomationLanes[0]?.points).toEqual([
+            { id: 'asp-split-c2-0', beat: 4, value: seamValue, curve: 'linear', tension: 0 },
+            { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+        ]);
+
+        // Playback continuity: inside the former straddling segment the
+        // fragment evaluates to exactly what the source lane played.
+        const playedBeforeSplit = getAutomationValueAtBeat('lane-1', 4.5);
+        expect(playedBeforeSplit).toBeCloseTo(0.62, 10);
+        restoreAutomationSnapshot({ lanes: [plan.rightAutomationLanes[0]!] });
+        expect(getAutomationValueAtBeat('auto-split-c2-0', 4.5)).toBe(playedBeforeSplit);
+    });
+
+    it('adds no seam beside a source point already sitting on the cut', () => {
+        restoreAutomationSnapshot({
+            lanes: [createClipLane({ id: 'lane-1', beats: [1, 4, 7], values: [0.2, 0.5, 0.8] })],
+        });
+
+        const plan = planFor(4);
+
+        // The authored point at the cut is the seam; a second point beside it
+        // would make the interpolation span zero-width.
+        expect(plan.rightAutomationLanes[0]?.points.map((point) => point.beat)).toEqual([4, 7]);
     });
 });

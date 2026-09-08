@@ -650,7 +650,13 @@ function planTrack(
                 sourceClipId: clip.id,
                 fragmentClipId: identity.targetClipId,
                 clipRelativeSplitBeats: operation.endBeat - clip.startBeat,
-                contentSplitBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                // Content beats are timeline beats times the ratio under
+                // stretch (reversedClipAudioOffsetBeats) — the same conversion
+                // the ordinary split's warp axis performs. Without the factor
+                // the cut lands short by the ratio and the fragment inherits
+                // markers for audio the deleted span carried.
+                contentSplitBeats:
+                    (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat) * (clip.stretchRatio ?? 1),
                 absoluteSplitBeats: operation.endBeat,
             });
             changed = true;

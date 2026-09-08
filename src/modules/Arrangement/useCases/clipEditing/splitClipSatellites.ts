@@ -1,9 +1,14 @@
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+
 import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 import { isDefaultWarpState } from '../../stores/warpStates';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelopePoints';
+
+/** Derived rather than imported: Automation owns the point model. */
+type AutomationLanePoint = AutomationLaneValue['points'][number];
 
 /**
  * The satellite half of a split plan: `previous` is what the stores hold before
@@ -130,6 +135,48 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
 }
 
 /**
+ * The seam point that pins the curve's interpolated value at the cut — the
+ * lane analogue of `splitGainEnvelope`'s seam. Without it a segment straddling
+ * the cut collapses to hold-first-value on the fragment: between the cut and
+ * the first copied point the fragment would jump straight to that point's
+ * value instead of continuing the curve, an audible change a split must not
+ * make (Pro Tools inserts a breakpoint at the split for the same reason).
+ *
+ * The value comes from the runtime's own evaluator on the live source lane,
+ * so linked-lane resolution, curve shapes, and lane-range clamping are
+ * exactly what played a moment earlier. A point already sitting on the cut IS
+ * that seam — a second point beside it would make the interpolation span
+ * zero-width. No strictly-left point means the runtime held the first value
+ * before its point anyway, which the verbatim copy reproduces for free.
+ * Segment shapes and the id derive from the right clip id, so a redo re-split
+ * reproduces exactly the point the original split's undo retired.
+ */
+function seamPointFor(
+    lane: AutomationLaneValue,
+    rightClipId: string,
+    laneIndex: number,
+    absoluteSplitBeats: number
+): AutomationLanePoint | null {
+    if (lane.points.some((point) => point.beat === absoluteSplitBeats)) {
+        return null;
+    }
+    if (!lane.points.some((point) => point.beat < absoluteSplitBeats)) {
+        return null;
+    }
+    const seamValue = getAutomationValueAtBeat(lane.id, absoluteSplitBeats);
+    if (seamValue === null) {
+        return null;
+    }
+    return {
+        id: `asp-split-${rightClipId}-${laneIndex}`,
+        beat: absoluteSplitBeats,
+        value: seamValue,
+        curve: 'linear',
+        tension: 0,
+    };
+}
+
+/**
  * The right fragment's share of the source's clip-scoped automation lanes —
  * the split-automation convention (Logic splits region automation with the
  * region; REAPER take envelopes travel with each split item, and Pro Tools
@@ -141,7 +188,9 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  * cut stay on the source lane (inert beyond its shrunken edge, and alive
  * again if that edge is extended back out), points at or right of the cut
  * follow the right fragment. Re-basing them would move the curve off the
- * audio it was drawn against.
+ * audio it was drawn against. A straddling segment gets a seam point at the
+ * cut (`seamPointFor`) so the fragment continues the curve instead of
+ * holding the first copied value.
  *
  * Automation objects are bounded containers whose ids must stay unique, and
  * the source lane outlives the split — so objects stay with the left half
@@ -168,6 +217,14 @@ function splitAutomationLanes(
         const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
         if (points.length === 0 && (trimPoints?.length ?? 0) === 0 && (ghostPoints?.length ?? 0) === 0) {
             continue;
+        }
+        // The seam rides only with a main-point copy: trim and ghost curves
+        // are overlays, and the played curve is the main point set.
+        if (points.length > 0) {
+            const seamPoint = seamPointFor(lane, rightClipId, index, absoluteSplitBeats);
+            if (seamPoint !== null) {
+                points.unshift(seamPoint);
+            }
         }
         const copy: AutomationLaneValue = {
             ...lane,
