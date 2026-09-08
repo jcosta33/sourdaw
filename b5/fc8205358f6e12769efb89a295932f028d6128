@@ -1,0 +1,31 @@
+tests/e2e/pianoRollDockAcceptance.spec.ts
+  s_87ab0a2f60ccf8::t_bf9c8fb1c66d02 367-368,371-378,383,386,399-415,418-427,429,432-438,441-442,444-447,452-463,467,469-482,484-486,488-497,499-513,518-520,523-526,528-552,554-560,566-582,604,619,621,625,627,629-631,633,635,677-679,791
+  s_87ab0a2f60ccf8::t_9b029f82e63da4 443,448-451,514-517,561-565
+  s_87ab0a2f60ccf8::t_db041ee184f68e 15-33,47-56,58
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_87ab0a2f60ccf8::t_eae9f54a646324 47
+  s_87ab0a2f60ccf8::t_dd1460a071cb62 32-46,48-51,58-60
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_87ab0a2f60ccf8::t_9921e3a78e4bbc 205-206,212
+  s_87ab0a2f60ccf8::t_93de934ef174d0 219
+  s_87ab0a2f60ccf8::t_bf16089c002840 71-76,185-204,207-211,213-218,220-251
+  s_87ab0a2f60ccf8::t_39f64d873dc23e 252-253
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_87ab0a2f60ccf8::t_ad6574da305250 14,158-174,388-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b5fc8205358f6e12769efb89a295932f028d6128",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
