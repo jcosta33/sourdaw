@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_87ab0a2f60ccf8::t_729d0f730d1284 395-405,439,453
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_87ab0a2f60ccf8::t_8db8fddf74c5eb 28,35,589-594,630-676
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleConfirmedCommandExecution.spec.ts
+  s_87ab0a2f60ccf8::t_6632973d93dc66 364-372,495,507,593-640
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_87ab0a2f60ccf8::t_5a53544f92a5c1 53,340-343,346-352,364-373,393
+src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts
+  s_87ab0a2f60ccf8::t_ba32f1a4bb544f 204,362-368
+src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts
+  s_87ab0a2f60ccf8::t_7b8a7a6b8e2ba8 9-13,17,22-23,27-32
+src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts
+  s_87ab0a2f60ccf8::t_ea57edfe8b2608 193-212
+src/modules/Command/useCases/commandApprovalBinding.ts
+  s_87ab0a2f60ccf8::t_883f144d217981 7-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b69b2b8e1a003e2d7248edcb56e3a6ab227c1b46",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
