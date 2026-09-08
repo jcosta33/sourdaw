@@ -26,7 +26,13 @@ import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 import { redo } from '../redo';
 import { undo } from '../undo';
 
-import type { ActionHandler, AppAction, HandlerDescribeResult, HandlerExecutionResult } from '#/utils/handlerContract';
+import type {
+    ActionHandler,
+    AppAction,
+    HandlerDescribeResult,
+    HandlerExecutionResult,
+    HandlerValidationContext,
+} from '#/utils/handlerContract';
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 
@@ -49,14 +55,22 @@ function readTraceEntries(): TraceEntry[] {
 }
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
-    execute: Mock<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>;
+    execute: Mock<
+        (
+            action: Action,
+            context?: HandlerValidationContext
+        ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>
+    >;
     describe: Mock<(action: Action) => HandlerDescribeResult>;
 };
 
 type CreateMockHandlerInput<Action extends AppAction> = {
     batchExecution?: ActionHandler<Action>['batchExecution'];
     label?: string;
-    execute?: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
+    execute?: (
+        action: Action,
+        context?: HandlerValidationContext
+    ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe?: (action: Action) => HandlerDescribeResult;
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: (action: Action) => boolean;
@@ -81,7 +95,12 @@ function create_mock_handler<Action extends AppAction>({
     return {
         batchExecution,
         execute:
-            vi.fn<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>(execute),
+            vi.fn<
+                (
+                    action: Action,
+                    context?: HandlerValidationContext
+                ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>
+            >(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
         executionKind,
         undoable,
@@ -572,10 +591,52 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action);
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
+    });
+
+    it('passes the final materialized action, cancellation signal, and deferred-work observer to project handlers', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const controller = new AbortController();
+        const onDeferredEffectAttempt = vi.fn();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            materializeCommandArguments: (candidate) => {
+                candidate.payload.tool = 'marquee';
+            },
+            execute: (executedAction, context) => {
+                context?.onDeferredEffectAttempt?.({
+                    kind: 'work-attempt',
+                    operation: executedAction.type,
+                    workId: 'project-work',
+                });
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { signal: controller.signal, onDeferredEffectAttempt });
+
+        const [executedAction, context] = handler.execute.mock.calls[0] ?? [];
+        expect(executedAction).toEqual({ type: 'setEditingTool', payload: { tool: 'marquee' } });
+        expect(context).toEqual({
+            actions: [executedAction],
+            actionIndex: 0,
+            signal: controller.signal,
+            onDeferredEffectAttempt,
+        });
+        expect(context?.actions[0]).toBe(executedAction);
+        expect(onDeferredEffectAttempt).toHaveBeenCalledExactlyOnceWith({
+            kind: 'work-attempt',
+            operation: 'setEditingTool',
+            workId: 'project-work',
+        });
+        expect(action).toEqual({ type: 'setEditingTool', payload: { tool: 'select' } });
     });
 
     it('executes runtime handlers without CRDT semantics, undo history, or macro recording', async () => {
@@ -585,13 +646,45 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action);
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
         expect(handler.describe).not.toHaveBeenCalled();
         expect(mocks.setSemanticContext).not.toHaveBeenCalled();
         expect(mocks.clearSemanticContext).not.toHaveBeenCalled();
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('passes the final materialized action, cancellation signal, and deferred-work observer to runtime handlers', async () => {
+        const action: SetPlaybackAction = { type: 'setPlayback', payload: { playing: true } };
+        const controller = new AbortController();
+        const onDeferredEffectAttempt = vi.fn();
+        const handler = create_mock_handler<SetPlaybackAction>({
+            executionKind: 'runtime',
+            materializeCommandArguments: (candidate) => {
+                candidate.payload.playing = false;
+            },
+            undoable: false,
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { signal: controller.signal, onDeferredEffectAttempt });
+
+        const [executedAction, context] = handler.execute.mock.calls[0] ?? [];
+        expect(executedAction).toEqual({ type: 'setPlayback', payload: { playing: false } });
+        expect(context).toEqual({
+            actions: [executedAction],
+            actionIndex: 0,
+            signal: controller.signal,
+            onDeferredEffectAttempt,
+        });
+        expect(context?.actions[0]).toBe(executedAction);
+        expect(action).toEqual({ type: 'setPlayback', payload: { playing: true } });
     });
 
     it('classifies rejected Stop teardown as committed after Stop was applied', async () => {
@@ -925,7 +1018,12 @@ describe('executeAppAction', () => {
         releaseWait();
         await execution;
         expect(handler.describe).toHaveBeenCalledOnce();
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
     });
 
     it('scopes the snapshot transaction to storage writes made by the action', async () => {
@@ -962,7 +1060,12 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { skipMacroRecording: true });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
@@ -996,7 +1099,12 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action);
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
     });
 
@@ -1007,7 +1115,12 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { skipUndo: true });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.execute).toHaveBeenCalledWith(action, {
+            actions: [action],
+            actionIndex: 0,
+            signal: undefined,
+            onDeferredEffectAttempt: undefined,
+        });
         expect(mocks.recordAction).toHaveBeenCalledWith(action);
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
