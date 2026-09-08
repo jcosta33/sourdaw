@@ -1,0 +1,59 @@
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_87ab0a2f60ccf8::t_65caaf257eb0bc 11-15,53
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_87ab0a2f60ccf8::t_b81dd9ab9b8d78 3,11-18,20,29-30,33,40,43,46,49,51
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_c4840c7d75c794::t_eef089ed01f527 402,414,451
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_c2a4d9a6d7bb2d::t_7a0c5aec49bdab 3833,3838-3848,3905-3908,3914-3917,3921-3923
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/beginConfirmedCommandExecution.spec.ts
+  s_87ab0a2f60ccf8::t_b63064145824ee 12-13,24,56-59,272-275,280-284,294,301-344
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/confirmationTerminalSettlement.spec.ts
+  s_87ab0a2f60ccf8::t_040f3a94c1a7d9 211-242
+src/modules/AiRuntime/useCases/agentRequestOrchestration/beginConfirmedCommandExecution.ts
+  s_87ab0a2f60ccf8::t_3042d6fa300bb3 59-64,67,70,81,85-88,102,107-110,116-131,139
+src/modules/AiRuntime/useCases/agentRequestOrchestration/confirmationTerminalSettlement.ts
+  s_a3ca87802bedcb::t_a2abffba1395ca 1,24,93-94,97-106,120
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_87ab0a2f60ccf8::t_66e3adfcd48e13 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "fb7379a4f4673191a0c25a6740b2d3204cb771ae",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a3ca87802bedcb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080f6-3676-7cf0-a530-cb2d0d14795f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2a4d9a6d7bb2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080a7-2b6c-7d31-99ca-94a40ea39ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c4840c7d75c794": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0809a-f0c3-74d3-9992-dc389f8cc81c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
