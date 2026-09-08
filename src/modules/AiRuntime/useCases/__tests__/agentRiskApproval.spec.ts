@@ -392,6 +392,17 @@ describe('agent risk approval', () => {
         expect(executeSetTrackGain).not.toHaveBeenCalled();
 
         collaborationStore.set({ ...collaborationStore.value!, localPeerId: 'actor-a' });
+        const actorMismatchValidation = validateAgentRiskApproval({
+            approval: { ...approval, localActorId: 'rotated-actor' },
+            commandBatch,
+            currentRevision: revision,
+        });
+        expect(actorMismatchValidation.status).toBe('invalid');
+        if (actorMismatchValidation.status !== 'invalid') {
+            throw new Error('Expected a rotated local actor to invalidate approval');
+        }
+        expect(actorMismatchValidation.reason).toContain('local actor');
+        expect(actorMismatchValidation.stale).toBe(false);
         targetFingerprint = 'track-vocal:v2';
         const targetMismatch = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
         expect(targetMismatch.status).toBe('invalid');
@@ -425,6 +436,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected changed consequences to invalidate approval');
         }
         expect(consequenceMismatch.reason).toContain('cost or data consequences');
+        expect(consequenceMismatch.stale).toBe(false);
         const policyMismatch = validateAgentRiskApproval({
             approval: {
                 ...approval,
@@ -438,6 +450,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected a changed trust mode to invalidate approval');
         }
         expect(policyMismatch.reason).toContain('trust mode or risk policy');
+        expect(policyMismatch.stale).toBe(false);
         const revisionMismatch = validateAgentRiskApproval({
             approval,
             commandBatch,

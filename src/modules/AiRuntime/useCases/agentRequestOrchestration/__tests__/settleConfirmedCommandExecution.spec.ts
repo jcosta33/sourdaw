@@ -361,6 +361,15 @@ function createRejectedBatchResult(): CompletedBatchResult {
     return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
 }
 
+function createRejectedBatchResultWithReason(reason: string): CompletedBatchResult {
+    const result = {
+        status: 'rejected',
+        reason,
+        actions: createEmptyActions(),
+    } satisfies Parameters<typeof createReceipt>[0];
+    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+}
+
 function createAmbiguousBatchResult(): CompletedBatchResult {
     const result = { status: 'ambiguous', reason: 'partial write', actions: createEmptyActions() } satisfies Parameters<
         typeof createReceipt
@@ -483,6 +492,7 @@ function createCompletedFlight(
         abortSignal?: AbortSignal;
         cancellationTriggeredByInvalidation?: boolean;
         isProjectMutationAuthorized?: () => boolean;
+        approvalBindingRejection?: { reason: string; stale: boolean } | null;
     } = {}
 ): CompletedFlight {
     return {
@@ -494,6 +504,7 @@ function createCompletedFlight(
         finalizationEvidenceFailure: input.finalizationEvidenceFailure ?? null,
         canRebindSectionRenderArtifacts: true,
         isProjectMutationAuthorized: input.isProjectMutationAuthorized ?? (() => true),
+        approvalBindingRejection: input.approvalBindingRejection ?? null,
         renderJobAttempts: 0,
         cancellationTriggeredByInvalidation: input.cancellationTriggeredByInvalidation ?? false,
         abortSignal: input.abortSignal ?? new AbortController().signal,
@@ -577,6 +588,54 @@ describe('settleConfirmedCommandExecution', () => {
         expect(mocks.invalidate).toHaveBeenCalledWith(confirmation);
         expect(mocks.recordFailure).not.toHaveBeenCalled();
         expect(mocks.settleResources).not.toHaveBeenCalled();
+    });
+
+    it('routes a stale-shaped mid-flight binding rejection to invalidated while the mutation stayed authorized', async () => {
+        const result = await settleConfirmedCommandExecution(
+            createInput(
+                createCompletedFlight(
+                    createRejectedBatchResultWithReason('The approved target fingerprints no longer match.'),
+                    {
+                        isProjectMutationAuthorized: () => true,
+                        approvalBindingRejection: {
+                            reason: 'The approved target fingerprints no longer match.',
+                            stale: true,
+                        },
+                    }
+                )
+            )
+        );
+
+        expect(result).toEqual({ status: 'invalidated', reason: 'project changed' });
+        expect(mocks.invalidate).toHaveBeenCalledWith(
+            confirmation,
+            'The approved target fingerprints no longer match.'
+        );
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
+    });
+
+    it('keeps a genuine mid-flight binding rejection failed while the mutation stayed authorized', async () => {
+        const result = await settleConfirmedCommandExecution(
+            createInput(
+                createCompletedFlight(
+                    createRejectedBatchResultWithReason('The approved action hashes no longer match.'),
+                    {
+                        isProjectMutationAuthorized: () => true,
+                        approvalBindingRejection: {
+                            reason: 'The approved action hashes no longer match.',
+                            stale: false,
+                        },
+                    }
+                )
+            )
+        );
+
+        expect(result.status).toBe('failed');
+        expect(mocks.invalidate).not.toHaveBeenCalled();
+        expect(mocks.recordFailure).toHaveBeenCalledWith(
+            confirmation,
+            expect.objectContaining({ category: 'authorization' })
+        );
     });
 
     it('settles a recovering pre-commit failure without invalidating for authorization drift', async () => {
