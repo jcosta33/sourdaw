@@ -1,0 +1,50 @@
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_ba3c0c1af0d873::t_2637eeb4f87390 5,16-22,32-33,132-189,205,219
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_ba3c0c1af0d873::t_98d6b5277ce041 81,107-109,119
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_cf59aea5116b0d 472-480
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_dc093b15c8fc38::t_ca10d2cd915161 489-529
+  s_87ab0a2f60ccf8::t_6ed68b1d00a554 25-26
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_87ab0a2f60ccf8::t_e181c92e4b137f 6-7,13-31,49-50,66-68,84-93
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_87ab0a2f60ccf8::t_60674c57ffa875 1,81-88
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_87ab0a2f60ccf8::t_793edef9aaed6c 20-27,37-38,49-50,101-102,188-262
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  s_87ab0a2f60ccf8::t_7cb30917061f5d 3-4,15,19-55,60,145-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "dfb3f155fbb6d0c0972705cee7a51c800406b701",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ba3c0c1af0d873": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0818f-2e44-7ee3-85b6-ac8c99a9d7d0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dc093b15c8fc38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08111-aa69-7d41-ad5a-cd7ef18cdcfc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
