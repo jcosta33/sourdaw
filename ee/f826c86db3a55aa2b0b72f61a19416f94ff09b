@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectRollPosition.spec.ts
+  s_1e1c6954fb04db::t_40b9d704ca6a2b 59-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "eef826c86db3a55aa2b0b72f61a19416f94ff09b",
+  "prompts": {},
+  "sessions": {
+    "s_1e1c6954fb04db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d75-718e-7ca2-a5c7-e1c98b766c92",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
