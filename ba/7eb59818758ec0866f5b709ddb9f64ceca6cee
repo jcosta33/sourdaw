@@ -1,0 +1,30 @@
+src/modules/Arrangement/useCases/importMidiFile.ts
+  s_87ab0a2f60ccf8::t_e74bd685ff4b06 122,124-132
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  s_87ab0a2f60ccf8::t_ffcbcc57baca1d 445-460
+src/modules/MIDI/workers/__tests__/midiImportWorker.spec.ts
+  s_87ab0a2f60ccf8::t_ffcbcc57baca1d 496-508
+src/modules/MIDI/workers/midiImportWorker.ts
+  s_87ab0a2f60ccf8::t_e74bd685ff4b06 352
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_e74bd685ff4b06 94-99
+src/modules/Arrangement/useCases/__tests__/importMidiFile.integration.spec.ts
+  s_87ab0a2f60ccf8::t_5a1902c4f0cf8c 1-237
+  s_87ab0a2f60ccf8::t_d39ef05c37284c 238-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ba7eb59818758ec0866f5b709ddb9f64ceca6cee",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
