@@ -1,0 +1,16 @@
+src/components/daw/visualizers/DelayTaps.tsx
+  h_1228e573df1f42 101,106,138,155
+src/components/daw/visualizers/__tests__/DelayTaps.spec.tsx
+  h_1228e573df1f42 52-53,57,143,152,163-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5b9752eeced8199089ab58fe990be3aa0a2ae255",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
