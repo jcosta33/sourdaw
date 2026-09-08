@@ -1,0 +1,16 @@
+src/infra/dialogService/NotificationToast.tsx
+  h_1228e573df1f42 34,50-56
+src/infra/dialogService/__tests__/NotificationToast.spec.tsx
+  h_1228e573df1f42 1-2,31,42-44,46-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "87ef30b1a79618971e9981557c3456f4e6ce6338",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
