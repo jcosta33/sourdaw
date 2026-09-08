@@ -228,6 +228,7 @@ async function main(): Promise<number> {
             diagnostics,
             verdict,
             reason,
+            playStart: measured.playStart,
         });
 
         if (args.jsonPath !== null) {

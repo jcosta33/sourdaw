@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { arch, cpus, loadavg, platform, release } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
+import { type PlayStartRecord } from './desktopLatencyPlayStart.ts';
 import { type Verdict } from './desktopLatencyReadings.ts';
 
 export type EngineEventRecord = {
@@ -118,6 +119,15 @@ export type DesktopLatencyRecord = {
     diagnostics: DiagnosticsRecord;
     verdict: Verdict;
     reason: string;
+    /**
+     * How long after the play gesture the native engine first reported
+     * `playing`, and what it reported at that instant — see
+     * `desktopLatencyPlayStart.ts`. This measures only the native roll: Web
+     * Audio's own scheduler is anchored at the gesture itself
+     * (`src/modules/Transport/useCases/transportControls/startPlayback.ts`),
+     * so it has no equivalent lag to record here.
+     */
+    playStart: PlayStartRecord;
 };
 
 /** A number without its machine is not a measurement. */
@@ -244,6 +254,7 @@ export type BuildRecordInput = {
     diagnostics: DiagnosticsRecord;
     verdict: Verdict;
     reason: string;
+    playStart: PlayStartRecord;
 };
 
 /** Assembles the record `writeRecord` writes out. Pure — takes every reading as an argument rather than gathering any of its own. */
@@ -268,6 +279,7 @@ export function buildRecord(input: BuildRecordInput): DesktopLatencyRecord {
         diagnostics: input.diagnostics,
         verdict: input.verdict,
         reason: input.reason,
+        playStart: input.playStart,
     };
 }
 

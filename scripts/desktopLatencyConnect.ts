@@ -20,6 +20,12 @@ import {
     openNewProjectFromLaunchScreen,
     waitForWorkspaceOrLaunchScreen,
 } from './desktopLatencyLaunch.ts';
+import {
+    describePlayStart,
+    resolvePlayStart,
+    type PlayStartProbe,
+    type PlayStartRecord,
+} from './desktopLatencyPlayStart.ts';
 import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesRecovery.ts';
 import {
     computeCounterDeltas,
@@ -49,6 +55,28 @@ import {
 const SAMPLE_INTERVAL_MS = 1_000;
 const STEP_TIMEOUT_MS = 15_000;
 const APP_READY_TIMEOUT_MS = 30_000;
+
+/** `AppShell`'s transport toolbar — shared by the Play click and the play-start probe's capture listener so both target the same element. */
+const PLAY_BUTTON_SELECTOR = '[aria-label="Playback controls"] [aria-label="Play"]';
+
+/**
+ * How long `installPlayStartProbe`'s in-page poll loop keeps polling
+ * `engine_transport_position` before giving up on ever seeing `playing`.
+ * Generous against `STEP_TIMEOUT_MS`: a native roll that has not landed
+ * within 5 s is itself the finding this probe exists to catch, not a timeout
+ * to tune away. The deadline starts at install, which precedes the Play
+ * click by whatever actionability checks Playwright's own `click()` performs
+ * on that locator, so the window still comfortably covers the gesture.
+ */
+const PLAY_START_PROBE_WINDOW_MS = 5_000;
+
+/**
+ * The scratch key `installPlayStartProbe` stores its poll-loop promise under
+ * on the page's own `globalThis`, and `readPlayStartProbe` reads and deletes
+ * it from. Shared as a constant, passed into both evaluations as an
+ * argument, so the two functions can never drift onto different keys.
+ */
+const PLAY_START_PROBE_KEY = '__sourdawPlayStartProbe';
 
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
@@ -327,6 +355,96 @@ async function readEngineDiagnostics(page: Page): Promise<EngineDiagnosticsReadi
     });
 }
 
+/**
+ * Installs a capture-phase click listener on `document`, then starts an
+ * un-awaited in-page poll loop against `engine_transport_position` and
+ * stores its promise on the page's own `globalThis` under
+ * `PLAY_START_PROBE_KEY` for `readPlayStartProbe` to collect later. The loop
+ * polls back-to-back — no `setTimeout` between polls — until the engine
+ * reports `playing` or `PLAY_START_PROBE_WINDOW_MS` elapses. The IPC round
+ * trip is deliberately the only thing pacing the loop: that round trip is
+ * what bounds how tight a bracket `resolvePlayStart` can draw around the
+ * moment the engine actually rolled, so throttling the loop further would
+ * only widen the bracket for no reason.
+ *
+ * Split from the read into its own awaited evaluation, called before the
+ * click in `driveToPlayingProject`, because the click has to find the
+ * capture listener already attached: an unawaited `page.evaluate` dispatched
+ * back-to-back with the click gives Playwright's own CDP transport no
+ * ordering guarantee that the listener installs before the click event
+ * fires, which is exactly the race that used to leave `gestureAtMs` null.
+ * Awaiting this evaluation before the click proves the listener is attached
+ * — it does not wait for the poll loop itself, which keeps running in the
+ * page after this call returns.
+ *
+ * `PLAY_START_PROBE_KEY` is this harness's own scratch on the page under
+ * test; `readPlayStartProbe` removes it once it has collected the result.
+ */
+async function installPlayStartProbe(page: Page): Promise<void> {
+    await page.evaluate(
+        ({ selector, windowMs, key }: { selector: string; windowMs: number; key: string }) => {
+            const bridge: unknown = Reflect.get(globalThis, 'sourdaw');
+            if (typeof bridge !== 'object' || bridge === null) {
+                throw new TypeError('window.sourdaw is absent — this is not the packaged desktop app');
+            }
+            const invoke: unknown = Reflect.get(bridge, 'invoke');
+            if (typeof invoke !== 'function') {
+                throw new TypeError('window.sourdaw.invoke is absent');
+            }
+            const call = invoke as (command: string, args: readonly unknown[]) => Promise<unknown>;
+
+            let gestureAtMs: number | null = null;
+            const onClick = (event: Event): void => {
+                if (event.target instanceof Element && event.target.closest(selector) !== null) {
+                    gestureAtMs = performance.now();
+                    document.removeEventListener('click', onClick, true);
+                }
+            };
+            document.addEventListener('click', onClick, true);
+
+            const pollLoop = (async () => {
+                const polls: { atMs: number; playing: boolean; positionSeconds: number }[] = [];
+                const deadline = performance.now() + windowMs;
+                while (performance.now() < deadline) {
+                    const payload: unknown = await call('engine_transport_position', []);
+                    if (typeof payload !== 'object' || payload === null) {
+                        throw new TypeError('engine_transport_position did not answer with an object');
+                    }
+                    const playing = Reflect.get(payload, 'playing') === true;
+                    const positionSeconds = Number(Reflect.get(payload, 'positionSeconds'));
+                    polls.push({ atMs: performance.now(), playing, positionSeconds });
+                    if (playing) {
+                        break;
+                    }
+                }
+
+                document.removeEventListener('click', onClick, true);
+                return { gestureAtMs, polls };
+            })();
+
+            Reflect.set(globalThis, key, pollLoop);
+        },
+        { selector: PLAY_BUTTON_SELECTOR, windowMs: PLAY_START_PROBE_WINDOW_MS, key: PLAY_START_PROBE_KEY }
+    );
+}
+
+/**
+ * Collects the poll loop `installPlayStartProbe` started, awaiting its
+ * result and removing the scratch key so a later run never finds a stale
+ * promise left over from this one.
+ */
+async function readPlayStartProbe(page: Page): Promise<PlayStartProbe> {
+    return page.evaluate(async (key: string) => {
+        const pollLoop: unknown = Reflect.get(globalThis, key);
+        if (pollLoop === undefined) {
+            throw new TypeError(`no play-start probe was installed under "${key}"`);
+        }
+        const result = await (pollLoop as Promise<PlayStartProbe>);
+        Reflect.deleteProperty(globalThis, key);
+        return result;
+    }, PLAY_START_PROBE_KEY);
+}
+
 async function sample(page: Page, t: number): Promise<{ record: SampleRecord; events: EngineEventRecord[] }> {
     const status = await readStatusBar(page);
     const diagnostics = await readEngineDiagnostics(page);
@@ -446,11 +564,13 @@ async function waitForScanToFinish(page: Page): Promise<number> {
     throw new Error(`the plugin scan did not finish within ${SCAN_STEP_TIMEOUT_MS} ms`);
 }
 
+type AppStartedResult = { startedAt: AppStartedAt; playStart: PlayStartRecord };
+
 async function driveToPlayingProject(
     page: Page,
     harnessPluginPath: string,
     pageErrors: readonly DiagnosticsEntry[]
-): Promise<AppStartedAt> {
+): Promise<AppStartedResult> {
     const startedAt = await step('wait for the workspace or the launch screen', () =>
         waitForWorkspaceOrLaunchScreen(page, STEP_TIMEOUT_MS)
     );
@@ -539,14 +659,21 @@ async function driveToPlayingProject(
         );
     });
 
+    // Awaited before the click below dispatches: the capture listener has to
+    // already be attached in the page when the click's own CDP sequence
+    // fires, and this await is what proves that ordering instead of leaving
+    // it to two evaluations Playwright could otherwise dispatch out of order.
+    await installPlayStartProbe(page);
     await step('start playback', async () => {
-        await page.locator('[aria-label="Playback controls"] [aria-label="Play"]').click({ timeout: STEP_TIMEOUT_MS });
+        await page.locator(PLAY_BUTTON_SELECTOR).click({ timeout: STEP_TIMEOUT_MS });
         await page
             .locator('[aria-label="Playback controls"] [aria-label="Pause"]')
             .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
     });
+    const playStart = resolvePlayStart(await readPlayStartProbe(page));
+    process.stdout.write(`${describePlayStart(playStart)}\n`);
 
-    return startedAt;
+    return { startedAt, playStart };
 }
 
 async function stopPlayback(page: Page): Promise<void> {
@@ -556,7 +683,7 @@ async function stopPlayback(page: Page): Promise<void> {
     }
 }
 
-type MeasuredLegsAndStart = { legs: LegRecord[]; startedAt: AppStartedAt };
+type MeasuredLegsAndStart = { legs: LegRecord[]; startedAt: AppStartedAt; playStart: PlayStartRecord };
 
 export type MeasuredLegs = MeasuredLegsAndStart & { version: CdpVersion };
 
@@ -567,7 +694,7 @@ async function measureLegs(
     harnessPluginPath: string,
     pageErrors: readonly DiagnosticsEntry[]
 ): Promise<MeasuredLegsAndStart> {
-    const startedAt = await driveToPlayingProject(page, harnessPluginPath, pageErrors);
+    const { startedAt, playStart } = await driveToPlayingProject(page, harnessPluginPath, pageErrors);
 
     const idle = await runLeg({
         page,
@@ -592,7 +719,7 @@ async function measureLegs(
     await stopUiLoad(page);
     await stopPlayback(page);
 
-    return { legs: [idle, uiLoad], startedAt };
+    return { legs: [idle, uiLoad], startedAt, playStart };
 }
 
 export async function connectAndMeasure(
@@ -620,14 +747,14 @@ export async function connectAndMeasure(
                 consoleLog.push(text);
             }
         });
-        const { legs, startedAt } = await measureLegs(
+        const { legs, startedAt, playStart } = await measureLegs(
             page,
             seconds,
             consoleLog,
             harnessPluginPath,
             diagnostics.pageErrors
         );
-        return { legs, version, startedAt };
+        return { legs, version, startedAt, playStart };
     } finally {
         await browser.close();
     }
