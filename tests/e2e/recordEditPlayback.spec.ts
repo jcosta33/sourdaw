@@ -19,12 +19,41 @@ async function openEditorDock(page: Page): Promise<void> {
     await page.getByRole('tab', { name: 'Editor' }).click();
 }
 
-async function getBox(locator: Locator): Promise<{ width: number; height: number }> {
+type Box = { height: number; width: number; x: number; y: number };
+
+async function getBox(locator: Locator): Promise<Box> {
     const box = await locator.boundingBox();
     if (!box) {
         throw new Error('Expected a rendered element box');
     }
     return box;
+}
+
+async function getVisibleHeight(locator: Locator): Promise<number> {
+    return locator.evaluate((element) => {
+        const elementRect = element.getBoundingClientRect();
+        let top = Math.max(0, elementRect.top);
+        let bottom = Math.min(window.innerHeight, elementRect.bottom);
+        let parent = element.parentElement;
+
+        while (parent) {
+            const style = getComputedStyle(parent);
+            if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
+                const parentRect = parent.getBoundingClientRect();
+                top = Math.max(top, parentRect.top);
+                bottom = Math.min(bottom, parentRect.bottom);
+            }
+            parent = parent.parentElement;
+        }
+
+        return Math.max(0, bottom - top);
+    });
+}
+
+async function expectUsableTimelineRow(canvas: Locator): Promise<void> {
+    await canvas.scrollIntoViewIfNeeded();
+    await expect(canvas).toBeInViewport();
+    expect(await getVisibleHeight(canvas)).toBeGreaterThanOrEqual(80);
 }
 
 // The record→edit→playback chain, with the virtual keyboard as the MIDI
@@ -102,15 +131,21 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
             return null;
         });
         expect(centerScrollTop).toBeGreaterThan(0);
-        await canvas.scrollIntoViewIfNeeded();
-        await expect(canvas).toBeInViewport();
+        await expectUsableTimelineRow(canvas);
 
         // Edit: open the piano roll and stamp one more note into the clip —
         // a single click stamps (a double click stamps then hit-removes).
         await canvas.dblclick({ position: { x: 100, y: 40 } });
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         await expect(pianoRoll).toBeVisible({ timeout: 10_000 });
-        await pianoRoll.click({ position: { x: 200, y: 130 } });
+        const pianoRollBox = await getBox(pianoRoll);
+        const notePosition = {
+            x: Math.max(1, Math.min(200, Math.floor(pianoRollBox.width / 2))),
+            y: Math.max(1, Math.min(130, Math.floor(pianoRollBox.height / 2))),
+        };
+        expect(notePosition.x).toBeLessThan(pianoRollBox.width);
+        expect(notePosition.y).toBeLessThan(pianoRollBox.height);
+        await pianoRoll.click({ position: notePosition });
         await expect(noteCount).toHaveText(`${recorded + 1} notes`, { timeout: 5000 });
 
         // Playback: the transport advances over the edited clip.
@@ -135,5 +170,42 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         expect(pressuredEditorBox.height).toBeLessThan(360);
         expect(pressuredTimelineBox.width).toBeGreaterThan(0);
         expect(pressuredTimelineBox.height).toBeGreaterThanOrEqual(80);
+        await expectUsableTimelineRow(canvas);
+
+        await page.setViewportSize({ width: 1280, height: 640 });
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        expect((await getBox(editorDock)).height).toBeGreaterThanOrEqual(280);
+        await expectUsableTimelineRow(canvas);
+
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await expect.poll(async () => (await getBox(editorDock)).height).toBe(360);
+        await expectUsableTimelineRow(canvas);
+
+        const editorResizeHandle = editorDock.locator('xpath=preceding-sibling::*[1]');
+        await expect(editorResizeHandle).toHaveAttribute('role', 'separator');
+        const editorResizeHandleBox = await getBox(editorResizeHandle);
+        await page.mouse.move(
+            editorResizeHandleBox.x + editorResizeHandleBox.width / 2,
+            editorResizeHandleBox.y + editorResizeHandleBox.height / 2
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+            editorResizeHandleBox.x + editorResizeHandleBox.width / 2,
+            editorResizeHandleBox.y + editorResizeHandleBox.height / 2 + 240,
+            { steps: 4 }
+        );
+        await page.mouse.up();
+        await expect.poll(async () => (await getBox(editorDock)).height).toBe(280);
+
+        await page.getByLabel('Close virtual keyboard').click();
+        await expect(keyboard).toBeHidden();
+        expect((await getBox(editorDock)).height).toBe(280);
+
+        await page.getByTestId('toggle-virtual-keyboard').click();
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        expect((await getBox(editorDock)).height).toBe(280);
+        await expectUsableTimelineRow(canvas);
     });
 });
