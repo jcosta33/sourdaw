@@ -116,6 +116,8 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             onClick={() => selectTrack(masterTrack.id)}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    event.stopPropagation();
                     selectTrack(masterTrack.id);
                 }
             }}
