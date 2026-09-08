@@ -63,6 +63,10 @@ For any prompt, answer: what the model proposed, what validation accepted, what 
 
 **Why:** without those four answers, partial model wrongness is undiagnosable.
 
+### Review escape: execution context reaches every dispatcher route
+
+Review public command execution context through single and batch dispatch, and through both runtime and project handlers. Prove cancellation and deferred-work attempts at a real consumer, not only a forwarding mock. PR 1949 (`ce2ffea3fd`) added the public signal and batch propagation/direct-handler coverage; PR 2988 (`1a1aabfe68`) added deferred-work telemetry. The single-action dispatcher entrypoint was not covered.
+
 ### 9. Preserve qualifiers through prompt segmentation
 
 When a multi-action prompt is segmented, retain each action's exclusions, qualifiers, and reference ambiguity without borrowing adjacent action text. Test connector and punctuation variants, and mutate literal-ID versus display-name and Unicode-overlap evidence so exact identifiers never erase genuine ambiguity.

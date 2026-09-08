@@ -97,7 +97,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 let runtime_result: HandlerExecutionResult | void;
                 try {
-                    runtime_result = await handler.execute(action);
+                    runtime_result = await handler.execute(action, {
+                        actions: [action],
+                        actionIndex: 0,
+                        signal: options?.signal,
+                        onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
+                    });
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                     throw error;
@@ -184,7 +189,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             let execution_result: HandlerExecutionResult | void;
             const storage_transaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
-                handler.execute(action)
+                handler.execute(action, {
+                    actions: [action],
+                    actionIndex: 0,
+                    signal: options?.signal,
+                    onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
+                })
             );
             if (storage_transaction.status === 'threw') {
                 storage_transaction.abort();

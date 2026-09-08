@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { MixAnalysisPanel } from '../MixAnalysisPanel';
 
@@ -31,6 +32,7 @@ describe('MixAnalysisPanel action dispatch integration', () => {
         clearHandlerRegistry();
         registerHandlerMap(getAnalysisHandlers());
         mocks.fail_lifecycle.mockClear();
+        mocks.get_master_analyser.mockReset();
         setMixAnalysisDisplayLifecycle({
             begin: () => 17,
             complete: () => undefined,
@@ -58,5 +60,18 @@ describe('MixAnalysisPanel action dispatch integration', () => {
 
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(failure.message));
         expect(mocks.fail_lifecycle).toHaveBeenCalledWith({ token: 17 });
+    });
+
+    it('stops real registered mix analysis before it reads the analyser when command cancellation is already signalled', async () => {
+        const controller = new AbortController();
+        const cancellation = new Error('mix analysis cancelled');
+        controller.abort(cancellation);
+
+        await expect(executeUserAppAction({ type: 'analyzeMix' }, { signal: controller.signal })).rejects.toBe(
+            cancellation
+        );
+
+        expect(mocks.fail_lifecycle).toHaveBeenCalledExactlyOnceWith({ token: 17 });
+        expect(mocks.get_master_analyser).not.toHaveBeenCalled();
     });
 });
