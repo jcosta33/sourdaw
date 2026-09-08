@@ -152,6 +152,48 @@ function projectContext(): ReturnType<typeof getProjectContext> {
     };
 }
 
+// Root document whose bus routing cycles: bus-vocal outputs to bus-master, which
+// outputs back to bus-vocal. Every other field is invariant-clean so a rejection
+// can only come from the audio-graph verdict itself.
+function cyclingRootDocument(): Record<string, unknown> {
+    return {
+        tracks: {
+            tracks: [
+                {
+                    id: 'track-vocal',
+                    kind: 'audio',
+                    gain: 1,
+                    pan: 0,
+                    outputId: 'bus-vocal',
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+                {
+                    id: 'bus-vocal',
+                    kind: 'bus',
+                    gain: 1,
+                    pan: 0,
+                    outputId: 'bus-master',
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+                {
+                    id: 'bus-master',
+                    kind: 'bus',
+                    gain: 1,
+                    pan: 0,
+                    outputId: 'bus-vocal',
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        },
+    };
+}
+
 describe('captureCommandBatchPreflightState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -466,6 +508,40 @@ describe('captureCommandBatchPreflightState', () => {
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
         expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('rejects the live path when the root document carries a cycle the store has not projected yet', () => {
+        // The store projection still holds the pre-cycle graph: track-vocal -> bus-vocal -> master.
+        mocks.getCrdtDoc.mockReturnValue(cyclingRootDocument());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+        expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('rejects a cycling document during repair even though no projection is available', () => {
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+        mocks.getCrdtDoc.mockReturnValue(cyclingRootDocument());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.audioGraphValid).toBe(false);
+    });
+
+    it('keeps the document-backed graph verdict when store and document agree on every path', () => {
+        const live = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        const staged = captureCommandBatchPreflightState({
+            assetReferences: [],
+            projectDocument: mocks.getCrdtDoc('root'),
+            targetIds: [],
+        });
+        mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
+        const duringRepair = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(live.audioGraphValid).toBe(true);
+        expect(staged.audioGraphValid).toBe(true);
+        expect(duringRepair.audioGraphValid).toBe(true);
     });
 
     it('binds projectId to the document identity, independently of the revision it commits against', () => {
