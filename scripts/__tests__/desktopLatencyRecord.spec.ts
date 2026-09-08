@@ -4,7 +4,13 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { digestPayloadComponents, writeRecord, type PayloadComponent } from '../desktopLatencyRecord.ts';
+import {
+    buildRecord,
+    digestPayloadComponents,
+    writeRecord,
+    type BuildRecordInput,
+    type PayloadComponent,
+} from '../desktopLatencyRecord.ts';
 
 const asar: PayloadComponent = { path: 'Contents/Resources/app.asar', bytes: Buffer.from('renderer bundle') };
 const addon: PayloadComponent = { path: 'Contents/Resources/sourdaw-native.node', bytes: Buffer.from('native addon') };
@@ -52,6 +58,45 @@ describe('digestPayloadComponents', () => {
         ]);
 
         expect(atAnotherPath).not.toBe(atItsOwnPath);
+    });
+});
+
+describe('buildRecord', () => {
+    // `buildRecord` is otherwise a pure field-for-field assembly, so the one
+    // thing worth pinning per input is that it is not dropped or reshaped on
+    // the way through — `playStart` is asserted by identity (`toBe`, not
+    // `toEqual`) so a copy that lost a field would still fail even if the
+    // copy happened to carry the same values.
+    it('passes playStart through to the built record unchanged', () => {
+        const playStart: BuildRecordInput['playStart'] = {
+            rollLagLowerMs: 0.5,
+            rollLagUpperMs: 12,
+            positionSecondsAtFirstPlaying: 0.006,
+            callbackPeriodMs: 2,
+            pollCount: 3,
+            pollIntervalMedianMs: 1.5,
+        };
+        const input: BuildRecordInput = {
+            machine: {
+                checkoutGitSha: 'deadbeef',
+                workingTree: 'clean',
+                host: { platform: 'darwin', release: '25.0.0', arch: 'arm64', cores: 8 },
+                loadAverage1m: 0.5,
+            },
+            appPath: '/nonexistent/Sourdaw.app',
+            payload: { sha256: 'abc123', mtime: '2026-01-01T00:00:00.000Z', files: [] },
+            browser: 'Chrome/1.0',
+            userAgent: 'test-agent',
+            startedAt: 'workspace',
+            pluginPath: '/nonexistent/plugin',
+            legs: [],
+            diagnostics: { pageErrors: [], consoleWarningsAndErrors: [] },
+            verdict: 'measured',
+            reason: 'the plugin reached the master meter and both legs completed',
+            playStart,
+        };
+
+        expect(buildRecord(input).playStart).toBe(playStart);
     });
 });
 
