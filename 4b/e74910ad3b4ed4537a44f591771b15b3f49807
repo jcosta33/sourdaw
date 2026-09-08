@@ -1,0 +1,41 @@
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_e440ffdc6997b7::t_24b77ba47383df 33-40,59-65,97-99,193-195,213-214,216,229-237
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_11000d83333479::t_e5674093017572 301-387
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_11000d83333479::t_420cc0151aa255 85
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_c11a282f92cb14::t_86fb5bae7f4c94 84-85,140-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4be74910ad3b4ed4537a44f591771b15b3f49807",
+  "prompts": {},
+  "sessions": {
+    "s_11000d83333479": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a082fd-357c-7421-9fc0-0caf4fa456ab",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c11a282f92cb14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0818d-16b8-7cb1-b2a5-ce94c57d4d89",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
