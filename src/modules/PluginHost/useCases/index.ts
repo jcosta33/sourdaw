@@ -28,6 +28,7 @@ export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';
 export { readPluginState } from './pluginLifecycle/readPluginState';
+export { readExternalPluginStateForCapture } from './pluginLifecycle/readExternalPluginStateForCapture';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
 export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
 export { clearExternalPluginRestoreFailure } from './pluginLifecycle/clearExternalPluginRestoreFailure';

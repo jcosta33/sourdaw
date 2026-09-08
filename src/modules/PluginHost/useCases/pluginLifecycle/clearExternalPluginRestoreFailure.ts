@@ -1,4 +1,5 @@
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 
 /**
  * Record that authoritative state now exists for this instance — a restore of
@@ -8,6 +9,7 @@ import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } fr
  * episode and warns again.
  */
 export function clearExternalPluginRestoreFailure(instanceId: string): void {
+    externalPluginStateCaptureAuthority.invalidate(instanceId);
     externalPluginRestoreFailures.delete(instanceId);
     warnedExternalPluginRestoreFailures.delete(instanceId);
 }

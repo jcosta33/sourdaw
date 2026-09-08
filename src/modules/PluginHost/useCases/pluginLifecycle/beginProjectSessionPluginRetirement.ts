@@ -1,5 +1,6 @@
 import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadPlugin } from './unloadPlugin';
 
@@ -9,6 +10,7 @@ export async function beginProjectSessionPluginRetirement(): Promise<{
     readonly reopen: () => void;
 }> {
     const rebuild = await pluginLifecycleScheduler.beginRebuildAfterCurrent();
+    externalPluginStateCaptureAuthority.invalidateAll();
     externalPluginActivationEpoch.current += 1;
     const admittedActivations = [...externalPluginActivationTasks.values()];
     let reopened = false;
