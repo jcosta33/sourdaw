@@ -349,7 +349,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         // or short cannot carry its desync into the next chunk id.
         reader.seek(chunkEnd);
 
-        if (notes.length > 0) {
+        if (notes.length > 0 || ccs.length > 0) {
             parsedTracks.push({ name: trackName, notes, ccs, endTick: tick });
         }
     }

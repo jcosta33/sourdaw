@@ -493,6 +493,19 @@ describe('midiImportWorker', () => {
             expect(new Set(ids).size).toBe(ids.length);
         });
 
+        it('retains a controller-only track whose later event uses running status', () => {
+            const body = [...varlen(0), 0xb9, 64, 127, ...varlen(2400), 64, 0, ...endOfTrack(0)];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+
+            const track = firstTrack();
+            expect(track.notes).toEqual([]);
+            expect(track.ccs).toMatchObject([
+                { controller: 64, value: 127, beat: 0, channel: 9 },
+                { controller: 64, value: 0, beat: 5, channel: 9 },
+            ]);
+            expect(new Set(track.ccs.map((cc) => cc.id)).size).toBe(2);
+        });
+
         it('does not let control-change handling desync the notes around it', () => {
             // A CC carries two data bytes; miscounting them shifts every
             // following event's delta and corrupts note timing.
