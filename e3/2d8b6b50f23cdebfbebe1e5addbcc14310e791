@@ -1,0 +1,35 @@
+src/modules/Arrangement/useCases/index.ts
+  s_9b530f08172a54::t_f924c5d553f77e 64
+src/modules/Arrangement/useCases/__tests__/relinkClipAudioSource.spec.ts
+  s_0b88f2b8aac24e::t_8a15a0812d2ec4 1-349
+src/modules/Arrangement/useCases/relinkClipAudioSource.ts
+  s_0b88f2b8aac24e::t_19c340be1e4e7c 1-196
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_0b88f2b8aac24e::t_903a008e81c4ca 20,264-281
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_0b88f2b8aac24e::t_c7877b827b5a18 15,167,282-291,767-772,780-783,785,789-790,792-800,802-809,818-821,823,826-829,838-841,873-875
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e32d8b6b50f23cdebfbebe1e5addbcc14310e791",
+  "prompts": {},
+  "sessions": {
+    "s_0b88f2b8aac24e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2ea6bc0798545b63",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
