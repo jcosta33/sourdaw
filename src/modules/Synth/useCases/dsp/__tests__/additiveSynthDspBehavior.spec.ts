@@ -23,13 +23,18 @@ import { beforeAll, describe, expect, it } from 'vitest';
  * is 48016 Hz, which folds to 16 Hz at approximately -12.04 dB relative to the fundamental.
  *
  * The fix weights harmonics with a smooth C1 transition before Nyquist (between 0.45*SR
- * and 0.49*SR) and clamps oscillator frequencies to 0.49*SR, completely suppressing foldback
- * while preserving valid harmonics and declared rolloff.
+ * and 0.49*SR), suppressing foldback while preserving valid harmonics and declared rolloff.
  */
 
 const DSP_FILE = 'src/modules/Synth/useCases/dsp/additive-synth.dsp';
 const COMPILE_TIMEOUT_MS = 120_000;
 const FAUST_ASSETS_DIR = './public/faust';
+const PARTIAL_COUNT = 16;
+const STEADY_ENVELOPE_LEVEL = 0.7;
+const NORMALIZED_FUNDAMENTAL_AMPLITUDE = STEADY_ENVELOPE_LEVEL / PARTIAL_COUNT;
+const ALIAS_FLOOR_DB = -60;
+const SAMPLE_RATES = [44_100, 48_000, 96_000] as const;
+const UPPER_FUNDAMENTALS = [3001, 5003, 8009, 11_999, 12_000] as const;
 
 let copyCounter = 0;
 
@@ -80,7 +85,8 @@ async function renderAdditive(
     sampleRate: number,
     settings: Settings,
     durationS = 1.0,
-    blockSize = 128
+    blockSize = 128,
+    settingsAtBlock?: (startSample: number) => Settings | undefined
 ): Promise<Float32Array> {
     const processor = await generator.createOfflineProcessor(sampleRate, blockSize);
     processor.start();
@@ -97,6 +103,11 @@ async function renderAdditive(
     const total = Math.floor(durationS * sampleRate);
     const output = new Float32Array(total);
     for (let start = 0; start < total; start += blockSize) {
+        const updatedSettings = settingsAtBlock?.(start);
+        for (const [name, value] of Object.entries(updatedSettings ?? {})) {
+            const address = paramAddressMap.get(name) ?? name;
+            processor.setParamValue(address, value);
+        }
         processor.compute(inputs, block);
         for (let i = 0; i < blockSize; i++) {
             if (start + i < total) {
@@ -131,6 +142,49 @@ function computeSinusoidalAmplitude(
     return Math.hypot(re, im);
 }
 
+function assertFiniteOutput(samples: Float32Array): void {
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples.every((sample) => Number.isFinite(sample))).toBe(true);
+}
+
+function steadyWindow(samples: Float32Array, sampleRate: number): [number, number] {
+    return [samples.length - sampleRate, samples.length];
+}
+
+function ratioDb(amplitude: number, reference: number): number {
+    return 20 * Math.log10(amplitude / reference);
+}
+
+function foldToNyquist(frequency: number, sampleRate: number): number {
+    const wrapped = frequency % sampleRate;
+    return Math.min(wrapped, sampleRate - wrapped);
+}
+
+function measurableAliasFrequencies(fundamental: number, sampleRate: number): number[] {
+    const nyquist = sampleRate / 2;
+    const retainedHarmonics = Array.from({ length: PARTIAL_COUNT }, (_, index) => fundamental * (index + 1)).filter(
+        (frequency) => frequency < sampleRate * 0.49
+    );
+    const aliases = Array.from({ length: PARTIAL_COUNT }, (_, index) => fundamental * (index + 1))
+        .filter((frequency) => frequency > nyquist)
+        .map((frequency) => foldToNyquist(frequency, sampleRate))
+        .filter((frequency) => frequency > 0 && frequency < nyquist)
+        .filter(
+            (frequency) =>
+                !retainedHarmonics.some((retainedFrequency) => Math.abs(retainedFrequency - frequency) < 1e-6)
+        );
+
+    return [...new Set(aliases)];
+}
+
+function maximumAbsoluteSample(samples: Float32Array, startSample = 0): number {
+    let peak = 0;
+    for (let index = startSample; index < samples.length; index++) {
+        peak = Math.max(peak, Math.abs(samples[index] ?? 0));
+    }
+    return peak;
+}
+
 describe('additive-synth.dsp anti-aliasing behavior', () => {
     let generator: FaustMonoDspGeneratorType;
 
@@ -148,101 +202,264 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
         extractAddresses(json.ui ?? []);
     }, COMPILE_TIMEOUT_MS);
 
-    it('48000 Hz: suppresses 16 Hz foldback of 16th harmonic (48016 Hz) below -60 dB', async () => {
-        const sampleRate = 48_000;
-        const output = await renderAdditive(generator, sampleRate, {
-            freq: 3001,
-            rolloff: 0.5,
-            gate: 1,
-            gain: 1,
-        });
+    it.each(SAMPLE_RATES)(
+        '%i Hz: retains all 16 low-note partials with declared rolloff and normalization',
+        async (sampleRate) => {
+            const rolloff = 1.5;
+            const output = await renderAdditive(generator, sampleRate, { freq: 440, rolloff, gate: 1, gain: 1 }, 2);
 
-        const startSample = Math.floor(0.5 * sampleRate);
-        const endSample = Math.floor(1.0 * sampleRate);
+            assertFiniteOutput(output);
+            const [startSample, endSample] = steadyWindow(output, sampleRate);
+            const fundamental = computeSinusoidalAmplitude(output, sampleRate, 440, startSample, endSample);
 
-        const fundMag = computeSinusoidalAmplitude(output, sampleRate, 3001, startSample, endSample);
-        const foldMag = computeSinusoidalAmplitude(output, sampleRate, 16, startSample, endSample);
-
-        expect(fundMag).toBeGreaterThan(0.03);
-        const foldRatioDb = 20 * Math.log10(foldMag / fundMag);
-        expect(foldRatioDb).toBeLessThan(-60);
-    });
-
-    it('44100 Hz: suppresses 3916 Hz foldback of 16th harmonic (48016 Hz) below -60 dB', async () => {
-        const sampleRate = 44_100;
-        const output = await renderAdditive(generator, sampleRate, {
-            freq: 3001,
-            rolloff: 0.5,
-            gate: 1,
-            gain: 1,
-        });
-
-        const startSample = Math.floor(0.5 * sampleRate);
-        const endSample = Math.floor(1.0 * sampleRate);
-
-        const fundMag = computeSinusoidalAmplitude(output, sampleRate, 3001, startSample, endSample);
-        const foldMag = computeSinusoidalAmplitude(output, sampleRate, 3916, startSample, endSample);
-
-        expect(fundMag).toBeGreaterThan(0.03);
-        const foldRatioDb = 20 * Math.log10(foldMag / fundMag);
-        expect(foldRatioDb).toBeLessThan(-60);
-    });
-
-    it('96000 Hz: suppresses 47984 Hz foldback of 16th harmonic (48016 Hz) below -60 dB', async () => {
-        const sampleRate = 96_000;
-        const output = await renderAdditive(generator, sampleRate, {
-            freq: 3001,
-            rolloff: 0.5,
-            gate: 1,
-            gain: 1,
-        });
-
-        const startSample = Math.floor(0.5 * sampleRate);
-        const endSample = Math.floor(1.0 * sampleRate);
-
-        const fundMag = computeSinusoidalAmplitude(output, sampleRate, 3001, startSample, endSample);
-        const foldMag = computeSinusoidalAmplitude(output, sampleRate, 47984, startSample, endSample);
-
-        expect(fundMag).toBeGreaterThan(0.03);
-        const foldRatioDb = 20 * Math.log10(foldMag / fundMag);
-        expect(foldRatioDb).toBeLessThan(-60);
-    });
-
-    it('Low pitch control (440 Hz): preserves declared rolloff across harmonics below Nyquist', async () => {
-        const sampleRate = 48_000;
-        const output = await renderAdditive(generator, sampleRate, {
-            freq: 440,
-            rolloff: 1.5,
-            gate: 1,
-            gain: 1,
-        });
-
-        const startSample = Math.floor(0.5 * sampleRate);
-        const endSample = Math.floor(1.0 * sampleRate);
-
-        const h1 = computeSinusoidalAmplitude(output, sampleRate, 440, startSample, endSample);
-        const h2 = computeSinusoidalAmplitude(output, sampleRate, 880, startSample, endSample);
-        const h3 = computeSinusoidalAmplitude(output, sampleRate, 1320, startSample, endSample);
-        const h4 = computeSinusoidalAmplitude(output, sampleRate, 1760, startSample, endSample);
-
-        expect(h1).toBeGreaterThan(0.03);
-        expect(h2 / h1).toBeCloseTo(2 ** -1.5, 2);
-        expect(h3 / h1).toBeCloseTo(3 ** -1.5, 2);
-        expect(h4 / h1).toBeCloseTo(4 ** -1.5, 2);
-    });
-
-    it('Finite output at upper keyboard ceiling (12000 Hz): all samples are finite (no NaNs/Infs)', async () => {
-        const sampleRate = 48_000;
-        const output = await renderAdditive(generator, sampleRate, {
-            freq: 12_000,
-            rolloff: 1.5,
-            gate: 1,
-            gain: 1,
-        });
-
-        expect(output.length).toBeGreaterThan(0);
-        for (let i = 0; i < output.length; i++) {
-            expect(Number.isFinite(output[i])).toBe(true);
+            for (let partial = 1; partial <= PARTIAL_COUNT; partial++) {
+                const amplitude = computeSinusoidalAmplitude(output, sampleRate, 440 * partial, startSample, endSample);
+                const measuredRatio = amplitude / fundamental;
+                expect(measuredRatio).toBeCloseTo(partial ** -rolloff, 3);
+            }
+            expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
         }
+    );
+
+    it.each(
+        SAMPLE_RATES.flatMap((sampleRate) =>
+            UPPER_FUNDAMENTALS.map((fundamental) => [sampleRate, fundamental] as const)
+        )
+    )(
+        '%i Hz at %i Hz: retains valid harmonics and keeps measurable aliases below -60 dB',
+        async (sampleRate, fundamentalFrequency) => {
+            const rolloff = 0.5;
+            const output = await renderAdditive(
+                generator,
+                sampleRate,
+                { freq: fundamentalFrequency, rolloff, gate: 1, gain: 1 },
+                2
+            );
+
+            assertFiniteOutput(output);
+            const [startSample, endSample] = steadyWindow(output, sampleRate);
+            const fundamental = computeSinusoidalAmplitude(
+                output,
+                sampleRate,
+                fundamentalFrequency,
+                startSample,
+                endSample
+            );
+
+            expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
+            for (let partial = 1; partial <= PARTIAL_COUNT; partial++) {
+                const harmonicFrequency = fundamentalFrequency * partial;
+                if (harmonicFrequency > sampleRate * 0.45) {
+                    break;
+                }
+                const amplitude = computeSinusoidalAmplitude(
+                    output,
+                    sampleRate,
+                    harmonicFrequency,
+                    startSample,
+                    endSample
+                );
+                expect(amplitude / fundamental).toBeCloseTo(partial ** -rolloff, 3);
+            }
+
+            const aliasFrequencies = measurableAliasFrequencies(fundamentalFrequency, sampleRate);
+            const collisionOnlyGrid = fundamentalFrequency === 12_000 && sampleRate !== 44_100;
+            if (collisionOnlyGrid) {
+                // At 48/96 kHz, every 12 kHz-grid alias lands on DC, Nyquist, or a retained harmonic.
+                // The adjacent 11,999 Hz case keeps the alias-floor oracle active at both rates.
+                expect(aliasFrequencies).toEqual([]);
+            } else {
+                expect(aliasFrequencies.length).toBeGreaterThan(0);
+            }
+            for (const aliasFrequency of aliasFrequencies) {
+                const aliasAmplitude = computeSinusoidalAmplitude(
+                    output,
+                    sampleRate,
+                    aliasFrequency,
+                    startSample,
+                    endSample
+                );
+                const aliasLevelDb = ratioDb(aliasAmplitude, fundamental);
+                expect(aliasLevelDb).toBeLessThan(ALIAS_FLOOR_DB);
+            }
+        }
+    );
+
+    it.each([
+        [44_100, 3],
+        [48_000, 2],
+        [96_000, 4],
+    ] as const)(
+        '%i Hz: renders full, intermediate, and suppressed partial levels across the Nyquist taper',
+        async (sampleRate, partial) => {
+            const fundamentals = [
+                Math.floor((sampleRate * 0.45) / partial),
+                (sampleRate * 0.47) / partial,
+                Math.ceil((sampleRate * 0.49) / partial) + 1,
+            ];
+            const normalizedRatios: number[] = [];
+
+            for (const fundamentalFrequency of fundamentals) {
+                const output = await renderAdditive(
+                    generator,
+                    sampleRate,
+                    { freq: fundamentalFrequency, rolloff: 0.5, gate: 1, gain: 1 },
+                    2
+                );
+                assertFiniteOutput(output);
+                const [startSample, endSample] = steadyWindow(output, sampleRate);
+                const fundamental = computeSinusoidalAmplitude(
+                    output,
+                    sampleRate,
+                    fundamentalFrequency,
+                    startSample,
+                    endSample
+                );
+                const taperedPartial = computeSinusoidalAmplitude(
+                    output,
+                    sampleRate,
+                    fundamentalFrequency * partial,
+                    startSample,
+                    endSample
+                );
+                expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
+                normalizedRatios.push(taperedPartial / fundamental / partial ** -0.5);
+            }
+
+            expect(normalizedRatios[0]).toBeGreaterThan(0.99);
+            expect(normalizedRatios[0]).toBeLessThan(1.01);
+            expect(normalizedRatios[1]).toBeGreaterThan(0.4);
+            expect(normalizedRatios[1]).toBeLessThan(0.6);
+            expect(ratioDb(normalizedRatios[2] ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+        }
+    );
+
+    // Held points make the taper envelope phase-independent after live parameter updates.
+    // They do not claim that a continuously ramped pitch has a smooth transient.
+    it('follows held taper levels after live frequency updates within the two-partial peak bound', async () => {
+        const sampleRate = 48_000;
+        const segmentSamples = sampleRate;
+        const points = [
+            { startSample: 0, frequency: 10_800 },
+            { startSample: 2 * segmentSamples, frequency: 11_040 },
+            { startSample: 3 * segmentSamples, frequency: 11_280 },
+            { startSample: 4 * segmentSamples, frequency: 11_520 },
+            { startSample: 5 * segmentSamples, frequency: 11_761 },
+        ];
+        const settingsByStartSample = new Map(
+            points.map(({ startSample, frequency }) => [startSample, { freq: frequency }])
+        );
+        const output = await renderAdditive(
+            generator,
+            sampleRate,
+            { freq: points[0]?.frequency ?? 10_800, rolloff: 0.5, gate: 1, gain: 1 },
+            6,
+            128,
+            (startSample) => settingsByStartSample.get(startSample)
+        );
+
+        assertFiniteOutput(output);
+        const normalizedWeights: number[] = [];
+        for (const [index, point] of points.entries()) {
+            const startSample = index === 0 ? segmentSamples : point.startSample;
+            const endSample = startSample + segmentSamples;
+            const fundamental = computeSinusoidalAmplitude(output, sampleRate, point.frequency, startSample, endSample);
+            const secondPartial = computeSinusoidalAmplitude(
+                output,
+                sampleRate,
+                point.frequency * 2,
+                startSample,
+                endSample
+            );
+            expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
+            normalizedWeights.push(secondPartial / fundamental / 2 ** -0.5);
+        }
+
+        expect(normalizedWeights[0]).toBeGreaterThan(0.99);
+        expect(normalizedWeights[0]).toBeLessThan(1.01);
+        expect(normalizedWeights[1]).toBeGreaterThan(0.8);
+        expect(normalizedWeights[1]).toBeLessThan(0.88);
+        expect(normalizedWeights[2]).toBeGreaterThan(0.45);
+        expect(normalizedWeights[2]).toBeLessThan(0.55);
+        expect(normalizedWeights[3]).toBeGreaterThan(0.12);
+        expect(normalizedWeights[3]).toBeLessThan(0.2);
+        expect(ratioDb(normalizedWeights[4] ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+
+        for (let index = 1; index < normalizedWeights.length; index++) {
+            expect(normalizedWeights[index]).toBeLessThan(normalizedWeights[index - 1] ?? Infinity);
+        }
+
+        const settledTwoPartialPeakBound = NORMALIZED_FUNDAMENTAL_AMPLITUDE * (1 + 2 ** -0.5) + 1e-4;
+        const measuredPeak = maximumAbsoluteSample(output, segmentSamples);
+        expect(measuredPeak).toBeLessThanOrEqual(settledTwoPartialPeakBound);
+    });
+
+    // Dense held sampling proves parameter-to-amplitude continuity after live updates.
+    // It does not measure the broadband transient of a continuously ramped pitch.
+    it('bounds adjacent output-amplitude changes across the full live Nyquist taper', async () => {
+        const sampleRate = 48_000;
+        const blockSize = 128;
+        // Swept frequencies are divisible by 4 Hz, so quarter-second projections contain whole cycles; holds round up to full 128-frame blocks.
+        const measurementSamples = sampleRate / 4;
+        const heldSegmentFrames = Math.ceil(measurementSamples / blockSize) * blockSize;
+        const firstHeldSegmentFrames = 2 * sampleRate;
+        const firstFundamental = 10_800;
+        const lastTaperFundamental = 11_760;
+        const fundamentalStep = 4;
+        const taperWidth = lastTaperFundamental - firstFundamental;
+        const fundamentals = Array.from(
+            { length: taperWidth / fundamentalStep + 1 },
+            (_, index) => firstFundamental + index * fundamentalStep
+        );
+        fundamentals.push(lastTaperFundamental + fundamentalStep);
+
+        const points = fundamentals.map((frequency, index) => ({
+            frequency,
+            startSample: index === 0 ? 0 : firstHeldSegmentFrames + (index - 1) * heldSegmentFrames,
+        }));
+        const settingsByStartSample = new Map(
+            points.map(({ startSample, frequency }) => [startSample, { freq: frequency }])
+        );
+        const output = await renderAdditive(
+            generator,
+            sampleRate,
+            { freq: firstFundamental, rolloff: 0.5, gate: 1, gain: 1 },
+            Math.ceil(((points.at(-1)?.startSample ?? 0) + heldSegmentFrames) / sampleRate),
+            blockSize,
+            (startSample) => settingsByStartSample.get(startSample)
+        );
+
+        assertFiniteOutput(output);
+        const normalizedWeights: number[] = [];
+        for (const [index, point] of points.entries()) {
+            const endSample = index === 0 ? firstHeldSegmentFrames : point.startSample + heldSegmentFrames;
+            const startSample = endSample - measurementSamples;
+            const fundamental = computeSinusoidalAmplitude(output, sampleRate, point.frequency, startSample, endSample);
+            const secondPartial = computeSinusoidalAmplitude(
+                output,
+                sampleRate,
+                point.frequency * 2,
+                startSample,
+                endSample
+            );
+
+            expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
+            normalizedWeights.push(secondPartial / fundamental / 2 ** -0.5);
+        }
+
+        expect(normalizedWeights[0]).toBeCloseTo(1, 3);
+        expect(ratioDb(normalizedWeights.at(-2) ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+        expect(ratioDb(normalizedWeights.at(-1) ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+
+        let maximumAdjacentChange = 0;
+        for (let index = 1; index < normalizedWeights.length; index++) {
+            const previousWeight = normalizedWeights[index - 1] ?? Infinity;
+            const currentWeight = normalizedWeights[index] ?? 0;
+            expect(currentWeight).toBeLessThanOrEqual(previousWeight + 1e-4);
+            maximumAdjacentChange = Math.max(maximumAdjacentChange, Math.abs(currentWeight - previousWeight));
+        }
+
+        const maximumSmoothstepChange = (1.5 * fundamentalStep) / taperWidth + 1e-4;
+        expect(maximumAdjacentChange).toBeLessThanOrEqual(maximumSmoothstepChange);
     });
 });

@@ -14,8 +14,10 @@ import {
     AppActionConflictError,
     AppActionNotDispatchedError,
 } from '../errors/AppActionExecutionError';
+import { isActionEntry } from '../models/UndoEntry';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
@@ -321,7 +323,21 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             options?.source ?? 'manual',
                             undoResult.redoAction
                         );
-                        if (historyGroupId) {
+                        if (options?.coalesceWithPrevious) {
+                            const previousEntry = undoStore.value?.past.at(-1);
+                            if (
+                                previousEntry &&
+                                isActionEntry(previousEntry) &&
+                                previousEntry.action.type === action.type
+                            ) {
+                                const groupId = previousEntry.groupId ?? `group-${crypto.randomUUID().slice(0, 8)}`;
+                                previousEntry.groupId = groupId;
+                                entry.groupId = groupId;
+                                if (previousEntry.groupLabel) {
+                                    entry.groupLabel = previousEntry.groupLabel;
+                                }
+                            }
+                        } else if (historyGroupId) {
                             entry.groupId = historyGroupId;
                             entry.groupLabel = historyGroupLabel;
                         }

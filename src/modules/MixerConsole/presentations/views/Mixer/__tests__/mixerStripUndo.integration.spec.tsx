@@ -18,6 +18,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     executeAppAction,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -356,6 +357,9 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     shouldWarnExternalPluginRestoreFailure: vi.fn(() => false),
     observeExternalPluginParameterEdits: vi.fn(),
     readPluginState: vi.fn(),
+    readExternalPluginStateForCapture: vi.fn(() =>
+        Promise.resolve({ status: 'preserve' as const, reason: 'not-loaded' as const })
+    ),
     registerFaustDSP: vi.fn(),
     restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
@@ -751,6 +755,32 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // And one press of undo returns the whole gesture to where it started,
         // not to the second-to-last pointer sample.
         await undo();
+        expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+    });
+
+    it('coalesces a fader groove double-click jump and reset into a single undo step', async () => {
+        render(<MixerStripRow />);
+
+        const fader = screen.getByRole('slider', { name: 'Lead Vocal gain' });
+
+        expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+
+        fireEvent.pointerDown(fader, { button: 0, pointerId: 1, clientY: 70 });
+        fireEvent.pointerUp(fader, { pointerId: 1 });
+        fireEvent.doubleClick(fader);
+
+        await vi.waitFor(() => {
+            expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+            expect(undoLabels().length).toBe(2);
+        });
+
+        expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+
+        await undo();
+        expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
+        expect(undoLabels()).toEqual([]);
+
+        await redo();
         expect(storedTrack()?.gain).toBeCloseTo(0.8, 5);
     });
 

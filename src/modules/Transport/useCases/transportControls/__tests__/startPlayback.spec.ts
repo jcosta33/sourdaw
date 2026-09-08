@@ -26,9 +26,10 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
-    // The rate the native session is told to place its programme on. A device
-    // rate is all `startPlayback` reads, so a live context is not needed here.
-    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
+    // The rate the native session is told to place its programme on, and the
+    // clock reading its start position is anchored against. A live context is
+    // not needed for either.
+    getAudioContext: (): { sampleRate: number; currentTime: number } => ({ sampleRate: 48_000, currentTime: 7.25 }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -203,7 +204,12 @@ describe('startPlayback', () => {
 
         startPlayback();
 
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 2 }));
+        // The context clock is read with that position, not later: the session
+        // carries the pair forward so its own start-up wait can be projected
+        // onto the roll rather than left as an offset behind Web Audio.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({ positionSeconds: 2, anchoredAtContextSeconds: 7.25 })
+        );
     });
 
     it('gives the native session the arrangement maps the engine has to follow', () => {

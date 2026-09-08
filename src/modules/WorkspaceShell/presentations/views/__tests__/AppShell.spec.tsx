@@ -646,6 +646,55 @@ describe('AppShell', () => {
         });
     });
 
+    describe('bottom-dock editorHeight and resize floor (Issue #3697)', () => {
+        it('uses editorHeight when activeBottomTab is editor and mixerHeight when activeBottomTab is mixer', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                mixerHeight: 200,
+                editorHeight: 360,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const dockStack = screen.getByRole('tabpanel').parentElement;
+            expect(dockStack).toHaveStyle({ height: '200px' });
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Editor' }));
+            expect(dockStack).toHaveStyle({ height: '360px' });
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Mixer' }));
+            expect(dockStack).toHaveStyle({ height: '200px' });
+        });
+
+        it('enforces 280px minimum resize floor when activeBottomTab is editor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                editorHeight: 360,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Editor' }));
+
+            const resizeHandle = screen.getByRole('tabpanel').parentElement?.previousElementSibling as HTMLElement;
+            expect(resizeHandle).toBeInTheDocument();
+
+            // Drag down by 200px (clientY from 100 to 300 -> delta is -200)
+            // 360 - 200 = 160, but floor is 280px
+            fireEvent.mouseDown(resizeHandle, { clientX: 0, clientY: 100, button: 0 });
+            fireEvent.mouseMove(document, { clientX: 0, clientY: 300 });
+            fireEvent.mouseUp(document);
+
+            expect(workspaceStore.value?.editorHeight).toBe(280);
+        });
+    });
+
     describe('skip-link resilience (Fix 2)', () => {
         it('renders a skip-link targeting #main-content when no dialog is open', () => {
             render(<AppShell>Content</AppShell>);

@@ -2,6 +2,7 @@ import { base64ToBytes } from '#/utils/base64';
 
 import { setPluginState } from '../../repositories/pluginBridge/setPluginState';
 
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 /**
@@ -14,6 +15,7 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
  * blank chunk is a no-op; the repository stubs out in browser dev mode (no desktop bridge).
  */
 export function restorePluginState(instanceId: string, stateChunk: string): Promise<void> {
+    externalPluginStateCaptureAuthority.invalidate(instanceId);
     return serializePluginLifecycle(instanceId, async () => {
         if (stateChunk.length === 0) {
             return;

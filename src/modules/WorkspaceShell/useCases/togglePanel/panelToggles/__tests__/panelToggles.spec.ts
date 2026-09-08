@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
         sidebarWidth: 224,
         inspectorWidth: 256,
         mixerHeight: 208,
+        editorHeight: 360,
         channelStripWidth: 'normal' as const,
         timeDisplayMode: 'musical' as const,
         chatPanelWidth: 320,

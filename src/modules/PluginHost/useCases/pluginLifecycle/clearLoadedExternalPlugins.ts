@@ -14,6 +14,7 @@ import {
     externalPluginActivationTasks,
 } from './externalPluginActivationTasks';
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { loadedExternalInstances } from './loadedExternalInstances';
 
 /**
@@ -26,6 +27,7 @@ import { loadedExternalInstances } from './loadedExternalInstances';
  * pushes into a registry entry for a device that no longer exists.
  */
 export function clearLoadedExternalPlugins(): void {
+    externalPluginStateCaptureAuthority.invalidateAll();
     loadedExternalInstances.clear();
     externalLatencyReporters.clear();
     externalPluginActivationEpoch.current += 1;

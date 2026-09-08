@@ -9,6 +9,7 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    readNativeOutputLatency,
     refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
@@ -22,6 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getEngineHealth: vi.fn(),
     getEngineState: vi.fn(),
     getMasterPeakLevel: vi.fn(),
+    readNativeOutputLatency: vi.fn(() => null),
     refreshEngineRtDiagnostics: vi.fn(() => Promise.resolve()),
 }));
 
@@ -254,6 +256,68 @@ describe('useStatusBarMetrics', () => {
     // Sibling of the text-node test below: this hook exists to avoid touching
     // unchanged DOM at animation-frame rate, and the latency tooltip is a string
     // that only moves when the device buffer does.
+    // ── Native carrier readout ───────────────────────────────────────────
+    // Once the native session becomes the audible carrier, Web Audio's own
+    // context/device figures describe a path nobody hears, so the readout
+    // switches to `readNativeOutputLatency`'s reading instead — see
+    // `describeOutputLatency` in `useStatusBarMetrics.ts`.
+    it('reads the native engine figure instead of Web Audio once the native session carries the monitor', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeOutputLatency).mockReturnValue({
+            contextSeconds: 256 / 48_000,
+            deviceSeconds: 528 / 48_000,
+        });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+
+        // 5.333ms + 11.0ms = 16.3ms — the native reading, not the 16.0ms the
+        // Web Audio fixture above would have produced.
+        expect(refs.latency.current!.textContent).toBe('16.3ms');
+        expect(refs.latency.current!.title).toBe(
+            'Output latency 16.3 ms = native engine buffer 5.3 ms + device 11.0 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.'
+        );
+    });
+
+    it('falls back to the Web Audio reading while readNativeOutputLatency reports null', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeOutputLatency).mockReturnValue(null);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+
+        expect(refs.latency.current!.textContent).toBe('16.0ms');
+        expect(refs.latency.current!.title).toBe(
+            'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
+                ' Hardware output path only — excludes plug-in delay compensation.'
+        );
+    });
+
     it('leaves the latency tooltip alone while the latency is unchanged', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,

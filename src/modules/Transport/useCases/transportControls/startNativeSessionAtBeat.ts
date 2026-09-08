@@ -28,6 +28,12 @@ export function startNativeSessionAtBeat(startBeat: number, tempo: number): void
     Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startBeat, tempo),
+            // Taken with the position above, on the clock the Web Audio
+            // scheduler integrates: the session's own start costs several
+            // awaited round trips, and this anchor is what lets it roll the
+            // engine at the position Web Audio has reached by then rather than
+            // at this one (#3577).
+            anchoredAtContextSeconds: getAudioContext().currentTime,
             // Read here, at the moment of play, so the engine follows the map
             // the timeline holds now rather than the one it held when the
             // session object was made.

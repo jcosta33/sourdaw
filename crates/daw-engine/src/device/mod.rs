@@ -53,8 +53,8 @@ pub(crate) struct DeviceOpenRequest {
     pub exclusive: bool,
 }
 
-/// What the open negotiated: the two facts the engine must build its
-/// scheduler and render callback around before any audio flows.
+/// What the open negotiated: the facts the engine must build its scheduler
+/// and render callback around before any audio flows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct NegotiatedOutput {
     pub sample_rate: f32,
@@ -65,10 +65,14 @@ pub(crate) struct NegotiatedOutput {
 /// length is a whole number of frames — for a device currently running
 /// `channels` channels. The channel count travels per call because a
 /// device-invalidation recovery may resume the same callback on an
-/// endpoint with a different layout. Runs on the audio thread: it must
-/// not allocate, lock, or block, and neither may the backend code around
-/// its invocation.
-pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize) + Send + 'static>;
+/// endpoint with a different layout. `output_path_frames` is the frames
+/// between this callback's invocation and the instant its first sample
+/// reaches the device, as the backend reports it for *this* callback — on
+/// cpal, the playback timestamp minus the callback timestamp — or zero when
+/// the backend has no figure. Runs on the audio thread: it must not
+/// allocate, lock, or block, and neither may the backend code around its
+/// invocation.
+pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize, usize) + Send + 'static>;
 
 /// Mid-stream error notification — device invalidation included. Backends
 /// map their native error codes onto [`StreamErrorKind`] before calling

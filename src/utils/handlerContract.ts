@@ -1292,7 +1292,18 @@ export type AppAction =
               deleteParameter?: boolean;
           };
       }
-    | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
+    | {
+          type: 'setExternalPluginState';
+          payload:
+              | {
+                    intent: 'capture';
+                    deviceId: string;
+                    stateChunk: string;
+                    expectedInstanceId: string;
+                    expectedStateChunk: string | null;
+                }
+              | { intent: 'replacement'; deviceId: string; stateChunk: string };
+      }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
           type: 'setGrandBouleDeviceState';
@@ -2525,6 +2536,8 @@ export type ExecuteOptions = {
      * document, capped and evicting oldest — is declined.
      */
     skipUndo?: boolean;
+    /** When true, coalesce this action into the previous undo entry's group (or generate a shared group if unset). */
+    coalesceWithPrevious?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;
     /** When true, do not capture this execution in an active macro recording. */

@@ -1,8 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import {
     hasUnresolvedExternalPluginRestoreFailure,
-    readPluginState,
+    readExternalPluginStateForCapture,
     shouldWarnExternalPluginRestoreFailure,
 } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -22,156 +23,69 @@ export type ExternalPluginCaptureOutcome = {
 type RejectedCapture = {
     readonly instanceId: string;
     readonly pluginName: string;
+    readonly authorityToken: object;
 };
 
-/**
- * Capture the live state chunk of every loaded native plugin into project truth
- * immediately before a save. For each `external-plugin` device with an instance
- * id, read the host's opaque chunk and commit it (base64) through
- * `executeAppAction`, so it rides the same CRDT write path as the rest of the
- * project and is restored when the instance is next reloaded.
- *
- * A plugin that is absent, failed to instantiate, or produced an empty chunk
- * yields '' from `readPluginState`; that case is skipped so the previously
- * stored chunk survives a round-trip through a machine without the plugin
- * (Decision 0003 — never overwrite saved plugin state on instantiation
- * failure).
- *
- * A plugin that instantiated but REJECTED its saved state stays loaded holding
- * its own defaults, so its get-state is not the user's data either. While that
- * failure stands unresolved, the stored chunk stays authoritative for the slot
- * and the host is not read at all; a later successful restore or an explicit
- * `setExternalPluginState` replacement (which pushes the chunk to the host)
- * clears the marker and capture resumes. The skip is never silent — but it
- * warns exactly once per failure episode: autosave ticks on a plugin that
- * keeps rejecting its chunk must not nag every 30 seconds, while a
- * resolved-then-refailed instance warns again.
- *
- * The write is gated on whether THIS peer's own host state changed since its last
- * capture (`capturedNativePluginStateCache`), not on whether the stored chunk
- * differs. Under collaboration a sync can replace the stored chunk with a peer's
- * value; comparing against the store alone would re-commit the local chunk every
- * autosave tick while the peer did the reverse — an endless ping-pong. Comparing
- * against the self-read baseline makes "host unchanged" a guaranteed no-write.
- *
- * The baseline advances only once the command machinery reports the capture as
- * accepted — committed (including a committed-but-observer-error, where truth
- * holds the chunk even though post-commit processing failed) or needing no
- * write at all. A PRECOMMIT rejection wrote nothing, so the baseline stays
- * untouched and the next save retries the capture even when the host reads an
- * unchanged chunk; the rejected plugin is returned to the caller and named in a
- * warning, once per failed-capture episode.
- *
- * Reads and commits are serialized per device so a slow host cannot flood the
- * IPC bridge and so each commit lands before the next read observes the store.
- */
-export async function captureExternalPluginStates(): Promise<ExternalPluginCaptureOutcome> {
+type DeviceWitness = {
+    readonly deviceId: string;
+    readonly deviceType: string;
+    readonly instanceId: string;
+    readonly stateChunk: string | null;
+};
+
+function hasExactDeviceWitness(witness: DeviceWitness): boolean {
     const state = trackStore.value;
     if (!state) {
-        return { rejectedPlugins: [] };
+        return false;
     }
-
-    const preservedPlugins: string[] = [];
-    const rejectedCaptures: RejectedCapture[] = [];
     for (const track of state.tracks) {
-        for (const device of track.devices) {
-            const instanceId = device.externalInstanceId;
-            if (device.type !== 'external-plugin' || !instanceId) {
-                continue;
-            }
-
-            // The plugin rejected its saved state, so its current runtime state
-            // is defaults. Preserve the stored original chunk by leaving the
-            // slot untouched until authoritative state exists again — and say
-            // so, once per failure episode: a save that silently drops the
-            // plugin's edits reads as success to the musician, but an autosave
-            // that nags every 30 seconds is noise.
-            if (hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
-                if (shouldWarnExternalPluginRestoreFailure(instanceId)) {
-                    preservedPlugins.push(device.externalPluginId ?? device.name);
-                }
-                continue;
-            }
-
-            let stateChunk: string;
-            try {
-                stateChunk = await readPluginState(instanceId);
-            } catch {
-                // A failed read must not clobber the stored chunk (missing/failed plugin).
-                continue;
-            }
-
-            if (stateChunk.length === 0) {
-                continue;
-            }
-
-            // Self-referential skip: our own host state is unchanged since the last
-            // capture for this instance, so there is nothing local to persist —
-            // regardless of what a collaboration sync wrote into the store.
-            if (stateChunk === capturedNativePluginStateCache.get(instanceId)) {
-                continue;
-            }
-
-            // Project truth already holds our host state — nothing to write. The
-            // read still becomes the baseline: after a sync replaces the stored
-            // chunk, an unchanged host must keep skipping rather than re-commit
-            // our chunk over the peer's (collab ping-pong).
-            if (stateChunk === device.externalStateChunk) {
-                recordAcceptedCapture(instanceId, stateChunk);
-                continue;
-            }
-
-            try {
-                await executeAppAction(
-                    { type: 'setExternalPluginState', payload: { deviceId: device.id, stateChunk } },
-                    { skipMacroRecording: true }
-                );
-            } catch (error) {
-                if (isAppActionCommittedError(error)) {
-                    // The commit landed; only post-commit processing failed. The
-                    // chunk is in project truth, so this capture counts as done
-                    // and the unchanged-host skip keeps holding.
-                    recordAcceptedCapture(instanceId, stateChunk);
-                    continue;
-                }
-                // Precommit rejection: nothing was written, so the baseline stays
-                // untouched and the next save retries the capture even though the
-                // host will read the same chunk.
-                rejectedCaptures.push({ instanceId, pluginName: device.externalPluginId ?? device.name });
-                continue;
-            }
-            recordAcceptedCapture(instanceId, stateChunk);
+        const device = track.devices.find((candidate) => candidate.id === witness.deviceId);
+        if (!device) {
+            continue;
         }
-    }
-
-    if (preservedPlugins.length > 0) {
-        notifyUser(
-            `Saved state was preserved for ${preservedPlugins.join(', ')} after a failed restore — edits made in the plugin since were not captured.`,
-            'warning'
+        return (
+            device.type === witness.deviceType &&
+            device.externalInstanceId === witness.instanceId &&
+            (device.externalStateChunk ?? null) === witness.stateChunk
         );
     }
-
-    warnOncePerEpisode(rejectedCaptures);
-
-    return { rejectedPlugins: rejectedCaptures.map((rejection) => rejection.pluginName) };
+    return false;
 }
 
-/**
- * Record a capture the command machinery accepted — committed, or needing no
- * write at all. The baseline advances so unchanged-host saves keep skipping,
- * and a pending failed-capture episode for the instance ends.
- */
-function recordAcceptedCapture(instanceId: string, stateChunk: string): void {
-    capturedNativePluginStateCache.set(instanceId, stateChunk);
+function recordAcceptedCapture(instanceId: string, stateChunk: string, authorityToken: object): void {
+    capturedNativePluginStateCache.set(instanceId, { stateChunk, authorityToken });
     warnedExternalPluginCaptureRejections.delete(instanceId);
+}
+
+function wasCaptureAccepted(instanceId: string, stateChunk: string, authorityToken: object): boolean {
+    const accepted = capturedNativePluginStateCache.get(instanceId);
+    return accepted?.stateChunk === stateChunk && accepted.authorityToken === authorityToken;
+}
+
+function addPreservationWarning(instanceId: string, pluginName: string, preservedPlugins: string[]): void {
+    if (shouldWarnExternalPluginRestoreFailure(instanceId)) {
+        preservedPlugins.push(pluginName);
+    }
+}
+
+function rejectOrPreserve(
+    rejection: RejectedCapture,
+    preservedPlugins: string[],
+    rejectedCaptures: RejectedCapture[]
+): void {
+    if (hasUnresolvedExternalPluginRestoreFailure(rejection.instanceId)) {
+        addPreservationWarning(rejection.instanceId, rejection.pluginName, preservedPlugins);
+        return;
+    }
+    rejectedCaptures.push(rejection);
 }
 
 function warnOncePerEpisode(rejectedCaptures: readonly RejectedCapture[]): void {
     const unwarned = rejectedCaptures.filter(
-        (rejection) => !warnedExternalPluginCaptureRejections.has(rejection.instanceId)
+        ({ instanceId, authorityToken }) => warnedExternalPluginCaptureRejections.get(instanceId) !== authorityToken
     );
-    for (const rejection of unwarned) {
-        warnedExternalPluginCaptureRejections.add(rejection.instanceId);
+    for (const { instanceId, authorityToken } of unwarned) {
+        warnedExternalPluginCaptureRejections.set(instanceId, authorityToken);
     }
     if (unwarned.length === 0) {
         return;
@@ -180,4 +94,129 @@ function warnOncePerEpisode(rejectedCaptures: readonly RejectedCapture[]): void 
         `The latest state of ${unwarned.map((rejection) => rejection.pluginName).join(', ')} could not be saved — the project still reports unsaved changes, so save again to retry.`,
         'warning'
     );
+}
+
+function warnPreservedPlugins(preservedPlugins: readonly string[]): void {
+    if (preservedPlugins.length === 0) {
+        return;
+    }
+    notifyUser(
+        `Saved state was preserved for ${preservedPlugins.join(', ')} after a failed restore — edits made in the plugin since were not captured.`,
+        'warning'
+    );
+}
+
+function isAcceptedBatchStatus(status: string): boolean {
+    return status === 'committed' || status === 'committed-with-warning' || status === 'ambiguous';
+}
+
+/**
+ * Capture every loaded native plugin through a revision-, device-, and
+ * native-generation-bound Command commit.
+ */
+export async function captureExternalPluginStates(): Promise<ExternalPluginCaptureOutcome> {
+    const openingState = trackStore.value;
+    if (!openingState) {
+        return { rejectedPlugins: [] };
+    }
+
+    const preservedPlugins: string[] = [];
+    const rejectedCaptures: RejectedCapture[] = [];
+
+    for (const track of openingState.tracks) {
+        for (const openingDevice of track.devices) {
+            const instanceId = openingDevice.externalInstanceId;
+            if (openingDevice.type !== 'external-plugin' || !instanceId) {
+                continue;
+            }
+
+            const pluginName = openingDevice.externalPluginId ?? openingDevice.name;
+            const witness: DeviceWitness = {
+                deviceId: openingDevice.id,
+                deviceType: openingDevice.type,
+                instanceId,
+                stateChunk: openingDevice.externalStateChunk ?? null,
+            };
+            const originalRevision = captureProjectRevision();
+            const mutationIsAuthorized = captureProjectMutationAuthorization();
+            const read = await readExternalPluginStateForCapture(instanceId);
+
+            if (read.status === 'preserve') {
+                if (read.reason === 'restore-failed') {
+                    addPreservationWarning(instanceId, pluginName, preservedPlugins);
+                }
+                continue;
+            }
+            if (read.status === 'stale') {
+                rejectOrPreserve(
+                    { instanceId, pluginName, authorityToken: read.authorityToken },
+                    preservedPlugins,
+                    rejectedCaptures
+                );
+                continue;
+            }
+
+            const rejection = { instanceId, pluginName, authorityToken: read.authorityToken };
+            if (!read.isCurrent() || captureProjectRevision() !== originalRevision || !hasExactDeviceWitness(witness)) {
+                rejectOrPreserve(rejection, preservedPlugins, rejectedCaptures);
+                continue;
+            }
+
+            if (wasCaptureAccepted(instanceId, read.stateChunk, read.authorityToken)) {
+                continue;
+            }
+
+            if (read.stateChunk === witness.stateChunk) {
+                recordAcceptedCapture(instanceId, read.stateChunk, read.authorityToken);
+                continue;
+            }
+
+            let ownerBound = false;
+            const result = await executeAppActionBatch(
+                [
+                    {
+                        type: 'setExternalPluginState',
+                        payload: {
+                            intent: 'capture',
+                            deviceId: witness.deviceId,
+                            stateChunk: read.stateChunk,
+                            expectedInstanceId: witness.instanceId,
+                            expectedStateChunk: witness.stateChunk,
+                        },
+                    },
+                ],
+                {
+                    groupLabel: 'Capture plugin state',
+                    skipMacroRecording: true,
+                    authorizeFirstHandler: () => {
+                        ownerBound = true;
+                        if (!mutationIsAuthorized()) {
+                            return 'Project changed while plugin state was captured';
+                        }
+                        if (captureProjectRevision() !== originalRevision) {
+                            return 'Project revision changed while plugin state was captured';
+                        }
+                        if (!hasExactDeviceWitness(witness)) {
+                            return 'Plugin device changed while its state was captured';
+                        }
+                        if (!read.isCurrent()) {
+                            return 'Plugin runtime changed while its state was captured';
+                        }
+                        return null;
+                    },
+                    shouldExecute: () => !ownerBound || (mutationIsAuthorized() && read.isCurrent()),
+                }
+            );
+
+            if (isAcceptedBatchStatus(result.status)) {
+                recordAcceptedCapture(instanceId, read.stateChunk, read.authorityToken);
+                continue;
+            }
+            rejectOrPreserve(rejection, preservedPlugins, rejectedCaptures);
+        }
+    }
+
+    warnPreservedPlugins(preservedPlugins);
+    warnOncePerEpisode(rejectedCaptures);
+    return { rejectedPlugins: rejectedCaptures.map((rejection) => rejection.pluginName) };
 }

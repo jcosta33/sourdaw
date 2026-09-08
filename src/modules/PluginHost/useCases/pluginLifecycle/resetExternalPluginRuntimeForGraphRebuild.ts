@@ -1,5 +1,6 @@
 import { clearLoadedExternalPlugins } from './clearLoadedExternalPlugins';
 import { externalPluginActivationEpoch, externalPluginActivationTasks } from './externalPluginActivationTasks';
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
 import { unloadPlugin } from './unloadPlugin';
 
@@ -11,6 +12,7 @@ export function resetExternalPluginRuntimeForGraphRebuild(): Promise<void> {
         return activeReset;
     }
 
+    externalPluginStateCaptureAuthority.invalidateAll();
     externalPluginActivationEpoch.current += 1;
     const rebuild = pluginLifecycleScheduler.beginRebuild();
     const admittedActivations = [...externalPluginActivationTasks.values()];

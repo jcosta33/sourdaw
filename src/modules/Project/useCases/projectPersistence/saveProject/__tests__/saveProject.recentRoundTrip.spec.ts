@@ -48,6 +48,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
@@ -87,6 +88,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),

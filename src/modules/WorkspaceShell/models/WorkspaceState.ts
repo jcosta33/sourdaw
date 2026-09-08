@@ -25,6 +25,7 @@ export type WorkspaceState = {
     sidebarWidth: number;
     inspectorWidth: number;
     mixerHeight: number;
+    editorHeight: number;
     soloMode: SoloMode;
     channelStripWidth: ChannelStripWidth;
     timeDisplayMode: TimeDisplayMode;
@@ -77,6 +78,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     sidebarWidth: 224,
     inspectorWidth: 256,
     mixerHeight: 208,
+    editorHeight: 360,
     soloMode: 'sip',
     channelStripWidth: 'normal',
     timeDisplayMode: 'musical',

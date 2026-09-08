@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,

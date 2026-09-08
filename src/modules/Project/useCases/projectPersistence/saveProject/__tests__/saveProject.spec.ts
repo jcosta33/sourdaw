@@ -64,6 +64,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
 }));

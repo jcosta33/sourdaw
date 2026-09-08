@@ -232,6 +232,8 @@ describe('useTimelineFileDrop', () => {
 
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+        const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf1', buffer: { duration: 2 } });
 
         await act(async () => {
@@ -605,13 +607,95 @@ describe('useTimelineFileDrop', () => {
         );
     });
 
-    it('warns with the decode message when a native-root sample file cannot be decoded', async () => {
+    // Regression (#3756): a failed import must leave the timeline unchanged —
+    // the pre-fix flow warned and still placed a permanently silent clip (and
+    // sometimes a new track) after a read or decode rejection.
+    it('aborts a library drop when the sample file cannot be read', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        mocks.resolveDroppedSampleFile.mockRejectedValue(new Error('file handle revoked'));
+
+        // No eligible track: the pre-fix flow created one before the read failed.
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Kick',
+                              id: 'unreadable-kick',
+                              path: 'Drums/Kick.wav',
+                              libraryRootId: 'root-native',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Could not access "Kick" — the file may have moved or folder permissions were revoked.',
+                'error'
+            );
+        });
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts a library drop when the resolver cannot resolve the sample root', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Kick',
+                              id: 'rootless-kick',
+                              path: 'Drums/Kick.wav',
+                              libraryRootId: 'gone-root',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Could not access "Kick" — its library folder is no longer available.',
+                'error'
+            );
+        });
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts a native-root library drop when the sample cannot be decoded', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
         mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
-        mocks.hitTestTrack.mockReturnValue('t1');
-        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        // No eligible track: the pre-fix flow created one before decoding failed.
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
 
         const mockEvent = {
             preventDefault: vi.fn(),
@@ -636,22 +720,14 @@ describe('useTimelineFileDrop', () => {
         await waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalledWith(
                 '"Broken Kick" could not be decoded — the file may be DRM-protected or corrupt.',
-                'warning'
+                'error'
             );
         });
-        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({
-                trackId: 't1',
-                name: 'Broken Kick',
-                type: 'audio',
-                audioBufferId: undefined,
-                assetHash: undefined,
-            })
-        );
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
-    it('keeps the decode warning for browser-root sample files that cannot be decoded', async () => {
+    it('aborts a browser-root library drop onto an existing track when the sample cannot be decoded', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
@@ -682,19 +758,11 @@ describe('useTimelineFileDrop', () => {
         await waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalledWith(
                 '"Broken Clap" could not be decoded — the file may be DRM-protected or corrupt.',
-                'warning'
+                'error'
             );
         });
-        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({
-                trackId: 't1',
-                name: 'Broken Clap',
-                type: 'audio',
-                audioBufferId: undefined,
-                assetHash: undefined,
-            })
-        );
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
     it('keeps a forwarded MIDI continuation bound to its drop epoch', async () => {
