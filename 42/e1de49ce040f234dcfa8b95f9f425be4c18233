@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/relinkClipAudioSource.ts
+  s_ab88639a82a403::t_8f9430a5146d62 75-78
+src/modules/Project/useCases/arrangement/__tests__/switchArrangement.spec.ts
+  s_ab88639a82a403::t_62bf77d8f9cf11 1,3-8,11-121,123-140,146-167
+src/modules/Project/useCases/arrangement/switchArrangement.ts
+  s_ab88639a82a403::t_e4c3b48dd57f39 7,92-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "42e1de49ce040f234dcfa8b95f9f425be4c18233",
+  "prompts": {},
+  "sessions": {
+    "s_ab88639a82a403": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2311e36a2f2b8e42",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
