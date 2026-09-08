@@ -30,5 +30,6 @@ osc3 = os.sawtooth(mfreq * (1 - spread * 1.5));
 mixed = (osc1 + osc2 + osc3 * osc3lvl) / 3;
 env = en.adsr(atk, dec, sus, rel, gate);
 fenv = env * env_amt;
-filtered = mixed : ve.moogLadder(min(1.0, mod_cutoff / 20000 + fenv), res);
+norm_cutoff = log10(max(20.0, mod_cutoff) / 20.0) / 3.0;
+filtered = mixed : ve.moogLadder(min(1.0, max(0.0, norm_cutoff + fenv)), res);
 process = filtered * env * gain * 0.8 <: _, _;
