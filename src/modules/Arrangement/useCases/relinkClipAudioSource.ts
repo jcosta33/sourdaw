@@ -72,10 +72,10 @@ function rewriteTrack(track: Track, overrides: ReadonlyMap<string, string | unde
  * Stored INACTIVE ARRANGEMENTS are deliberately out of reach: they live in
  * Project's arrangement store, which Arrangement cannot import (Project
  * imports Arrangement). Their clips keep the missing id until the user
- * switches to that arrangement, which rehydrates it into the live stores where
- * the missing-media scan re-flags it and this same repair applies — and a
- * switch clears undo history anyway, so no undo entry could honestly cover
- * both aggregates.
+ * switches to that arrangement — the switch rehydrates it into the live
+ * stores, its post-load missing-media scan re-flags it, and this same repair
+ * applies — and a switch clears undo history anyway, so no undo entry could
+ * honestly cover both aggregates.
  */
 function publishAudioBufferIds(state: TrackStoreState, overrides: ReadonlyMap<string, string | undefined>): void {
     trackStore.set({ ...state, tracks: state.tracks.map((track) => rewriteTrack(track, overrides)) });
