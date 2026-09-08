@@ -373,6 +373,12 @@ function isValidComputedOffset(value: number): boolean {
     return Number.isFinite(value);
 }
 
+/** Content beats consumed by `timelineBeats` of a stretched clip — the same
+ *  conversion the ordinary split applies to both the audio and warp axes. */
+function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
+    return timelineBeats * (clip.stretchRatio ?? 1);
+}
+
 function isValidComputedBeat(value: number): boolean {
     return Number.isFinite(value) && value >= 0;
 }
@@ -384,7 +390,8 @@ function validateComputedValues(owners: readonly NormalizedOwner[], operation: S
             const spansRange = clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat;
             const overlapsRightEdge = clip.startBeat < operation.endBeat && clip.endBeat > operation.endBeat;
             if (spansRange || overlapsRightEdge) {
-                const nextAudioOffset = (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat);
+                const nextAudioOffset =
+                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat);
                 if (!isValidComputedOffset(nextAudioOffset)) {
                     return false;
                 }
@@ -634,7 +641,11 @@ function planTrack(
                 id: identity.targetClipId,
                 startBeat: operation.endBeat,
                 name: `${clip.name} (R)`,
-                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                // The fragment plays on where the cut left off: the consumed
+                // span is timeline beats times the ratio, the same conversion
+                // the ordinary split and the warp cut below use.
+                audioOffsetBeats:
+                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
             };
             finalClips.push(leftClip, rightClip);
@@ -671,7 +682,11 @@ function planTrack(
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
-                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
+                // Same ratio conversion as the spanning fragment above: the
+                // head inside the deleted range is content the clip no longer
+                // plays.
+                audioOffsetBeats:
+                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
             });
             changed = true;
             continue;

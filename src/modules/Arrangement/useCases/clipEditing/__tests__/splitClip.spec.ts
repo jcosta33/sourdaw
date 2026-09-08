@@ -542,4 +542,78 @@ describe('splitClip', () => {
         expect(valueBeforeSplit).toBeCloseTo(0.62, 10);
         expect(getAutomationValueAtBeat('auto-split-new-clip-right-0', 4.5)).toBe(valueBeforeSplit);
     });
+
+    it('carries a linked follower lane onto the fragment with its link intact', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+
+        // A self-standing leader and a follower with no own points: the
+        // follower's played curve comes entirely from its link target, so the
+        // split must judge it by the leader's content, not its own.
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-leader',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+                {
+                    id: 'lane-follower',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    linkedLaneId: 'lane-leader',
+                    linkScale: -1,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        const leaderCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        const followerCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-1');
+        // Both copies land on the fragment, and the follower copy follows the
+        // leader's copy — the fragment's chain is self-contained.
+        expect(leaderCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.linkedLaneId).toBe('auto-split-new-clip-right-0');
+        expect(followerCopy?.linkScale).toBe(-1);
+        // Pan keeps following over the right span: inside the former
+        // straddling segment the follower evaluates to the leader copy's
+        // value times the link scale, seam included.
+        const leaderValue = requiredValue('auto-split-new-clip-right-0', 4.5);
+        expect(leaderValue).toBeCloseTo(0.62, 10);
+        expect(getAutomationValueAtBeat('auto-split-new-clip-right-1', 4.5)).toBeCloseTo(-leaderValue, 10);
+        // The originals survive on the left half and still follow each other.
+        expect(lanes.find((lane) => lane.id === 'lane-follower')?.linkedLaneId).toBe('lane-leader');
+        expect(getAutomationValueAtBeat('lane-follower', 2)).toBeCloseTo(-requiredValue('lane-leader', 2), 10);
+    });
 });
+
+/** The runtime evaluator reads `number | null`; these lanes must evaluate. */
+function requiredValue(laneId: string, beat: number): number {
+    const value = getAutomationValueAtBeat(laneId, beat);
+    expect(value).not.toBeNull();
+    return value ?? Number.NaN;
+}

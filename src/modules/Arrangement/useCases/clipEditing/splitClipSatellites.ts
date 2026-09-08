@@ -1,4 +1,5 @@
-import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { getAutomationLanes, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
@@ -192,6 +193,18 @@ function seamPointFor(
  * cut (`seamPointFor`) so the fragment continues the curve instead of
  * holding the first copied value.
  *
+ * Linked (follower) lanes travel by their RESOLVED source, not their own
+ * points: a follower's played curve is its link target's (`resolveLinkedLane`
+ * — its own points are ignored), so a follower whose own arrays are empty or
+ * all left of the cut would otherwise be skipped and the driven parameter
+ * would fall back to base over the right span. A follower whose resolved
+ * source reaches the right span copies too, keeping `linkedLaneId` and
+ * `linkScale` as clip duplication does; when the direct leader is itself
+ * copied onto the fragment, the follower copy follows the leader's copy, so
+ * the chain stays inside the fragment and survives undo/redo on the same
+ * deterministic ids. A follower whose chain end never reaches the right span
+ * copies as nothing, exactly as before.
+ *
  * Automation objects are bounded containers whose ids must stay unique, and
  * the source lane outlives the split — so objects stay with the left half
  * whole rather than being duplicated onto the copy. An object reaching into
@@ -210,38 +223,77 @@ function splitAutomationLanes(
     absoluteSplitBeats: number
 ): AutomationLaneValue[] {
     const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
+    const laneById = new Map(getAutomationLanes().map((lane) => [lane.id, lane]));
+    const copyIdBySourceLaneId = new Map<string, string>();
     const copies: AutomationLaneValue[] = [];
     for (const [index, lane] of readClipScopedAutomationLanes([sourceClipId]).entries()) {
-        const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
-        const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
-        const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
-        if (points.length === 0 && (trimPoints?.length ?? 0) === 0 && (ghostPoints?.length ?? 0) === 0) {
+        const resolvedLink =
+            lane.linkedLaneId === undefined ? null : resolveLinkedLane(lane.id, (id) => laneById.get(id));
+        const resolvedSource = resolvedLink === null ? undefined : laneById.get(resolvedLink.sourceLaneId);
+        const linkedSourceReachesRightSpan = resolvedSource !== undefined && resolvedSource.points.some(atOrAfterCut);
+        const hasOwnRightContent =
+            lane.points.some(atOrAfterCut) ||
+            (lane.trimPoints?.some(atOrAfterCut) ?? false) ||
+            (lane.ghostPoints?.some(atOrAfterCut) ?? false);
+        if (!hasOwnRightContent && !linkedSourceReachesRightSpan) {
             continue;
         }
-        // The seam rides only with a main-point copy: trim and ghost curves
-        // are overlays, and the played curve is the main point set.
-        if (points.length > 0) {
-            const seamPoint = seamPointFor(lane, rightClipId, index, absoluteSplitBeats);
-            if (seamPoint !== null) {
-                points.unshift(seamPoint);
-            }
-        }
-        const copy: AutomationLaneValue = {
-            ...lane,
-            id: `auto-split-${rightClipId}-${index}`,
-            clipId: rightClipId,
-            points,
-            objects: [],
-        };
-        if (trimPoints !== undefined) {
-            copy.trimPoints = trimPoints;
-        }
-        if (ghostPoints !== undefined) {
-            copy.ghostPoints = ghostPoints;
-        }
+        const copy = buildLaneCopy(lane, index, rightClipId, absoluteSplitBeats, resolvedLink === null);
+        copyIdBySourceLaneId.set(lane.id, copy.id);
         copies.push(copy);
     }
+    // A follower whose direct leader also copied follows the leader's copy, so
+    // the fragment's chain is self-contained; a leader that stayed behind (its
+    // own points never reach the right span, or it lives outside this clip)
+    // survives the split untouched and the link keeps resolving to it.
+    for (const copy of copies) {
+        if (copy.linkedLaneId === undefined) {
+            continue;
+        }
+        const leaderCopyId = copyIdBySourceLaneId.get(copy.linkedLaneId);
+        if (leaderCopyId !== undefined) {
+            copy.linkedLaneId = leaderCopyId;
+        }
+    }
     return copies;
+}
+
+/**
+ * The copy of one source lane, clamped to the fragment's window. `includeSeam`
+ * marks a self-standing lane — a follower plays its leader's curve (the seam
+ * that copy carries) and its own points are never evaluated.
+ */
+function buildLaneCopy(
+    lane: AutomationLaneValue,
+    laneIndex: number,
+    rightClipId: string,
+    absoluteSplitBeats: number,
+    includeSeam: boolean
+): AutomationLaneValue {
+    const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
+    const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
+    const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+    const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+    if (includeSeam && points.length > 0) {
+        const seamPoint = seamPointFor(lane, rightClipId, laneIndex, absoluteSplitBeats);
+        if (seamPoint !== null) {
+            points.unshift(seamPoint);
+        }
+    }
+    const copy: AutomationLaneValue = {
+        ...lane,
+        id: `auto-split-${rightClipId}-${laneIndex}`,
+        clipId: rightClipId,
+        points,
+        objects: [],
+    };
+    if (trimPoints !== undefined) {
+        copy.trimPoints = trimPoints;
+    }
+    if (ghostPoints !== undefined) {
+        copy.ghostPoints = ghostPoints;
+    }
+    return copy;
 }
 
 /**
