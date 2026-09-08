@@ -39,8 +39,11 @@ test.describe('Track Management', () => {
         const synthLeadTrackNames = trackList.getByTitle('Double-click to rename').filter({ hasText: 'Synth Lead' });
         await expect(synthLeadTrackNames).toHaveCount(1);
 
+        // Wait for rename menu to be fully dismissed
+        await expect(page.getByRole('menu')).toHaveCount(0);
+
         // 3. Duplicate track
-        await firstTrackRow.click({ button: 'right' });
+        await synthLeadTrackNames.first().click({ button: 'right' });
         const duplicateItem = page.getByRole('menuitem', { name: /Duplicate Track/i });
         await expect(duplicateItem).toBeVisible();
         await duplicateItem.click();
