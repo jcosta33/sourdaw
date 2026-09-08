@@ -1,0 +1,28 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  h_1228e573df1f42 361,373,409-470
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  h_1228e573df1f42 405,442,455-497,657-719
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  h_1228e573df1f42 23,27,37,181,184-186,233-314
+src/modules/Arrangement/useCases/clipEditing/consumedStretchFactor.ts
+  h_1228e573df1f42 1-17
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  h_1228e573df1f42 18,377-378,381,666-670,672
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  h_1228e573df1f42 10,73-76
+src/modules/Arrangement/useCases/clipEditing/reversedClipAudioOffsetBeats.ts
+  h_1228e573df1f42 1,42
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  h_1228e573df1f42 148-152,154-161,172-173,184-186,204-207,214,218-219,228-230,247-255,281-284,297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "fa12d86a039e31606e94e5225eddffd2afeda147",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
