@@ -1466,6 +1466,7 @@ const schemaDefinitions = [
             sourceMidi: 187,
             rightMidi: 187,
             clipSatellites: 69,
+            clipAutomationLanes: 112,
         },
         required: ['trackId', 'leftClip', 'rightClip', 'rightClipIndex', 'sourceMidi', 'rightMidi'],
         additionalProperties: false,

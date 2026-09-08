@@ -39,6 +39,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     duplicateClipAutomationBatch: vi.fn(),
     getAutomationLaneCeiling: vi.fn(),
     getAutomationLanes: vi.fn(),
+    getAutomationValueAtBeat: vi.fn(),
     getClipAutomationMoveState: vi.fn(),
     recordAutomationValue: vi.fn(),
     releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
