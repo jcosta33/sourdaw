@@ -175,6 +175,61 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
     );
 }
 
+async function loadSavedProjectInFreshRealm(
+    context: BrowserContext,
+    bufferId: string,
+    decodedPcm: readonly number[]
+): Promise<void> {
+    const loader = await openRealm(context);
+    try {
+        await configureNotificationCapture(loader);
+        const restored = await loader.evaluate(
+            async ({ createdAt }) => {
+                const [audio, arrangement, project, arrangementStores, crdt, helpers, collaboration, command] =
+                    await Promise.all([
+                        import('/src/modules/AudioEngine/useCases/index.ts'),
+                        import('/src/modules/Arrangement/useCases/index.ts'),
+                        import('/src/modules/Project/useCases/index.ts'),
+                        import('/src/modules/Arrangement/stores/index.ts'),
+                        import('/src/modules/CrdtDocument/useCases/index.ts'),
+                        import('/src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts'),
+                        import('/src/modules/Collaboration/useCases/index.ts'),
+                        import('/src/modules/Command/stores/index.ts'),
+                    ]);
+
+                arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
+                command.clearHandlerRegistry();
+                command.registerHandlerMap(arrangement.getArrangementHandlers());
+                crdt.registerCrdtStorageRuntime();
+                collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
+                project.setProjectIdentityTransitionDependencies({
+                    leaveCollaborationSession: () => Promise.resolve(),
+                });
+                crdt.resetCrdtProjectAuthority('Native audio ownership reopen');
+                helpers.resetModuleStoresToDefault();
+
+                const outcome = await project.loadRecentProject(project.getProjectSnapshotKey(createdAt));
+                const clip = arrangementStores.trackStore.value?.tracks
+                    .flatMap((track) => track.clips)
+                    .find((candidate) => candidate.type === 'audio');
+                const restoredBuffer = clip ? audio.getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : undefined;
+                return {
+                    outcome,
+                    clipBufferId: clip?.audioBufferId ?? null,
+                    pcm: restoredBuffer ? Array.from(restoredBuffer.getChannelData(0)) : null,
+                };
+            },
+            { createdAt: CREATED_AT }
+        );
+        expect(restored.outcome).toBe('committed');
+        expect(restored.clipBufferId).toBe(bufferId);
+        expect(restored.pcm).toEqual(decodedPcm);
+        expect(await readNotifications(loader)).not.toContainEqual(SAVE_FAILURE_NOTIFICATION);
+    } finally {
+        await loader.close();
+    }
+}
+
 async function saveProject(page: Page): Promise<boolean> {
     return page.evaluate(async () => {
         const { saveProject } = await import('/src/modules/Project/useCases/index.ts');
@@ -385,6 +440,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         expect(durable.json).toContain(bufferId);
         await requireHydratableDurableProjectAudio(collector, bufferId, durable.json);
         expect(durable.pcm).toEqual(decodedPcm);
+        await loadSavedProjectInFreshRealm(context, bufferId, decodedPcm);
     });
 
     test('collection-first admission never publishes a named snapshot without exact PCM', async ({ context }) => {
@@ -404,6 +460,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
             await requireHydratableDurableProjectAudio(collector, bufferId, durable.json);
             expect(durable.pcm).toEqual(decodedPcm);
             expect(await readNotifications(saver)).not.toContainEqual(SAVE_FAILURE_NOTIFICATION);
+            await loadSavedProjectInFreshRealm(context, bufferId, decodedPcm);
             return;
         }
         expect(collectedCount).toBeGreaterThan(0);
