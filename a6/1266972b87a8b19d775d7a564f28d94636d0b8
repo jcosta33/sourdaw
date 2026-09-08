@@ -1,0 +1,20 @@
+src/modules/Onboarding/presentations/views/OnboardingTour.tsx
+  h_1228e573df1f42 1,151-152,163-179,206-242,272-273,277
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  h_1228e573df1f42 4-7,177-282
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  h_1228e573df1f42 641,1069
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  h_1228e573df1f42 823-838
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a61266972b87a8b19d775d7a564f28d94636d0b8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
