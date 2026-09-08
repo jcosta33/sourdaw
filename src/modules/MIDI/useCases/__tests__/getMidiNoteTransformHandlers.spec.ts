@@ -130,14 +130,14 @@ describe('getMidiNoteTransformHandlers', () => {
             probability: 100,
         });
         expect(addedNote?.id).toMatch(/^note-/);
-        expect(mocks.transposeNotes).toHaveBeenCalledWith('clip1', 2);
+        expect(mocks.transposeNotes).toHaveBeenCalledWith('clip1', 2, undefined);
         // The handler forwards optional velocityAmount + seed (both absent on a
         // first execute) so it can capture the returned seed for deterministic redo.
         expect(mocks.humanizeNotes).toHaveBeenCalledWith('clip1', 0.25, undefined, undefined);
         expect(mocks.invertNotes).toHaveBeenCalledWith('clip1');
         expect(mocks.retrogradeNotes).toHaveBeenCalledWith('clip1');
-        expect(mocks.quantizeNoteLengths).toHaveBeenCalledWith('clip1', 0.25);
-        expect(mocks.quantizeNotes).toHaveBeenCalledWith('clip1', 0.25, 0.5, 0.1);
+        expect(mocks.quantizeNoteLengths).toHaveBeenCalledWith('clip1', 0.25, undefined);
+        expect(mocks.quantizeNotes).toHaveBeenCalledWith('clip1', 0.25, 0.5, 0.1, undefined);
         expect(mocks.scaleVelocities).toHaveBeenCalledWith('clip1', 'linear', 10, 100);
         expect(mocks.scaleAllVelocities).toHaveBeenCalledWith('clip1', 0.8);
         expect(mocks.setAllVelocities).toHaveBeenCalledWith('clip1', 90);

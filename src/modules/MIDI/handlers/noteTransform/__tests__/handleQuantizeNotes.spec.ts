@@ -36,7 +36,17 @@ describe('handleQuantizeNotes — execute', () => {
             type: 'quantizeNotes',
             payload: { clipId: 'c1', gridSize: 0.25, strength: 1, swing: 0 },
         });
-        expect(mockedQuantize).toHaveBeenCalledWith('c1', 0.25, 1, 0);
+        expect(mockedQuantize).toHaveBeenCalledWith('c1', 0.25, 1, 0, undefined);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('passes noteIds through to quantizeNotes when provided', () => {
+        mockedQuantize.mockReturnValue(true);
+        const result = handleQuantizeNotes.execute({
+            type: 'quantizeNotes',
+            payload: { clipId: 'c1', gridSize: 0.25, strength: 1, swing: 0, noteIds: ['n1', 'n2'] },
+        });
+        expect(mockedQuantize).toHaveBeenCalledWith('c1', 0.25, 1, 0, ['n1', 'n2']);
         expect(result).toEqual({ status: 'written' });
     });
 
@@ -59,6 +69,15 @@ describe('handleQuantizeNotes — describe', () => {
         expect(mockedPrepare).toHaveBeenCalled();
         expect(result.label).toBe('Quantize notes');
         expect(result.inverseAction?.type).toBe('restoreMidiClipNotes');
+    });
+
+    it('uses selection-scoped label when noteIds is non-empty', () => {
+        handleQuantizeNotes.describe({
+            type: 'quantizeNotes',
+            payload: { clipId: 'c1', gridSize: 0.25, strength: 1, swing: 0, noteIds: ['n1'] },
+        });
+        const prepareCall = mockedPrepare.mock.calls[0];
+        expect(prepareCall?.[0]?.label).toBe('Quantize selected notes');
     });
 });
 

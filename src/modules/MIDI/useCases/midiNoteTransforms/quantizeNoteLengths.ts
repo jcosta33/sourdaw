@@ -12,9 +12,9 @@ import { applyMidiNoteTransform } from './applyMidiNoteTransform';
  * to fill a grid cell they never occupied. Notes that round to one or more grid
  * steps are snapped to the nearest multiple as before.
  */
-export function quantizeNoteLengths(clipId: string, gridSize: number): boolean {
+export function quantizeNoteLengths(clipId: string, gridSize: number, noteIds?: readonly string[]): boolean {
     return applyMidiNoteTransform({
         clipId,
-        transform: (notes) => quantizeMidiNoteLengths({ notes, gridSize }),
+        transform: (notes) => quantizeMidiNoteLengths({ notes, gridSize, noteIds }),
     });
 }

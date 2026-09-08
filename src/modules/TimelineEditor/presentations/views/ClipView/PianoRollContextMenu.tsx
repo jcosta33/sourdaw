@@ -155,7 +155,11 @@ export const PianoRollContextMenu = ({
                         onClick={act(() => {
                             void executeUserAppAction({
                                 type: 'quantizeNotes',
-                                payload: { clipId, gridSize: g },
+                                payload: {
+                                    clipId,
+                                    gridSize: g,
+                                    ...(selectedNoteIds.size > 0 ? { noteIds: [...selectedNoteIds] } : {}),
+                                },
                             }).catch(() => logger.warn('Could not quantize notes'));
                         })}
                     >
@@ -177,7 +181,11 @@ export const PianoRollContextMenu = ({
                         onClick={act(() => {
                             void executeUserAppAction({
                                 type: 'quantizeNoteLengths',
-                                payload: { clipId, gridSize: g },
+                                payload: {
+                                    clipId,
+                                    gridSize: g,
+                                    ...(selectedNoteIds.size > 0 ? { noteIds: [...selectedNoteIds] } : {}),
+                                },
                             }).catch(() => logger.warn('Could not quantize note lengths'));
                         })}
                     >
@@ -201,7 +209,11 @@ export const PianoRollContextMenu = ({
                         onClick={act(() => {
                             void executeUserAppAction({
                                 type: 'transposeNotes',
-                                payload: { clipId, semitones: semi },
+                                payload: {
+                                    clipId,
+                                    semitones: semi,
+                                    ...(selectedNoteIds.size > 0 ? { noteIds: [...selectedNoteIds] } : {}),
+                                },
                             }).catch(() => logger.warn('Could not transpose notes'));
                         })}
                     >

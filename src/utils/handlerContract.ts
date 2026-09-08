@@ -1517,7 +1517,16 @@ export type AppAction =
               cp2?: { x: number; y: number };
           };
       }
-    | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
+    | {
+          type: 'quantizeNotes';
+          payload: {
+              clipId: string;
+              gridSize: number;
+              strength?: number;
+              swing?: number;
+              noteIds?: string[];
+          };
+      }
     | {
           type: 'removeShortMidiOverlaps';
           payload: {
@@ -1586,8 +1595,8 @@ export type AppAction =
               };
           };
       }
-    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
-    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
+    | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number; noteIds?: string[] } }
+    | { type: 'transposeNotes'; payload: { clipId: string; semitones: number; noteIds?: string[] } }
     | {
           type: 'humanizeNotes';
           // `seed`/`velocityAmount` are optional and captured by the handler on

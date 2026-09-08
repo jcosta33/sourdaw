@@ -36,7 +36,17 @@ describe('handleTransposeNotes — execute', () => {
             type: 'transposeNotes',
             payload: { clipId: 'c1', semitones: 3 },
         });
-        expect(mockedTranspose).toHaveBeenCalledWith('c1', 3);
+        expect(mockedTranspose).toHaveBeenCalledWith('c1', 3, undefined);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('passes noteIds through to transposeNotes', () => {
+        mockedTranspose.mockReturnValue(true);
+        const result = handleTransposeNotes.execute({
+            type: 'transposeNotes',
+            payload: { clipId: 'c1', semitones: 3, noteIds: ['n1', 'n2'] },
+        });
+        expect(mockedTranspose).toHaveBeenCalledWith('c1', 3, ['n1', 'n2']);
         expect(result).toEqual({ status: 'written' });
     });
 
@@ -70,6 +80,15 @@ describe('handleTransposeNotes — describe', () => {
         }
         const arg = prepareCall[0];
         expect(arg.label).toBe('Transpose -5 semitones');
+    });
+
+    it('sets selection-scoped label when noteIds is non-empty', () => {
+        handleTransposeNotes.describe({
+            type: 'transposeNotes',
+            payload: { clipId: 'c1', semitones: 3, noteIds: ['n1'] },
+        });
+        const prepareCall = mockedPrepare.mock.calls[0];
+        expect(prepareCall?.[0]?.label).toBe('Transpose selected notes +3 semitones');
     });
 });
 

@@ -29,6 +29,11 @@ describe('quantizeNotes', () => {
         expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.startBeat)).toEqual([0, 0.5]);
     });
 
+    it('should snap only selected notes to the grid when noteIds is provided', () => {
+        quantizeNotes('clip1', 0.25, 1, 0, ['b']);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.startBeat)).toEqual([0.11, 0.5]);
+    });
+
     it('should not mutate when the clip or store is missing', () => {
         quantizeNotes('missing', 0.25);
         midiStore.set(null);
