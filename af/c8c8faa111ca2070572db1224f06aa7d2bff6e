@@ -1,0 +1,16 @@
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  h_1228e573df1f42 16-59,71-73,123-128,142-147,149,151-156
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  h_1228e573df1f42 5,22,25,27-60,63,65-92,95,97-122,125,127-139,142-177,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "afc8c8faa111ca2070572db1224f06aa7d2bff6e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
