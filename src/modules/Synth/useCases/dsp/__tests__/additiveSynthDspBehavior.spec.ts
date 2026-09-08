@@ -393,4 +393,70 @@ describe('additive-synth.dsp anti-aliasing behavior', () => {
         const measuredPeak = maximumAbsoluteSample(output, segmentSamples);
         expect(measuredPeak).toBeLessThanOrEqual(settledTwoPartialPeakBound);
     });
+
+    // Dense held sampling proves parameter-to-amplitude continuity after live updates.
+    // It does not measure the broadband transient of a continuously ramped pitch.
+    it('bounds adjacent output-amplitude changes across the full live Nyquist taper', async () => {
+        const sampleRate = 48_000;
+        const blockSize = 128;
+        const segmentSamples = sampleRate;
+        const firstFundamental = 10_800;
+        const lastTaperFundamental = 11_760;
+        const fundamentalStep = 4;
+        const taperWidth = lastTaperFundamental - firstFundamental;
+        const fundamentals = Array.from(
+            { length: taperWidth / fundamentalStep + 1 },
+            (_, index) => firstFundamental + index * fundamentalStep
+        );
+        fundamentals.push(lastTaperFundamental + fundamentalStep);
+
+        const points = fundamentals.map((frequency, index) => ({
+            frequency,
+            startSample: index === 0 ? 0 : (index + 1) * segmentSamples,
+        }));
+        const settingsByStartSample = new Map(
+            points.map(({ startSample, frequency }) => [startSample, { freq: frequency }])
+        );
+        const output = await renderAdditive(
+            generator,
+            sampleRate,
+            { freq: firstFundamental, rolloff: 0.5, gate: 1, gain: 1 },
+            points.length + 1,
+            blockSize,
+            (startSample) => settingsByStartSample.get(startSample)
+        );
+
+        assertFiniteOutput(output);
+        const normalizedWeights: number[] = [];
+        for (const [index, point] of points.entries()) {
+            const startSample = index === 0 ? segmentSamples : point.startSample;
+            const endSample = startSample + segmentSamples;
+            const fundamental = computeSinusoidalAmplitude(output, sampleRate, point.frequency, startSample, endSample);
+            const secondPartial = computeSinusoidalAmplitude(
+                output,
+                sampleRate,
+                point.frequency * 2,
+                startSample,
+                endSample
+            );
+
+            expect(fundamental).toBeCloseTo(NORMALIZED_FUNDAMENTAL_AMPLITUDE, 3);
+            normalizedWeights.push(secondPartial / fundamental / 2 ** -0.5);
+        }
+
+        expect(normalizedWeights[0]).toBeCloseTo(1, 3);
+        expect(ratioDb(normalizedWeights.at(-2) ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+        expect(ratioDb(normalizedWeights.at(-1) ?? 0, 1)).toBeLessThan(ALIAS_FLOOR_DB);
+
+        let maximumAdjacentChange = 0;
+        for (let index = 1; index < normalizedWeights.length; index++) {
+            const previousWeight = normalizedWeights[index - 1] ?? Infinity;
+            const currentWeight = normalizedWeights[index] ?? 0;
+            expect(currentWeight).toBeLessThanOrEqual(previousWeight + 1e-4);
+            maximumAdjacentChange = Math.max(maximumAdjacentChange, Math.abs(currentWeight - previousWeight));
+        }
+
+        const maximumSmoothstepChange = (1.5 * fundamentalStep) / taperWidth + 1e-4;
+        expect(maximumAdjacentChange).toBeLessThanOrEqual(maximumSmoothstepChange);
+    });
 });
