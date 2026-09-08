@@ -328,6 +328,35 @@ async function readDurableProjectAudio(page: Page, bufferId: string): Promise<{ 
     );
 }
 
+async function requireHydratableDurableProjectAudio(page: Page, bufferId: string, json: string | null): Promise<void> {
+    if (json === null) {
+        throw new Error('The successful save did not publish a named project snapshot');
+    }
+    const serializedAudioBufferId = await page.evaluate(
+        async ({ json: serializedJson }) => {
+            const { isHydratableProjectData } =
+                await import('/src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts');
+            const parsed: unknown = JSON.parse(serializedJson);
+            if (!isHydratableProjectData(parsed)) {
+                throw new Error('The successful save did not publish a hydratable project snapshot');
+            }
+            const audioClip = parsed.arrangement.tracks
+                .flatMap((track) => track.clips)
+                .find(
+                    (clip) => clip.type === 'audio' && (clip.bufferId !== undefined || clip.audioBufferId !== undefined)
+                );
+            return audioClip?.bufferId ?? audioClip?.audioBufferId ?? null;
+        },
+        { json }
+    );
+    expect(serializedAudioBufferId).toBe(bufferId);
+    const ownedBufferIds = await page.evaluate(async () => {
+        const project = await import('/src/modules/Project/useCases/index.ts');
+        return project.collectDurableOwnedAudioBufferIds();
+    });
+    expect(ownedBufferIds).toContain(bufferId);
+}
+
 async function holdNativeLock(page: Page): Promise<void> {
     await page.evaluate(async (lockName) => {
         let acquired!: () => void;
@@ -354,6 +383,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
 
         const durable = await readDurableProjectAudio(collector, bufferId);
         expect(durable.json).toContain(bufferId);
+        await requireHydratableDurableProjectAudio(collector, bufferId, durable.json);
         expect(durable.pcm).toEqual(decodedPcm);
     });
 
@@ -371,6 +401,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         const durable = await readDurableProjectAudio(collector, bufferId);
         if (saved) {
             expect(durable.json).toContain(bufferId);
+            await requireHydratableDurableProjectAudio(collector, bufferId, durable.json);
             expect(durable.pcm).toEqual(decodedPcm);
             expect(await readNotifications(saver)).not.toContainEqual(SAVE_FAILURE_NOTIFICATION);
             return;
