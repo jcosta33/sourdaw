@@ -1235,7 +1235,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 try {
                     const database = await host.openDatabase();
                     if (!host.isDurableMutationCurrent(id, generation!)) {
-                        return { kind: 'complete' as const, superseded: true };
+                        return { kind: 'superseded' as const };
                     }
                     const transaction = database.transaction(
                         [host.bufferStoreName, host.metadataStoreName],
@@ -1291,7 +1291,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                         }
                         if (!host.isDurableMutationCurrent(id, generation!) || !invalidateDurabilitySource!()) {
                             await abortRejectedPreparedTransition(transaction);
-                            return { kind: 'complete' as const, superseded: true };
+                            return { kind: 'superseded' as const };
                         }
                         committedData = existingData;
                         if (existingOwner.persistenceRevision === undefined) {
@@ -1327,7 +1327,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                         }
                         if (!host.isDurableMutationCurrent(id, generation!) || !invalidateDurabilitySource!()) {
                             await abortRejectedPreparedTransition(transaction);
-                            return { kind: 'complete' as const, superseded: true };
+                            return { kind: 'superseded' as const };
                         }
                         bufferStore.put(data, id);
                         metadataStore.put(
@@ -1388,10 +1388,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 }
             });
 
+            if (primary.kind === 'superseded') {
+                return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+            }
             if (primary.kind === 'complete') {
-                return 'result' in primary
-                    ? primary.result
-                    : { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+                return primary.result;
             }
 
             for (;;) {
