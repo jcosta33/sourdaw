@@ -16,6 +16,36 @@ type MasterChannelStripProps = {
     widthClass: string;
 };
 
+function restoreEngineFromProjectTruth(): void {
+    const storeMasterGain = transportStore.value?.masterGain;
+    if (storeMasterGain === undefined) {
+        return;
+    }
+    setMasterGain(storeMasterGain, true);
+}
+
+async function dispatchMasterGainAction(
+    value: number,
+    expectedPercent: number,
+    coalesceWithPrevious?: boolean
+): Promise<void> {
+    const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
+    if (options) {
+        await executeUserAppAction(
+            {
+                type: 'setMasterGain',
+                payload: { gain: value, expectedPercent },
+            },
+            options
+        );
+    } else {
+        await executeUserAppAction({
+            type: 'setMasterGain',
+            payload: { gain: value, expectedPercent },
+        });
+    }
+}
+
 export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
     // Mid-gesture fader value, in 0–1 fader units, held only for the duration of
@@ -62,6 +92,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // is what lets a later commit's `expectedPercent` read the store only
     // after an earlier, barrier-held commit has actually landed.
     const pendingCommit = useRef<Promise<void>>(Promise.resolve());
+    const lastGrooveSettleTime = useRef(0);
 
     /**
      * Put the engine back on project truth after a settle that never moved
@@ -76,26 +107,6 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
      * write here is idempotent — nothing branches on outcome. Same
      * precedent as `useChannelStripActions`'s `restoreEngineFromProjectTruth`.
      */
-    const restoreEngineFromProjectTruth = (): void => {
-        const storeMasterGain = transportStore.value?.masterGain;
-        if (storeMasterGain === undefined) {
-            return;
-        }
-        setMasterGain(storeMasterGain, true);
-    };
-
-    /**
-     * Runs once a settle's dispatch has landed, whichever token it was
-     * issued under. If no newer gesture has opened and no newer settle has
-     * landed since, this settle is still the display and engine's owner and
-     * reconciles both from project truth as before. Otherwise something
-     * newer has already taken over — restoring here would clobber it with
-     * this stale commit's outcome, so this instead re-asserts whatever
-     * `displayedValue` currently holds (the newer gesture's live sample, or
-     * a newer settle's optimistic value — never `null` here, since one of
-     * them set it) on the engine, and leaves the display state untouched;
-     * its own eventual settle reconciles the rest.
-     */
     const settleContinuation = (token: number): void => {
         if (gestureToken.current === token) {
             restoreEngineFromProjectTruth();
@@ -108,16 +119,13 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const commitMasterGain = async (value: number, token: number): Promise<void> => {
+    const commitMasterGain = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
         try {
             const expectedPercent = transportStore.value?.masterGain;
             if (expectedPercent === undefined) {
                 return;
             }
-            await executeUserAppAction({
-                type: 'setMasterGain',
-                payload: { gain: value, expectedPercent },
-            });
+            await dispatchMasterGainAction(value, expectedPercent, coalesceWithPrevious);
         } catch (error) {
             logger.error(new Error('Master channel strip commit failed for action: setMasterGain', { cause: error }));
         } finally {
@@ -136,20 +144,23 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             setMasterGain(value * 100, true);
             return;
         }
+        const wasOpen = gestureOpen.current;
         gestureOpen.current = false;
         gestureToken.current += 1;
         const token = gestureToken.current;
         displayedValue.current = value;
         setGestureGain(value);
-        // A keyboard nudge, a double-click, or an alt-click reset settles
-        // with no preceding transient sample, so without this write the
-        // engine never moves while a persistence barrier holds the queued
-        // commit below — only the display would move. Idempotent for a
-        // drag, whose last transient already sent this exact value to the
-        // engine; ownership past this point is still decided by
-        // `settleContinuation` reading `gestureToken`, untouched here.
         setMasterGain(value * 100, true);
-        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token));
+
+        let coalesceWithPrevious = false;
+        if (wasOpen) {
+            lastGrooveSettleTime.current = performance.now();
+        } else if (performance.now() - lastGrooveSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastGrooveSettleTime.current = 0;
+        }
+
+        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, coalesceWithPrevious));
     };
 
     const displayGain = gestureGain ?? masterGain / 100;

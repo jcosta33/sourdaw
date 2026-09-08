@@ -486,6 +486,13 @@ pub(crate) struct SpawnedAudioThread {
     /// What the capture side published as its settled latency, or zero when
     /// no input stream was opened.
     pub input_latency_frames: Arc<AtomicUsize>,
+    /// The frames the render callback is currently asked for per call. See
+    /// [`new_output_buffer_frames_slot`].
+    pub output_buffer_frames: Arc<AtomicUsize>,
+    /// The backend's raw output-path figure, published only once two
+    /// consecutive callbacks agree — never a figure decided once at open.
+    /// See [`new_output_path_frames_slot`].
+    pub output_path_frames: Arc<AtomicUsize>,
     /// The slot a refused capture open or start stores its kind into. See
     /// [`new_capture_refusal_slot`].
     pub capture_refusal: Arc<AtomicU8>,
@@ -525,6 +532,10 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
     let input_latency_frames = new_input_latency_slot();
     let input_latency_slot = Arc::clone(&input_latency_frames);
+    let output_buffer_frames = new_output_buffer_frames_slot();
+    let output_buffer_frames_slot = Arc::clone(&output_buffer_frames);
+    let output_path_frames = new_output_path_frames_slot();
+    let output_path_frames_slot = Arc::clone(&output_path_frames);
     let capture_refusal = new_capture_refusal_slot();
     let capture_refusal_slot = Arc::clone(&capture_refusal);
     let output_stream_fault = new_output_stream_fault_slot();
@@ -547,6 +558,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             force_default_buffer,
             &sample_rate_slot,
             &input_latency_slot,
+            &output_buffer_frames_slot,
+            &output_path_frames_slot,
             &capture_refusal_slot,
             &output_stream_fault_slot,
             &build_liveness,
@@ -581,6 +594,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         handle,
         sample_rate,
         input_latency_frames,
+        output_buffer_frames,
+        output_path_frames,
         capture_refusal,
         liveness,
         output_stream_fault,
@@ -687,6 +702,38 @@ pub(crate) fn effective_buffer_size(
 /// ask for — so the reader writes it from the audio thread the moment it
 /// settles, and retracts it when it stops serving.
 pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
+    Arc::new(AtomicUsize::new(0))
+}
+
+/// The slot the render callback publishes the frames it is asked for, per
+/// call.
+///
+/// Zero until the first callback: the figure is settled by whatever period
+/// the device actually runs, which is not known until the callback is
+/// called, and a recovery that resumes the stream on a different period
+/// re-settles it from the callback that reflects that change. The control
+/// side subtracts this from the backend's whole output-path figure
+/// ([`new_output_path_frames_slot`]) to describe what the device adds beyond
+/// it.
+pub(crate) fn new_output_buffer_frames_slot() -> Arc<AtomicUsize> {
+    Arc::new(AtomicUsize::new(0))
+}
+
+/// The slot the render callback publishes the backend's whole output-path
+/// figure into ([`RenderFn`]): the frames from a callback's invocation to
+/// its first sample reaching the device, as the backend reports it.
+///
+/// Zero until the first callback, and zero means no figure rather than no
+/// delay — the same reading rule [`new_input_latency_slot`] documents for the
+/// capture side. Published only once two consecutive callbacks agree on the
+/// same reading: cpal's `monotonic_output_callback` clamps the playback
+/// timestamp this is derived from so it never regresses, so after a reroute
+/// to a lower-latency device the figure it reports decays one period per
+/// callback rather than switching straight to the new value, and publishing
+/// an unsettled reading would surface that decay to a poll. The control side
+/// subtracts the buffer figure ([`new_output_buffer_frames_slot`]) from this
+/// one to describe what the device adds beyond it.
+pub(crate) fn new_output_path_frames_slot() -> Arc<AtomicUsize> {
     Arc::new(AtomicUsize::new(0))
 }
 
@@ -821,6 +868,18 @@ pub(crate) struct DeviceRenderer {
     /// why the callback itself, not the error kind, is what has to answer
     /// whether the stream is still calling back.
     callbacks_rendered: Arc<AtomicU64>,
+    /// The slot [`Self::render`] publishes this callback's frame count into.
+    /// See [`new_output_buffer_frames_slot`].
+    output_buffer_frames: Arc<AtomicUsize>,
+    /// The slot [`Self::render`] publishes the backend's whole output-path
+    /// figure into, once two consecutive callbacks agree. See
+    /// [`new_output_path_frames_slot`].
+    output_path_frames: Arc<AtomicUsize>,
+    /// The output-path figure the previous callback reported, kept to detect
+    /// two consecutive callbacks agreeing before `output_path_frames` above
+    /// is published. Never published itself: a UI poll reads the atomic
+    /// slot, never this.
+    last_output_path_frames: usize,
 }
 
 impl DeviceRenderer {
@@ -828,6 +887,8 @@ impl DeviceRenderer {
         scheduler: AudioScheduler,
         capture_rx: Consumer<CaptureFeed>,
         callbacks_rendered: Arc<AtomicU64>,
+        output_buffer_frames: Arc<AtomicUsize>,
+        output_path_frames: Arc<AtomicUsize>,
     ) -> Self {
         Self {
             scheduler,
@@ -837,6 +898,9 @@ impl DeviceRenderer {
             capture_feed: None,
             capture_position_frames: 0,
             callbacks_rendered,
+            output_buffer_frames,
+            output_path_frames,
+            last_output_path_frames: 0,
         }
     }
 
@@ -884,8 +948,11 @@ impl DeviceRenderer {
     ///
     /// `channels` arrives per call because a Windows device-invalidation
     /// recovery may resume this same callback on an endpoint with a different
-    /// channel layout; the cpal backends pass a constant.
-    pub(crate) fn render(&mut self, data: &mut [f32], channels: usize) {
+    /// channel layout; the cpal backends pass a constant. `output_path_frames`
+    /// is the backend's own figure for this callback — see [`RenderFn`] — and
+    /// is never decided once: a default-output reroute cpal refreshes mid
+    /// stream lands on the very next callback that carries it.
+    pub(crate) fn render(&mut self, data: &mut [f32], channels: usize, output_path_frames: usize) {
         // One lock-free atomic increment, no allocation, no lock: this is the
         // one witness the liveness thread trusts to say the stream is still
         // calling back. Counted before the channel guard below — a
@@ -910,6 +977,30 @@ impl DeviceRenderer {
         // splits it: the meter's hold window is measured in frames the device
         // consumed, not in the chunks the loop happened to render them in.
         let callback_frames = data.len() / channels;
+
+        // Published only on change: one `load` every callback, and a `store`
+        // only on the callback that actually moves the reading — a period
+        // negotiation or a device-invalidation recovery, never every block.
+        if self.output_buffer_frames.load(Ordering::Relaxed) != callback_frames {
+            self.output_buffer_frames
+                .store(callback_frames, Ordering::Relaxed);
+        }
+
+        // The backend's whole output-path figure, published only once two
+        // consecutive callbacks agree on the same reading. cpal's
+        // `monotonic_output_callback` clamps the playback timestamp this is
+        // derived from so it never regresses, so after a reroute to a
+        // lower-latency device the figure decays one period per callback
+        // rather than switching straight to the new value — publishing an
+        // unsettled reading would surface that decay to a poll. The control
+        // side subtracts the buffer figure to describe what the device adds
+        // beyond it.
+        let settled = output_path_frames == self.last_output_path_frames;
+        self.last_output_path_frames = output_path_frames;
+        if settled && self.output_path_frames.load(Ordering::Relaxed) != output_path_frames {
+            self.output_path_frames
+                .store(output_path_frames, Ordering::Relaxed);
+        }
 
         // What the device is actually handed this callback. A shadowed block
         // writes zeros and so contributes nothing, which is what keeps the
@@ -1288,6 +1379,8 @@ fn build_audio_stream(
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
     input_latency_slot: &Arc<AtomicUsize>,
+    output_buffer_frames_slot: &Arc<AtomicUsize>,
+    output_path_frames_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
     output_stream_fault_slot: &Arc<AtomicU8>,
     liveness: &RenderLiveness,
@@ -1326,10 +1419,14 @@ fn build_audio_stream(
         scheduler,
         capture_feed_rx,
         Arc::clone(&liveness.callbacks_rendered),
+        Arc::clone(output_buffer_frames_slot),
+        Arc::clone(output_path_frames_slot),
     );
-    let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
-        renderer.render(data, channels);
-    });
+    let render: RenderFn = Box::new(
+        move |data: &mut [f32], channels: usize, output_path_frames: usize| {
+            renderer.render(data, channels, output_path_frames);
+        },
+    );
 
     let output = open.start(
         render,
@@ -2803,7 +2900,13 @@ mod capture_render_tests {
                 command_tx,
                 retired_rx,
                 feed_tx,
-                renderer: DeviceRenderer::new(scheduler, feed_rx, Arc::clone(&callbacks_rendered)),
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    feed_rx,
+                    Arc::clone(&callbacks_rendered),
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                ),
                 diagnostics,
                 callbacks_rendered,
             }
@@ -2823,7 +2926,7 @@ mod capture_render_tests {
 
         fn render(&mut self, frames: usize) {
             let mut data = vec![0.0f32; frames * OUTPUT_CHANNELS];
-            self.renderer.render(&mut data, OUTPUT_CHANNELS);
+            self.renderer.render(&mut data, OUTPUT_CHANNELS, 0);
             // This thread is both the command side and the render side, so
             // freeing here is safe and keeps the retirement ring moving.
             while self.retired_rx.pop().is_ok() {}
@@ -3123,7 +3226,7 @@ mod capture_render_tests {
                 // its deinterleave, the delivery, and the starved reads after
                 // the ring runs dry.
                 for _ in 0..CALLBACKS {
-                    harness.renderer.render(&mut data, OUTPUT_CHANNELS);
+                    harness.renderer.render(&mut data, OUTPUT_CHANNELS, 0);
                 }
             });
 
@@ -3161,7 +3264,7 @@ mod device_output_tests {
     };
     use crate::transport_map::{LoopRegion, MIN_LOOP_FRAMES};
     use rtrb::{Consumer, Producer, RingBuffer};
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::Arc;
 
     const SAMPLE_RATE: f32 = 48_000.0;
@@ -3188,6 +3291,8 @@ mod device_output_tests {
         renderer: DeviceRenderer,
         progress: GraphProgressReader,
         meter: MeterReader,
+        output_buffer_frames: Arc<AtomicUsize>,
+        output_path_frames: Arc<AtomicUsize>,
     }
 
     impl DeviceHarness {
@@ -3212,13 +3317,19 @@ mod device_output_tests {
             // No capture side: this module drives the monitor gate, and the
             // renderer with no feed delivers no input at all.
             let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            let output_buffer_frames = Arc::new(AtomicUsize::new(0));
+            let output_path_frames = Arc::new(AtomicUsize::new(0));
             Self {
                 command_tx,
                 retired_rx,
+                output_buffer_frames: Arc::clone(&output_buffer_frames),
+                output_path_frames: Arc::clone(&output_path_frames),
                 renderer: DeviceRenderer::new(
                     scheduler,
                     capture_feed_rx,
                     Arc::new(AtomicU64::new(0)),
+                    output_buffer_frames,
+                    output_path_frames,
                 ),
                 progress,
                 meter,
@@ -3233,22 +3344,55 @@ mod device_output_tests {
         }
 
         /// One device callback of `frames`, returning the interleaved buffer
-        /// the device would have played.
+        /// the device would have played. The backend reports no output-path
+        /// figure for this callback — see [`Self::render_with_path`] for a
+        /// callback that does.
         fn render(&mut self, frames: usize) -> Vec<f32> {
-            self.render_with_channels(frames, DEVICE_CHANNELS)
+            self.render_full(frames, DEVICE_CHANNELS, 0)
         }
 
         /// One device callback of `frames` on a device exposing `channels`
         /// channels, returning the interleaved buffer the device would have
         /// played.
         fn render_with_channels(&mut self, frames: usize, channels: usize) -> Vec<f32> {
+            self.render_full(frames, channels, 0)
+        }
+
+        /// One device callback of `frames`, with the backend reporting
+        /// `output_path_frames` as this callback's whole output-path figure —
+        /// what [`DeviceRenderer::render`]'s `output_path_frames` argument
+        /// carries in production.
+        fn render_with_path(&mut self, frames: usize, output_path_frames: usize) -> Vec<f32> {
+            self.render_full(frames, DEVICE_CHANNELS, output_path_frames)
+        }
+
+        fn render_full(
+            &mut self,
+            frames: usize,
+            channels: usize,
+            output_path_frames: usize,
+        ) -> Vec<f32> {
             let mut data = vec![0.0f32; frames * channels];
-            self.renderer.render(&mut data, channels);
+            self.renderer
+                .render(&mut data, channels, output_path_frames);
             // This thread is both the command side and the render side, so
             // freeing here is safe and keeps the retirement ring from
             // stalling the next drain.
             while self.retired_rx.pop().is_ok() {}
             data
+        }
+
+        /// The backend's whole output-path figure as of the most recent pair
+        /// of agreeing callbacks — what a UI poll landing between callbacks
+        /// would read off [`new_output_path_frames_slot`].
+        fn output_path_frames(&self) -> usize {
+            self.output_path_frames.load(Ordering::Relaxed)
+        }
+
+        /// The frames the last callback asked for — what a UI poll landing
+        /// between callbacks would read off [`new_output_buffer_frames_slot`].
+        fn output_buffer_frames(&self) -> usize {
+            self.output_buffer_frames.load(Ordering::Relaxed)
         }
 
         fn progress(&mut self) -> GraphProgressSnapshot {
@@ -3628,6 +3772,57 @@ mod device_output_tests {
         assert_eq!(harness.strip_peak(1), None);
         assert_eq!(harness.strip_count(), 0);
     }
+
+    /// The output-buffer-frames slot settles on whatever the device last
+    /// asked for: a UI poll landing between callbacks reads the frame count
+    /// of the most recent render, not a fixed or accumulated figure.
+    #[test]
+    fn the_output_buffer_slot_settles_on_the_frames_the_device_asks_for() {
+        let mut harness = DeviceHarness::new();
+
+        harness.render(512);
+        assert_eq!(harness.output_buffer_frames(), 512);
+
+        harness.render(256);
+        assert_eq!(harness.output_buffer_frames(), 256);
+
+        harness.render(256);
+        assert_eq!(harness.output_buffer_frames(), 256);
+    }
+
+    /// The output-path slot publishes the backend's whole output-path figure
+    /// only once two consecutive callbacks report the same reading — never
+    /// on the callback that first reports a change, because cpal clamps its
+    /// playback timestamp to never regress, and a reroute to a lower-latency
+    /// device would otherwise be caught mid-decay, one period short of the
+    /// figure it is settling toward.
+    ///
+    /// Mutation: force `settled` to `true` unconditionally — the first
+    /// assertion goes red (`left: 553, right: 0`), because the very first
+    /// callback's reading would publish immediately instead of waiting for
+    /// a second callback to agree with it.
+    #[test]
+    fn the_output_path_slot_publishes_a_figure_only_once_two_callbacks_agree() {
+        let mut harness = DeviceHarness::new();
+
+        harness.render_with_path(512, 553);
+        assert_eq!(harness.output_path_frames(), 0);
+
+        harness.render_with_path(512, 553);
+        assert_eq!(harness.output_path_frames(), 553);
+
+        harness.render_with_path(512, 600);
+        assert_eq!(harness.output_path_frames(), 553);
+
+        harness.render_with_path(512, 600);
+        assert_eq!(harness.output_path_frames(), 600);
+
+        harness.render_with_path(512, 0);
+        assert_eq!(harness.output_path_frames(), 600);
+
+        harness.render_with_path(512, 0);
+        assert_eq!(harness.output_path_frames(), 0);
+    }
 }
 
 /// Compensation's real-time contract, driven through the production render
@@ -3703,6 +3898,8 @@ mod compensation_render_alloc_guards {
                     scheduler,
                     capture_feed_rx,
                     Arc::new(AtomicU64::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
                 ),
             }
         }
@@ -3837,7 +4034,7 @@ mod compensation_render_alloc_guards {
                     UNBYPASS_AT => harness.send(GraphCommand::SetBypass(EFFECT_ID, false)),
                     _ => {}
                 }
-                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                harness.renderer.render(&mut data, DEVICE_CHANNELS, 0);
                 let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
                 for (frame, sample) in block.iter_mut().enumerate() {
                     *sample = data[frame * DEVICE_CHANNELS];
@@ -3958,7 +4155,7 @@ mod compensation_render_alloc_guards {
 
         assert_no_alloc(|| {
             for callback in 0..CALLBACKS {
-                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                harness.renderer.render(&mut data, DEVICE_CHANNELS, 0);
                 let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
                 for (frame, sample) in block.iter_mut().enumerate() {
                     *sample = data[frame * DEVICE_CHANNELS];
@@ -4171,7 +4368,7 @@ mod compensation_render_alloc_guards {
 
         assert_no_alloc(|| {
             for _ in 0..CALLBACKS {
-                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                harness.renderer.render(&mut data, DEVICE_CHANNELS, 0);
             }
         });
 
@@ -4180,7 +4377,7 @@ mod compensation_render_alloc_guards {
         harness.send(GraphCommand::SetTransport(TransportState::default()));
 
         assert_no_alloc(|| {
-            harness.renderer.render(&mut data, DEVICE_CHANNELS);
+            harness.renderer.render(&mut data, DEVICE_CHANNELS, 0);
         });
 
         let stop_frame = (CALLBACKS * CALLBACK_FRAMES) as u64;
@@ -4270,7 +4467,7 @@ mod compensation_render_alloc_guards {
                 if callback == WRITE_AT {
                     harness.send(GraphCommand::SetParam(EFFECT_ID, CUTOFF, 0.3));
                 }
-                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                harness.renderer.render(&mut data, DEVICE_CHANNELS, 0);
                 let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
                 for (frame, sample) in block.iter_mut().enumerate() {
                     *sample = data[frame * DEVICE_CHANNELS];

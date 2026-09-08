@@ -756,7 +756,9 @@ impl StreamRuntime {
             // A panicking render callback must end the stream audibly —
             // through the error path and its taxonomy — not by silently
             // killing this thread while the engine believes audio flows.
-            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels))).is_err() {
+            // WASAPI publishes no output-path figure until ADR 0027 D4; this
+            // backend reports zero, the seam's "no figure" reading.
+            if catch_unwind(AssertUnwindSafe(|| render(&mut *interleaved, channels, 0))).is_err() {
                 return LoopExit::Error(E_FAIL);
             }
 

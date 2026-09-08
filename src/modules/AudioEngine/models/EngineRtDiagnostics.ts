@@ -50,6 +50,24 @@ export type EngineRtDiagnostics = {
      */
     inputLatencyFrames: number;
     /**
+     * The rate the output stream actually opened at. Zero for the not-running
+     * shape, the same reading rule every other counter here follows.
+     */
+    sampleRate: number;
+    /**
+     * Frames the output device's most recent callback asked for. Zero before
+     * the stream has rendered its first callback, the same reading rule
+     * `inputLatencyFrames` documents.
+     */
+    outputBufferFrames: number;
+    /**
+     * The backend's whole output-path figure, as of the most recent pair of
+     * agreeing callbacks. Zero means no figure, not no delay — see
+     * `daw_engine::EngineHandle::output_path_frames` (`crates/daw-engine`)
+     * for the same rule on the Rust side.
+     */
+    outputPathFrames: number;
+    /**
      * The kind of the last non-xrun error the output stream reported, or
      * `null` if it has not reported one. Detail beside `running`, not a
      * substitute for it: a `deviceChanged` reroute or a recovered WASAPI
@@ -80,6 +98,9 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     captureBlocksDropped: 0,
     captureInputUnderruns: 0,
     inputLatencyFrames: 0,
+    sampleRate: 0,
+    outputBufferFrames: 0,
+    outputPathFrames: 0,
     outputStreamFault: null,
     events: [],
 };

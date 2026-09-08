@@ -64,6 +64,30 @@ impl OutputBackend for CpalOutputBackend {
     }
 }
 
+/// How many frames separate this callback's invocation from the instant its
+/// first sample reaches the device, per cpal's own `OutputStreamTimestamp`:
+/// `playback` minus `callback`, converted back to frames at `sample_rate`.
+///
+/// cpal derives `playback` from a frame count by rounding to the nearest
+/// nanosecond (`frames_to_duration`), so recovering that frame count has to
+/// round rather than truncate — truncating would read one frame short on
+/// exactly the readings cpal rounded up. `duration_since` saturates to zero
+/// when `playback` is earlier than `callback`; that ordering is a backend
+/// fault, not a negative latency, and reads as "no figure" like every other
+/// unavailable reading on this seam. No allocation: this is arithmetic over
+/// two `Copy` timestamps, called from the render callback itself.
+pub(crate) fn output_path_frames(
+    timestamp: &cpal::OutputStreamTimestamp,
+    sample_rate: f32,
+) -> usize {
+    (timestamp
+        .playback
+        .duration_since(timestamp.callback)
+        .as_secs_f64()
+        * f64::from(sample_rate))
+    .round() as usize
+}
+
 impl OpenOutput for CpalOpenOutput {
     type Stream = cpal::Stream;
 
@@ -86,13 +110,20 @@ impl OpenOutput for CpalOpenOutput {
         // no stderr lock, no allocation, no wait.
         let err_fn = move |err: cpal::Error| on_error(StreamErrorKind::from(&err));
         let channels = self.negotiated.channels;
+        let sample_rate = self.negotiated.sample_rate;
 
         let stream = match self.config.sample_format() {
             cpal::SampleFormat::F32 => self
                 .device
                 .build_output_stream(
                     self.stream_config,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| render(data, channels),
+                    move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                        render(
+                            data,
+                            channels,
+                            output_path_frames(&info.timestamp(), sample_rate),
+                        )
+                    },
                     err_fn,
                     None,
                 )
@@ -248,9 +279,40 @@ impl OpenInput for CpalOpenInput {
 
 #[cfg(test)]
 mod tests {
-    use super::{capture_buffer_size, expected_period_frames};
+    use super::{capture_buffer_size, expected_period_frames, output_path_frames};
     use crate::audio_thread::negotiated_buffer_size;
     use crate::device::InputOpenRefusal;
+    use cpal::{OutputStreamTimestamp, StreamInstant};
+
+    /// `output_path_frames` has to invert `frames_to_duration`'s own
+    /// nanosecond rounding exactly: 553 frames at 48 000 Hz round-trips
+    /// through cpal as 11 520 833 ns, and reading that back must land on 553
+    /// again, not 552.
+    ///
+    /// Mutation: change the final `.round()` to a truncating cast — this
+    /// goes red (552, not 553) on exactly this reading.
+    #[test]
+    fn the_output_path_reading_inverts_cpal_rounding_exactly() {
+        let timestamp = OutputStreamTimestamp {
+            callback: StreamInstant::from_nanos(0),
+            playback: StreamInstant::from_nanos(11_520_833),
+        };
+
+        assert_eq!(output_path_frames(&timestamp, 48_000.0), 553);
+    }
+
+    /// A playback instant the backend reports earlier than its own callback
+    /// instant is a backend fault, not a negative latency, and reads as this
+    /// seam's "no figure" — zero — like every other unavailable reading.
+    #[test]
+    fn a_playback_instant_before_the_callback_reads_as_no_figure() {
+        let timestamp = OutputStreamTimestamp {
+            callback: StreamInstant::from_nanos(1_000_000),
+            playback: StreamInstant::from_nanos(0),
+        };
+
+        assert_eq!(output_path_frames(&timestamp, 48_000.0), 0);
+    }
 
     #[test]
     fn a_device_left_on_its_own_period_is_sized_from_the_range_it_advertises() {
