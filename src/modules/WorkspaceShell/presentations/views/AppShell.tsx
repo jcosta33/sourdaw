@@ -203,6 +203,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         sidebarWidth,
         inspectorWidth,
         mixerHeight,
+        editorHeight = 360,
         chatPanelWidth: chatWidth,
         aiPanelWidth: aiWidth,
         fermenterHeight,
@@ -374,6 +375,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         | 'chatPanelWidth'
         | 'aiPanelWidth'
         | 'mixerHeight'
+        | 'editorHeight'
         | 'fermenterHeight'
         | 'toasterHeight'
         | 'levainHeight'
@@ -395,6 +397,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const setChatWidth = makeDimSetter('chatPanelWidth', chatWidth);
     const setAiWidth = makeDimSetter('aiPanelWidth', aiWidth);
     const setMixerHeight = makeDimSetter('mixerHeight', mixerHeight);
+    const setEditorHeight = makeDimSetter('editorHeight', editorHeight);
     const setFermenterHeight = makeDimSetter('fermenterHeight', fermenterHeight);
     const setToasterHeight = makeDimSetter('toasterHeight', toasterHeight);
     const setLevainHeight = makeDimSetter('levainHeight', levainHeight);
@@ -877,12 +880,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             <>
                                 <DragResizeHandle
                                     side="top"
-                                    onResize={(d) => setMixerHeight((h) => Math.max(120, h + d))}
+                                    onResize={(d) => {
+                                        if (activeBottomTab === 'editor') {
+                                            setEditorHeight((h) => Math.max(260, h + d));
+                                        } else {
+                                            setMixerHeight((h) => Math.max(120, h + d));
+                                        }
+                                    }}
                                 />
                                 <Stack
                                     shrink={false}
                                     className="contain-strict bg-surface-base overflow-hidden"
-                                    style={{ height: mixerHeight }}
+                                    style={{ height: activeBottomTab === 'editor' ? editorHeight : mixerHeight }}
                                 >
                                     {/* Bottom panel tab bar */}
                                     <Row

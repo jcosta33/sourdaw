@@ -406,7 +406,7 @@ export const PianoRoll = ({
                 <Row
                     align="stretch"
                     grow
-                    className="overflow-auto"
+                    className="min-h-[70px] overflow-auto"
                     ref={scrollRef}
                     onScroll={(event) => {
                         const sl = (event.target as HTMLElement).scrollLeft;
