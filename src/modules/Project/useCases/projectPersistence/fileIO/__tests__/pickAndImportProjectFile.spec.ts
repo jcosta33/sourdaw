@@ -175,7 +175,11 @@ describe('pickAndImportProjectFile', () => {
         mocks.saveProject.mockImplementation(
             () =>
                 new Promise<boolean>((resolve) => {
-                    resolveSave = resolve;
+                    resolveSave = (value) => {
+                        // A fully successful save is what clears the dirty flag.
+                        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
+                        resolve(value);
+                    };
                 })
         );
 
@@ -186,6 +190,24 @@ describe('pickAndImportProjectFile', () => {
         resolveSave?.(true);
         await expect(importOperation).resolves.toBe(true);
         expect(mocks.applyImportedProjectData).toHaveBeenCalledOnce();
+    });
+
+    // A save can resolve while the project is still dirty — a plugin state
+    // capture rejected before commit warns and keeps that edit uncaptured.
+    // Importing over the project would lose the edit exactly as a failed save
+    // would, and the capture already told the user why.
+    it('aborts the import when the pre-save resolves but leaves the project dirty', async () => {
+        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
+        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
+        mocks.saveProject.mockResolvedValue(true);
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+        expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('aborts the import when the pre-save of the dirty open project fails', async () => {

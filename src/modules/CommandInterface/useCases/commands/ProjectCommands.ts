@@ -1,4 +1,9 @@
-import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
+import {
+    newProject,
+    pickAndImportProjectFile,
+    saveProject,
+    saveProjectBeforeReplacement,
+} from '#/modules/Project/useCases';
 import { openExportDialog, toggleBranchManager } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -11,7 +16,16 @@ export const projectCommands: CallableCommandEntry[] = [
         description: 'Create a new empty project',
         category: 'Project',
         action: () => {
-            void newProject();
+            void (async () => {
+                // Same guard as the menu's New Project: a failed save, or one
+                // that resolved with the project still dirty (a plugin capture
+                // rejected before commit), refuses the replacement — both
+                // surfaces already notified.
+                if (!(await saveProjectBeforeReplacement())) {
+                    return;
+                }
+                void newProject();
+            })();
         },
     },
     {

@@ -17,6 +17,7 @@ import {
     pickAndImportProjectFile,
     recentProjectChanges,
     saveProject,
+    saveProjectBeforeReplacement,
     quiesceProjectSession,
     cancelProjectSessionQuiesce,
 } from '#/modules/Project/useCases';
@@ -47,9 +48,13 @@ const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
 
 const saveProjectIfClean = async (): Promise<boolean> =>
-    (await saveProject()) &&
-    projectStore.value?.dirty !== true &&
-    projectStore.value?.identityPersistencePending !== true;
+    // The shared guard refuses a failed save and one that resolved with the
+    // project still dirty (issue #3694). The close flow additionally refuses
+    // while an identity transition is still publishing: `newProject` and
+    // `replaceProjectData` set the flag mid-transition and only a successful
+    // save's receipt clears it, so a true here means a transition raced this
+    // save's tail.
+    (await saveProjectBeforeReplacement()) && projectStore.value?.identityPersistencePending !== true;
 
 /** Created-at named keys stay stable while legacy projects migrate to canonical ids. */
 const nativeProjectKey = (project: Pick<ProjectStoreState, 'createdAt'>): string =>

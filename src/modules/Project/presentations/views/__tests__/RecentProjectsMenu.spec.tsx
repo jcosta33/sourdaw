@@ -9,6 +9,20 @@ import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentPr
 import { removeFromRecentProjects } from '../../../useCases/recentProjects/removeFromRecentProjects';
 import { RecentProjectsMenu } from '../RecentProjectsMenu';
 
+const mocks = vi.hoisted(() => ({
+    projectStoreValue: { value: null as { dirty: boolean } | null },
+}));
+
+vi.mock('../../../stores/projectStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/projectStore')>()),
+    projectStore: {
+        get value() {
+            return mocks.projectStoreValue.value;
+        },
+        set: vi.fn(),
+    },
+}));
+
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
@@ -82,6 +96,7 @@ vi.mock('../TemplateChooser', () => ({
 describe('RecentProjectsMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.projectStoreValue.value = null;
     });
 
     it('should render without crashing', () => {
@@ -239,6 +254,40 @@ describe('RecentProjectsMenu', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(newProject).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    // Issue 3694: a save can resolve true while the project is still dirty —
+    // a plugin state capture rejected before commit warns and keeps that edit
+    // out of project truth. Replacing the project over it would destroy the
+    // edit, so the transition must refuse even though the save resolved.
+    it('refuses the new-project transition when the save resolved but left the project dirty', async () => {
+        mocks.projectStoreValue.value = { dirty: true };
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(newProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(newProject).not.toHaveBeenCalled();
+    });
+
+    it('refuses the recent-project load when the save resolved but left the project dirty', async () => {
+        mocks.projectStoreValue.value = { dirty: true };
+        vi.mocked(saveProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(loadRecentProject).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
     });
 

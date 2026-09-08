@@ -80,6 +80,7 @@ const ORIGINAL_CHUNK = bytesToBase64(bytesOf('original-saved-state'));
 const ACCEPTED_CHUNK = bytesToBase64(bytesOf('accepted-runtime-state'));
 const REPLACED_CHUNK = bytesToBase64(bytesOf('deliberately-replaced'));
 const FRESH_EDIT_CHUNK = bytesToBase64(bytesOf('fresh-host-state-edited'));
+const RETRIED_CHUNK = bytesToBase64(bytesOf('fresh-host-edit'));
 
 /**
  * Minimal in-memory IndexedDB double covering the surface the project snapshot
@@ -311,6 +312,43 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
 
         await exportProjectFile();
         expect(storedDeviceChunk()).toBe(ORIGINAL_CHUNK);
+    });
+
+    // Regression (issue 3694): the capture's self-read baseline used to
+    // advance BEFORE the command was accepted, so a precommit rejection left
+    // the old chunk in project truth while the cache claimed the fresh chunk
+    // was captured — the next save with an unchanged host skipped the write
+    // and the plugin edit never reached disk. Here the refusal is the real
+    // command machinery: with no handler registered, `executeAppAction`
+    // rejects before any project write.
+    it('retries a precommit-rejected capture on the next save and persists the fresh host state', async () => {
+        const instanceId = 'inst-rejected-capture';
+        seedSavedProject(instanceId, ORIGINAL_CHUNK);
+        mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-edit'));
+
+        clearHandlerRegistry();
+        await expect(saveProject()).resolves.toBe(true);
+
+        // The host was read, but nothing was written: the snapshot still holds
+        // the original chunk, the project stays dirty so the edit is not
+        // reported as saved, and the refusal is named to the user.
+        expect(mocks.getPluginStateRepo).toHaveBeenCalledTimes(1);
+        expect(persistedDeviceChunk()).toBe(ORIGINAL_CHUNK);
+        expect(projectStore.value?.dirty).toBe(true);
+        const captureRejectionWarnings = vi
+            .mocked(notifyUser)
+            .mock.calls.filter(([message, level]) => level === 'warning' && String(message).includes('could not be'));
+        expect(captureRejectionWarnings).toHaveLength(1);
+        expect(String(captureRejectionWarnings[0]?.[0])).toContain('serum');
+
+        // The refusal is lifted; the next save retries the capture with the
+        // same host state and commits the fresh chunk.
+        registerHandlerMap(getArrangementHandlers());
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.getPluginStateRepo).toHaveBeenCalledTimes(2);
+        expect(persistedDeviceChunk()).toBe(RETRIED_CHUNK);
+        expect(projectStore.value?.dirty).toBe(false);
     });
 
     // Round 2: the warning is once per unresolved failure EPISODE, not once per

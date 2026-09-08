@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
+import {
+    newProject,
+    pickAndImportProjectFile,
+    saveProject,
+    saveProjectBeforeReplacement,
+} from '#/modules/Project/useCases';
 import { openExportDialog, toggleBranchManager } from '#/modules/WorkspaceShell/useCases';
 
 import { projectCommands } from '../ProjectCommands';
@@ -9,6 +14,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn().mockResolvedValue(true),
     pickAndImportProjectFile: vi.fn().mockResolvedValue(true),
     saveProject: vi.fn(),
+    saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openExportDialog: vi.fn(), toggleBranchManager: vi.fn() }));
 
@@ -23,6 +29,7 @@ function runAction(id: string): void {
 describe('projectCommands', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
     });
 
     it('exposes the project commands under the Project category', () => {
@@ -67,10 +74,26 @@ describe('projectCommands', () => {
         }
     });
 
-    it('new-project creates a new empty project', () => {
+    it('new-project runs the pre-switch guard, then creates a new empty project', async () => {
         runAction('new-project');
 
-        expect(newProject).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+    });
+
+    // Issue 3694: the palette replaces the open project, so it must refuse
+    // when the guard refuses — a save that resolved with the project still
+    // dirty (a plugin capture rejected before commit) must not be replaced
+    // over. Removing the guard call from the action reds this test.
+    it('new-project refuses the replacement when the pre-switch guard refuses', async () => {
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(false);
+
+        runAction('new-project');
+
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(newProject).not.toHaveBeenCalled();
     });
 
     it('save-project saves the project to local storage', () => {

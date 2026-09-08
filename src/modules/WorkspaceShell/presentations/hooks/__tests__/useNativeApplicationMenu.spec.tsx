@@ -50,6 +50,7 @@ const crdt = vi.hoisted(() => ({
 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
+    saveProjectBeforeReplacement: vi.fn<ProjectUseCases['saveProjectBeforeReplacement']>(async () => true),
     quiesceProjectSession: vi.fn<ProjectUseCases['quiesceProjectSession']>(async () => 'success'),
     cancelProjectSessionQuiesce: vi.fn<ProjectUseCases['cancelProjectSessionQuiesce']>(async () => 'rejected'),
     discardProjectChanges: vi.fn(async () => true),
@@ -94,6 +95,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     quiesceProjectSession: projectActions.quiesceProjectSession,
     recentProjectChanges: projectActions.recentProjectChanges,
     saveProject: projectActions.saveProject,
+    saveProjectBeforeReplacement: projectActions.saveProjectBeforeReplacement,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: crdt.captureProjectRevision,
@@ -242,6 +244,8 @@ describe('useNativeApplicationMenu', () => {
         crdt.subscribeToCrdtChanges.mockClear();
         projectActions.saveProject.mockReset();
         projectActions.saveProject.mockResolvedValue(true);
+        projectActions.saveProjectBeforeReplacement.mockReset();
+        projectActions.saveProjectBeforeReplacement.mockResolvedValue(true);
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
         projectActions.pickAndImportProjectFile.mockReset();
@@ -1095,14 +1099,12 @@ describe('useNativeApplicationMenu', () => {
         );
     });
 
-    it('keeps New and Open Recent in place when save succeeds but a concurrent edit remains dirty', async () => {
-        const completeSaves: (() => void)[] = [];
-        projectActions.saveProject.mockImplementation(
-            () =>
-                new Promise<boolean>((resolve) => {
-                    completeSaves.push(() => resolve(true));
-                })
-        );
+    // Issue 3694: both transitions replace the open project, so a guard
+    // refusal — a save that failed or resolved with the project still dirty —
+    // must hold both in place. The guard's dirty semantics are pinned in the
+    // guard's own spec; this pins the hook routing through it.
+    it('keeps New and Open Recent in place when the pre-switch guard refuses', async () => {
+        projectActions.saveProjectBeforeReplacement.mockResolvedValue(false);
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -1122,13 +1124,39 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:new' });
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
-        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(1));
-        projectState.dirty = true;
-        completeSaves[0]?.();
-        await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(2));
-        completeSaves[1]?.();
-        // Await both post-save continuations: this assertion fails if the
-        // live dirty check is removed from the transition guard.
+        await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(projectActions.newProject).not.toHaveBeenCalled();
+        expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
+    });
+
+    // The close flow keeps one check beyond the shared guard: an identity
+    // transition still publishing (`newProject`/`replaceProjectData` set the
+    // flag mid-transition; only a successful save's receipt clears it) means
+    // a transition raced this save's tail, and stacking another is refused.
+    it('keeps New and Open Recent in place while an identity transition is still publishing', async () => {
+        projectState.identityPersistencePending = true;
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:new' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2));
         await Promise.resolve();
         await Promise.resolve();
         expect(projectActions.newProject).not.toHaveBeenCalled();
@@ -1157,7 +1185,7 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
         expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project');
-        expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+        expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 
     it('serializes native project transitions in menu delivery order', async () => {
@@ -1188,13 +1216,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
-        expect(projectActions.saveProject).toHaveBeenCalledTimes(1);
+        expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1);
         expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
 
         releaseNewProject?.();
 
         await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project'));
-        expect(projectActions.saveProject).toHaveBeenCalledTimes(2);
+        expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 
     it('preserves project transition order across hook rerenders and includes Import Project', async () => {

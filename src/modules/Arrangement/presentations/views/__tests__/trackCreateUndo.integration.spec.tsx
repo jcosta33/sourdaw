@@ -152,6 +152,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     pickFiles: vi.fn(),
     saveProject: vi.fn(),
+    saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),

@@ -5,6 +5,7 @@ import {
     captureProjectTransitionAuthority,
     newProject,
     saveProject,
+    saveProjectBeforeReplacement,
     exportProjectFile,
     pickFiles,
 } from '#/modules/Project/useCases';
@@ -47,6 +48,7 @@ const projectEpoch = vi.hoisted(() => {
 vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     saveProject: vi.fn(),
+    saveProjectBeforeReplacement: vi.fn(),
     exportProjectFile: vi.fn(),
     pickFiles: vi.fn().mockResolvedValue([pickedFiles.audio]),
     captureProjectTransitionAuthority: projectEpoch.capture,
@@ -64,12 +66,25 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 describe('Workspace Project Handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
         projectEpoch.reset();
     });
 
-    it('handleNewProject should delegate to newProject', () => {
+    it('handleNewProject runs the pre-switch guard, then delegates to newProject', async () => {
         void handleNewProject.execute({ type: 'newProject' });
-        expect(newProject).toHaveBeenCalled();
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+    });
+
+    // Issue 3694: this action replaces the open project, so a guard refusal —
+    // a save that resolved with the project still dirty — must stop it.
+    it('handleNewProject refuses the replacement when the pre-switch guard refuses', async () => {
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(false);
+        void handleNewProject.execute({ type: 'newProject' });
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(newProject).not.toHaveBeenCalled();
     });
 
     it('handleSaveProject should delegate to saveProject', () => {
