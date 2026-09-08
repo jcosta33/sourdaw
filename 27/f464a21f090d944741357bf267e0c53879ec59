@@ -1,0 +1,44 @@
+src/modules/Arrangement/useCases/getTimelineSurfaceMinimumHeight.ts
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 1-18
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 185-186,679-683,685,891,898,900-903
+src/modules/Arrangement/transformers/getVisibleTimelineTracks.ts
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 1-23
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_87ab0a2f60ccf8::t_c490a19cfe1f48 368
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 18,45-48
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_87ab0a2f60ccf8::t_e49f0b71901e74 360-369
+src/modules/Arrangement/useCases/__tests__/getTimelineSurfaceMinimumHeight.spec.ts
+  s_87ab0a2f60ccf8::t_e49f0b71901e74 1-47
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 236,274
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 15,210,213
+tests/e2e/recordEditPlayback.spec.ts
+  s_87ab0a2f60ccf8::t_d89900d2789a78 66,68,116-120,172-176,181-182,184-188,193-197,204,210,214-218,229-242
+  s_87ab0a2f60ccf8::t_9b2a506482e0de 22-24,30-50,53-58,135,171,177-180,183,189-192,198-203,205-209,211-213,219-228
+  s_87ab0a2f60ccf8::t_e49f0b71901e74 25-29,51-52,109-115,121-134,142-149,158-170
+  s_87ab0a2f60ccf8::t_bab511db660bc9 136
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_87ab0a2f60ccf8::t_e49f0b71901e74 696-712
+.agents/skills/ui-patterns/SKILL.md
+  s_87ab0a2f60ccf8::t_4c55af75f154f3 62-63
+  s_87ab0a2f60ccf8::t_e45f54a0ea4038 58-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "27f464a21f090d944741357bf267e0c53879ec59",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
