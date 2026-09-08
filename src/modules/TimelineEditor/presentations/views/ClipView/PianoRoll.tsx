@@ -11,6 +11,7 @@
  */
 import {
     type ReactElement,
+    type FocusEvent,
     type Dispatch,
     type SetStateAction,
     useEffect,
@@ -153,6 +154,23 @@ export const PianoRoll = ({
     const [activeExpressionLane, setActiveExpressionLane] = useState<'velocity' | 'pressure' | 'slide' | 'pitchBend'>(
         'velocity'
     );
+
+    const revealFocusedToolbarControl = (event: FocusEvent<HTMLDivElement>): void => {
+        const focusedControl = event.target;
+        if (!(focusedControl instanceof HTMLElement)) {
+            return;
+        }
+        const viewport = event.currentTarget;
+        const viewportRect = viewport.getBoundingClientRect();
+        const controlRect = focusedControl.getBoundingClientRect();
+        if (controlRect.left < viewportRect.left) {
+            viewport.scrollLeft += controlRect.left - viewportRect.left;
+            return;
+        }
+        if (controlRect.right > viewportRect.right) {
+            viewport.scrollLeft += controlRect.right - viewportRect.right;
+        }
+    };
 
     const beatWidth = Math.max(1, 40 * zoom);
     /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
@@ -366,42 +384,47 @@ export const PianoRoll = ({
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
 
     return (
-        <Stack grow className="overflow-hidden">
-            <PianoRollToolbar
-                gridSnap={gridSnap}
-                onGridSnapChange={setGridSnap}
-                scaleRoot={keyRoot}
-                onScaleRootChange={setProjectKeyRoot}
-                scaleType={scaleName}
-                onScaleTypeChange={setProjectScaleName}
-                isFolded={isFolded}
-                onToggleFolded={() => setIsFolded((param) => !param)}
-                constrainToScale={constrainToScale}
-                onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
-                stepInput={stepRecord?.active ?? false}
-                onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
-                showGhostNotes={showGhostNotes}
-                onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
-                chordMode={chordMode}
-                onToggleChordMode={() => setChordMode((param) => !param)}
-                chordType={chordType}
-                onChordTypeChange={setChordType}
-                paintMode={paintMode}
-                onTogglePaintMode={() => setPaintMode((param) => !param)}
-                lassoMode={lassoMode}
-                onToggleLassoMode={() => setLassoMode((param) => !param)}
-                notePreviewEnabled={notePreviewEnabled}
-                onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
-                zoom={zoom}
-                onZoomChange={setZoom}
-                openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
-                focusedClipId={focusedClipId}
-                onFocusedClipIdChange={setFocusedClipId}
-                showExpressionView={showExpressionView}
-                onToggleExpressionView={() => setShowExpressionView((param) => !param)}
-                activeExpressionLane={activeExpressionLane}
-                onActiveExpressionLaneChange={setActiveExpressionLane}
-            />
+        <Stack grow className="min-w-0 overflow-hidden">
+            <div
+                className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden"
+                onFocusCapture={revealFocusedToolbarControl}
+            >
+                <PianoRollToolbar
+                    gridSnap={gridSnap}
+                    onGridSnapChange={setGridSnap}
+                    scaleRoot={keyRoot}
+                    onScaleRootChange={setProjectKeyRoot}
+                    scaleType={scaleName}
+                    onScaleTypeChange={setProjectScaleName}
+                    isFolded={isFolded}
+                    onToggleFolded={() => setIsFolded((param) => !param)}
+                    constrainToScale={constrainToScale}
+                    onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
+                    stepInput={stepRecord?.active ?? false}
+                    onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
+                    showGhostNotes={showGhostNotes}
+                    onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
+                    chordMode={chordMode}
+                    onToggleChordMode={() => setChordMode((param) => !param)}
+                    chordType={chordType}
+                    onChordTypeChange={setChordType}
+                    paintMode={paintMode}
+                    onTogglePaintMode={() => setPaintMode((param) => !param)}
+                    lassoMode={lassoMode}
+                    onToggleLassoMode={() => setLassoMode((param) => !param)}
+                    notePreviewEnabled={notePreviewEnabled}
+                    onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
+                    zoom={zoom}
+                    onZoomChange={setZoom}
+                    openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
+                    focusedClipId={focusedClipId}
+                    onFocusedClipIdChange={setFocusedClipId}
+                    showExpressionView={showExpressionView}
+                    onToggleExpressionView={() => setShowExpressionView((param) => !param)}
+                    activeExpressionLane={activeExpressionLane}
+                    onActiveExpressionLaneChange={setActiveExpressionLane}
+                />
+            </div>
             <Stack grow className="min-h-0 overflow-hidden">
                 <Row
                     align="stretch"

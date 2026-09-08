@@ -29,12 +29,45 @@ function isWithinModalSurface(target: EventTarget | null): boolean {
     return target instanceof Element && target.closest(MODAL_SURFACE_SELECTOR) !== null;
 }
 
+function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
+    if (event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target instanceof HTMLCanvasElement) {
+        return false;
+    }
+    // Chromium can place native sequential focus on an overflow scrollport
+    // with tabIndex -1. It is still the focused DOM surface, so preserve its
+    // unmodified Tab traversal instead of treating it as workspace mode.
+    if (
+        target === target.ownerDocument.activeElement &&
+        target !== target.ownerDocument.body &&
+        target !== target.ownerDocument.documentElement
+    ) {
+        return true;
+    }
+    return (
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLAnchorElement && target.hasAttribute('href')) ||
+        target.isContentEditable ||
+        target.getAttribute('contenteditable') === 'true' ||
+        target.tabIndex >= 0
+    );
+}
+
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
+            if (preservesNativeTabTraversal(event)) {
+                return;
+            }
             // A load that replaced the CRDT authority and then failed leaves the
             // stores holding an empty project while `projectStore` still carries
             // the *previous* project's `name`/`createdAt` — the metadata write
@@ -84,7 +117,13 @@ export const useGlobalKeyboardShortcuts = (): void => {
             // a modal is no more a shortcut context than an input is, so the
             // one `allowedInInput` exception (Cmd+K palette summon) applies
             // here too, as it already does inside a dialog's own inputs.
-            const isInput = isKeyboardEditableTarget(target) || isWithinModalSurface(event.target);
+            // A native select owns Home, End, Space, and arrow navigation just
+            // like a text field. Keep this adapter-local so native Edit routing
+            // retains its narrower shared editable-target contract.
+            const isInput =
+                target instanceof HTMLSelectElement ||
+                isKeyboardEditableTarget(target) ||
+                isWithinModalSurface(event.target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,
