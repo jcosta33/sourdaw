@@ -88,7 +88,11 @@ impl From<EngineEvent> for EngineEventPayload {
 /// The frontend mirror of this type is hand-maintained (`crates/sourdaw-native/AGENTS.md`):
 /// a field added or renamed here needs the same edit in
 /// `src/modules/AudioEngine/models/EngineRtDiagnostics.ts`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Eq` dropped from the derive when `sample_rate` was added: `f32` has no
+/// total order, so it cannot implement `Eq`. `PartialEq` still covers every
+/// field-level `assert_eq!` this module makes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineRtDiagnostics {
     pub running: bool,
@@ -110,6 +114,19 @@ pub struct EngineRtDiagnostics {
     /// capture is not serving — see `daw_engine::EngineHandle::input_latency_frames`
     /// for what zero does and does not mean.
     pub input_latency_frames: u64,
+    /// The rate the output stream actually opened at — see
+    /// `daw_engine::EngineHandle::sample_rate`. Zero for the not-running
+    /// shape, the same as every other reading here.
+    pub sample_rate: f32,
+    /// Frames the output device's most recent callback asked for — see
+    /// `daw_engine::EngineHandle::output_buffer_frames`. Zero before the
+    /// stream has rendered a callback, the same reading rule
+    /// `input_latency_frames` documents.
+    pub output_buffer_frames: u64,
+    /// Frames the output device reports it adds after the stream's own
+    /// buffer — see `daw_engine::EngineHandle::output_device_latency_frames`.
+    /// Zero means no figure, not no delay.
+    pub output_device_latency_frames: u64,
     /// The kind of the last non-xrun error the output stream reported, or
     /// `null` if it has not reported one.
     ///
@@ -140,6 +157,9 @@ fn running_engine_diagnostics(
     input_latency_frames: usize,
     rendering: bool,
     output_stream_fault: Option<StreamErrorKind>,
+    sample_rate: f32,
+    output_buffer_frames: usize,
+    output_device_latency_frames: usize,
 ) -> EngineRtDiagnostics {
     EngineRtDiagnostics {
         // An engine object existing is not the same as it rendering: the
@@ -156,6 +176,9 @@ fn running_engine_diagnostics(
         capture_blocks_dropped: snapshot.capture_blocks_dropped,
         capture_input_underruns: snapshot.capture_input_underruns,
         input_latency_frames: input_latency_frames as u64,
+        sample_rate,
+        output_buffer_frames: output_buffer_frames as u64,
+        output_device_latency_frames: output_device_latency_frames as u64,
         output_stream_fault: output_stream_fault.map(StreamErrorKindPayload::from),
         events: events.into_iter().map(EngineEventPayload::from).collect(),
     }
@@ -188,6 +211,9 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
     let input_latency_frames = engine.input_latency_frames();
     let rendering = engine.is_rendering();
     let output_stream_fault = engine.output_stream_fault();
+    let sample_rate = engine.sample_rate();
+    let output_buffer_frames = engine.output_buffer_frames();
+    let output_device_latency_frames = engine.output_device_latency_frames();
 
     Ok(running_engine_diagnostics(
         snapshot,
@@ -195,6 +221,9 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
         input_latency_frames,
         rendering,
         output_stream_fault,
+        sample_rate,
+        output_buffer_frames,
+        output_device_latency_frames,
     ))
 }
 
@@ -217,6 +246,9 @@ mod tests {
             capture_blocks_dropped: 12,
             capture_input_underruns: 13,
             input_latency_frames: 14,
+            sample_rate: 48_000.0,
+            output_buffer_frames: 256,
+            output_device_latency_frames: 128,
             output_stream_fault: Some(StreamErrorKindPayload::DeviceChanged),
             events: vec![EngineEventPayload::StreamError {
                 side: StreamSidePayload::Input,
@@ -234,7 +266,9 @@ mod tests {
                 r#""unsupportedEffectAdditions":4,"unmappedSetParamCalls":5,"#,
                 r#""captureConsumerRefusals":11,"#,
                 r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
-                r#""inputLatencyFrames":14,"outputStreamFault":"deviceChanged","#,
+                r#""inputLatencyFrames":14,"sampleRate":48000.0,"#,
+                r#""outputBufferFrames":256,"outputDeviceLatencyFrames":128,"#,
+                r#""outputStreamFault":"deviceChanged","#,
                 r#""events":[{"type":"streamError","side":"input","#,
                 r#""kind":"deviceNotAvailable"}]}"#
             )
@@ -254,7 +288,9 @@ mod tests {
                 r#""unsupportedEffectAdditions":0,"unmappedSetParamCalls":0,"#,
                 r#""captureConsumerRefusals":0,"#,
                 r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
-                r#""inputLatencyFrames":0,"outputStreamFault":null,"events":[]}"#
+                r#""inputLatencyFrames":0,"sampleRate":0.0,"#,
+                r#""outputBufferFrames":0,"outputDeviceLatencyFrames":0,"#,
+                r#""outputStreamFault":null,"events":[]}"#
             )
         );
     }
@@ -317,6 +353,9 @@ mod tests {
             14,
             true,
             None,
+            48_000.0,
+            256,
+            128,
         );
 
         assert!(diagnostics.running);
@@ -329,6 +368,9 @@ mod tests {
         assert_eq!(diagnostics.capture_blocks_dropped, 12);
         assert_eq!(diagnostics.capture_input_underruns, 13);
         assert_eq!(diagnostics.input_latency_frames, 14);
+        assert_eq!(diagnostics.sample_rate, 48_000.0);
+        assert_eq!(diagnostics.output_buffer_frames, 256);
+        assert_eq!(diagnostics.output_device_latency_frames, 128);
         assert_eq!(diagnostics.output_stream_fault, None);
         assert_eq!(
             diagnostics.events,
@@ -366,6 +408,9 @@ mod tests {
             0,
             false,
             Some(StreamErrorKind::DeviceChanged),
+            0.0,
+            0,
+            0,
         );
 
         assert!(
@@ -406,6 +451,9 @@ mod tests {
             0,
             true,
             Some(StreamErrorKind::DeviceChanged),
+            0.0,
+            0,
+            0,
         );
 
         assert!(
@@ -435,7 +483,8 @@ mod tests {
             late_midi_notes: 0,
         };
 
-        let diagnostics = running_engine_diagnostics(snapshot, Vec::new(), 0, true, None);
+        let diagnostics =
+            running_engine_diagnostics(snapshot, Vec::new(), 0, true, None, 0.0, 0, 0);
 
         assert!(diagnostics.running);
         assert_eq!(diagnostics.output_stream_fault, None);

@@ -53,12 +53,21 @@ pub(crate) struct DeviceOpenRequest {
     pub exclusive: bool,
 }
 
-/// What the open negotiated: the two facts the engine must build its
-/// scheduler and render callback around before any audio flows.
+/// What the open negotiated: the facts the engine must build its scheduler
+/// and render callback around before any audio flows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct NegotiatedOutput {
     pub sample_rate: f32,
     pub channels: usize,
+    /// Frames the output device reports it adds after the stream's own
+    /// buffer — on CoreAudio, `kAudioDevicePropertyLatency` plus
+    /// `kAudioDevicePropertySafetyOffset`, output scope, main element.
+    ///
+    /// Zero means no figure, not no delay — the same reading rule
+    /// `EngineHandle::input_latency_frames` documents for the capture side:
+    /// a backend that cannot read the property (Windows, today) or a device
+    /// the read fails against reports zero rather than a guess.
+    pub device_latency_frames: usize,
 }
 
 /// The engine's render callback: fill `data` — interleaved f32, whose

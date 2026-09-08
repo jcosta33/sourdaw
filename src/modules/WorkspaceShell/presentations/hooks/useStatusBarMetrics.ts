@@ -6,6 +6,7 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    readNativeOutputLatency,
     refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
@@ -65,6 +66,55 @@ function describeDropouts({ playback, health }: DescribeDropoutsInput): string {
         ` · missed render deadlines: ${String(playback.underrunEvents)} (${underrunMs} ms)` +
         ` · engine-detected dropouts: ${String(health.dropouts.detectedUnderrunBlocks)}`
     );
+}
+
+type DescribeOutputLatencyInput = {
+    native: ReturnType<typeof readNativeOutputLatency>;
+    engineInfo: ReturnType<typeof getEngineState>;
+};
+
+type OutputLatencyDescription = {
+    outputLatencyMs: number;
+    title: string;
+};
+
+/**
+ * The output-latency readout and its tooltip breakdown, from whichever side
+ * is actually the audible carrier.
+ *
+ * The native session becoming the audible carrier does not stop Web Audio's
+ * own `AudioContext` from running — it just stops being what the listener
+ * hears — so `engineInfo.baseLatency + engineInfo.outputLatency` would keep
+ * reporting a real number that describes a path nobody is on. `native`
+ * (`readNativeOutputLatency`) is `null` in exactly the cases where that
+ * fallback is the right answer: Web Audio is the carrier, or the native
+ * engine has not published a figure yet.
+ */
+function describeOutputLatency({ native, engineInfo }: DescribeOutputLatencyInput): OutputLatencyDescription {
+    if (native) {
+        const contextMs = native.contextSeconds * 1000;
+        const deviceMs = native.deviceSeconds * 1000;
+        const outputLatencyMs = contextMs + deviceMs;
+        return {
+            outputLatencyMs,
+            title:
+                `Output latency ${outputLatencyMs.toFixed(1)} ms` +
+                ` = native engine buffer ${contextMs.toFixed(1)} ms` +
+                ` + device ${deviceMs.toFixed(1)} ms.` +
+                ' Hardware output path only — excludes plug-in delay compensation.',
+        };
+    }
+    const baseLatencyMs = engineInfo.baseLatency * 1000;
+    const deviceLatencyMs = engineInfo.outputLatency * 1000;
+    const outputLatencyMs = baseLatencyMs + deviceLatencyMs;
+    return {
+        outputLatencyMs,
+        title:
+            `Output latency ${outputLatencyMs.toFixed(1)} ms` +
+            ` = context ${baseLatencyMs.toFixed(1)} ms` +
+            ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
+            ' Hardware output path only — excludes plug-in delay compensation.',
+    };
 }
 
 /**
@@ -235,9 +285,14 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             // each other *inside* the graph, upstream of AudioDestinationNode —
             // it is a different quantity, is not shown here, and adding it would
             // double-count delay this figure already covers downstream.
-            const baseLatencyMs = engineInfo.baseLatency * 1000;
-            const deviceLatencyMs = engineInfo.outputLatency * 1000;
-            const outputLatencyMs = baseLatencyMs + deviceLatencyMs;
+            //
+            // The native session can become the audible carrier (see the
+            // carrier law docs on `nativeLiveGraphSessionState.ts`), and once it
+            // does, Web Audio's own context and device figures describe a path
+            // nobody is hearing — `describeOutputLatency` reads whichever side
+            // is actually carrying the monitor.
+            const native = readNativeOutputLatency();
+            const { outputLatencyMs, title: latencyTitle } = describeOutputLatency({ native, engineInfo });
             updateTextNode(refs.latency.current, `${outputLatencyMs.toFixed(1)}ms`);
             // Compare before writing, the same way `updateTextNode` does: this
             // tick runs at animation-frame rate and the tooltip only moves when
@@ -251,11 +306,6 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             // the pattern to copy. The model here is `updateTextNode`'s own
             // `nodeValue !== value` check: compare against the live DOM, write
             // only on a real change, and stay correct across a remount.
-            const latencyTitle =
-                `Output latency ${outputLatencyMs.toFixed(1)} ms` +
-                ` = context ${baseLatencyMs.toFixed(1)} ms` +
-                ` + device ${deviceLatencyMs.toFixed(1)} ms.` +
-                ' Hardware output path only — excludes plug-in delay compensation.';
             if (refs.latency.current && refs.latency.current.title !== latencyTitle) {
                 refs.latency.current.title = latencyTitle;
             }

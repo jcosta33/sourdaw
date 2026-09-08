@@ -198,6 +198,15 @@ pub struct EngineHandle {
     /// zero, so [`Self::output_stream_fault`] always reports the newest
     /// report the stream made. See `audio_thread::new_output_stream_fault_slot`.
     output_stream_fault: Arc<AtomicU8>,
+    /// The frames the output device's last callback asked for, published by
+    /// the audio thread — see `audio_thread::new_output_buffer_frames_slot`
+    /// and [`Self::output_buffer_frames`].
+    output_buffer_frames: Arc<AtomicUsize>,
+    /// Frames the output device reports it adds after the stream's own
+    /// buffer, decided once when the stream opened — see
+    /// `device::NegotiatedOutput::device_latency_frames` and
+    /// [`Self::output_device_latency_frames`].
+    output_device_latency_frames: usize,
 }
 
 impl EngineHandle {
@@ -304,6 +313,8 @@ impl EngineHandle {
             capture_refusal: spawned.capture_refusal,
             rendering: spawned.liveness.rendering,
             output_stream_fault: spawned.output_stream_fault,
+            output_buffer_frames: spawned.output_buffer_frames,
+            output_device_latency_frames: spawned.output_device_latency_frames,
         })
     }
 
@@ -333,6 +344,25 @@ impl EngineHandle {
     /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
+    /// Frames the output device's most recent callback asked for — a UI poll
+    /// landing between callbacks reads the frame count of the last render,
+    /// not a fixed or accumulated figure. Zero before the stream has rendered
+    /// its first callback.
+    pub fn output_buffer_frames(&self) -> usize {
+        self.output_buffer_frames.load(Ordering::Relaxed)
+    }
+
+    /// Frames the output device reports it adds after the stream's own
+    /// buffer, decided once when the stream opened.
+    ///
+    /// Zero means no figure, not no delay — the same reading rule
+    /// [`Self::input_latency_frames`] documents for the capture side: a
+    /// backend that cannot read the property (Windows, today) or a device
+    /// the read fails against reports zero rather than a guess.
+    pub const fn output_device_latency_frames(&self) -> usize {
+        self.output_device_latency_frames
     }
 
     /// Whether the output stream's render callback is still being called.
@@ -1412,6 +1442,8 @@ fn engine_handle_fixture(
         capture_refusal,
         rendering,
         output_stream_fault,
+        output_buffer_frames: audio_thread::new_output_buffer_frames_slot(),
+        output_device_latency_frames: 0,
     }
 }
 

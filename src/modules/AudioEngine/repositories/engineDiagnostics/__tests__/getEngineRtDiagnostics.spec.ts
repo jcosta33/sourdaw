@@ -30,6 +30,9 @@ const nativePayload = {
     captureBlocksDropped: 12,
     captureInputUnderruns: 13,
     inputLatencyFrames: 14,
+    sampleRate: 48_000,
+    outputBufferFrames: 256,
+    outputDeviceLatencyFrames: 128,
     outputStreamFault: 'deviceChanged',
     events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };

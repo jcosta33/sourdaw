@@ -486,6 +486,13 @@ pub(crate) struct SpawnedAudioThread {
     /// What the capture side published as its settled latency, or zero when
     /// no input stream was opened.
     pub input_latency_frames: Arc<AtomicUsize>,
+    /// The frames the render callback is currently asked for per call. See
+    /// [`new_output_buffer_frames_slot`].
+    pub output_buffer_frames: Arc<AtomicUsize>,
+    /// What the output device reported it adds after that buffer at open, or
+    /// zero when the backend could not read a figure. See
+    /// [`crate::device::NegotiatedOutput::device_latency_frames`].
+    pub output_device_latency_frames: usize,
     /// The slot a refused capture open or start stores its kind into. See
     /// [`new_capture_refusal_slot`].
     pub capture_refusal: Arc<AtomicU8>,
@@ -523,8 +530,12 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
+    let output_device_latency_cell = Arc::new(OnceLock::new());
+    let output_device_latency_slot = Arc::clone(&output_device_latency_cell);
     let input_latency_frames = new_input_latency_slot();
     let input_latency_slot = Arc::clone(&input_latency_frames);
+    let output_buffer_frames = new_output_buffer_frames_slot();
+    let output_buffer_frames_slot = Arc::clone(&output_buffer_frames);
     let capture_refusal = new_capture_refusal_slot();
     let capture_refusal_slot = Arc::clone(&capture_refusal);
     let output_stream_fault = new_output_stream_fault_slot();
@@ -546,7 +557,9 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             capture_event_tx,
             force_default_buffer,
             &sample_rate_slot,
+            &output_device_latency_slot,
             &input_latency_slot,
+            &output_buffer_frames_slot,
             &capture_refusal_slot,
             &output_stream_fault_slot,
             &build_liveness,
@@ -577,10 +590,18 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate = *sample_rate_cell
         .get()
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
+    // Filled beside the sample rate, inside the same successful build — see
+    // `build_audio_stream`. Defaults to zero (the seam's "no figure" reading)
+    // on the vanishingly unlikely chance the cell was never filled, rather
+    // than failing engine start over a figure that is diagnostic, not load
+    // bearing.
+    let output_device_latency_frames = output_device_latency_cell.get().copied().unwrap_or(0);
     Ok(SpawnedAudioThread {
         handle,
         sample_rate,
         input_latency_frames,
+        output_buffer_frames,
+        output_device_latency_frames,
         capture_refusal,
         liveness,
         output_stream_fault,
@@ -687,6 +708,21 @@ pub(crate) fn effective_buffer_size(
 /// ask for — so the reader writes it from the audio thread the moment it
 /// settles, and retracts it when it stops serving.
 pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
+    Arc::new(AtomicUsize::new(0))
+}
+
+/// The slot the render callback publishes the frames it is asked for, per
+/// call.
+///
+/// Zero until the first callback: the figure is settled by whatever period
+/// the device actually runs, which is not known until the callback is
+/// called, and a recovery that resumes the stream on a different period
+/// re-settles it from the callback that reflects that change. The control
+/// side adds this to the device's own reported latency
+/// ([`crate::device::NegotiatedOutput::device_latency_frames`]) to describe
+/// the whole output path a musician hears — the engine's own buffer plus
+/// what the device adds after it.
+pub(crate) fn new_output_buffer_frames_slot() -> Arc<AtomicUsize> {
     Arc::new(AtomicUsize::new(0))
 }
 
@@ -821,6 +857,9 @@ pub(crate) struct DeviceRenderer {
     /// why the callback itself, not the error kind, is what has to answer
     /// whether the stream is still calling back.
     callbacks_rendered: Arc<AtomicU64>,
+    /// The slot [`Self::render`] publishes this callback's frame count into.
+    /// See [`new_output_buffer_frames_slot`].
+    output_buffer_frames: Arc<AtomicUsize>,
 }
 
 impl DeviceRenderer {
@@ -828,6 +867,7 @@ impl DeviceRenderer {
         scheduler: AudioScheduler,
         capture_rx: Consumer<CaptureFeed>,
         callbacks_rendered: Arc<AtomicU64>,
+        output_buffer_frames: Arc<AtomicUsize>,
     ) -> Self {
         Self {
             scheduler,
@@ -837,6 +877,7 @@ impl DeviceRenderer {
             capture_feed: None,
             capture_position_frames: 0,
             callbacks_rendered,
+            output_buffer_frames,
         }
     }
 
@@ -910,6 +951,14 @@ impl DeviceRenderer {
         // splits it: the meter's hold window is measured in frames the device
         // consumed, not in the chunks the loop happened to render them in.
         let callback_frames = data.len() / channels;
+
+        // Published only on change: one `load` every callback, and a `store`
+        // only on the callback that actually moves the reading — a period
+        // negotiation or a device-invalidation recovery, never every block.
+        if self.output_buffer_frames.load(Ordering::Relaxed) != callback_frames {
+            self.output_buffer_frames
+                .store(callback_frames, Ordering::Relaxed);
+        }
 
         // What the device is actually handed this callback. A shadowed block
         // writes zeros and so contributes nothing, which is what keeps the
@@ -1287,7 +1336,9 @@ fn build_audio_stream(
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
+    output_device_latency_out: &OnceLock<usize>,
     input_latency_slot: &Arc<AtomicUsize>,
+    output_buffer_frames_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
     output_stream_fault_slot: &Arc<AtomicU8>,
     liveness: &RenderLiveness,
@@ -1308,6 +1359,7 @@ fn build_audio_stream(
 
     let sample_rate = negotiated.sample_rate;
     let _ = sample_rate_out.set(sample_rate);
+    let _ = output_device_latency_out.set(negotiated.device_latency_frames);
     let scheduler = AudioScheduler::with_rt_diagnostics(
         command_rx,
         retired_tx,
@@ -1326,6 +1378,7 @@ fn build_audio_stream(
         scheduler,
         capture_feed_rx,
         Arc::clone(&liveness.callbacks_rendered),
+        Arc::clone(output_buffer_frames_slot),
     );
     let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
         renderer.render(data, channels);
@@ -2803,7 +2856,12 @@ mod capture_render_tests {
                 command_tx,
                 retired_rx,
                 feed_tx,
-                renderer: DeviceRenderer::new(scheduler, feed_rx, Arc::clone(&callbacks_rendered)),
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    feed_rx,
+                    Arc::clone(&callbacks_rendered),
+                    Arc::new(AtomicUsize::new(0)),
+                ),
                 diagnostics,
                 callbacks_rendered,
             }
@@ -3161,7 +3219,7 @@ mod device_output_tests {
     };
     use crate::transport_map::{LoopRegion, MIN_LOOP_FRAMES};
     use rtrb::{Consumer, Producer, RingBuffer};
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::Arc;
 
     const SAMPLE_RATE: f32 = 48_000.0;
@@ -3188,6 +3246,7 @@ mod device_output_tests {
         renderer: DeviceRenderer,
         progress: GraphProgressReader,
         meter: MeterReader,
+        output_buffer_frames: Arc<AtomicUsize>,
     }
 
     impl DeviceHarness {
@@ -3212,13 +3271,16 @@ mod device_output_tests {
             // No capture side: this module drives the monitor gate, and the
             // renderer with no feed delivers no input at all.
             let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            let output_buffer_frames = Arc::new(AtomicUsize::new(0));
             Self {
                 command_tx,
                 retired_rx,
+                output_buffer_frames: Arc::clone(&output_buffer_frames),
                 renderer: DeviceRenderer::new(
                     scheduler,
                     capture_feed_rx,
                     Arc::new(AtomicU64::new(0)),
+                    output_buffer_frames,
                 ),
                 progress,
                 meter,
@@ -3249,6 +3311,12 @@ mod device_output_tests {
             // stalling the next drain.
             while self.retired_rx.pop().is_ok() {}
             data
+        }
+
+        /// The frames the last callback asked for — what a UI poll landing
+        /// between callbacks would read off [`new_output_buffer_frames_slot`].
+        fn output_buffer_frames(&self) -> usize {
+            self.output_buffer_frames.load(Ordering::Relaxed)
         }
 
         fn progress(&mut self) -> GraphProgressSnapshot {
@@ -3628,6 +3696,23 @@ mod device_output_tests {
         assert_eq!(harness.strip_peak(1), None);
         assert_eq!(harness.strip_count(), 0);
     }
+
+    /// The output-buffer-frames slot settles on whatever the device last
+    /// asked for: a UI poll landing between callbacks reads the frame count
+    /// of the most recent render, not a fixed or accumulated figure.
+    #[test]
+    fn the_output_buffer_slot_settles_on_the_frames_the_device_asks_for() {
+        let mut harness = DeviceHarness::new();
+
+        harness.render(512);
+        assert_eq!(harness.output_buffer_frames(), 512);
+
+        harness.render(256);
+        assert_eq!(harness.output_buffer_frames(), 256);
+
+        harness.render(256);
+        assert_eq!(harness.output_buffer_frames(), 256);
+    }
 }
 
 /// Compensation's real-time contract, driven through the production render
@@ -3703,6 +3788,7 @@ mod compensation_render_alloc_guards {
                     scheduler,
                     capture_feed_rx,
                     Arc::new(AtomicU64::new(0)),
+                    Arc::new(AtomicUsize::new(0)),
                 ),
             }
         }

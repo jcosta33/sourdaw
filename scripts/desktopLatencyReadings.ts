@@ -185,11 +185,12 @@ export type EngineCounters = Readonly<Record<string, number>>;
  * `EngineRtDiagnostics` in
  * `crates/sourdaw-native/src/commands/engine_diagnostics.rs` and its TS
  * mirror `src/modules/AudioEngine/models/EngineRtDiagnostics.ts` at this
- * head — every numeric field except `inputLatencyFrames`, which is
- * deliberately excluded: it is a gauge (the capture path's current added
- * latency, or zero while capture is not serving), not a running total, and
- * differencing it would read like a counter increment when it is really two
- * unrelated snapshots. `desktopLatencyReadings.spec.ts`'s
+ * head — every numeric field except the gauges named in `GAUGE_NAMES`,
+ * which are deliberately excluded: each is a snapshot of current state (the
+ * capture path's current added latency, the output device's current buffer
+ * size, its current added latency), not a running total, and differencing
+ * one would read like a counter increment when it is really two unrelated
+ * snapshots. `desktopLatencyReadings.spec.ts`'s
  * `MONOTONIC_COUNTER_NAMES ∪ GAUGE_NAMES` spec asserts this set against
  * `notRunningEngineRtDiagnostics`'s own numeric keys, so a field added to
  * either side later cannot fall through uncovered.
@@ -205,8 +206,13 @@ export const MONOTONIC_COUNTER_NAMES = [
     'captureInputUnderruns',
 ] as const;
 
-/** `engine_rt_diagnostics`'s one gauge — see `MONOTONIC_COUNTER_NAMES`. */
-export const GAUGE_NAMES = ['inputLatencyFrames'] as const;
+/** `engine_rt_diagnostics`'s gauges — see `MONOTONIC_COUNTER_NAMES`. */
+export const GAUGE_NAMES = [
+    'inputLatencyFrames',
+    'sampleRate',
+    'outputBufferFrames',
+    'outputDeviceLatencyFrames',
+] as const;
 
 /**
  * Only the named monotonic counters are differenced, never every numeric key

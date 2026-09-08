@@ -59,9 +59,115 @@ impl OutputBackend for CpalOutputBackend {
             negotiated: NegotiatedOutput {
                 sample_rate,
                 channels,
+                device_latency_frames: default_output_device_latency_frames(),
             },
         })
     }
+}
+
+/// The frames the *default* output device reports it adds after the
+/// stream's own buffer.
+///
+/// Read through the default device's object id rather than through cpal's
+/// `Device`, because cpal exposes no device id — nothing here can ask "this
+/// device's latency". The default device is the right stand-in: this
+/// backend opens `host.default_output_device()` two lines above `negotiated`
+/// is built, on the same thread, so the two name the same device at open
+/// time.
+///
+/// Any failure along the way — no default device (a headless CI runner), a
+/// device that does not implement one of the two properties, or an
+/// unexpected reply size — answers zero, the seam's "no figure" reading,
+/// never a guess. Runs once, here, on the thread that opens the stream;
+/// never on the audio callback.
+#[cfg(target_vendor = "apple")]
+fn default_output_device_latency_frames() -> usize {
+    use objc2_core_audio::{
+        kAudioDevicePropertyLatency, kAudioDevicePropertySafetyOffset,
+        kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyScopeOutput, kAudioObjectSystemObject, AudioObjectID,
+    };
+
+    let Some(device_id) = read_device_property_u32(
+        kAudioObjectSystemObject as AudioObjectID,
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+    ) else {
+        return 0;
+    };
+
+    let latency = read_device_property_u32(
+        device_id,
+        kAudioDevicePropertyLatency,
+        kAudioObjectPropertyScopeOutput,
+    )
+    .unwrap_or(0);
+    let safety_offset = read_device_property_u32(
+        device_id,
+        kAudioDevicePropertySafetyOffset,
+        kAudioObjectPropertyScopeOutput,
+    )
+    .unwrap_or(0);
+
+    (latency + safety_offset) as usize
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn default_output_device_latency_frames() -> usize {
+    0
+}
+
+/// One `AudioObjectGetPropertyData` read of a `UInt32`-shaped CoreAudio
+/// property, on the main element.
+///
+/// `None` covers every way this can fail to answer: an object id the HAL
+/// does not recognise (this is the shape a "no default device" lookup
+/// failure takes — see `kAudioObjectUnknown` in the test below), a device
+/// that does not implement the requested property, or a reply whose size
+/// does not match the `UInt32` this backend asked for. The caller's own
+/// zero-on-failure policy lives one level up, in
+/// [`default_output_device_latency_frames`]; this function only ever reports
+/// what it actually read.
+#[cfg(target_vendor = "apple")]
+fn read_device_property_u32(
+    object_id: objc2_core_audio::AudioObjectID,
+    selector: u32,
+    scope: u32,
+) -> Option<u32> {
+    use objc2_core_audio::{
+        kAudioObjectPropertyElementMain, AudioObjectGetPropertyData, AudioObjectPropertyAddress,
+    };
+    use std::mem::size_of;
+    use std::ptr::NonNull;
+
+    let address = AudioObjectPropertyAddress {
+        mSelector: selector,
+        mScope: scope,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+    let mut value: u32 = 0;
+    let mut data_size = size_of::<u32>() as u32;
+
+    // Safety: `address` and `data_size` are valid local values whose
+    // addresses outlive the call, `value`'s pointer is a valid `u32` buffer
+    // of exactly the size named, and no qualifier data is supplied (this
+    // family of properties takes none).
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            object_id,
+            NonNull::from(&address),
+            0,
+            std::ptr::null(),
+            NonNull::from(&mut data_size),
+            NonNull::from(&mut value).cast(),
+        )
+    };
+
+    if status != 0 || data_size as usize != size_of::<u32>() {
+        return None;
+    }
+
+    Some(value)
 }
 
 impl OpenOutput for CpalOpenOutput {
@@ -249,8 +355,55 @@ impl OpenInput for CpalOpenInput {
 #[cfg(test)]
 mod tests {
     use super::{capture_buffer_size, expected_period_frames};
+    #[cfg(target_vendor = "apple")]
+    use super::{default_output_device_latency_frames, read_device_property_u32};
     use crate::audio_thread::negotiated_buffer_size;
     use crate::device::InputOpenRefusal;
+
+    /// `AudioObjectGetPropertyData` must answer "no figure" rather than a
+    /// device's stale reading or a panic when the object id it is handed is
+    /// not one the HAL recognises — the shape a "no default device" lookup
+    /// takes on a headless CI runner. Feeding `kAudioObjectUnknown` proves
+    /// that failure path directly, without needing a machine that actually
+    /// has no output device.
+    ///
+    /// Mutation: have the failure branch `unwrap` the status instead of
+    /// returning `None` — this test goes red (a panic) rather than reading a
+    /// fabricated latency for a device that does not exist.
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn a_backend_that_cannot_read_device_latency_reports_no_figure() {
+        use objc2_core_audio::{
+            kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput, kAudioObjectUnknown,
+        };
+
+        assert_eq!(
+            read_device_property_u32(
+                kAudioObjectUnknown,
+                kAudioDevicePropertyLatency,
+                kAudioObjectPropertyScopeOutput,
+            ),
+            None,
+            "an object id the HAL does not recognise must answer no figure, not a fabricated one"
+        );
+    }
+
+    /// The composite reader `open_default_output` actually calls must survive
+    /// whatever this machine's default output device answers — including no
+    /// device at all — without panicking, and the reading it returns has to
+    /// be a genuine two-`UInt32` sum rather than data that escaped a failed
+    /// read: `default_output_device_latency_frames` never has more than 2^32
+    /// combined across both properties.
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn reading_the_default_device_latency_never_panics() {
+        let frames = default_output_device_latency_frames();
+
+        assert!(
+            frames < (1_usize << 33),
+            "a genuine latency-plus-safety-offset reading fits two u32s; anything larger means a failed read escaped as data"
+        );
+    }
 
     #[test]
     fn a_device_left_on_its_own_period_is_sized_from_the_range_it_advertises() {

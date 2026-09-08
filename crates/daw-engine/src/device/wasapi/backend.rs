@@ -683,6 +683,9 @@ impl StreamRuntime {
         NegotiatedOutput {
             sample_rate: self.format.rate as f32,
             channels: usize::from(self.format.channels),
+            // IAudioClient3/WASAPI device-latency reporting is out of scope
+            // here — Windows is ADR 0027's D4 slice, not this one.
+            device_latency_frames: 0,
         }
     }
 
