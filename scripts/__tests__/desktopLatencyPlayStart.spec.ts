@@ -145,6 +145,57 @@ describe('resolvePlayStart', () => {
         });
     });
 
+    it('the poll interval median takes the middle gap of an odd count', () => {
+        const probe: PlayStartProbe = {
+            gestureAtMs: 100,
+            callbackPeriodMs: 1,
+            failure: null,
+            polls: [
+                { issuedAtMs: 100.5, answeredAtMs: 100.9, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 101.5, answeredAtMs: 101.9, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 106.5, answeredAtMs: 106.9, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 108.5, answeredAtMs: 108.9, playing: true, positionSeconds: 0.01 },
+            ],
+        };
+
+        const record = resolvePlayStart(probe);
+        if ('outcome' in record) {
+            throw new Error('expected an observed record');
+        }
+        expect(record.rollLagUpperMs).toBeCloseTo(8.9, 10);
+        expect({ ...record, rollLagUpperMs: undefined }).toEqual({
+            rollLagLowerMs: 5.5,
+            rollLagUpperMs: undefined,
+            positionSecondsAtFirstPlaying: 0.01,
+            callbackPeriodMs: 1,
+            pollCount: 4,
+            pollIntervalMedianMs: 2,
+        });
+    });
+
+    it('polls after the first playing one are not counted', () => {
+        const probe: PlayStartProbe = {
+            gestureAtMs: 100,
+            callbackPeriodMs: 2,
+            failure: null,
+            polls: [
+                { issuedAtMs: 101, answeredAtMs: 102, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 102, answeredAtMs: 104, playing: true, positionSeconds: 0.002 },
+                { issuedAtMs: 104, answeredAtMs: 106, playing: false, positionSeconds: 0.004 },
+                { issuedAtMs: 106, answeredAtMs: 108, playing: false, positionSeconds: 0.006 },
+            ],
+        };
+
+        expect(resolvePlayStart(probe)).toEqual({
+            rollLagLowerMs: 0,
+            rollLagUpperMs: 4,
+            positionSecondsAtFirstPlaying: 0.002,
+            callbackPeriodMs: 2,
+            pollCount: 2,
+            pollIntervalMedianMs: 1,
+        });
+    });
+
     it('reports not-observed when the engine published no callback period', () => {
         const probe: PlayStartProbe = {
             gestureAtMs: 100,
