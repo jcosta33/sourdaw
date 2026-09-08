@@ -1,0 +1,37 @@
+src/modules/Arrangement/useCases/getTimelineSurfaceMinimumHeight.ts
+  s_87ab0a2f60ccf8::t_2c8fb6ac7a5261 1-18
+.agents/skills/ui-patterns/SKILL.md
+  s_c11a282f92cb14::t_3ea063058c463d 58-61
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_c11a282f92cb14::t_b1cff94784a6e3 15,210,213
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_c11a282f92cb14::t_c17ebfe5a25816 236,274
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_c11a282f92cb14::t_3f55e34f791ed8 185-186,679-683,685,891,898,900-903
+tests/e2e/recordEditPlayback.spec.ts
+  s_c11a282f92cb14::t_d9a169bf57ceaa 22-29,79-107,122-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e598373f2b51a8b91b518c7b7e3c2ea677ee878d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c11a282f92cb14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0818d-16b8-7cb1-b2a5-ce94c57d4d89",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
