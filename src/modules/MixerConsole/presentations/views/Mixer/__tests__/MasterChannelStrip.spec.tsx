@@ -639,4 +639,35 @@ describe('MasterChannelStrip', () => {
 
         expect(Number(screen.getByTestId('fader').getAttribute('data-max'))).toBeCloseTo(FADER_MAX_GAIN, 5);
     });
+
+    it('passes coalesceWithPrevious when a double-click reset directly follows a groove tap settle', async () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.6, expectedPercent: 80 },
+        });
+
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '1.0' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1, expectedPercent: 80 },
+            },
+            { coalesceWithPrevious: true }
+        );
+    });
 });

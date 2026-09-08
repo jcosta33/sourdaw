@@ -127,11 +127,13 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     const gainGestureOpen = useRef(false);
     const displayedGain = useRef<number | null>(null);
     const pendingGainCommit = useRef<Promise<void>>(Promise.resolve());
+    const lastGainSettleTime = useRef(0);
 
     const panGestureToken = useRef(0);
     const panGestureOpen = useRef(false);
     const displayedPan = useRef<number | null>(null);
     const pendingPanCommit = useRef<Promise<void>>(Promise.resolve());
+    const lastPanSettleTime = useRef(0);
 
     let displayGain = track.gain;
     if (gestureGain !== null) {
@@ -223,14 +225,25 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitGain = async (value: number, token: number): Promise<void> => {
+    const commitGain = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedGain = currentTrack?.gain ?? track.gain;
-            await executeAppAction({
-                type: 'setTrackGain',
-                payload: { trackId: track.id, gain: value, expectedGain },
-            });
+            const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
+            if (options) {
+                await executeAppAction(
+                    {
+                        type: 'setTrackGain',
+                        payload: { trackId: track.id, gain: value, expectedGain },
+                    },
+                    options
+                );
+            } else {
+                await executeAppAction({
+                    type: 'setTrackGain',
+                    payload: { trackId: track.id, gain: value, expectedGain },
+                });
+            }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackGain', { cause: error }));
             if (gainGestureToken.current === token) {
@@ -244,14 +257,25 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitPan = async (value: number, token: number): Promise<void> => {
+    const commitPan = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedPan = currentTrack?.pan ?? track.pan;
-            await executeAppAction({
-                type: 'setTrackPan',
-                payload: { trackId: track.id, pan: value, expectedPan },
-            });
+            const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
+            if (options) {
+                await executeAppAction(
+                    {
+                        type: 'setTrackPan',
+                        payload: { trackId: track.id, pan: value, expectedPan },
+                    },
+                    options
+                );
+            } else {
+                await executeAppAction({
+                    type: 'setTrackPan',
+                    payload: { trackId: track.id, pan: value, expectedPan },
+                });
+            }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackPan', { cause: error }));
             if (panGestureToken.current === token) {
@@ -323,9 +347,16 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackGain(track.id, value, true);
             }
+            let coalesceWithPrevious = false;
+            if (wasOpen) {
+                lastGainSettleTime.current = performance.now();
+            } else if (performance.now() - lastGainSettleTime.current <= 500) {
+                coalesceWithPrevious = true;
+                lastGainSettleTime.current = 0;
+            }
             pendingGainCommit.current = pendingGainCommit.current
                 .catch(() => undefined)
-                .then(() => commitGain(value, token));
+                .then(() => commitGain(value, token, coalesceWithPrevious));
         },
         setPan: (value, isTransient = false) => {
             if (isTransient) {
@@ -347,9 +378,16 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackPan(track.id, value, true);
             }
+            let coalesceWithPrevious = false;
+            if (wasOpen) {
+                lastPanSettleTime.current = performance.now();
+            } else if (performance.now() - lastPanSettleTime.current <= 500) {
+                coalesceWithPrevious = true;
+                lastPanSettleTime.current = 0;
+            }
             pendingPanCommit.current = pendingPanCommit.current
                 .catch(() => undefined)
-                .then(() => commitPan(value, token));
+                .then(() => commitPan(value, token, coalesceWithPrevious));
         },
         setColor: (color) => {
             void executeUserAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
