@@ -222,11 +222,13 @@ describe('OnboardingTour', () => {
         expect(backButton).toBeDisabled();
 
         skipButton.focus();
-        fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+        // Tab from skipButton skips disabled backButton and focuses nextButton
+        fireEvent.keyDown(window, { key: 'Tab' });
         expect(nextButton).toHaveFocus();
         expect(backButton).not.toHaveFocus();
 
-        fireEvent.keyDown(window, { key: 'Tab' });
+        // Shift+Tab from nextButton skips disabled backButton and focuses skipButton
+        fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
         expect(skipButton).toHaveFocus();
         expect(backButton).not.toHaveFocus();
     });

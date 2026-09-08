@@ -222,22 +222,22 @@ export const OnboardingTour = (): ReactElement | null => {
                     return;
                 }
 
-                const first = focusables[0];
-                const last = focusables[focusables.length - 1];
+                event.preventDefault();
                 const active = document.activeElement;
-                const isInside = active instanceof HTMLElement && focusables.includes(active);
-
-                if (event.shiftKey) {
-                    if (!isInside || active === first) {
-                        event.preventDefault();
-                        last?.focus();
+                const currentIndex = active instanceof HTMLElement ? focusables.indexOf(active) : -1;
+                if (currentIndex === -1) {
+                    if (event.shiftKey) {
+                        focusables[focusables.length - 1]?.focus();
+                    } else {
+                        focusables[0]?.focus();
                     }
-                } else {
-                    if (!isInside || active === last) {
-                        event.preventDefault();
-                        first?.focus();
-                    }
+                    return;
                 }
+
+                const nextIndex = event.shiftKey
+                    ? (currentIndex - 1 + focusables.length) % focusables.length
+                    : (currentIndex + 1) % focusables.length;
+                focusables[nextIndex]?.focus();
                 return;
             }
             if (event.key === 'Escape') {
