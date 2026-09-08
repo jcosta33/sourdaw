@@ -15,6 +15,7 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -178,6 +179,7 @@ describe('importMidiFile serialized owner integration', () => {
         const file = new File([lastDownloadedBytes()], 'layered.mid', { type: 'audio/midi' });
         await expect(importMidiFile(file, { shouldContinue: () => true })).resolves.toBe('completed');
         flushAutomergeStorageWrites();
+        projectCrdtToStores({ resetProjections: true });
 
         const { clip } = requireImportedClip();
         expect(midiStore.value?.notesByClipId[clip.id]).toMatchObject([
@@ -207,6 +209,7 @@ describe('importMidiFile serialized owner integration', () => {
             })
         ).resolves.toBe('completed');
         flushAutomergeStorageWrites();
+        projectCrdtToStores({ resetProjections: true });
 
         const imported = requireImportedClip();
         const importedTrackId = imported.track.id;
@@ -225,6 +228,7 @@ describe('importMidiFile serialized owner integration', () => {
 
         await expect(undo()).resolves.toEqual({ headConsumed: true });
         flushAutomergeStorageWrites();
+        projectCrdtToStores({ resetProjections: true });
         expect(trackStore.value?.tracks).toEqual([]);
         expect(midiStore.value?.notesByClipId).not.toHaveProperty(importedClipId);
         expect(midiStore.value?.ccByClipId).not.toHaveProperty(importedClipId);
@@ -233,6 +237,7 @@ describe('importMidiFile serialized owner integration', () => {
 
         await redo();
         flushAutomergeStorageWrites();
+        projectCrdtToStores({ resetProjections: true });
         const redone = requireImportedClip();
         expect(redone.track.id).toBe(importedTrackId);
         expect(redone.clip).toMatchObject({ id: importedClipId, endBeat: 8 });
