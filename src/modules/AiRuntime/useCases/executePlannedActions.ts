@@ -37,6 +37,7 @@ type ExecutePlannedActionsInput = CommandBatchInput & {
     successVerb?: 'Executed' | 'Confirmed';
     group?: ReturnType<typeof generateGroupId>;
     onProjectCommitPrepared?: () => void;
+    getApprovalBindingRejection?: () => { reason: string; stale: boolean } | null;
 };
 
 type ExecutedAction = {
@@ -162,6 +163,18 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     const isCommitted = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
     const isExecuted = batchResult.status === 'executed' || batchResult.status === 'executed-with-warning';
     if (!isCommitted && !isExecuted) {
+        // A rejection the approval binding's own validator classified as
+        // stale-shaped is the project-moved-on event the revision-drift route
+        // above settles as invalidated; it carries that same sentence instead
+        // of reporting an execution failure.
+        const bindingRejection = input.getApprovalBindingRejection?.() ?? null;
+        if (
+            bindingRejection?.stale === true &&
+            batchResult.status === 'rejected' &&
+            batchResult.reason === bindingRejection.reason
+        ) {
+            return { status: 'invalidated', reason: new AiProposalInvalidatedError().message };
+        }
         return { status: 'failed', reason: batchResult.reason };
     }
     if (!('receipt' in batchResult)) {

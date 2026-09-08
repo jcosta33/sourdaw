@@ -463,4 +463,46 @@ describe('agent risk approval', () => {
         expect(revisionMismatch.reason).toContain('source revision');
         expect(revisionMismatch.stale).toBe(true);
     });
+
+    it('classifies a project-identity-stale revalidation as the project-changed event', () => {
+        const revision = captureProjectRevision();
+        const { commandBatch } = createBatch(revision);
+        const approval = compileAgentRiskApproval({ commandBatch });
+        // The active project switched after the approval was compiled: the
+        // preflight capture now reports a foreign project identity.
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-elsewhere',
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, targetFingerprint])),
+        }));
+
+        const validation = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
+
+        expect(validation.status).toBe('invalid');
+        if (validation.status !== 'invalid') {
+            throw new Error('Expected a project identity mismatch to invalidate approval');
+        }
+        expect(validation.reason).toContain('project identity is stale');
+        expect(validation.stale).toBe(true);
+    });
+
+    it('classifies an unavailable fingerprint capture as a genuine rejection, not the project-changed event', () => {
+        const revision = captureProjectRevision();
+        const { commandBatch } = createBatch(revision);
+        const approval = compileAgentRiskApproval({ commandBatch });
+        commandBatchPreflightPort.setProvider(null);
+
+        const validation = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
+
+        expect(validation.status).toBe('invalid');
+        if (validation.status !== 'invalid') {
+            throw new Error('Expected an unavailable fingerprint capture to invalidate approval');
+        }
+        expect(validation.reason).toContain('fingerprint capture is unavailable');
+        expect(validation.stale).toBe(false);
+    });
 });

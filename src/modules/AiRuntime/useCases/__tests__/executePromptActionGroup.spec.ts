@@ -32,7 +32,9 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     getVersionedCommandBatchCommitProof: vi.fn(),
-    issueApprovalBinding: vi.fn(() => ({ token: 'exact-approval' })),
+    issueApprovalBinding: vi.fn<(input: Parameters<ApprovalBindingIssuer>[0]) => { token: string }>(() => ({
+        token: 'exact-approval',
+    })),
     prepareDurablePromotionRecovery: vi.fn(),
     commitDurablePromotionRecovery: vi.fn(),
     completeDurablePromotionRecovery: vi.fn(),
@@ -137,6 +139,7 @@ type BatchFixtures = {
 };
 type CommandUseCases = typeof import('#/modules/Command/useCases');
 type AgentApproval = Parameters<typeof executePromptActionGroup>[0]['prepared']['agentApproval'];
+type ApprovalBindingIssuer = typeof import('../issueAgentCommandApprovalBinding').issueAgentCommandApprovalBinding;
 
 let batchFixtures: BatchFixtures | null = null;
 
@@ -249,6 +252,31 @@ function admitted(fixture: BatchFixture, agentApproval: AgentApproval = null) {
             commandBatch: fixture.commandBatch,
             agentApproval,
             requiresConfirmation: agentApproval !== null,
+        },
+    };
+}
+
+function buildAgentApproval(fixture: BatchFixture): NonNullable<AgentApproval> {
+    const command = getReceiptCommandFixture(fixture);
+    return {
+        schemaVersion: 1,
+        actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
+        sourceRevision: fixture.envelope.baseRevision,
+        targetFingerprints: {},
+        advertisedTargetFingerprints: {},
+        consequences: {
+            audioUpload: fixture.envelope.grants.audioUpload,
+            fileAccess: fixture.envelope.grants.file,
+            maxImportedAssets: fixture.envelope.budgets.maxImportedAssets,
+            maxRenderJobs: fixture.envelope.budgets.maxRenderJobs,
+            remoteGeneration: fixture.envelope.grants.remoteGeneration,
+        },
+        localActorId: 'artist-1',
+        policy: {
+            decision: 'confirm',
+            reasons: ['The planning workflow requires explicit confirmation.'],
+            requiredTrustMode: 'apply-reversible',
+            risk: 'bounded-reversible',
         },
     };
 }
@@ -449,12 +477,64 @@ describe('executePromptActionGroup', () => {
             ...admitted(fixture, approval),
         });
 
-        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith({ approval, commandBatch: fixture.commandBatch });
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith(
+            expect.objectContaining({ approval, commandBatch: fixture.commandBatch })
+        );
         expect(mocks.executePlannedActions).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: RUN_ID,
                 commandBatch: expect.objectContaining({ approvalBinding: { token: 'exact-approval' } }),
             })
+        );
+    });
+
+    it('hands the approval binding rejection down to planned-action settlement', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        const approval = buildAgentApproval(fixture);
+        let observedBySettlement: { reason: string; stale: boolean } | null | 'not-read' = 'not-read';
+        mocks.issueApprovalBinding.mockImplementation(({ onRejection }) => {
+            onRejection?.({ reason: 'The approved target fingerprints no longer match.', stale: true });
+            return { token: 'exact-approval' };
+        });
+        mocks.executePlannedActions.mockImplementation(async (input) => {
+            observedBySettlement = input.getApprovalBindingRejection?.() ?? null;
+            return { status: 'failed', reason: 'The approved target fingerprints no longer match.' };
+        });
+
+        await executePromptActionGroup({
+            actions: fixture.actions,
+            prompt: 'Import stems',
+            projectRevision: 'revision-1',
+            ...admitted(fixture, approval),
+        });
+
+        expect(observedBySettlement).toEqual({
+            reason: 'The approved target fingerprints no longer match.',
+            stale: true,
+        });
+    });
+
+    it('settles an invalidated planned-action rejection with the unified sentence on the prompt surface', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'invalidated' });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Command not executed: The project changed after this proposal was created. Review and submit the command again.',
+            []
         );
     });
 
@@ -540,7 +620,7 @@ describe('executePromptActionGroup', () => {
     });
 
     it.each([
-        { execution: { status: 'invalidated', reason: 'Revision changed' }, outcome: 'failed' },
+        { execution: { status: 'invalidated', reason: 'Revision changed' }, outcome: 'invalidated' },
         { execution: { status: 'failed', reason: 'Execution failed' }, outcome: 'failed' },
         { execution: { status: 'cancelled' }, outcome: 'cancelled' },
         { execution: { status: 'no-op' }, outcome: 'no-op' },
@@ -719,7 +799,7 @@ describe('executePromptActionGroup', () => {
                     projectRevision: 'revision-1',
                     ...admitted(exactFixture),
                 })
-            ).resolves.toEqual({ status: exactResult.status === 'invalidated' ? 'failed' : exactResult.status });
+            ).resolves.toEqual({ status: exactResult.status });
 
             expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
                 phase,
@@ -1163,18 +1243,21 @@ describe('executePromptActionGroup', () => {
         {
             label: 'invalidated stale settlement',
             execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            outcome: 'invalidated' as const,
             settle: () => ({ status: 'stale' as const }),
             warning: AGENT_RUN_STALE_FAILURE_WARNING,
         },
         {
             label: 'failed stale settlement',
             execution: { status: 'failed' as const, reason: 'Execution failed' },
+            outcome: 'failed' as const,
             settle: () => ({ status: 'stale' as const }),
             warning: AGENT_RUN_STALE_FAILURE_WARNING,
         },
         {
             label: 'invalidated persistence failure',
             execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            outcome: 'invalidated' as const,
             settle: () => {
                 throw new Error('Lease storage unavailable');
             },
@@ -1183,12 +1266,13 @@ describe('executePromptActionGroup', () => {
         {
             label: 'failed persistence failure',
             execution: { status: 'failed' as const, reason: 'Execution failed' },
+            outcome: 'failed' as const,
             settle: () => {
                 throw new Error('Lease storage unavailable');
             },
             warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
         },
-    ])('does not terminalize $label', async ({ execution, settle, warning }) => {
+    ])('does not terminalize $label', async ({ execution, outcome, settle, warning }) => {
         const fixture = getBatchFixtures().stem;
         seedRun(fixture);
         mocks.executePlannedActions.mockResolvedValue(execution);
@@ -1201,7 +1285,7 @@ describe('executePromptActionGroup', () => {
                 projectRevision: 'revision-1',
                 ...admitted(fixture),
             })
-        ).resolves.toEqual({ status: 'failed' });
+        ).resolves.toEqual({ status: outcome });
 
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'executing',

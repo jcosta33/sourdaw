@@ -38,7 +38,7 @@ type ExecutePromptActionGroupInput = {
 };
 
 type ExecutePromptActionGroupResult = {
-    status: 'committed' | 'executed' | 'failed' | 'cancelled' | 'ambiguous' | 'no-op';
+    status: 'committed' | 'executed' | 'failed' | 'invalidated' | 'cancelled' | 'ambiguous' | 'no-op';
 };
 
 const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
@@ -262,6 +262,10 @@ export async function executePromptActionGroup(
     }
 
     const group = generateGroupId(input.prompt);
+    // The approval binding re-validates during the batch's own authorization;
+    // its staleness classification is observed here and read back by planned
+    // -action settlement through the getter below.
+    const approvalBindingRejectionRef: { current: { reason: string; stale: boolean } | null } = { current: null };
     const commandBatch = (() => {
         if (!input.prepared.agentApproval) {
             return input.prepared.commandBatch;
@@ -271,6 +275,9 @@ export async function executePromptActionGroup(
             approvalBinding: issueAgentCommandApprovalBinding({
                 approval: input.prepared.agentApproval,
                 commandBatch: input.prepared.commandBatch,
+                onRejection: (rejection) => {
+                    approvalBindingRejectionRef.current = rejection;
+                },
             }),
         };
     })();
@@ -367,6 +374,7 @@ export async function executePromptActionGroup(
             ...input,
             group,
             commandBatch,
+            getApprovalBindingRejection: () => approvalBindingRejectionRef.current,
         });
     } catch (error) {
         const reason = getErrorMessage(error);
@@ -459,7 +467,17 @@ export async function executePromptActionGroup(
         return { status: 'cancelled' };
     }
 
-    if (execution.status === 'invalidated' || execution.status === 'failed') {
+    if (execution.status === 'invalidated') {
+        const leaseSettlement = settleTerminalCommand('failed');
+        await releaseImportedStems();
+        notifyAiChange(
+            appendSettlementWarning(`Command not executed: ${execution.reason}`, leaseSettlement.warning),
+            []
+        );
+        return { status: 'invalidated' };
+    }
+
+    if (execution.status === 'failed') {
         const leaseSettlement = settleTerminalCommand('failed');
         await releaseImportedStems();
         notifyAiChange(
