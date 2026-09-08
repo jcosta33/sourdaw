@@ -1,0 +1,14 @@
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  h_1228e573df1f42 176-197,199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b498167fe87710da473eda08e593176ef05bd4bb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
