@@ -669,7 +669,7 @@ describe('AppShell', () => {
             expect(dockStack).toHaveStyle({ height: '200px' });
         });
 
-        it('enforces 260px minimum resize floor when activeBottomTab is editor', () => {
+        it('enforces 280px minimum resize floor when activeBottomTab is editor', () => {
             workspaceState = createWorkspaceState({
                 sidebarOpen: false,
                 inspectorOpen: false,
@@ -686,12 +686,12 @@ describe('AppShell', () => {
             expect(resizeHandle).toBeInTheDocument();
 
             // Drag down by 200px (clientY from 100 to 300 -> delta is -200)
-            // 360 - 200 = 160, but floor is 260px
+            // 360 - 200 = 160, but floor is 280px
             fireEvent.mouseDown(resizeHandle, { clientX: 0, clientY: 100, button: 0 });
             fireEvent.mouseMove(document, { clientX: 0, clientY: 300 });
             fireEvent.mouseUp(document);
 
-            expect(workspaceStore.value?.editorHeight).toBe(260);
+            expect(workspaceStore.value?.editorHeight).toBe(280);
         });
     });
 

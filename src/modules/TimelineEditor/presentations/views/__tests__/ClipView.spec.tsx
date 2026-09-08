@@ -442,7 +442,7 @@ describe('ClipView', () => {
         expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
     });
 
-    it('should enforce min-h-[70px] floor on clip-editor-body-row', () => {
+    it('should enforce min-h-[102px] floor on clip-editor-body-row', () => {
         const clip = makeClip({ id: 'clip-midi', name: 'Midi Clip', type: 'midi' });
         vi.mocked(useTracks).mockReturnValue({
             tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
@@ -453,6 +453,6 @@ describe('ClipView', () => {
 
         const bodyRow = screen.getByTestId('clip-editor-body-row');
         expect(bodyRow).toBeInTheDocument();
-        expect(bodyRow.className).toContain('min-h-[70px]');
+        expect(bodyRow.className).toContain('min-h-[102px]');
     });
 });

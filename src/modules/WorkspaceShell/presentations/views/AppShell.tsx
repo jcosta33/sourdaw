@@ -882,7 +882,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     side="top"
                                     onResize={(d) => {
                                         if (activeBottomTab === 'editor') {
-                                            setEditorHeight((h) => Math.max(260, h + d));
+                                            setEditorHeight((h) => Math.max(280, h + d));
                                         } else {
                                             setMixerHeight((h) => Math.max(120, h + d));
                                         }

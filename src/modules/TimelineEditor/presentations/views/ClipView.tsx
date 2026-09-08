@@ -208,7 +208,7 @@ export const ClipView = (): ReactElement => {
                     Automation
                 </Button>
             </DawControlStrip>
-            <Row align="stretch" grow className="min-h-[70px] overflow-hidden" data-testid="clip-editor-body-row">
+            <Row align="stretch" grow className="min-h-[102px] overflow-hidden" data-testid="clip-editor-body-row">
                 {renderEditorBody()}
             </Row>
             {showAutomationTray ? (
