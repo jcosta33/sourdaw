@@ -69,10 +69,11 @@ describe('buildRecord', () => {
     // copy happened to carry the same values.
     it('passes playStart through to the built record unchanged', () => {
         const playStart: BuildRecordInput['playStart'] = {
-            rollLagLowerMs: 4,
-            rollLagUpperMs: 18,
-            positionSecondsAtFirstPlaying: 0.002,
-            pollCount: 4,
+            rollLagLowerMs: 0.5,
+            rollLagUpperMs: 12,
+            positionSecondsAtFirstPlaying: 0.006,
+            callbackPeriodMs: 2,
+            pollCount: 3,
             pollIntervalMedianMs: 1.5,
         };
         const input: BuildRecordInput = {

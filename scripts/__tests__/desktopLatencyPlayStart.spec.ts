@@ -8,55 +8,97 @@ import {
 } from '../desktopLatencyPlayStart.ts';
 
 describe('resolvePlayStart', () => {
-    // The engine reported playing at the fourth poll (118 ms). The bracket's
-    // lower edge is the *last poll before that one showed not-playing*
-    // (104 ms), not the gesture's very first poll (101 ms) — the interval
-    // between the gesture and that first poll proves nothing about when the
-    // engine actually rolled. A trailing fifth poll (120 ms, also playing) is
-    // included to prove the resolver stops counting at the first playing
-    // poll rather than the last one in the array.
-    it('brackets the roll lag between the last not-playing poll and the first playing poll', () => {
+    // The engine reported playing at the third poll (answered 118 ms). The
+    // lower edge is built from the *previous* poll's issued time (102.5 ms)
+    // minus one callback period (2 ms) minus the gesture — not from the first
+    // playing poll's own timestamp — because a not-playing answer only proves
+    // the engine was not rolling at the last callback boundary before the
+    // poll that asked. The upper edge subtracts the rendered position
+    // (0.006 s → 6 ms) from the first playing poll's answered time, because
+    // the engine cannot have rendered 6 ms of audio in less than 6 ms of wall
+    // time.
+    it('brackets the roll lag by the callback period on the lower edge and the rendered position on the upper edge', () => {
         const probe: PlayStartProbe = {
             gestureAtMs: 100,
+            callbackPeriodMs: 2,
             polls: [
-                { atMs: 101, playing: false, positionSeconds: 0 },
-                { atMs: 102.5, playing: false, positionSeconds: 0 },
-                { atMs: 104, playing: false, positionSeconds: 0 },
-                { atMs: 118, playing: true, positionSeconds: 0.002 },
-                { atMs: 120, playing: true, positionSeconds: 0.004 },
+                { issuedAtMs: 101, answeredAtMs: 102.5, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 102.5, answeredAtMs: 104, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 104, answeredAtMs: 118, playing: true, positionSeconds: 0.006 },
             ],
         };
 
         expect(resolvePlayStart(probe)).toEqual({
-            rollLagLowerMs: 4,
-            rollLagUpperMs: 18,
-            positionSecondsAtFirstPlaying: 0.002,
-            pollCount: 4,
+            rollLagLowerMs: 0.5,
+            rollLagUpperMs: 12,
+            positionSecondsAtFirstPlaying: 0.006,
+            callbackPeriodMs: 2,
+            pollCount: 3,
             pollIntervalMedianMs: 1.5,
         });
     });
 
-    it('brackets the lag at zero when the very first poll already reports playing', () => {
+    it('clamps the lower edge at zero when the last not-playing poll precedes the gesture', () => {
         const probe: PlayStartProbe = {
             gestureAtMs: 100,
-            polls: [{ atMs: 105, playing: true, positionSeconds: 0.01 }],
+            callbackPeriodMs: 2,
+            polls: [
+                { issuedAtMs: 99, answeredAtMs: 100.5, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 100.5, answeredAtMs: 102, playing: true, positionSeconds: 0.001 },
+            ],
         };
 
         expect(resolvePlayStart(probe)).toEqual({
             rollLagLowerMs: 0,
-            rollLagUpperMs: 5,
-            positionSecondsAtFirstPlaying: 0.01,
+            rollLagUpperMs: 1,
+            positionSecondsAtFirstPlaying: 0.001,
+            callbackPeriodMs: 2,
+            pollCount: 2,
+            pollIntervalMedianMs: 1.5,
+        });
+    });
+
+    it('brackets the lag at zero on both edges when the very first poll already reports playing', () => {
+        const probe: PlayStartProbe = {
+            gestureAtMs: 100,
+            callbackPeriodMs: 2,
+            polls: [{ issuedAtMs: 101, answeredAtMs: 103, playing: true, positionSeconds: 0.5 }],
+        };
+
+        expect(resolvePlayStart(probe)).toEqual({
+            rollLagLowerMs: 0,
+            rollLagUpperMs: 3,
+            positionSecondsAtFirstPlaying: 0.5,
+            callbackPeriodMs: 2,
             pollCount: 1,
             pollIntervalMedianMs: 0,
+        });
+    });
+
+    it('reports not-observed when the engine published no callback period', () => {
+        const probe: PlayStartProbe = {
+            gestureAtMs: 100,
+            callbackPeriodMs: 0,
+            polls: [
+                { issuedAtMs: 101, answeredAtMs: 102.5, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 102.5, answeredAtMs: 104, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 104, answeredAtMs: 118, playing: true, positionSeconds: 0.006 },
+            ],
+        };
+
+        expect(resolvePlayStart(probe)).toEqual({
+            outcome: 'not-observed',
+            reason: 'the engine published no callback period',
         });
     });
 
     it('reports not-observed when no poll ever caught the engine playing', () => {
         const probe: PlayStartProbe = {
             gestureAtMs: 100,
+            callbackPeriodMs: 2,
             polls: [
-                { atMs: 101, playing: false, positionSeconds: 0 },
-                { atMs: 5_100, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 101, answeredAtMs: 101.5, playing: false, positionSeconds: 0 },
+                { issuedAtMs: 5_100, answeredAtMs: 5_100.5, playing: false, positionSeconds: 0 },
             ],
         };
 
@@ -69,7 +111,8 @@ describe('resolvePlayStart', () => {
     it('reports not-observed when the play click never reached the capture listener', () => {
         const probe: PlayStartProbe = {
             gestureAtMs: null,
-            polls: [{ atMs: 101, playing: true, positionSeconds: 0.02 }],
+            callbackPeriodMs: 2,
+            polls: [{ issuedAtMs: 101, answeredAtMs: 101.5, playing: true, positionSeconds: 0.02 }],
         };
 
         expect(resolvePlayStart(probe)).toEqual({
@@ -82,15 +125,16 @@ describe('resolvePlayStart', () => {
 describe('describePlayStart', () => {
     it('describes an observed bracket as one reportLeg-style line', () => {
         const record: PlayStartRecord = {
-            rollLagLowerMs: 18.2,
-            rollLagUpperMs: 19.6,
-            positionSecondsAtFirstPlaying: 0,
-            pollCount: 14,
-            pollIntervalMedianMs: 1.3,
+            rollLagLowerMs: 0.5,
+            rollLagUpperMs: 12,
+            positionSecondsAtFirstPlaying: 0.006,
+            callbackPeriodMs: 2,
+            pollCount: 3,
+            pollIntervalMedianMs: 1.5,
         };
 
         expect(describePlayStart(record)).toBe(
-            'play start: native roll lag 18.2–19.6 ms (poll median 1.3 ms, 14 polls), engine position 0.000 s at first playing'
+            'play start: native roll lag 0.5–12.0 ms (callback 2.0 ms, poll median 1.5 ms, 3 polls), engine position 0.006 s at first playing'
         );
     });
 

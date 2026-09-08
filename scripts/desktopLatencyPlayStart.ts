@@ -1,8 +1,8 @@
 /**
  * The pure half of the play-start probe: turning the in-page capture
- * described in `scripts/desktopLatencyConnect.ts`'s `armPlayStartProbe` into
- * a bracketed measurement of how long the native engine took to roll after
- * the play gesture.
+ * described in `scripts/desktopLatencyConnect.ts`'s `installPlayStartProbe`
+ * into a bracketed measurement of how long the native engine took to roll
+ * after the play gesture.
  *
  * `startPlayback.ts` (`src/modules/Transport/useCases/transportControls/
  * startPlayback.ts`) fires the native session start without awaiting it and
@@ -17,26 +17,70 @@
  * probe's own readings, so a spec can pin it without a packaged app.
  */
 
-/** One `engine_transport_position` poll taken during the probe window. */
-export type PlayStartPoll = Readonly<{ atMs: number; playing: boolean; positionSeconds: number }>;
-
-/** What the in-page probe installed by `armPlayStartProbe` returns. */
-export type PlayStartProbe = Readonly<{ gestureAtMs: number | null; polls: readonly PlayStartPoll[] }>;
+/**
+ * One `engine_transport_position` poll taken during the probe window.
+ * `issuedAtMs` is stamped before the awaited round trip; `answeredAtMs` after
+ * it lands. Both are kept because a `playing:false` answer only proves the
+ * engine was not rolling at whatever moment the *published* snapshot it
+ * answered with was taken — not at either stamp — while a `playing:true`
+ * answer's own `positionSeconds`, compared against the previous poll's, tells
+ * `resolvePlayStart` how much the transport actually advanced between them.
+ */
+export type PlayStartPoll = Readonly<{
+    issuedAtMs: number;
+    answeredAtMs: number;
+    playing: boolean;
+    positionSeconds: number;
+}>;
 
 /**
- * The native roll lag is reported as a bracket, not a point: the poll loop
- * only proves the engine was not yet playing at the last poll before the
- * first one that caught it playing, and was playing by that one. The true
- * transition happened somewhere inside that interval. `pollIntervalMedianMs`
- * carries the interval's own width so a reader can tell the instrument's
- * resolution apart from the thing it measured — a wide bracket on a run with
- * a large median is the poll cadence, not a slow roll.
+ * What the in-page probe installed by `installPlayStartProbe` returns.
+ * `callbackPeriodMs` is the native engine's own audio-callback period —
+ * `outputBufferFrames / sampleRate` in milliseconds, read once from
+ * `engine_rt_diagnostics` after the poll loop closes — and is what bounds
+ * how stale a `playing:false` answer can be, not the poll loop's own cadence.
+ */
+export type PlayStartProbe = Readonly<{
+    gestureAtMs: number | null;
+    callbackPeriodMs: number;
+    polls: readonly PlayStartPoll[];
+}>;
+
+/**
+ * The native roll lag is reported as a bracket, not a point, because of how
+ * the engine publishes the transport snapshot each poll reads:
+ * `publish_transport_position` (`crates/daw-engine/src/scheduler.rs`) writes
+ * it once at the end of every audio callback, so the snapshot a poll answers
+ * with can be up to one whole `callbackPeriodMs` stale by the time the poll
+ * was even issued.
+ *
+ * That publication law is what the bracket's two edges encode:
+ *
+ * - A `playing:false` answer to a poll *issued* at T proves only that the
+ *   engine was not rolling at the last callback boundary before T — i.e. no
+ *   later than `T - callbackPeriodMs`. It says nothing about the interval
+ *   between that boundary and T itself, which is why the lower edge is built
+ *   from the *previous* poll's `issuedAtMs`, not the first playing poll's own
+ *   timestamp.
+ * - A `playing:true` answer *received* at T, whose `positionSeconds` shows P
+ *   seconds of transport rendered since the previous poll, proves the roll
+ *   began no later than `T - P`: the engine cannot have rendered P seconds of
+ *   audio in less than P seconds of wall time.
+ *
+ * The true transition lies inside `[rollLagLowerMs, rollLagUpperMs]` under
+ * that law. `pollIntervalMedianMs` is the poll loop's own cadence — how often
+ * the harness happened to ask — and is reported only so a reader can tell the
+ * *instrument's loop* apart from the *instrument's resolution*: the loop
+ * cadence bears on nothing in the bracket's math, while `callbackPeriodMs`,
+ * the engine's own publication period, is what actually sets how tight the
+ * lower edge can be.
  */
 export type PlayStartRecord =
     | Readonly<{
           rollLagLowerMs: number;
           rollLagUpperMs: number;
           positionSecondsAtFirstPlaying: number;
+          callbackPeriodMs: number;
           pollCount: number;
           pollIntervalMedianMs: number;
       }>
@@ -52,15 +96,18 @@ function median(values: readonly number[]): number {
 }
 
 /**
- * Resolves the probe's raw gesture timestamp and polls into the bracket
- * described on {@link PlayStartRecord}. `gestureAtMs === null` means the
- * capture listener installed in the page never saw the click reach it, and
- * an empty match among `polls` means the engine never reported `playing`
- * inside the probe's own window — both are reported as `'not-observed'`
- * rather than as a bracket computed from readings that never happened.
+ * Resolves the probe's raw gesture timestamp, callback period, and polls
+ * into the bracket described on {@link PlayStartRecord}. `gestureAtMs ===
+ * null` means the capture listener installed in the page never saw the
+ * click reach it; an empty match among `polls` means the engine never
+ * reported `playing` inside the probe's own window; a callback period that
+ * is not a positive finite number means `engine_rt_diagnostics` never
+ * reported one (engine not yet started) — all three are reported as
+ * `'not-observed'` rather than as a bracket computed from readings that
+ * never happened or a lower edge with no sound basis.
  */
 export function resolvePlayStart(probe: PlayStartProbe): PlayStartRecord {
-    const { gestureAtMs, polls } = probe;
+    const { gestureAtMs, callbackPeriodMs, polls } = probe;
     if (gestureAtMs === null) {
         return { outcome: 'not-observed', reason: 'the play click never reached the capture listener' };
     }
@@ -70,15 +117,23 @@ export function resolvePlayStart(probe: PlayStartProbe): PlayStartRecord {
         return { outcome: 'not-observed', reason: 'the engine never reported playing within the probe window' };
     }
 
-    const firstPlaying = polls[firstPlayingIndex]!;
-    const lastBeforePlaying = firstPlayingIndex === 0 ? gestureAtMs : polls[firstPlayingIndex - 1]!.atMs;
+    if (!Number.isFinite(callbackPeriodMs) || callbackPeriodMs <= 0) {
+        return { outcome: 'not-observed', reason: 'the engine published no callback period' };
+    }
+
+    const first = polls[firstPlayingIndex]!;
+    const previous = firstPlayingIndex === 0 ? null : polls[firstPlayingIndex - 1]!;
     const consideredPolls = polls.slice(0, firstPlayingIndex + 1);
-    const gaps = consideredPolls.slice(1).map((poll, index) => poll.atMs - consideredPolls[index]!.atMs);
+    const gaps = consideredPolls.slice(1).map((poll, index) => poll.issuedAtMs - consideredPolls[index]!.issuedAtMs);
+
+    const rollLagLowerMs = previous === null ? 0 : Math.max(previous.issuedAtMs - callbackPeriodMs - gestureAtMs, 0);
+    const renderedMs = previous === null ? 0 : Math.max(first.positionSeconds - previous.positionSeconds, 0) * 1000;
 
     return {
-        rollLagLowerMs: Math.max(lastBeforePlaying - gestureAtMs, 0),
-        rollLagUpperMs: firstPlaying.atMs - gestureAtMs,
-        positionSecondsAtFirstPlaying: firstPlaying.positionSeconds,
+        rollLagLowerMs,
+        rollLagUpperMs: first.answeredAtMs - renderedMs - gestureAtMs,
+        positionSecondsAtFirstPlaying: first.positionSeconds,
+        callbackPeriodMs,
         pollCount: consideredPolls.length,
         pollIntervalMedianMs: median(gaps),
     };
@@ -91,7 +146,7 @@ export function describePlayStart(record: PlayStartRecord): string {
     }
     return (
         `play start: native roll lag ${record.rollLagLowerMs.toFixed(1)}–${record.rollLagUpperMs.toFixed(1)} ms ` +
-        `(poll median ${record.pollIntervalMedianMs.toFixed(1)} ms, ${String(record.pollCount)} polls), ` +
+        `(callback ${record.callbackPeriodMs.toFixed(1)} ms, poll median ${record.pollIntervalMedianMs.toFixed(1)} ms, ${String(record.pollCount)} polls), ` +
         `engine position ${record.positionSecondsAtFirstPlaying.toFixed(3)} s at first playing`
     );
 }

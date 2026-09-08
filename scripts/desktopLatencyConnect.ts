@@ -362,10 +362,14 @@ async function readEngineDiagnostics(page: Page): Promise<EngineDiagnosticsReadi
  * `PLAY_START_PROBE_KEY` for `readPlayStartProbe` to collect later. The loop
  * polls back-to-back — no `setTimeout` between polls — until the engine
  * reports `playing` or `PLAY_START_PROBE_WINDOW_MS` elapses. The IPC round
- * trip is deliberately the only thing pacing the loop: that round trip is
- * what bounds how tight a bracket `resolvePlayStart` can draw around the
- * moment the engine actually rolled, so throttling the loop further would
- * only widen the bracket for no reason.
+ * trip is what paces the loop, stamped on both sides (`issuedAtMs` before it,
+ * `answeredAtMs` after), but it is the engine's own callback period — read
+ * once from `engine_rt_diagnostics` after the loop closes — that actually
+ * bounds how tight a bracket `resolvePlayStart` can draw around the moment
+ * the engine rolled: a `playing:false` answer can be stale by up to one whole
+ * callback, however fast the round trip that fetched it was. The two stamps
+ * and the callback period together are what let `resolvePlayStart` draw a
+ * sound bracket instead of one keyed to the poll loop's own cadence.
  *
  * Split from the read into its own awaited evaluation, called before the
  * click in `driveToPlayingProject`, because the click has to find the
@@ -403,23 +407,41 @@ async function installPlayStartProbe(page: Page): Promise<void> {
             document.addEventListener('click', onClick, true);
 
             const pollLoop = (async () => {
-                const polls: { atMs: number; playing: boolean; positionSeconds: number }[] = [];
+                const polls: {
+                    issuedAtMs: number;
+                    answeredAtMs: number;
+                    playing: boolean;
+                    positionSeconds: number;
+                }[] = [];
                 const deadline = performance.now() + windowMs;
                 while (performance.now() < deadline) {
+                    const issuedAtMs = performance.now();
                     const payload: unknown = await call('engine_transport_position', []);
+                    const answeredAtMs = performance.now();
                     if (typeof payload !== 'object' || payload === null) {
                         throw new TypeError('engine_transport_position did not answer with an object');
                     }
                     const playing = Reflect.get(payload, 'playing') === true;
                     const positionSeconds = Number(Reflect.get(payload, 'positionSeconds'));
-                    polls.push({ atMs: performance.now(), playing, positionSeconds });
+                    polls.push({ issuedAtMs, answeredAtMs, playing, positionSeconds });
                     if (playing) {
                         break;
                     }
                 }
 
                 document.removeEventListener('click', onClick, true);
-                return { gestureAtMs, polls };
+
+                // Read after the bracket above is fully closed, so this
+                // round trip cannot itself perturb the poll loop it explains.
+                const diagnostics: unknown = await call('engine_rt_diagnostics', []);
+                if (typeof diagnostics !== 'object' || diagnostics === null) {
+                    throw new TypeError('engine_rt_diagnostics did not answer with an object');
+                }
+                const outputBufferFrames = Number(Reflect.get(diagnostics, 'outputBufferFrames'));
+                const sampleRate = Number(Reflect.get(diagnostics, 'sampleRate'));
+                const callbackPeriodMs = sampleRate > 0 ? (outputBufferFrames / sampleRate) * 1000 : 0;
+
+                return { gestureAtMs, callbackPeriodMs, polls };
             })();
 
             Reflect.set(globalThis, key, pollLoop);
@@ -663,14 +685,19 @@ async function driveToPlayingProject(
     // already be attached in the page when the click's own CDP sequence
     // fires, and this await is what proves that ordering instead of leaving
     // it to two evaluations Playwright could otherwise dispatch out of order.
-    await installPlayStartProbe(page);
+    await step('install the play-start probe', () => installPlayStartProbe(page));
     await step('start playback', async () => {
         await page.locator(PLAY_BUTTON_SELECTOR).click({ timeout: STEP_TIMEOUT_MS });
         await page
             .locator('[aria-label="Playback controls"] [aria-label="Pause"]')
             .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
     });
-    const playStart = resolvePlayStart(await readPlayStartProbe(page));
+    const probe = await step(
+        'read the play-start probe',
+        () => readPlayStartProbe(page),
+        PLAY_START_PROBE_WINDOW_MS + STEP_TIMEOUT_MS
+    );
+    const playStart = resolvePlayStart(probe);
     process.stdout.write(`${describePlayStart(playStart)}\n`);
 
     return { startedAt, playStart };
