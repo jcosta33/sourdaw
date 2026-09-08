@@ -1,0 +1,27 @@
+src/modules/MIDI/handlers/noteTransform/__tests__/handleTransposeAndRestoreSoloSafe.spec.ts
+  s_87ab0a2f60ccf8::t_b3afbfe7487141 39
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_87ab0a2f60ccf8::t_64ae7ce4210f86 314,318
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_87ab0a2f60ccf8::t_064d0581879982 374-382
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNoteLengths.ts
+  s_87ab0a2f60ccf8::t_7d44bdfbf29cfa 28-31
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNotes.ts
+  s_87ab0a2f60ccf8::t_f50ced9923b372 28-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4d11886e54b431c9c8fc1bb7c3e37ccb68ea9441",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
