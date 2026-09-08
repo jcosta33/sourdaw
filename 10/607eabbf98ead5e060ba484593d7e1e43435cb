@@ -1,0 +1,39 @@
+src/modules/WorkspaceShell/models/WorkspaceState.ts
+  s_87ab0a2f60ccf8::t_a8b204586abcb5 28,81
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_87ab0a2f60ccf8::t_2f430cf03935a8 206,378,400,883-889,894
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_87ab0a2f60ccf8::t_895278155f49b6 649-697
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/panelToggles.spec.ts
+  s_87ab0a2f60ccf8::t_ecd3979cab0a97 30
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  s_c2a4d9a6d7bb2d::t_c50d196339d7f9 33,199-209,211,214-225
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_87ab0a2f60ccf8::t_421b6148fc6111 409
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  s_c2a4d9a6d7bb2d::t_824b2694d7f11f 19-27,128,419-457
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "10607eabbf98ead5e060ba484593d7e1e43435cb",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2a4d9a6d7bb2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080a7-2b6c-7d31-99ca-94a40ea39ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
