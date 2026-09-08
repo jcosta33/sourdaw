@@ -693,6 +693,23 @@ describe('AppShell', () => {
 
             expect(workspaceStore.value?.editorHeight).toBe(280);
         });
+
+        it('lets the editor dock shrink while retaining its 280px CSS floor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                editorHeight: 360,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('tab', { name: 'Editor' }));
+
+            const dockStack = screen.getByRole('tabpanel').parentElement;
+            expect(dockStack).not.toHaveClass('shrink-0');
+            expect(dockStack).toHaveStyle({ minHeight: '280px' });
+        });
     });
 
     describe('skip-link resilience (Fix 2)', () => {

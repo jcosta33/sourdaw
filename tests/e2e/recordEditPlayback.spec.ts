@@ -19,6 +19,43 @@ async function openEditorDock(page: Page): Promise<void> {
     await page.getByRole('tab', { name: 'Editor' }).click();
 }
 
+type Box = { height: number; width: number; x: number; y: number };
+
+async function getBox(locator: import('@playwright/test').Locator): Promise<Box> {
+    const box = await locator.boundingBox();
+    if (!box) {
+        throw new Error('Expected a rendered element box');
+    }
+    return box;
+}
+
+async function getVisibleHeight(locator: import('@playwright/test').Locator): Promise<number> {
+    return locator.evaluate((element) => {
+        const elementRect = element.getBoundingClientRect();
+        let top = Math.max(0, elementRect.top);
+        let bottom = Math.min(window.innerHeight, elementRect.bottom);
+        let parent = element.parentElement;
+
+        while (parent) {
+            const style = getComputedStyle(parent);
+            if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
+                const parentRect = parent.getBoundingClientRect();
+                top = Math.max(top, parentRect.top);
+                bottom = Math.min(bottom, parentRect.bottom);
+            }
+            parent = parent.parentElement;
+        }
+
+        return Math.max(0, bottom - top);
+    });
+}
+
+async function expectUsableTimelineRow(canvas: import('@playwright/test').Locator): Promise<void> {
+    await canvas.scrollIntoViewIfNeeded();
+    await expect(canvas).toBeInViewport();
+    expect(await getVisibleHeight(canvas)).toBeGreaterThanOrEqual(80);
+}
+
 // The record→edit→playback chain, with the virtual keyboard as the MIDI
 // source. Recording alone is covered (arm/record toggles); no spec records,
 // edits the resulting clip, and plays back. Note capture is asserted through
@@ -26,8 +63,9 @@ async function openEditorDock(page: Page): Promise<void> {
 // recorded clip from an empty one (record start creates the clip
 // unconditionally).
 test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
-    test('recording keyboard input creates a clip that survives an edit and plays back', async ({ page }) => {
+    test('recording keyboard input creates a clip that survives an edit and plays back', async ({ page }, testInfo) => {
         test.setTimeout(120000);
+        const dockGeometry: Record<string, { editorHeight: number; timeline: Box; visibleTimelineHeight: number }> = {};
         await setupWorkspace(page);
         await launch_new_project(page);
         await addMidiTrack(page);
@@ -68,13 +106,47 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         const recorded = Number((await noteCount.innerText()).match(/\d+/)?.[0] ?? '0');
         expect(recorded).toBeGreaterThanOrEqual(playedKeys.length);
 
+        const canvas = page.getByLabel('Timeline editor surface');
+        const editorDock = page.getByRole('tabpanel').locator('..');
+        const timelineBox = await getBox(canvas);
+        const editorBox = await getBox(editorDock);
+        expect(timelineBox.width).toBeGreaterThan(0);
+        expect(timelineBox.height).toBeGreaterThanOrEqual(80);
+        expect(editorBox.height).toBeGreaterThanOrEqual(280);
+        dockGeometry.initial = {
+            editorHeight: editorBox.height,
+            timeline: timelineBox,
+            visibleTimelineHeight: await getVisibleHeight(canvas),
+        };
+
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        const centerScrollTop = await keyboard.evaluate((element) => {
+            let parent = element.parentElement;
+            while (parent) {
+                if (getComputedStyle(parent).overflowY === 'auto') {
+                    return parent.scrollTop;
+                }
+                parent = parent.parentElement;
+            }
+            return null;
+        });
+        expect(centerScrollTop).toBeGreaterThan(0);
+        await expectUsableTimelineRow(canvas);
+
         // Edit: open the piano roll and stamp one more note into the clip —
         // a single click stamps (a double click stamps then hit-removes).
-        const canvas = page.getByLabel('Timeline editor surface');
         await canvas.dblclick({ position: { x: 100, y: 40 } });
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         await expect(pianoRoll).toBeVisible({ timeout: 10_000 });
-        await pianoRoll.click({ position: { x: 200, y: 130 } });
+        const pianoRollBox = await getBox(pianoRoll);
+        const notePosition = {
+            x: Math.max(1, Math.min(200, Math.floor(pianoRollBox.width / 2))),
+            y: Math.max(1, Math.min(130, Math.floor(pianoRollBox.height / 2))),
+        };
+        expect(notePosition.x).toBeLessThan(pianoRollBox.width);
+        expect(notePosition.y).toBeLessThan(pianoRollBox.height);
+        await pianoRoll.click({ position: notePosition });
         await expect(noteCount).toHaveText(`${recorded + 1} notes`, { timeout: 5000 });
 
         // Playback: the transport advances over the edited clip.
@@ -83,5 +155,90 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
         await page.getByTestId('transport-stop').click();
         await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 5000 });
+
+        await page.getByLabel('Close virtual keyboard').click();
+        await expect(keyboard).toBeHidden();
+        expect((await getBox(editorDock)).height).toBe(360);
+
+        await page.getByTestId('toggle-virtual-keyboard').click();
+        await keyboard.scrollIntoViewIfNeeded();
+        const pressuredEditorBox = await getBox(editorDock);
+        const pressuredTimelineBox = await getBox(canvas);
+        expect(pressuredEditorBox.height).toBeGreaterThanOrEqual(280);
+        expect(pressuredEditorBox.height).toBeLessThan(360);
+        expect(pressuredTimelineBox.width).toBeGreaterThan(0);
+        expect(pressuredTimelineBox.height).toBeGreaterThanOrEqual(80);
+        await expectUsableTimelineRow(canvas);
+        dockGeometry.keyboardPressure = {
+            editorHeight: pressuredEditorBox.height,
+            timeline: pressuredTimelineBox,
+            visibleTimelineHeight: await getVisibleHeight(canvas),
+        };
+
+        await page.setViewportSize({ width: 1280, height: 640 });
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        const compactEditorBox = await getBox(editorDock);
+        expect(compactEditorBox.height).toBeGreaterThanOrEqual(280);
+        await expectUsableTimelineRow(canvas);
+        dockGeometry.viewport640 = {
+            editorHeight: compactEditorBox.height,
+            timeline: await getBox(canvas),
+            visibleTimelineHeight: await getVisibleHeight(canvas),
+        };
+
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await expect.poll(async () => (await getBox(editorDock)).height).toBe(360);
+        await expectUsableTimelineRow(canvas);
+        dockGeometry.viewport900 = {
+            editorHeight: (await getBox(editorDock)).height,
+            timeline: await getBox(canvas),
+            visibleTimelineHeight: await getVisibleHeight(canvas),
+        };
+
+        const editorResizeHandle = editorDock.locator('xpath=preceding-sibling::*[1]');
+        await expect(editorResizeHandle).toHaveAttribute('role', 'separator');
+        const editorResizeHandleBox = await getBox(editorResizeHandle);
+        await page.mouse.move(
+            editorResizeHandleBox.x + editorResizeHandleBox.width / 2,
+            editorResizeHandleBox.y + editorResizeHandleBox.height / 2
+        );
+        await page.mouse.down();
+        await page.mouse.move(
+            editorResizeHandleBox.x + editorResizeHandleBox.width / 2,
+            editorResizeHandleBox.y + editorResizeHandleBox.height / 2 + 240,
+            { steps: 4 }
+        );
+        await page.mouse.up();
+        await expect.poll(async () => (await getBox(editorDock)).height).toBe(280);
+        dockGeometry.resizeFloor = {
+            editorHeight: (await getBox(editorDock)).height,
+            timeline: await getBox(canvas),
+            visibleTimelineHeight: await getVisibleHeight(canvas),
+        };
+
+        await page.getByLabel('Close virtual keyboard').click();
+        await expect(keyboard).toBeHidden();
+        expect((await getBox(editorDock)).height).toBe(280);
+
+        await page.getByTestId('toggle-virtual-keyboard').click();
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        expect((await getBox(editorDock)).height).toBe(280);
+        await expectUsableTimelineRow(canvas);
+
+        await testInfo.attach('dock-geometry.json', {
+            body: JSON.stringify(
+                {
+                    dockGeometry,
+                    playbackAdvanced: true,
+                    recordedNotes: recorded,
+                    editedNotes: recorded + 1,
+                },
+                null,
+                2
+            ),
+            contentType: 'application/json',
+        });
     });
 });

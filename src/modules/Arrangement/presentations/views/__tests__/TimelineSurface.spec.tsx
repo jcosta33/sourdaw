@@ -357,6 +357,16 @@ describe('TimelineSurface', () => {
         const { container } = renderWithTooltip(<TimelineSurface />);
         expect(container.firstChild).toHaveClass('overflow-hidden');
     });
+
+    it('reserves the selected visible track height for the canvas', () => {
+        zoomHandlers.trackStoreRef.current?.set({
+            tracks: [makeTrack({ id: 'selected', kind: 'midi', height: 96 })],
+            selectedTrackId: 'selected',
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        expect(container.firstChild).toHaveStyle({ minHeight: '96px' });
+    });
 });
 
 const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
