@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -148,6 +148,8 @@ const clampTooltipPosition = (
 
 export const OnboardingTour = (): ReactElement | null => {
     const state = useStore(onboardingStore, defaultOnboardingState);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const returnFocusRef = useRef<HTMLElement | null>(null);
     const [viewport, setViewport] = useState<{ width: number; height: number }>(() => ({
         width: typeof window === 'undefined' ? 0 : window.innerWidth,
         height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -157,6 +159,23 @@ export const OnboardingTour = (): ReactElement | null => {
     const stepIndex = Math.max(0, Math.min(state.stepIndex, TOUR_STEPS.length - 1));
     const step = TOUR_STEPS[stepIndex]!;
     const isLastStep = stepIndex >= TOUR_STEPS.length - 1;
+
+    useEffect(() => {
+        if (!state.active) {
+            return undefined;
+        }
+
+        if (document.activeElement instanceof HTMLElement) {
+            returnFocusRef.current = document.activeElement;
+        }
+
+        dialogRef.current?.focus();
+
+        return () => {
+            returnFocusRef.current?.focus();
+            returnFocusRef.current = null;
+        };
+    }, [state.active]);
 
     useEffect(() => {
         if (!state.active) {
@@ -184,6 +203,43 @@ export const OnboardingTour = (): ReactElement | null => {
             return undefined;
         }
         const onKeyDown = (event: KeyboardEvent): void => {
+            if (event.key === 'Tab') {
+                const dialog = dialogRef.current;
+                if (!dialog) {
+                    return;
+                }
+                const focusables = Array.from(
+                    dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+                ).filter(
+                    (element) =>
+                        !element.hasAttribute('disabled') &&
+                        !('disabled' in element && (element as HTMLButtonElement).disabled)
+                );
+
+                if (focusables.length === 0) {
+                    event.preventDefault();
+                    dialog.focus();
+                    return;
+                }
+
+                event.preventDefault();
+                const active = document.activeElement;
+                const currentIndex = active instanceof HTMLElement ? focusables.indexOf(active) : -1;
+                if (currentIndex === -1) {
+                    if (event.shiftKey) {
+                        focusables[focusables.length - 1]?.focus();
+                    } else {
+                        focusables[0]?.focus();
+                    }
+                    return;
+                }
+
+                const nextIndex = event.shiftKey
+                    ? (currentIndex - 1 + focusables.length) % focusables.length
+                    : (currentIndex + 1) % focusables.length;
+                focusables[nextIndex]?.focus();
+                return;
+            }
             if (event.key === 'Escape') {
                 event.preventDefault();
                 dismissOnboardingTour();
@@ -213,10 +269,12 @@ export const OnboardingTour = (): ReactElement | null => {
 
     return (
         <div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label="Onboarding tour"
-            className="fixed inset-0 z-[10000]"
+            className="fixed inset-0 z-[10000] outline-none"
             style={{ pointerEvents: 'auto' }}
         >
             {spotlight ? (
