@@ -119,14 +119,19 @@ export async function importMidiFile(
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
         const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
-        let maxBeat = 4;
+        let endBeat = 4;
         for (const note of parsedTrack.notes) {
-            const value = note.startBeat + note.duration;
-            if (value > maxBeat) {
-                maxBeat = value;
+            const noteEndBeat = Math.ceil((note.startBeat + note.duration) / 4) * 4;
+            if (noteEndBeat > endBeat) {
+                endBeat = noteEndBeat;
             }
         }
-        const endBeat = Math.ceil(maxBeat / 4) * 4;
+        for (const cc of parsedTrack.ccs) {
+            const ccEndBeat = (Math.floor(cc.beat / 4) + 1) * 4;
+            if (ccEndBeat > endBeat) {
+                endBeat = ccEndBeat;
+            }
+        }
         const clip: Clip = {
             id: getNextClipId(),
             trackId: track.id,

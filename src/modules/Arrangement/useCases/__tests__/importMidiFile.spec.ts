@@ -442,6 +442,22 @@ describe('importMidiFile', () => {
         expect(clip?.endBeat).toBe(8);
     });
 
+    it.each([
+        { label: 'after the first bar', beat: 5 },
+        { label: 'on the first bar boundary', beat: 4 },
+    ])('extends a controller-only clip for a CC $label', async ({ beat }) => {
+        shouldInjectConcurrentTrack = false;
+        const sustain = { id: 'cc-sustain', controller: 64, value: 127, beat, channel: 9 };
+        mocks.readMidiFile.mockResolvedValue([{ name: 'Controls', notes: [], ccs: [sustain], endTick: beat * 480 }]);
+
+        await importMidiFile(new File([], 'controls.mid'), { shouldContinue: () => true });
+
+        const clip = trackStore.value?.tracks[0]?.clips[0];
+        expect(clip?.endBeat).toBe(8);
+        expect(getMidiStoreState()?.notesByClipId[clip!.id]).toEqual([]);
+        expect(getMidiStoreState()?.ccByClipId[clip!.id]).toEqual([sustain]);
+    });
+
     it('labels the undo entry with the single track name', async () => {
         shouldInjectConcurrentTrack = false;
         mocks.readMidiFile.mockResolvedValue([{ name: 'Bass', notes: [importedNote], ccs: [], endTick: 960 }]);

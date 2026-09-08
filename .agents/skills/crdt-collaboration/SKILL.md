@@ -91,6 +91,12 @@ For project-integrity review, apply peer edits after the original operation and 
 
 **Why:** issue #3757 escaped in commit `9b8166687867a4e1eb2ffb39ca4f2f69795d349e` because whole-track snapshots passed ordinary undo/redo coverage while erasing later peer work.
 
+### 8. Import reviews must cross the serialized owner boundary
+
+For an import that creates project truth, exercise actual serialized source bytes through the real parser and read API into the owning stores and authoritative document, then use real undo and redo. Include supported event-only inputs and point events after notes or exactly on an extent boundary. Prove mutations that drop an event or its channel at each boundary, omit it from the owner write, mis-size its extent, or skip either history half all fail the connected check.
+
+**Why:** PR #3968 separately proved MIDI export, parsing, and mocked owner writes while controller-only tracks and late control changes still disappeared or landed beyond the usable clip.
+
 ## Anti-patterns
 
 ### Checkpoint isolation escape
