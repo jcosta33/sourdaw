@@ -22,9 +22,10 @@
  * `issuedAtMs` is stamped before the awaited round trip; `answeredAtMs` after
  * it lands. Both are kept because a `playing:false` answer only proves the
  * engine was not rolling at whatever moment the *published* snapshot it
- * answered with was taken — not at either stamp — while a `playing:true`
- * answer's own `positionSeconds`, compared against the previous poll's, tells
- * `resolvePlayStart` how much the transport actually advanced between them.
+ * answered with was taken — not at either stamp. `positionSeconds` is carried
+ * through to the record for information only: the play gesture also sends a
+ * locate, so a delta between polls conflates seek distance with rendered
+ * audio and cannot be used to tighten either bracket edge.
  */
 export type PlayStartPoll = Readonly<{
     issuedAtMs: number;
@@ -44,6 +45,15 @@ export type PlayStartProbe = Readonly<{
     gestureAtMs: number | null;
     callbackPeriodMs: number;
     polls: readonly PlayStartPoll[];
+    /**
+     * `null` on a probe that ran its loop to completion. Set to the rejection's
+     * message when anything inside the in-page loop threw — an `invoke`
+     * rejection, a non-object answer, or the closing diagnostics read failing —
+     * so `resolvePlayStart` can report the failure as a `not-observed` outcome
+     * instead of the caller ever seeing an unhandled rejection surface as an
+     * app defect.
+     */
+    failure: string | null;
 }>;
 
 /**
@@ -62,10 +72,15 @@ export type PlayStartProbe = Readonly<{
  *   between that boundary and T itself, which is why the lower edge is built
  *   from the *previous* poll's `issuedAtMs`, not the first playing poll's own
  *   timestamp.
- * - A `playing:true` answer *received* at T, whose `positionSeconds` shows P
- *   seconds of transport rendered since the previous poll, proves the roll
- *   began no later than `T - P`: the engine cannot have rendered P seconds of
- *   audio in less than P seconds of wall time.
+ * - A `playing:true` answer received at T proves the roll began no later than
+ *   T. `positionSeconds` is reported alongside it but not used to tighten this
+ *   edge: `startNativeSessionAtBeat` sends `positionSeconds` with the play
+ *   itself, and the same graph batch that flips `is_playing` also applies a
+ *   `SeekFrames`, so the position delta between the last not-playing poll and
+ *   the first playing one includes whatever the locate moved the playhead by,
+ *   not only rendered audio — on a project whose playhead rests away from
+ *   zero that delta can dwarf the render time it would otherwise stand in
+ *   for.
  *
  * The true transition lies inside `[rollLagLowerMs, rollLagUpperMs]` under
  * that law. `pollIntervalMedianMs` is the poll loop's own cadence — how often
@@ -97,17 +112,23 @@ function median(values: readonly number[]): number {
 
 /**
  * Resolves the probe's raw gesture timestamp, callback period, and polls
- * into the bracket described on {@link PlayStartRecord}. `gestureAtMs ===
- * null` means the capture listener installed in the page never saw the
- * click reach it; an empty match among `polls` means the engine never
- * reported `playing` inside the probe's own window; a callback period that
- * is not a positive finite number means `engine_rt_diagnostics` never
- * reported one (engine not yet started) — all three are reported as
- * `'not-observed'` rather than as a bracket computed from readings that
- * never happened or a lower edge with no sound basis.
+ * into the bracket described on {@link PlayStartRecord}. `failure !== null`
+ * means the in-page loop itself threw — checked first, ahead of every other
+ * field, because a probe that failed mid-loop carries no trustworthy
+ * `gestureAtMs` or `polls` to reason about. `gestureAtMs === null` means the
+ * capture listener installed in the page never saw the click reach it; an
+ * empty match among `polls` means the engine never reported `playing` inside
+ * the probe's own window; a callback period that is not a positive finite
+ * number means `engine_rt_diagnostics` never reported one (engine not yet
+ * started) — all four are reported as `'not-observed'` rather than as a
+ * bracket computed from readings that never happened or a lower edge with no
+ * sound basis.
  */
 export function resolvePlayStart(probe: PlayStartProbe): PlayStartRecord {
-    const { gestureAtMs, callbackPeriodMs, polls } = probe;
+    const { gestureAtMs, callbackPeriodMs, polls, failure } = probe;
+    if (failure !== null) {
+        return { outcome: 'not-observed', reason: `the probe failed: ${failure}` };
+    }
     if (gestureAtMs === null) {
         return { outcome: 'not-observed', reason: 'the play click never reached the capture listener' };
     }
@@ -127,11 +148,10 @@ export function resolvePlayStart(probe: PlayStartProbe): PlayStartRecord {
     const gaps = consideredPolls.slice(1).map((poll, index) => poll.issuedAtMs - consideredPolls[index]!.issuedAtMs);
 
     const rollLagLowerMs = previous === null ? 0 : Math.max(previous.issuedAtMs - callbackPeriodMs - gestureAtMs, 0);
-    const renderedMs = previous === null ? 0 : Math.max(first.positionSeconds - previous.positionSeconds, 0) * 1000;
 
     return {
         rollLagLowerMs,
-        rollLagUpperMs: first.answeredAtMs - renderedMs - gestureAtMs,
+        rollLagUpperMs: first.answeredAtMs - gestureAtMs,
         positionSecondsAtFirstPlaying: first.positionSeconds,
         callbackPeriodMs,
         pollCount: consideredPolls.length,
