@@ -123,11 +123,10 @@ pub struct EngineRtDiagnostics {
     /// stream has rendered a callback, the same reading rule
     /// `input_latency_frames` documents.
     pub output_buffer_frames: u64,
-    /// Frames the output device reports it adds after the stream's own
-    /// buffer, as of the most recent callback — see
-    /// `daw_engine::EngineHandle::output_device_latency_frames`. Zero means
-    /// no figure, not no delay.
-    pub output_device_latency_frames: u64,
+    /// The backend's whole output-path figure, as of the most recent pair of
+    /// agreeing callbacks — see `daw_engine::EngineHandle::output_path_frames`.
+    /// Zero means no figure, not no delay.
+    pub output_path_frames: u64,
     /// The kind of the last non-xrun error the output stream reported, or
     /// `null` if it has not reported one.
     ///
@@ -160,7 +159,7 @@ fn running_engine_diagnostics(
     output_stream_fault: Option<StreamErrorKind>,
     sample_rate: f32,
     output_buffer_frames: usize,
-    output_device_latency_frames: usize,
+    output_path_frames: usize,
 ) -> EngineRtDiagnostics {
     EngineRtDiagnostics {
         // An engine object existing is not the same as it rendering: the
@@ -179,7 +178,7 @@ fn running_engine_diagnostics(
         input_latency_frames: input_latency_frames as u64,
         sample_rate,
         output_buffer_frames: output_buffer_frames as u64,
-        output_device_latency_frames: output_device_latency_frames as u64,
+        output_path_frames: output_path_frames as u64,
         output_stream_fault: output_stream_fault.map(StreamErrorKindPayload::from),
         events: events.into_iter().map(EngineEventPayload::from).collect(),
     }
@@ -214,7 +213,7 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
     let output_stream_fault = engine.output_stream_fault();
     let sample_rate = engine.sample_rate();
     let output_buffer_frames = engine.output_buffer_frames();
-    let output_device_latency_frames = engine.output_device_latency_frames();
+    let output_path_frames = engine.output_path_frames();
 
     Ok(running_engine_diagnostics(
         snapshot,
@@ -224,7 +223,7 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
         output_stream_fault,
         sample_rate,
         output_buffer_frames,
-        output_device_latency_frames,
+        output_path_frames,
     ))
 }
 
@@ -249,7 +248,7 @@ mod tests {
             input_latency_frames: 14,
             sample_rate: 48_000.0,
             output_buffer_frames: 256,
-            output_device_latency_frames: 128,
+            output_path_frames: 297,
             output_stream_fault: Some(StreamErrorKindPayload::DeviceChanged),
             events: vec![EngineEventPayload::StreamError {
                 side: StreamSidePayload::Input,
@@ -268,7 +267,7 @@ mod tests {
                 r#""captureConsumerRefusals":11,"#,
                 r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
                 r#""inputLatencyFrames":14,"sampleRate":48000.0,"#,
-                r#""outputBufferFrames":256,"outputDeviceLatencyFrames":128,"#,
+                r#""outputBufferFrames":256,"outputPathFrames":297,"#,
                 r#""outputStreamFault":"deviceChanged","#,
                 r#""events":[{"type":"streamError","side":"input","#,
                 r#""kind":"deviceNotAvailable"}]}"#
@@ -290,7 +289,7 @@ mod tests {
                 r#""captureConsumerRefusals":0,"#,
                 r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
                 r#""inputLatencyFrames":0,"sampleRate":0.0,"#,
-                r#""outputBufferFrames":0,"outputDeviceLatencyFrames":0,"#,
+                r#""outputBufferFrames":0,"outputPathFrames":0,"#,
                 r#""outputStreamFault":null,"events":[]}"#
             )
         );
@@ -356,7 +355,7 @@ mod tests {
             None,
             48_000.0,
             256,
-            128,
+            297,
         );
 
         assert!(diagnostics.running);
@@ -371,7 +370,7 @@ mod tests {
         assert_eq!(diagnostics.input_latency_frames, 14);
         assert_eq!(diagnostics.sample_rate, 48_000.0);
         assert_eq!(diagnostics.output_buffer_frames, 256);
-        assert_eq!(diagnostics.output_device_latency_frames, 128);
+        assert_eq!(diagnostics.output_path_frames, 297);
         assert_eq!(diagnostics.output_stream_fault, None);
         assert_eq!(
             diagnostics.events,

@@ -202,11 +202,11 @@ pub struct EngineHandle {
     /// the audio thread — see `audio_thread::new_output_buffer_frames_slot`
     /// and [`Self::output_buffer_frames`].
     output_buffer_frames: Arc<AtomicUsize>,
-    /// Frames the output device reports it adds after the stream's own
-    /// buffer, published by the audio thread — see
-    /// `audio_thread::new_output_device_latency_slot` and
-    /// [`Self::output_device_latency_frames`].
-    output_device_latency_frames: Arc<AtomicUsize>,
+    /// The backend's whole output-path figure, published by the audio thread
+    /// only once two consecutive callbacks agree — see
+    /// `audio_thread::new_output_path_frames_slot` and
+    /// [`Self::output_path_frames`].
+    output_path_frames: Arc<AtomicUsize>,
 }
 
 impl EngineHandle {
@@ -314,7 +314,7 @@ impl EngineHandle {
             rendering: spawned.liveness.rendering,
             output_stream_fault: spawned.output_stream_fault,
             output_buffer_frames: spawned.output_buffer_frames,
-            output_device_latency_frames: spawned.output_device_latency_frames,
+            output_path_frames: spawned.output_path_frames,
         })
     }
 
@@ -354,17 +354,22 @@ impl EngineHandle {
         self.output_buffer_frames.load(Ordering::Relaxed)
     }
 
-    /// Frames the output device reports it adds after the stream's own
-    /// buffer, as of the most recent callback — never a figure decided once
-    /// when the stream opened, so a default-output reroute the backend
-    /// refreshes mid stream is reflected on the next callback.
+    /// The backend's whole output-path figure — the frames from a callback's
+    /// invocation to its first sample reaching the device, as the backend
+    /// reports it — published only once two consecutive callbacks agree on
+    /// the same reading. Never a figure decided once when the stream opened:
+    /// a default-output reroute the backend refreshes mid stream is
+    /// reflected once the callbacks that follow it agree again.
     ///
     /// Zero means no figure, not no delay — the same reading rule
     /// [`Self::input_latency_frames`] documents for the capture side: a
-    /// backend that reports none for this callback (WASAPI, today) or a
-    /// device the read fails against reports zero rather than a guess.
-    pub fn output_device_latency_frames(&self) -> usize {
-        self.output_device_latency_frames.load(Ordering::Relaxed)
+    /// backend that reports none for this callback (WASAPI, today), or a
+    /// reroute still decaying toward its new reading, reads zero or the
+    /// last-agreed figure rather than a guess. A caller wanting what the
+    /// device adds beyond its own buffer subtracts
+    /// [`Self::output_buffer_frames`] from this.
+    pub fn output_path_frames(&self) -> usize {
+        self.output_path_frames.load(Ordering::Relaxed)
     }
 
     /// Whether the output stream's render callback is still being called.
@@ -1445,7 +1450,7 @@ fn engine_handle_fixture(
         rendering,
         output_stream_fault,
         output_buffer_frames: audio_thread::new_output_buffer_frames_slot(),
-        output_device_latency_frames: audio_thread::new_output_device_latency_slot(),
+        output_path_frames: audio_thread::new_output_path_frames_slot(),
     }
 }
 

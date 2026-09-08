@@ -35,7 +35,7 @@ function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiag
         inputLatencyFrames: 0,
         sampleRate: 0,
         outputBufferFrames: 0,
-        outputDeviceLatencyFrames: 0,
+        outputPathFrames: 0,
         outputStreamFault: null,
         events: [],
         ...overrides,

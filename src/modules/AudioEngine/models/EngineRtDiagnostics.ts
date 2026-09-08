@@ -61,12 +61,12 @@ export type EngineRtDiagnostics = {
      */
     outputBufferFrames: number;
     /**
-     * Frames the output device reports it adds after the stream's own
-     * buffer, as of the most recent callback. Zero means no figure, not no
-     * delay — see `daw_engine::EngineHandle::output_device_latency_frames`
-     * (`crates/daw-engine`) for the same rule on the Rust side.
+     * The backend's whole output-path figure, as of the most recent pair of
+     * agreeing callbacks. Zero means no figure, not no delay — see
+     * `daw_engine::EngineHandle::output_path_frames` (`crates/daw-engine`)
+     * for the same rule on the Rust side.
      */
-    outputDeviceLatencyFrames: number;
+    outputPathFrames: number;
     /**
      * The kind of the last non-xrun error the output stream reported, or
      * `null` if it has not reported one. Detail beside `running`, not a
@@ -100,7 +100,7 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     inputLatencyFrames: 0,
     sampleRate: 0,
     outputBufferFrames: 0,
-    outputDeviceLatencyFrames: 0,
+    outputPathFrames: 0,
     outputStreamFault: null,
     events: [],
 };

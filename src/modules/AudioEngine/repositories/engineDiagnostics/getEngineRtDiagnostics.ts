@@ -97,7 +97,7 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
         sampleRate: readCounter(payload, 'sampleRate'),
         outputBufferFrames: readCounter(payload, 'outputBufferFrames'),
-        outputDeviceLatencyFrames: readCounter(payload, 'outputDeviceLatencyFrames'),
+        outputPathFrames: readCounter(payload, 'outputPathFrames'),
         outputStreamFault: readOutputStreamFault(payload.outputStreamFault),
         events,
     };

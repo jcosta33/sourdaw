@@ -20,7 +20,7 @@ function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiag
         inputLatencyFrames: 0,
         sampleRate: 48_000,
         outputBufferFrames: 256,
-        outputDeviceLatencyFrames: 71,
+        outputPathFrames: 297,
         outputStreamFault: null,
         events: [],
         ...overrides,
@@ -34,16 +34,28 @@ describe('readNativeOutputLatency', () => {
     });
 
     it('splits the reading into the context buffer and the device figure, both in seconds', () => {
-        expect(readNativeOutputLatency()).toEqual({
-            contextSeconds: 256 / 48_000,
-            deviceSeconds: 71 / 48_000,
-        });
+        const result = readNativeOutputLatency();
+
+        expect(result?.contextSeconds).toEqual(256 / 48_000);
+        expect(result?.deviceSeconds).toBeCloseTo(41 / 48_000);
     });
 
-    it('reports zero device seconds when the device reported no figure, without treating it as no reading', () => {
+    // Mutation: drop `|| outputPathFrames <= 0` from the gate — this goes red
+    // because the read then returns an object (deviceSeconds 0) instead of
+    // null.
+    it('measures nothing when the backend reports no output-path figure at all', () => {
         engineRtDiagnosticsStore.set({
             ...defaultEngineRtDiagnosticsState,
-            latest: diagnostics({ outputDeviceLatencyFrames: 0 }),
+            latest: diagnostics({ outputPathFrames: 0 }),
+        });
+
+        expect(readNativeOutputLatency()).toBeNull();
+    });
+
+    it('clamps the device figure at zero when the output-path figure sits at or below the buffer, a backend fault rather than a negative device contribution', () => {
+        engineRtDiagnosticsStore.set({
+            ...defaultEngineRtDiagnosticsState,
+            latest: diagnostics({ outputPathFrames: 100 }),
         });
 
         expect(readNativeOutputLatency()).toEqual({

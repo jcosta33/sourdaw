@@ -24,11 +24,16 @@ export type NativeOutputLatency = Readonly<{
  *
  * `null` beyond that carries no distinction a caller needs to react to
  * differently: a stopped engine, a diagnostics poll that has not landed yet,
- * and a running engine whose stream has not yet rendered a callback (so
- * `outputBufferFrames` still reads its start-up zero) are all "no native
+ * a running engine whose stream has not yet rendered a callback (so
+ * `outputBufferFrames` still reads its start-up zero), and a backend that
+ * publishes no output-path figure at all (WASAPI, today) are all "no native
  * figure to show," and every one of them falls back to Web Audio's own
  * `baseLatency + outputLatency` computation exactly as an engine that was
- * never the carrier does.
+ * never the carrier does. A zero `outputPathFrames` is read the same way
+ * rather than as a measured zero-latency path, because this build cannot
+ * tell "the backend has nothing to say" from "the backend measured
+ * nothing" — and showing a device term nobody measured would be worse than
+ * falling back.
  */
 export function readNativeOutputLatency(): NativeOutputLatency | null {
     if (!nativeLiveGraphSession.audibleCarrier) {
@@ -38,12 +43,16 @@ export function readNativeOutputLatency(): NativeOutputLatency | null {
     if (!diagnostics || !diagnostics.running) {
         return null;
     }
-    const { sampleRate, outputBufferFrames, outputDeviceLatencyFrames } = diagnostics;
-    if (sampleRate <= 0 || outputBufferFrames <= 0) {
+    const { sampleRate, outputBufferFrames, outputPathFrames } = diagnostics;
+    if (sampleRate <= 0 || outputBufferFrames <= 0 || outputPathFrames <= 0) {
         return null;
     }
+    // The backend's whole output path minus the context's own buffer is what
+    // the device adds beyond it. Clamped at zero rather than left signed: a
+    // path figure at or below the buffer is a backend fault, not a negative
+    // device contribution the status bar could show.
     return {
         contextSeconds: outputBufferFrames / sampleRate,
-        deviceSeconds: outputDeviceLatencyFrames / sampleRate,
+        deviceSeconds: Math.max(outputPathFrames - outputBufferFrames, 0) / sampleRate,
     };
 }

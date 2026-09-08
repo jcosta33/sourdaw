@@ -207,12 +207,7 @@ export const MONOTONIC_COUNTER_NAMES = [
 ] as const;
 
 /** `engine_rt_diagnostics`'s gauges — see `MONOTONIC_COUNTER_NAMES`. */
-export const GAUGE_NAMES = [
-    'inputLatencyFrames',
-    'sampleRate',
-    'outputBufferFrames',
-    'outputDeviceLatencyFrames',
-] as const;
+export const GAUGE_NAMES = ['inputLatencyFrames', 'sampleRate', 'outputBufferFrames', 'outputPathFrames'] as const;
 
 /**
  * Only the named monotonic counters are differenced, never every numeric key
