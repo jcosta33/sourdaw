@@ -13,7 +13,6 @@ import type { ProjectStoreState } from '../../../../stores/projectStore';
 import type { BuiltProjectData } from '../../fileIO/buildProjectData';
 
 type ProjectRepairState = Exclude<ReturnType<typeof inspectCurrentAgentProjectRepairState>, null>;
-type AudioDurabilityResult = Awaited<ReturnType<typeof ensureCachedAudioBuffersDurable>>;
 
 const mocks = vi.hoisted(() => {
     const repairState: { value: ProjectRepairState | null } = { value: null };
@@ -34,9 +33,9 @@ const mocks = vi.hoisted(() => {
         setSemanticContext: vi.fn(),
         clearSemanticContext: vi.fn(),
         writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
-        ensureCachedAudioBuffersDurable: vi.fn<
-            (ids: readonly string[], scope?: unknown) => Promise<AudioDurabilityResult>
-        >(() => Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })),
+        ensureCachedAudioBuffersDurable: vi.fn<typeof ensureCachedAudioBuffersDurable>(() =>
+            Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })
+        ),
     };
 });
 
