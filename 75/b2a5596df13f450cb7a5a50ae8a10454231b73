@@ -1,0 +1,23 @@
+tests/e2e/recordEditPlayback.spec.ts
+  s_87ab0a2f60ccf8::t_b98bd96279dab7 1,24,32,53,66,108-110,119-120,158-160,178
+src/modules/Arrangement/transformers/__tests__/getVisibleTimelineTracks.spec.ts
+  s_87ab0a2f60ccf8::t_ade1fb8b2fe24f 1-47
+src/modules/Arrangement/useCases/__tests__/getTimelineSurfaceMinimumHeight.spec.ts
+  s_87ab0a2f60ccf8::t_0dd5dfbb29853e 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "75b2a5596df13f450cb7a5a50ae8a10454231b73",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
