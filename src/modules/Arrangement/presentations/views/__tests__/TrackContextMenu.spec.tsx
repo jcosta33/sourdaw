@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -20,6 +20,7 @@ import { renameTrack } from '../../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
 import { setTrackColor } from '../../../useCases/setTrackGainPan/setTrackColor';
+import { toggleVariationLanes } from '../../../useCases/toggleTrackState/toggleVariationLanes';
 import { TrackContextMenu } from '../TrackContextMenu';
 
 // Mock external dependencies
@@ -37,6 +38,10 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
 
 vi.mock('../../../useCases/toggleTrackState/toggleSoloSafe', () => ({
     toggleSoloSafe: vi.fn(),
+}));
+
+vi.mock('../../../useCases/toggleTrackState/toggleVariationLanes', () => ({
+    toggleVariationLanes: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clip/addClip', () => ({
@@ -641,5 +646,159 @@ describe('TrackContextMenu', () => {
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Duplicate Track'));
         expect(vi.mocked(duplicateTrack)).toHaveBeenCalledWith('track1');
+    });
+
+    it('preserves showVariationLanes as false when committing track rename via Enter', () => {
+        const track = TrackDummy.create({
+            id: 'track1',
+            name: 'Test Track',
+            showVariationLanes: false,
+        });
+        const onUnexpectedAction = vi.fn();
+        renderWithTooltip(
+            <div onKeyDown={onUnexpectedAction}>
+                <TrackContextMenu track={track}>
+                    <button
+                        type="button"
+                        aria-label="Toggle variation lanes"
+                        onClick={() => toggleVariationLanes(track.id)}
+                    >
+                        Toggle variation lanes
+                    </button>
+                </TrackContextMenu>
+            </div>
+        );
+
+        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        toggleBtn.focus();
+        fireEvent.contextMenu(toggleBtn);
+        fireEvent.click(screen.getByText('Rename'));
+
+        const input = screen.getByDisplayValue('Test Track');
+        fireEvent.change(input, { target: { value: 'Renamed Track' } });
+
+        const enterEvent = createEvent.keyDown(input, { key: 'Enter', cancelable: true });
+        fireEvent(input, enterEvent);
+
+        expect(enterEvent.defaultPrevented).toBe(true);
+        expect(onUnexpectedAction).not.toHaveBeenCalled();
+        expect(toggleVariationLanes).not.toHaveBeenCalled();
+        expect(vi.mocked(renameTrack)).toHaveBeenCalledWith('track1', 'Renamed Track');
+        expect(track.showVariationLanes).toBe(false);
+    });
+
+    it('preserves showVariationLanes as false when cancelling track rename via Escape', () => {
+        const track = TrackDummy.create({
+            id: 'track1',
+            name: 'Test Track',
+            showVariationLanes: false,
+        });
+        const onUnexpectedAction = vi.fn();
+        renderWithTooltip(
+            <div onKeyDown={onUnexpectedAction}>
+                <TrackContextMenu track={track}>
+                    <button
+                        type="button"
+                        aria-label="Toggle variation lanes"
+                        onClick={() => toggleVariationLanes(track.id)}
+                    >
+                        Toggle variation lanes
+                    </button>
+                </TrackContextMenu>
+            </div>
+        );
+
+        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        toggleBtn.focus();
+        fireEvent.contextMenu(toggleBtn);
+        fireEvent.click(screen.getByText('Rename'));
+
+        const input = screen.getByDisplayValue('Test Track');
+        fireEvent.change(input, { target: { value: 'Different Track' } });
+
+        const escapeEvent = createEvent.keyDown(input, { key: 'Escape', cancelable: true });
+        fireEvent(input, escapeEvent);
+
+        expect(escapeEvent.defaultPrevented).toBe(true);
+        expect(onUnexpectedAction).not.toHaveBeenCalled();
+        expect(toggleVariationLanes).not.toHaveBeenCalled();
+        expect(renameTrack).not.toHaveBeenCalled();
+        expect(track.showVariationLanes).toBe(false);
+    });
+
+    it('preserves showVariationLanes as true when committing track rename via Enter', () => {
+        const track = TrackDummy.create({
+            id: 'track1',
+            name: 'Test Track',
+            showVariationLanes: true,
+        });
+        const onUnexpectedAction = vi.fn();
+        renderWithTooltip(
+            <div onKeyDown={onUnexpectedAction}>
+                <TrackContextMenu track={track}>
+                    <button
+                        type="button"
+                        aria-label="Toggle variation lanes"
+                        onClick={() => toggleVariationLanes(track.id)}
+                    >
+                        Toggle variation lanes
+                    </button>
+                </TrackContextMenu>
+            </div>
+        );
+
+        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        toggleBtn.focus();
+        fireEvent.contextMenu(toggleBtn);
+        fireEvent.click(screen.getByText('Rename'));
+
+        const input = screen.getByDisplayValue('Test Track');
+        fireEvent.change(input, { target: { value: 'Renamed Track Again' } });
+
+        const enterEvent = createEvent.keyDown(input, { key: 'Enter', cancelable: true });
+        fireEvent(input, enterEvent);
+
+        expect(enterEvent.defaultPrevented).toBe(true);
+        expect(onUnexpectedAction).not.toHaveBeenCalled();
+        expect(toggleVariationLanes).not.toHaveBeenCalled();
+        expect(vi.mocked(renameTrack)).toHaveBeenCalledWith('track1', 'Renamed Track Again');
+        expect(track.showVariationLanes).toBe(true);
+    });
+
+    it('preserves showVariationLanes as true when cancelling track rename via Escape', () => {
+        const track = TrackDummy.create({
+            id: 'track1',
+            name: 'Test Track',
+            showVariationLanes: true,
+        });
+        const onUnexpectedAction = vi.fn();
+        renderWithTooltip(
+            <div onKeyDown={onUnexpectedAction}>
+                <TrackContextMenu track={track}>
+                    <button
+                        type="button"
+                        aria-label="Toggle variation lanes"
+                        onClick={() => toggleVariationLanes(track.id)}
+                    >
+                        Toggle variation lanes
+                    </button>
+                </TrackContextMenu>
+            </div>
+        );
+
+        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        toggleBtn.focus();
+        fireEvent.contextMenu(toggleBtn);
+        fireEvent.click(screen.getByText('Rename'));
+
+        const input = screen.getByDisplayValue('Test Track');
+        const escapeEvent = createEvent.keyDown(input, { key: 'Escape', cancelable: true });
+        fireEvent(input, escapeEvent);
+
+        expect(escapeEvent.defaultPrevented).toBe(true);
+        expect(onUnexpectedAction).not.toHaveBeenCalled();
+        expect(toggleVariationLanes).not.toHaveBeenCalled();
+        expect(renameTrack).not.toHaveBeenCalled();
+        expect(track.showVariationLanes).toBe(true);
     });
 });

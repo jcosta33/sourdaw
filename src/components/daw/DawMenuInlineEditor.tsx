@@ -23,9 +23,13 @@ export const DawMenuInlineEditor = ({
 }: DawMenuInlineEditorProps): ReactElement => {
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
         if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
             onSubmit();
         }
         if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
             onCancel();
         }
     };
