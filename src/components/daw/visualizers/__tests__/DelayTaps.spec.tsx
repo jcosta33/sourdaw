@@ -193,7 +193,11 @@ describe('DelayTaps', () => {
         // When feedback is 0, no subsequent wet taps are drawn.
         const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
         expect(wetBarCalls).toHaveLength(1);
-        expect(wetBarCalls[0][3]).toBeCloseTo(30.4, 2);
+        const firstWetBar = wetBarCalls[0];
+        if (!firstWetBar) {
+            throw new TypeError('Expected at least one wet bar');
+        }
+        expect(firstWetBar[3]).toBeCloseTo(30.4, 2);
 
         vi.restoreAllMocks();
     });
@@ -210,9 +214,13 @@ describe('DelayTaps', () => {
         // Tap 2: amplitude 0.4 -> barH = 15.2
         // Tap 3: amplitude 0.2 -> barH = 7.6
         const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
-        expect(wetBarCalls[0][3]).toBeCloseTo(30.4, 2);
-        expect(wetBarCalls[1][3]).toBeCloseTo(15.2, 2);
-        expect(wetBarCalls[2][3]).toBeCloseTo(7.6, 2);
+        const [tap1, tap2, tap3] = wetBarCalls;
+        if (!tap1 || !tap2 || !tap3) {
+            throw new TypeError('Expected at least three wet bars');
+        }
+        expect(tap1[3]).toBeCloseTo(30.4, 2);
+        expect(tap2[3]).toBeCloseTo(15.2, 2);
+        expect(tap3[3]).toBeCloseTo(7.6, 2);
 
         vi.restoreAllMocks();
     });
