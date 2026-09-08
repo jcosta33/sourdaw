@@ -1,0 +1,19 @@
+AGENTS.md
+  s_e440ffdc6997b7::t_11c4f9b381e3f9 3,7-8,11-24,28-29,31-36,42-47,54-106,110-112,116-119,123-124,168-172,211-217,224-244,262-267,271-277,294-327,344-368,375-404,413-452
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "46846cd0c19307c868fff02fc16e5e486bc99980",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
