@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { createPreparedAudioBufferLifecycle } from '../preparedAudioBufferLifecycle';
 
 import {
@@ -18,8 +20,11 @@ import {
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 
+const runStoragePhase = <Result>(operation: () => Promise<Result>): Promise<Result> => operation();
+
 beforeEach(async () => {
     vi.resetModules();
+    vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     installTestAudioBufferConstructor();
     ({ audioBufferCache } = await import('../audioBufferCache'));
 });
@@ -120,7 +125,10 @@ describe('prepared audio-buffer lifecycle races', () => {
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
-        const persistence = lifecycle.persist({ id: 'source-fenced-persistence', leaseId: 'lease', data });
+        const persistence = lifecycle.persist(
+            { id: 'source-fenced-persistence', leaseId: 'lease', data },
+            runStoragePhase
+        );
         sourceCurrent = false;
 
         await expect(persistence).resolves.toEqual({
@@ -167,7 +175,7 @@ describe('prepared audio-buffer lifecycle races', () => {
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
-        const discard = lifecycle.release({ id, leaseId: 'lease', disposition: 'discard' });
+        const discard = lifecycle.release({ id, leaseId: 'lease', disposition: 'discard' }, runStoragePhase);
         sourceCurrent = false;
 
         await expect(discard).resolves.toEqual({
@@ -237,17 +245,19 @@ describe('prepared audio-buffer lifecycle races', () => {
         const context = createTestContext(
             vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
         );
-        await expect(lifecycleA.reopen({ id, leaseId, context })).resolves.toEqual({
+        await expect(lifecycleA.reopen({ id, leaseId, context }, runStoragePhase)).resolves.toEqual({
             status: 'reopened',
             bufferId: id,
             ownership: 'temporary',
         });
         controls.pauseWriteSettlements();
         let staleSettled = false;
-        const stalePromotion = lifecycleA.release({ id, leaseId, disposition: 'project-owned' }).then((result) => {
-            staleSettled = true;
-            return result;
-        });
+        const stalePromotion = lifecycleA
+            .release({ id, leaseId, disposition: 'project-owned' }, runStoragePhase)
+            .then((result) => {
+                staleSettled = true;
+                return result;
+            });
         await waitFor(
             () => controls.pendingWriteSettlementCount() > 0 || staleSettled,
             'first promotion never reached commit'
@@ -285,7 +295,7 @@ describe('prepared audio-buffer lifecycle races', () => {
             recoveryStoreName: 'preparedBufferRecovery',
         });
         let reopened = false;
-        const recoveredReopen = lifecycleB.reopen({ id, leaseId, context }).then((result) => {
+        const recoveredReopen = lifecycleB.reopen({ id, leaseId, context }, runStoragePhase).then((result) => {
             reopened = true;
             return result;
         });
@@ -296,10 +306,12 @@ describe('prepared audio-buffer lifecycle races', () => {
             ownership: 'temporary',
         });
         let newerSettled = false;
-        const newerPromotion = lifecycleB.release({ id, leaseId, disposition: 'project-owned' }).then((result) => {
-            newerSettled = true;
-            return result;
-        });
+        const newerPromotion = lifecycleB
+            .release({ id, leaseId, disposition: 'project-owned' }, runStoragePhase)
+            .then((result) => {
+                newerSettled = true;
+                return result;
+            });
         await settlePendingWrites(controls, () => newerSettled);
         await expect(newerPromotion).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
 

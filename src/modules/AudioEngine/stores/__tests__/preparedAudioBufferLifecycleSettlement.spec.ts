@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -25,8 +27,30 @@ const malformedPreparedMetadataCases: ReadonlyArray<[string, (metadata: StoredBu
     ['invalid freeze-project ID', (metadata) => (metadata.freezeProjectId = -1)],
 ];
 
+async function settlePendingWrites(
+    controls: ReturnType<typeof installFakeAudioIndexedDb>,
+    promises: readonly Promise<unknown>[]
+): Promise<void> {
+    let settled = false;
+    void Promise.all(promises).then(
+        () => {
+            settled = true;
+        },
+        () => {
+            settled = true;
+        }
+    );
+    await vi.waitFor(() => {
+        if (controls.pendingWriteSettlementCount() > 0) {
+            controls.releaseNextWriteSettlement();
+        }
+        expect(settled).toBe(true);
+    });
+}
+
 beforeEach(async () => {
     vi.resetModules();
+    vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     installTestAudioBufferConstructor();
     ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
         await import('../audioBufferCache'));
@@ -138,7 +162,6 @@ describe('prepared audio-buffer settlement and recovery', () => {
             leaseId: 'overlapping-promotion-lease',
         });
         controls.pauseWriteSettlements();
-        const writeCountBeforePromotions = controls.writeTransactionCount();
         const first = audioBufferCache.releasePreparedBuffer({
             id: 'overlapping-promotions',
             leaseId: 'overlapping-promotion-lease',
@@ -152,14 +175,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
             leaseId: 'overlapping-promotion-lease',
             disposition: 'project-owned',
         });
-        while (controls.writeTransactionCount() < writeCountBeforePromotions + 2) {
-            await flushIndexedDbTasks(1);
-        }
-
         clearRuntimeAudioBufferCache();
-        while (controls.pendingWriteSettlementCount() > 0) {
-            controls.releaseNextWriteSettlement();
-        }
+        await settlePendingWrites(controls, [first, second]);
 
         await expect(first).resolves.toEqual({
             status: 'failed',
@@ -829,7 +846,13 @@ describe('prepared audio-buffer settlement and recovery', () => {
             await flushIndexedDbTasks(1);
         }
         await expect(discard).resolves.toEqual({ status: 'released', disposition: 'discarded' });
-        await flushIndexedDbTasks(2);
+        const durability = audioBufferCache.ensureDurable(['discard-race']);
+        await settlePendingWrites(controls, [durability]);
+        const durable = await durability;
+        expect(durable.status).toBe('durable');
+        if (durable.status === 'durable') {
+            durable.release();
+        }
         expect(audioBufferCache.get('discard-race')).toBe(ordinary);
         expect(controls.committed.get('discard-race')?.channelData[0]?.[0]).toBeCloseTo(0.85);
         expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
@@ -852,19 +875,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
         const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         replacement.getChannelData(0)[0] = 0.75;
         const replacementPersistence = audioBufferCache.persistPreparedBuffer({ id, leaseId, buffer: replacement });
-        while (controls.writeTransactionCount() < 3) {
-            await flushIndexedDbTasks(1);
-        }
-
-        controls.releaseNextWriteSettlement();
-        while (controls.pendingWriteSettlementCount() === 0) {
-            await flushIndexedDbTasks(1);
-        }
-        controls.releaseNextWriteSettlement();
-        while (controls.pendingWriteSettlementCount() === 0) {
-            await flushIndexedDbTasks(1);
-        }
-        controls.releaseNextWriteSettlement();
+        await settlePendingWrites(controls, [discard, replacementPersistence]);
 
         await expect(replacementPersistence).resolves.toEqual({ status: 'persisted', bufferId: id, leaseId });
         await expect(discard).resolves.toEqual({

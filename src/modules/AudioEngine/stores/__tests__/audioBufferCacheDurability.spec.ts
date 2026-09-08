@@ -22,6 +22,7 @@ import {
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
+let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
 
 const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE] as const;
 
@@ -133,8 +134,15 @@ beforeEach(async () => {
     vi.resetModules();
     vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     installTestAudioBufferConstructor();
-    [{ audioBufferCache, clearRuntimeAudioBufferCache }, { setDurableAudioBufferOwnershipProvider }] =
-        await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
+    [
+        { audioBufferCache, clearRuntimeAudioBufferCache },
+        { setDurableAudioBufferOwnershipProvider },
+        { withProjectAudioStorageLock },
+    ] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+        import('#/infra/storage/withProjectAudioStorageLock'),
+    ]);
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -877,6 +885,29 @@ describe('audio buffer save durability', () => {
         expect(receipt.isCurrent()).toBe(true);
         receipt.release();
         expect(receipt.isCurrent()).toBe(false);
+    });
+
+    it('does not wait inside a held storage scope for a queued prepared settlement', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        let persistence: ReturnType<typeof audioBufferCache.persistPreparedBuffer> | undefined;
+
+        await withProjectAudioStorageLock(async (scope) => {
+            persistence = audioBufferCache.persistPreparedBuffer({
+                id: 'queued-prepared-save',
+                buffer: makeBuffer([0.7]),
+                leaseId: 'queued-prepared-save-lease',
+            });
+            await expect(audioBufferCache.ensureDurable(['queued-prepared-save'], scope)).resolves.toEqual({
+                status: 'superseded',
+            });
+        });
+
+        await expect(persistence).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'queued-prepared-save',
+            leaseId: 'queued-prepared-save-lease',
+        });
+        expect(controls.committed.get('queued-prepared-save')?.channelData[0]?.[0]).toBeCloseTo(0.7);
     });
 
     it('refuses an absent ID when its prepared persistence is admitted behind the durability request', async () => {

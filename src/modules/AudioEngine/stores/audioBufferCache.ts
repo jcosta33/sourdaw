@@ -6,7 +6,10 @@ import {
 } from '#/infra/storage/withProjectAudioStorageLock';
 
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
-import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
+import {
+    createPreparedAudioBufferLifecycle,
+    PreparedAudioStoragePhaseUnavailableError,
+} from './preparedAudioBufferLifecycle';
 import {
     isValidPreparedSerializedAudioBuffer,
     readPreparedOwner,
@@ -457,12 +460,15 @@ const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
 type AudioStorageWriteAdmissionWitness = {
     globalIntentRevision: number;
     intentRevisionById: ReadonlyMap<string, number>;
+    preparedTicketSettlements: readonly Promise<void>[];
     preparedTicketSequencesById: ReadonlyMap<string, ReadonlySet<number>>;
 };
 
 type PreparedAudioStorageAdmissionTicket = {
     id: string;
     sequence: number;
+    settle: () => void;
+    settlement: Promise<void>;
     settled: boolean;
 };
 
@@ -470,7 +476,7 @@ let globalAudioStorageIntentRevision = 0;
 let nextAudioStorageIntentRevision = 0;
 const audioStorageIntentRevisionById = new Map<string, number>();
 let nextPreparedAudioStorageTicketSequence = 0;
-const activePreparedAudioStorageTicketSequencesById = new Map<string, Set<number>>();
+const activePreparedAudioStorageTicketsById = new Map<string, Set<PreparedAudioStorageAdmissionTicket>>();
 
 function recordAudioStorageIntent(ids: readonly string[]): void {
     for (const id of new Set(ids)) {
@@ -483,14 +489,21 @@ function recordProjectAudioStorageTransitionIntent(): void {
 }
 
 function beginPreparedAudioStorageAdmission(id: string): PreparedAudioStorageAdmissionTicket {
+    let settle = (): void => undefined;
+    const settlement = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
     const ticket: PreparedAudioStorageAdmissionTicket = {
         id,
         sequence: ++nextPreparedAudioStorageTicketSequence,
+        settle,
+        settlement,
         settled: false,
     };
-    const activeSequences = activePreparedAudioStorageTicketSequencesById.get(id) ?? new Set<number>();
-    activeSequences.add(ticket.sequence);
-    activePreparedAudioStorageTicketSequencesById.set(id, activeSequences);
+    const activeTickets =
+        activePreparedAudioStorageTicketsById.get(id) ?? new Set<PreparedAudioStorageAdmissionTicket>();
+    activeTickets.add(ticket);
+    activePreparedAudioStorageTicketsById.set(id, activeTickets);
     return ticket;
 }
 
@@ -499,10 +512,11 @@ function finishPreparedAudioStorageAdmission(ticket: PreparedAudioStorageAdmissi
         return;
     }
     ticket.settled = true;
-    const activeSequences = activePreparedAudioStorageTicketSequencesById.get(ticket.id);
-    activeSequences?.delete(ticket.sequence);
-    if (activeSequences?.size === 0) {
-        activePreparedAudioStorageTicketSequencesById.delete(ticket.id);
+    ticket.settle();
+    const activeTickets = activePreparedAudioStorageTicketsById.get(ticket.id);
+    activeTickets?.delete(ticket);
+    if (activeTickets?.size === 0) {
+        activePreparedAudioStorageTicketsById.delete(ticket.id);
     }
 }
 
@@ -511,8 +525,19 @@ function captureAudioStorageWriteAdmission(ids: readonly string[]): AudioStorage
     return {
         globalIntentRevision: globalAudioStorageIntentRevision,
         intentRevisionById: new Map(uniqueIds.map((id) => [id, audioStorageIntentRevisionById.get(id) ?? 0] as const)),
+        preparedTicketSettlements: uniqueIds.flatMap((id) =>
+            [...(activePreparedAudioStorageTicketsById.get(id) ?? [])].map((ticket) => ticket.settlement)
+        ),
         preparedTicketSequencesById: new Map(
-            uniqueIds.map((id) => [id, new Set(activePreparedAudioStorageTicketSequencesById.get(id) ?? [])] as const)
+            uniqueIds.map(
+                (id) =>
+                    [
+                        id,
+                        new Set(
+                            [...(activePreparedAudioStorageTicketsById.get(id) ?? [])].map((ticket) => ticket.sequence)
+                        ),
+                    ] as const
+            )
         ),
     };
 }
@@ -529,14 +554,15 @@ function isAudioStorageWriteAdmissionCurrent(
             return false;
         }
         const capturedSequences = witness.preparedTicketSequencesById.get(id) ?? new Set<number>();
-        const activeSequences = activePreparedAudioStorageTicketSequencesById.get(id);
-        if (!activeSequences) {
+        const activeTickets = activePreparedAudioStorageTicketsById.get(id);
+        if (!activeTickets) {
             continue;
         }
-        if (requireCapturedTicketsSettled && [...activeSequences].some((sequence) => capturedSequences.has(sequence))) {
+        const activeSequences = [...activeTickets].map((ticket) => ticket.sequence);
+        if (requireCapturedTicketsSettled && activeSequences.some((sequence) => capturedSequences.has(sequence))) {
             return false;
         }
-        if ([...activeSequences].some((sequence) => !capturedSequences.has(sequence))) {
+        if (activeSequences.some((sequence) => !capturedSequences.has(sequence))) {
             return false;
         }
     }
@@ -555,19 +581,39 @@ function runAudioStorageWrite<TResult>(
     );
 }
 
-function runPreparedAudioStorageWrite<TResult>(id: string, operation: () => Promise<TResult>): Promise<TResult> {
-    const ticket = beginPreparedAudioStorageAdmission(id);
-    const result = withProjectAudioStorageLock(async (scope) => {
-        try {
-            return await runInProjectAudioStorageLock(scope, operation);
-        } finally {
-            finishPreparedAudioStorageAdmission(ticket);
+type RunPreparedAudioStoragePhase = <TResult>(operation: () => Promise<TResult>) => Promise<TResult>;
+
+function runPreparedAudioStoragePhase<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    let operationStarted = false;
+    return withProjectAudioStorageLock((scope) => {
+        operationStarted = true;
+        return runInProjectAudioStorageLock(scope, operation);
+    }).catch((error: unknown) => {
+        if (operationStarted) {
+            throw error;
         }
+        throw new PreparedAudioStoragePhaseUnavailableError(error);
     });
-    return result.catch((error: unknown) => {
+}
+
+function runPreparedAudioStorageWrite<TResult>(
+    id: string,
+    operation: (runStoragePhase: RunPreparedAudioStoragePhase) => Promise<TResult>
+): Promise<TResult> {
+    const ticket = beginPreparedAudioStorageAdmission(id);
+    if (globalThis.navigator?.locks === undefined) {
+        return Promise.reject<TResult>(new Error('Project audio storage requires the Web Locks API')).finally(() =>
+            finishPreparedAudioStorageAdmission(ticket)
+        );
+    }
+    let result: Promise<TResult>;
+    try {
+        result = operation(runPreparedAudioStoragePhase);
+    } catch (error) {
         finishPreparedAudioStorageAdmission(ticket);
         throw error;
-    });
+    }
+    return result.finally(() => finishPreparedAudioStorageAdmission(ticket));
 }
 
 let nextPersistenceGeneration = 0;
@@ -1417,23 +1463,32 @@ type ReleasePreparedBufferInput = {
 
 /** Persist one collision-safe prepared owner, then publish its committed PCM for synchronous reads. */
 async function persistPreparedBuffer({ id, buffer, leaseId }: PersistPreparedBufferInput) {
-    return runPreparedAudioStorageWrite(id, () =>
-        preparedAudioBufferLifecycle.persist({
-            id,
-            leaseId: leaseId ?? `prepared-audio-${crypto.randomUUID()}`,
-            data: serializeBuffer(buffer),
-        })
-    );
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) => {
+        const admittedLeaseId = leaseId ?? `prepared-audio-${crypto.randomUUID()}`;
+        const data = serializeBuffer(buffer);
+        return preparedAudioBufferLifecycle.persist(
+            {
+                id,
+                leaseId: admittedLeaseId,
+                data,
+            },
+            runStoragePhase
+        );
+    });
 }
 
 /** Reconstruct one exact prepared owner without making every playback read async. */
 async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBufferInput) {
-    return runPreparedAudioStorageWrite(id, () => preparedAudioBufferLifecycle.reopen({ id, leaseId, context }));
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) =>
+        preparedAudioBufferLifecycle.reopen({ id, leaseId, context }, runStoragePhase)
+    );
 }
 
 /** Settle one temporary owner transactionally; project transfer retains PCM. */
 async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
-    return runPreparedAudioStorageWrite(id, () => preparedAudioBufferLifecycle.release({ id, leaseId, disposition }));
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) =>
+        preparedAudioBufferLifecycle.release({ id, leaseId, disposition }, runStoragePhase)
+    );
 }
 
 export async function reclaimPreparedBufferOrphans({
@@ -1676,9 +1731,17 @@ async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<str
 async function ensureDurableAudioBuffersInScope(
     requiredIds: readonly string[],
     admissionWitness: AudioStorageWriteAdmissionWitness,
-    scope: ProjectAudioStorageLockScope
+    scope: ProjectAudioStorageLockScope,
+    lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
+    settlementsSettled = false
 ): Promise<CachedAudioBuffersDurabilityResult> {
-    const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
+    if (
+        !settlementsSettled &&
+        (admissionWitness.preparedTicketSettlements.length > 0 ||
+            preparedAudioBufferLifecycle.hasPendingProjectDurabilitySettlements(lifecycleWitness))
+    ) {
+        return { status: 'superseded' };
+    }
     const sourceRevisionById = new Map(
         requiredIds.map((id) => [id, durabilitySourceById.get(id)?.revision ?? null] as const)
     );
@@ -1712,16 +1775,13 @@ async function ensureDurableAudioBuffersInScope(
         return wasCurrent ? { status: 'failed', failedIds } : { status: 'superseded' };
     };
     try {
-        const [settlementsCurrent, attemptResults] = await Promise.all([
-            preparedAudioBufferLifecycle.waitForProjectDurabilityWitness(lifecycleWitness),
-            Promise.all(
-                capturedAttempts.map(async ({ id, attempt }) => ({
-                    id,
-                    persisted: await attempt,
-                }))
-            ),
-        ]);
-        if (!settlementsCurrent || !isCurrent()) {
+        const attemptResults = await Promise.all(
+            capturedAttempts.map(async ({ id, attempt }) => ({
+                id,
+                persisted: await attempt,
+            }))
+        );
+        if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
         }
@@ -1787,14 +1847,31 @@ function ensureDurableAudioBuffers(
             ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope)
         );
     }
-    return withProjectAudioStorageLock((activeScope) => {
-        if (!isAudioStorageWriteAdmissionCurrent(admissionWitness, true)) {
-            return Promise.resolve({ status: 'superseded' });
-        }
-        return runInProjectAudioStorageLock(activeScope, () =>
-            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope)
-        );
-    });
+    const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
+    const acquireAfterSettlements = (): Promise<CachedAudioBuffersDurabilityResult> =>
+        withProjectAudioStorageLock((activeScope) => {
+            if (
+                !isAudioStorageWriteAdmissionCurrent(admissionWitness, true) ||
+                !preparedAudioBufferLifecycle.isProjectDurabilityWitnessCurrent(lifecycleWitness)
+            ) {
+                return Promise.resolve({ status: 'superseded' as const });
+            }
+            return runInProjectAudioStorageLock(activeScope, () =>
+                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, lifecycleWitness, true)
+            );
+        });
+    if (
+        admissionWitness.preparedTicketSettlements.length === 0 &&
+        !preparedAudioBufferLifecycle.hasPendingProjectDurabilitySettlements(lifecycleWitness)
+    ) {
+        return acquireAfterSettlements();
+    }
+    return Promise.all([
+        preparedAudioBufferLifecycle.waitForProjectDurabilityWitness(lifecycleWitness),
+        ...admissionWitness.preparedTicketSettlements,
+    ]).then(([settlementsCurrent]) =>
+        settlementsCurrent ? acquireAfterSettlements() : { status: 'superseded' as const }
+    );
 }
 
 /** The durable owned-id set is fetched before any deletion decision in every

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -29,6 +31,7 @@ describe('clearRuntimeCachedAudioBuffers', () => {
 
     beforeEach(() => {
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE] });
     });
 

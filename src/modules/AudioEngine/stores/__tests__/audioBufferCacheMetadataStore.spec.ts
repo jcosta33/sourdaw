@@ -440,6 +440,7 @@ describe('audioBufferCache metadata store', () => {
         // restore never settles at all, which is the defect.
         it('settles the restore instead of hanging it', async () => {
             vi.unstubAllGlobals();
+            vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'forever' });
             const audioBufferCache = await importCache();
 
@@ -463,6 +464,7 @@ describe('audioBufferCache metadata store', () => {
         // first assertion in milliseconds instead of hanging the spec.
         it('clears the memo so the next caller retries', async () => {
             vi.unstubAllGlobals();
+            vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'forever' });
             const audioBufferCache = await importCache();
             const context = { createBuffer: () => stereoSecond() };
@@ -481,6 +483,7 @@ describe('audioBufferCache metadata store', () => {
         // `onsuccess` reds `liveConnectionCount()` at 1 and `closeCount()` at 0.
         it('closes a connection that arrives after the open was reported blocked', async () => {
             vi.unstubAllGlobals();
+            vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'then-yields' });
             const audioBufferCache = await importCache();
 

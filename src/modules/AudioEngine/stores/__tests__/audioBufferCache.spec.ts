@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
-import { installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
+import { BUFFER_STORE, installFakeAudioIndexedDb, META_STORE, RECOVERY_STORE } from './fakeAudioBufferIndexedDb';
 import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
@@ -571,85 +571,25 @@ describe('audioBufferCache conversions', () => {
     });
 
     it('does not let a stale remove delete a newer persisted buffer', async () => {
-        const requests: Array<{
-            error: Error | null;
-            onerror: (() => void) | null;
-            onsuccess: (() => void) | null;
-            result: unknown;
-        }> = [];
-        const transactions: Array<{
-            error: Error | null;
-            onabort: (() => void) | null;
-            oncomplete: (() => void) | null;
-            onerror: (() => void) | null;
-        }> = [];
-        const store = {
-            delete: vi.fn(),
-            put: vi.fn(),
-        };
-        const database = {
-            objectStoreNames: { contains: () => true },
-            transaction: vi.fn((storeNames: string | string[]) => {
-                if (storeNames === 'preparedBufferRecovery') {
-                    return createCompletedRecoveryMigrationTransaction();
-                }
-                const transaction = {
-                    error: null,
-                    objectStore: () => store,
-                    onabort: null,
-                    oncomplete: null,
-                    onerror: null,
-                };
-                transactions.push(transaction);
-                return transaction;
-            }),
-        };
-        const open = vi.fn(() => {
-            const request = {
-                error: null,
-                onerror: null,
-                onsuccess: null,
-                result: database,
-            };
-            requests.push(request);
-            return request;
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
         });
-        vi.stubGlobal('indexedDB', { open });
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
 
-        try {
-            audioBufferCache.remove('race');
-            audioBufferCache.set('race', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+        audioBufferCache.remove('race');
+        audioBufferCache.set('race', replacement);
 
-            // One memoized connection (audit M-045): both operations wait on
-            // the same open request rather than racing two of them.
-            expect(requests).toHaveLength(1);
-
-            // Resolving it releases both continuations in the order they were
-            // registered — the stale remove first, then the newer persist. The
-            // remove must recognise that `set` has since claimed a newer
-            // persistence generation for 'race' and skip its delete, which is
-            // now the only thing keeping the buffer alive: it can no longer be
-            // saved by the test resolving the opens in a convenient order.
-            requests[0]!.onsuccess?.();
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-            expect(store.put).toHaveBeenCalledWith(expect.anything(), 'race');
-            expect(store.delete).not.toHaveBeenCalled();
-            expect(transactions).toHaveLength(1);
-
-            // And it stays skipped once the persist's transaction commits —
-            // the remove is abandoned, not merely deferred behind the put.
-            transactions[0]!.oncomplete?.();
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-            expect(store.delete).not.toHaveBeenCalled();
-            expect(transactions).toHaveLength(1);
-        } finally {
-            for (const transaction of transactions) {
-                transaction.oncomplete?.();
-            }
-            vi.unstubAllGlobals();
+        const durability = await audioBufferCache.ensureDurable(['race']);
+        expect(durability.status).toBe('durable');
+        if (durability.status !== 'durable') {
+            throw new TypeError('Expected the replacement buffer to become durable');
         }
+        durability.release();
+
+        expect(audioBufferCache.get('race')).toBe(replacement);
+        expect(controls.committed.get('race')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(controls.committedMeta.get('race')?.preparedOwner).toBeUndefined();
     });
 
     it('reports prepared PCM durable only after commit and reopens the exact owner after reload', async () => {
