@@ -829,6 +829,7 @@ describe('AppShell', () => {
             rerender(<AppShell>Content</AppShell>);
 
             expect(shellRoot).toHaveAttribute('inert');
+            expect(shellRoot).not.toContainElement(screen.getByRole('dialog', { name: /onboarding tour/i }));
 
             onboardingState = { active: false, stepIndex: 0 };
             rerender(<AppShell>Content</AppShell>);

@@ -1066,7 +1066,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 it declares `aria-modal="true"`, so the shell root goes `inert`
                 while it is open and it cannot be inside that subtree. */}
             <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
-            <OnboardingTour />
+            {onboarding.active ? <OnboardingTour /> : null}
 
             {/* Terminal open failure: the previous session is gone and no
                 project replaced it. Gated on its own store rather than the
