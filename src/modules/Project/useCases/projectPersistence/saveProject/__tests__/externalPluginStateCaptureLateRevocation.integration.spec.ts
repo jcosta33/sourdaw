@@ -193,7 +193,7 @@ describe('external plugin capture late authority revocation', () => {
         const retry = await captureExternalPluginStates();
 
         expect(retry).toEqual({ rejectedPlugins: [] });
-        expect(mocks.batchResult?.status).toBe('committed');
+        expect(mocks.batchResult).toMatchObject({ status: 'committed' });
         expect(currentExternalChunk()).toBe('fresh-host-chunk');
         expect(capturedNativePluginStateCache.get('instance-capture')).toEqual({
             stateChunk: 'fresh-host-chunk',

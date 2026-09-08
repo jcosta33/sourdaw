@@ -260,7 +260,7 @@ async function settleRejectedRestore(activation: Promise<unknown>, restore: Defe
 }
 
 function expectRestoreErrorPreserved(instanceId: string): void {
-    expect(contracts.externalPluginActivationStore.value.byInstanceId[instanceId]).toEqual({
+    expect(contracts.externalPluginActivationStore.value?.byInstanceId[instanceId]).toEqual({
         status: 'error',
         message: RESTORE_ERROR,
     });
