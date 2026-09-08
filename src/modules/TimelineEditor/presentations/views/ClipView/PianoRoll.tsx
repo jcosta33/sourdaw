@@ -366,42 +366,44 @@ export const PianoRoll = ({
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
 
     return (
-        <Stack grow className="overflow-hidden">
-            <PianoRollToolbar
-                gridSnap={gridSnap}
-                onGridSnapChange={setGridSnap}
-                scaleRoot={keyRoot}
-                onScaleRootChange={setProjectKeyRoot}
-                scaleType={scaleName}
-                onScaleTypeChange={setProjectScaleName}
-                isFolded={isFolded}
-                onToggleFolded={() => setIsFolded((param) => !param)}
-                constrainToScale={constrainToScale}
-                onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
-                stepInput={stepRecord?.active ?? false}
-                onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
-                showGhostNotes={showGhostNotes}
-                onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
-                chordMode={chordMode}
-                onToggleChordMode={() => setChordMode((param) => !param)}
-                chordType={chordType}
-                onChordTypeChange={setChordType}
-                paintMode={paintMode}
-                onTogglePaintMode={() => setPaintMode((param) => !param)}
-                lassoMode={lassoMode}
-                onToggleLassoMode={() => setLassoMode((param) => !param)}
-                notePreviewEnabled={notePreviewEnabled}
-                onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
-                zoom={zoom}
-                onZoomChange={setZoom}
-                openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
-                focusedClipId={focusedClipId}
-                onFocusedClipIdChange={setFocusedClipId}
-                showExpressionView={showExpressionView}
-                onToggleExpressionView={() => setShowExpressionView((param) => !param)}
-                activeExpressionLane={activeExpressionLane}
-                onActiveExpressionLaneChange={setActiveExpressionLane}
-            />
+        <Stack grow className="min-w-0 overflow-hidden">
+            <div className="min-w-0 shrink-0 overflow-x-auto overflow-y-hidden">
+                <PianoRollToolbar
+                    gridSnap={gridSnap}
+                    onGridSnapChange={setGridSnap}
+                    scaleRoot={keyRoot}
+                    onScaleRootChange={setProjectKeyRoot}
+                    scaleType={scaleName}
+                    onScaleTypeChange={setProjectScaleName}
+                    isFolded={isFolded}
+                    onToggleFolded={() => setIsFolded((param) => !param)}
+                    constrainToScale={constrainToScale}
+                    onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
+                    stepInput={stepRecord?.active ?? false}
+                    onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
+                    showGhostNotes={showGhostNotes}
+                    onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
+                    chordMode={chordMode}
+                    onToggleChordMode={() => setChordMode((param) => !param)}
+                    chordType={chordType}
+                    onChordTypeChange={setChordType}
+                    paintMode={paintMode}
+                    onTogglePaintMode={() => setPaintMode((param) => !param)}
+                    lassoMode={lassoMode}
+                    onToggleLassoMode={() => setLassoMode((param) => !param)}
+                    notePreviewEnabled={notePreviewEnabled}
+                    onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
+                    zoom={zoom}
+                    onZoomChange={setZoom}
+                    openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
+                    focusedClipId={focusedClipId}
+                    onFocusedClipIdChange={setFocusedClipId}
+                    showExpressionView={showExpressionView}
+                    onToggleExpressionView={() => setShowExpressionView((param) => !param)}
+                    activeExpressionLane={activeExpressionLane}
+                    onActiveExpressionLaneChange={setActiveExpressionLane}
+                />
+            </div>
             <Stack grow className="min-h-0 overflow-hidden">
                 <Row
                     align="stretch"
