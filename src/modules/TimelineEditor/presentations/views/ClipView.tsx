@@ -30,6 +30,7 @@ export const ClipView = (): ReactElement => {
     const [pianoRollContentWidth, setPianoRollContentWidth] = useState(0);
     const automationScrollRef = useRef<HTMLDivElement>(null);
     const [audioEditMode, setAudioEditMode] = useState<'waveform' | 'pitch'>('waveform');
+    const [showAutomationTray, setShowAutomationTray] = useState(true);
 
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
 
@@ -195,20 +196,33 @@ export const ClipView = (): ReactElement => {
                     </Row>
                 ) : null}
                 {renderAudioEditModeToggle()}
+                <Button
+                    variant={showAutomationTray ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className="ml-auto h-5 px-2 text-[10px]"
+                    onClick={() => setShowAutomationTray((prev) => !prev)}
+                    aria-label="Toggle automation lane"
+                    aria-pressed={showAutomationTray}
+                    data-testid="toggle-automation-tray-button"
+                >
+                    Automation
+                </Button>
             </DawControlStrip>
-            <Row align="stretch" grow className="overflow-hidden">
+            <Row align="stretch" grow className="min-h-[102px] overflow-hidden" data-testid="clip-editor-body-row">
                 {renderEditorBody()}
             </Row>
-            <ClipEditorTray className="h-28">
-                <AutomationLane
-                    clipId={selectedClip?.id ?? null}
-                    trackId={selectedTrack.id}
-                    selectedNoteIds={selectedNoteIds}
-                    beatWidth={pianoRollBeatWidth}
-                    contentWidth={contentWidth}
-                    scrollRef={automationScrollRef}
-                />
-            </ClipEditorTray>
+            {showAutomationTray ? (
+                <ClipEditorTray className="h-28" data-testid="clip-editor-tray">
+                    <AutomationLane
+                        clipId={selectedClip?.id ?? null}
+                        trackId={selectedTrack.id}
+                        selectedNoteIds={selectedNoteIds}
+                        beatWidth={pianoRollBeatWidth}
+                        contentWidth={contentWidth}
+                        scrollRef={automationScrollRef}
+                    />
+                </ClipEditorTray>
+            ) : null}
         </DawPanelSurface>
     );
 };

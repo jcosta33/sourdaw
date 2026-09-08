@@ -16,8 +16,15 @@ const clipSelectionMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, variant, size, className }: any) => (
-        <button type="button" onClick={onClick} data-variant={variant} data-size={size} className={className}>
+    Button: ({ children, onClick, variant, size, className, ...props }: any) => (
+        <button
+            type="button"
+            onClick={onClick}
+            data-variant={variant}
+            data-size={size}
+            className={className}
+            {...props}
+        >
             {children}
         </button>
     ),
@@ -118,7 +125,7 @@ vi.mock('../ClipView/AutomationLane', () => ({
 }));
 
 vi.mock('../ClipEditorTray', () => ({
-    ClipEditorTray: ({ children }: any) => <div>{children}</div>,
+    ClipEditorTray: ({ children, ...props }: any) => <div {...props}>{children}</div>,
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -408,5 +415,44 @@ describe('ClipView', () => {
 
         expect(screen.getByTestId('automation-lane')).toHaveAttribute('data-beat-width', '88');
         expect(screen.getByTestId('automation-lane')).toHaveAttribute('data-content-width', '777');
+    });
+
+    it('should render the automation toggle button and toggle ClipEditorTray on and off', () => {
+        const clip = makeClip({ id: 'clip-midi', name: 'Midi Clip', type: 'midi' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+        });
+
+        renderWithTooltip(<ClipView />);
+
+        const toggleButton = screen.getByTestId('toggle-automation-tray-button');
+        expect(toggleButton).toBeInTheDocument();
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
+
+        fireEvent.click(toggleButton);
+
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+
+        fireEvent.click(toggleButton);
+
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
+    });
+
+    it('should enforce min-h-[102px] floor on clip-editor-body-row', () => {
+        const clip = makeClip({ id: 'clip-midi', name: 'Midi Clip', type: 'midi' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+        });
+
+        renderWithTooltip(<ClipView />);
+
+        const bodyRow = screen.getByTestId('clip-editor-body-row');
+        expect(bodyRow).toBeInTheDocument();
+        expect(bodyRow.className).toContain('min-h-[102px]');
     });
 });

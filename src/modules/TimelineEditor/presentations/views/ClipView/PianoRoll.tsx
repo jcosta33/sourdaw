@@ -402,11 +402,11 @@ export const PianoRoll = ({
                 activeExpressionLane={activeExpressionLane}
                 onActiveExpressionLaneChange={setActiveExpressionLane}
             />
-            <Stack grow className="overflow-hidden">
+            <Stack grow className="min-h-0 overflow-hidden">
                 <Row
                     align="stretch"
                     grow
-                    className="overflow-auto"
+                    className="min-h-[70px] overflow-auto"
                     ref={scrollRef}
                     onScroll={(event) => {
                         const sl = (event.target as HTMLElement).scrollLeft;
@@ -486,7 +486,7 @@ export const PianoRoll = ({
 
                 {/* I4: Expression View bottom panel */}
                 {showExpressionView ? (
-                    <Row align="stretch" className="h-32 border-t border-border/20 bg-surface-well">
+                    <Row align="stretch" shrink className="h-28 min-h-[64px] border-t border-border/20 bg-surface-well">
                         <Stack align="center" shrink={false} className="w-10 border-r border-border/10 py-1">
                             <span className="text-[8px] text-muted-foreground uppercase vertical-text">
                                 {activeExpressionLane}
