@@ -500,4 +500,31 @@ describe('PianoRollContextMenu', () => {
         fireEvent.click(screen.getByText('=64'));
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
+
+    it('should dispatch quantizeNotes, quantizeNoteLengths, and transposeNotes with noteIds when notes are selected', () => {
+        const selectedNoteIds = new Set(['n1', 'n2']);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={selectedNoteIds} />);
+
+        // Quantize notes
+        fireEvent.click(screen.getAllByText('1/4')[0]!);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] },
+        });
+
+        // Quantize note lengths
+        const quarterButtons = screen.getAllByText('1/4');
+        fireEvent.click(quarterButtons[1]!);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNoteLengths',
+            payload: { clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] },
+        });
+
+        // Transpose
+        fireEvent.click(screen.getByText('+Oct'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'transposeNotes',
+            payload: { clipId: 'clip-1', semitones: 12, noteIds: ['n1', 'n2'] },
+        });
+    });
 });

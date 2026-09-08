@@ -7,10 +7,21 @@ type QuantizeMidiNotesInput = {
     gridSize: number;
     strength?: number;
     swing?: number;
+    noteIds?: readonly string[];
 };
 
-export function quantizeMidiNotes({ notes, gridSize, strength = 1, swing = 0 }: QuantizeMidiNotesInput): MidiNote[] {
+export function quantizeMidiNotes({
+    notes,
+    gridSize,
+    strength = 1,
+    swing = 0,
+    noteIds,
+}: QuantizeMidiNotesInput): MidiNote[] {
+    const targetIds = noteIds && noteIds.length > 0 ? new Set(noteIds) : null;
     return notes.map((note) => {
+        if (targetIds && !targetIds.has(note.id)) {
+            return note;
+        }
         const stepIndex = Math.round(note.startBeat / gridSize);
         const quantizedBeat = stepIndex * gridSize;
         const swingUnitIndex = Math.round(quantizedBeat / SWING_UNIT_BEATS);

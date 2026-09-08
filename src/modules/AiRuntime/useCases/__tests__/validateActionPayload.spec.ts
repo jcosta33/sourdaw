@@ -1296,6 +1296,11 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: [] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: [''] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: 'n1' })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(true);
             expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1' })).toBe(false);
@@ -1317,6 +1322,11 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
 
             expect(guard({ clipId: 'clip-1', semitones: -127 })).toBe(true);
             expect(guard({ clipId: 'clip-1', semitones: 127 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 7, noteIds: ['n1'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 7, noteIds: ['n1', 'n2'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 7, noteIds: [] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 7, noteIds: [''] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 7, noteIds: 'n1' })).toBe(false);
             expect(guard({ clipId: '', semitones: 7 })).toBe(false);
             expect(guard({ clipId: 'clip-1', semitones: 0 })).toBe(false);
             expect(guard({ clipId: 'clip-1', semitones: 1.5 })).toBe(false);
@@ -1347,6 +1357,11 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: [] })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: [''] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, noteIds: 'n1' })).toBe(false);
             expect(guard({ clipId: 'clip-1', gridSize: 0.03125 })).toBe(true);
             expect(guard({ clipId: 'clip-1', gridSize: 64 })).toBe(true);
             expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);

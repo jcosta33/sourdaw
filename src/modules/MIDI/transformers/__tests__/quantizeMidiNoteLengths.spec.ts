@@ -47,4 +47,23 @@ describe('quantizeMidiNoteLengths', () => {
         });
         expect(result[0]?.duration).toBe(0.1);
     });
+
+    it('quantizes durations only for matching notes when noteIds is provided', () => {
+        const result = quantizeMidiNoteLengths({
+            notes: [note('a', 0.6), note('b', 0.6), note('c', 1.1)],
+            gridSize: 0.25,
+            noteIds: ['b'],
+        });
+        // 'a' untouched (0.6), 'b' snapped (0.5), 'c' untouched (1.1)
+        expect(result.map((n) => n.duration)).toEqual([0.6, 0.5, 1.1]);
+    });
+
+    it('quantizes all notes when noteIds is empty array', () => {
+        const result = quantizeMidiNoteLengths({
+            notes: [note('a', 0.6), note('b', 1.1)],
+            gridSize: 0.25,
+            noteIds: [],
+        });
+        expect(result.map((n) => n.duration)).toEqual([0.5, 1.0]);
+    });
 });

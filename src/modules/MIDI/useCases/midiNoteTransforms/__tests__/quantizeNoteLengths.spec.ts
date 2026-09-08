@@ -31,6 +31,18 @@ describe('quantizeNoteLengths', () => {
         expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.duration)).toEqual([0.11, 0.5]);
     });
 
+    it('should snap only selected notes when noteIds is provided', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [note('a', 0.6), note('b', 0.6)],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        quantizeNoteLengths('clip1', 0.25, ['b']);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.duration)).toEqual([0.6, 0.5]);
+    });
+
     it('should not inflate a sub-grid note to a full grid step (1/64 on a 1/4 grid)', () => {
         midiStore.set({
             notesByClipId: { clip1: [note('tiny', 0.015625)] }, // 1/64 note

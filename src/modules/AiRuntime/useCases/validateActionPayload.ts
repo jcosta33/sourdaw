@@ -473,10 +473,13 @@ const validators = {
     // MIDI note batch ops
     quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
         isObj(param) &&
-        hasExactKeys(param, ['clipId', 'gridSize']) &&
+        hasOnlyKeys(param, ['clipId', 'gridSize', 'noteIds']) &&
+        Object.hasOwn(param, 'clipId') &&
+        Object.hasOwn(param, 'gridSize') &&
         isNonEmptyString(param.clipId) &&
         isPositiveNumber(param.gridSize) &&
-        param.gridSize <= 64,
+        param.gridSize <= 64 &&
+        isOptionalOwn(param, 'noteIds', isNonEmptyStringArray),
     removeShortMidiOverlaps: (param): param is PayloadOf<'removeShortMidiOverlaps'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'maximumOverlapMs']) &&
@@ -500,20 +503,26 @@ const validators = {
         param.sourceClipId !== param.targetClipId,
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
         isObj(param) &&
-        hasExactKeys(param, ['clipId', 'semitones']) &&
+        hasOnlyKeys(param, ['clipId', 'semitones', 'noteIds']) &&
+        Object.hasOwn(param, 'clipId') &&
+        Object.hasOwn(param, 'semitones') &&
         isNonEmptyString(param.clipId) &&
         isInRange(param.semitones, -127, 127) &&
         Number.isInteger(param.semitones) &&
-        param.semitones !== 0,
+        param.semitones !== 0 &&
+        isOptionalOwn(param, 'noteIds', isNonEmptyStringArray),
     invertNotes: (param): param is PayloadOf<'invertNotes'> =>
         isObj(param) && hasExactKeys(param, ['clipId']) && isNonEmptyString(param.clipId),
     retrogradeNotes: (param): param is PayloadOf<'retrogradeNotes'> =>
         isObj(param) && hasExactKeys(param, ['clipId']) && isNonEmptyString(param.clipId),
     quantizeNoteLengths: (param): param is PayloadOf<'quantizeNoteLengths'> =>
         isObj(param) &&
-        hasExactKeys(param, ['clipId', 'gridSize']) &&
+        hasOnlyKeys(param, ['clipId', 'gridSize', 'noteIds']) &&
+        Object.hasOwn(param, 'clipId') &&
+        Object.hasOwn(param, 'gridSize') &&
         isNonEmptyString(param.clipId) &&
-        isInRange(param.gridSize, 0.03125, 64),
+        isInRange(param.gridSize, 0.03125, 64) &&
+        isOptionalOwn(param, 'noteIds', isNonEmptyStringArray),
     scaleAllVelocities: (param): param is PayloadOf<'scaleAllVelocities'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'factor']) &&

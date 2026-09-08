@@ -2,14 +2,20 @@ import { midiStore } from '../../stores/midiStore';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 import { quantizeMidiNotes } from '../../transformers/quantizeMidiNotes';
 
-export function quantizeNotes(clipId: string, gridSize: number, strength: number = 1, swing: number = 0): boolean {
+export function quantizeNotes(
+    clipId: string,
+    gridSize: number,
+    strength: number = 1,
+    swing: number = 0,
+    noteIds?: readonly string[]
+): boolean {
     const state = midiStore.value;
     const notes = state?.notesByClipId[clipId];
     if (!state || !notes || notes.length === 0) {
         return false;
     }
 
-    const quantizedNotes = quantizeMidiNotes({ notes, gridSize, strength, swing });
+    const quantizedNotes = quantizeMidiNotes({ notes, gridSize, strength, swing, noteIds });
     if (midiNotesEqual(notes, quantizedNotes)) {
         return false;
     }

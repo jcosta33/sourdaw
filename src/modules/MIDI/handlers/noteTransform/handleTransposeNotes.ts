@@ -8,16 +8,28 @@ import { prepareMidiNoteTransformUndo } from './prepareMidiNoteTransformUndo';
 
 function prepareTransposeNotes(action: Extract<AppAction, { type: 'transposeNotes' }>) {
     const semitoneLabel = `${action.payload.semitones > 0 ? '+' : ''}${action.payload.semitones}`;
+    const isSelected = (action.payload.noteIds?.length ?? 0) > 0;
+    const label = isSelected
+        ? `Transpose selected notes ${semitoneLabel} semitones`
+        : `Transpose ${semitoneLabel} semitones`;
     return prepareMidiNoteTransformUndo({
         clipId: action.payload.clipId,
-        label: `Transpose ${semitoneLabel} semitones`,
-        transform: (notes) => transposeMidiNotes({ notes, semitones: action.payload.semitones }),
+        label,
+        transform: (notes) =>
+            transposeMidiNotes({
+                notes,
+                semitones: action.payload.semitones,
+                noteIds: action.payload.noteIds,
+            }),
     });
 }
 
 export const handleTransposeNotes = createHandler<'transposeNotes'>({
     execute: (action) => {
-        const written = transposeNotes(action.payload.clipId, action.payload.semitones);
+        const written =
+            action.payload.noteIds !== undefined
+                ? transposeNotes(action.payload.clipId, action.payload.semitones, action.payload.noteIds)
+                : transposeNotes(action.payload.clipId, action.payload.semitones);
         return { status: written ? 'written' : 'no-write' };
     },
     describe: (action) => prepareTransposeNotes(action).description,
