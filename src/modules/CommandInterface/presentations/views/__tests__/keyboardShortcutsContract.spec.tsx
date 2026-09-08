@@ -182,6 +182,30 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         expect(lastIsInput()).toBe(true);
     });
 
+    it.each(['Home', 'End', ' '])('keeps native %s navigation inside a select', (key) => {
+        openSessionWithCommandHandlers();
+        mocks.handleKeydown.mockImplementation((descriptor) => !descriptor.isInput);
+        render(<Host />);
+        const select = mount(document.createElement('select'));
+
+        const event = dispatchKey(select, { key });
+
+        expect(lastIsInput()).toBe(true);
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('still delegates the command-palette exception from a select', () => {
+        openSessionWithCommandHandlers();
+        mocks.handleKeydown.mockImplementation((descriptor) => descriptor.key === 'k' && descriptor.mod);
+        render(<Host />);
+        const select = mount(document.createElement('select'));
+
+        const event = dispatchKey(select, { key: 'k', metaKey: true });
+
+        expect(lastIsInput()).toBe(true);
+        expect(event.defaultPrevented).toBe(true);
+    });
+
     describe('native Tab traversal', () => {
         it.each([
             ['Tab', false],
@@ -220,6 +244,24 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             }
 
             expect(mocks.handleKeydown).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['Tab', false],
+            ['Shift+Tab', true],
+        ])('leaves %s on a browser-focused negative-tabindex surface for native traversal', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const scrollport = mount(document.createElement('div'));
+            scrollport.tabIndex = -1;
+            scrollport.focus();
+            expect(document.activeElement).toBe(scrollport);
+
+            const event = dispatchKey(scrollport, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
         });
 
         it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {

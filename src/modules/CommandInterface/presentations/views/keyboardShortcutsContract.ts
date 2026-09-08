@@ -37,6 +37,16 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
     if (!(target instanceof HTMLElement) || target instanceof HTMLCanvasElement) {
         return false;
     }
+    // Chromium can place native sequential focus on an overflow scrollport
+    // with tabIndex -1. It is still the focused DOM surface, so preserve its
+    // unmodified Tab traversal instead of treating it as workspace mode.
+    if (
+        target === target.ownerDocument.activeElement &&
+        target !== target.ownerDocument.body &&
+        target !== target.ownerDocument.documentElement
+    ) {
+        return true;
+    }
     return (
         target instanceof HTMLButtonElement ||
         target instanceof HTMLInputElement ||
@@ -107,7 +117,13 @@ export const useGlobalKeyboardShortcuts = (): void => {
             // a modal is no more a shortcut context than an input is, so the
             // one `allowedInInput` exception (Cmd+K palette summon) applies
             // here too, as it already does inside a dialog's own inputs.
-            const isInput = isKeyboardEditableTarget(target) || isWithinModalSurface(event.target);
+            // A native select owns Home, End, Space, and arrow navigation just
+            // like a text field. Keep this adapter-local so native Edit routing
+            // retains its narrower shared editable-target contract.
+            const isInput =
+                target instanceof HTMLSelectElement ||
+                isKeyboardEditableTarget(target) ||
+                isWithinModalSurface(event.target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,

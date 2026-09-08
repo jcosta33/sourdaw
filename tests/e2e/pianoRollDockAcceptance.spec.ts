@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, test, type Frame, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Frame, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
@@ -56,6 +56,11 @@ type ToolbarState = {
     visibleViewport: Rect;
 };
 type AutomationTrayState = { selector: Rect; tray: Rect; visibleTray: Rect };
+type NativeSelectKeyObservation = {
+    key: string;
+    defaultPrevented: boolean;
+    selectRetainedFocus: boolean;
+};
 type PianoRollGeometry = {
     canvas: Rect;
     dockHeight: number;
@@ -454,7 +459,7 @@ function assertToolbarFocus(state: ToolbarState, expectedName: string): void {
     expect(state.gridScrollLeft).toBe(0);
 }
 
-async function pressFromActiveControl(frame: Frame, key: 'Tab' | 'Shift+Tab'): Promise<void> {
+async function pressFromActiveControl(frame: Frame, key: string): Promise<void> {
     const active = frame.locator(':focus');
     await expect(active).toHaveCount(1);
     await active.press(key);
@@ -566,20 +571,139 @@ async function automationTrayState(frame: Frame): Promise<AutomationTrayState> {
     });
 }
 
-async function assertAutomationTray(frame: Frame, expressionVisible: boolean): Promise<void> {
+async function isClipEditorScrollStop(frame: Frame): Promise<boolean> {
+    return frame.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="Piano roll editor"]');
+        const active = document.activeElement;
+        if (canvas === null || !(active instanceof HTMLElement) || active === canvas) {
+            return false;
+        }
+        const style = window.getComputedStyle(active);
+        if (!/(auto|scroll)/.test(`${style.overflow} ${style.overflowX} ${style.overflowY}`)) {
+            return false;
+        }
+        // Chromium admits the expression lane's horizontal scrollport to the
+        // native Tab order. The grid scrollport contains the piano-roll canvas;
+        // the expression stop contains its rendered lane group. No other
+        // application scrollport is accepted as part of this editor traversal.
+        return active.contains(canvas) || active.querySelector('[role="group"][aria-label$=" lane"]') !== null;
+    });
+}
+
+async function workspaceMode(frame: Frame): Promise<string | null> {
+    return frame.evaluate(async () => {
+        const { workspaceStore } = await import('/src/modules/WorkspaceShell/stores/workspaceStore.ts');
+        return workspaceStore.value?.mode ?? null;
+    });
+}
+
+async function pressBetweenPianoRollAndTray(frame: Frame, key: 'Tab' | 'Shift+Tab', expected: Locator): Promise<void> {
+    await pressFromActiveControl(frame, key);
+    if (await expected.evaluate((element) => document.activeElement === element)) {
+        return;
+    }
+    expect(await isClipEditorScrollStop(frame)).toBe(true);
+    await pressFromActiveControl(frame, key);
+    await expect(expected).toBeFocused();
+}
+
+async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): Promise<NativeSelectKeyObservation[]> {
+    await frame.evaluate(() => {
+        const selector = document.querySelector<HTMLSelectElement>('#lane-selector');
+        if (selector === null) {
+            throw new Error('Automation lane selector is unavailable');
+        }
+        const element = selector as HTMLSelectElement & {
+            __pianoRollNativeKeyCapture?: {
+                observations: NativeSelectKeyObservation[];
+                listener: (event: KeyboardEvent) => void;
+            };
+        };
+        const observations: NativeSelectKeyObservation[] = [];
+        const listener = (event: KeyboardEvent) => {
+            window.setTimeout(() => {
+                observations.push({
+                    key: event.key,
+                    defaultPrevented: event.defaultPrevented,
+                    selectRetainedFocus: document.activeElement === selector,
+                });
+            }, 0);
+        };
+        element.__pianoRollNativeKeyCapture = { observations, listener };
+        selector.addEventListener('keydown', listener);
+    });
+
+    for (const key of keys) {
+        await pressFromActiveControl(frame, key);
+    }
+
+    return frame.evaluate(async () => {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        const selector = document.querySelector<HTMLSelectElement>('#lane-selector');
+        if (selector === null) {
+            throw new Error('Automation lane selector is unavailable');
+        }
+        const element = selector as HTMLSelectElement & {
+            __pianoRollNativeKeyCapture?: {
+                observations: NativeSelectKeyObservation[];
+                listener: (event: KeyboardEvent) => void;
+            };
+        };
+        const capture = element.__pianoRollNativeKeyCapture;
+        if (capture === undefined) {
+            throw new Error('Native select key capture is unavailable');
+        }
+        selector.removeEventListener('keydown', capture.listener);
+        delete element.__pianoRollNativeKeyCapture;
+        return capture.observations;
+    });
+}
+
+async function assertAutomationLaneValueChange(selector: Locator): Promise<void> {
+    await selector.selectOption('probability');
+    await expect(selector).toHaveValue('probability');
+}
+
+async function assertAutomationTray(frame: Frame): Promise<void> {
     const toggle = frame.getByRole('button', { name: 'Toggle automation lane' });
     const selector = frame.getByRole('combobox', { name: 'Automation lane type' });
+    const pianoRoll = frame.getByLabel('Piano roll editor');
+    const playhead = frame.getByTestId('transport-playhead');
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect(selector).toBeVisible();
     const state = await automationTrayState(frame);
     expect(state.visibleTray.width).toBeGreaterThan(CONTROL_VISIBILITY_TOLERANCE);
     expect(state.visibleTray.height).toBeGreaterThan(CONTROL_VISIBILITY_TOLERANCE);
     expect(isFullyVisible(state.selector, state.visibleTray)).toBe(true);
-    await selector.focus();
+
+    await expect(pianoRoll).toHaveAttribute('tabindex', '0');
+    await expect(pianoRoll).toHaveAttribute('data-canvas-editor', '');
+    await frame.locator('body').press('Home');
+    await expect(playhead).toContainText('1.1.000');
+    const playheadAtStart = await playhead.textContent();
+    await frame.locator('body').press('End');
+    await expect(playhead).not.toHaveText(requireValue(playheadAtStart, 'Initial playhead text'));
+    const playheadAtClipEnd = requireValue(await playhead.textContent(), 'Clip-end playhead text');
+
+    await pianoRoll.focus();
+    await expect(pianoRoll).toBeFocused();
+    const initialWorkspaceMode = await workspaceMode(frame);
+    await pressBetweenPianoRollAndTray(frame, 'Tab', selector);
     await expect(selector).toBeFocused();
-    const value = expressionVisible ? 'velocity' : 'probability';
-    await selector.selectOption(value);
-    await expect(selector).toHaveValue(value);
+    await expect.poll(() => workspaceMode(frame)).toBe(initialWorkspaceMode);
+    const nativeKeyObservations = await observeNativeSelectKeys(frame, ['Home', 'End', 'Space', 'ArrowDown', 'Enter']);
+    expect(nativeKeyObservations).toEqual([
+        { key: 'Home', defaultPrevented: false, selectRetainedFocus: true },
+        { key: 'End', defaultPrevented: false, selectRetainedFocus: true },
+        { key: ' ', defaultPrevented: false, selectRetainedFocus: true },
+        { key: 'ArrowDown', defaultPrevented: false, selectRetainedFocus: true },
+        { key: 'Enter', defaultPrevented: false, selectRetainedFocus: true },
+    ]);
+    await expect(playhead).toHaveText(playheadAtClipEnd);
+    await assertAutomationLaneValueChange(selector);
+    await pressBetweenPianoRollAndTray(frame, 'Shift+Tab', pianoRoll);
+    await expect(pianoRoll).toBeFocused();
+    await expect.poll(() => workspaceMode(frame)).toBe(initialWorkspaceMode);
 }
 
 function noteById(snapshot: ProjectSnapshot, id: string): Note {
@@ -674,7 +798,7 @@ async function assertCondition(
             await expect(expressionLane).toHaveCount(0);
         }
 
-        await assertAutomationTray(frame, expressionVisible);
+        await assertAutomationTray(frame);
         await assertToolbarKeyboardTraversal(page, frame, scale, expressionVisible);
 
         const geometry = await pianoRollGeometry(frame);
