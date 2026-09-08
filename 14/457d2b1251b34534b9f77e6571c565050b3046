@@ -1,0 +1,19 @@
+src/modules/PluginHost/useCases/faustEngine/dsp/minimoog-lead.dsp
+  s_9b530f08172a54::t_955ced3b4c8f0e 33-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "14457d2b1251b34534b9f77e6571c565050b3046",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
