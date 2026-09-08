@@ -56,6 +56,34 @@ describe('projectRollPosition', () => {
         ).toBeCloseTo(2.03, 9);
     });
 
+    it('advances linearly within the loop when the projection has not reached loop end', () => {
+        // While playback is inside the loop but has not yet reached the seam,
+        // it advances linearly without wrapping.
+        expect(
+            projectRollPosition({
+                positionSeconds: 2.2,
+                anchoredAtContextSeconds: 10,
+                nowContextSeconds: 10.08,
+                loopRegion: LOOP_REGION,
+                loopEnabled: true,
+            })
+        ).toBeCloseTo(2.28, 9);
+    });
+
+    it('plays straight through from before the loop when the projection does not reach loop end', () => {
+        // Starting before the loop region does not engage seam wrapping
+        // until the loop end is actually crossed.
+        expect(
+            projectRollPosition({
+                positionSeconds: 0.5,
+                anchoredAtContextSeconds: 10,
+                nowContextSeconds: 10.08,
+                loopRegion: LOOP_REGION,
+                loopEnabled: true,
+            })
+        ).toBeCloseTo(0.58, 9);
+    });
+
     it('plays straight through from a position already past the loop end', () => {
         // The engine's own meaning of a locate past the loop end: a region
         // cannot pull in a playhead that never entered it.
