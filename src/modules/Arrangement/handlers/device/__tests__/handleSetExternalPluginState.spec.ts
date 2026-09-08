@@ -5,7 +5,7 @@ import { handleSetExternalPluginState } from '../handleSetExternalPluginState';
 import type { ExternalPluginStateWrite } from '../../../useCases/device/setExternalPluginState';
 
 const mocks = vi.hoisted(() => ({
-    setExternalPluginState: vi.fn<(deviceId: string, stateChunk: string) => ExternalPluginStateWrite>(),
+    setExternalPluginState: vi.fn<(payload: unknown) => ExternalPluginStateWrite>(),
 }));
 
 vi.mock('../../../useCases/device/setExternalPluginState', () => ({
@@ -22,10 +22,14 @@ describe('handleSetExternalPluginState', () => {
 
         const result = handleSetExternalPluginState.execute({
             type: 'setExternalPluginState',
-            payload: { deviceId: 'd1', stateChunk: 'YmFzZTY0' },
+            payload: { intent: 'replacement', deviceId: 'd1', stateChunk: 'YmFzZTY0' },
         });
 
-        expect(mocks.setExternalPluginState).toHaveBeenCalledWith('d1', 'YmFzZTY0');
+        expect(mocks.setExternalPluginState).toHaveBeenCalledWith({
+            intent: 'replacement',
+            deviceId: 'd1',
+            stateChunk: 'YmFzZTY0',
+        });
         expect(mocks.setExternalPluginState).toHaveBeenCalledTimes(1);
         expect(result).toEqual({ status: 'written' });
     });
@@ -35,7 +39,7 @@ describe('handleSetExternalPluginState', () => {
 
         const result = handleSetExternalPluginState.execute({
             type: 'setExternalPluginState',
-            payload: { deviceId: 'd1', stateChunk: 'x' },
+            payload: { intent: 'replacement', deviceId: 'd1', stateChunk: 'x' },
         });
 
         expect(result).toEqual({ status: 'no-write' });
@@ -50,7 +54,7 @@ describe('handleSetExternalPluginState', () => {
 
         const result = handleSetExternalPluginState.execute({
             type: 'setExternalPluginState',
-            payload: { deviceId: 'd1', stateChunk: 'YmFzZTY0' },
+            payload: { intent: 'replacement', deviceId: 'd1', stateChunk: 'YmFzZTY0' },
         });
 
         expect(result).toEqual({
@@ -65,7 +69,7 @@ describe('handleSetExternalPluginState', () => {
         expect(
             handleSetExternalPluginState.describe({
                 type: 'setExternalPluginState',
-                payload: { deviceId: 'd1', stateChunk: 'x' },
+                payload: { intent: 'replacement', deviceId: 'd1', stateChunk: 'x' },
             })
         ).toEqual({ label: 'Capture plugin state' });
     });

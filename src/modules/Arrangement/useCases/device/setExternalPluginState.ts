@@ -4,6 +4,7 @@ import {
     hasUnresolvedExternalPluginRestoreFailure,
     restorePluginState,
 } from '#/modules/PluginHost/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
@@ -11,6 +12,7 @@ import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import type { Track } from '../../models/Track';
 
 type Device = Track['devices'][number];
+export type SetExternalPluginStateInput = Extract<AppAction, { type: 'setExternalPluginState' }>['payload'];
 
 /**
  * What one `setExternalPluginState` dispatch did.
@@ -72,27 +74,41 @@ function pushReplacementToHost(instanceId: string, stateChunk: string): () => Pr
  * reports a no-write and the CRDT transaction aborts instead of committing an
  * empty diff.
  */
-export function setExternalPluginState(deviceId: string, stateChunk: string): ExternalPluginStateWrite {
+export function setExternalPluginState(input: SetExternalPluginStateInput): ExternalPluginStateWrite {
     const state = getTrackState();
     if (!state) {
         return { didWrite: false };
     }
 
-    const device = findDeviceById(state.tracks, deviceId);
+    const device = findDeviceById(state.tracks, input.deviceId);
     if (!device) {
+        return { didWrite: false };
+    }
+
+    if (
+        input.intent === 'capture' &&
+        (device.type !== 'external-plugin' ||
+            device.externalInstanceId !== input.expectedInstanceId ||
+            (device.externalStateChunk ?? null) !== input.expectedStateChunk ||
+            hasUnresolvedExternalPluginRestoreFailure(input.expectedInstanceId))
+    ) {
         return { didWrite: false };
     }
 
     mapAllTracks((track) => ({
         ...track,
         devices: track.devices.map((candidate) =>
-            candidate.id === deviceId ? { ...candidate, externalStateChunk: stateChunk } : candidate
+            candidate.id === input.deviceId ? { ...candidate, externalStateChunk: input.stateChunk } : candidate
         ),
     }));
 
+    if (input.intent === 'capture') {
+        return { didWrite: true };
+    }
+
     const instanceId = device.externalInstanceId;
     if (instanceId && hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
-        return { didWrite: true, pushReplacementToHost: pushReplacementToHost(instanceId, stateChunk) };
+        return { didWrite: true, pushReplacementToHost: pushReplacementToHost(instanceId, input.stateChunk) };
     }
     return { didWrite: true };
 }

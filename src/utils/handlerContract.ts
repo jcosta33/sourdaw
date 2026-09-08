@@ -1292,7 +1292,18 @@ export type AppAction =
               deleteParameter?: boolean;
           };
       }
-    | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
+    | {
+          type: 'setExternalPluginState';
+          payload:
+              | {
+                    intent: 'capture';
+                    deviceId: string;
+                    stateChunk: string;
+                    expectedInstanceId: string;
+                    expectedStateChunk: string | null;
+                }
+              | { intent: 'replacement'; deviceId: string; stateChunk: string };
+      }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
           type: 'setGrandBouleDeviceState';

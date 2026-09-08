@@ -319,11 +319,12 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
     // the old chunk in project truth while the cache claimed the fresh chunk
     // was captured — the next save with an unchanged host skipped the write
     // and the plugin edit never reached disk. Here the refusal is the real
-    // command machinery: with no handler registered, `executeAppAction`
+    // command machinery: with no handler registered, `executeAppActionBatch`
     // rejects before any project write.
     it('retries a precommit-rejected capture on the next save and persists the fresh host state', async () => {
         const instanceId = 'inst-rejected-capture';
         seedSavedProject(instanceId, ORIGINAL_CHUNK);
+        await expect(activateInstance(instanceId, ORIGINAL_CHUNK)).resolves.toEqual({ status: 'active' });
         mocks.getPluginStateRepo.mockResolvedValue(bytesOf('fresh-host-edit'));
 
         clearHandlerRegistry();
@@ -414,7 +415,10 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
 
         // Deliberate replacement resolves the episode: the host accepts the push.
         await executeAppAction(
-            { type: 'setExternalPluginState', payload: { deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK } },
+            {
+                type: 'setExternalPluginState',
+                payload: { intent: 'replacement', deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK },
+            },
             { skipMacroRecording: true }
         );
         expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(false);
@@ -485,7 +489,10 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         // pushed to the host after the commit, and the marker clears on
         // acceptance.
         await executeAppAction(
-            { type: 'setExternalPluginState', payload: { deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK } },
+            {
+                type: 'setExternalPluginState',
+                payload: { intent: 'replacement', deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK },
+            },
             { skipMacroRecording: true }
         );
         expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(false);

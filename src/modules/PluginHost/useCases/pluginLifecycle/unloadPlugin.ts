@@ -66,6 +66,7 @@ import {
     markExternalPluginParameterSnapshotsAttached,
 } from '../../stores/externalPluginParameterStore';
 
+import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 import { forgetPluginInstance } from './forgetPluginInstance';
 import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 import { loadedExternalInstances } from './loadedExternalInstances';
@@ -132,8 +133,10 @@ async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
 
 export function unloadPlugin(instanceId?: string): Promise<void> {
     if (instanceId === undefined) {
+        externalPluginStateCaptureAuthority.invalidateAll();
         return unloadWithRetractedMirror();
     }
+    externalPluginStateCaptureAuthority.invalidate(instanceId);
     return serializePluginLifecycle(instanceId, () => {
         if (!loadedExternalInstances.has(instanceId)) {
             return Promise.resolve();

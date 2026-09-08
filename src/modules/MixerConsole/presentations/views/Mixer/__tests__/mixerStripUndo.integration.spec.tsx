@@ -357,6 +357,9 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     shouldWarnExternalPluginRestoreFailure: vi.fn(() => false),
     observeExternalPluginParameterEdits: vi.fn(),
     readPluginState: vi.fn(),
+    readExternalPluginStateForCapture: vi.fn(() =>
+        Promise.resolve({ status: 'preserve' as const, reason: 'not-loaded' as const })
+    ),
     registerFaustDSP: vi.fn(),
     restorePluginState: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(),

@@ -5,7 +5,7 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleSetExternalPluginState = createHandler<'setExternalPluginState'>({
     execute: (alpha) => {
-        const result = setExternalPluginState(alpha.payload.deviceId, alpha.payload.stateChunk);
+        const result = setExternalPluginState(alpha.payload);
         if (!result.didWrite) {
             return toHandlerExecutionResult(false);
         }
