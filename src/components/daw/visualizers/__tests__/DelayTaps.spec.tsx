@@ -49,12 +49,12 @@ const getCanvas = (container: HTMLElement): HTMLCanvasElement => {
 // pad=6, plotW=188, plotH=38 (see DelayTaps.tsx lines 67-102):
 //   maxTaps = min(12, max(2, floor(2000/250))) = 8
 //   firstTapX = pad + plotW/maxTaps = 6 + 188/8 = 29.5
-//   firstTapAmplitude = mix*feedback = 0.25
-//   envelopeY = pad + plotH*(1-0.25) = 6 + 28.5 = 34.5
+//   firstTapAmplitude = mix = 0.5
+//   envelopeY = pad + plotH*(1-0.5) = 6 + 19 = 25
 // jsdom's getBoundingClientRect is all-zero so client coords map 1:1 to canvas coords.
 const defaultProps = { time: 250, feedback: 0.5, mix: 0.5 };
 const FIRST_TAP_X = 29.5;
-const ENVELOPE_Y = 34.5;
+const ENVELOPE_Y = 25;
 
 describe('DelayTaps', () => {
     it('should render canvas', () => {
@@ -140,7 +140,7 @@ describe('DelayTaps', () => {
     });
 
     it('falls back to whichever axis is closer when the press lands far from both hit zones', () => {
-        // mx=70 -> distToTap=|70-29.5|=40.5; my=90 -> distToEnvelope=|90-34.5|=55.5.
+        // mx=70 -> distToTap=|70-29.5|=40.5; my=90 -> distToEnvelope=|90-25|=65.
         // Neither is within the 20px hit radius, so the tie-break picks the closer axis (time).
         const timeOnParamChange = vi.fn();
         const { container: timeContainer } = render(<DelayTaps {...defaultProps} onParamChange={timeOnParamChange} />);
@@ -149,7 +149,7 @@ describe('DelayTaps', () => {
         fireEvent.pointerMove(timeCanvas, { clientX: 100, clientY: 90, pointerId: 3 });
         expect(timeOnParamChange.mock.calls.at(-1)?.[0]).toBe('delay-time');
 
-        // mx=90 -> distToTap=60.5; my=60 -> distToEnvelope=25.5. Feedback is the closer axis.
+        // mx=90 -> distToTap=60.5; my=60 -> distToEnvelope=35. Feedback is the closer axis.
         const feedbackOnParamChange = vi.fn();
         const { container: feedbackContainer } = render(
             <DelayTaps {...defaultProps} onParamChange={feedbackOnParamChange} />
@@ -158,6 +158,42 @@ describe('DelayTaps', () => {
         fireEvent.pointerDown(feedbackCanvas, { clientX: 90, clientY: 60, pointerId: 4 });
         fireEvent.pointerMove(feedbackCanvas, { clientX: 90, clientY: 30, pointerId: 4 });
         expect(feedbackOnParamChange.mock.calls.at(-1)?.[0]).toBe('delay-feedback');
+    });
+
+    it('draws the first wet tap at mix amplitude when feedback is zero', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0} mix={0.8} />);
+
+        // Dry bar is drawn with dryBarH = 38 * 0.9 = 34.2.
+        // Tap 1 is drawn with barH = 0.8 * 38 = 30.4, plus 1px top highlight.
+        // When feedback is 0, no subsequent wet taps are drawn.
+        const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
+        expect(wetBarCalls).toHaveLength(1);
+        expect(wetBarCalls[0][3]).toBeCloseTo(30.4, 2);
+
+        vi.restoreAllMocks();
+    });
+
+    it('decays subsequent taps by feedback while keeping first tap at mix amplitude', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const fillRectSpy = vi.spyOn(ctx, 'fillRect');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0.5} mix={0.8} />);
+
+        // Dry bar height = 34.2. Tap highlights have height = 1.
+        // Tap 1: amplitude 0.8 -> barH = 30.4
+        // Tap 2: amplitude 0.4 -> barH = 15.2
+        // Tap 3: amplitude 0.2 -> barH = 7.6
+        const wetBarCalls = fillRectSpy.mock.calls.filter(([, , , height]) => height !== 34.2 && height !== 1);
+        expect(wetBarCalls[0][3]).toBeCloseTo(30.4, 2);
+        expect(wetBarCalls[1][3]).toBeCloseTo(15.2, 2);
+        expect(wetBarCalls[2][3]).toBeCloseTo(7.6, 2);
+
+        vi.restoreAllMocks();
     });
 
     it('stops reporting param changes once the pointer is released', () => {
