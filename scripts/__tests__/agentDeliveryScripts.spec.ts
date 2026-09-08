@@ -2085,7 +2085,22 @@ describe('package scripts and gitignore', () => {
         mkdirSync(bundle, { recursive: true });
         writeFileSync(
             join(bundle, 'review.json'),
-            JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+            JSON.stringify({
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+                evidence: {
+                    headSha: head,
+                    claims: [
+                        {
+                            observable: 'Delivery ownership prevents review publication on the same PR',
+                            verification:
+                                'pnpm test:run scripts/__tests__/agentDeliveryScripts.spec.ts -t "refuses review publication before remote work"',
+                            observed: 'The delivery fence rejects publication before any review POST',
+                        },
+                    ],
+                },
+            })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');
         const executable = join(root, 'ps');
