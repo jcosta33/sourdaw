@@ -539,6 +539,10 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             input.assetReferences.flatMap((reference) => (reference.audioBufferId ? [reference.audioBufferId] : []))
         ),
     ];
+    let authoritativeAudioGraphValid = true;
+    if (!input.projectDocument) {
+        authoritativeAudioGraphValid = compileAudioGraphTopology({ tracks, sidechainRoutes }).status === 'compiled';
+    }
     let authoritativeProjectInvariantsValid = true;
     if (!input.projectDocument) {
         authoritativeProjectInvariantsValid = context ? projectInvariantsAreValid(context) : false;
@@ -546,9 +550,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
 
     return {
         advertisedTargetFingerprints,
-        audioGraphValid:
-            (input.projectDocument ? documentInspection.audioGraphValid : undefined) ??
-            compileAudioGraphTopology({ tracks, sidechainRoutes }).status === 'compiled',
+        audioGraphValid: documentInspection.audioGraphValid && authoritativeAudioGraphValid,
         availableAssetHashes: assetHashes.filter(
             (assetHash) => currentClipAssetHashes.has(assetHash) || assetTransfer?.hasAsset(assetHash) === true
         ),
