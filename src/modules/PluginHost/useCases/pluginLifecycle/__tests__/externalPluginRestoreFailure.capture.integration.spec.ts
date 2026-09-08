@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, normalizeTrack } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -231,8 +232,12 @@ function activateInstance(instanceId: string, stateChunk: string | undefined) {
 }
 
 describe('external plugin state survives a failed restore (issue 3693)', () => {
+    let lockManager: ReturnType<typeof createControlledLockManager>;
+
     beforeEach(() => {
         vi.clearAllMocks();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         Container.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('external plugin restore failure persistence');
@@ -274,7 +279,8 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         }));
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         agentProjectInspectionPort.setProvider(null);
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -287,6 +293,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         }
         configureAutomergeStoragePort(null);
         Container.clear();
+        vi.unstubAllGlobals();
     });
 
     it('keeps the original saved chunk across Save and Export when the plugin rejected its state', async () => {

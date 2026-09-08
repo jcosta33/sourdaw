@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -15,6 +17,7 @@ import {
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
+let lockManager: ReturnType<typeof createControlledLockManager>;
 
 function installCurrentAudioIndexedDb() {
     return installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
@@ -22,6 +25,8 @@ function installCurrentAudioIndexedDb() {
 
 beforeEach(async () => {
     vi.resetModules();
+    lockManager = createControlledLockManager();
+    vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
     installTestAudioBufferConstructor();
     ({ audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache'));
 });
@@ -32,6 +37,130 @@ afterEach(() => {
 });
 
 describe('prepared audio-buffer persistence and admission', () => {
+    it('captures prepared PCM before a held storage lock admits its first transaction', async () => {
+        const controls = installCurrentAudioIndexedDb();
+        let releaseHolder = (): void => undefined;
+        let markHolderEntered = (): void => undefined;
+        const holderEntered = new Promise<void>((resolve) => {
+            markHolderEntered = resolve;
+        });
+        const holderReleased = new Promise<void>((resolve) => {
+            releaseHolder = resolve;
+        });
+        const holder = lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => {
+            markHolderEntered();
+            await holderReleased;
+        });
+        await holderEntered;
+
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.25;
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'held-lock-snapshot',
+            buffer: source,
+            leaseId: 'held-lock-snapshot-lease',
+        });
+        source.getChannelData(0)[0] = 0.875;
+        releaseHolder();
+        await holder;
+
+        await expect(persistence).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'held-lock-snapshot',
+            leaseId: 'held-lock-snapshot-lease',
+        });
+        expect(audioBufferCache.get('held-lock-snapshot')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+        expect(controls.committed.get('held-lock-snapshot')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+    });
+
+    it('releases prepared admission state when the storage phase cannot acquire Web Locks', async () => {
+        const controls = installCurrentAudioIndexedDb();
+        const locks = navigator.locks;
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: { request: vi.fn().mockRejectedValue(new Error('Lock request refused')) },
+        });
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id: 'failed-lock-admission',
+                buffer: createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+                leaseId: 'failed-lock-admission-lease',
+            })
+        ).rejects.toThrow('Lock request refused');
+
+        vi.stubGlobal('navigator', { ...navigator, locks });
+        const retry = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        retry.getChannelData(0)[0] = 0.625;
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id: 'failed-lock-admission',
+                buffer: retry,
+                leaseId: 'failed-lock-admission-lease',
+            })
+        ).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'failed-lock-admission',
+            leaseId: 'failed-lock-admission-lease',
+        });
+        expect(controls.committed.get('failed-lock-admission')?.channelData[0]?.[0]).toBeCloseTo(0.625);
+
+        clearRuntimeAudioBufferCache();
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: { request: vi.fn().mockRejectedValue(new Error('Lock request refused')) },
+        });
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'failed-lock-admission',
+                leaseId: 'failed-lock-admission-lease',
+                context,
+            })
+        ).rejects.toThrow('Lock request refused');
+
+        vi.stubGlobal('navigator', { ...navigator, locks });
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id: 'failed-lock-admission',
+                leaseId: 'failed-lock-admission-lease',
+                context,
+            })
+        ).resolves.toMatchObject({ status: 'reopened', ownership: 'temporary' });
+
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: { request: vi.fn().mockRejectedValue(new Error('Lock request refused')) },
+        });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'failed-lock-admission',
+                leaseId: 'failed-lock-admission-lease',
+                disposition: 'project-owned',
+            })
+        ).rejects.toThrow('Lock request refused');
+
+        vi.stubGlobal('navigator', { ...navigator, locks });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'failed-lock-admission',
+                leaseId: 'failed-lock-admission-lease',
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+
+        const durability = await audioBufferCache.ensureDurable(['failed-lock-admission']);
+        expect(durability.status).toBe('durable');
+        if (durability.status === 'durable') {
+            expect(durability.isCurrent()).toBe(true);
+            durability.release();
+        }
+    });
+
     it('publishes the committed PCM snapshot when the caller mutates its buffer before commit', async () => {
         const controls = installCurrentAudioIndexedDb();
         controls.pauseWriteSettlements();
@@ -222,10 +351,6 @@ describe('prepared audio-buffer persistence and admission', () => {
             buffer: current,
             leaseId: 'same-lease-reservation',
         });
-        while (controls.writeTransactionCount() < 2) {
-            await flushIndexedDbTasks(1);
-        }
-
         controls.releaseNextWriteSettlement();
         await expect(first).resolves.toMatchObject({ status: 'failed' });
         while (controls.pendingWriteSettlementCount() === 0) {

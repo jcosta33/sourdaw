@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
@@ -176,6 +177,7 @@ async function loadContracts() {
 let indexedDb: TransactionalIndexedDbInstallation;
 let contracts: Awaited<ReturnType<typeof loadContracts>>;
 let initialArrangementState: typeof contracts.arrangementStore.value;
+let lockManager: ReturnType<typeof createControlledLockManager>;
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -284,6 +286,8 @@ describe('external plugin capture while saved-state restore is pending (issue 36
 
     beforeEach(() => {
         vi.clearAllMocks();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         localStorage.clear();
         Reflect.deleteProperty(window, 'showSaveFilePicker');
         Reflect.deleteProperty(window, 'sourdaw');
@@ -330,7 +334,8 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         }));
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         contracts.agentProjectInspectionPort.setProvider(null);
         contracts.clearUndoHistory();
         contracts.resetActionReplayAuthority();
@@ -343,6 +348,7 @@ describe('external plugin capture while saved-state restore is pending (issue 36
         }
         contracts.configureAutomergeStoragePort(null);
         contracts.Container.clear();
+        vi.unstubAllGlobals();
     });
 
     afterAll(async () => {

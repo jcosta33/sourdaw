@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     installFakeAudioIndexedDb,
@@ -9,6 +11,8 @@ import {
 
 let audioBufferCache: typeof import('../../stores/audioBufferCache').audioBufferCache;
 let discardDecodedAudioFile: typeof import('../discardDecodedAudioFile').discardDecodedAudioFile;
+let setDurableAudioBufferOwnershipProvider: typeof import('../../stores/durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
+let lockManager: ReturnType<typeof createControlledLockManager>;
 
 function createAudioBuffer(): AudioBuffer {
     const channel = new Float32Array([0.25, -0.25]);
@@ -26,12 +30,21 @@ function createAudioBuffer(): AudioBuffer {
 describe('discardDecodedAudioFile', () => {
     beforeEach(async () => {
         vi.resetModules();
-        ({ audioBufferCache } = await import('../../stores/audioBufferCache'));
-        ({ discardDecodedAudioFile } = await import('../discardDecodedAudioFile'));
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+        [{ audioBufferCache }, { discardDecodedAudioFile }, { setDurableAudioBufferOwnershipProvider }] =
+            await Promise.all([
+                import('../../stores/audioBufferCache'),
+                import('../discardDecodedAudioFile'),
+                import('../../stores/durableAudioBufferOwnership'),
+            ]);
+        setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         audioBufferCache.clear();
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        setDurableAudioBufferOwnershipProvider(null);
         vi.unstubAllGlobals();
     });
 
@@ -48,16 +61,27 @@ describe('discardDecodedAudioFile', () => {
             expect(controls.committedMeta.has('audio-retained')).toBe(true);
         });
 
+        const initialDurability = await audioBufferCache.ensureDurable(['audio-discarded', 'audio-retained']);
+        expect(initialDurability.status).toBe('durable');
+        if (initialDurability.status === 'durable') {
+            initialDurability.release();
+        }
+
         discardDecodedAudioFile('audio-discarded');
 
         expect(audioBufferCache.has('audio-discarded')).toBe(false);
         expect(audioBufferCache.get('audio-retained')).toBe(retained);
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         await vi.waitFor(() => {
             expect(controls.committed.has('audio-discarded')).toBe(false);
             expect(controls.committedMeta.has('audio-discarded')).toBe(false);
         });
         expect(controls.committed.has('audio-retained')).toBe(true);
         expect(controls.committedMeta.has('audio-retained')).toBe(true);
-        await expect(audioBufferCache.ensureDurable(['audio-retained'])).resolves.toMatchObject({ status: 'durable' });
+        const retainedDurability = await audioBufferCache.ensureDurable(['audio-retained']);
+        expect(retainedDurability.status).toBe('durable');
+        if (retainedDurability.status === 'durable') {
+            retainedDurability.release();
+        }
     });
 });

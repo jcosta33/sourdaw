@@ -18,11 +18,7 @@ describe('readNamedProjectJson', () => {
         vi.resetModules();
     });
 
-    // AC-4. The defect: the localStorage mirror froze at the moment the project
-    // first exceeded quota, while IndexedDB kept receiving every later save.
-    // Mutation: restoring `if (local !== null) { return local; }` at the top of
-    // readNamedProjectJson reds this — it resolves to the stale mirror.
-    it('resolves the fresh IndexedDB copy over a stale localStorage mirror', async () => {
+    it('reads the IndexedDB copy without consulting a stale localStorage record', async () => {
         const controls = installFakeIndexedDb();
         const stale = snapshot('Frozen', 1700000000000);
         const fresh = snapshot('Current', 1800000000000);
@@ -33,10 +29,7 @@ describe('readNamedProjectJson', () => {
         await expect(readNamedProjectJson(KEY)).resolves.toBe(fresh);
     });
 
-    // AC-4. Recency, not store rank: an unmigrated mirror that is genuinely
-    // newer than the primary still wins. Mutation: hardcoding "IndexedDB always
-    // wins when present" reds this.
-    it('resolves the localStorage mirror when it is newer than the IndexedDB copy', async () => {
+    it('reads the IndexedDB copy even when localStorage contains newer legacy content', async () => {
         const controls = installFakeIndexedDb();
         const newerMirror = snapshot('Mirror', 1800000000000);
         const olderPrimary = snapshot('Primary', 1700000000000);
@@ -44,16 +37,16 @@ describe('readNamedProjectJson', () => {
         controls.values.set(KEY, olderPrimary);
         const { readNamedProjectJson } = await import('../readNamedProjectJson');
 
-        await expect(readNamedProjectJson(KEY)).resolves.toBe(newerMirror);
+        await expect(readNamedProjectJson(KEY)).resolves.toBe(olderPrimary);
     });
 
-    it('resolves the localStorage mirror when IndexedDB has no copy', async () => {
+    it('returns null when only legacy localStorage contains the key', async () => {
         installFakeIndexedDb();
         const mirror = snapshot('OnlyCopy', 1700000000000);
         localStorage.setItem(KEY, mirror);
         const { readNamedProjectJson } = await import('../readNamedProjectJson');
 
-        await expect(readNamedProjectJson(KEY)).resolves.toBe(mirror);
+        await expect(readNamedProjectJson(KEY)).resolves.toBeNull();
     });
 
     it('resolves the IndexedDB copy when localStorage has no mirror', async () => {

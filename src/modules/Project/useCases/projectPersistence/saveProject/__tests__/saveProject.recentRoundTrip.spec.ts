@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 import { createDefaultProductionBrief } from '../../../../models/ProductionBrief';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
@@ -177,6 +179,7 @@ function makeProjectData(): ProjectData {
 describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installFakeIndexedDb();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         window.localStorage.clear();

@@ -1,15 +1,17 @@
 import { logger } from '#/infra/logger/appLogger';
+import {
+    runInProjectAudioStorageLock,
+    type ProjectAudioStorageLockScope,
+    withProjectAudioStorageLock,
+} from '#/infra/storage/withProjectAudioStorageLock';
 
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
-import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
-    isPreparedAudioRecoveryMigrationMarker,
-    PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY,
+    createPreparedAudioBufferLifecycle,
+    PreparedAudioStoragePhaseUnavailableError,
+} from './preparedAudioBufferLifecycle';
+import {
     isValidPreparedSerializedAudioBuffer,
-    preparedAudioRecoveryKey,
-    preparedAudioRecoveryMigrationMarker,
-    readPreparedAudioRecoveryMetadata,
-    readPreparedAudioRecoveryRecord,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -217,59 +219,6 @@ type CheckpointAudioRetention = {
     ownershipToken: string;
 };
 
-async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise<void> {
-    const markerTransaction = database.transaction(RECOVERY_STORE_NAME, 'readonly');
-    const marker = await awaitRequest(
-        markerTransaction
-            .objectStore(RECOVERY_STORE_NAME)
-            .get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>
-    );
-    await awaitTransaction(markerTransaction);
-    if (isPreparedAudioRecoveryMigrationMarker(marker)) {
-        return;
-    }
-    const transaction = database.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
-    const bufferStore = transaction.objectStore(STORE_NAME);
-    const currentMetadataStore = transaction.objectStore(META_STORE_NAME);
-    const recoveryStore = transaction.objectStore(RECOVERY_STORE_NAME);
-    const [currentMarker, metadataRows, keys] = await Promise.all([
-        awaitRequest(recoveryStore.get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>),
-        awaitRequest(currentMetadataStore.getAll() as IDBRequest<unknown[]>),
-        awaitRequest(currentMetadataStore.getAllKeys()),
-    ]);
-    if (isPreparedAudioRecoveryMigrationMarker(currentMarker)) {
-        await awaitTransaction(transaction);
-        return;
-    }
-    const legacyRows = keys.flatMap((key, index) => {
-        const metadata = readPreparedAudioRecoveryMetadata(metadataRows[index]);
-        return typeof key === 'string' && metadata !== null && key === preparedAudioRecoveryKey(metadata.id)
-            ? [{ key, metadata }]
-            : [];
-    });
-    for (const { key, metadata } of legacyRows) {
-        const [data, existingRecovery] = await Promise.all([
-            awaitRequest(bufferStore.get(key) as IDBRequest<SerializedBuffer | undefined>),
-            awaitRequest(recoveryStore.get(metadata.id) as IDBRequest<unknown>),
-        ]);
-        const existing = readPreparedAudioRecoveryRecord(existingRecovery);
-        if (existing !== null && (existing.id !== metadata.id || existing.revision !== metadata.revision)) {
-            continue;
-        }
-        if (existing === null) {
-            const migrated = readPreparedAudioRecoveryRecord({ ...metadata, data, stagedAtMs: Date.now() });
-            if (migrated === null) {
-                continue;
-            }
-            recoveryStore.put(migrated, metadata.id);
-        }
-        bufferStore.delete(key);
-        currentMetadataStore.delete(key);
-    }
-    recoveryStore.put(preparedAudioRecoveryMigrationMarker(), PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY);
-    await awaitTransaction(transaction);
-}
-
 function isProtectedFromCollection(metadata: BufferMeta): boolean {
     const owner = readPreparedOwner(metadata);
     return (
@@ -424,13 +373,7 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
                 onConnectionLoss();
             };
             db.onclose = onConnectionLoss;
-            void migrateLegacyPreparedRecoveryRows(db).then(
-                () => resolve(db),
-                (error: unknown) => {
-                    db.close();
-                    reject(error);
-                }
-            );
+            resolve(db);
         };
         req.onerror = () => {
             if (settled) {
@@ -514,6 +457,165 @@ type RetainedCachedAudioDurabilitySource = Readonly<
 let nextDurabilitySourceRevision = 0;
 const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
 
+type AudioStorageWriteAdmissionWitness = {
+    globalIntentRevision: number;
+    intentRevisionById: ReadonlyMap<string, number>;
+    preparedTicketSettlements: readonly Promise<void>[];
+    preparedTicketSequencesById: ReadonlyMap<string, ReadonlySet<number>>;
+};
+
+type PreparedAudioStorageAdmissionTicket = {
+    id: string;
+    sequence: number;
+    settle: () => void;
+    settlement: Promise<void>;
+    settled: boolean;
+};
+
+let globalAudioStorageIntentRevision = 0;
+let nextAudioStorageIntentRevision = 0;
+const audioStorageIntentRevisionById = new Map<string, number>();
+let nextPreparedAudioStorageTicketSequence = 0;
+const activePreparedAudioStorageTicketsById = new Map<string, Set<PreparedAudioStorageAdmissionTicket>>();
+
+function recordAudioStorageIntent(ids: readonly string[]): void {
+    for (const id of new Set(ids)) {
+        audioStorageIntentRevisionById.set(id, ++nextAudioStorageIntentRevision);
+    }
+}
+
+function recordProjectAudioStorageTransitionIntent(): void {
+    globalAudioStorageIntentRevision += 1;
+}
+
+function beginPreparedAudioStorageAdmission(id: string): PreparedAudioStorageAdmissionTicket {
+    let settle = (): void => undefined;
+    const settlement = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    const ticket: PreparedAudioStorageAdmissionTicket = {
+        id,
+        sequence: ++nextPreparedAudioStorageTicketSequence,
+        settle,
+        settlement,
+        settled: false,
+    };
+    const activeTickets =
+        activePreparedAudioStorageTicketsById.get(id) ?? new Set<PreparedAudioStorageAdmissionTicket>();
+    activeTickets.add(ticket);
+    activePreparedAudioStorageTicketsById.set(id, activeTickets);
+    return ticket;
+}
+
+function finishPreparedAudioStorageAdmission(ticket: PreparedAudioStorageAdmissionTicket): void {
+    if (ticket.settled) {
+        return;
+    }
+    ticket.settled = true;
+    ticket.settle();
+    const activeTickets = activePreparedAudioStorageTicketsById.get(ticket.id);
+    activeTickets?.delete(ticket);
+    if (activeTickets?.size === 0) {
+        activePreparedAudioStorageTicketsById.delete(ticket.id);
+    }
+}
+
+function captureAudioStorageWriteAdmission(ids: readonly string[]): AudioStorageWriteAdmissionWitness {
+    const uniqueIds = [...new Set(ids)];
+    return {
+        globalIntentRevision: globalAudioStorageIntentRevision,
+        intentRevisionById: new Map(uniqueIds.map((id) => [id, audioStorageIntentRevisionById.get(id) ?? 0] as const)),
+        preparedTicketSettlements: uniqueIds.flatMap((id) =>
+            [...(activePreparedAudioStorageTicketsById.get(id) ?? [])].map((ticket) => ticket.settlement)
+        ),
+        preparedTicketSequencesById: new Map(
+            uniqueIds.map(
+                (id) =>
+                    [
+                        id,
+                        new Set(
+                            [...(activePreparedAudioStorageTicketsById.get(id) ?? [])].map((ticket) => ticket.sequence)
+                        ),
+                    ] as const
+            )
+        ),
+    };
+}
+
+function isAudioStorageWriteAdmissionCurrent(
+    witness: AudioStorageWriteAdmissionWitness,
+    requireCapturedTicketsSettled = false
+): boolean {
+    if (globalAudioStorageIntentRevision !== witness.globalIntentRevision) {
+        return false;
+    }
+    for (const [id, intentRevision] of witness.intentRevisionById) {
+        if ((audioStorageIntentRevisionById.get(id) ?? 0) !== intentRevision) {
+            return false;
+        }
+        const capturedSequences = witness.preparedTicketSequencesById.get(id) ?? new Set<number>();
+        const activeTickets = activePreparedAudioStorageTicketsById.get(id);
+        if (!activeTickets) {
+            continue;
+        }
+        const activeSequences = [...activeTickets].map((ticket) => ticket.sequence);
+        if (requireCapturedTicketsSettled && activeSequences.some((sequence) => capturedSequences.has(sequence))) {
+            return false;
+        }
+        if (activeSequences.some((sequence) => !capturedSequences.has(sequence))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function runAudioStorageWrite<TResult>(
+    scope: ProjectAudioStorageLockScope | undefined,
+    operation: (activeScope: ProjectAudioStorageLockScope) => Promise<TResult>
+): Promise<TResult> {
+    if (scope !== undefined) {
+        return runInProjectAudioStorageLock(scope, () => operation(scope));
+    }
+    return withProjectAudioStorageLock((activeScope) =>
+        runInProjectAudioStorageLock(activeScope, () => operation(activeScope))
+    );
+}
+
+type RunPreparedAudioStoragePhase = <TResult>(operation: () => Promise<TResult>) => Promise<TResult>;
+
+function runPreparedAudioStoragePhase<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    let operationStarted = false;
+    return withProjectAudioStorageLock((scope) => {
+        operationStarted = true;
+        return runInProjectAudioStorageLock(scope, operation);
+    }).catch((error: unknown) => {
+        if (operationStarted) {
+            throw error;
+        }
+        throw new PreparedAudioStoragePhaseUnavailableError(error);
+    });
+}
+
+function runPreparedAudioStorageWrite<TResult>(
+    id: string,
+    operation: (runStoragePhase: RunPreparedAudioStoragePhase) => Promise<TResult>
+): Promise<TResult> {
+    const ticket = beginPreparedAudioStorageAdmission(id);
+    if (globalThis.navigator?.locks === undefined) {
+        return Promise.reject<TResult>(new Error('Project audio storage requires the Web Locks API')).finally(() =>
+            finishPreparedAudioStorageAdmission(ticket)
+        );
+    }
+    let result: Promise<TResult>;
+    try {
+        result = operation(runPreparedAudioStoragePhase);
+    } catch (error) {
+        finishPreparedAudioStorageAdmission(ticket);
+        throw error;
+    }
+    return result.finally(() => finishPreparedAudioStorageAdmission(ticket));
+}
+
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
 let nextImportCandidateId = 0;
@@ -572,6 +674,7 @@ function recordCachedAudioDurabilitySource(
     data: SerializedBuffer,
     freezeProjectId?: number
 ): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
     const source: CachedAudioDurabilitySource = {
         attempt: undefined,
         data,
@@ -592,6 +695,7 @@ function recordLazyCachedAudioDurabilitySource(
     freezeProjectId: number | undefined,
     isAuthoritative: () => boolean
 ): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
     const source: CachedAudioDurabilitySource = {
         attempt: undefined,
         data: undefined,
@@ -620,6 +724,42 @@ function invalidateCachedAudioDurabilitySource(
         revision: ++nextDurabilitySourceRevision,
         status,
     });
+}
+
+function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
+    const existing = durabilitySourceById.get(id);
+    const source: CachedAudioDurabilitySource = existing
+        ? {
+              attempt: undefined,
+              data: existing.data,
+              dataFactory: existing.dataFactory,
+              freezeProjectId: existing.freezeProjectId,
+              isAuthoritative: existing.isAuthoritative,
+              persistence: undefined,
+              revision: ++nextDurabilitySourceRevision,
+              status: existing.status,
+          }
+        : {
+              attempt: undefined,
+              data: undefined,
+              dataFactory: undefined,
+              freezeProjectId: undefined,
+              isAuthoritative: () => true,
+              persistence: undefined,
+              revision: ++nextDurabilitySourceRevision,
+              status: 'external',
+          };
+    durabilitySourceById.set(id, source);
+    if (source.status !== 'pending') {
+        return source;
+    }
+    if (!source.isAuthoritative() || !existing?.persistence) {
+        source.status = 'failed';
+        return source;
+    }
+    void trackCachedAudioDurabilityAttempt(id, source, existing.persistence);
+    return source;
 }
 
 function captureCachedAudioDurabilitySourceInvalidation(id: string): () => boolean {
@@ -679,7 +819,11 @@ function trackCachedAudioDurabilityAttempt(
     return attempt;
 }
 
-function startCachedAudioDurabilityAttempt(id: string, source: CachedAudioDurabilitySource): Promise<boolean> {
+function startCachedAudioDurabilityAttempt(
+    id: string,
+    source: CachedAudioDurabilitySource,
+    scope?: ProjectAudioStorageLockScope
+): Promise<boolean> {
     if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
         return Promise.resolve(false);
     }
@@ -693,7 +837,11 @@ function startCachedAudioDurabilityAttempt(id: string, source: CachedAudioDurabi
     if (!data) {
         return Promise.resolve(false);
     }
-    return trackCachedAudioDurabilityAttempt(id, source, persistSerializedToIdb(id, data, source.freezeProjectId));
+    return trackCachedAudioDurabilityAttempt(
+        id,
+        source,
+        persistSerializedToIdb(id, data, source.freezeProjectId, scope)
+    );
 }
 
 function captureRetainedCachedAudioDurabilitySources(
@@ -930,52 +1078,74 @@ function refreshAccessTime(id: string): void {
     });
 }
 
-async function persistSerializedToIdb(id: string, data: SerializedBuffer, freezeProjectId?: number): Promise<boolean> {
-    const generation = claimPersistenceGeneration(id);
-    try {
-        const db = await openDb();
-        if (persistenceGenerationById.get(id) !== generation) {
+function persistSerializedToIdb(
+    id: string,
+    data: SerializedBuffer,
+    freezeProjectId?: number,
+    scope?: ProjectAudioStorageLockScope
+): Promise<boolean> {
+    return runAudioStorageWrite(scope, async () => {
+        const generation = claimPersistenceGeneration(id);
+        try {
+            const db = await openDb();
+            if (persistenceGenerationById.get(id) !== generation) {
+                return false;
+            }
+            // One transaction over both stores. Two transactions would let the
+            // record commit while its metadata row rolled back (or the reverse),
+            // and a `sizeInBytes` total that disagrees with the records is a size
+            // collector evicting the wrong things or nothing at all.
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            tx.objectStore(STORE_NAME).put(data, id);
+            const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
+            if (freezeProjectId !== undefined) {
+                metadata.freezeProjectId = freezeProjectId;
+            }
+            tx.objectStore(META_STORE_NAME).put(metadata, id);
+            await awaitTransaction(tx);
+            return persistenceGenerationById.get(id) === generation;
+        } catch (error) {
+            logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
             return false;
+        } finally {
+            if (persistenceGenerationById.get(id) === generation) {
+                persistenceGenerationById.delete(id);
+            }
         }
-        // One transaction over both stores. Two transactions would let the
-        // record commit while its metadata row rolled back (or the reverse),
-        // and a `sizeInBytes` total that disagrees with the records is a size
-        // collector evicting the wrong things or nothing at all.
-        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-        tx.objectStore(STORE_NAME).put(data, id);
-        const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
-        if (freezeProjectId !== undefined) {
-            metadata.freezeProjectId = freezeProjectId;
-        }
-        tx.objectStore(META_STORE_NAME).put(metadata, id);
-        await awaitTransaction(tx);
-        return persistenceGenerationById.get(id) === generation;
-    } catch (error) {
-        logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
-        return false;
-    } finally {
-        if (persistenceGenerationById.get(id) === generation) {
-            persistenceGenerationById.delete(id);
-        }
-    }
+    });
 }
 
-async function removeFromIdb(id: string): Promise<void> {
+async function removeFromIdb(id: string, sourceAtRemoval: CachedAudioDurabilitySource | undefined): Promise<void> {
     const generation = claimPersistenceGeneration(id);
     try {
-        const db = await openDb();
-        if (persistenceGenerationById.get(id) !== generation) {
-            return;
-        }
-        // Both rows under one transaction: a metadata row that outlived its
-        // record keeps counting bytes that are no longer there.
-        const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-        const retainedIds = await readCheckpointRetainedBufferIds(tx);
-        if (!retainedIds.has(id)) {
-            tx.objectStore(STORE_NAME).delete(id);
-            tx.objectStore(META_STORE_NAME).delete(id);
-        }
-        await awaitTransaction(tx);
+        await withProjectAudioStorageLock(async () => {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return;
+            }
+            const db = await openDb();
+            if (persistenceGenerationById.get(id) !== generation) {
+                return;
+            }
+            // Both rows under one transaction: a metadata row that outlived
+            // its record keeps counting bytes that are no longer there.
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+            const retainedIds = await readCheckpointRetainedBufferIds(tx);
+            let removed = false;
+            if (persistenceGenerationById.get(id) === generation && !durableOwnedIds.has(id) && !retainedIds.has(id)) {
+                tx.objectStore(STORE_NAME).delete(id);
+                tx.objectStore(META_STORE_NAME).delete(id);
+                removed = true;
+            }
+            await awaitTransaction(tx);
+            if (
+                removed &&
+                persistenceGenerationById.get(id) === generation &&
+                durabilitySourceById.get(id) === sourceAtRemoval
+            ) {
+                invalidateCachedAudioDurabilitySource(id, 'removed');
+            }
+        });
     } catch (error) {
         logger.warn('[audioBufferCache] Audio buffer removal failed', { id, error });
     } finally {
@@ -1023,6 +1193,7 @@ function evictCachedBuffer(id: string): void {
 }
 
 function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
+    recordProjectAudioStorageTransitionIntent();
     const retainedSources = retainedIds ? captureRetainedCachedAudioDurabilitySources(retainedIds) : undefined;
     preparedAudioBufferLifecycle.beginProjectTransition(retainedIds);
     durabilitySourceById.clear();
@@ -1100,6 +1271,9 @@ async function prepareBuffersFromIdb({
     if (shouldContinue?.() === false) {
         return null;
     }
+    if (ids !== undefined) {
+        recordAudioStorageIntent(ids);
+    }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
@@ -1150,7 +1324,9 @@ async function prepareBuffersFromIdb({
     };
     try {
         if (ids) {
-            await preparedAudioBufferLifecycle.recoverProjectReservations(ids, provisionalReservations);
+            await runAudioStorageWrite(undefined, async () => {
+                await preparedAudioBufferLifecycle.recoverProjectReservations(ids, provisionalReservations);
+            });
         }
         if (shouldContinue?.() === false) {
             return cancelAsNull();
@@ -1287,21 +1463,32 @@ type ReleasePreparedBufferInput = {
 
 /** Persist one collision-safe prepared owner, then publish its committed PCM for synchronous reads. */
 async function persistPreparedBuffer({ id, buffer, leaseId }: PersistPreparedBufferInput) {
-    return preparedAudioBufferLifecycle.persist({
-        id,
-        leaseId: leaseId ?? `prepared-audio-${crypto.randomUUID()}`,
-        data: serializeBuffer(buffer),
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) => {
+        const admittedLeaseId = leaseId ?? `prepared-audio-${crypto.randomUUID()}`;
+        const data = serializeBuffer(buffer);
+        return preparedAudioBufferLifecycle.persist(
+            {
+                id,
+                leaseId: admittedLeaseId,
+                data,
+            },
+            runStoragePhase
+        );
     });
 }
 
 /** Reconstruct one exact prepared owner without making every playback read async. */
 async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBufferInput) {
-    return preparedAudioBufferLifecycle.reopen({ id, leaseId, context });
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) =>
+        preparedAudioBufferLifecycle.reopen({ id, leaseId, context }, runStoragePhase)
+    );
 }
 
 /** Settle one temporary owner transactionally; project transfer retains PCM. */
 async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
-    return preparedAudioBufferLifecycle.release({ id, leaseId, disposition });
+    return runPreparedAudioStorageWrite(id, (runStoragePhase) =>
+        preparedAudioBufferLifecycle.release({ id, leaseId, disposition }, runStoragePhase)
+    );
 }
 
 export async function reclaimPreparedBufferOrphans({
@@ -1311,7 +1498,9 @@ export async function reclaimPreparedBufferOrphans({
     createdBeforeMs: number;
     liveLeaseIds: readonly string[];
 }) {
-    return preparedAudioBufferLifecycle.reclaimOrphans({ createdBeforeMs, liveLeaseIds });
+    return withProjectAudioStorageLock(() =>
+        preparedAudioBufferLifecycle.reclaimOrphans({ createdBeforeMs, liveLeaseIds })
+    );
 }
 
 export function clearRuntimeAudioBufferCache({ retainedIds }: AudioBufferCacheClearRuntimeOptions = {}): void {
@@ -1539,9 +1728,20 @@ async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<str
     return ids.filter((_, index) => !isDurableAudioBufferPair(pairs[index]?.[0], pairs[index]?.[1]));
 }
 
-async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<CachedAudioBuffersDurabilityResult> {
-    const requiredIds = [...new Set(ids)];
-    const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
+async function ensureDurableAudioBuffersInScope(
+    requiredIds: readonly string[],
+    admissionWitness: AudioStorageWriteAdmissionWitness,
+    scope: ProjectAudioStorageLockScope,
+    lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds),
+    settlementsSettled = false
+): Promise<CachedAudioBuffersDurabilityResult> {
+    if (
+        !settlementsSettled &&
+        (admissionWitness.preparedTicketSettlements.length > 0 ||
+            preparedAudioBufferLifecycle.hasPendingProjectDurabilitySettlements(lifecycleWitness))
+    ) {
+        return { status: 'superseded' };
+    }
     const sourceRevisionById = new Map(
         requiredIds.map((id) => [id, durabilitySourceById.get(id)?.revision ?? null] as const)
     );
@@ -1559,12 +1759,13 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
             return source.attempt ? [{ id, attempt: source.attempt }] : [{ id, attempt: Promise.resolve(false) }];
         }
         if ((source.status === 'failed' || source.status === 'unpersisted') && (source.data || source.dataFactory)) {
-            return [{ id, attempt: startCachedAudioDurabilityAttempt(id, source) }];
+            return [{ id, attempt: startCachedAudioDurabilityAttempt(id, source, scope) }];
         }
         return [];
     });
     const reservations = preparedAudioBufferLifecycle.beginProjectDurabilityReservations(lifecycleWitness);
     const isCurrent = (): boolean =>
+        isAudioStorageWriteAdmissionCurrent(admissionWitness) &&
         reservations.isCurrent() &&
         preparedAudioBufferLifecycle.isProjectDurabilityWitnessCurrent(lifecycleWitness) &&
         isSourceCurrent();
@@ -1574,16 +1775,13 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
         return wasCurrent ? { status: 'failed', failedIds } : { status: 'superseded' };
     };
     try {
-        const [settlementsCurrent, attemptResults] = await Promise.all([
-            preparedAudioBufferLifecycle.waitForProjectDurabilityWitness(lifecycleWitness),
-            Promise.all(
-                capturedAttempts.map(async ({ id, attempt }) => ({
-                    id,
-                    persisted: await attempt,
-                }))
-            ),
-        ]);
-        if (!settlementsCurrent || !isCurrent()) {
+        const attemptResults = await Promise.all(
+            capturedAttempts.map(async ({ id, attempt }) => ({
+                id,
+                persisted: await attempt,
+            }))
+        );
+        if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
         }
@@ -1638,15 +1836,52 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
     }
 }
 
+function ensureDurableAudioBuffers(
+    ids: readonly string[],
+    scope?: ProjectAudioStorageLockScope
+): Promise<CachedAudioBuffersDurabilityResult> {
+    const requiredIds = [...new Set(ids)];
+    const admissionWitness = captureAudioStorageWriteAdmission(requiredIds);
+    if (scope !== undefined) {
+        return runInProjectAudioStorageLock(scope, () =>
+            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope)
+        );
+    }
+    const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
+    const acquireAfterSettlements = (): Promise<CachedAudioBuffersDurabilityResult> =>
+        withProjectAudioStorageLock((activeScope) => {
+            if (
+                !isAudioStorageWriteAdmissionCurrent(admissionWitness, true) ||
+                !preparedAudioBufferLifecycle.isProjectDurabilityWitnessCurrent(lifecycleWitness)
+            ) {
+                return Promise.resolve({ status: 'superseded' as const });
+            }
+            return runInProjectAudioStorageLock(activeScope, () =>
+                ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope, lifecycleWitness, true)
+            );
+        });
+    if (
+        admissionWitness.preparedTicketSettlements.length === 0 &&
+        !preparedAudioBufferLifecycle.hasPendingProjectDurabilitySettlements(lifecycleWitness)
+    ) {
+        return acquireAfterSettlements();
+    }
+    return Promise.all([
+        preparedAudioBufferLifecycle.waitForProjectDurabilityWitness(lifecycleWitness),
+        ...admissionWitness.preparedTicketSettlements,
+    ]).then(([settlementsCurrent]) =>
+        settlementsCurrent ? acquireAfterSettlements() : { status: 'superseded' as const }
+    );
+}
+
 /** The durable owned-id set is fetched before any deletion decision in every
- * collection run (issue #3777). No provider reads as "nothing durably owned"
- * — the plain age/budget rules apply. A provider rejection aborts the run:
- * with the owned set unknown, no entry can be proven unowned, so nothing is
- * deleted. */
+ * collection run (issue #3777). A missing or rejected provider leaves the
+ * owned set unknown, so no entry can be proven unowned and nothing is deleted. */
 async function readDurableOwnedIdsOrAbort(): Promise<Set<string> | null> {
     const pending = fetchDurableOwnedAudioBufferIds();
     if (pending === null) {
-        return new Set();
+        logger.warn('[audioBufferCache] Durable ownership provider is unavailable; deletion refused');
+        return null;
     }
     try {
         return new Set(await pending);
@@ -1681,10 +1916,10 @@ export const audioBufferCache = {
     },
 
     remove(id: string): void {
-        invalidateCachedAudioDurabilitySource(id, 'removed');
+        const sourceAtRemoval = rebindCachedAudioDurabilitySourceForRemoval(id);
         pinnedBufferIds.delete(id);
         evictCachedBuffer(id);
-        void removeFromIdb(id);
+        void removeFromIdb(id, sourceAtRemoval);
     },
 
     has(id: string): boolean {
@@ -1854,39 +2089,41 @@ export const audioBufferCache = {
         // the page. That leak is the whole reason, and it is sufficient on its
         // own.
         //
-        // Ordering is *not* part of the reason, whatever an earlier draft of
-        // this comment claimed. IDB 3.0 §2.7.2 orders overlapping-scope
-        // "readwrite" transactions by creation order across the *database* —
-        // there is no same-connection qualifier — so a `clear()` and a `set()`
-        // right after it commit in that order even on two connections.
-        openDb()
-            .then(async (db) => {
-                const tx = db.transaction(
-                    [STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
-                    'readwrite'
-                );
-                const retainedIds = await readCheckpointRetainedBufferIds(tx);
-                const bufferStore = tx.objectStore(STORE_NAME);
-                const metadataStore = tx.objectStore(META_STORE_NAME);
-                const [bufferKeys, metadataKeys] = await Promise.all([
-                    awaitRequest(bufferStore.getAllKeys()),
-                    awaitRequest(metadataStore.getAllKeys()),
-                ]);
-                for (const key of new Set([...bufferKeys, ...metadataKeys])) {
-                    if (typeof key === 'string' && retainedIds.has(key)) {
-                        continue;
-                    }
-                    bufferStore.delete(key);
-                    metadataStore.delete(key);
+        // The lock and census wait can let a later `set()` establish a new
+        // durability source before deletion starts. The transaction retains
+        // every current source, so clearing cannot erase that replacement.
+        void withProjectAudioStorageLock(async () => {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return;
+            }
+            const db = await openDb();
+            const tx = db.transaction(
+                [STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
+                'readwrite'
+            );
+            const retainedIds = await readCheckpointRetainedBufferIds(tx);
+            const bufferStore = tx.objectStore(STORE_NAME);
+            const metadataStore = tx.objectStore(META_STORE_NAME);
+            const [bufferKeys, metadataKeys] = await Promise.all([
+                awaitRequest(bufferStore.getAllKeys()),
+                awaitRequest(metadataStore.getAllKeys()),
+            ]);
+            for (const key of new Set([...bufferKeys, ...metadataKeys])) {
+                if (
+                    typeof key === 'string' &&
+                    (durabilitySourceById.has(key) || durableOwnedIds.has(key) || retainedIds.has(key))
+                ) {
+                    continue;
                 }
-                tx.objectStore(RECOVERY_STORE_NAME).clear();
-                await awaitTransaction(tx);
-                return null;
-            })
-            .catch((error: unknown) => {
-                logger.warn('[audioBufferCache] Audio buffer store clear failed', { error });
-                return null;
-            });
+                bufferStore.delete(key);
+                metadataStore.delete(key);
+            }
+            tx.objectStore(RECOVERY_STORE_NAME).clear();
+            await awaitTransaction(tx);
+        }).catch((error: unknown) => {
+            logger.warn('[audioBufferCache] Audio buffer store clear failed', { error });
+        });
     },
 
     cancelPendingImport(): void {
@@ -2120,78 +2357,80 @@ export const audioBufferCache = {
             candidateId === activeImportCandidateId &&
             candidateId === committedImportCandidateId &&
             [...publishedSourceById].every(([id, source]) => durabilitySourceById.get(id) === source);
-        const persistImportBatch = async (): Promise<boolean> => {
+        const persistImportBatch = (): Promise<boolean> => {
             if (!isImportAuthorityCurrent()) {
-                return false;
+                return Promise.resolve(false);
             }
             const entriesToPersist = entries.filter((entry) => publishedSourceById.get(entry.id)?.status !== 'durable');
             if (entriesToPersist.length === 0) {
-                return true;
+                return Promise.resolve(true);
             }
-            const generations = new Map<string, number>();
-            for (const { id } of entriesToPersist) {
-                generations.set(id, claimPersistenceGeneration(id));
-            }
-            let transaction: IDBTransaction | null = null;
-            let transactionSettled = false;
-            try {
-                const database = await openDb();
-                if (
-                    !isImportAuthorityCurrent() ||
-                    [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
-                ) {
-                    return false;
+            return runAudioStorageWrite(undefined, async () => {
+                const generations = new Map<string, number>();
+                for (const { id } of entriesToPersist) {
+                    generations.set(id, claimPersistenceGeneration(id));
                 }
-
-                const activeTransaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-                transaction = activeTransaction;
-                importPersistenceTransactions.set(candidateId, activeTransaction);
-                const objectStore = activeTransaction.objectStore(STORE_NAME);
-                const metaStore = activeTransaction.objectStore(META_STORE_NAME);
-                for (const entry of entriesToPersist) {
-                    const source = entry.durabilitySource;
-                    const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
-                    if (!data) {
-                        throw new Error('Imported audio source is unavailable');
-                    }
-                    objectStore.put(data, entry.id);
-                    const metadata: BufferMeta = {
-                        lastAccessed: data.lastAccessed,
-                        sizeInBytes: data.sizeInBytes,
-                    };
-                    if (entry.freezeProjectId !== undefined) {
-                        metadata.freezeProjectId = entry.freezeProjectId;
-                    }
-                    metaStore.put(metadata, entry.id);
-                }
+                let transaction: IDBTransaction | null = null;
+                let transactionSettled = false;
                 try {
-                    await awaitTransaction(activeTransaction);
-                } finally {
-                    transactionSettled = true;
-                }
-                return (
-                    isImportAuthorityCurrent() &&
-                    [...generations].every(([id, generation]) => persistenceGenerationById.get(id) === generation)
-                );
-            } catch {
-                if (transaction && !transactionSettled) {
+                    const database = await openDb();
+                    if (
+                        !isImportAuthorityCurrent() ||
+                        [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
+                    ) {
+                        return false;
+                    }
+
+                    const activeTransaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+                    transaction = activeTransaction;
+                    importPersistenceTransactions.set(candidateId, activeTransaction);
+                    const objectStore = activeTransaction.objectStore(STORE_NAME);
+                    const metaStore = activeTransaction.objectStore(META_STORE_NAME);
+                    for (const entry of entriesToPersist) {
+                        const source = entry.durabilitySource;
+                        const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
+                        if (!data) {
+                            throw new Error('Imported audio source is unavailable');
+                        }
+                        objectStore.put(data, entry.id);
+                        const metadata: BufferMeta = {
+                            lastAccessed: data.lastAccessed,
+                            sizeInBytes: data.sizeInBytes,
+                        };
+                        if (entry.freezeProjectId !== undefined) {
+                            metadata.freezeProjectId = entry.freezeProjectId;
+                        }
+                        metaStore.put(metadata, entry.id);
+                    }
                     try {
-                        transaction.abort();
-                    } catch {
-                        // The transaction already settled before the failure was observed.
+                        await awaitTransaction(activeTransaction);
+                    } finally {
+                        transactionSettled = true;
+                    }
+                    return (
+                        isImportAuthorityCurrent() &&
+                        [...generations].every(([id, generation]) => persistenceGenerationById.get(id) === generation)
+                    );
+                } catch {
+                    if (transaction && !transactionSettled) {
+                        try {
+                            transaction.abort();
+                        } catch {
+                            // The transaction already settled before the failure was observed.
+                        }
+                    }
+                    return false;
+                } finally {
+                    for (const [id, generation] of generations) {
+                        if (persistenceGenerationById.get(id) === generation) {
+                            persistenceGenerationById.delete(id);
+                        }
+                    }
+                    if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
+                        importPersistenceTransactions.delete(candidateId);
                     }
                 }
-                return false;
-            } finally {
-                for (const [id, generation] of generations) {
-                    if (persistenceGenerationById.get(id) === generation) {
-                        persistenceGenerationById.delete(id);
-                    }
-                }
-                if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
-                    importPersistenceTransactions.delete(candidateId);
-                }
-            }
+            });
         };
         return {
             persist: () => {
@@ -2283,69 +2522,77 @@ export const audioBufferCache = {
 
     async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
         try {
-            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
-            if (durableOwnedIds === null) {
-                return;
-            }
-            const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const metaStore = tx.objectStore(META_STORE_NAME);
-            const [metadataRows, metadataKeys, checkpointRetainedIds] = await Promise.all([
-                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
-                awaitRequest(metaStore.getAllKeys()),
-                readCheckpointRetainedBufferIds(tx),
-            ]);
-            const collectedKeys = new Set<string>();
-            const protectedKeys = new Set<string>();
-            for (let index = 0; index < metadataKeys.length; index++) {
-                const key = metadataKeys[index];
-                const metadata = metadataRows[index];
-                if (
-                    typeof key === 'string' &&
-                    (checkpointRetainedIds.has(key) ||
-                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
-                        (metadata && isProtectedFromCollection(metadata)))
-                ) {
-                    protectedKeys.add(key);
-                    continue;
+            await withProjectAudioStorageLock(async () => {
+                const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+                if (durableOwnedIds === null) {
+                    return;
                 }
-                let freezeProjectId = metadata?.freezeProjectId;
-                if (typeof key === 'string' && residentFreezeProjectIdById.has(key)) {
-                    freezeProjectId = residentFreezeProjectIdById.get(key);
-                }
-                if (
-                    typeof key !== 'string' ||
-                    !key.startsWith('freeze-') ||
-                    durableOwnedIds.has(key) ||
-                    activeIds.has(key) ||
-                    freezeProjectId !== projectId
-                ) {
-                    continue;
-                }
-                collectedKeys.add(key);
-            }
-            for (const [key, freezeProjectId] of residentFreezeProjectIdById) {
-                if (
-                    key.startsWith('freeze-') &&
-                    !activeIds.has(key) &&
-                    !durableOwnedIds.has(key) &&
-                    !protectedKeys.has(key) &&
-                    !checkpointRetainedIds.has(key) &&
-                    !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
-                    freezeProjectId === projectId
-                ) {
+                const db = await openDb();
+                const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const metaStore = tx.objectStore(META_STORE_NAME);
+                const [metadataRows, metadataKeys, checkpointRetainedIds] = await Promise.all([
+                    awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                    awaitRequest(metaStore.getAllKeys()),
+                    readCheckpointRetainedBufferIds(tx),
+                ]);
+                const collectedKeys = new Set<string>();
+                const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
+                const protectedKeys = new Set<string>();
+                for (let index = 0; index < metadataKeys.length; index++) {
+                    const key = metadataKeys[index];
+                    const metadata = metadataRows[index];
+                    if (
+                        typeof key === 'string' &&
+                        (checkpointRetainedIds.has(key) ||
+                            preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
+                            (metadata && isProtectedFromCollection(metadata)))
+                    ) {
+                        protectedKeys.add(key);
+                        continue;
+                    }
+                    let freezeProjectId = metadata?.freezeProjectId;
+                    if (typeof key === 'string' && residentFreezeProjectIdById.has(key)) {
+                        freezeProjectId = residentFreezeProjectIdById.get(key);
+                    }
+                    if (
+                        typeof key !== 'string' ||
+                        !key.startsWith('freeze-') ||
+                        persistenceGenerationById.has(key) ||
+                        durableOwnedIds.has(key) ||
+                        activeIds.has(key) ||
+                        freezeProjectId !== projectId
+                    ) {
+                        continue;
+                    }
                     collectedKeys.add(key);
                 }
-            }
-            for (const key of collectedKeys) {
-                store.delete(key);
-                metaStore.delete(key);
-            }
-            await awaitTransaction(tx);
-            for (const key of collectedKeys) {
-                evictCachedBuffer(key);
-            }
+                for (const [key, freezeProjectId] of residentFreezeProjectIdById) {
+                    if (
+                        key.startsWith('freeze-') &&
+                        !persistenceGenerationById.has(key) &&
+                        !activeIds.has(key) &&
+                        !durableOwnedIds.has(key) &&
+                        !protectedKeys.has(key) &&
+                        !checkpointRetainedIds.has(key) &&
+                        !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
+                        freezeProjectId === projectId
+                    ) {
+                        collectedKeys.add(key);
+                    }
+                }
+                for (const key of collectedKeys) {
+                    collectedSources.set(key, durabilitySourceById.get(key));
+                    store.delete(key);
+                    metaStore.delete(key);
+                }
+                await awaitTransaction(tx);
+                for (const key of collectedKeys) {
+                    if (durabilitySourceById.get(key) === collectedSources.get(key)) {
+                        evictCachedBuffer(key);
+                    }
+                }
+            });
         } catch (error) {
             logger.warn('[audioBufferCache] Freeze-file collection failed', { error });
         }
@@ -2355,142 +2602,153 @@ export const audioBufferCache = {
         const threshold = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
         let deletedCount = 0;
         try {
-            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
-            if (durableOwnedIds === null) {
-                return 0;
-            }
-            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({
-                staleBeforeMs: threshold,
+            await withProjectAudioStorageLock(async () => {
+                const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+                if (durableOwnedIds === null) {
+                    return;
+                }
+                const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({
+                    staleBeforeMs: threshold,
+                });
+                deletedCount += recoveryCollection.count;
+                const db = await openDb();
+                const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const metaStore = tx.objectStore(META_STORE_NAME);
+                // Reads the metadata store, not the records: the two numbers this
+                // loop wants are 16 bytes each, and `getAll()` on the records
+                // materialised every buffer in a store capped at 2 GiB to find
+                // them.
+                //
+                // The invariant is **never collect on a stamp we do not have** —
+                // not "never collect without a metadata row". The v1 code read
+                // `item.lastAccessed ?? 0`, which *invented* a stamp: an absent one
+                // read as the epoch and the record was deleted on the spot. That
+                // fallback is gone rather than moved. What replaces it is reading
+                // the real value, from the row where there is one and from the
+                // record where there is not.
+                const [metas, keys, recordKeys, checkpointRetainedIds] = await Promise.all([
+                    awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                    awaitRequest(metaStore.getAllKeys()),
+                    awaitRequest(store.getAllKeys()),
+                    readCheckpointRetainedBufferIds(tx),
+                ]);
+
+                const migratedIds = new Set<IDBValidKey>(keys);
+                const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
+                let pendingDeletedCount = 0;
+                for (let index = 0; index < metas.length; index++) {
+                    const meta = metas[index]!;
+                    const key = keys[index]! as string;
+                    if (
+                        durableOwnedIds.has(key) ||
+                        checkpointRetainedIds.has(key) ||
+                        persistenceGenerationById.has(key) ||
+                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
+                        isProtectedFromCollection(meta)
+                    ) {
+                        continue;
+                    }
+                    if (typeof meta.lastAccessed !== 'number') {
+                        continue;
+                    }
+                    if (meta.lastAccessed < threshold) {
+                        collectedSources.set(key, durabilitySourceById.get(key));
+                        store.delete(key);
+                        metaStore.delete(key);
+                        pendingDeletedCount++;
+                    }
+                }
+
+                // Records that predate the metadata store. This is the only place
+                // that reliably sees them: `set` and the import write a row with
+                // every new record, and `updateAccessTimeInIdb` seeds one for any id
+                // a read touches — but a record whose clip was deleted without an
+                // explicit `remove` is referenced by no project, so nothing ever
+                // reads it.
+                //
+                // `restoreFromIdb` cannot be relied on either. It walks every key
+                // only when `ids` is undefined, and the two use-case callers always
+                // pass a list; the one caller that can omit it is `ExportDialog`,
+                // and only when the project has no clips referencing a buffer at
+                // all. So the ids it sees are, in every case that matters, ones
+                // some project still holds — the exact complement of this set.
+                //
+                // Left unmigrated such a record would be immortal — never
+                // age-collectable, and invisible to `garbageCollectBySize`'s total,
+                // so the 2 GiB budget would be computed over a store arbitrarily
+                // larger than it. v1 reaped these after `maxAgeDays` and so must
+                // this. Reading the record is the only way to recover its stamp and
+                // size, so the pass reads within a byte budget and converges over
+                // successive cleanups rather than doing it all at once. Same
+                // transaction as the reads above, so no window exists in which a
+                // row can outlive the record it describes.
+                let migrationBytes = 0;
+                for (const key of recordKeys) {
+                    if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
+                        break;
+                    }
+                    if (
+                        typeof key !== 'string' ||
+                        migratedIds.has(key) ||
+                        checkpointRetainedIds.has(key) ||
+                        persistenceGenerationById.has(key) ||
+                        durableOwnedIds.has(key)
+                    ) {
+                        continue;
+                    }
+                    const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
+                    if (!record) {
+                        continue;
+                    }
+                    const sizeInBytes = recordSizeInBytes(record);
+                    migrationBytes += sizeInBytes;
+                    if (typeof record.lastAccessed !== 'number') {
+                        // Neither the row nor the record carries a stamp. Records
+                        // written before `lastAccessed` existed are real — the
+                        // original `SerializedBuffer` was `{sampleRate,
+                        // numberOfChannels, channelData}` and nothing else.
+                        //
+                        // The clock starts now. That cannot advance a collection:
+                        // `Date.now()` is the furthest-future stamp available, so
+                        // the record becomes collectable `maxAgeDays` from this
+                        // pass and never sooner. The invariant is that a record is
+                        // never deleted on a stamp that was invented, and nothing
+                        // here deletes.
+                        //
+                        // Leaving the row unwritten is what would be unsafe, and
+                        // not for the obvious reason: the record would charge the
+                        // byte budget on this pass, never retire from the sweep,
+                        // and charge it again on every pass after — starving every
+                        // record behind it out of the migration for as long as it
+                        // exists. Those records would then stay out of
+                        // `garbageCollectBySize`'s total, which is the 2 GiB
+                        // residual this sweep was written to close.
+                        metaStore.put({ lastAccessed: Date.now(), sizeInBytes } satisfies BufferMeta, key);
+                        continue;
+                    }
+                    if (
+                        !persistenceGenerationById.has(key) &&
+                        !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
+                        record.lastAccessed < threshold
+                    ) {
+                        collectedSources.set(key, durabilitySourceById.get(key));
+                        store.delete(key);
+                        pendingDeletedCount++;
+                        continue;
+                    }
+                    metaStore.put({ lastAccessed: record.lastAccessed, sizeInBytes } satisfies BufferMeta, key);
+                }
+
+                // The count is reported only for deletes that committed.
+                await awaitTransaction(tx);
+                for (const [key, source] of collectedSources) {
+                    if (durabilitySourceById.get(key) === source) {
+                        evictCachedBuffer(key);
+                    }
+                }
+                deletedCount += pendingDeletedCount;
             });
-            deletedCount += recoveryCollection.count;
-            const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const metaStore = tx.objectStore(META_STORE_NAME);
-            // Reads the metadata store, not the records: the two numbers this
-            // loop wants are 16 bytes each, and `getAll()` on the records
-            // materialised every buffer in a store capped at 2 GiB to find
-            // them.
-            //
-            // The invariant is **never collect on a stamp we do not have** —
-            // not "never collect without a metadata row". The v1 code read
-            // `item.lastAccessed ?? 0`, which *invented* a stamp: an absent one
-            // read as the epoch and the record was deleted on the spot. That
-            // fallback is gone rather than moved. What replaces it is reading
-            // the real value, from the row where there is one and from the
-            // record where there is not.
-            const [metas, keys, recordKeys, checkpointRetainedIds] = await Promise.all([
-                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
-                awaitRequest(metaStore.getAllKeys()),
-                awaitRequest(store.getAllKeys()),
-                readCheckpointRetainedBufferIds(tx),
-            ]);
-
-            const migratedIds = new Set<IDBValidKey>(keys);
-            let pendingDeletedCount = 0;
-            for (let index = 0; index < metas.length; index++) {
-                const meta = metas[index]!;
-                const key = keys[index]! as string;
-                if (
-                    durableOwnedIds.has(key) ||
-                    checkpointRetainedIds.has(key) ||
-                    preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
-                    isProtectedFromCollection(meta)
-                ) {
-                    continue;
-                }
-                if (typeof meta.lastAccessed !== 'number') {
-                    continue;
-                }
-                if (meta.lastAccessed < threshold) {
-                    store.delete(key);
-                    metaStore.delete(key);
-                    evictCachedBuffer(key);
-                    pendingDeletedCount++;
-                }
-            }
-
-            // Records that predate the metadata store. This is the only place
-            // that reliably sees them: `set` and the import write a row with
-            // every new record, and `updateAccessTimeInIdb` seeds one for any id
-            // a read touches — but a record whose clip was deleted without an
-            // explicit `remove` is referenced by no project, so nothing ever
-            // reads it.
-            //
-            // `restoreFromIdb` cannot be relied on either. It walks every key
-            // only when `ids` is undefined, and the two use-case callers always
-            // pass a list; the one caller that can omit it is `ExportDialog`,
-            // and only when the project has no clips referencing a buffer at
-            // all. So the ids it sees are, in every case that matters, ones
-            // some project still holds — the exact complement of this set.
-            //
-            // Left unmigrated such a record would be immortal — never
-            // age-collectable, and invisible to `garbageCollectBySize`'s total,
-            // so the 2 GiB budget would be computed over a store arbitrarily
-            // larger than it. v1 reaped these after `maxAgeDays` and so must
-            // this. Reading the record is the only way to recover its stamp and
-            // size, so the pass reads within a byte budget and converges over
-            // successive cleanups rather than doing it all at once. Same
-            // transaction as the reads above, so no window exists in which a
-            // row can outlive the record it describes.
-            let migrationBytes = 0;
-            for (const key of recordKeys) {
-                if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
-                    break;
-                }
-                if (
-                    typeof key !== 'string' ||
-                    migratedIds.has(key) ||
-                    checkpointRetainedIds.has(key) ||
-                    durableOwnedIds.has(key)
-                ) {
-                    continue;
-                }
-                const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
-                if (!record) {
-                    continue;
-                }
-                const sizeInBytes = recordSizeInBytes(record);
-                migrationBytes += sizeInBytes;
-                if (typeof record.lastAccessed !== 'number') {
-                    // Neither the row nor the record carries a stamp. Records
-                    // written before `lastAccessed` existed are real — the
-                    // original `SerializedBuffer` was `{sampleRate,
-                    // numberOfChannels, channelData}` and nothing else.
-                    //
-                    // The clock starts now. That cannot advance a collection:
-                    // `Date.now()` is the furthest-future stamp available, so
-                    // the record becomes collectable `maxAgeDays` from this
-                    // pass and never sooner. The invariant is that a record is
-                    // never deleted on a stamp that was invented, and nothing
-                    // here deletes.
-                    //
-                    // Leaving the row unwritten is what would be unsafe, and
-                    // not for the obvious reason: the record would charge the
-                    // byte budget on this pass, never retire from the sweep,
-                    // and charge it again on every pass after — starving every
-                    // record behind it out of the migration for as long as it
-                    // exists. Those records would then stay out of
-                    // `garbageCollectBySize`'s total, which is the 2 GiB
-                    // residual this sweep was written to close.
-                    metaStore.put({ lastAccessed: Date.now(), sizeInBytes } satisfies BufferMeta, key);
-                    continue;
-                }
-                if (
-                    !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
-                    record.lastAccessed < threshold
-                ) {
-                    store.delete(key);
-                    evictCachedBuffer(key);
-                    pendingDeletedCount++;
-                    continue;
-                }
-                metaStore.put({ lastAccessed: record.lastAccessed, sizeInBytes } satisfies BufferMeta, key);
-            }
-
-            // The count is reported only for deletes that committed.
-            await awaitTransaction(tx);
-            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Age-based collection failed', { error });
             return deletedCount;
@@ -2501,73 +2759,85 @@ export const audioBufferCache = {
     async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
         let deletedCount = 0;
         try {
-            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
-            if (durableOwnedIds === null) {
-                return 0;
-            }
-            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
-            deletedCount += recoveryCollection.count;
-            const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
-            const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const metaStore = tx.objectStore(META_STORE_NAME);
-            // Metadata rows, for the same reason as `garbageCollectByAge`, and
-            // with the same consequence: a record with no row is neither a
-            // deletion candidate nor part of `currentTotal`.
-            //
-            // This collector does not sweep for un-migrated records itself.
-            // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
-            // before it, and that pass seeds or reaps them, so by the time this
-            // runs the rows exist for everything the budget reached. Doing the
-            // sweep in both would double the migration read for no gain.
-            //
-            // Until then those records are out of the total, so this collector
-            // evicts *less* than it should. That is the direction to be wrong
-            // in — the alternative is counting a record whose size is unknown as
-            // zero, which under-reports the total just as badly *and* makes it
-            // a candidate that frees nothing when deleted, so the loop would
-            // walk the whole store deleting audio without the total ever
-            // falling.
-            const [metas, keys, checkpointRetainedIds] = await Promise.all([
-                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
-                awaitRequest(metaStore.getAllKeys()),
-                readCheckpointRetainedBufferIds(tx),
-            ]);
-
-            // Sort by access time ascending (oldest first)
-            const entries = metas
-                .map((meta, index) => ({
-                    id: keys[index]! as string,
-                    lastAccessed: meta.lastAccessed,
-                    protected:
-                        durableOwnedIds.has(keys[index]! as string) ||
-                        checkpointRetainedIds.has(keys[index]! as string) ||
-                        isProtectedFromCollection(meta),
-                    size: meta.sizeInBytes,
-                }))
-                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
-                .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
-
-            let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
-            let pendingDeletedCount = 0;
-
-            for (const entry of entries) {
-                if (currentTotal <= ordinarySizeBudget) {
-                    break;
+            await withProjectAudioStorageLock(async () => {
+                const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+                if (durableOwnedIds === null) {
+                    return;
                 }
-                if (preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) || entry.protected) {
-                    continue;
+                const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
+                deletedCount += recoveryCollection.count;
+                const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
+                const db = await openDb();
+                const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const metaStore = tx.objectStore(META_STORE_NAME);
+                // Metadata rows, for the same reason as `garbageCollectByAge`, and
+                // with the same consequence: a record with no row is neither a
+                // deletion candidate nor part of `currentTotal`.
+                //
+                // This collector does not sweep for un-migrated records itself.
+                // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
+                // before it, and that pass seeds or reaps them, so by the time this
+                // runs the rows exist for everything the budget reached. Doing the
+                // sweep in both would double the migration read for no gain.
+                //
+                // Until then those records are out of the total, so this collector
+                // evicts *less* than it should. That is the direction to be wrong
+                // in — the alternative is counting a record whose size is unknown as
+                // zero, which under-reports the total just as badly *and* makes it
+                // a candidate that frees nothing when deleted, so the loop would
+                // walk the whole store deleting audio without the total ever
+                // falling.
+                const [metas, keys, checkpointRetainedIds] = await Promise.all([
+                    awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                    awaitRequest(metaStore.getAllKeys()),
+                    readCheckpointRetainedBufferIds(tx),
+                ]);
+
+                // Sort by access time ascending (oldest first)
+                const entries = metas
+                    .map((meta, index) => ({
+                        id: keys[index]! as string,
+                        lastAccessed: meta.lastAccessed,
+                        protected:
+                            durableOwnedIds.has(keys[index]! as string) ||
+                            checkpointRetainedIds.has(keys[index]! as string) ||
+                            isProtectedFromCollection(meta),
+                        size: meta.sizeInBytes,
+                    }))
+                    .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
+                    .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
+
+                let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
+                const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
+                let pendingDeletedCount = 0;
+
+                for (const entry of entries) {
+                    if (currentTotal <= ordinarySizeBudget) {
+                        break;
+                    }
+                    if (
+                        persistenceGenerationById.has(entry.id) ||
+                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) ||
+                        entry.protected
+                    ) {
+                        continue;
+                    }
+                    collectedSources.set(entry.id, durabilitySourceById.get(entry.id));
+                    store.delete(entry.id);
+                    metaStore.delete(entry.id);
+                    currentTotal -= entry.size;
+                    pendingDeletedCount++;
                 }
-                store.delete(entry.id);
-                metaStore.delete(entry.id);
-                evictCachedBuffer(entry.id);
-                currentTotal -= entry.size;
-                pendingDeletedCount++;
-            }
-            // The count is reported only for deletes that committed.
-            await awaitTransaction(tx);
-            deletedCount += pendingDeletedCount;
+                // The count is reported only for deletes that committed.
+                await awaitTransaction(tx);
+                for (const [key, source] of collectedSources) {
+                    if (durabilitySourceById.get(key) === source) {
+                        evictCachedBuffer(key);
+                    }
+                }
+                deletedCount += pendingDeletedCount;
+            });
         } catch (error) {
             logger.warn('[audioBufferCache] Size-based collection failed', { error });
             return deletedCount;

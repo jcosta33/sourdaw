@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -31,7 +33,11 @@ function makeAudioBuffer(channelData: Float32Array[], sampleRate = 48_000): Audi
 }
 
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const module = await import('../audioBufferCache');
+    const [module, ownership] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
 
@@ -53,6 +59,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
     });
 
@@ -203,10 +210,17 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
         audioBufferCache.set('evicted', makeAudioBuffer([new Float32Array([0.5])]));
         // The in-memory LRU is bounded at 64 entries, so 64 further buffers
         // push exactly the first one out while its IDB record survives.
+        const fillerIds: string[] = [];
         for (let index = 0; index < 64; index++) {
-            audioBufferCache.set(`filler-${index}`, makeAudioBuffer([new Float32Array([0.1])]));
+            const id = `filler-${index}`;
+            fillerIds.push(id);
+            audioBufferCache.set(id, makeAudioBuffer([new Float32Array([0.1])]));
         }
-        await flushIndexedDbTasks();
+        const durability = await audioBufferCache.ensureDurable(['evicted', ...fillerIds]);
+        if (durability.status !== 'durable') {
+            throw new TypeError('Expected every cache fill to become durable');
+        }
+        durability.release();
         expect(audioBufferCache.has('evicted')).toBe(false);
         // 65 persists, one readwrite transaction each.
         expect(controls.writeTransactionCount()).toBe(65);
@@ -216,7 +230,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
         // a genuine use and must move the stamp.
         now.mockReturnValue(30_000);
         const exported = await audioBufferCache.exportBuffers(['evicted']);
-        await flushIndexedDbTasks();
+        await vi.waitFor(() => expect(controls.committedMeta.get('evicted')?.lastAccessed).toBe(30_000));
 
         expect(exported.evicted?.sampleRate).toBe(48_000);
         expect(controls.writeTransactionCount()).toBe(66);

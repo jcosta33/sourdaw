@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     META_STORE,
@@ -88,21 +90,41 @@ function makeResidentAudioBuffer(): AudioBuffer {
     };
 }
 
+function residentAudioBufferWithSample(sample: number): AudioBuffer {
+    const channel = new Float32Array([sample]);
+    return {
+        ...makeResidentAudioBuffer(),
+        getChannelData: () => channel,
+    };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let settle!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, resolve: settle };
+}
+
 describe('audioBufferCache durable ownership', () => {
     let controls: FakeAudioIndexedDbControls;
     let routes: ProductionRoutes;
+    let lockManager: ReturnType<typeof createControlledLockManager>;
 
     beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         vi.spyOn(Date, 'now').mockReturnValue(NOW);
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         routes = await importProductionRoutes();
     });
 
     afterEach(async () => {
-        routes.setDurableAudioBufferOwnershipProvider(null);
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         await flushIndexedDbTasks();
+        routes.setDurableAudioBufferOwnershipProvider(null);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
@@ -167,15 +189,18 @@ describe('audioBufferCache durable ownership', () => {
             );
         });
 
-        it('keeps today’s age rule for unowned entries when no provider is registered', async () => {
+        it('deletes nothing when no ownership provider is registered', async () => {
             seedOrdinaryEntry(controls, 'ancient', THIRTY_ONE_DAYS_AGO);
             seedOrdinaryEntry(controls, 'fresh', NOW);
 
             const deleted = await routes.garbageCollectCachedAudioBuffersByAge({ maxAgeDays: 30 });
 
-            expect(deleted).toBe(1);
-            expect(controls.committed.has('ancient')).toBe(false);
+            expect(deleted).toBe(0);
+            expect(controls.committed.has('ancient')).toBe(true);
             expect(controls.committed.has('fresh')).toBe(true);
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(
+                '[audioBufferCache] Durable ownership provider is unavailable; deletion refused'
+            );
         });
     });
 
@@ -222,6 +247,24 @@ describe('audioBufferCache durable ownership', () => {
                 expect.objectContaining({ error: expect.anything() })
             );
         });
+
+        it('keeps raw PCM and metadata in a freeze sweep when no ownership provider is registered', async () => {
+            controls.committed.set('freeze-provider-absent', ordinaryRecord(NOW, 4));
+            controls.committedMeta.set('freeze-provider-absent', {
+                lastAccessed: NOW,
+                sizeInBytes: 4,
+                freezeProjectId: 200,
+            });
+
+            await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set<string>(), projectId: 200 });
+
+            expect(controls.committed.get('freeze-provider-absent')).toEqual(ordinaryRecord(NOW, 4));
+            expect(controls.committedMeta.get('freeze-provider-absent')).toEqual({
+                lastAccessed: NOW,
+                sizeInBytes: 4,
+                freezeProjectId: 200,
+            });
+        });
     });
 
     describe('production size sweep', () => {
@@ -256,6 +299,214 @@ describe('audioBufferCache durable ownership', () => {
                 '[audioBufferCache] Durable ownership enumeration failed; collection aborted without deleting',
                 expect.objectContaining({ error: expect.anything() })
             );
+        });
+
+        it('keeps raw PCM and metadata when no ownership provider is registered', async () => {
+            seedOrdinaryEntry(controls, 'provider-absent', THIRTY_ONE_DAYS_AGO, 4);
+
+            const deleted = await routes.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+
+            expect(deleted).toBe(0);
+            expect(controls.committed.get('provider-absent')).toEqual(ordinaryRecord(THIRTY_ONE_DAYS_AGO, 4));
+            expect(controls.committedMeta.get('provider-absent')).toEqual({
+                lastAccessed: THIRTY_ONE_DAYS_AGO,
+                sizeInBytes: 4,
+            });
+        });
+
+        it('deletes nothing when the cross-renderer storage lock is unavailable', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            seedOrdinaryEntry(controls, 'unowned-middle', THIRTY_ONE_DAYS_AGO);
+            vi.stubGlobal('navigator', { ...navigator, locks: undefined });
+
+            const deleted = await routes.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+
+            expect(deleted).toBe(0);
+            expect(controls.committed.has('unowned-middle')).toBe(true);
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(
+                '[audioBufferCache] Size-based collection failed',
+                expect.objectContaining({ error: expect.any(Error) })
+            );
+        });
+    });
+
+    describe('broad destructive operations', () => {
+        it('remove preserves named-owned durable rows and deletes an unowned row', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned']));
+            seedOrdinaryEntry(controls, 'owned', NOW);
+            seedOrdinaryEntry(controls, 'unowned', NOW);
+
+            routes.audioBufferCache.remove('owned');
+            routes.audioBufferCache.remove('unowned');
+            await flushIndexedDbTasks();
+
+            expect(controls.committed.has('owned')).toBe(true);
+            expect(controls.committedMeta.has('owned')).toBe(true);
+            expect(controls.committed.has('unowned')).toBe(false);
+            expect(controls.committedMeta.has('unowned')).toBe(false);
+        });
+
+        it('a named-owned removal re-tracks pending persistence and remains usable after settlement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['pending-owned']));
+            controls.pauseWriteSettlements();
+            routes.audioBufferCache.set('pending-owned', residentAudioBufferWithSample(0.6));
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+
+            routes.audioBufferCache.remove('pending-owned');
+            controls.releaseNextWriteSettlement();
+            const removalSettled = lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            controls.releaseNextWriteSettlement();
+            await removalSettled;
+
+            const durabilityPending = routes.audioBufferCache.ensureDurable(['pending-owned']);
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            controls.releaseNextWriteSettlement();
+            const durability = await durabilityPending;
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                expect(durability.isCurrent()).toBe(true);
+                durability.release();
+            }
+            expect(controls.committed.has('pending-owned')).toBe(true);
+            expect(controls.committed.get('pending-owned')?.channelData[0]?.[0]).toBe(Math.fround(0.6));
+        });
+
+        it('clear preserves named-owned durable rows and deletes unowned rows', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned']));
+            seedOrdinaryEntry(controls, 'owned', NOW);
+            seedOrdinaryEntry(controls, 'unowned', NOW);
+
+            routes.audioBufferCache.clear();
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(controls.committed.has('owned')).toBe(true);
+            expect(controls.committedMeta.has('owned')).toBe(true);
+            expect(controls.committed.has('unowned')).toBe(false);
+            expect(controls.committedMeta.has('unowned')).toBe(false);
+        });
+
+        it('remove and clear delete no durable rows when ownership is unknown', async () => {
+            seedOrdinaryEntry(controls, 'remove-unknown', NOW);
+            seedOrdinaryEntry(controls, 'clear-unknown', NOW);
+
+            routes.audioBufferCache.remove('remove-unknown');
+            routes.audioBufferCache.clear();
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(controls.committed.has('remove-unknown')).toBe(true);
+            expect(controls.committed.has('clear-unknown')).toBe(true);
+        });
+
+        it('a delayed old remove cannot delete or tombstone a newer replacement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.1));
+            const initialDurability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            expect(initialDurability.status).toBe('durable');
+            if (initialDurability.status === 'durable') {
+                initialDurability.release();
+            }
+            const held = deferred();
+            const holder = lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => held.promise
+            );
+
+            let replacementDurabilityPromise!: ReturnType<typeof routes.audioBufferCache.ensureDurable>;
+            try {
+                routes.audioBufferCache.remove('replacement-race');
+                routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.9));
+                replacementDurabilityPromise = routes.audioBufferCache.ensureDurable(['replacement-race']);
+                let replacementSettled = false;
+                void replacementDurabilityPromise.then(() => {
+                    replacementSettled = true;
+                });
+                await flushIndexedDbTasks(2);
+                expect(replacementSettled).toBe(false);
+            } finally {
+                held.resolve();
+                await holder;
+            }
+            const replacementDurability = await replacementDurabilityPromise;
+            expect(replacementDurability.status).toBe('durable');
+            if (replacementDurability.status === 'durable') {
+                replacementDurability.release();
+            }
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(Array.from(controls.committed.get('replacement-race')?.channelData[0] ?? [])).toEqual([
+                Math.fround(0.9),
+            ]);
+            expect(controls.committedMeta.get('replacement-race')).toMatchObject({ sizeInBytes: 4 });
+            const durability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                durability.release();
+            }
+        });
+
+        it('a delayed clear does not delete a newer replacement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            seedOrdinaryEntry(controls, 'replacement-after-clear', NOW);
+            const held = deferred();
+            const holder = lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => held.promise
+            );
+
+            let replacementDurabilityPromise!: ReturnType<typeof routes.audioBufferCache.ensureDurable>;
+            try {
+                routes.audioBufferCache.clear();
+                routes.audioBufferCache.set('replacement-after-clear', residentAudioBufferWithSample(0.9));
+                replacementDurabilityPromise = routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+                let replacementSettled = false;
+                void replacementDurabilityPromise.then(() => {
+                    replacementSettled = true;
+                });
+                await flushIndexedDbTasks(2);
+                expect(replacementSettled).toBe(false);
+            } finally {
+                held.resolve();
+                await holder;
+            }
+            const replacementDurability = await replacementDurabilityPromise;
+            expect(replacementDurability.status).toBe('durable');
+            if (replacementDurability.status === 'durable') {
+                replacementDurability.release();
+            }
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(Array.from(controls.committed.get('replacement-after-clear')?.channelData[0] ?? [])).toEqual([
+                Math.fround(0.9),
+            ]);
+            expect(controls.committedMeta.get('replacement-after-clear')).toMatchObject({ sizeInBytes: 4 });
+            const durability = await routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                durability.release();
+            }
         });
     });
 });

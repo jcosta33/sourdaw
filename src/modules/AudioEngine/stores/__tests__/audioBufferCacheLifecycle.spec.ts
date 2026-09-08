@@ -1,14 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
 // of the module (audit M-045), and these tests install a new `indexedDB` double
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
+let lockManager: ReturnType<typeof createControlledLockManager>;
 
 beforeEach(async () => {
     vi.resetModules();
-    ({ audioBufferCache } = await import('../audioBufferCache'));
+    lockManager = createControlledLockManager();
+    vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
+    [{ audioBufferCache }, { setDurableAudioBufferOwnershipProvider }] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
 /** Minimal AudioBuffer double backed by real Float32 channel data. */
@@ -159,19 +169,13 @@ function installFakeIndexedDb(): FakeBacking {
     return backing;
 }
 
-/** Flush the fake IDB microtasks queued by fire-and-forget persistence. */
-async function settle(): Promise<void> {
-    for (let round = 0; round < 8; round++) {
-        await Promise.resolve();
-    }
-}
-
 const MAX_ENTRIES = 64;
 
 describe('audioBufferCache lifecycle', () => {
     afterEach(async () => {
         audioBufferCache.clear();
-        await settle();
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        setDurableAudioBufferOwnershipProvider(null);
         vi.unstubAllGlobals();
     });
 
@@ -514,22 +518,30 @@ describe('audioBufferCache lifecycle', () => {
     describe('garbage collection', () => {
         it('drops inactive freeze buffers from memory while keeping active and non-freeze entries', async () => {
             installFakeIndexedDb();
-            audioBufferCache.set('freeze-project-200-track-old-1', createAudioBuffer({ length: 1 }), {
+            const inactiveId = 'freeze-project-200-track-old-1';
+            const activeId = 'freeze-project-200-track-active-2';
+            const ordinaryId = 'clip-normal';
+            audioBufferCache.set(inactiveId, createAudioBuffer({ length: 1 }), {
                 freezeProjectId: 200,
             });
-            audioBufferCache.set('freeze-project-200-track-active-2', createAudioBuffer({ length: 1 }), {
+            audioBufferCache.set(activeId, createAudioBuffer({ length: 1 }), {
                 freezeProjectId: 200,
             });
-            audioBufferCache.set('clip-normal', createAudioBuffer({ length: 1 }));
+            audioBufferCache.set(ordinaryId, createAudioBuffer({ length: 1 }));
+            const durability = await audioBufferCache.ensureDurable([inactiveId, activeId, ordinaryId]);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                durability.release();
+            }
 
             await audioBufferCache.garbageCollectFreezeFiles({
-                activeIds: new Set(['freeze-project-200-track-active-2']),
+                activeIds: new Set([activeId]),
                 projectId: 200,
             });
 
-            expect(audioBufferCache.has('freeze-project-200-track-old-1')).toBe(false);
-            expect(audioBufferCache.has('freeze-project-200-track-active-2')).toBe(true);
-            expect(audioBufferCache.has('clip-normal')).toBe(true);
+            expect(audioBufferCache.has(inactiveId)).toBe(false);
+            expect(audioBufferCache.has(activeId)).toBe(true);
+            expect(audioBufferCache.has(ordinaryId)).toBe(true);
         });
 
         it('garbageCollectByAge deletes only durable entries older than the threshold', async () => {

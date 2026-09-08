@@ -35,7 +35,7 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn<() => string>(),
@@ -309,9 +309,13 @@ async function bootRestoreBlankProjectB(): Promise<void> {
 
 describe('recent-menu switch after a fresh renderer restored the blank project (#2898)', () => {
     let idbControls: ReturnType<typeof installFakeIndexedDb> | undefined;
+    let lockManager: { locks: Pick<LockManager, 'request'> };
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
+        const { createControlledLockManager } = await import('#/infra/testing/createControlledLockManager');
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         // One fake IndexedDB world across tests: storageSupport caches its
         // database handle module-globally, so the first install stays the
         // connected one and later installs only replace the global stub.
@@ -333,6 +337,11 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
             onAuthorityReplaced?.();
         });
         resetLiveStoresToBlank();
+    });
+
+    afterEach(async () => {
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        vi.unstubAllGlobals();
     });
 
     it('the menu save-before-switch commits the saved project over the restored blank one', async () => {

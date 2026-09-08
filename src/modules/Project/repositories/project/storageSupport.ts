@@ -19,6 +19,11 @@ const DB_NAME = 'sourdaw-projects';
 const STORE_NAME = 'projects';
 const DB_VERSION = 1;
 
+type IndexedDbRecord = {
+    key: IDBValidKey;
+    value: unknown;
+};
+
 // In-memory cache for synchronous reads. Populated from IndexedDB on
 // init or from in-process writes. Independent of the IDB connection — the
 // cache may be set before or after the DB is open and can serve reads even if
@@ -137,6 +142,22 @@ function idbDelete(key: string): Promise<void> {
     });
 }
 
+function idbListRecords(): Promise<readonly IndexedDbRecord[]> {
+    return runTransaction<readonly IndexedDbRecord[]>('readonly', (store) => {
+        const records: IndexedDbRecord[] = [];
+        const request = store.openCursor();
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                return;
+            }
+            records.push({ key: cursor.key, value: cursor.value });
+            cursor.continue();
+        };
+        return () => records;
+    });
+}
+
 async function warmCache(): Promise<void> {
     const stored = await idbGet(ACTIVE_PROJECT_KEY);
     if (stored && !cachedJson) {
@@ -165,6 +186,7 @@ const storageSupport = {
     getIndexedDb: idbGet,
     initializeIndexedDb: initDB,
     legacyProjectStorageKey: LEGACY_PROJECT_STORAGE_KEY,
+    listIndexedDbRecords: idbListRecords,
     primaryKey: ACTIVE_PROJECT_KEY,
     putIndexedDb: idbPut,
     setCachedJson,

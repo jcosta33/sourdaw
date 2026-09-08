@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { saveProject } from '../saveProject';
 
+import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import type { inspectCurrentAgentProjectRepairState } from '#/modules/CrdtDocument/useCases';
 import type { ProjectStoreState } from '../../../../stores/projectStore';
 import type { BuiltProjectData } from '../../fileIO/buildProjectData';
@@ -30,8 +33,8 @@ const mocks = vi.hoisted(() => {
         setSemanticContext: vi.fn(),
         clearSemanticContext: vi.fn(),
         writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
-        ensureCachedAudioBuffersDurable: vi.fn(() =>
-            Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+        ensureCachedAudioBuffersDurable: vi.fn<typeof ensureCachedAudioBuffersDurable>(() =>
+            Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })
         ),
     };
 });
@@ -145,9 +148,21 @@ function mockBuiltProjectData(snapshotRevision = 'saved-revision'): void {
     });
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let settle!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, resolve: settle };
+}
+
 describe('saveProject', () => {
+    let lockManager: ReturnType<typeof createControlledLockManager>;
+
     beforeEach(() => {
         vi.clearAllMocks();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         installFakeIndexedDb();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
@@ -229,6 +244,72 @@ describe('saveProject', () => {
         finishMigration?.();
         await expect(saving).resolves.toBe(true);
         expect(mocks.buildProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('revalidates snapshot authority after waiting for the storage lock', async () => {
+        const held = deferred();
+        const holder = lockManager.locks.request(
+            'sourdaw:project-audio-storage',
+            { mode: 'exclusive' },
+            async () => held.promise
+        );
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith([]);
+
+        mocks.projectStoreValue.value = { ...makeProject(), createdAt: 1700000000001 };
+        held.resolve();
+        await holder;
+
+        await expect(saving).resolves.toBe(false);
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+    });
+
+    it('refuses a preflight receipt invalidated while Save waits for the storage lock', async () => {
+        const held = deferred();
+        const holder = lockManager.locks.request(
+            'sourdaw:project-audio-storage',
+            { mode: 'exclusive' },
+            async () => held.promise
+        );
+        let receiptCurrent = true;
+        const release = vi.fn();
+        mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
+            status: 'durable',
+            isCurrent: () => receiptCurrent,
+            release,
+        });
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        receiptCurrent = false;
+        held.resolve();
+        await holder;
+
+        await expect(saving).resolves.toBe(false);
+        expect(release).toHaveBeenCalledOnce();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+    });
+
+    it('reports failure before PCM or project persistence when Web Locks are unavailable', async () => {
+        vi.stubGlobal('navigator', { ...navigator, locks: undefined });
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Save failed — your latest changes could not be persisted.',
+            'error'
+        );
     });
 
     it('clears a migrated project only after validating its post-migration identity', async () => {

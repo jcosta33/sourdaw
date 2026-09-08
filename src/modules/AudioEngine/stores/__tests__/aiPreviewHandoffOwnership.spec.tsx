@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { AiRenderClipPreview } from '#/modules/BrowserAi/presentations/views';
@@ -175,6 +176,7 @@ function expectPlaybackResolvesPcm(bufferId: string, pcm: Float32Array): void {
 
 describe('AI preview handoff ownership', () => {
     beforeEach(() => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls.committed.clear();
         controls.committedMeta.clear();
         controls.committedRecovery.clear();

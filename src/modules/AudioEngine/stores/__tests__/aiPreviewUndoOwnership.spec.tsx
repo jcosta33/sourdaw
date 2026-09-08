@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     addClip,
@@ -219,6 +220,7 @@ describe('AI preview undo ownership', () => {
     });
 
     beforeEach(() => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls.committed.clear();
         controls.committedMeta.clear();
         controls.committedRecovery.clear();

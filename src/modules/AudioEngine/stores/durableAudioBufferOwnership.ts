@@ -10,11 +10,9 @@
  * while any one of them remains.
  *
  * AudioEngine must not import Project, so the composition root injects the
- * provider here. An unset provider means no durable ownership is knowable in
- * this process (fresh boot with no recents, tests) — the collectors treat the
- * owned set as empty and keep the plain age/budget rules. A provider that
- * rejects is an enumeration failure: the collectors abort the run and delete
- * nothing, because nothing can be proven unowned.
+ * provider here. An unset or rejecting provider means durable ownership is
+ * unknown, so destructive storage operations refuse primary deletion because
+ * no buffer can be proven unowned.
  */
 export type DurableAudioBufferOwnershipProvider = () => Promise<readonly string[]>;
 

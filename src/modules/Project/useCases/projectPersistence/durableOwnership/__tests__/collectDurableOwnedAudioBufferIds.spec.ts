@@ -1,28 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
+
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { getProjectSnapshotKey } from '../../getProjectSnapshotKey';
 
 // Imported fresh per test. `storageSupport` memoizes its IndexedDB connection
 // and the recent-projects adapter caches its entries for the life of the
-// module, and these tests install a new `indexedDB` double per test — without
-// the reset, every test after the first would keep talking to the first test's
-// double through the memoized connection.
+// module, and these tests install a new IndexedDB factory per test.
 type SubjectModules = {
     collectDurableOwnedAudioBufferIds: typeof import('../collectDurableOwnedAudioBufferIds').collectDurableOwnedAudioBufferIds;
     storageSupport: typeof import('../../../../repositories/project/storageSupport').storageSupport;
     writeNamedProjectJsonByKey: typeof import('../../../../repositories/project/writeNamedProjectJsonByKey').writeNamedProjectJsonByKey;
+    readNamedProjectJson: typeof import('../../../../repositories/project/readNamedProjectJson').readNamedProjectJson;
     addToRecentProjects: typeof import('../../../recentProjects/addToRecentProjects').addToRecentProjects;
     getRecentProjects: typeof import('../../../recentProjects/helpers').getRecentProjects;
     removeFromRecentProjects: typeof import('../../../recentProjects/removeFromRecentProjects').removeFromRecentProjects;
 };
 
 async function importSubjectModules(): Promise<SubjectModules> {
-    const [subject, storage, writeNamed, addToRecent, recentHelpers, removeFromRecent] = await Promise.all([
+    const [subject, storage, writeNamed, readNamed, addToRecent, recentHelpers, removeFromRecent] = await Promise.all([
         import('../collectDurableOwnedAudioBufferIds'),
         import('../../../../repositories/project/storageSupport'),
         import('../../../../repositories/project/writeNamedProjectJsonByKey'),
+        import('../../../../repositories/project/readNamedProjectJson'),
         import('../../../recentProjects/addToRecentProjects'),
         import('../../../recentProjects/helpers'),
         import('../../../recentProjects/removeFromRecentProjects'),
@@ -31,6 +35,7 @@ async function importSubjectModules(): Promise<SubjectModules> {
         collectDurableOwnedAudioBufferIds: subject.collectDurableOwnedAudioBufferIds,
         storageSupport: storage.storageSupport,
         writeNamedProjectJsonByKey: writeNamed.writeNamedProjectJsonByKey,
+        readNamedProjectJson: readNamed.readNamedProjectJson,
         addToRecentProjects: addToRecent.addToRecentProjects,
         getRecentProjects: recentHelpers.getRecentProjects,
         removeFromRecentProjects: removeFromRecent.removeFromRecentProjects,
@@ -39,13 +44,13 @@ async function importSubjectModules(): Promise<SubjectModules> {
 
 // The enumeration must speak for actually-persisted projects, so every test
 // here writes its snapshot through the real repository path saveProject uses
-// (writeNamedProjectJsonByKey into the IndexedDB double, plus the real recent
-// index entry) and reads nothing from in-memory state.
+// (`writeNamedProjectJsonByKey` into real fake-indexeddb transactions) and
+// reads nothing from in-memory state.
 
 const PROJECT_A_CREATED_AT = 1_700_000_000_000;
 const PROJECT_B_CREATED_AT = 1_700_000_100_000;
 
-function clip(bufferId: string, legacy = false): ProjectData['arrangement']['tracks'][number]['clips'][number] {
+function clip(bufferId: string): ProjectData['arrangement']['tracks'][number]['clips'][number] {
     return {
         id: `clip-${bufferId}`,
         trackId: 'track-1',
@@ -59,7 +64,7 @@ function clip(bufferId: string, legacy = false): ProjectData['arrangement']['tra
         color: '#000000',
         locked: false,
         muted: false,
-        ...(legacy ? { audioBufferId: bufferId } : { bufferId }),
+        bufferId,
     };
 }
 
@@ -68,13 +73,11 @@ function projectDataFixture({
     frozenBufferId,
     alternativeClips = [],
     storedArrangementClips = [],
-    audioBufferKeys = [],
 }: {
     clips: ReturnType<typeof clip>[];
     frozenBufferId?: string;
     alternativeClips?: ReturnType<typeof clip>[];
     storedArrangementClips?: ReturnType<typeof clip>[];
-    audioBufferKeys?: string[];
 }): ProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
@@ -207,22 +210,29 @@ function projectDataFixture({
                   activeArrangementId: 'arrangement-2',
               }
             : {}),
-        ...(audioBufferKeys.length > 0
-            ? {
-                  audioBuffers: Object.fromEntries(
-                      audioBufferKeys.map((id) => [id, { sampleRate: 48_000, numberOfChannels: 1, channelData: [] }])
-                  ),
-              }
-            : {}),
         history: { checkpoints: [] },
     };
 }
 
 let modules: SubjectModules;
+let installation: TransactionalIndexedDbInstallation;
+
+function projectSnapshotForPersistence(name: string, createdAt: number, data: ProjectData): ProjectData {
+    return {
+        ...data,
+        meta: {
+            ...data.meta,
+            projectId: crypto.randomUUID(),
+            name,
+            createdAt,
+            updatedAt: createdAt,
+        },
+    };
+}
 
 async function persistSavedProject(name: string, createdAt: number, data: ProjectData): Promise<string> {
     const key = getProjectSnapshotKey(createdAt);
-    await modules.writeNamedProjectJsonByKey(key, JSON.stringify(data));
+    await modules.writeNamedProjectJsonByKey(key, JSON.stringify(projectSnapshotForPersistence(name, createdAt, data)));
     modules.addToRecentProjects(name, key);
     return key;
 }
@@ -230,16 +240,24 @@ async function persistSavedProject(name: string, createdAt: number, data: Projec
 describe('collectDurableOwnedAudioBufferIds', () => {
     beforeEach(async () => {
         vi.resetModules();
-        installFakeIndexedDb();
         window.localStorage.clear();
+        installation = installTransactionalIndexedDb();
         modules = await importSubjectModules();
     });
 
-    afterEach(() => {
-        vi.unstubAllGlobals();
+    afterEach(async () => {
+        await installation.dispose();
+        window.localStorage.clear();
+        vi.resetModules();
     });
 
     it('returns an empty set when no project is persisted', async () => {
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+    });
+
+    it('does not treat the active project cache record as a named project', async () => {
+        await modules.storageSupport.putIndexedDb(modules.storageSupport.primaryKey, '{not-json');
+
         await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
     });
 
@@ -251,16 +269,43 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         expect([...owned].sort()).toEqual(['buffer-a', 'buffer-b']);
     });
 
-    it('collects the sections buildProjectData writes ids into, with the legacy clip alias', async () => {
+    it('keeps an evicted recent-project snapshot as a durable audio owner', async () => {
+        const oldestKey = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
+        const oldestSnapshot = JSON.stringify(
+            projectSnapshotForPersistence(
+                'Saved 0',
+                PROJECT_A_CREATED_AT,
+                projectDataFixture({ clips: [clip('buffer-oldest')] })
+            )
+        );
+        await modules.writeNamedProjectJsonByKey(oldestKey, oldestSnapshot);
+        modules.addToRecentProjects('Saved 0', oldestKey);
+
+        for (let index = 1; index <= 10; index++) {
+            const createdAt = PROJECT_A_CREATED_AT + index;
+            await persistSavedProject(
+                `Saved ${index}`,
+                createdAt,
+                projectDataFixture({ clips: [clip(`buffer-${index}`)] })
+            );
+        }
+
+        expect(modules.getRecentProjects()).toHaveLength(10);
+        expect(modules.getRecentProjects()).not.toContainEqual(expect.objectContaining({ key: oldestKey }));
+        await expect(modules.readNamedProjectJson(oldestKey)).resolves.toBe(oldestSnapshot);
+
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toContain('buffer-oldest');
+    });
+
+    it('collects every current serialized reference section written by buildProjectData', async () => {
         await persistSavedProject(
             'Saved A',
             PROJECT_A_CREATED_AT,
             projectDataFixture({
-                clips: [clip('buffer-active'), clip('buffer-legacy', true)],
+                clips: [clip('buffer-active')],
                 frozenBufferId: 'buffer-frozen',
                 alternativeClips: [clip('buffer-alternative')],
                 storedArrangementClips: [clip('buffer-inactive-arrangement')],
-                audioBufferKeys: ['buffer-embedded'],
             })
         );
 
@@ -268,14 +313,12 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         expect([...owned].sort()).toEqual([
             'buffer-active',
             'buffer-alternative',
-            'buffer-embedded',
             'buffer-frozen',
             'buffer-inactive-arrangement',
-            'buffer-legacy',
         ]);
     });
 
-    it('keeps a shared buffer owned while any referencing project remains, and releases it when none do', async () => {
+    it('keeps a shared buffer owned after every recent-project entry is removed without deleting durable records', async () => {
         const keyA = await persistSavedProject(
             'Saved A',
             PROJECT_A_CREATED_AT,
@@ -292,7 +335,9 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-shared']);
 
         modules.removeFromRecentProjects(keyB);
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+        await expect(modules.readNamedProjectJson(keyA)).resolves.not.toBeNull();
+        await expect(modules.readNamedProjectJson(keyB)).resolves.not.toBeNull();
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-shared']);
     });
 
     it('releases a project audio when its durable record is removed while the recent entry stays', async () => {
@@ -314,12 +359,7 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
     });
 
-    it('reads a supported v1 flat snapshot through the same interpreter the loaders use', async () => {
-        // MIN_SUPPORTED_PROJECT_VERSION is 1 and v1 saves were flat: top-level
-        // `tracks`, no `arrangement`. Interpreting them without
-        // `normalizeLegacyProjectData` — the interpreter every load path runs
-        // first — would reject the provider on such an install and abort every
-        // collection run forever.
+    it('rejects a legacy snapshot instead of treating it as current ownership data', async () => {
         const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
         await modules.writeNamedProjectJsonByKey(
             key,
@@ -346,25 +386,31 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         );
         modules.addToRecentProjects('Legacy Song', key);
 
-        const owned = await modules.collectDurableOwnedAudioBufferIds();
-        expect([...owned].sort()).toEqual(['buffer-v1', 'buffer-v1-frozen', 'buffer-v1-legacy']);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow(
+            'is not a valid current-format project snapshot'
+        );
     });
 
     it('fails the enumeration when a persisted snapshot cannot be parsed, so the collector can delete nothing', async () => {
-        const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
+        await persistSavedProject(
+            'Valid owner',
+            PROJECT_A_CREATED_AT,
+            projectDataFixture({ clips: [clip('buffer-valid-owner')] })
+        );
+        const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT + 1);
         await modules.writeNamedProjectJsonByKey(key, '{"arrangement":');
         modules.addToRecentProjects('Corrupt', key);
 
         await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow();
     });
 
-    it('fails the enumeration when a persisted snapshot has no arrangement tracks to read', async () => {
+    it('fails the enumeration when a current-format snapshot has malformed tracks', async () => {
         const key = getProjectSnapshotKey(PROJECT_A_CREATED_AT);
         await modules.writeNamedProjectJsonByKey(key, JSON.stringify({ version: CURRENT_PROJECT_VERSION, meta: {} }));
         modules.addToRecentProjects('Uninterpretable', key);
 
         await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow(
-            'Persisted project snapshot is missing its arrangement tracks.'
+            'is not a valid current-format project snapshot'
         );
     });
 });

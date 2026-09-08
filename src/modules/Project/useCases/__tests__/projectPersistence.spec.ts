@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installFakeIndexedDb } from '../../__tests__/fakeIndexedDb';
@@ -192,7 +193,11 @@ vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
 }));
 
 describe('Project Persistence Use Cases', () => {
+    let lockManager: ReturnType<typeof createControlledLockManager>;
+
     beforeEach(() => {
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         injectDependencies(notifyUser, { eventBus: { emit } });
         emit.mockClear();
         vi.clearAllMocks();
@@ -230,7 +235,8 @@ describe('Project Persistence Use Cases', () => {
         });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         vi.unstubAllGlobals();
     });
 
