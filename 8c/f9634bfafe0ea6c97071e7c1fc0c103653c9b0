@@ -1,0 +1,29 @@
+scripts/__tests__/desktopLatencyRecord.spec.ts
+  s_9b530f08172a54::t_a7c7c321017371 72-76
+scripts/__tests__/desktopLatencyPlayStart.spec.ts
+  s_9b530f08172a54::t_a17749847fa2a6 11-20,23,25-27,32-36,41,44-65,70-72,78-94,98,100-101,114-115,128-133,137
+scripts/desktopLatencyConnect.ts
+  s_9b530f08172a54::t_abf820cb2e97d5 688,695-700
+  s_9b530f08172a54::t_d5ceed1761a9fb 365-372
+  s_9b530f08172a54::t_64df286a31b40c 410-415,418,420,426,433-444
+scripts/desktopLatencyPlayStart.ts
+  s_9b530f08172a54::t_f12fd25173ef22 134
+  s_9b530f08172a54::t_26b5f345cd9f14 3-5,20-34,36-47,50-76,83,99-107,110,120-125,127-128,130,133,135-136,149
+  s_9b530f08172a54::t_b8c92a1fd3c037 129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8cf9634bfafe0ea6c97071e7c1fc0c103653c9b0",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
