@@ -1,0 +1,77 @@
+src/modules/MIDI/handlers/noteTransform/handleTransposeNotes.ts
+  s_87ab0a2f60ccf8::t_bd1aa384caae01 11-14,17-23,29
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/quantizeNoteLengths.spec.ts
+  s_87ab0a2f60ccf8::t_776b70cdebd2e0 34-45
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/transposeNotes.spec.ts
+  s_87ab0a2f60ccf8::t_d55e28feadaeaf 34-38
+src/modules/MIDI/useCases/midiNoteTransforms/transposeNotes.ts
+  s_87ab0a2f60ccf8::t_b78b6b740b8d8f 5,12
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a3ca87802bedcb::t_6fe6a52b2b4b47 1299-1303,1325-1329,1360-1364
+src/modules/MIDI/handlers/noteTransform/__tests__/handleQuantizeNotes.spec.ts
+  s_87ab0a2f60ccf8::t_f2cf4bf840b4f6 39-49,73-81
+src/modules/MIDI/handlers/noteTransform/__tests__/handleTransposeAndRestoreSoloSafe.spec.ts
+  s_c2a4d9a6d7bb2d::t_efddaee3a419e1 39-49,84-92
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNoteLengths.ts
+  s_c2a4d9a6d7bb2d::t_2a82ab9ffa9f28 10-13,16-22,28
+src/modules/MIDI/handlers/noteTransform/handleQuantizeNotes.ts
+  s_c2a4d9a6d7bb2d::t_3310fa606f0598 10-11,14,21,32-33
+src/modules/MIDI/transformers/__tests__/quantizeMidiNoteLengths.spec.ts
+  s_87ab0a2f60ccf8::t_d8d1511297caf0 50-68
+src/modules/MIDI/transformers/__tests__/quantizeMidiNotes.spec.ts
+  s_87ab0a2f60ccf8::t_182839960358ac 119-149
+src/modules/MIDI/transformers/__tests__/transposeMidiNotes.spec.ts
+  s_c2a4d9a6d7bb2d::t_09fde1173506cd 37-54
+src/modules/MIDI/transformers/quantizeMidiNoteLengths.ts
+  s_87ab0a2f60ccf8::t_18c4293d2bb63d 6,15,17-19
+src/modules/MIDI/transformers/quantizeMidiNotes.ts
+  s_c2a4d9a6d7bb2d::t_bec8668a7c392a 10,13-20,22-24
+src/modules/MIDI/transformers/transposeMidiNotes.ts
+  s_87ab0a2f60ccf8::t_10d155d6d83d40 6,9-19
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  s_c2a4d9a6d7bb2d::t_72f6fcce0888c1 133,139-140
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/quantizeNotes.spec.ts
+  s_c2a4d9a6d7bb2d::t_8578ba33f76c76 32-36
+src/modules/MIDI/useCases/midiNoteTransforms/quantizeNoteLengths.ts
+  s_c2a4d9a6d7bb2d::t_9fbf4195717d82 15,18
+src/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes.ts
+  s_c2a4d9a6d7bb2d::t_594d8314ad3155 5-11,18
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_c2a4d9a6d7bb2d::t_0f7456e78f392a 158-162,184-188,212-216
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_c2a4d9a6d7bb2d::t_205fc7f49ec574 503-529
+src/utils/handlerContract.ts
+  s_c2a4d9a6d7bb2d::t_b7e11c32df923e 1520-1529,1598-1599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a22d904781afd7f6baae63edd4aa94df51676d1b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a3ca87802bedcb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080f6-3676-7cf0-a530-cb2d0d14795f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2a4d9a6d7bb2d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080a7-2b6c-7d31-99ca-94a40ea39ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
