@@ -14,14 +14,20 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../stores/automationStore', () => ({
-    automationStore: {
-        get value(): AutomationStoreState | null {
-            return mocks.state.value;
+vi.mock('../../../stores/automationStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/automationStore')>();
+    return {
+        automationStore: {
+            get value(): AutomationStoreState | null {
+                return mocks.state.value;
+            },
+            set: mocks.set,
         },
-        set: mocks.set,
-    },
-}));
+        // The real exactness check: lane copies are validated against the same
+        // shape the store itself enforces on every write.
+        is_exact_automation_lane: actual.is_exact_automation_lane,
+    };
+});
 
 const { prepareAutomationTimeOperation } = await import('../prepareAutomationTimeOperation');
 
@@ -249,6 +255,92 @@ describe('prepareAutomationTimeOperation', () => {
             operation: { type: 'delete', startBeat: 0, endBeat: 2 },
             owners: [owner('track-1', true, ['clip-1'])],
             removedClipIds: ['clip-1', 7],
+        });
+
+        expect(transaction.status).toBe('rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
+    it('adds the caller-provided lane copies for the clips it mints, undoably', () => {
+        const survivingLane = lane({ id: 'lane-source', clipId: 'clip-source', points: [point(6, 0.4)] });
+        const preparedState: AutomationStoreState = { lanes: [survivingLane] };
+        mocks.state.value = preparedState;
+        // The copy is keyed to the fresh fragment id, which deliberately is not
+        // in the owner snapshot: the minting transaction adds the clip in the
+        // same commit.
+        const fragmentCopy = lane({
+            id: 'auto-split-clip-fragment-0',
+            clipId: 'clip-fragment',
+            points: [point(2, 0.9)],
+        });
+
+        const transaction = prepareAutomationTimeOperation({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-source'])],
+            clipLaneCopies: [fragmentCopy],
+        });
+
+        expect(transaction).toHaveProperty('status', 'ready');
+        expect(transaction.hasChanges).toBe(true);
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.state.value?.lanes.map((entry) => entry.id)).toEqual([
+            'lane-source',
+            'auto-split-clip-fragment-0',
+        ]);
+
+        // Undo restores the pre-operation store, copies included.
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedState);
+    });
+
+    it('adds lane copies even when no existing lane changes', () => {
+        const dormantLane = lane({ id: 'lane-dormant', trackId: 'track-vca', clipId: 'clip-vca' });
+        const preparedState: AutomationStoreState = { lanes: [dormantLane] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareAutomationTimeOperation({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-vca', false, ['clip-vca'])],
+            clipLaneCopies: [lane({ id: 'auto-split-clip-frag-0', trackId: 'track-vca', clipId: 'clip-frag' })],
+        });
+
+        expect(transaction).toHaveProperty('status', 'ready');
+        expect(transaction.hasChanges).toBe(true);
+        expect(transaction.inversePlan?.replacement).toEqual(preparedState);
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.state.value?.lanes.map((entry) => entry.id)).toEqual(['lane-dormant', 'auto-split-clip-frag-0']);
+    });
+
+    it.each([
+        { label: 'a non-array list', clipLaneCopies: 'lane-1' },
+        { label: 'a lane shaped like nothing', clipLaneCopies: [{ nope: true }] },
+        { label: 'a track-wide copy', clipLaneCopies: [lane({ clipId: undefined })] },
+        {
+            label: 'a copy for a clip id the transaction retires',
+            clipLaneCopies: [lane({ id: 'copy-1', clipId: 'clip-removed' })],
+        },
+        {
+            label: 'a copy on a track with no owner',
+            clipLaneCopies: [lane({ id: 'copy-1', clipId: 'clip-frag', trackId: 'track-unknown' })],
+        },
+        { label: 'a copy id that already exists', clipLaneCopies: [lane({ clipId: 'clip-frag' })] },
+        {
+            label: 'two copies sharing an id',
+            clipLaneCopies: [
+                lane({ id: 'copy-1', clipId: 'clip-frag-a' }),
+                lane({ id: 'copy-1', clipId: 'clip-frag-b' }),
+            ],
+        },
+    ])('rejects $label in the lane-copy list before touching state', ({ clipLaneCopies }) => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(3, 0.2)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput({
+            operation: { type: 'delete', startBeat: 0, endBeat: 2 },
+            owners: [owner('track-1', true, ['clip-1'])],
+            removedClipIds: ['clip-removed'],
+            clipLaneCopies,
         });
 
         expect(transaction.status).toBe('rejected');

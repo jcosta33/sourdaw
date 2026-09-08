@@ -1,3 +1,5 @@
+import { type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
+
 type InsertTimeOperation = {
     type: 'insert';
     atBeat: number;
@@ -88,6 +90,9 @@ export type TimeOperationDependencies = {
         removedClipIds: readonly string[];
         /** Clip ids this operation re-keys; their clip-scoped lanes follow. */
         clipIdMigrations?: readonly { sourceClipId: string; targetClipId: string }[];
+        /** Whole clip-scoped lanes this operation adds for clips it mints in the
+         *  same commit — a split fragment's inherited copy of the source lane. */
+        clipLaneCopies?: readonly AutomationLaneValue[];
     }) => PreparedTimeOperationWithInversePlan;
     prepareAutomationTimeStateRestore: (plan: unknown) => PreparedTimeOperation;
     prepareMidiGlobalTimeTransaction: (input: {

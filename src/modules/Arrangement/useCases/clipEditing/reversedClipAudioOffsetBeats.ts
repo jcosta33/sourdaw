@@ -1,4 +1,4 @@
-import { boundStretchRatio } from '#/utils/stretchRatioBound';
+import { consumedStretchFactor } from './consumedStretchFactor';
 
 /**
  * After the whole source is mirrored, `[offset, offset + consumed)` lives at
@@ -39,8 +39,5 @@ export function reversedClipAudioOffsetBeats(input: {
 }
 
 function sourceConsumedBeats(input: { clipLengthBeats: number; stretchMode?: string; stretchRatio?: number }): number {
-    if (!input.stretchMode || input.stretchMode === 'off') {
-        return input.clipLengthBeats;
-    }
-    return input.clipLengthBeats * boundStretchRatio(input.stretchRatio ?? 1);
+    return input.clipLengthBeats * consumedStretchFactor(input);
 }

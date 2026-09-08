@@ -7,6 +7,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
+import { consumedStretchFactor } from './consumedStretchFactor';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type PrepareClipSplitInput = {
@@ -69,8 +70,10 @@ export function prepareClipSplit({
         return null;
     }
     const timelineSplitDelta = adjustedSplitBeat - clip.startBeat;
-    const stretchRatio = clip.stretchRatio ?? 1;
-    const contentSplitDelta = timelineSplitDelta * stretchRatio;
+    // The consumed content is what the runtimes play: 1x unless stretch is on,
+    // the bounded ratio when it is — the shared law, not the raw stored ratio
+    // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
+    const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
     const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
 
     const satellites = prepareClipSplitSatellites({
@@ -78,6 +81,7 @@ export function prepareClipSplit({
         rightClipId: effectiveRightClipId,
         clipRelativeSplitBeats: timelineSplitDelta,
         contentSplitBeats,
+        absoluteSplitBeats: adjustedSplitBeat,
     });
 
     const leftClip: Clip = {
@@ -103,6 +107,9 @@ export function prepareClipSplit({
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
         clipSatellites: satellites.previous,
+        // The right clip id is proven unused, so the pre-split side carries no
+        // lanes for it; the explicit emptiness is what the undo leg restores.
+        clipAutomationLanes: [],
     };
     const next: ClipSplitActionSnapshot = {
         trackId: track.id,
@@ -112,6 +119,7 @@ export function prepareClipSplit({
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
         clipSatellites: satellites.next,
+        clipAutomationLanes: satellites.rightAutomationLanes,
     };
     return {
         adjustedMediaSplit,

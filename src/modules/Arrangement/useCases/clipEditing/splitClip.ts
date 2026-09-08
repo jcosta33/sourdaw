@@ -1,3 +1,4 @@
+import { restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 import { type ClipStateSnapshot } from '#/utils/handlerContract';
 
@@ -76,6 +77,14 @@ export function splitClip(
         for (const entry of plan.next.clipSatellites) {
             writeClipSatelliteEntry(entry);
         }
+    }
+    // The right fragment's clip-scoped automation lanes travel with it (the
+    // copy ids derive from the right clip id, so a redo re-split reproduces
+    // them exactly). The left half's lanes are untouched, and an undo of this
+    // split retires the copies with the right clip itself (`removeClip` →
+    // `removeClipSatelliteData`).
+    if (plan.next.clipAutomationLanes && plan.next.clipAutomationLanes.length > 0) {
+        restoreAutomationLanes(plan.next.clipAutomationLanes);
     }
     return plan.rightClipId;
 }

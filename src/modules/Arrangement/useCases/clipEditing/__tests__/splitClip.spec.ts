@@ -22,6 +22,8 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+import { getAutomationLanes, getAutomationValueAtBeat, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
@@ -400,6 +402,7 @@ describe('splitClip', () => {
                     startBeat: 0,
                     endBeat: 8,
                     audioOffsetBeats: 2,
+                    stretchMode: 'timestretch',
                     stretchRatio: 0.5,
                 }),
             ])
@@ -436,6 +439,7 @@ describe('splitClip', () => {
                     startBeat: 0,
                     endBeat: 4,
                     audioOffsetBeats: 1,
+                    stretchMode: 'timestretch',
                     stretchRatio: 2,
                 }),
             ])
@@ -446,6 +450,49 @@ describe('splitClip', () => {
         const clips = newTrackState().tracks[0]?.clips ?? [];
         const right = clips.find((candidate) => candidate.id === 'new-clip-right');
         expect(right?.audioOffsetBeats).toBe(5);
+    });
+
+    it('advances a mode-off clip by the plain timeline delta, ignoring its dormant ratio', () => {
+        // The runtimes consume 1x unless stretch is on: a mode-off clip holding
+        // ratio 2 must split as if unstretched, or the fragment plays twice
+        // the consumed content.
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    stretchMode: 'off',
+                    stretchRatio: 2,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const right = newTrackState().tracks[0]?.clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(4);
+    });
+
+    it('bounds an out-of-range ratio instead of producing an infinite offset', () => {
+        // A hydrate-admissible finite ratio is not guaranteed in range; the
+        // schedulable bound (100) caps the consumed conversion.
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 1e308,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const right = newTrackState().tracks[0]?.clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(400);
     });
 
     it('continues to use 1:1 scaling for audioOffsetBeats when splitting an unstretched clip', () => {
@@ -484,4 +531,197 @@ describe('splitClip', () => {
         right = clips.find((candidate) => candidate.id === 'new-clip-right');
         expect(right?.audioOffsetBeats).toBe(3);
     });
+
+    it('installs the clamped lane copy with its seam on the right fragment of the split', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+
+        // A clip-scoped lane on the source, absolute-timeline points astride the
+        // cut at 4, with an object that must stay with the surviving left half.
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-source',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        // The curve's value at the cut, per the runtime evaluator — the seam
+        // point must carry exactly this so the fragment continues the curve.
+        const seamValue = getAutomationValueAtBeat('lane-source', 4);
+        expect(seamValue).toBeCloseTo(0.56, 10);
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        expect(lanes).toHaveLength(2);
+        const copy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        expect(copy?.clipId).toBe('new-clip-right');
+        expect(copy?.points).toEqual([
+            { id: 'asp-split-new-clip-right-0', beat: 4, value: seamValue, curve: 'linear', tension: 0 },
+            { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+        ]);
+        // The source lane keeps its id, its whole point set, and its object.
+        const source = lanes.find((lane) => lane.id === 'lane-source');
+        expect(source?.clipId).toBe('c1');
+        expect(source?.points.map((point) => point.beat)).toEqual([1, 6]);
+
+        // Playback continuity: a beat inside the straddling segment plays the
+        // same value before and after the split — the fragment continues the
+        // curve through the seam instead of holding the first copied value.
+        const valueBeforeSplit = getAutomationValueAtBeat('lane-source', 4.5);
+        expect(valueBeforeSplit).toBeCloseTo(0.62, 10);
+        expect(getAutomationValueAtBeat('auto-split-new-clip-right-0', 4.5)).toBe(valueBeforeSplit);
+    });
+
+    it('carries a linked follower lane onto the fragment with its link intact', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+
+        // A self-standing leader and a follower with no own points: the
+        // follower's played curve comes entirely from its link target, so the
+        // split must judge it by the leader's content, not its own.
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-leader',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+                {
+                    id: 'lane-follower',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    linkedLaneId: 'lane-leader',
+                    linkScale: -1,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        const leaderCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        const followerCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-1');
+        // Both copies land on the fragment, and the follower copy follows the
+        // leader's copy — the fragment's chain is self-contained.
+        expect(leaderCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.linkedLaneId).toBe('auto-split-new-clip-right-0');
+        expect(followerCopy?.linkScale).toBe(-1);
+        // Pan keeps following over the right span: inside the former
+        // straddling segment the follower evaluates to the leader copy's
+        // value times the link scale, seam included.
+        const leaderValue = requiredValue('auto-split-new-clip-right-0', 4.5);
+        expect(leaderValue).toBeCloseTo(0.62, 10);
+        expect(getAutomationValueAtBeat('auto-split-new-clip-right-1', 4.5)).toBeCloseTo(-leaderValue, 10);
+        // The originals survive on the left half and still follow each other.
+        expect(lanes.find((lane) => lane.id === 'lane-follower')?.linkedLaneId).toBe('lane-leader');
+        expect(getAutomationValueAtBeat('lane-follower', 2)).toBeCloseTo(-requiredValue('lane-leader', 2), 10);
+    });
+
+    it('keeps a drawn-then-held lane and its follower driving over the right span', () => {
+        // The common shape: ramps ending mid-clip. The runtime holds the last
+        // value for every beat after it, so both lanes were still driving over
+        // [4, 8) before the split — the fragment must keep that, not step the
+        // parameters back to base at the cut.
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-held',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 3, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+                {
+                    id: 'lane-held-follower',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'pan',
+                    parameterName: 'Pan',
+                    linkedLaneId: 'lane-held',
+                    linkScale: -1,
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: -1,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        const heldBeforeSplit = requiredValue('lane-held', 4.5);
+        expect(heldBeforeSplit).toBeCloseTo(0.8, 10);
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        const heldCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        const followerCopy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-1');
+        expect(heldCopy?.clipId).toBe('new-clip-right');
+        expect(followerCopy?.linkedLaneId).toBe('auto-split-new-clip-right-0');
+        // The seam pins the held value at the fragment's first beat, and the
+        // follower keeps its inverted drive over the right span.
+        expect(heldCopy?.points[0]?.value).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-0', 4.5)).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-0', 7)).toBeCloseTo(heldBeforeSplit, 10);
+        expect(requiredValue('auto-split-new-clip-right-1', 4.5)).toBeCloseTo(-heldBeforeSplit, 10);
+    });
 });
+
+/** The runtime evaluator reads `number | null`; these lanes must evaluate. */
+function requiredValue(laneId: string, beat: number): number {
+    const value = getAutomationValueAtBeat(laneId, beat);
+    expect(value).not.toBeNull();
+    return value ?? Number.NaN;
+}

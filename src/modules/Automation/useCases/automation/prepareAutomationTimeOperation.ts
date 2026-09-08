@@ -1,4 +1,4 @@
-import { automationStore, type AutomationStoreState } from '../../stores/automationStore';
+import { automationStore, is_exact_automation_lane, type AutomationStoreState } from '../../stores/automationStore';
 
 import type { AutomationLane, AutomationPoint } from '../../models/Automation';
 
@@ -38,6 +38,14 @@ type PrepareAutomationTimeOperationInput = {
      * lose deterministic automation the user never asked to delete.
      */
     clipIdMigrations?: readonly { sourceClipId: string; targetClipId: string }[];
+    /**
+     * Fully-formed clip-scoped lanes the caller's own transaction ADDS for clips
+     * it mints in the same commit — a split's right fragment inheriting the
+     * source's lane, clamped to the fragment's window. Spliced into the prepared
+     * state verbatim, so the inverse plan restores the store without them
+     * exactly as it does for every lane this preparation retires or re-keys.
+     */
+    clipLaneCopies?: readonly AutomationLane[];
 };
 
 type IndexedAutomationOwner = {
@@ -263,6 +271,41 @@ function validateInput(input: unknown): {
     };
 }
 
+function validateClipLaneCopies(
+    value: readonly AutomationLane[] | undefined,
+    removedClipIds: ReadonlySet<string>,
+    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
+    liveLaneIds: ReadonlySet<string>
+): readonly AutomationLane[] | null {
+    if (value === undefined) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const copyIds = new Set<string>();
+    const copies: AutomationLane[] = [];
+    for (const candidate of value) {
+        // The caller builds copies from live lanes, so the exactness check is
+        // cheap; the identity checks are the ones a drifted caller can break.
+        if (!is_exact_automation_lane(candidate) || candidate.clipId === undefined) {
+            return null;
+        }
+        if (
+            removedClipIds.has(candidate.clipId) ||
+            !ownersByTrackId.has(candidate.trackId) ||
+            liveLaneIds.has(candidate.id) ||
+            copyIds.has(candidate.id)
+        ) {
+            return null;
+        }
+        copyIds.add(candidate.id);
+        copies.push(candidate);
+    }
+    return copies;
+}
+
 function prepareInsertedPoints(
     points: readonly AutomationPoint[],
     operation: InsertAutomationTimeOperation
@@ -346,7 +389,8 @@ function prepareNextState(
     operation: AutomationTimeOperation,
     ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>,
     removedClipIds: ReadonlySet<string>,
-    clipIdMigrations: ReadonlyMap<string, string>
+    clipIdMigrations: ReadonlyMap<string, string>,
+    clipLaneCopies: readonly AutomationLane[]
 ): PreparedAutomationState {
     if (!preparedState) {
         return {
@@ -421,6 +465,11 @@ function prepareNextState(
         lanes.push(nextLane);
     }
 
+    if (clipLaneCopies.length > 0) {
+        hasChanges = true;
+        lanes.push(...clipLaneCopies);
+    }
+
     if (!hasChanges) {
         return {
             status: 'ready',
@@ -461,13 +510,28 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
             nextState: preparedState,
         };
     } else {
-        preparedOperation = prepareNextState(
-            preparedState,
-            validatedInput.operation,
-            validatedInput.ownersByTrackId,
+        const liveLaneIds = new Set(preparedState?.lanes.map((lane) => lane.id) ?? []);
+        const clipLaneCopies = validateClipLaneCopies(
+            input.clipLaneCopies,
             validatedInput.removedClipIds,
-            validatedInput.clipIdMigrations
+            validatedInput.ownersByTrackId,
+            liveLaneIds
         );
+        preparedOperation =
+            clipLaneCopies === null
+                ? {
+                      status: 'rejected',
+                      hasChanges: false,
+                      nextState: preparedState,
+                  }
+                : prepareNextState(
+                      preparedState,
+                      validatedInput.operation,
+                      validatedInput.ownersByTrackId,
+                      validatedInput.removedClipIds,
+                      validatedInput.clipIdMigrations,
+                      clipLaneCopies
+                  );
     }
     let inversePlan: AutomationTimeStateRestorePlan | null = null;
     if (
