@@ -201,6 +201,7 @@ export async function settleConfirmedCommandExecution(
         finalizationEvidenceFailure,
         canRebindSectionRenderArtifacts,
         isProjectMutationAuthorized,
+        approvalBindingRejection,
         renderJobAttempts,
         cancellationTriggeredByInvalidation,
         abortSignal,
@@ -358,6 +359,13 @@ export async function settleConfirmedCommandExecution(
 
     const batchFailedBeforeCommit =
         batchResult.status === 'rejected' || batchResult.status === 'conflicted' || batchResult.status === 'failed';
+    // A stale-shaped binding rejection is the project-moved-on event class the
+    // preflight guard also detects, and it arrives with mutation authorization
+    // still intact when the drift was projection-only, so route it on the
+    // classification alone — never consult authorization here.
+    if (!recoveringPendingEffects && batchFailedBeforeCommit && approvalBindingRejection?.stale === true) {
+        return confirmationTerminalSettlement.invalidateForProjectChange(confirmation, approvalBindingRejection.reason);
+    }
     if (!recoveringPendingEffects && batchFailedBeforeCommit && !isProjectMutationAuthorized()) {
         return confirmationTerminalSettlement.invalidateForProjectChange(confirmation);
     }

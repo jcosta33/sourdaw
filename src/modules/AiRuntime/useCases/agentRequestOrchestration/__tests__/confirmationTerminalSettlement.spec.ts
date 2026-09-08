@@ -208,6 +208,38 @@ describe('confirmationTerminalSettlement', () => {
         });
     });
 
+    it('keeps the detecting guard reason internal while the musician sees the unified invalidation', async () => {
+        const result = await confirmationTerminalSettlement.invalidateForProjectChange(
+            confirmation,
+            'The approved target fingerprints no longer match.'
+        );
+
+        expect(mocks.cancelRun).toHaveBeenCalledWith({
+            runId: 'run-1',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(mocks.status).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            status: 'invalidated',
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(mocks.message).toHaveBeenCalledWith('assistant-1', {
+            pendingActionConfirmationStatus: 'invalidated',
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+            content:
+                'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
+        });
+        expect(mocks.settleResources).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            disposition: 'discard',
+        });
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            detail: 'The approved target fingerprints no longer match.',
+        });
+    });
+
     it('awaits cancellation and resource discard before invalidating a divergent proposal', async () => {
         const divergence = {
             kind: 'ambiguous-same-object',

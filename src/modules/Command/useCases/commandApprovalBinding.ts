@@ -4,7 +4,12 @@ import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatch
 
 export const commandApprovalBrand = Symbol('commandApprovalBinding');
 
-export type CommandApprovalValidationResult = { status: 'valid' } | { status: 'invalid'; reason: string };
+// `stale` on an invalid result is the validator's own classification that the
+// rejection means "the project moved on after the proposal was created" rather
+// than an execution failure; it is additive and optional because only the
+// approval validators that know the project context can set it.
+export type CommandApprovalValidationResult =
+    { status: 'valid' } | { status: 'invalid'; reason: string; stale?: boolean };
 
 export type CommandApprovalBinding = Readonly<{
     kind: 'command-approval-binding';

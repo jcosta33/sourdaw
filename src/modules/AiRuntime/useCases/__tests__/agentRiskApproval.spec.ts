@@ -392,6 +392,17 @@ describe('agent risk approval', () => {
         expect(executeSetTrackGain).not.toHaveBeenCalled();
 
         collaborationStore.set({ ...collaborationStore.value!, localPeerId: 'actor-a' });
+        const actorMismatchValidation = validateAgentRiskApproval({
+            approval: { ...approval, localActorId: 'rotated-actor' },
+            commandBatch,
+            currentRevision: revision,
+        });
+        expect(actorMismatchValidation.status).toBe('invalid');
+        if (actorMismatchValidation.status !== 'invalid') {
+            throw new Error('Expected a rotated local actor to invalidate approval');
+        }
+        expect(actorMismatchValidation.reason).toContain('local actor');
+        expect(actorMismatchValidation.stale).toBe(false);
         targetFingerprint = 'track-vocal:v2';
         const targetMismatch = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
         expect(targetMismatch.status).toBe('invalid');
@@ -399,6 +410,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected the changed target to invalidate approval');
         }
         expect(targetMismatch.reason).toContain('target fingerprints');
+        expect(targetMismatch.stale).toBe(true);
         targetFingerprint = 'track-vocal:v1';
         const hashMismatch = validateAgentRiskApproval({
             approval: { ...approval, actionHashes: ['fnv1a32:tampered'] },
@@ -410,6 +422,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected the changed action hash to invalidate approval');
         }
         expect(hashMismatch.reason).toContain('action hashes');
+        expect(hashMismatch.stale).toBe(false);
         const consequenceMismatch = validateAgentRiskApproval({
             approval: {
                 ...approval,
@@ -423,6 +436,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected changed consequences to invalidate approval');
         }
         expect(consequenceMismatch.reason).toContain('cost or data consequences');
+        expect(consequenceMismatch.stale).toBe(false);
         const policyMismatch = validateAgentRiskApproval({
             approval: {
                 ...approval,
@@ -436,6 +450,7 @@ describe('agent risk approval', () => {
             throw new Error('Expected a changed trust mode to invalidate approval');
         }
         expect(policyMismatch.reason).toContain('trust mode or risk policy');
+        expect(policyMismatch.stale).toBe(false);
         const revisionMismatch = validateAgentRiskApproval({
             approval,
             commandBatch,
@@ -446,5 +461,48 @@ describe('agent risk approval', () => {
             throw new Error('Expected a changed source revision to invalidate approval');
         }
         expect(revisionMismatch.reason).toContain('source revision');
+        expect(revisionMismatch.stale).toBe(true);
+    });
+
+    it('classifies a project-identity-stale revalidation as the project-changed event', () => {
+        const revision = captureProjectRevision();
+        const { commandBatch } = createBatch(revision);
+        const approval = compileAgentRiskApproval({ commandBatch });
+        // The active project switched after the approval was compiled: the
+        // preflight capture now reports a foreign project identity.
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-elsewhere',
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, targetFingerprint])),
+        }));
+
+        const validation = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
+
+        expect(validation.status).toBe('invalid');
+        if (validation.status !== 'invalid') {
+            throw new Error('Expected a project identity mismatch to invalidate approval');
+        }
+        expect(validation.reason).toContain('project identity is stale');
+        expect(validation.stale).toBe(true);
+    });
+
+    it('classifies an unavailable fingerprint capture as a genuine rejection, not the project-changed event', () => {
+        const revision = captureProjectRevision();
+        const { commandBatch } = createBatch(revision);
+        const approval = compileAgentRiskApproval({ commandBatch });
+        commandBatchPreflightPort.setProvider(null);
+
+        const validation = validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision });
+
+        expect(validation.status).toBe('invalid');
+        if (validation.status !== 'invalid') {
+            throw new Error('Expected an unavailable fingerprint capture to invalidate approval');
+        }
+        expect(validation.reason).toContain('fingerprint capture is unavailable');
+        expect(validation.stale).toBe(false);
     });
 });

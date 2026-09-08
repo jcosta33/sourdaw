@@ -190,4 +190,24 @@ describe('command approval boundary', () => {
         expect(stale).toMatchObject({ status: 'rejected', reason: 'The approved source revision is stale.' });
         expect(execute).not.toHaveBeenCalled();
     });
+
+    it('keeps the validator staleness classification on the consumed binding rejection', () => {
+        const batch = compileCommitBatch();
+        const binding = issueCommandApprovalBinding({
+            ...batch,
+            validate: () => ({ status: 'invalid', reason: 'The approved source revision is stale.', stale: true }),
+        });
+
+        const consumed = consumeCommandApprovalBinding({
+            approvalBinding: binding,
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(consumed).toEqual({
+            status: 'invalid',
+            reason: 'The approved source revision is stale.',
+            stale: true,
+        });
+    });
 });
