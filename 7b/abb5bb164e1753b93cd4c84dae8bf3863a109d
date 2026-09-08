@@ -1,0 +1,32 @@
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_87ab0a2f60ccf8::t_aa8254a02b9ba8 185-208
+  s_87ab0a2f60ccf8::t_db111dfeaddbbe 249-266
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_87ab0a2f60ccf8::t_db111dfeaddbbe 40-49
+  s_87ab0a2f60ccf8::t_aa8254a02b9ba8 120-126
+tests/e2e/pianoRollDockAcceptance.spec.ts
+  s_87ab0a2f60ccf8::t_db111dfeaddbbe 593-599,690,693,706
+  s_87ab0a2f60ccf8::t_de659a1d6d3248 584,590-592,604
+  s_87ab0a2f60ccf8::t_1fd442396cb956 652-655
+  s_87ab0a2f60ccf8::t_75e16e9b8c8184 3,462,575-577,579-581,601-603,606-607,665-666,670-671,678-689,702,705
+  s_87ab0a2f60ccf8::t_930154ad6ae2d0 600
+  s_87ab0a2f60ccf8::t_c4ef2fb2212e4e 610
+  s_87ab0a2f60ccf8::t_b83c65519446d4 59-63,608-609,611-651,656-664,694-701,703
+  s_87ab0a2f60ccf8::t_3ff2960081e7ef 574,578,582-583,585-589,605,667,691,704,801
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7babb5bb164e1753b93cd4c84dae8bf3863a109d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
