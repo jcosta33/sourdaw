@@ -187,10 +187,14 @@ describe('audio buffer save durability', () => {
         await waitForPendingWrite(controls);
 
         const collection = audioBufferCache.garbageCollectBySize(0);
-        for (let attempt = 0; attempt < 100 && controls.writeTransactionCount() < 2; attempt++) {
-            await flushIndexedDbTasks(1);
-        }
-        expect(controls.writeTransactionCount()).toBe(2);
+        let collectionSettled = false;
+        void collection.then(() => {
+            collectionSettled = true;
+        });
+        await flushIndexedDbTasks(2);
+        expect(controls.writeTransactionCount()).toBe(1);
+        expect(collectionSettled).toBe(false);
+        controls.releaseNextWriteSettlement();
         const [deleted, result] = await settlePromiseWithWrites(Promise.all([collection, durability]), controls);
 
         expect(deleted).toBe(0);
@@ -214,10 +218,14 @@ describe('audio buffer save durability', () => {
         await waitForPendingWrite(controls);
 
         const collection = audioBufferCache.garbageCollectBySize(0);
-        for (let attempt = 0; attempt < 100 && controls.pendingWriteSettlementCount() < 2; attempt++) {
-            await flushIndexedDbTasks(1);
-        }
-        expect(controls.pendingWriteSettlementCount()).toBe(2);
+        let collectionSettled = false;
+        void collection.then(() => {
+            collectionSettled = true;
+        });
+        await flushIndexedDbTasks(2);
+        expect(controls.pendingWriteSettlementCount()).toBe(1);
+        expect(collectionSettled).toBe(false);
+        controls.releaseNextWriteSettlement();
         const [deleted, result] = await settlePromiseWithWrites(Promise.all([collection, durability]), controls);
         const recoveredPcm = Array.from(controls.committed.get(recoveryId)?.channelData[0] ?? []);
 
@@ -554,6 +562,7 @@ describe('audio buffer save durability', () => {
             expect(receipt.isCurrent()).toBe(false);
             receipt.release();
             await flushIndexedDbTasks();
+            expect(receipt.isCurrent()).toBe(false);
         }
     );
 
@@ -855,18 +864,179 @@ describe('audio buffer save durability', () => {
             return;
         }
 
-        await expect(
-            audioBufferCache.releasePreparedBuffer({
-                id: 'promoting-owner',
-                leaseId: 'promoting-owner-lease',
-                disposition: 'project-owned',
-            })
-        ).resolves.toEqual({
+        const rejectedPromotion = audioBufferCache.releasePreparedBuffer({
+            id: 'promoting-owner',
+            leaseId: 'promoting-owner-lease',
+            disposition: 'project-owned',
+        });
+        expect(receipt.isCurrent()).toBe(false);
+        await expect(rejectedPromotion).resolves.toEqual({
             status: 'failed',
             reason: 'Prepared audio buffer ID is reserved by the project.',
         });
         expect(receipt.isCurrent()).toBe(true);
         receipt.release();
+        expect(receipt.isCurrent()).toBe(false);
+    });
+
+    it('refuses an absent ID when its prepared persistence is admitted behind the durability request', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        controls.pauseWriteSettlements();
+        audioBufferCache.set('later-prepared-lock-blocker', makeBuffer([0.1]));
+        await waitForPendingWrite(controls);
+
+        const durability = audioBufferCache.ensureDurable(['later-prepared']);
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'later-prepared',
+            buffer: makeBuffer([0.7]),
+            leaseId: 'later-prepared-lease',
+        });
+        controls.releaseNextWriteSettlement();
+
+        await expect(durability).resolves.toEqual({ status: 'superseded' });
+        await expect(settlePromiseWithWrites(persistence, controls)).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'later-prepared',
+            leaseId: 'later-prepared-lease',
+        });
+    });
+
+    it('ignores a prepared admission for an unrelated ID', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'required-durable', [0.4]);
+        controls.pauseWriteSettlements();
+        audioBufferCache.set('unrelated-lock-blocker', makeBuffer([0.1]));
+        await waitForPendingWrite(controls);
+
+        const durability = audioBufferCache.ensureDurable(['required-durable']);
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'unrelated-prepared',
+            buffer: makeBuffer([0.7]),
+            leaseId: 'unrelated-prepared-lease',
+        });
+        controls.releaseNextWriteSettlement();
+
+        const receipt = await durability;
+        expect(receipt.status).toBe('durable');
+        if (receipt.status !== 'durable') {
+            return;
+        }
+        expect(receipt.isCurrent()).toBe(true);
+        await expect(settlePromiseWithWrites(persistence, controls)).resolves.toEqual({
+            status: 'persisted',
+            bufferId: 'unrelated-prepared',
+            leaseId: 'unrelated-prepared-lease',
+        });
+        expect(receipt.isCurrent()).toBe(true);
+        receipt.release();
+    });
+
+    it('removes a prepared ticket when lock acquisition fails without restoring a released receipt', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'lock-api-failure', [0.4]);
+        const receipt = await expectDurableReceipt(['lock-api-failure']);
+        const locks = navigator.locks;
+        vi.stubGlobal('navigator', { ...navigator, locks: undefined });
+
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'lock-api-failure',
+            buffer: makeBuffer([0.7]),
+            leaseId: 'lock-api-failure-lease',
+        });
+        expect(receipt.isCurrent()).toBe(false);
+        await expect(persistence).rejects.toThrow('Project audio storage requires the Web Locks API');
+        expect(receipt.isCurrent()).toBe(true);
+        receipt.release();
+        expect(receipt.isCurrent()).toBe(false);
+
+        vi.stubGlobal('navigator', { ...navigator, locks });
+    });
+
+    it('permanently invalidates a held receipt when explicit-ID recovery is admitted', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'explicit-recovery', [0.4]);
+        const receipt = await expectDurableReceipt(['explicit-recovery']);
+
+        const recovery = audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['explicit-recovery'] });
+        expect(receipt.isCurrent()).toBe(false);
+        await expect(recovery).resolves.toBe(1);
+        expect(receipt.isCurrent()).toBe(false);
+        receipt.release();
+    });
+
+    it('keeps a finalized prepared reopen as a no-write while a durable receipt is held', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        const id = 'finalized-reopen';
+        const leaseId = 'finalized-reopen-lease';
+        seedOrdinaryBuffer(controls, id, [0.45]);
+        controls.committedMeta.set(id, {
+            ...makeMetadata([0.45]),
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId,
+                persistenceRevision: 'finalized-reopen-persistence',
+                status: 'project-owned',
+            },
+        });
+        const receipt = await expectDurableReceipt([id]);
+
+        const reopen = audioBufferCache.reopenPreparedBuffer({ id, leaseId, context: testContext() });
+        expect(receipt.isCurrent()).toBe(false);
+        await expect(reopen).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is reserved by the project.',
+        });
+        expect(receipt.isCurrent()).toBe(true);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+            persistenceRevision: 'finalized-reopen-persistence',
+            status: 'project-owned',
+        });
+        receipt.release();
+    });
+
+    it('does not issue a durable receipt after transitional reopen reconciliation', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        const id = 'transitional-reopen';
+        const leaseId = 'transitional-reopen-lease';
+        seedOrdinaryBuffer(controls, id, [0.65]);
+        controls.committedMeta.set(id, {
+            ...makeMetadata([0.65]),
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId,
+                persistenceRevision: 'transitional-reopen-persistence',
+                promotionRevision: 'transitional-reopen-promotion',
+                status: 'project-owned',
+            },
+        });
+        controls.pauseReadonlySettlements();
+
+        const reopen = audioBufferCache.reopenPreparedBuffer({ id, leaseId, context: testContext() });
+        const durability = audioBufferCache.ensureDurable([id]);
+        let settled = false;
+        const result = Promise.all([reopen, durability]);
+        void result.then(() => {
+            settled = true;
+        });
+        for (let attempt = 0; attempt < 100 && !settled; attempt++) {
+            if (controls.pendingReadonlySettlementCount() > 0) {
+                controls.releaseNextReadonlySettlement();
+            }
+            if (controls.pendingWriteSettlementCount() > 0) {
+                controls.releaseNextWriteSettlement();
+            }
+            await flushIndexedDbTasks(1);
+        }
+
+        await expect(result).resolves.toEqual([
+            { status: 'reopened', bufferId: id, ownership: 'temporary' },
+            { status: 'failed', failedIds: [id] },
+        ]);
+        expect(controls.committedMeta.get(id)?.preparedOwner).toMatchObject({
+            persistenceRevision: 'transitional-reopen-persistence',
+            status: 'temporary',
+        });
+        expect(controls.committedMeta.get(id)?.preparedOwner?.promotionRevision).toBeUndefined();
     });
 
     it('protects and awaits exact in-flight prepared persistence and promotion before strengthening the receipt', async () => {

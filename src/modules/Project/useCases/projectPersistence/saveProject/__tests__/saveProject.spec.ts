@@ -254,14 +254,44 @@ describe('saveProject', () => {
 
         const saving = saveProject();
         await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
-        expect(mocks.ensureCachedAudioBuffersDurable).not.toHaveBeenCalled();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith([]);
 
         mocks.projectStoreValue.value = { ...makeProject(), createdAt: 1700000000001 };
         held.resolve();
         await holder;
 
         await expect(saving).resolves.toBe(false);
-        expect(mocks.ensureCachedAudioBuffersDurable).not.toHaveBeenCalled();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
+    });
+
+    it('refuses a preflight receipt invalidated while Save waits for the storage lock', async () => {
+        const held = deferred();
+        const holder = lockManager.locks.request(
+            'sourdaw:project-audio-storage',
+            { mode: 'exclusive' },
+            async () => held.promise
+        );
+        let receiptCurrent = true;
+        const release = vi.fn();
+        mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
+            status: 'durable',
+            isCurrent: () => receiptCurrent,
+            release,
+        });
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
+        receiptCurrent = false;
+        held.resolve();
+        await holder;
+
+        await expect(saving).resolves.toBe(false);
+        expect(release).toHaveBeenCalledOnce();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
         expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
     });
@@ -271,7 +301,7 @@ describe('saveProject', () => {
 
         await expect(saveProject()).resolves.toBe(false);
 
-        expect(mocks.ensureCachedAudioBuffersDurable).not.toHaveBeenCalled();
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
         expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
         expect(mocks.writeNamedProjectJsonByKey).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith(

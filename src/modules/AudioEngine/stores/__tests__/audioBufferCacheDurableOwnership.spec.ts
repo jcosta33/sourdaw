@@ -425,15 +425,26 @@ describe('audioBufferCache durable ownership', () => {
                 async () => held.promise
             );
 
-            routes.audioBufferCache.remove('replacement-race');
-            routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.9));
-            const replacementDurability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            let replacementDurabilityPromise!: ReturnType<typeof routes.audioBufferCache.ensureDurable>;
+            try {
+                routes.audioBufferCache.remove('replacement-race');
+                routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.9));
+                replacementDurabilityPromise = routes.audioBufferCache.ensureDurable(['replacement-race']);
+                let replacementSettled = false;
+                void replacementDurabilityPromise.then(() => {
+                    replacementSettled = true;
+                });
+                await flushIndexedDbTasks(2);
+                expect(replacementSettled).toBe(false);
+            } finally {
+                held.resolve();
+                await holder;
+            }
+            const replacementDurability = await replacementDurabilityPromise;
             expect(replacementDurability.status).toBe('durable');
             if (replacementDurability.status === 'durable') {
                 replacementDurability.release();
             }
-            held.resolve();
-            await holder;
             await lockManager.locks.request(
                 'sourdaw:project-audio-storage',
                 { mode: 'exclusive' },
@@ -443,6 +454,7 @@ describe('audioBufferCache durable ownership', () => {
             expect(Array.from(controls.committed.get('replacement-race')?.channelData[0] ?? [])).toEqual([
                 Math.fround(0.9),
             ]);
+            expect(controls.committedMeta.get('replacement-race')).toMatchObject({ sizeInBytes: 4 });
             const durability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
             expect(durability.status).toBe('durable');
             if (durability.status === 'durable') {
@@ -460,15 +472,26 @@ describe('audioBufferCache durable ownership', () => {
                 async () => held.promise
             );
 
-            routes.audioBufferCache.clear();
-            routes.audioBufferCache.set('replacement-after-clear', residentAudioBufferWithSample(0.9));
-            const replacementDurability = await routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+            let replacementDurabilityPromise!: ReturnType<typeof routes.audioBufferCache.ensureDurable>;
+            try {
+                routes.audioBufferCache.clear();
+                routes.audioBufferCache.set('replacement-after-clear', residentAudioBufferWithSample(0.9));
+                replacementDurabilityPromise = routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+                let replacementSettled = false;
+                void replacementDurabilityPromise.then(() => {
+                    replacementSettled = true;
+                });
+                await flushIndexedDbTasks(2);
+                expect(replacementSettled).toBe(false);
+            } finally {
+                held.resolve();
+                await holder;
+            }
+            const replacementDurability = await replacementDurabilityPromise;
             expect(replacementDurability.status).toBe('durable');
             if (replacementDurability.status === 'durable') {
                 replacementDurability.release();
             }
-            held.resolve();
-            await holder;
             await lockManager.locks.request(
                 'sourdaw:project-audio-storage',
                 { mode: 'exclusive' },
@@ -478,6 +501,12 @@ describe('audioBufferCache durable ownership', () => {
             expect(Array.from(controls.committed.get('replacement-after-clear')?.channelData[0] ?? [])).toEqual([
                 Math.fround(0.9),
             ]);
+            expect(controls.committedMeta.get('replacement-after-clear')).toMatchObject({ sizeInBytes: 4 });
+            const durability = await routes.audioBufferCache.ensureDurable(['replacement-after-clear']);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                durability.release();
+            }
         });
     });
 });

@@ -1,16 +1,14 @@
 import { logger } from '#/infra/logger/appLogger';
-import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
+import {
+    runInProjectAudioStorageLock,
+    type ProjectAudioStorageLockScope,
+    withProjectAudioStorageLock,
+} from '#/infra/storage/withProjectAudioStorageLock';
 
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
-    isPreparedAudioRecoveryMigrationMarker,
-    PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY,
     isValidPreparedSerializedAudioBuffer,
-    preparedAudioRecoveryKey,
-    preparedAudioRecoveryMigrationMarker,
-    readPreparedAudioRecoveryMetadata,
-    readPreparedAudioRecoveryRecord,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -218,59 +216,6 @@ type CheckpointAudioRetention = {
     ownershipToken: string;
 };
 
-async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise<void> {
-    const markerTransaction = database.transaction(RECOVERY_STORE_NAME, 'readonly');
-    const marker = await awaitRequest(
-        markerTransaction
-            .objectStore(RECOVERY_STORE_NAME)
-            .get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>
-    );
-    await awaitTransaction(markerTransaction);
-    if (isPreparedAudioRecoveryMigrationMarker(marker)) {
-        return;
-    }
-    const transaction = database.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
-    const bufferStore = transaction.objectStore(STORE_NAME);
-    const currentMetadataStore = transaction.objectStore(META_STORE_NAME);
-    const recoveryStore = transaction.objectStore(RECOVERY_STORE_NAME);
-    const [currentMarker, metadataRows, keys] = await Promise.all([
-        awaitRequest(recoveryStore.get(PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY) as IDBRequest<unknown>),
-        awaitRequest(currentMetadataStore.getAll() as IDBRequest<unknown[]>),
-        awaitRequest(currentMetadataStore.getAllKeys()),
-    ]);
-    if (isPreparedAudioRecoveryMigrationMarker(currentMarker)) {
-        await awaitTransaction(transaction);
-        return;
-    }
-    const legacyRows = keys.flatMap((key, index) => {
-        const metadata = readPreparedAudioRecoveryMetadata(metadataRows[index]);
-        return typeof key === 'string' && metadata !== null && key === preparedAudioRecoveryKey(metadata.id)
-            ? [{ key, metadata }]
-            : [];
-    });
-    for (const { key, metadata } of legacyRows) {
-        const [data, existingRecovery] = await Promise.all([
-            awaitRequest(bufferStore.get(key) as IDBRequest<SerializedBuffer | undefined>),
-            awaitRequest(recoveryStore.get(metadata.id) as IDBRequest<unknown>),
-        ]);
-        const existing = readPreparedAudioRecoveryRecord(existingRecovery);
-        if (existing !== null && (existing.id !== metadata.id || existing.revision !== metadata.revision)) {
-            continue;
-        }
-        if (existing === null) {
-            const migrated = readPreparedAudioRecoveryRecord({ ...metadata, data, stagedAtMs: Date.now() });
-            if (migrated === null) {
-                continue;
-            }
-            recoveryStore.put(migrated, metadata.id);
-        }
-        bufferStore.delete(key);
-        currentMetadataStore.delete(key);
-    }
-    recoveryStore.put(preparedAudioRecoveryMigrationMarker(), PREPARED_AUDIO_RECOVERY_MIGRATION_MARKER_KEY);
-    await awaitTransaction(transaction);
-}
-
 function isProtectedFromCollection(metadata: BufferMeta): boolean {
     const owner = readPreparedOwner(metadata);
     return (
@@ -425,13 +370,7 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
                 onConnectionLoss();
             };
             db.onclose = onConnectionLoss;
-            void migrateLegacyPreparedRecoveryRows(db).then(
-                () => resolve(db),
-                (error: unknown) => {
-                    db.close();
-                    reject(error);
-                }
-            );
+            resolve(db);
         };
         req.onerror = () => {
             if (settled) {
@@ -515,6 +454,122 @@ type RetainedCachedAudioDurabilitySource = Readonly<
 let nextDurabilitySourceRevision = 0;
 const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
 
+type AudioStorageWriteAdmissionWitness = {
+    globalIntentRevision: number;
+    intentRevisionById: ReadonlyMap<string, number>;
+    preparedTicketSequencesById: ReadonlyMap<string, ReadonlySet<number>>;
+};
+
+type PreparedAudioStorageAdmissionTicket = {
+    id: string;
+    sequence: number;
+    settled: boolean;
+};
+
+let globalAudioStorageIntentRevision = 0;
+let nextAudioStorageIntentRevision = 0;
+const audioStorageIntentRevisionById = new Map<string, number>();
+let nextPreparedAudioStorageTicketSequence = 0;
+const activePreparedAudioStorageTicketSequencesById = new Map<string, Set<number>>();
+
+function recordAudioStorageIntent(ids: readonly string[]): void {
+    for (const id of new Set(ids)) {
+        audioStorageIntentRevisionById.set(id, ++nextAudioStorageIntentRevision);
+    }
+}
+
+function recordProjectAudioStorageTransitionIntent(): void {
+    globalAudioStorageIntentRevision += 1;
+}
+
+function beginPreparedAudioStorageAdmission(id: string): PreparedAudioStorageAdmissionTicket {
+    const ticket: PreparedAudioStorageAdmissionTicket = {
+        id,
+        sequence: ++nextPreparedAudioStorageTicketSequence,
+        settled: false,
+    };
+    const activeSequences = activePreparedAudioStorageTicketSequencesById.get(id) ?? new Set<number>();
+    activeSequences.add(ticket.sequence);
+    activePreparedAudioStorageTicketSequencesById.set(id, activeSequences);
+    return ticket;
+}
+
+function finishPreparedAudioStorageAdmission(ticket: PreparedAudioStorageAdmissionTicket): void {
+    if (ticket.settled) {
+        return;
+    }
+    ticket.settled = true;
+    const activeSequences = activePreparedAudioStorageTicketSequencesById.get(ticket.id);
+    activeSequences?.delete(ticket.sequence);
+    if (activeSequences?.size === 0) {
+        activePreparedAudioStorageTicketSequencesById.delete(ticket.id);
+    }
+}
+
+function captureAudioStorageWriteAdmission(ids: readonly string[]): AudioStorageWriteAdmissionWitness {
+    const uniqueIds = [...new Set(ids)];
+    return {
+        globalIntentRevision: globalAudioStorageIntentRevision,
+        intentRevisionById: new Map(uniqueIds.map((id) => [id, audioStorageIntentRevisionById.get(id) ?? 0] as const)),
+        preparedTicketSequencesById: new Map(
+            uniqueIds.map((id) => [id, new Set(activePreparedAudioStorageTicketSequencesById.get(id) ?? [])] as const)
+        ),
+    };
+}
+
+function isAudioStorageWriteAdmissionCurrent(
+    witness: AudioStorageWriteAdmissionWitness,
+    requireCapturedTicketsSettled = false
+): boolean {
+    if (globalAudioStorageIntentRevision !== witness.globalIntentRevision) {
+        return false;
+    }
+    for (const [id, intentRevision] of witness.intentRevisionById) {
+        if ((audioStorageIntentRevisionById.get(id) ?? 0) !== intentRevision) {
+            return false;
+        }
+        const capturedSequences = witness.preparedTicketSequencesById.get(id) ?? new Set<number>();
+        const activeSequences = activePreparedAudioStorageTicketSequencesById.get(id);
+        if (!activeSequences) {
+            continue;
+        }
+        if (requireCapturedTicketsSettled && [...activeSequences].some((sequence) => capturedSequences.has(sequence))) {
+            return false;
+        }
+        if ([...activeSequences].some((sequence) => !capturedSequences.has(sequence))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function runAudioStorageWrite<TResult>(
+    scope: ProjectAudioStorageLockScope | undefined,
+    operation: (activeScope: ProjectAudioStorageLockScope) => Promise<TResult>
+): Promise<TResult> {
+    if (scope !== undefined) {
+        return runInProjectAudioStorageLock(scope, () => operation(scope));
+    }
+    return withProjectAudioStorageLock((activeScope) =>
+        runInProjectAudioStorageLock(activeScope, () => operation(activeScope))
+    );
+}
+
+function runPreparedAudioStorageWrite<TResult>(id: string, operation: () => Promise<TResult>): Promise<TResult> {
+    const ticket = beginPreparedAudioStorageAdmission(id);
+    const result = withProjectAudioStorageLock(async (scope) => {
+        try {
+            return await runInProjectAudioStorageLock(scope, operation);
+        } finally {
+            finishPreparedAudioStorageAdmission(ticket);
+        }
+    });
+    return result.catch((error: unknown) => {
+        finishPreparedAudioStorageAdmission(ticket);
+        throw error;
+    });
+}
+
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
 let nextImportCandidateId = 0;
@@ -573,6 +628,7 @@ function recordCachedAudioDurabilitySource(
     data: SerializedBuffer,
     freezeProjectId?: number
 ): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
     const source: CachedAudioDurabilitySource = {
         attempt: undefined,
         data,
@@ -593,6 +649,7 @@ function recordLazyCachedAudioDurabilitySource(
     freezeProjectId: number | undefined,
     isAuthoritative: () => boolean
 ): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
     const source: CachedAudioDurabilitySource = {
         attempt: undefined,
         data: undefined,
@@ -624,6 +681,7 @@ function invalidateCachedAudioDurabilitySource(
 }
 
 function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDurabilitySource {
+    recordAudioStorageIntent([id]);
     const existing = durabilitySourceById.get(id);
     const source: CachedAudioDurabilitySource = existing
         ? {
@@ -715,7 +773,11 @@ function trackCachedAudioDurabilityAttempt(
     return attempt;
 }
 
-function startCachedAudioDurabilityAttempt(id: string, source: CachedAudioDurabilitySource): Promise<boolean> {
+function startCachedAudioDurabilityAttempt(
+    id: string,
+    source: CachedAudioDurabilitySource,
+    scope?: ProjectAudioStorageLockScope
+): Promise<boolean> {
     if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
         return Promise.resolve(false);
     }
@@ -729,7 +791,11 @@ function startCachedAudioDurabilityAttempt(id: string, source: CachedAudioDurabi
     if (!data) {
         return Promise.resolve(false);
     }
-    return trackCachedAudioDurabilityAttempt(id, source, persistSerializedToIdb(id, data, source.freezeProjectId));
+    return trackCachedAudioDurabilityAttempt(
+        id,
+        source,
+        persistSerializedToIdb(id, data, source.freezeProjectId, scope)
+    );
 }
 
 function captureRetainedCachedAudioDurabilitySources(
@@ -966,34 +1032,41 @@ function refreshAccessTime(id: string): void {
     });
 }
 
-async function persistSerializedToIdb(id: string, data: SerializedBuffer, freezeProjectId?: number): Promise<boolean> {
-    const generation = claimPersistenceGeneration(id);
-    try {
-        const db = await openDb();
-        if (persistenceGenerationById.get(id) !== generation) {
+function persistSerializedToIdb(
+    id: string,
+    data: SerializedBuffer,
+    freezeProjectId?: number,
+    scope?: ProjectAudioStorageLockScope
+): Promise<boolean> {
+    return runAudioStorageWrite(scope, async () => {
+        const generation = claimPersistenceGeneration(id);
+        try {
+            const db = await openDb();
+            if (persistenceGenerationById.get(id) !== generation) {
+                return false;
+            }
+            // One transaction over both stores. Two transactions would let the
+            // record commit while its metadata row rolled back (or the reverse),
+            // and a `sizeInBytes` total that disagrees with the records is a size
+            // collector evicting the wrong things or nothing at all.
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            tx.objectStore(STORE_NAME).put(data, id);
+            const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
+            if (freezeProjectId !== undefined) {
+                metadata.freezeProjectId = freezeProjectId;
+            }
+            tx.objectStore(META_STORE_NAME).put(metadata, id);
+            await awaitTransaction(tx);
+            return persistenceGenerationById.get(id) === generation;
+        } catch (error) {
+            logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
             return false;
+        } finally {
+            if (persistenceGenerationById.get(id) === generation) {
+                persistenceGenerationById.delete(id);
+            }
         }
-        // One transaction over both stores. Two transactions would let the
-        // record commit while its metadata row rolled back (or the reverse),
-        // and a `sizeInBytes` total that disagrees with the records is a size
-        // collector evicting the wrong things or nothing at all.
-        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-        tx.objectStore(STORE_NAME).put(data, id);
-        const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
-        if (freezeProjectId !== undefined) {
-            metadata.freezeProjectId = freezeProjectId;
-        }
-        tx.objectStore(META_STORE_NAME).put(metadata, id);
-        await awaitTransaction(tx);
-        return persistenceGenerationById.get(id) === generation;
-    } catch (error) {
-        logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
-        return false;
-    } finally {
-        if (persistenceGenerationById.get(id) === generation) {
-            persistenceGenerationById.delete(id);
-        }
-    }
+    });
 }
 
 async function removeFromIdb(id: string, sourceAtRemoval: CachedAudioDurabilitySource | undefined): Promise<void> {
@@ -1074,6 +1147,7 @@ function evictCachedBuffer(id: string): void {
 }
 
 function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
+    recordProjectAudioStorageTransitionIntent();
     const retainedSources = retainedIds ? captureRetainedCachedAudioDurabilitySources(retainedIds) : undefined;
     preparedAudioBufferLifecycle.beginProjectTransition(retainedIds);
     durabilitySourceById.clear();
@@ -1151,6 +1225,9 @@ async function prepareBuffersFromIdb({
     if (shouldContinue?.() === false) {
         return null;
     }
+    if (ids !== undefined) {
+        recordAudioStorageIntent(ids);
+    }
     const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
@@ -1201,7 +1278,9 @@ async function prepareBuffersFromIdb({
     };
     try {
         if (ids) {
-            await preparedAudioBufferLifecycle.recoverProjectReservations(ids, provisionalReservations);
+            await runAudioStorageWrite(undefined, async () => {
+                await preparedAudioBufferLifecycle.recoverProjectReservations(ids, provisionalReservations);
+            });
         }
         if (shouldContinue?.() === false) {
             return cancelAsNull();
@@ -1338,21 +1417,23 @@ type ReleasePreparedBufferInput = {
 
 /** Persist one collision-safe prepared owner, then publish its committed PCM for synchronous reads. */
 async function persistPreparedBuffer({ id, buffer, leaseId }: PersistPreparedBufferInput) {
-    return preparedAudioBufferLifecycle.persist({
-        id,
-        leaseId: leaseId ?? `prepared-audio-${crypto.randomUUID()}`,
-        data: serializeBuffer(buffer),
-    });
+    return runPreparedAudioStorageWrite(id, () =>
+        preparedAudioBufferLifecycle.persist({
+            id,
+            leaseId: leaseId ?? `prepared-audio-${crypto.randomUUID()}`,
+            data: serializeBuffer(buffer),
+        })
+    );
 }
 
 /** Reconstruct one exact prepared owner without making every playback read async. */
 async function reopenPreparedBuffer({ id, leaseId, context }: ReopenPreparedBufferInput) {
-    return preparedAudioBufferLifecycle.reopen({ id, leaseId, context });
+    return runPreparedAudioStorageWrite(id, () => preparedAudioBufferLifecycle.reopen({ id, leaseId, context }));
 }
 
 /** Settle one temporary owner transactionally; project transfer retains PCM. */
 async function releasePreparedBuffer({ id, leaseId, disposition }: ReleasePreparedBufferInput) {
-    return preparedAudioBufferLifecycle.release({ id, leaseId, disposition });
+    return runPreparedAudioStorageWrite(id, () => preparedAudioBufferLifecycle.release({ id, leaseId, disposition }));
 }
 
 export async function reclaimPreparedBufferOrphans({
@@ -1362,7 +1443,9 @@ export async function reclaimPreparedBufferOrphans({
     createdBeforeMs: number;
     liveLeaseIds: readonly string[];
 }) {
-    return preparedAudioBufferLifecycle.reclaimOrphans({ createdBeforeMs, liveLeaseIds });
+    return withProjectAudioStorageLock(() =>
+        preparedAudioBufferLifecycle.reclaimOrphans({ createdBeforeMs, liveLeaseIds })
+    );
 }
 
 export function clearRuntimeAudioBufferCache({ retainedIds }: AudioBufferCacheClearRuntimeOptions = {}): void {
@@ -1590,8 +1673,11 @@ async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<str
     return ids.filter((_, index) => !isDurableAudioBufferPair(pairs[index]?.[0], pairs[index]?.[1]));
 }
 
-async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<CachedAudioBuffersDurabilityResult> {
-    const requiredIds = [...new Set(ids)];
+async function ensureDurableAudioBuffersInScope(
+    requiredIds: readonly string[],
+    admissionWitness: AudioStorageWriteAdmissionWitness,
+    scope: ProjectAudioStorageLockScope
+): Promise<CachedAudioBuffersDurabilityResult> {
     const lifecycleWitness = preparedAudioBufferLifecycle.captureProjectDurabilityWitness(requiredIds);
     const sourceRevisionById = new Map(
         requiredIds.map((id) => [id, durabilitySourceById.get(id)?.revision ?? null] as const)
@@ -1610,12 +1696,13 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
             return source.attempt ? [{ id, attempt: source.attempt }] : [{ id, attempt: Promise.resolve(false) }];
         }
         if ((source.status === 'failed' || source.status === 'unpersisted') && (source.data || source.dataFactory)) {
-            return [{ id, attempt: startCachedAudioDurabilityAttempt(id, source) }];
+            return [{ id, attempt: startCachedAudioDurabilityAttempt(id, source, scope) }];
         }
         return [];
     });
     const reservations = preparedAudioBufferLifecycle.beginProjectDurabilityReservations(lifecycleWitness);
     const isCurrent = (): boolean =>
+        isAudioStorageWriteAdmissionCurrent(admissionWitness) &&
         reservations.isCurrent() &&
         preparedAudioBufferLifecycle.isProjectDurabilityWitnessCurrent(lifecycleWitness) &&
         isSourceCurrent();
@@ -1687,6 +1774,27 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
     } catch {
         return failAndRelease(requiredIds);
     }
+}
+
+function ensureDurableAudioBuffers(
+    ids: readonly string[],
+    scope?: ProjectAudioStorageLockScope
+): Promise<CachedAudioBuffersDurabilityResult> {
+    const requiredIds = [...new Set(ids)];
+    const admissionWitness = captureAudioStorageWriteAdmission(requiredIds);
+    if (scope !== undefined) {
+        return runInProjectAudioStorageLock(scope, () =>
+            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, scope)
+        );
+    }
+    return withProjectAudioStorageLock((activeScope) => {
+        if (!isAudioStorageWriteAdmissionCurrent(admissionWitness, true)) {
+            return Promise.resolve({ status: 'superseded' });
+        }
+        return runInProjectAudioStorageLock(activeScope, () =>
+            ensureDurableAudioBuffersInScope(requiredIds, admissionWitness, activeScope)
+        );
+    });
 }
 
 /** The durable owned-id set is fetched before any deletion decision in every
@@ -2172,78 +2280,80 @@ export const audioBufferCache = {
             candidateId === activeImportCandidateId &&
             candidateId === committedImportCandidateId &&
             [...publishedSourceById].every(([id, source]) => durabilitySourceById.get(id) === source);
-        const persistImportBatch = async (): Promise<boolean> => {
+        const persistImportBatch = (): Promise<boolean> => {
             if (!isImportAuthorityCurrent()) {
-                return false;
+                return Promise.resolve(false);
             }
             const entriesToPersist = entries.filter((entry) => publishedSourceById.get(entry.id)?.status !== 'durable');
             if (entriesToPersist.length === 0) {
-                return true;
+                return Promise.resolve(true);
             }
-            const generations = new Map<string, number>();
-            for (const { id } of entriesToPersist) {
-                generations.set(id, claimPersistenceGeneration(id));
-            }
-            let transaction: IDBTransaction | null = null;
-            let transactionSettled = false;
-            try {
-                const database = await openDb();
-                if (
-                    !isImportAuthorityCurrent() ||
-                    [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
-                ) {
-                    return false;
+            return runAudioStorageWrite(undefined, async () => {
+                const generations = new Map<string, number>();
+                for (const { id } of entriesToPersist) {
+                    generations.set(id, claimPersistenceGeneration(id));
                 }
-
-                const activeTransaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-                transaction = activeTransaction;
-                importPersistenceTransactions.set(candidateId, activeTransaction);
-                const objectStore = activeTransaction.objectStore(STORE_NAME);
-                const metaStore = activeTransaction.objectStore(META_STORE_NAME);
-                for (const entry of entriesToPersist) {
-                    const source = entry.durabilitySource;
-                    const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
-                    if (!data) {
-                        throw new Error('Imported audio source is unavailable');
-                    }
-                    objectStore.put(data, entry.id);
-                    const metadata: BufferMeta = {
-                        lastAccessed: data.lastAccessed,
-                        sizeInBytes: data.sizeInBytes,
-                    };
-                    if (entry.freezeProjectId !== undefined) {
-                        metadata.freezeProjectId = entry.freezeProjectId;
-                    }
-                    metaStore.put(metadata, entry.id);
-                }
+                let transaction: IDBTransaction | null = null;
+                let transactionSettled = false;
                 try {
-                    await awaitTransaction(activeTransaction);
-                } finally {
-                    transactionSettled = true;
-                }
-                return (
-                    isImportAuthorityCurrent() &&
-                    [...generations].every(([id, generation]) => persistenceGenerationById.get(id) === generation)
-                );
-            } catch {
-                if (transaction && !transactionSettled) {
+                    const database = await openDb();
+                    if (
+                        !isImportAuthorityCurrent() ||
+                        [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
+                    ) {
+                        return false;
+                    }
+
+                    const activeTransaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+                    transaction = activeTransaction;
+                    importPersistenceTransactions.set(candidateId, activeTransaction);
+                    const objectStore = activeTransaction.objectStore(STORE_NAME);
+                    const metaStore = activeTransaction.objectStore(META_STORE_NAME);
+                    for (const entry of entriesToPersist) {
+                        const source = entry.durabilitySource;
+                        const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
+                        if (!data) {
+                            throw new Error('Imported audio source is unavailable');
+                        }
+                        objectStore.put(data, entry.id);
+                        const metadata: BufferMeta = {
+                            lastAccessed: data.lastAccessed,
+                            sizeInBytes: data.sizeInBytes,
+                        };
+                        if (entry.freezeProjectId !== undefined) {
+                            metadata.freezeProjectId = entry.freezeProjectId;
+                        }
+                        metaStore.put(metadata, entry.id);
+                    }
                     try {
-                        transaction.abort();
-                    } catch {
-                        // The transaction already settled before the failure was observed.
+                        await awaitTransaction(activeTransaction);
+                    } finally {
+                        transactionSettled = true;
+                    }
+                    return (
+                        isImportAuthorityCurrent() &&
+                        [...generations].every(([id, generation]) => persistenceGenerationById.get(id) === generation)
+                    );
+                } catch {
+                    if (transaction && !transactionSettled) {
+                        try {
+                            transaction.abort();
+                        } catch {
+                            // The transaction already settled before the failure was observed.
+                        }
+                    }
+                    return false;
+                } finally {
+                    for (const [id, generation] of generations) {
+                        if (persistenceGenerationById.get(id) === generation) {
+                            persistenceGenerationById.delete(id);
+                        }
+                    }
+                    if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
+                        importPersistenceTransactions.delete(candidateId);
                     }
                 }
-                return false;
-            } finally {
-                for (const [id, generation] of generations) {
-                    if (persistenceGenerationById.get(id) === generation) {
-                        persistenceGenerationById.delete(id);
-                    }
-                }
-                if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
-                    importPersistenceTransactions.delete(candidateId);
-                }
-            }
+            });
         };
         return {
             persist: () => {

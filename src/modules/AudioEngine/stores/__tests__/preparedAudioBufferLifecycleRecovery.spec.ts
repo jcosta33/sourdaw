@@ -10,8 +10,6 @@ import {
     installFakeAudioIndexedDb,
     META_STORE,
     RECOVERY_STORE,
-    type StoredAudioBuffer,
-    type StoredBufferMeta,
     type StoredRecoveryValue,
 } from './fakeAudioBufferIndexedDb';
 import {
@@ -47,11 +45,10 @@ afterEach(async () => {
 });
 
 describe('prepared audio-buffer recovery and project admission', () => {
-    it('upgrades a pre-existing v2 database before using the v3 recovery store', async () => {
+    it('upgrades a pre-existing v2 database before using the current recovery store', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
         source.getChannelData(0)[0] = 0.375;
-        expect(controls.committedRecovery.has(0)).toBe(false);
 
         await expect(
             audioBufferCache.persistPreparedBuffer({
@@ -65,10 +62,8 @@ describe('prepared audio-buffer recovery and project admission', () => {
             leaseId: 'v2-to-v3-prepared-lease',
         });
         expect(controls.storeNames()).toContain(RECOVERY_STORE);
-        expect(controls.committedRecovery.get(0)).toEqual({
-            kind: 'prepared-audio-recovery-migration',
-            schemaVersion: 1,
-        });
+        expect(controls.committed.has('v2-to-v3-prepared-buffer')).toBe(true);
+        expect(controls.committedMeta.get('v2-to-v3-prepared-buffer')?.preparedOwner?.status).toBe('temporary');
     });
 
     it('does not open recovery storage after cancellation and degrades recovery read failure to zero publication', async () => {
@@ -83,154 +78,6 @@ describe('prepared audio-buffer recovery and project admission', () => {
         controls.failRequestsFrom(META_STORE);
         await expect(audioBufferCache.restoreFromIdb({ context, ids: ['storage-failure-recovery'] })).resolves.toBe(0);
         expect(context.createBuffer).not.toHaveBeenCalled();
-    });
-
-    it('keeps historic prefixed ordinary IDs reachable while migrating only identified legacy recovery rows', async () => {
-        const controls = installFakeAudioIndexedDb({
-            existingStores: [BUFFER_STORE, META_STORE],
-            pendingLegacyRecoveryMigration: true,
-        });
-        const historicId = '\u0000sourdaw-prepared-recovery:historic-user-buffer';
-        const recoveredId = 'legacy-recovery-project-buffer';
-        const legacyRecoveryKey = `\u0000sourdaw-prepared-recovery:${recoveredId}`;
-        const stored = (sample: number): StoredAudioBuffer => ({
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([sample])],
-            lastAccessed: 1,
-            sizeInBytes: 4,
-        });
-        const historicMeta: StoredBufferMeta = { lastAccessed: 1, sizeInBytes: 4 };
-        const recoveredMeta: StoredBufferMeta = {
-            lastAccessed: 1,
-            preparedOwner: {
-                schemaVersion: 1,
-                createdAtMs: 1,
-                leaseId: 'legacy-recovery-lease',
-                persistenceRevision: 'legacy-persistence-revision',
-                status: 'temporary',
-            },
-            sizeInBytes: 4,
-        };
-        controls.committed.set(historicId, stored(0.25));
-        controls.committedMeta.set(historicId, historicMeta);
-        controls.committed.set(legacyRecoveryKey, stored(0.75));
-        controls.committedMeta.set(legacyRecoveryKey, {
-            id: recoveredId,
-            metadata: recoveredMeta,
-            operation: 'discard',
-            revision: 'legacy-recovery-revision',
-            schemaVersion: 1,
-        } as unknown as StoredBufferMeta);
-        const context = createTestContext(
-            vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
-        );
-
-        await expect(audioBufferCache.restoreFromIdb({ context, ids: [historicId, recoveredId] })).resolves.toBe(2);
-        expect(audioBufferCache.get(historicId)?.getChannelData(0)[0]).toBeCloseTo(0.25);
-        expect(audioBufferCache.get(recoveredId)?.getChannelData(0)[0]).toBeCloseTo(0.75);
-        expect(controls.committed.get(historicId)).toEqual(stored(0.25));
-        expect(controls.committedMeta.get(historicId)).toEqual(historicMeta);
-        expect(controls.committed.get(recoveredId)?.channelData[0]?.[0]).toBeCloseTo(0.75);
-        expect(controls.committedMeta.get(recoveredId)).toEqual({
-            ...recoveredMeta,
-            preparedOwner: { ...recoveredMeta.preparedOwner!, status: 'project-owned' },
-        });
-        expect(controls.committed.has(legacyRecoveryKey)).toBe(false);
-        expect(controls.committedMeta.has(legacyRecoveryKey)).toBe(false);
-    });
-
-    it('retains a mismatched legacy recovery key without touching its embedded target ID', async () => {
-        const controls = installFakeAudioIndexedDb({
-            existingStores: [BUFFER_STORE, META_STORE],
-            pendingLegacyRecoveryMigration: true,
-        });
-        const targetId = 'mismatched-legacy-target';
-        const mismatchedKey = '\u0000sourdaw-prepared-recovery:different-id';
-        const stored: StoredAudioBuffer = {
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([0.875])],
-            lastAccessed: 1,
-            sizeInBytes: 4,
-        };
-        controls.committed.set(mismatchedKey, stored);
-        controls.committedMeta.set(mismatchedKey, {
-            id: targetId,
-            metadata: {
-                lastAccessed: 1,
-                preparedOwner: {
-                    schemaVersion: 1,
-                    leaseId: 'mismatched-legacy-lease',
-                    persistenceRevision: 'mismatched-legacy-persistence',
-                    status: 'temporary',
-                },
-                sizeInBytes: 4,
-            },
-            operation: 'discard',
-            revision: 'mismatched-legacy-revision',
-            schemaVersion: 1,
-        } as unknown as StoredBufferMeta);
-        const context = createTestContext(vi.fn());
-
-        await expect(audioBufferCache.restoreFromIdb({ context, ids: [targetId] })).resolves.toBe(0);
-        expect(controls.committed.get(mismatchedKey)).toEqual(stored);
-        expect(controls.committedMeta.has(mismatchedKey)).toBe(true);
-        expect(controls.committed.has(targetId)).toBe(false);
-        expect(controls.committedMeta.has(targetId)).toBe(false);
-        expect(controls.committedRecovery.has(targetId)).toBe(false);
-    });
-
-    it('retries legacy recovery migration after its first transaction aborts', async () => {
-        const controls = installFakeAudioIndexedDb({
-            existingStores: [BUFFER_STORE, META_STORE],
-            pendingLegacyRecoveryMigration: true,
-        });
-        const id = 'retry-legacy-migration';
-        const legacyKey = `\u0000sourdaw-prepared-recovery:${id}`;
-        controls.committed.set(legacyKey, {
-            sampleRate: 48_000,
-            numberOfChannels: 1,
-            channelData: [new Float32Array([0.625])],
-            lastAccessed: 1,
-            sizeInBytes: 4,
-        });
-        controls.committedMeta.set(legacyKey, {
-            id,
-            metadata: {
-                lastAccessed: 1,
-                preparedOwner: {
-                    schemaVersion: 1,
-                    leaseId: 'retry-legacy-lease',
-                    persistenceRevision: 'retry-legacy-persistence',
-                    status: 'temporary',
-                },
-                sizeInBytes: 4,
-            },
-            operation: 'discard',
-            revision: 'retry-legacy-revision',
-            schemaVersion: 1,
-        } as unknown as StoredBufferMeta);
-        controls.abortNextWrite();
-        const firstContext = createTestContext(vi.fn());
-
-        await expect(audioBufferCache.restoreFromIdb({ context: firstContext, ids: [id] })).resolves.toBe(0);
-        expect(controls.committed.has(legacyKey)).toBe(true);
-        expect(controls.committedRecovery.has(id)).toBe(false);
-
-        vi.resetModules();
-        [{ audioBufferCache }, { setDurableAudioBufferOwnershipProvider }] = await Promise.all([
-            import('../audioBufferCache'),
-            import('../durableAudioBufferOwnership'),
-        ]);
-        setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
-        const secondContext = createTestContext(
-            vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
-        );
-        await expect(audioBufferCache.restoreFromIdb({ context: secondContext, ids: [id] })).resolves.toBe(1);
-        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.625);
-        expect(controls.committed.has(legacyKey)).toBe(false);
-        expect(controls.committedRecovery.has(id)).toBe(false);
     });
 
     it('accepts prefixed ordinary set, import, and project IDs without touching isolated recovery', async () => {
@@ -539,7 +386,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
     });
 
     it('releases a provisional prepare reservation when continuation is cancelled', async () => {
-        installFakeAudioIndexedDb();
+        const controls = installFakeAudioIndexedDb();
         const id = 'cancelled-provisional-reservation';
         const existingId = 'existing-project-reservation';
         const existingProject = audioBufferCache.importBuffers({
@@ -556,13 +403,13 @@ describe('prepared audio-buffer recovery and project admission', () => {
         });
         shouldContinue = false;
 
-        await expect(
-            audioBufferCache.reopenPreparedBuffer({
-                id,
-                leaseId: `${id}-lease`,
-                context: createTestContext(vi.fn()),
-            })
-        ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
+        const reopenAfterCancellation = audioBufferCache.reopenPreparedBuffer({
+            id,
+            leaseId: `${id}-lease`,
+            context: createTestContext(vi.fn()),
+        });
+        await expect(preparation).resolves.toBeNull();
+        await expect(reopenAfterCancellation).resolves.toEqual({ status: 'missing' });
         await expect(
             audioBufferCache.reopenPreparedBuffer({
                 id: existingId,
@@ -570,7 +417,9 @@ describe('prepared audio-buffer recovery and project admission', () => {
                 context: createTestContext(vi.fn()),
             })
         ).resolves.toEqual({ status: 'failed', reason: 'Prepared audio buffer ID is reserved by the project.' });
-        await expect(preparation).resolves.toBeNull();
+        expect(audioBufferCache.has(id)).toBe(false);
+        expect(controls.committed.has(id)).toBe(false);
+        expect(controls.committedMeta.has(id)).toBe(false);
         await expect(
             audioBufferCache.reopenPreparedBuffer({
                 id,

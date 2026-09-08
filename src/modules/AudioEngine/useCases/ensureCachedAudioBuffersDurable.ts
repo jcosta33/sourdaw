@@ -1,5 +1,7 @@
 import { audioBufferCache } from '../stores/audioBufferCache';
 
+import type { ProjectAudioStorageLockScope } from '#/infra/storage/withProjectAudioStorageLock';
+
 export type CachedAudioBuffersDurabilityReceipt = {
     status: 'durable';
     isCurrent: () => boolean;
@@ -18,7 +20,8 @@ export type CachedAudioBuffersDurabilityResult =
 
 /** Hold the exact required PCM sources durable while one project snapshot commits. */
 export function ensureCachedAudioBuffersDurable(
-    requiredAudioBufferIds: readonly string[]
+    requiredAudioBufferIds: readonly string[],
+    scope?: ProjectAudioStorageLockScope
 ): Promise<CachedAudioBuffersDurabilityResult> {
-    return audioBufferCache.ensureDurable(requiredAudioBufferIds);
+    return audioBufferCache.ensureDurable(requiredAudioBufferIds, scope);
 }
