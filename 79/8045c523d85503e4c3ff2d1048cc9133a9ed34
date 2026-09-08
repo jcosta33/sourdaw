@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_327db2353f377a::t_49bade02ae2da7 2088-2103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "798045c523d85503e4c3ff2d1048cc9133a9ed34",
+  "prompts": {},
+  "sessions": {
+    "s_327db2353f377a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08302-159f-7382-b0b2-ca5ad66640fd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
