@@ -36,7 +36,7 @@ describe('handleTransposeNotes — execute', () => {
             type: 'transposeNotes',
             payload: { clipId: 'c1', semitones: 3 },
         });
-        expect(mockedTranspose).toHaveBeenCalledWith('c1', 3, undefined);
+        expect(mockedTranspose).toHaveBeenCalledWith('c1', 3);
         expect(result).toEqual({ status: 'written' });
     });
 

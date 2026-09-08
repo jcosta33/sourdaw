@@ -25,13 +25,21 @@ function prepareQuantizeNotes(action: Extract<AppAction, { type: 'quantizeNotes'
 
 export const handleQuantizeNotes = createHandler<'quantizeNotes'>({
     execute: (action) => {
-        const written = quantizeNotes(
-            action.payload.clipId,
-            action.payload.gridSize,
-            action.payload.strength,
-            action.payload.swing,
-            action.payload.noteIds
-        );
+        const written =
+            action.payload.noteIds !== undefined
+                ? quantizeNotes(
+                      action.payload.clipId,
+                      action.payload.gridSize,
+                      action.payload.strength,
+                      action.payload.swing,
+                      action.payload.noteIds
+                  )
+                : quantizeNotes(
+                      action.payload.clipId,
+                      action.payload.gridSize,
+                      action.payload.strength,
+                      action.payload.swing
+                  );
         return { status: written ? 'written' : 'no-write' };
     },
     describe: (action) => prepareQuantizeNotes(action).description,

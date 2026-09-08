@@ -25,7 +25,10 @@ function prepareQuantizeNoteLengths(action: Extract<AppAction, { type: 'quantize
 
 export const handleQuantizeNoteLengths = createHandler<'quantizeNoteLengths'>({
     execute: (action) => {
-        const written = quantizeNoteLengths(action.payload.clipId, action.payload.gridSize, action.payload.noteIds);
+        const written =
+            action.payload.noteIds !== undefined
+                ? quantizeNoteLengths(action.payload.clipId, action.payload.gridSize, action.payload.noteIds)
+                : quantizeNoteLengths(action.payload.clipId, action.payload.gridSize);
         return { status: written ? 'written' : 'no-write' };
     },
     describe: (action) => prepareQuantizeNoteLengths(action).description,

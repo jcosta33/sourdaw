@@ -36,7 +36,7 @@ describe('handleQuantizeNotes — execute', () => {
             type: 'quantizeNotes',
             payload: { clipId: 'c1', gridSize: 0.25, strength: 1, swing: 0 },
         });
-        expect(mockedQuantize).toHaveBeenCalledWith('c1', 0.25, 1, 0, undefined);
+        expect(mockedQuantize).toHaveBeenCalledWith('c1', 0.25, 1, 0);
         expect(result).toEqual({ status: 'written' });
     });
 
