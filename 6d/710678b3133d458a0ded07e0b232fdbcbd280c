@@ -1,0 +1,64 @@
+crates/daw-engine/src/audio_thread.rs
+  h_1228e573df1f42 489-495,535-538,561-562,597-598,708-739,871-882,890-891,901-903,951-955,981-1004,1382-1383,1422-1428,2903-2909,2929,3229,3267,3294-3295,3320-3321,3325-3326,3331-3332,3347-3349,3351,3358-3374,3376-3377,3385-3397,3775-3825,3901-3902,4037,4158,4371,4380,4470
+crates/daw-engine/src/device/cpal_backend.rs
+  h_1228e573df1f42 67-90,113,120-126,282,285-315
+crates/daw-engine/src/device/mod.rs
+  h_1228e573df1f42 56-57,68-75
+crates/daw-engine/src/device/wasapi/backend.rs
+  h_1228e573df1f42 759-761
+crates/daw-engine/src/lib.rs
+  h_1228e573df1f42 201-209,316-317,349-374,1452-1453
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  h_1228e573df1f42 91-95,117-129,160-162,179-181,214-216,224-226,249-251,269-271,291-293,356-358,371-373,411-413,454-456,486-487
+release/open-source-inventory.json
+  h_1228e573df1f42 1198
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  h_1228e573df1f42 206-207,211,218,222-235
+scripts/desktopLatencyReadings.ts
+  h_1228e573df1f42 188-193,209-210
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  h_1228e573df1f42 52-69,101-103
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  h_1228e573df1f42 33-35
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  h_1228e573df1f42 98-100
+src/modules/AudioEngine/useCases/engineAccess/__tests__/readNativeOutputLatency.spec.ts
+  h_1228e573df1f42 1-107
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  h_1228e573df1f42 36-38
+src/modules/AudioEngine/useCases/engineAccess/readNativeOutputLatency.ts
+  h_1228e573df1f42 1-58
+src/modules/AudioEngine/useCases/index.ts
+  h_1228e573df1f42 82
+src/modules/Command/useCases/executeAppAction.ts
+  h_1228e573df1f42 17,20,326-340
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  h_1228e573df1f42 130,136,228,232-246,260,264-278,350-356,359,381-387,390
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  h_1228e573df1f42 19-48,95,122,128,147,154-163
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  h_1228e573df1f42 642-672
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_1228e573df1f42 21,756-781
+src/modules/PluginHost/useCases/faustEngine/__tests__/minimoogLeadDspBehavior.spec.ts
+  h_1228e573df1f42 1-408
+src/modules/PluginHost/useCases/faustEngine/dsp/minimoog-lead.dsp
+  h_1228e573df1f42 33-34
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  h_1228e573df1f42 12,26,259-320
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  h_1228e573df1f42 9,71-125,294-301
+src/utils/handlerContract.ts
+  h_1228e573df1f42 2528-2529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6d710678b3133d458a0ded07e0b232fdbcbd280c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
