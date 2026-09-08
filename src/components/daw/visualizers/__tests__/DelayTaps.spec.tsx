@@ -139,6 +139,27 @@ describe('DelayTaps', () => {
         expect(onParamChange).toHaveBeenCalledWith('delay-feedback', 0);
     });
 
+    it('targets feedback near the envelope line even when feedback is zero', () => {
+        // When feedback is 0 and mix is 0.8:
+        // firstTapX = 6 + (250 / 2000) * 188 = 29.5
+        // firstTapAmplitude = mix = 0.8 (envelopeY = 6 + 38 - 30.4 = 13.6).
+        // If mutated to mix * feedback: firstTapAmplitude = 0 (envelopeY = 44).
+        // At clientX = 50, clientY = 14:
+        //   distToTap = |50 - 29.5| = 20.5 (>= 20)
+        //   distToEnvelope = |14 - 13.6| = 0.4 (< 20)
+        // Correct code selects 'feedback'.
+        // Mutated code has distToEnvelope = |14 - 44| = 30 (>= 20); tie-breaker 20.5 < 30 selects 'time'.
+        const onParamChange = vi.fn();
+        const { container } = render(<DelayTaps time={250} feedback={0} mix={0.8} onParamChange={onParamChange} />);
+        const canvas = getCanvas(container);
+
+        fireEvent.pointerDown(canvas, { clientX: 50, clientY: 14, pointerId: 10 });
+        fireEvent.pointerMove(canvas, { clientX: 50, clientY: 20, pointerId: 10 });
+
+        const lastCall = onParamChange.mock.calls.at(-1);
+        expect(lastCall?.[0]).toBe('delay-feedback');
+    });
+
     it('falls back to whichever axis is closer when the press lands far from both hit zones', () => {
         // mx=70 -> distToTap=|70-29.5|=40.5; my=90 -> distToEnvelope=|90-25|=65.
         // Neither is within the 20px hit radius, so the tie-break picks the closer axis (time).
@@ -192,6 +213,20 @@ describe('DelayTaps', () => {
         expect(wetBarCalls[0][3]).toBeCloseTo(30.4, 2);
         expect(wetBarCalls[1][3]).toBeCloseTo(15.2, 2);
         expect(wetBarCalls[2][3]).toBeCloseTo(7.6, 2);
+
+        vi.restoreAllMocks();
+    });
+
+    it('connects the decay envelope line to the first wet tap when feedback is zero', () => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        const lineToSpy = vi.spyOn(ctx, 'lineTo');
+        spyOnGetContext(ctx);
+
+        render(<DelayTaps time={250} feedback={0} mix={0.8} />);
+
+        // When feedback is 0, tap 1 is drawn at xPos = 29.5, yPos = pad + plotH - 0.8 * plotH = 13.6.
+        // If amplitude was computed as mix * feedback, tap 1 has amplitude 0 < 0.01 and breaks before calling lineTo.
+        expect(lineToSpy).toHaveBeenCalledWith(29.5, expect.closeTo(13.6, 1));
 
         vi.restoreAllMocks();
     });
