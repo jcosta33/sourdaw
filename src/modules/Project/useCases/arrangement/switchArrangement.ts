@@ -4,6 +4,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
 import { projectLoadEpoch } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 import { loadSnapshot } from './loadSnapshot';
@@ -87,6 +88,14 @@ export async function switchArrangement(id: string): Promise<void> {
 
     // Load target
     loadSnapshot(currentTargetAfterStop);
+
+    // The target snapshot's audio that failed to resolve out of IndexedDB is
+    // simply absent from the cache — scan the freshly hydrated track state
+    // against the cache so the absence re-flags the missing-media panel for
+    // the arrangement the user just opened, the way every project-open path
+    // does. Runs after `publish()` and `loadSnapshot` so both sides of the
+    // comparison are current.
+    verifyAudioBufferReferences();
 
     // Clear undo history because IDs might have been reused or destroyed
     clearUndoHistory();

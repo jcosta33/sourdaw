@@ -17,6 +17,7 @@ import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
+    relinkClipAudioSource,
     replaceClipAudioBuffer,
     enableWarp,
     disableWarp,
@@ -260,15 +261,24 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                 discardDecodedAudioFile(bufferId);
                 return;
             }
-            if (replaceClipAudioBuffer(clipId, bufferId)) {
-                // Dropping a file here is the repair the missing-media panel
-                // prompts for, and the panel holds a scan rather than a
-                // subscription — so a successful relink has to re-scan or it
-                // keeps counting a clip the user has already fixed. This sits
-                // at the caller because `replaceClipAudioBuffer` cannot import
-                // Project's use cases: Project already imports Arrangement's,
-                // and the edge closes a dependency cycle (`deps:validate`
-                // no-circular).
+            // A drop onto a clip whose source buffer is missing is the repair
+            // the missing-media panel prompts for, and it relinks every clip
+            // sharing that source (the panel counts one file). A drop onto a
+            // healthy clip swaps only that clip's audio. The cache decides
+            // which flow this drop is; the relink use case re-checks the
+            // source at write time.
+            const sourceBufferId = audioBufferId ?? clipId;
+            const sourceIsMissing = getCachedAudioBuffer({ bufferId: sourceBufferId }) === null;
+            const repaired = sourceIsMissing
+                ? relinkClipAudioSource({ sourceBufferId, replacementBufferId: bufferId }).status === 'relinked'
+                : replaceClipAudioBuffer(clipId, bufferId);
+            if (repaired) {
+                // The panel holds a scan rather than a subscription — so a
+                // successful relink has to re-scan or it keeps counting a clip
+                // the user has already fixed. This sits at the caller because
+                // the Arrangement use cases cannot import Project's: Project
+                // already imports Arrangement's, and the edge closes a
+                // dependency cycle (`deps:validate` no-circular).
                 verifyAudioBufferReferences();
                 setBufferVersion((value) => value + 1);
                 return;
