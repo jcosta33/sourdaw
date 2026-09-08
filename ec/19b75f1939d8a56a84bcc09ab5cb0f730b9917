@@ -1,0 +1,88 @@
+release/open-source-inventory.json
+  h_1228e573df1f42 1198
+scripts/resourceGuard.ts
+  h_1228e573df1f42 106,108
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_1228e573df1f42 155-196,513-546
+src/app/captureCommandBatchPreflightState.ts
+  h_1228e573df1f42 542-545,553
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  h_1228e573df1f42 16
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  h_1228e573df1f42 41
+src/modules/Arrangement/handlers/device/__tests__/handleSetExternalPluginState.spec.ts
+  h_1228e573df1f42 8,25,28-32,42,57,72
+src/modules/Arrangement/handlers/device/handleSetExternalPluginState.ts
+  h_1228e573df1f42 8
+src/modules/Arrangement/useCases/device/__tests__/setExternalPluginState.spec.ts
+  h_1228e573df1f42 37,49-111,122,144,157,168,179,190
+src/modules/Arrangement/useCases/device/setExternalPluginState.ts
+  h_1228e573df1f42 7,15,77,83,88-97,101,105-108,111
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_1228e573df1f42 1767-1770,1774,1777-1778,1780,1783-1799,1830,1841,1876,1881,1924,1929,2015,2038-2039,2062,2081,2089,2098,2109-2111,2125-2127,2158,2164,2173,2184,2192,2203-2204,2218-2219,2244-2245,2303,2312,2370,2388,2394,2442,2450,2459,2468-2469,2474-2479,2514,2521,2537,2545,2605-2606,2726,2732,2782,2797,2802,2820-2821,2841,2855-2856,2865,2867,2879-2880,2888-2889,2929-2930,3004-3005,3083-3084,3210,3221,3302-3303,3330-3331,3353,3367,3376,3398,3412,3419,3426-3428,3469-3472,3494,3499,3511,3518,3523,3525,3531,3536,3538-3539,3558,3565,3573-3574,3580,3583,3627-3628,3637-3638,3701,3707-3708,3719-3720,3742-3743,3777,3784,3789-3790,3806,3811-3812,3824,3834,3841,3847,3852,3861-3862,3883,3888-3889,3926-3927,3947,3961-3962,3970-3971,4060,4067,4073-4074,4081,4095,4110,4124,4129-4132,4161,4167,4181,4187,4232,4234,4249,4258-4259,4261,4274-4275,4278,4285,4290,4317,4322,4417,4424,4452,4460,4466,4474-4475,4515,4526,4534,4540,4547,4552,4560-4561,4772,4788,4805,4812-4813,4816,4847,4860-4863,4873-4874,4919,4933,4938,4940,4988,4993,5011,5016,5040,5045,5154-5160,5167-5197,5200-5205,5209,5211-5228,5231,5233-5243,5245-5246,5254-5286,5292-5293,5296-5300,5302-5303,5305,5307-5317,5321-5323,5325-5331,5333-5335,5337-5349,5351,5353-5355,5360,5363-5366,5370-5375,5380,5382-5383,5385-5386,5389-5401,5405-5409,5411-5413,5417-5418,5420-5421
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_1228e573df1f42 360-362
+src/modules/PluginHost/AGENTS.md
+  h_1228e573df1f42 12,30
+src/modules/PluginHost/useCases/index.ts
+  h_1228e573df1f42 31
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginPendingRestore.capture.integration.spec.ts
+  h_1228e573df1f42 1-491
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  h_1228e573df1f42 322,327,418-421,492-495
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginStateCaptureAuthority.spec.ts
+  h_1228e573df1f42 1-168
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/readExternalPluginStateForCapture.spec.ts
+  h_1228e573df1f42 1-101
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  h_1228e573df1f42 9,19,124,133,230,238
+src/modules/PluginHost/useCases/pluginLifecycle/beginProjectSessionPluginRetirement.ts
+  h_1228e573df1f42 3,13
+src/modules/PluginHost/useCases/pluginLifecycle/clearExternalPluginRestoreFailure.ts
+  h_1228e573df1f42 2,12
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  h_1228e573df1f42 17,30
+src/modules/PluginHost/useCases/pluginLifecycle/externalPluginStateCaptureAuthority.ts
+  h_1228e573df1f42 1-23
+src/modules/PluginHost/useCases/pluginLifecycle/forgetPluginInstance.ts
+  h_1228e573df1f42 19,23
+src/modules/PluginHost/useCases/pluginLifecycle/loadPlugin.ts
+  h_1228e573df1f42 3,15
+src/modules/PluginHost/useCases/pluginLifecycle/markExternalPluginRestoreFailure.ts
+  h_1228e573df1f42 1-8
+src/modules/PluginHost/useCases/pluginLifecycle/readExternalPluginStateForCapture.ts
+  h_1228e573df1f42 1-83
+src/modules/PluginHost/useCases/pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild.ts
+  h_1228e573df1f42 3,15
+src/modules/PluginHost/useCases/pluginLifecycle/restorePluginState.ts
+  h_1228e573df1f42 5,18
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  h_1228e573df1f42 69,136,139
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  h_1228e573df1f42 1,9,16-26,28-32,39-42,45,51-60,65-82,87-90,92,97-121,123-126,129-133,135,137-141,143-146,151,156-159,162-165,167,170-171,174-178,182-186,189-194,197-198,200-212,215-248,250,252-253,256-258,262,264,266,268-269,272-275,278-283,288-289,291,293-295,297,299-300,303-309,311,313,316-322,324,326-327,330-335,337-338,340-341
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/externalPluginStateCaptureLateRevocation.integration.spec.ts
+  h_1228e573df1f42 1-203
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_1228e573df1f42 49,89
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  h_1228e573df1f42 64
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  h_1228e573df1f42 2-3,6,26,29-112,114-115,118-119,125-129,133-146,150-155,159-161,165,169-170,174-207,209-212,215,219
+src/modules/Project/useCases/projectPersistence/saveProject/capturedNativePluginStateCache.ts
+  h_1228e573df1f42 2,4-5,7
+src/modules/Project/useCases/projectPersistence/saveProject/warnedExternalPluginCaptureRejections.ts
+  h_1228e573df1f42 2-4,6
+src/utils/handlerContract.ts
+  h_1228e573df1f42 1295-1306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ec19b75f1939d8a56a84bcc09ab5cb0f730b9917",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
