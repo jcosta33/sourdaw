@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -17,6 +17,14 @@ async function openEditorDock(page: Page): Promise<void> {
         await page.waitForTimeout(400);
     }
     await page.getByRole('tab', { name: 'Editor' }).click();
+}
+
+async function getBox(locator: Locator): Promise<{ width: number; height: number }> {
+    const box = await locator.boundingBox();
+    if (!box) {
+        throw new Error('Expected a rendered element box');
+    }
+    return box;
 }
 
 // The record→edit→playback chain, with the virtual keyboard as the MIDI
@@ -68,9 +76,37 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         const recorded = Number((await noteCount.innerText()).match(/\d+/)?.[0] ?? '0');
         expect(recorded).toBeGreaterThanOrEqual(playedKeys.length);
 
+        // Both docks are open at the default 1280×720 browser viewport. The
+        // arrangement must retain one usable track row rather than collapsing
+        // the renderer while the editor keeps its protected minimum.
+        const canvas = page.getByLabel('Timeline editor surface');
+        const editorDock = page.getByRole('tabpanel').locator('..');
+        const timelineBox = await getBox(canvas);
+        const editorBox = await getBox(editorDock);
+        expect(timelineBox.width).toBeGreaterThan(0);
+        expect(timelineBox.height).toBeGreaterThanOrEqual(80);
+        expect(editorBox.height).toBeGreaterThanOrEqual(280);
+
+        // The center split owns the overflow. Reaching the keyboard must scroll
+        // that split instead of clipping either dock out of the document.
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        const centerScrollTop = await keyboard.evaluate((element) => {
+            let parent = element.parentElement;
+            while (parent) {
+                if (getComputedStyle(parent).overflowY === 'auto') {
+                    return parent.scrollTop;
+                }
+                parent = parent.parentElement;
+            }
+            return null;
+        });
+        expect(centerScrollTop).toBeGreaterThan(0);
+        await canvas.scrollIntoViewIfNeeded();
+        await expect(canvas).toBeInViewport();
+
         // Edit: open the piano roll and stamp one more note into the clip —
         // a single click stamps (a double click stamps then hit-removes).
-        const canvas = page.getByLabel('Timeline editor surface');
         await canvas.dblclick({ position: { x: 100, y: 40 } });
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         await expect(pianoRoll).toBeVisible({ timeout: 10_000 });
@@ -83,5 +119,21 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         await expect(playhead).not.toHaveText(/1\.1\.000/, { timeout: 10_000 });
         await page.getByTestId('transport-stop').click();
         await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 5000 });
+
+        // Removing pressure restores the stored 360px preference; restoring
+        // pressure may shrink only the editor, never the timeline below its
+        // complete-row minimum.
+        await page.getByLabel('Close virtual keyboard').click();
+        await expect(keyboard).toBeHidden();
+        expect((await getBox(editorDock)).height).toBe(360);
+
+        await page.getByTestId('toggle-virtual-keyboard').click();
+        await keyboard.scrollIntoViewIfNeeded();
+        const pressuredEditorBox = await getBox(editorDock);
+        const pressuredTimelineBox = await getBox(canvas);
+        expect(pressuredEditorBox.height).toBeGreaterThanOrEqual(280);
+        expect(pressuredEditorBox.height).toBeLessThan(360);
+        expect(pressuredTimelineBox.width).toBeGreaterThan(0);
+        expect(pressuredTimelineBox.height).toBeGreaterThanOrEqual(80);
     });
 });
