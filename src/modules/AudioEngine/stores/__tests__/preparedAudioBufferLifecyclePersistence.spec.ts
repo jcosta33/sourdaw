@@ -152,6 +152,13 @@ describe('prepared audio-buffer persistence and admission', () => {
                 disposition: 'project-owned',
             })
         ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+
+        const durability = await audioBufferCache.ensureDurable(['failed-lock-admission']);
+        expect(durability.status).toBe('durable');
+        if (durability.status === 'durable') {
+            expect(durability.isCurrent()).toBe(true);
+            durability.release();
+        }
     });
 
     it('publishes the committed PCM snapshot when the caller mutates its buffer before commit', async () => {
