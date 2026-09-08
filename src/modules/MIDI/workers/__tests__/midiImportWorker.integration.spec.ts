@@ -5,6 +5,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type TrackStoreState, trackStore } from '#/modules/Arrangement/stores';
+import { importMidiFile } from '#/modules/Arrangement/useCases';
 import {
     clearUndoHistory,
     redo,
@@ -20,19 +22,17 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { downloadMidiFile } from '#/modules/MIDI/useCases';
 
-import { type TrackStoreState, trackStore } from '../../stores/trackStore';
-import { importMidiFile } from '../importMidiFile';
+import { type MidiStoreState, midiStore } from '../../stores';
+import { downloadMidiFile } from '../../useCases';
 
-import '../../../MIDI/workers/midiImportWorker';
+import '../midiImportWorker';
 
 const mocks = vi.hoisted(() => ({
     downloadBlob: vi.fn(),
 }));
 
-vi.mock('../../../MIDI/repositories/downloadFile', () => ({
+vi.mock('../../repositories/downloadFile', () => ({
     downloadBlob: mocks.downloadBlob,
 }));
 
@@ -82,12 +82,12 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
-function lastDownloadedBytes(): Uint8Array {
+function lastDownloadedBytes(): Uint8Array<ArrayBuffer> {
     const call = mocks.downloadBlob.mock.calls.at(-1);
     if (!call || !(call[0] instanceof Uint8Array)) {
         throw new TypeError('Expected the MIDI exporter to download bytes');
     }
-    return call[0];
+    return new Uint8Array(call[0]);
 }
 
 function findSequence(bytes: Uint8Array, sequence: readonly number[]): number {
@@ -99,7 +99,7 @@ function findSequence(bytes: Uint8Array, sequence: readonly number[]): number {
     return -1;
 }
 
-function useRunningStatusForSecondSustain(bytes: Uint8Array): Uint8Array {
+function useRunningStatusForSecondSustain(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
     const statusIndex = findSequence(bytes, [0xb9, 64, 0]);
     if (statusIndex < 0) {
         throw new Error('Expected a second explicit channel-9 sustain event');
