@@ -1,0 +1,16 @@
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  h_1228e573df1f42 1069
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  h_1228e573df1f42 832
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "30636f8795770d19373fef60832b53d7988011a5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
