@@ -533,7 +533,7 @@ describe('captureCommandBatchPreflightState', () => {
         const live = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
         const staged = captureCommandBatchPreflightState({
             assetReferences: [],
-            projectDocument: mocks.getCrdtDoc('root'),
+            projectDocument: mocks.getCrdtDoc('root') as Readonly<Record<string, unknown>>,
             targetIds: [],
         });
         mocks.agentProjectRepairStateStore.value = { status: 'repair-required' };
