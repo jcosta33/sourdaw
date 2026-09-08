@@ -221,6 +221,7 @@ export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineVie
 export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';
 export { toggleTimelineAutoScroll } from './toggleTimelineAutoScroll';
 export { zoomTimelineBy } from './zoomTimelineBy';
+export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 
 // ── VCA ───────────────────────────────────────────────────────────────────────
 

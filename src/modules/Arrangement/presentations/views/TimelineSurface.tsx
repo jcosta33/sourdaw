@@ -15,6 +15,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { setAutoScroll, setScrollX, setTimelineZoom, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { getTimelineSurfaceMinimumHeight } from '../../useCases/getTimelineSurfaceMinimumHeight';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { createTimelineRenderer } from '../renderers/createTimelineRenderer';
 
@@ -41,6 +42,10 @@ export const TimelineSurface = (): ReactElement => {
         autoScrollEnabled: true,
     });
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const timelineMinimumHeight = getTimelineSurfaceMinimumHeight(
+        currentTrackStore.tracks,
+        currentTrackStore.selectedTrackId
+    );
 
     const {
         handleMouseDown,
@@ -360,6 +365,7 @@ export const TimelineSurface = (): ReactElement => {
         <div
             ref={containerRef}
             className="relative flex-1 overflow-hidden"
+            style={{ minHeight: timelineMinimumHeight }}
             onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'copy';

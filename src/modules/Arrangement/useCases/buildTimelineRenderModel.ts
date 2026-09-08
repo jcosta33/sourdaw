@@ -12,6 +12,7 @@ import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
+import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
@@ -206,21 +207,10 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const scrollX = viewState?.scrollX ?? 0;
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
-        const collapsedFolders = new Set(
-            (trackState?.tracks ?? []).filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id)
-        );
-        const visibleTracks = (trackState?.tracks ?? []).filter((time) => {
-            if (time.kind === 'master') {
-                return false;
-            }
-            if (!time.parentId) {
-                return true;
-            }
-            return !collapsedFolders.has(time.parentId);
-        });
+        const visibleTracks = getVisibleTimelineTracks(trackState?.tracks ?? []);
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
-            const baseHeight = track.kind === 'folder' ? 26 : track.height;
+            const baseHeight = getTimelineTrackHeight(track);
 
             const mappedClips: ClipRenderModel[] = track.clips.map((clip) => {
                 const notes = midiState?.notesByClipId[clip.id] ?? [];

@@ -182,6 +182,8 @@ type BottomTabState = {
     selectedClipId: string | null;
 };
 
+const EDITOR_MIN_HEIGHT = 280;
+
 /**
  * The shell proper. `MobileGate` sits *above* this component, in the root route, so on
  * a sub-768px viewport AppShell never mounts and none of the effects below run: no
@@ -674,9 +676,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
                     {/* Center: vertical split — arrangement over mixer */}
-                    <Stack grow className="min-w-0 overflow-hidden" style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}>
+                    <Stack
+                        grow
+                        className="min-w-0 overflow-x-hidden overflow-y-auto"
+                        style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}
+                    >
                         {/* Main arrangement area */}
-                        <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
+                        <main id="main-content" className="contain-content flex-1 min-h-min overflow-hidden">
                             {children}
                         </main>
 
@@ -882,16 +888,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     side="top"
                                     onResize={(d) => {
                                         if (activeBottomTab === 'editor') {
-                                            setEditorHeight((h) => Math.max(280, h + d));
+                                            setEditorHeight((h) => Math.max(EDITOR_MIN_HEIGHT, h + d));
                                         } else {
                                             setMixerHeight((h) => Math.max(120, h + d));
                                         }
                                     }}
                                 />
                                 <Stack
-                                    shrink={false}
+                                    shrink={activeBottomTab === 'editor'}
                                     className="contain-strict bg-surface-base overflow-hidden"
-                                    style={{ height: activeBottomTab === 'editor' ? editorHeight : mixerHeight }}
+                                    style={{
+                                        height: activeBottomTab === 'editor' ? editorHeight : mixerHeight,
+                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : undefined,
+                                    }}
                                 >
                                     {/* Bottom panel tab bar */}
                                     <Row

@@ -233,7 +233,7 @@ export const ArrangeView = (): ReactElement => {
     }
 
     return (
-        <Row align="stretch" className="h-full" ref={arrangeRowRef}>
+        <Row align="stretch" className="h-full min-h-min" ref={arrangeRowRef}>
             {dualViewOpen ? (
                 <>
                     <Stack
@@ -271,7 +271,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <Stack
                 grow
-                className="overflow-hidden relative min-w-0"
+                className="overflow-hidden relative min-w-0 min-h-min"
                 ref={timelineContainerRef}
                 style={{ minWidth: MIN_TIMELINE_COLUMN_WIDTH }}
             >
