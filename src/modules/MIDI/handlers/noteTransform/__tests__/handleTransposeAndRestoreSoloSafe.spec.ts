@@ -18,11 +18,14 @@ vi.mock('../prepareMidiNoteTransformUndo', () => ({
     })),
 }));
 
+import { type MidiNote } from '../../../models/MidiNote';
+import { transposeMidiNotes } from '../../../transformers/transposeMidiNotes';
 import { transposeNotes } from '../../../useCases/midiNoteTransforms/transposeNotes';
 import { handleTransposeNotes } from '../handleTransposeNotes';
 import { prepareMidiNoteTransformUndo } from '../prepareMidiNoteTransformUndo';
 
 const mockedTranspose = vi.mocked(transposeNotes);
+const mockedTransposeTransformer = vi.mocked(transposeMidiNotes);
 const mockedPrepare = vi.mocked(prepareMidiNoteTransformUndo);
 
 beforeEach(() => {
@@ -89,6 +92,54 @@ describe('handleTransposeNotes — describe', () => {
         });
         const prepareCall = mockedPrepare.mock.calls[0];
         expect(prepareCall?.[0]?.label).toBe('Transpose selected notes +3 semitones');
+    });
+
+    it('passes transform callback to prepareMidiNoteTransformUndo that calls transposeMidiNotes with noteIds', () => {
+        handleTransposeNotes.describe({
+            type: 'transposeNotes',
+            payload: { clipId: 'c1', semitones: 5, noteIds: ['n1', 'n2'] },
+        });
+        const prepareCall = mockedPrepare.mock.calls[0];
+        const transform = prepareCall?.[0]?.transform;
+        expect(transform).toBeDefined();
+
+        const sampleNotes: MidiNote[] = [
+            {
+                id: 'n1',
+                pitch: 60,
+                startBeat: 0,
+                duration: 1,
+                velocity: 100,
+                probability: 100,
+                pressure: 0,
+                slide: 0,
+                pitchBend: 0,
+            },
+        ];
+        transform?.(sampleNotes);
+        expect(mockedTransposeTransformer).toHaveBeenCalledWith({
+            notes: sampleNotes,
+            semitones: 5,
+            noteIds: ['n1', 'n2'],
+        });
+    });
+
+    it('passes transform callback to prepareMidiNoteTransformUndo that calls transposeMidiNotes without noteIds', () => {
+        handleTransposeNotes.describe({
+            type: 'transposeNotes',
+            payload: { clipId: 'c1', semitones: -2 },
+        });
+        const prepareCall = mockedPrepare.mock.calls[0];
+        const transform = prepareCall?.[0]?.transform;
+        expect(transform).toBeDefined();
+
+        const sampleNotes: MidiNote[] = [];
+        transform?.(sampleNotes);
+        expect(mockedTransposeTransformer).toHaveBeenCalledWith({
+            notes: sampleNotes,
+            semitones: -2,
+            noteIds: undefined,
+        });
     });
 });
 
