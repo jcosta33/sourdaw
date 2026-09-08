@@ -22,6 +22,8 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+import { getAutomationLanes, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
@@ -483,5 +485,46 @@ describe('splitClip', () => {
         clips = newTrackState().tracks[0]?.clips ?? [];
         right = clips.find((candidate) => candidate.id === 'new-clip-right');
         expect(right?.audioOffsetBeats).toBe(3);
+    });
+
+    it('installs the clamped lane copy on the right fragment of the split', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 8)]));
+        restoreAutomationSnapshot({ lanes: [] });
+
+        // A clip-scoped lane on the source, absolute-timeline points astride the
+        // cut at 4, with an object that must stay with the surviving left half.
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-source',
+                    trackId: 't1',
+                    clipId: 'c1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 6, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const lanes = getAutomationLanes();
+        expect(lanes).toHaveLength(2);
+        const copy = lanes.find((lane) => lane.id === 'auto-split-new-clip-right-0');
+        expect(copy?.clipId).toBe('new-clip-right');
+        expect(copy?.points.map((point) => point.beat)).toEqual([6]);
+        // The source lane keeps its id, its whole point set, and its object.
+        const source = lanes.find((lane) => lane.id === 'lane-source');
+        expect(source?.clipId).toBe('c1');
+        expect(source?.points.map((point) => point.beat)).toEqual([1, 6]);
     });
 });

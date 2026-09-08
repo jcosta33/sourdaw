@@ -469,6 +469,15 @@ export type ClipSplitActionSnapshot = {
      * clears the right half's satellites rather than leaving them behind.
      */
     readonly clipSatellites?: readonly ClipSatelliteEntrySnapshot[];
+    /**
+     * The right fragment's clip-scoped automation lanes, copied from the
+     * source and clamped to its window. Scoped to the RIGHT clip id only —
+     * the left half keeps its id and its lanes untouched. Optional so split
+     * actions captured before lanes joined this snapshot still decode; the
+     * pre-split side carries an explicit empty list, so restoring it retires
+     * the copies rather than leaving them behind.
+     */
+    readonly clipAutomationLanes?: readonly ClipAutomationLaneSnapshot[];
 };
 export type RippleShiftSnapshot = {
     readonly clipId: string;

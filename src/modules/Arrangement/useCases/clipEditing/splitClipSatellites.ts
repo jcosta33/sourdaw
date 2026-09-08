@@ -2,6 +2,7 @@ import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 import { isDefaultWarpState } from '../../stores/warpStates';
+import { readClipScopedAutomationLanes, type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelopePoints';
 
 /**
@@ -12,6 +13,13 @@ import { sampleGainEnvelopePoints } from '../clipGainEnvelope/sampleGainEnvelope
 export type ClipSplitSatellitePlan = {
     previous: ClipSatelliteEntry[];
     next: ClipSatelliteEntry[];
+    /**
+     * Copies of the source's clip-scoped automation lanes clamped to the right
+     * fragment's window, keyed to the right clip id. The left half's lanes are
+     * deliberately absent — the left keeps its id and its lanes untouched, so
+     * there is nothing to capture or restore on that side.
+     */
+    rightAutomationLanes: AutomationLaneValue[];
 };
 
 type PrepareClipSplitSatellitesInput = {
@@ -21,6 +29,8 @@ type PrepareClipSplitSatellitesInput = {
     clipRelativeSplitBeats: number;
     /** Cut position in source content beats — the warp marker axis. */
     contentSplitBeats: number;
+    /** Cut position on the absolute timeline — the clip automation axis. */
+    absoluteSplitBeats: number;
 };
 
 type SplitGainEnvelopes = {
@@ -120,6 +130,64 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
 }
 
 /**
+ * The right fragment's share of the source's clip-scoped automation lanes —
+ * the split-automation convention (Logic splits region automation with the
+ * region; REAPER take envelopes travel with each split item, and Pro Tools
+ * clip automation belongs to the clip, so both halves keep playing what they
+ * played before the cut).
+ *
+ * Lane points live in the ABSOLUTE timeline frame, so the copy keeps them
+ * verbatim and is only clamped to the fragment's window — points left of the
+ * cut stay on the source lane (inert beyond its shrunken edge, and alive
+ * again if that edge is extended back out), points at or right of the cut
+ * follow the right fragment. Re-basing them would move the curve off the
+ * audio it was drawn against.
+ *
+ * Automation objects are bounded containers whose ids must stay unique, and
+ * the source lane outlives the split — so objects stay with the left half
+ * whole rather than being duplicated onto the copy. An object reaching into
+ * the right fragment keeps playing there through the source lane only if a
+ * later edit re-extends the left edge; the point curves, which carry the
+ * common cases, do travel.
+ *
+ * A lane with no content at or right of the cut copies as nothing: the
+ * source lane already keeps that parameter alive over the left half.
+ * Copy ids derive from the right clip id, so a redo re-split reproduces
+ * exactly the lanes the original split's undo retired.
+ */
+function splitAutomationLanes(
+    sourceClipId: string,
+    rightClipId: string,
+    absoluteSplitBeats: number
+): AutomationLaneValue[] {
+    const atOrAfterCut = (point: { beat: number }): boolean => point.beat >= absoluteSplitBeats;
+    const copies: AutomationLaneValue[] = [];
+    for (const [index, lane] of readClipScopedAutomationLanes([sourceClipId]).entries()) {
+        const points = lane.points.filter(atOrAfterCut).map((point) => ({ ...point }));
+        const trimPoints = lane.trimPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+        const ghostPoints = lane.ghostPoints?.filter(atOrAfterCut).map((point) => ({ ...point }));
+        if (points.length === 0 && (trimPoints?.length ?? 0) === 0 && (ghostPoints?.length ?? 0) === 0) {
+            continue;
+        }
+        const copy: AutomationLaneValue = {
+            ...lane,
+            id: `auto-split-${rightClipId}-${index}`,
+            clipId: rightClipId,
+            points,
+            objects: [],
+        };
+        if (trimPoints !== undefined) {
+            copy.trimPoints = trimPoints;
+        }
+        if (ghostPoints !== undefined) {
+            copy.ghostPoints = ghostPoints;
+        }
+        copies.push(copy);
+    }
+    return copies;
+}
+
+/**
  * Repartition the source clip's gain envelope and warp state across the two
  * halves of a split.
  *
@@ -134,7 +202,7 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  * exactly the entries the original split's undo captured.
  */
 export function prepareClipSplitSatellites(input: PrepareClipSplitSatellitesInput): ClipSplitSatellitePlan {
-    const { clipId, rightClipId, contentSplitBeats } = input;
+    const { clipId, rightClipId, contentSplitBeats, absoluteSplitBeats } = input;
     const source = readClipSatelliteEntry(clipId);
     const gainEnvelopes =
         source.gainEnvelope !== null && source.gainEnvelope.points.length > 0
@@ -148,5 +216,6 @@ export function prepareClipSplitSatellites(input: PrepareClipSplitSatellitesInpu
             { clipId, gainEnvelope: gainEnvelopes.left, warpState: warpStates.left },
             { clipId: rightClipId, gainEnvelope: gainEnvelopes.right, warpState: warpStates.right },
         ],
+        rightAutomationLanes: splitAutomationLanes(clipId, rightClipId, absoluteSplitBeats),
     };
 }

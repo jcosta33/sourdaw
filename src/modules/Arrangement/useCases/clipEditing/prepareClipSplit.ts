@@ -78,6 +78,7 @@ export function prepareClipSplit({
         rightClipId: effectiveRightClipId,
         clipRelativeSplitBeats: timelineSplitDelta,
         contentSplitBeats,
+        absoluteSplitBeats: adjustedSplitBeat,
     });
 
     const leftClip: Clip = {
@@ -103,6 +104,9 @@ export function prepareClipSplit({
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
         clipSatellites: satellites.previous,
+        // The right clip id is proven unused, so the pre-split side carries no
+        // lanes for it; the explicit emptiness is what the undo leg restores.
+        clipAutomationLanes: [],
     };
     const next: ClipSplitActionSnapshot = {
         trackId: track.id,
@@ -112,6 +116,7 @@ export function prepareClipSplit({
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
         clipSatellites: satellites.next,
+        clipAutomationLanes: satellites.rightAutomationLanes,
     };
     return {
         adjustedMediaSplit,

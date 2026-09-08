@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { getAutomationLanes, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
 import { prepareClipSplitSatellites } from '../splitClipSatellites';
@@ -10,13 +12,52 @@ function planFor(clipRelativeSplitBeats: number, contentSplitBeats = clipRelativ
         rightClipId: 'c2',
         clipRelativeSplitBeats,
         contentSplitBeats,
+        absoluteSplitBeats: clipRelativeSplitBeats,
     });
+}
+
+function createClipLane(input: { id: string; beats: number[]; trimBeats?: number[]; ghostBeats?: number[] }) {
+    return {
+        id: input.id,
+        trackId: 'track-1',
+        clipId: 'c1',
+        parameterId: 'gain',
+        parameterName: 'Gain',
+        points: input.beats.map((beat) => ({ beat, value: 0.5, curve: 'linear' as const, tension: 0 })),
+        ...(input.trimBeats === undefined
+            ? {}
+            : {
+                  trimPoints: input.trimBeats.map((beat) => ({
+                      beat,
+                      value: 0.25,
+                      curve: 'linear' as const,
+                      tension: 0,
+                  })),
+              }),
+        objects: [],
+        ...(input.ghostBeats === undefined
+            ? {}
+            : {
+                  ghostPoints: input.ghostBeats.map((beat) => ({
+                      beat,
+                      value: 0.75,
+                      curve: 'linear' as const,
+                      tension: 0,
+                  })),
+              }),
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
 }
 
 describe('prepareClipSplitSatellites', () => {
     beforeEach(() => {
         __resetGainEnvelopesForTest();
         warpStates.clear();
+        restoreAutomationSnapshot({ lanes: [] });
     });
 
     it('captures the right half’s empty entry even when the source carries no satellites', () => {
@@ -100,5 +141,43 @@ describe('prepareClipSplitSatellites', () => {
         expect(plan.next[0]?.warpState?.markers).toEqual([{ id: 'w-left', originalBeat: 3, warpedBeat: 3.25 }]);
         expect(plan.next[1]?.warpState?.markers).toEqual([{ id: 'w-right', originalBeat: 7, warpedBeat: 7.5 }]);
         expect(plan.previous[1]).toEqual({ clipId: 'c2', gainEnvelope: null, warpState: null });
+    });
+
+    it('copies the points at or right of the cut onto a lane keyed to the right clip, verbatim', () => {
+        restoreAutomationSnapshot({
+            lanes: [createClipLane({ id: 'lane-1', beats: [1, 4, 7] })],
+        });
+
+        const plan = planFor(4);
+
+        // Absolute-timeline points are clamped to the fragment's window, not
+        // re-based — the curve must stay on the audio it was drawn against.
+        expect(plan.rightAutomationLanes).toHaveLength(1);
+        expect(plan.rightAutomationLanes[0]?.clipId).toBe('c2');
+        expect(plan.rightAutomationLanes[0]?.id).toBe('auto-split-c2-0');
+        expect(plan.rightAutomationLanes[0]?.points).toEqual([
+            { beat: 4, value: 0.5, curve: 'linear', tension: 0 },
+            { beat: 7, value: 0.5, curve: 'linear', tension: 0 },
+        ]);
+        // The source lane itself is untouched: the left half keeps its id and
+        // its whole point set, so the undo leg has nothing to restore there.
+        expect(getAutomationLanes()).toHaveLength(1);
+        expect(getAutomationLanes()[0]?.points).toHaveLength(3);
+    });
+
+    it('clamps trim and ghost points the same way and skips a lane with nothing at or right of the cut', () => {
+        restoreAutomationSnapshot({
+            lanes: [
+                createClipLane({ id: 'lane-left-only', beats: [1], trimBeats: [2] }),
+                createClipLane({ id: 'lane-straddling', beats: [3], trimBeats: [4, 6], ghostBeats: [5] }),
+            ],
+        });
+
+        const plan = planFor(4);
+
+        expect(plan.rightAutomationLanes).toHaveLength(1);
+        expect(plan.rightAutomationLanes[0]?.id).toBe('auto-split-c2-1');
+        expect(plan.rightAutomationLanes[0]?.trimPoints?.map((point) => point.beat)).toEqual([4, 6]);
+        expect(plan.rightAutomationLanes[0]?.ghostPoints?.map((point) => point.beat)).toEqual([5]);
     });
 });
