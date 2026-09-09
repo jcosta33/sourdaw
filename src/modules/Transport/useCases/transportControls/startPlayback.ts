@@ -14,7 +14,14 @@ import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadSchedu
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 import { startSchedulerWhenNativeSessionSettles } from './startSchedulerWhenNativeSessionSettles';
 
-export function startPlayback(): void {
+/**
+ * Resolves once the scheduler start has been decided, so a caller that has to
+ * know when the transport actually rolled — a take opened from a stopped
+ * transport, whose buffer is placed against that instant — can wait for it. A
+ * browser build decides synchronously; a desktop build decides when the native
+ * session settles or the hold cap expires.
+ */
+export async function startPlayback(): Promise<void> {
     const state = getTransportState();
     if (!state) {
         return;
@@ -71,5 +78,5 @@ export function startPlayback(): void {
     // replaced.
     const generation = schedulerSession.generation;
     const session = startNativeSessionAtBeat(startPosition, state.tempo);
-    void startSchedulerWhenNativeSessionSettles(session, generation);
+    await startSchedulerWhenNativeSessionSettles(session, generation);
 }

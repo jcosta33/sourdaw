@@ -24,7 +24,18 @@ import { recordingLifecycle } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
-async function beginActualRecording(startToken: number, anchorBeat?: number): Promise<boolean> {
+/**
+ * How long the transport was asked to wait before it rolled, filled in after
+ * the finaliser closure below is created — the wait is not known until the roll
+ * has happened, and the closure has to read whatever it turned out to be.
+ */
+type TransportHold = { seconds: number };
+
+async function beginActualRecording(
+    startToken: number,
+    anchorBeat: number | undefined,
+    transportHold: TransportHold
+): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
@@ -47,7 +58,12 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
 
                 const transport = getTransportState();
                 const bpm = transport?.tempo ?? 120;
-                const offsetBeats = totalLatencySec * (bpm / 60);
+                // The capture is open before the transport is asked to roll, and
+                // on a desktop build the roll waits for the native session, so
+                // the buffer's first sample predates the beat the clip is
+                // anchored on by that wait. It is subtracted like hardware
+                // latency.
+                const offsetBeats = (totalLatencySec + transportHold.seconds) * (bpm / 60);
                 const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
                 const durationBeats = buffer.duration * (bpm / 60);
                 const exactEndBeat = newStartBeat + durationBeats;
@@ -96,10 +112,16 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
-    void beginActualRecording(startToken, anchorBeat).then((started) => {
+    const transportHold = { seconds: 0 };
+    void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
-            startPlayback();
+            const ctx = getAudioContext();
+            // The instant the transport is asked to roll, read on the clock the
+            // capture runs on: the take opened here is placed against it.
+            const heldFromContextSeconds = ctx.currentTime;
+            await startPlayback();
+            transportHold.seconds = Math.max(ctx.currentTime - heldFromContextSeconds, 0);
         }
         return null;
     });
@@ -184,7 +206,7 @@ export function toggleRecording(): void {
         // scheduler refuses to punch on it, so diverting would leave Record
         // with no path to a recording at all.
         if (!state.isPlaying) {
-            startPlayback();
+            void startPlayback();
         }
         return;
     }

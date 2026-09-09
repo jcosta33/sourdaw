@@ -4,8 +4,8 @@
  * Held apart from `startPlayback` because a play is not the only thing that
  * starts a session: `rearmNativeSessionAfterEngineRetire` starts one mid-play,
  * from the live playhead, after a lost engine was retired (#3960). Both need
- * the same position projection, the same freshly read transport maps, and the
- * same handling of a decline.
+ * the same beat-to-seconds conversion, the same freshly read transport maps,
+ * and the same handling of a decline.
  *
  * The returned promise settles when the start settles, either way: a decline
  * and a failure are outcomes, not rejections, so a caller that waits for the

@@ -17,7 +17,7 @@
  * sound is what every established DAW accepts here; dropping the material at
  * the play position is not.
  *
- * ── Why the generation, not `isPlaying` ───────────────────────────────────
+ * ── Why the generation, and `isPlaying` as well ───────────────────────────
  *
  * The wait spans a gesture the musician can end. `schedulerSession.generation`
  * is the identity every ending bumps — `stopPlayheadScheduler` (stop, pause and
@@ -25,11 +25,15 @@
  * `startPlayheadScheduler` itself — so comparing it makes a stop, pause, seek
  * or dispose landing inside the hold leave the transport alone, and keeps a
  * seek that has already restarted the scheduler from starting it twice.
- * `isPlaying` is shared by every play: a stop and a fresh play inside the hold
- * would leave it true, and this continuation would then re-snap the new play's
- * scheduler.
+ * `isPlaying` cannot carry that identity: it is shared by every play, so a stop
+ * and a fresh play inside the hold would leave it true and this continuation
+ * would re-snap the new play's scheduler. It is still required alongside the
+ * generation because `pausePlayback` clears the flag straight away and only
+ * bumps the generation behind its recording flush, so a pause inside the hold
+ * can reach the end of the wait with the generation it opened on.
  */
 
+import { getTransportState } from '../../repositories/transport/getTransportState';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
@@ -59,7 +63,7 @@ export async function startSchedulerWhenNativeSessionSettles(
         }
     }
 
-    if (schedulerSession.generation !== generation) {
+    if (schedulerSession.generation !== generation || getTransportState()?.isPlaying !== true) {
         return;
     }
     startPlayheadScheduler();

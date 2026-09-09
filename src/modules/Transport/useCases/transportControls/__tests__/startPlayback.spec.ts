@@ -7,7 +7,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { defaultTransportState } from '../../../models/TransportState';
+import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
@@ -289,12 +289,10 @@ describe('startPlayback', () => {
      * forward to Web Audio.
      */
     describe('holding the Web Audio start for the native session', () => {
-        const rollingState = {
-            ...defaultTransportState,
-            isPlaying: false,
-            playheadPosition: 0,
-            preRollEnabled: false,
-        };
+        // `startPlayback` commits `isPlaying: true` before the hold opens and
+        // the hold reads the flag back at the end of the wait, so the store has
+        // to carry the write rather than answer one fixed snapshot.
+        let transportState: TransportState = defaultTransportState;
         /** One macrotask drains the whole chain: session → then → catch → race → await. */
         const drainHold = (): Promise<void> =>
             new Promise((resolve) => {
@@ -302,8 +300,17 @@ describe('startPlayback', () => {
             });
 
         beforeEach(() => {
+            transportState = {
+                ...defaultTransportState,
+                isPlaying: false,
+                playheadPosition: 0,
+                preRollEnabled: false,
+            };
             vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
-            vi.mocked(getTransportState).mockReturnValue(rollingState);
+            vi.mocked(getTransportState).mockImplementation(() => transportState);
+            vi.mocked(updateTransportState).mockImplementation((patch) => {
+                transportState = { ...transportState, ...patch };
+            });
         });
 
         it('does not start the scheduler until the native session has answered', async () => {
@@ -352,6 +359,29 @@ describe('startPlayback', () => {
             expect(startPlayheadScheduler).not.toHaveBeenCalled();
         });
 
+        it('leaves a transport paused inside the hold alone, before the pause has bumped the generation', async () => {
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            void startPlayback();
+            // What `pausePlayback` does inside the hold while recording: it
+            // commits `isPlaying: false` straight away and only bumps the
+            // generation behind its recording flush, so the wait can end
+            // carrying the generation it opened on. Starting the scheduler here
+            // would roll a paused transport.
+            transportState = { ...transportState, isPlaying: false };
+            answer();
+
+            await drainHold();
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        });
+
         it('gives up on the native session after the hold cap rather than never starting', async () => {
             vi.useFakeTimers();
             let answer = (): void => {};
@@ -364,9 +394,15 @@ describe('startPlayback', () => {
             );
 
             try {
-                startPlayback();
+                void startPlayback();
 
-                await vi.advanceTimersByTimeAsync(250);
+                // The cap is what releases the wait here — the session never
+                // answers — so the hold has to still be holding one millisecond
+                // short of it.
+                await vi.advanceTimersByTimeAsync(249);
+                expect(startPlayheadScheduler).not.toHaveBeenCalled();
+
+                await vi.advanceTimersByTimeAsync(1);
                 expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
 
                 // The session answering after the cap has nothing left to start:

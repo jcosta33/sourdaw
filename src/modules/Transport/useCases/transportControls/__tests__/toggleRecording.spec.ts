@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => {
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
-        startPlayback: vi.fn<() => void>(),
+        startPlayback: vi.fn<() => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
         startAudioRecording: vi.fn<StartAudioRecording>(),
@@ -131,6 +131,10 @@ describe('toggleRecording', () => {
         mocks.resumeEngine.mockResolvedValue(undefined);
         mocks.startAudioRecording.mockResolvedValue(true);
         mocks.stopAudioRecording.mockResolvedValue(undefined);
+        // `startPlayback` now resolves when the transport has actually rolled,
+        // and the recording path waits on it; the default here is a roll that
+        // costs nothing.
+        mocks.startPlayback.mockResolvedValue(undefined);
         mocks.stopActiveRecording.mockImplementation(() => {
             recordingLifecycle.cancelPendingRecordingStart();
             const timerId = recordingLifecycle.countInTimerId;
@@ -143,6 +147,8 @@ describe('toggleRecording', () => {
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
         audioClock.currentTime = 0;
+        audioClock.baseLatency = 0;
+        audioClock.outputLatency = 0;
         mocks.getAudioContext.mockReturnValue(audioClock);
         // clearAllMocks keeps return values, so a track snapshot an earlier test
         // installed would otherwise leak into every later one through the
@@ -355,6 +361,102 @@ describe('toggleRecording', () => {
             startBeat: 10,
             endBeat: 14,
         });
+    });
+
+    it('places a take opened from a stopped transport against the instant the transport rolled', async () => {
+        // The capture is open before the transport is asked to roll, and on a
+        // desktop build the roll waits for the native session — 80 ms here. So
+        // the buffer's first sample predates the anchor beat by that wait on top
+        // of the 20 ms of hardware latency: at 120 BPM, 4 - (0.02 + 0.08) * 2.
+        const recordingClip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 4,
+            endBeat: 4,
+        };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.02;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+        // The roll costs 80 ms of audio time, charged when it reports back.
+        mocks.startPlayback.mockImplementation(() =>
+            Promise.resolve().then(() => {
+                audioClock.currentTime = 10.08;
+            })
+        );
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startPlayback).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(audioClock.currentTime).toBeCloseTo(10.08, 9));
+        // The wait is measured on the tick after the roll reports back.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ kind: 'completed', buffer: { duration: 2 } });
+        await Promise.resolve();
+
+        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        if (!clipUpdate) {
+            throw new Error('Expected recording clip to be updated');
+        }
+        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.8, 9);
+    });
+
+    it('places a take engaged mid-play on hardware latency alone, with no roll to wait for', async () => {
+        // Record engaged while the transport is already rolling never calls
+        // `startPlayback`, so there is no wait to subtract: the placement is the
+        // 20 ms of hardware latency it always was — 4 - 0.02 * 2 at 120 BPM.
+        const recordingClip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 4,
+            endBeat: 4,
+        };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.02;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ kind: 'completed', buffer: { duration: 2 } });
+        await Promise.resolve();
+
+        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        if (!clipUpdate) {
+            throw new Error('Expected recording clip to be updated');
+        }
+        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.96, 9);
     });
 
     it('does not cache or update a clip for a failed recording result', async () => {
