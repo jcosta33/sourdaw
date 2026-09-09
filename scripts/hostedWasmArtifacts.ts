@@ -533,7 +533,7 @@ function main(): void {
             !/^[1-9][0-9]*$/.test(pr)
         ) {
             throw new Error(
-                'Usage: wasm:hosted verify-return <zip> <run.json> <artifact.json> <owner/repo> <PR> <run ID> <artifact ID> <private-output-directory>'
+                'Usage: node scripts/hostedWasmArtifacts.ts verify-return <zip> <run.json> <artifact.json> <owner/repo> <PR> <run ID> <artifact ID> <private-output-directory>'
             );
         }
         if (lstatSync(zipPath).size > outputLimit) {

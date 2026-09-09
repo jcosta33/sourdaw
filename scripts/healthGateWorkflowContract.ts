@@ -515,11 +515,15 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         { ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false },
         'exact head checkout without persisted credentials'
     );
-    requireEqual(named('Select affected packages').run, 'pnpm wasm:hosted plan', 'the package selection helper');
+    requireEqual(
+        named('Select affected packages').run,
+        'node scripts/hostedWasmArtifacts.ts plan',
+        'the package selection helper'
+    );
     requireEqual(named('Select affected packages').id, 'plan', 'the selection output ID');
     requireEqual(
         named('Build and qualify complete artifact').run,
-        'pnpm wasm:hosted build',
+        'node scripts/hostedWasmArtifacts.ts build',
         'complete build and provenance qualification'
     );
     requireEqual(

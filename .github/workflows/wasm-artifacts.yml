@@ -49,7 +49,7 @@ jobs:
 
       - name: Select affected packages
         id: plan
-        run: pnpm wasm:hosted plan
+        run: node scripts/hostedWasmArtifacts.ts plan
 
       - name: Install pinned generation toolchain
         if: steps.plan.outputs.selected == 'true'
@@ -64,7 +64,7 @@ jobs:
         if: steps.plan.outputs.selected == 'true'
         env:
           BUILD_OUTPUT_DIRECTORY: ${{ runner.temp }}/qualified-wasm-artifacts
-        run: pnpm wasm:hosted build
+        run: node scripts/hostedWasmArtifacts.ts build
 
       - name: Upload qualified artifact
         if: steps.plan.outputs.selected == 'true'
