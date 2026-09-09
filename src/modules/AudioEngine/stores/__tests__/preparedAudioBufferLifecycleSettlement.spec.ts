@@ -553,6 +553,73 @@ describe('prepared audio-buffer settlement and recovery', () => {
         ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
     });
 
+    it.each([
+        ['temporary', 'project-owned'],
+        ['temporary', 'discard'],
+        ['project-owned', 'project-owned'],
+        ['project-owned', 'discard'],
+    ] as const)(
+        'does not settle stale resident prepared revision over %s disk ownership as %s',
+        async (replacementStatus, disposition) => {
+            const controls = installFakeAudioIndexedDb({
+                existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE],
+            });
+            const instanceA = audioBufferCache;
+            const id = `stale-resident-revision-${disposition}`;
+            const leaseId = `stale-resident-revision-${disposition}-lease`;
+            const first = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            first.getChannelData(0)[0] = 0.25;
+
+            await expect(instanceA.persistPreparedBuffer({ id, buffer: first, leaseId })).resolves.toEqual({
+                status: 'persisted',
+                bufferId: id,
+                leaseId,
+            });
+            expect(instanceA.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.25);
+            const firstRevision = controls.committedMeta.get(id)?.preparedOwner?.persistenceRevision;
+            expect(firstRevision).toEqual(expect.any(String));
+
+            vi.resetModules();
+            const instanceB = (await import('../audioBufferCache')).audioBufferCache;
+            await expect(instanceB.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+                status: 'released',
+                disposition: 'discarded',
+            });
+            const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            replacement.getChannelData(0)[0] = 0.75;
+            await expect(instanceB.persistPreparedBuffer({ id, buffer: replacement, leaseId })).resolves.toEqual({
+                status: 'persisted',
+                bufferId: id,
+                leaseId,
+            });
+            if (replacementStatus === 'project-owned') {
+                await expect(
+                    instanceB.releasePreparedBuffer({ id, leaseId, disposition: 'project-owned' })
+                ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+            }
+
+            const replacementPcm = structuredClone(controls.committed.get(id));
+            const replacementOwner = structuredClone(controls.committedMeta.get(id)?.preparedOwner);
+            const replacementRecovery = structuredClone(controls.committedRecovery);
+            expect(replacementPcm?.channelData[0]?.[0]).toBeCloseTo(0.75);
+            expect(replacementOwner).toMatchObject({
+                leaseId,
+                persistenceRevision: expect.any(String),
+                status: replacementStatus,
+            });
+            expect(replacementOwner?.persistenceRevision).not.toBe(firstRevision);
+            expect(instanceA.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+            const staleSettlement = await instanceA.releasePreparedBuffer({ id, leaseId, disposition });
+
+            expect(controls.committed.get(id)).toEqual(replacementPcm);
+            expect(controls.committedMeta.get(id)?.preparedOwner).toEqual(replacementOwner);
+            expect(controls.committedRecovery).toEqual(replacementRecovery);
+            expect(staleSettlement).toEqual({ status: 'mismatched' });
+            expect(instanceA.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.25);
+        }
+    );
+
     it.each(malformedPreparedMetadataCases)(
         'rejects exact-lease retry with %s after reload without publishing runtime PCM',
         async (_label, corruptMetadata) => {
