@@ -1,0 +1,19 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/destroyWebMidiPreference.spec.ts
+  s_06adf2b091dc62::t_946ea04a888351 1,10-13,23-30,41-42,57,64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3ac53f5d80ade5d163f1c120d27045ab4d42efd1",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
