@@ -43,6 +43,7 @@ export { getExecutableAppActionProviderSchema } from './getExecutableAppActionPr
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
+export { getExecutableAppActionEffect } from './executableAppActionEffects';
 export { isExecutableAppActionType } from './executableAppActionRegistry';
 export { registerProductionCommandHandlers } from './registerProductionCommandHandlers';
 export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';
