@@ -30,11 +30,14 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
+    COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE,
     findAppPageTarget,
+    GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
     type AppPageTarget,
+    type StatusBarReading,
 } from './desktopLatencyReadings.ts';
 import {
     type AppStartedAt,
@@ -120,6 +123,22 @@ const STREAM_ERROR_MARKER = '[AudioEngine] native engine streamError';
 const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
 
 /**
+ * The status bar collapses its secondary readouts — "Out" among them — into a
+ * Radix Popover behind `button[aria-label="More application status"]` at or
+ * below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) in `StatusBar.tsx`. Electron
+ * asks for a 1440×900 window in `electron/main.ts`, but the runner's own
+ * screen can clamp that request narrower than 1200 px — the exact way the
+ * nightly job silently dropped the app into the compact layout on 2026-09-09
+ * and lost the "Out" readout this harness reads. Pinning the viewport to the
+ * app's own default window size, right after connecting, keeps the expanded
+ * layout regardless of the runner's screen. Viewport emulation over CDP
+ * changes only what the renderer lays out; it does not touch the native
+ * engine's audio rendering or the OS audio device stream this harness
+ * measures.
+ */
+const EXPANDED_STATUS_BAR_VIEWPORT = { width: 1440, height: 900 } as const;
+
+/**
  * The one outcome an aborted pre-connect `fetch` and an already-tripped
  * `signal` are both reported as, so `launchAndMeasure`'s caller sees one
  * consistent reason rather than a raw `AbortError` in one case and a named
@@ -136,14 +155,6 @@ type EngineDiagnosticsReading = {
     running: boolean;
     counters: Record<string, number>;
     events: EngineEventRecord[];
-};
-
-type StatusBarReading = {
-    sampleRateText: string;
-    latencyText: string;
-    latencyTitle: string;
-    engineTitle: string;
-    masterLevelText: string;
 };
 
 /**
@@ -281,45 +292,68 @@ async function findAppPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * Reads the status bar by structure rather than by class name: a readout is the
- * second of exactly two sibling spans whose first one is the label. Class names
- * on these elements are styling and change without notice; the label beside the
- * value is what the product means.
+ * Reads the status bar by structure rather than by class name: a readout is
+ * the second of exactly two sibling spans whose first one is the label.
+ * Class names on these elements are styling and change without notice; the
+ * label beside the value is what the product means.
+ *
+ * This walk is a hand-kept copy of `desktopLatencyReadings.ts`'s
+ * `readStatusBarReadouts`, not a call to it: Playwright serialises an
+ * evaluated function by its own source text, so a closure reaching back into
+ * this module's imports cannot cross into the page, and reconstructing a
+ * serialised closure with `new Function` is exactly what oxlint's
+ * `no-implied-eval`/`no-unsafe-call` refuse, with no in-repo disable route
+ * (`docs/07-conventions.md` bans suppressing lint errors). What *does* cross
+ * safely, as plain data rather than a function, are the two message
+ * templates below — so a missing readout is worded identically here and in
+ * `readStatusBarReadouts`'s own spec, even though the walk that decides which
+ * one applies is written out twice.
  */
 async function readStatusBar(page: Page): Promise<StatusBarReading> {
-    return page.evaluate((selector: string) => {
-        const footer = document.querySelector(selector);
-        if (footer === null) {
-            throw new Error('the status bar is not in the document');
-        }
-        const valueSpan = (label: string): HTMLElement => {
-            for (const row of footer.querySelectorAll('div')) {
-                const spans = row.querySelectorAll(':scope > span');
-                const first = spans[0];
-                const second = spans[1];
-                if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
-                    return second;
-                }
+    return page.evaluate(
+        (input: { selector: string; compactTemplate: string; genericTemplate: string }) => {
+            const footer = document.querySelector(input.selector);
+            if (footer === null) {
+                throw new Error('the status bar is not in the document');
             }
-            throw new Error(`the status bar has no readout labelled "${label}"`);
-        };
-        const engineDot = footer.querySelector('[title^="Engine: "]');
-        if (engineDot === null) {
-            throw new Error('the status bar has no engine dot');
+            const fillMissingReadoutTemplate = (template: string, label: string): string =>
+                template.replace('{label}', label).replace('{innerWidth}', String(window.innerWidth));
+            const valueSpan = (label: string): HTMLElement => {
+                for (const row of footer.querySelectorAll('div')) {
+                    const spans = row.querySelectorAll(':scope > span');
+                    const first = spans[0];
+                    const second = spans[1];
+                    if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
+                        return second;
+                    }
+                }
+                const hasMoreTrigger = footer.querySelector('button[aria-label="More application status"]') !== null;
+                const template = hasMoreTrigger ? input.compactTemplate : input.genericTemplate;
+                throw new Error(fillMissingReadoutTemplate(template, label));
+            };
+            const engineDot = footer.querySelector('[title^="Engine: "]');
+            if (engineDot === null) {
+                throw new Error('the status bar has no engine dot');
+            }
+            const latency = valueSpan('Latency');
+            const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
+            if (latencyTitle === undefined || latencyTitle === null) {
+                throw new Error('the Latency readout carries no title');
+            }
+            return {
+                sampleRateText: valueSpan('Rate').textContent ?? '',
+                latencyText: latency.textContent ?? '',
+                latencyTitle,
+                engineTitle: engineDot.getAttribute('title') ?? '',
+                masterLevelText: valueSpan('Out').textContent ?? '',
+            };
+        },
+        {
+            selector: STATUS_BAR_SELECTOR,
+            compactTemplate: COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE,
+            genericTemplate: GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE,
         }
-        const latency = valueSpan('Latency');
-        const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
-        if (latencyTitle === undefined || latencyTitle === null) {
-            throw new Error('the Latency readout carries no title');
-        }
-        return {
-            sampleRateText: valueSpan('Rate').textContent ?? '',
-            latencyText: latency.textContent ?? '',
-            latencyTitle,
-            engineTitle: engineDot.getAttribute('title') ?? '',
-            masterLevelText: valueSpan('Out').textContent ?? '',
-        };
-    }, STATUS_BAR_SELECTOR);
+    );
 }
 
 /**
@@ -814,6 +848,7 @@ export async function connectAndMeasure(
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${String(port)}`);
     try {
         const page = await findAppPage(browser);
+        await page.setViewportSize(EXPANDED_STATUS_BAR_VIEWPORT);
         subscribeDiagnostics(page, diagnostics, () => activeStep);
         const consoleLog: string[] = [];
         page.on('console', (message) => {
