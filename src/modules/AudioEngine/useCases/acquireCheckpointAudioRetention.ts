@@ -1,15 +1,7 @@
 import { audioBufferCache } from '../stores/audioBufferCache';
 
-type AcquireCheckpointAudioRetentionInput = {
-    checkpointId: string;
-    projectOwnerId: string;
-    bufferIds: readonly string[];
-};
-
-export function acquireCheckpointAudioRetention({
-    checkpointId,
-    projectOwnerId,
-    bufferIds,
-}: AcquireCheckpointAudioRetentionInput): Promise<{ ownershipToken: string }> {
-    return audioBufferCache.acquireCheckpointRetention({ checkpointId, projectOwnerId, bufferIds });
+export function acquireCheckpointAudioRetention(
+    input: Parameters<typeof audioBufferCache.acquireCheckpointRetention>[0]
+): ReturnType<typeof audioBufferCache.acquireCheckpointRetention> {
+    return audioBufferCache.acquireCheckpointRetention(input);
 }
