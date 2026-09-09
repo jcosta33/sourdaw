@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AutomationCurvePoint, evaluateAutomationCurve } from '../automationCurve';
+import {
+    type AutomationCurvePoint,
+    evaluateAutomationCurve,
+    resolveBezierControls,
+    subdivideBezierRightHalf,
+} from '../automationCurve';
 
 /**
  * Golden-value lock for the shared automation curve kernel (finding AU-1).
@@ -190,5 +195,152 @@ describe('evaluateAutomationCurve — bezier', () => {
         const secondPoint = point({ beat: 4, value: 8 });
         expect(evaluateAutomationCurve({ firstPoint, secondPoint, beat: 0 })).toBe(0);
         expect(evaluateAutomationCurve({ firstPoint, secondPoint, beat: 4 })).toBe(8);
+    });
+});
+
+describe('resolveBezierControls', () => {
+    it('returns authored control points verbatim', () => {
+        const firstPoint = point({
+            beat: 1,
+            value: 0.2,
+            curve: 'bezier',
+            cp1: { x: 0.2, y: 0.35 },
+            cp2: { x: 0.75, y: 0.9 },
+        });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        expect(resolveBezierControls({ firstPoint, secondPoint })).toEqual({
+            cx1: 0.2,
+            cx2: 0.75,
+            cy1: 0.35,
+            cy2: 0.9,
+        });
+    });
+
+    it('falls back to the renderer defaults, applied to the segment endpoints', () => {
+        const firstPoint = point({ beat: 1, value: 0.2, curve: 'bezier' });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        expect(resolveBezierControls({ firstPoint, secondPoint })).toEqual({
+            cx1: 0.33,
+            cx2: 0.66,
+            cy1: 0.2,
+            cy2: 0.8,
+        });
+    });
+
+    it('is the same quad the evaluator inlines (behavioral drift guard)', () => {
+        // The evaluator reads the cps inline to stay allocation-free; this
+        // pins the resolver and the inline reads to ONE quad, so a default
+        // changed in either copy alone goes red here.
+        const firstPoint = point({ beat: 1, value: 0.2, curve: 'bezier' });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        const quad = resolveBezierControls({ firstPoint, secondPoint });
+        const withExplicitQuad = evaluateAutomationCurve({
+            firstPoint: { ...firstPoint, cp1: { x: quad.cx1, y: quad.cy1 }, cp2: { x: quad.cx2, y: quad.cy2 } },
+            secondPoint,
+            beat: 4,
+        });
+        const withDefaults = evaluateAutomationCurve({ firstPoint, secondPoint, beat: 4 });
+        expect(withExplicitQuad).toBe(withDefaults);
+    });
+});
+
+describe('subdivideBezierRightHalf', () => {
+    /**
+     * Exactness bound for a subdivided right half evaluated through the
+     * kernel. The subdivision itself is exact to float64 (~1e-15, measured);
+     * the residual is the kernel's own Newton x-solve, whose 1e-6 FRACTION
+     * tolerance the source and fragment evaluations reach along different
+     * trajectories, leaving up to ~tolerance × segment slope (≤ ~3 for
+     * in-range quads) of value disagreement. Measured worst case over dense
+     * sweeps of representative quads and cuts: 1.3e-6. A wrong or missing
+     * continuation (the #4044 defect) shifts values by 1e-2 and up — four
+     * orders above this bound.
+     */
+    const SUBDIVISION_EXACTNESS_EPSILON = 5e-6;
+
+    it('reconstructs the source curve exactly on the right half', () => {
+        const firstPoint = point({
+            beat: 1,
+            value: 0.2,
+            curve: 'bezier',
+            cp1: { x: 0.2, y: 0.35 },
+            cp2: { x: 0.75, y: 0.9 },
+        });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        const quad = resolveBezierControls({ firstPoint, secondPoint });
+        const cutFraction = (4 - 1) / (7 - 1);
+        const seamValue = evaluateAutomationCurve({ firstPoint, secondPoint, beat: 4 });
+
+        const right = subdivideBezierRightHalf({ ...quad, y0: 0.2, y3: 0.8, cutFraction });
+        const seamPoint = point({ beat: 4, value: seamValue, curve: 'bezier', cp1: right.cp1, cp2: right.cp2 });
+
+        for (let beat = 4.1; beat <= 7; beat += 0.1) {
+            const sourceValue = evaluateAutomationCurve({ firstPoint, secondPoint, beat });
+            const fragmentValue = evaluateAutomationCurve({ firstPoint: seamPoint, secondPoint, beat });
+            expect(Math.abs(sourceValue - fragmentValue)).toBeLessThan(SUBDIVISION_EXACTNESS_EPSILON);
+        }
+    });
+
+    it('lands the subdivision point on the evaluator’s own sample at the cut', () => {
+        const firstPoint = point({
+            beat: 1,
+            value: 0.2,
+            curve: 'bezier',
+            cp1: { x: 0.2, y: 0.35 },
+            cp2: { x: 0.75, y: 0.9 },
+        });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        const cutFraction = 0.5;
+        const seamValue = evaluateAutomationCurve({ firstPoint, secondPoint, beat: 4 });
+
+        const right = subdivideBezierRightHalf({
+            ...resolveBezierControls({ firstPoint, secondPoint }),
+            y0: 0.2,
+            y3: 0.8,
+            cutFraction,
+        });
+
+        // xAtCut is the Newton solve's own residual carrier, so it tracks the
+        // kernel's 1e-6 fraction tolerance rather than float64 noise.
+        expect(Math.abs(right.xAtCut - cutFraction)).toBeLessThan(1e-5);
+        expect(right.yAtCut).toBeCloseTo(seamValue, 12);
+    });
+
+    it('stays finite when the cut sits at or beyond the segment end', () => {
+        // #4044's degenerate guard: the x renormalization divides by
+        // 1 − X(s); clamping the subdivision parameter (MAX_BEZIER_CUT_FRACTION)
+        // must keep every emitted number finite rather than mint Infinities.
+        const base = { cx1: 0.33, cx2: 0.66, cy1: 0.1, cy2: 0.9, y0: 0, y3: 1 };
+        for (const cutFraction of [1, 1.5, 12]) {
+            const right = subdivideBezierRightHalf({ ...base, cutFraction });
+            const values = [right.xAtCut, right.yAtCut, right.cp1.x, right.cp1.y, right.cp2.x, right.cp2.y];
+            for (const value of values) {
+                expect(Number.isFinite(value)).toBe(true);
+            }
+        }
+    });
+
+    it('treats a cut at the segment start as the whole segment', () => {
+        const firstPoint = point({
+            beat: 1,
+            value: 0.2,
+            curve: 'bezier',
+            cp1: { x: 0.2, y: 0.35 },
+            cp2: { x: 0.75, y: 0.9 },
+        });
+        const secondPoint = point({ beat: 7, value: 0.8 });
+        const right = subdivideBezierRightHalf({
+            ...resolveBezierControls({ firstPoint, secondPoint }),
+            y0: 0.2,
+            y3: 0.8,
+            cutFraction: 0,
+        });
+
+        const seamPoint = point({ beat: 1, value: 0.2, curve: 'bezier', cp1: right.cp1, cp2: right.cp2 });
+        for (let beat = 1.2; beat <= 7; beat += 0.2) {
+            const sourceValue = evaluateAutomationCurve({ firstPoint, secondPoint, beat });
+            const fragmentValue = evaluateAutomationCurve({ firstPoint: seamPoint, secondPoint, beat });
+            expect(Math.abs(sourceValue - fragmentValue)).toBeLessThan(SUBDIVISION_EXACTNESS_EPSILON);
+        }
     });
 });

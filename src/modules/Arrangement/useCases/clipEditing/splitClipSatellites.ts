@@ -1,4 +1,5 @@
 import { getAutomationLanes, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { resolveBezierControls, subdivideBezierRightHalf } from '#/utils/automationCurve';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { type WarpState } from '../../models/WarpMarker';
@@ -136,6 +137,52 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
 }
 
 /**
+ * The exact continuation of a straddling `bezier` segment, as the seam's cps.
+ *
+ * #4036 made the seam inherit the straddling segment's curve FAMILY, but a
+ * `bezier` seam without cps plays the family-default quad — an audible change
+ * whenever the musician authored control points. Subdividing the source quad
+ * at the cut (`subdivideBezierRightHalf` — de Casteljau, parameter solved by
+ * the evaluator's own Newton loop) yields the right half's inner controls: the
+ * seam→next segment is then the same polynomial re-parameterized over the
+ * remaining span, so the fragment plays, at every absolute beat, exactly what
+ * the source played before the split. The seam's own `value` stays the
+ * evaluator's live sample — the same curve at the same solved parameter, and
+ * the one read that preserves the held-seam lane-range clamp semantics.
+ *
+ * Anything non-bezier returns no cps — those point models carry no cp fields,
+ * and their seams are byte-identical to the pre-#4044 shape. A bezier whose
+ * held value ends the lane (no next point) has no continuation to carry, and
+ * a degenerate (zero-width or reversed) span has nothing the evaluator would
+ * play — both return no cps rather than NaN.
+ */
+function bezierSeamControlPoints(
+    lastLeft: AutomationLanePoint,
+    nextPoint: AutomationLanePoint | undefined,
+    absoluteSplitBeats: number
+): Pick<AutomationLanePoint, 'cp1' | 'cp2'> {
+    if (lastLeft.curve !== 'bezier' || nextPoint === undefined) {
+        return {};
+    }
+    const beatSpan = nextPoint.beat - lastLeft.beat;
+    if (beatSpan <= 0) {
+        return {};
+    }
+    const cutFraction = (absoluteSplitBeats - lastLeft.beat) / beatSpan;
+    const { cx1, cx2, cy1, cy2 } = resolveBezierControls({ firstPoint: lastLeft, secondPoint: nextPoint });
+    const { cp1, cp2 } = subdivideBezierRightHalf({
+        cx1,
+        cx2,
+        cy1,
+        cy2,
+        y0: lastLeft.value,
+        y3: nextPoint.value,
+        cutFraction,
+    });
+    return { cp1, cp2 };
+}
+
+/**
  * The seam point that pins the curve's interpolated value at the cut — the
  * lane analogue of `splitGainEnvelope`'s seam. Without it a segment straddling
  * the cut collapses to hold-first-value on the fragment: between the cut and
@@ -157,8 +204,10 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  * (`evaluateAutomationCurve` branches on it), so a copied `linear`/`step`
  * seam reproduces the played segment exactly and a shaped one stays in the
  * curve family it was drawn with instead of flattening to a straight ramp.
- * The id derives from the right clip id, so a redo re-split reproduces
- * exactly the point the original split's undo retired.
+ * A straddling `bezier` segment additionally carries the de Casteljau right
+ * half as `cp1`/`cp2` (`bezierSeamControlPoints`) — the family alone would
+ * play the default quad. The id derives from the right clip id, so a redo
+ * re-split reproduces exactly the point the original split's undo retired.
  */
 function seamPointFor(
     lane: AutomationLaneValue,
@@ -177,6 +226,11 @@ function seamPointFor(
     if (seamValue === null) {
         return null;
     }
+    // Points are kept sorted by beat, and the on-the-cut guard above already
+    // returned, so this is the evaluator's segment right endpoint
+    // (`points[beforeIdx + 1]` for a query at the cut).
+    const nextPoint = lane.points.find((point) => point.beat > absoluteSplitBeats);
+    const { cp1, cp2 } = bezierSeamControlPoints(lastLeft, nextPoint, absoluteSplitBeats);
     return {
         id: `asp-split-${rightClipId}-${laneIndex}`,
         beat: absoluteSplitBeats,
@@ -184,6 +238,8 @@ function seamPointFor(
         curve: lastLeft.curve,
         tension: lastLeft.tension,
         ...(lastLeft.stairSteps === undefined ? {} : { stairSteps: lastLeft.stairSteps }),
+        ...(cp1 === undefined ? {} : { cp1 }),
+        ...(cp2 === undefined ? {} : { cp2 }),
     };
 }
 
@@ -205,6 +261,12 @@ function seamPointFor(
  * cut (drawn-then-held, the common shape) travels too: the runtime holds the
  * last point's value for every beat after it, so the lane is still driving
  * its parameter over the right span, and the seam carries that held value.
+ *
+ * The LEFT half needs no seam at all: it keeps its clip id, lane id, and whole
+ * point set untouched, so a straddling segment A→B still evaluates its beats
+ * left of the cut at fractions below the cut fraction — the identical
+ * pre-split evaluation, not a look-alike (`splitClipBezierExactness.spec.ts`
+ * pins both halves' exactness).
  *
  * Linked (follower) lanes travel by their RESOLVED source, not their own
  * points: a follower's played curve is its link target's (`resolveLinkedLane`
