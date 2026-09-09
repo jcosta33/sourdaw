@@ -97,3 +97,9 @@ publish-then-notify port, re-enter hydrate with and without a nested public flus
 and identical raw, cache, and fresh-decoder results. Also reset projection during preparation and terminal projection,
 and throw from trailing document reads and validators after one document publishes. The old identity must stay inert,
 claims must release, and the error must retain committed classification without replay.
+
+Every callback in the terminal read path can itself accept newer same-slot authority. Fence the whole read, decode,
+guard, and local-field projection sequence with a document-authority epoch, including nested commits authored before
+the outer write. A stale continuation settles its published claim against the retained newer baseline; author revision
+order cannot replace actual publication order. Treat `null` from an inbound projector as an accepted value, not as a
+missing callback result, and keep ambiguous publish-then-throw outcomes on the committed terminal path.

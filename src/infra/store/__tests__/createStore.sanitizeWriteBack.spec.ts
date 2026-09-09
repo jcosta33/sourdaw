@@ -6,6 +6,7 @@ import {
     countPendingAutomergeStorageWrites,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '../storage/createAutomergeStorage';
 import { createMemoryStorage } from '../storage/createMemoryStorage';
@@ -488,6 +489,230 @@ describe('createStore sanitization against a shared document', () => {
         expect(doc.state).toEqual({ count: 2 });
         expect(mutationCount).toBe(1);
         expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'Store sanitization failed' }));
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it.each(['returns null', 'throws'] as const)(
+        'preserves a null fallback when a sanitizer %s during hydrate beneath a pending write',
+        (mode) => {
+            type CountState = { count: number };
+            const { doc, port } = createTestPort({ state: { count: 7 } });
+            configureAutomergeStoragePort(port);
+            const storage = createAutomergeStorage<CountState>('root', 'state');
+            const store = createStore({
+                storage,
+                sanitize: (value) => {
+                    if (value?.count !== 7) {
+                        return value;
+                    }
+                    if (mode === 'throws') {
+                        throw new Error('count 7 rejected');
+                    }
+                    return null;
+                },
+            });
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+
+            store.hydrate();
+            transaction.abort();
+
+            expect(doc.state).toEqual({ count: 7 });
+            expect(store.value).toBeNull();
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
+
+    it.each(['returns null', 'throws'] as const)(
+        'preserves a null fallback when a sanitizer %s during committed terminal projection',
+        (mode) => {
+            type CountState = { count: number };
+            const doc: TestDoc = { state: { count: 0 } };
+            let publishInterveningValue = false;
+            let mutationCount = 0;
+            configureAutomergeStoragePort({
+                getDoc: () => doc,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(doc);
+                    mutationCount += 1;
+                    if (publishInterveningValue) {
+                        publishInterveningValue = false;
+                        doc.state = { count: 2 };
+                    }
+                },
+            });
+            const storage = createAutomergeStorage<CountState>('root', 'state');
+            expect(storage.hydrate?.()).toBe(true);
+            const store = createStore({
+                storage,
+                sanitize: (value) => {
+                    if (value?.count !== 2) {
+                        return value;
+                    }
+                    if (mode === 'throws') {
+                        throw new Error('count 2 rejected');
+                    }
+                    return null;
+                },
+            });
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+            publishInterveningValue = true;
+
+            transaction.commit();
+
+            expect(doc.state).toEqual({ count: 2 });
+            expect(store.value).toBeNull();
+            expect(mutationCount).toBe(1);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
+
+    it('preserves a later-authored same-slot commit made during terminal projection', () => {
+        type CountState = { count: number };
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        let publishNested = false;
+        const store = createStore({
+            storage,
+            sanitize: (value) => {
+                if (publishNested && value?.count === 1) {
+                    publishNested = false;
+                    const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+                    nested.commit();
+                }
+                return value;
+            },
+        });
+        const outer = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+        publishNested = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(store.value).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('preserves an earlier-authored same-slot commit published during a later terminal projection', () => {
+        type CountState = { count: number };
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        let publishNested = false;
+        let earlier: ReturnType<typeof runWithAutomergeStorageTransaction> | undefined;
+        const store = createStore({
+            storage,
+            sanitize: (value) => {
+                if (publishNested && value?.count === 1) {
+                    publishNested = false;
+                    if (!earlier) {
+                        throw new Error('Earlier transaction was not initialized');
+                    }
+                    earlier.commit();
+                }
+                return value;
+            },
+        });
+        earlier = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 2 }));
+        const outer = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+        publishNested = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(store.value).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('preserves a same-slot hydrate accepted during terminal projection', () => {
+        type CountState = { count: number };
+        const { doc, port, bumpHeads } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        let hydrateNested = false;
+        const store = createStore({
+            storage,
+            sanitize: (value) => {
+                if (hydrateNested && value?.count === 1) {
+                    hydrateNested = false;
+                    doc.state = { count: 2 };
+                    bumpHeads();
+                    store.hydrate();
+                }
+                return value;
+            },
+        });
+        const outer = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+        hydrateNested = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(store.value).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('does not let a stale hydrate stamp metadata after its projector resets authority', () => {
+        type CountState = { count: number };
+        const { doc, port, bumpHeads } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        let resetDuringHydrate = false;
+        const store = createStore({
+            storage,
+            sanitize: (value) => {
+                if (resetDuringHydrate && value?.count === 1) {
+                    resetDuringHydrate = false;
+                    resetAutomergeStorageProjections('root');
+                }
+                return value;
+            },
+        });
+        doc.state = { count: 1 };
+        bumpHeads();
+        resetDuringHydrate = true;
+
+        store.hydrate();
+        expect(store.value).toEqual({ count: -1 });
+
+        store.hydrate();
+        expect(store.value).toEqual({ count: 1 });
+        expect(doc.state).toEqual({ count: 1 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('does not let late projector registration overwrite authority committed by its callback', () => {
+        type CountState = { count: number };
+        const { doc, port } = createTestPort({ state: { count: 0 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const successor = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        let publishNested = true;
+        const store = createStore({
+            storage,
+            sanitize: (value) => {
+                if (publishNested && value?.count === 0) {
+                    publishNested = false;
+                    const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+                    nested.commit();
+                }
+                return value;
+            },
+        });
+
+        successor.abort();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(store.value).toEqual({ count: 2 });
         expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
 });

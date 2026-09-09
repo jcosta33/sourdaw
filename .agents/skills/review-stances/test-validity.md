@@ -195,3 +195,8 @@ Probe that would have caught it: use an atomic publish-then-notify port and asse
 adapter cache, fresh decoder, pending count, and later flush. Delete the whole-snapshot claims, restore terminal pending
 copying, capture a later write only when its preparation starts, remove callback identity checks, and remove the
 post-publication error catch one at a time; each owning case must fail on behavior rather than error wording.
+
+The same probe must publish newer same-slot authority from inside each independently guarded terminal/hydrate callback
+and cover both later- and earlier-authored nested scopes. Bypass the authority-epoch check and the ambiguous terminal
+call separately; each must leave raw and cache divergent and fail. Include projectors that return `null` and throw with
+no configured initial value so nullish fallback cannot silently reinstate rejected document content.

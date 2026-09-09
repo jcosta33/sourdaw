@@ -1526,6 +1526,92 @@ describe('createAutomergeStorage', () => {
         expect(mutationCount).toBe(1);
     });
 
+    it('preserves same-slot authority committed by a terminal local-state callback', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let publishNested = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            projectCommittedLocalState: ({ authorityValue }) => {
+                if (publishNested) {
+                    publishNested = false;
+                    const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+                    nested.commit();
+                }
+                return authorityValue;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const outer = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        publishNested = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(mutations).toHaveLength(2);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('does not stamp stale hydrate metadata after pending rebase resets projection authority', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let resetDuringRebase = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+            rebasePending: ({ pendingValue }) => {
+                if (resetDuringRebase) {
+                    resetDuringRebase = false;
+                    resetAutomergeStorageProjections('root');
+                }
+                return pendingValue;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        doc.state = { count: 2 };
+        resetDuringRebase = true;
+
+        expect(storage.hydrate?.()).toBe(false);
+        expect(storage.get()).toEqual({ count: -1 });
+
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(doc.state).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        transaction.abort();
+    });
+
+    it('projects current document authority after publication throws', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        let mutationCount = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutationCount += 1;
+                doc.state = { count: 2 };
+                throw new Error('publication receipt failed');
+            },
+        });
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+
+        const freshStorage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(freshStorage.hydrate?.()).toBe(true);
+        expect(doc.state).toEqual({ count: 2 });
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(freshStorage.get()).toEqual({ count: 2 });
+        expect(mutationCount).toBe(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        flushAutomergeStorageWrites();
+        expect(mutationCount).toBe(1);
+    });
+
     it('keeps a clear committed by a listener after the outer publication', () => {
         const doc: TestDoc = { state: { count: 0 } };
         let afterPublication: (() => void) | undefined;

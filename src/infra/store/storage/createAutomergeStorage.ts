@@ -196,7 +196,6 @@ type PendingWritePreparation =
 type PendingAutomergeStorageWrite = {
     readonly abort: () => void;
     readonly commitOwner: object;
-    readonly didCommit: () => void;
     readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
     readonly scoped: boolean;
@@ -205,6 +204,7 @@ type PendingAutomergeStorageWrite = {
 };
 
 type ClaimedAutomergeStorageWrite = Omit<PendingAutomergeStorageWrite, 'claim'> & {
+    readonly didCommit: () => void;
     readonly isCurrent: () => boolean;
     readonly prepare: () => PendingWritePreparation;
     readonly releaseClaim: () => void;
@@ -874,7 +874,7 @@ function flushMatchingAutomergeStorageWrites(
                     continue;
                 }
                 const mutations: AutomergeStorageMutationInput[] = [];
-                const abandonedWrites: PendingAutomergeStorageWrite[] = [];
+                const abandonedWrites: ClaimedAutomergeStorageWrite[] = [];
                 let preparationFailed = false;
                 let preparationUnavailable = false;
 
@@ -1120,6 +1120,7 @@ export const createAutomergeStorage = <TData>(
     let committedCacheRevision = 0;
     let absencePresentation: 'null' | 'default' = 'null';
     let projectionGeneration = 0;
+    let acceptedAuthorityEpoch = 0;
     let inboundProjector:
         ((input: { value: TData | null; purpose: 'baseline' | 'visible' }) => TData | null) | undefined;
     const previewIdentity = Object.freeze({});
@@ -1341,7 +1342,10 @@ export const createAutomergeStorage = <TData>(
     };
 
     const guardInboundValue = (value: TData | null, purpose: 'baseline' | 'visible'): TData | null => {
-        return inboundProjector?.({ value, purpose }) ?? value;
+        if (!inboundProjector) {
+            return value;
+        }
+        return inboundProjector({ value, purpose });
     };
 
     const getSemanticMessage = (): string | undefined => {
@@ -1469,22 +1473,47 @@ export const createAutomergeStorage = <TData>(
         cachedRevision = visibleRevision;
     };
 
+    const settleStaleCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
+        if (!releasePendingWrite(pending)) {
+            return;
+        }
+        const visibleBefore = cachedValue;
+        committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
+        committedSetRevision = Math.max(committedSetRevision, claimRevision);
+        for (const remaining of pendingWritesByOwner.values()) {
+            remaining.baseValue = committedCacheValue;
+        }
+        recomputeCachedValue();
+        if (!Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
+    };
+
     const recordCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
         const execution = pending.claimedExecution;
         if (!execution || !execution.isCurrent()) {
             return;
         }
-        const localValue = cachedValue;
+        const projectionEpoch = acceptedAuthorityEpoch;
+        const generation = projectionGeneration;
+        const isCurrentProjection = (): boolean =>
+            execution.isCurrent() && projectionGeneration === generation && acceptedAuthorityEpoch === projectionEpoch;
         const port = getAutomergeStoragePort();
         const document = port?.getDoc(docId);
         if (!document) {
             throw new Error(`Automerge storage committed document is unavailable: ${docId}`);
         }
-        if (!execution.isCurrent()) {
+        if (!isCurrentProjection()) {
+            settleStaleCommittedWrite(pending, claimRevision);
             return;
         }
 
         const decoded = decodeDocumentValue(document);
+        if (!isCurrentProjection()) {
+            settleStaleCommittedWrite(pending, claimRevision);
+            return;
+        }
+        const localValue = cachedValue;
         const projectionPurpose = pending.revision === cachedRevision ? 'visible' : 'baseline';
         let projected: TData | null;
         if (decoded === undefined) {
@@ -1494,11 +1523,17 @@ export const createAutomergeStorage = <TData>(
                     : guardInboundValue(hydrateMissing ? toDocSafe(hydrateMissing()) : null, projectionPurpose);
         } else {
             projected = guardInboundValue(mergePartialAuthority(localValue, decoded), projectionPurpose);
-            if (projected !== null && localValue !== null && projectCommittedLocalState) {
-                projected = projectCommittedLocalState({ authorityValue: projected, localValue });
+            if (!isCurrentProjection()) {
+                settleStaleCommittedWrite(pending, claimRevision);
+                return;
+            }
+            const currentLocalValue = cachedValue;
+            if (projected !== null && currentLocalValue !== null && projectCommittedLocalState) {
+                projected = projectCommittedLocalState({ authorityValue: projected, localValue: currentLocalValue });
             }
         }
-        if (!execution.isCurrent()) {
+        if (!isCurrentProjection()) {
+            settleStaleCommittedWrite(pending, claimRevision);
             return;
         }
         if (!releasePendingWrite(pending)) {
@@ -1513,6 +1548,7 @@ export const createAutomergeStorage = <TData>(
         if (decoded !== undefined) {
             absencePresentation = 'default';
         }
+        acceptedAuthorityEpoch += 1;
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = projected;
         }
@@ -1535,7 +1571,6 @@ export const createAutomergeStorage = <TData>(
         const write: PendingAutomergeStorageWrite = {
             abort: () => abortPendingWrite(getPending()),
             commitOwner: context.commitOwner,
-            didCommit: () => recordCommittedWrite(getPending()),
             // Audit CC-5 — the deferred terminal. The write is dropped but
             // its value stays visible, because no committed value exists to
             // fall back to. A write whose value is *not* truth takes `abort`
@@ -1616,9 +1651,14 @@ export const createAutomergeStorage = <TData>(
             releasePendingWrite(pending);
         }
         const visibleBefore = cachedValue;
+        const generation = projectionGeneration;
+        const projectionEpoch = acceptedAuthorityEpoch;
+        const defaultValue = hydrateMissing ? toDocSafe(hydrateMissing()) : null;
+        if (projectionGeneration !== generation || acceptedAuthorityEpoch !== projectionEpoch) {
+            return;
+        }
 
         hasObservedDocumentAuthority = true;
-        const defaultValue = hydrateMissing ? toDocSafe(hydrateMissing()) : null;
         committedCacheValue = defaultValue;
         committedCacheRevision = ++nextRevision;
         committedSetRevision = committedCacheRevision;
@@ -1627,6 +1667,7 @@ export const createAutomergeStorage = <TData>(
         cachedRevision = committedCacheRevision;
         lastHydratedJson = null;
         lastHydratedHeads = null;
+        acceptedAuthorityEpoch += 1;
         if (!Object.is(visibleBefore, cachedValue)) {
             notifyDeferredChange();
         }
@@ -1661,12 +1702,14 @@ export const createAutomergeStorage = <TData>(
                 return;
             }
             const generation = projectionGeneration;
+            const projectionEpoch = acceptedAuthorityEpoch;
             const guardedBaseline = guardInboundValue(
                 mergePartialAuthority(cachedValue, committedCacheValue),
                 'baseline'
             );
             if (
                 projectionGeneration !== generation ||
+                acceptedAuthorityEpoch !== projectionEpoch ||
                 pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending
             ) {
                 return;
@@ -1716,8 +1759,10 @@ export const createAutomergeStorage = <TData>(
          * those rows is right; writing the refusal back is not, because the
          * deletion then propagates to peers that read them fine.
          *
-         * So a sanitized value replaces the committed baseline and nothing
-         * else. Every revision counter is deliberately left where it was:
+         * A sanitized value replaces the visible pending projection when one
+         * exists; otherwise it corrects the committed projection baseline.
+         * It never authors shared truth. Every revision counter is deliberately
+         * left where it was:
          *
          * - `lastHydratedJson` / `lastHydratedHeads` describe the document,
          *   which has not changed.
@@ -1729,15 +1774,12 @@ export const createAutomergeStorage = <TData>(
          *   showing a value the document never received.
          *
          * The visible pending write needs correcting rather than outranking.
-         * `sanitize` guards data arriving from outside and is deliberately
-         * absent from the commit path, because a locally authored value is
-         * built by a use case from typed models and the store must not quietly
-         * rewrite what that use case asked to write. `hydrate`'s rebase branch
-         * breaks that premise: it blends freshly-hydrated document data into an
-         * in-flight write (`{ ...pendingValue, ...crdtData }`), so the pending
-         * is no longer purely authored and its inbound half never passed the
-         * guard. Racing it on revision order lets the rejected blend win the
-         * cache and then flush to the document unexamined.
+         * The registered projector guards document authority during hydrate
+         * and committed terminal reads. `setProjected` remains the compatibility
+         * path for constructor projection and adapters that cannot register that
+         * guard. Hydrate can also blend document data into an in-flight write
+         * (`{ ...pendingValue, ...crdtData }`); that visible blend takes the
+         * projector verdict before it can flush.
          *
          * So the pending whose value the sanitizer just examined — the visible
          * one, which is what `get()` returned — takes the verdict. That
@@ -1793,20 +1835,30 @@ export const createAutomergeStorage = <TData>(
                 return false;
             }
             const port = getAutomergeStoragePort();
+            const generation = projectionGeneration;
+            const projectionEpoch = acceptedAuthorityEpoch;
+            const isCurrentProjection = (): boolean =>
+                projectionGeneration === generation && acceptedAuthorityEpoch === projectionEpoch;
             const doc = port?.getDoc(docId);
-            if (!doc) {
+            if (!doc || !isCurrentProjection()) {
                 return false;
             }
 
             hasObservedDocumentAuthority = true;
 
             const heads = port?.getDocHeads?.(docId);
+            if (!isCurrentProjection()) {
+                return false;
+            }
             const headsKey = heads ? heads.join(',') : null;
             if (headsKey !== null && headsKey === lastHydratedHeads) {
                 return false;
             }
 
             const incomingValues = readRawDocumentValues(doc);
+            if (!isCurrentProjection()) {
+                return false;
+            }
             if (incomingValues) {
                 // §119.1 — single strip pass via one JSON round-trip (the
                 // Automerge proxy deref + undefined strip are unavoidable).
@@ -1819,35 +1871,33 @@ export const createAutomergeStorage = <TData>(
                 }
                 const rawValues = JSON.parse(incomingJson) as unknown[];
                 const crdtData = decodeClonedValues(rawValues);
-                if (crdtData === undefined) {
+                if (crdtData === undefined || !isCurrentProjection()) {
                     return false;
                 }
 
                 const visiblePending = [...pendingWritesByOwner.values()].find(
                     (pending) => pending.revision === cachedRevision
                 );
-                const generation = projectionGeneration;
                 const localSeed = cachedValue;
-                const authorityRevision = ++nextRevision;
                 if (visiblePending) {
                     const acceptedBaseline = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'baseline');
-                    if (projectionGeneration !== generation) {
-                        return false;
-                    }
-                    committedCacheValue = acceptedBaseline;
-                    committedCacheRevision = authorityRevision;
-                    committedSetRevision = committedCacheRevision;
                     if (
+                        !isCurrentProjection() ||
                         pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending ||
                         visiblePending.revision !== cachedRevision
                     ) {
-                        recomputeCachedValue();
-                        absencePresentation = 'default';
-                        lastHydratedJson = incomingJson;
-                        lastHydratedHeads = headsKey;
-                        return true;
+                        return false;
                     }
+                    const authorityRevision = ++nextRevision;
+                    committedCacheValue = acceptedBaseline;
+                    committedCacheRevision = authorityRevision;
+                    committedSetRevision = committedCacheRevision;
+                    absencePresentation = 'default';
+                    acceptedAuthorityEpoch += 1;
 
+                    const visibleProjectionEpoch = acceptedAuthorityEpoch;
+                    const isCurrentVisibleProjection = (): boolean =>
+                        projectionGeneration === generation && acceptedAuthorityEpoch === visibleProjectionEpoch;
                     let rebasedValue = visiblePending.value;
                     if (rebasePending) {
                         rebasedValue = rebasePending({
@@ -1864,25 +1914,27 @@ export const createAutomergeStorage = <TData>(
                     ) {
                         rebasedValue = { ...visiblePending.value, ...crdtData };
                     }
+                    if (!isCurrentVisibleProjection()) {
+                        return false;
+                    }
                     if (
-                        projectionGeneration !== generation ||
                         pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending ||
                         visiblePending.revision !== cachedRevision
                     ) {
                         recomputeCachedValue();
-                        absencePresentation = 'default';
                         lastHydratedJson = incomingJson;
                         lastHydratedHeads = headsKey;
                         return true;
                     }
                     const acceptedVisible = guardInboundValue(rebasedValue, 'visible');
+                    if (!isCurrentVisibleProjection()) {
+                        return false;
+                    }
                     if (
-                        projectionGeneration !== generation ||
                         pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending ||
                         visiblePending.revision !== cachedRevision
                     ) {
                         recomputeCachedValue();
-                        absencePresentation = 'default';
                         lastHydratedJson = incomingJson;
                         lastHydratedHeads = headsKey;
                         return true;
@@ -1893,16 +1945,18 @@ export const createAutomergeStorage = <TData>(
                     visiblePending.revision = cachedRevision;
                 } else {
                     const acceptedValue = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'visible');
-                    if (projectionGeneration !== generation) {
+                    if (!isCurrentProjection()) {
                         return false;
                     }
+                    const authorityRevision = ++nextRevision;
                     cachedValue = acceptedValue;
                     committedCacheValue = acceptedValue;
                     committedCacheRevision = authorityRevision;
                     committedSetRevision = committedCacheRevision;
                     recomputeCachedValue();
+                    absencePresentation = 'default';
+                    acceptedAuthorityEpoch += 1;
                 }
-                absencePresentation = 'default';
                 lastHydratedJson = incomingJson;
                 lastHydratedHeads = headsKey;
                 return true;
@@ -1914,26 +1968,30 @@ export const createAutomergeStorage = <TData>(
             // projection a second writer, recursed into itself through the
             // projection bridge, and bled the previous project's cache into a
             // fresh document.
-            lastHydratedHeads = null;
             if (cachedValue !== null && hydrateMissing) {
-                const generation = projectionGeneration;
-                const missing_value = guardInboundValue(toDocSafe(hydrateMissing()), 'visible');
-                if (projectionGeneration !== generation) {
+                const missingValue = guardInboundValue(toDocSafe(hydrateMissing()), 'visible');
+                if (!isCurrentProjection()) {
                     return false;
                 }
-                if (JSON.stringify(cachedValue) === JSON.stringify(missing_value)) {
+                if (JSON.stringify(cachedValue) === JSON.stringify(missingValue)) {
+                    lastHydratedHeads = null;
                     return false;
                 }
-                cachedValue = missing_value;
-                committedCacheValue = missing_value;
+                cachedValue = missingValue;
+                committedCacheValue = missingValue;
                 committedCacheRevision = ++nextRevision;
                 committedSetRevision = committedCacheRevision;
                 cachedRevision = committedCacheRevision;
-                absencePresentation = missing_value === null ? 'null' : 'default';
+                absencePresentation = missingValue === null ? 'null' : 'default';
                 lastHydratedJson = null;
+                lastHydratedHeads = null;
+                acceptedAuthorityEpoch += 1;
                 return true;
             }
 
+            if (isCurrentProjection()) {
+                lastHydratedHeads = null;
+            }
             return false;
         },
     };

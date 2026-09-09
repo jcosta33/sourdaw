@@ -111,9 +111,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     /**
      * Apply the sanitizer to a value arriving from backing storage.
      *
-     * Sanitizing runs on inbound paths only — the initial seed and post-hydrate
-     * — so it is a guard against data this build cannot read, never a review of
-     * what this build just wrote.
+     * Sanitizing runs on inbound paths only — the initial seed, hydrate, and
+     * committed document projection — so it guards data this build cannot read
+     * without reviewing or rewriting what a use case just authored.
      *
      * What happens to the rejected content depends on who else can see the
      * backing store. On a shared document the sanitized result governs the read
