@@ -65,11 +65,15 @@ function legacyRecord({
     };
 }
 
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
+
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const [module, ownership] = await Promise.all([
+    const [module, ownership, useCases] = await Promise.all([
         import('../audioBufferCache'),
         import('../durableAudioBufferOwnership'),
+        import('../../useCases/garbageCollectCachedAudioBuffersBySize'),
     ]);
+    garbageCollectCachedAudioBuffersBySize = useCases.garbageCollectCachedAudioBuffersBySize;
     ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
@@ -97,7 +101,7 @@ describe('audioBufferCache metadata store', () => {
         // `bytesWritten` at 384 118 against the 4 096 ceiling, and reds the
         // record's own `lastAccessed` by moving it to 70 000.
         it('moves the stamp without rewriting the record', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const now = vi.spyOn(Date, 'now');
             now.mockReturnValue(1_000);
 
@@ -130,7 +134,7 @@ describe('audioBufferCache metadata store', () => {
         // `set` reds `sizeInBytes` here at `undefined`, and the size collector
         // silently stops accounting for the buffer.
         it('carries the record size onto the metadata row when a buffer is persisted', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const now = vi.spyOn(Date, 'now');
             now.mockReturnValue(1_000);
 
@@ -150,7 +154,7 @@ describe('audioBufferCache metadata store', () => {
         // metadata store in `garbageCollectByAge` (the v1 behaviour) reds
         // `bytesRead` at 768 236 against the 4 096 ceiling.
         it('collects by age without materialising any PCM', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const now = vi.spyOn(Date, 'now');
             now.mockReturnValue(10_000_000_000);
             controls.committed.set('stale', legacyRecord({ frames: FRAMES_PER_SECOND, channels: 2, lastAccessed: 0 }));
@@ -170,7 +174,7 @@ describe('audioBufferCache metadata store', () => {
         // Mutation: reading `store.getAll()` on the buffers store instead of the
         // metadata store in `garbageCollectBySize` reds `bytesRead` the same way.
         it('collects by size without materialising any PCM', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('older', legacyRecord({ frames: FRAMES_PER_SECOND, channels: 2, lastAccessed: 0 }));
             controls.committed.set('newer', legacyRecord({ frames: FRAMES_PER_SECOND, channels: 2, lastAccessed: 0 }));
             controls.committedMeta.set('older', { lastAccessed: 1_000, sizeInBytes: PCM_BYTES });
@@ -178,7 +182,7 @@ describe('audioBufferCache metadata store', () => {
             controls.resetByteCounters();
 
             // Room for exactly one of the two.
-            const deleted = await audioBufferCache.garbageCollectBySize(PCM_BYTES + 1);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: PCM_BYTES + 1 });
 
             expect(deleted).toBe(1);
             expect(controls.bytesRead()).toBeLessThan(SCALAR_TRAFFIC_CEILING);
@@ -198,7 +202,7 @@ describe('audioBufferCache metadata store', () => {
         // Mutation: restoring the `?? 0` fallback — on the row or on the record
         // in the migration sweep — reds `deleted` at 1 and empties the store.
         it('is not collected by age when neither the row nor the record carries a stamp', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             vi.spyOn(Date, 'now').mockReturnValue(9_000_000_000);
             const stampless = legacyRecord({ frames: 3, channels: 1, lastAccessed: 0 });
             // A record written before `lastAccessed` existed. The type says the
@@ -228,7 +232,7 @@ describe('audioBufferCache metadata store', () => {
         // stamp-less branch reds `committedMeta.has('ordinary')` at false and
         // holds `bytesRead()` at 75 497 832 on the second pass.
         it('retires a stamp-less record so it cannot starve the ones behind it', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             vi.spyOn(Date, 'now').mockReturnValue(9_000_000_000);
             const framesFor24Mb = (24 * 1024 * 1024) / (2 * Float32Array.BYTES_PER_ELEMENT);
             for (let index = 0; index < 3; index++) {
@@ -259,7 +263,7 @@ describe('audioBufferCache metadata store', () => {
         // reds `deleted` at 0 — the record becomes immortal, which is what the
         // reviewer caught.
         it('is collected by age on the record own stamp when the row is missing', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: 3, channels: 1, lastAccessed: 0 }));
 
             const deleted = await audioBufferCache.garbageCollectByAge(1);
@@ -275,7 +279,7 @@ describe('audioBufferCache metadata store', () => {
         // Mutation: `lastAccessed: Date.now()` in the sweep's `metaStore.put`
         // reds this at 9 000 000 000 instead of the record's 8 999 999 000.
         it('is migrated rather than reaped when the record own stamp is recent', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             vi.spyOn(Date, 'now').mockReturnValue(9_000_000_000);
             // One second old against a one-day threshold.
             controls.committed.set('recent', legacyRecord({ frames: 3, channels: 1, lastAccessed: 8_999_999_000 }));
@@ -292,7 +296,7 @@ describe('audioBufferCache metadata store', () => {
         // Presence pin: the same threshold and the same ancient stamp, reached
         // through the row rather than the record.
         it('is collected by age once its metadata row exists', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: 3, channels: 1, lastAccessed: 0 }));
             controls.committedMeta.set('legacy', { lastAccessed: 0, sizeInBytes: 12 });
 
@@ -317,12 +321,12 @@ describe('audioBufferCache metadata store', () => {
         // the loop deletes `metaed` too: reds `deleted` at 2 and the surviving
         // keys at `[]`.
         it('is not collected by size, even while the collector is over budget', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: 3, channels: 1, lastAccessed: 0 }));
             controls.committed.set('metaed', legacyRecord({ frames: 25, channels: 1, lastAccessed: 2_000 }));
             controls.committedMeta.set('metaed', { lastAccessed: 2_000, sizeInBytes: 100 });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(50);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 50 });
 
             expect(deleted).toBe(1);
             expect([...controls.committed.keys()]).toEqual(['legacy']);
@@ -332,11 +336,11 @@ describe('audioBufferCache metadata store', () => {
         // Presence pin for the assertion above: the same record, over the same
         // budget, collected once it has a row.
         it('is collected by size once its metadata row exists', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: 3, channels: 1, lastAccessed: 0 }));
             controls.committedMeta.set('legacy', { lastAccessed: 0, sizeInBytes: 12 });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(1);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 1 });
 
             expect(deleted).toBe(1);
             expect([...controls.committed.keys()]).toEqual([]);
@@ -350,7 +354,7 @@ describe('audioBufferCache metadata store', () => {
         // a store the freeze cleanup caps at 2 GiB. The v3 recovery migration
         // does a bounded key scan after upgrade, so scalar traffic is expected.
         it('creates the metadata store without reading legacy PCM', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('legacy', legacyRecord({ frames: FRAMES_PER_SECOND, channels: 2, lastAccessed: 5 }));
 
             // `ids: []` resolves without touching the store, so the only IDB
@@ -370,7 +374,7 @@ describe('audioBufferCache metadata store', () => {
         // instead of the clock reds it at 70 000 — a read is a *use*, so this
         // one is the only seeding site that must stamp now.
         it('back-fills a row from the legacy record the first time the stamp is refreshed', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const now = vi.spyOn(Date, 'now');
             now.mockReturnValue(1_000);
             controls.committed.set('legacy', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
@@ -396,7 +400,7 @@ describe('audioBufferCache metadata store', () => {
         // Mutation: dropping the `migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET`
         // break reds the first assertion at 6, and the byte count at 144 MB.
         it('bounds how much PCM one migration pass reads, and converges over passes', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const now = vi.spyOn(Date, 'now');
             now.mockReturnValue(9_000_000_000);
             const framesFor24Mb = (24 * 1024 * 1024) / (2 * Float32Array.BYTES_PER_ELEMENT);
@@ -449,7 +453,7 @@ describe('audioBufferCache metadata store', () => {
             vi.unstubAllGlobals();
             vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'forever' });
-            const audioBufferCache = await importCache();
+            await importCache();
 
             const pending = audioBufferCache.restoreFromIdb({
                 context: { createBuffer: () => stereoSecond() },
@@ -473,7 +477,7 @@ describe('audioBufferCache metadata store', () => {
             vi.unstubAllGlobals();
             vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'forever' });
-            const audioBufferCache = await importCache();
+            await importCache();
             const context = { createBuffer: () => stereoSecond() };
 
             expect(await settlesWithin(audioBufferCache.restoreFromIdb({ context, ids: ['pcm'] }))).toBe(true);
@@ -492,7 +496,7 @@ describe('audioBufferCache metadata store', () => {
             vi.unstubAllGlobals();
             vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
             controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE], blockOpens: 'then-yields' });
-            const audioBufferCache = await importCache();
+            await importCache();
 
             await audioBufferCache.restoreFromIdb({
                 context: { createBuffer: () => stereoSecond() },
@@ -512,7 +516,7 @@ describe('audioBufferCache metadata store', () => {
         // transactions reds the scope assertion, and — with `abortWrites` — reds
         // the roll-back assertion by leaving one store written and the other not.
         it('persist a record and its metadata row under one transaction', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
 
             audioBufferCache.set('pcm', makeAudioBuffer([new Float32Array([0.5])]));
             await flushIndexedDbTasks();
@@ -530,7 +534,7 @@ describe('audioBufferCache metadata store', () => {
         // could not see that: it kills both halves and the stores agree by
         // accident.
         it('roll back together, so size accounting cannot drift from the records', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.abortWritesTo(BUFFER_STORE);
             const id = 'freeze-pending-owner';
 
@@ -553,7 +557,7 @@ describe('audioBufferCache metadata store', () => {
         // `committedMeta.has('pcm')` — an orphan row would keep the size
         // collector counting bytes that no longer exist.
         it('remove a record and its metadata row together', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             audioBufferCache.set('pcm', makeAudioBuffer([new Float32Array([0.5])]));
             await flushIndexedDbTasks();
             expect(controls.committedMeta.has('pcm')).toBe(true);
@@ -568,7 +572,7 @@ describe('audioBufferCache metadata store', () => {
         // Mutation: dropping the metadata delete from `garbageCollectFreezeFiles`
         // reds `committedMeta` — the stale freeze row survives its record.
         it('collect a freeze record and its metadata row together', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             controls.committed.set('freeze-stale', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
             controls.committed.set('freeze-live', legacyRecord({ frames: 3, channels: 1, lastAccessed: 1_000 }));
             controls.committedMeta.set('freeze-stale', { freezeProjectId: 200, lastAccessed: 1_000, sizeInBytes: 12 });
@@ -581,7 +585,7 @@ describe('audioBufferCache metadata store', () => {
         });
 
         it('protects every prepared owner classification across durable and resident freeze scans', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             const invalidOwnerId = 'freeze-invalid-prepared-owner';
             const reconcilingOwnerId = 'freeze-reconciling-prepared-owner';
             const ordinaryId = 'freeze-ordinary-stale';
@@ -615,7 +619,7 @@ describe('audioBufferCache metadata store', () => {
         // `committedMeta.size` — every row of the previous project would keep
         // counting against the 2 GiB cap.
         it('clear both stores together', async () => {
-            const audioBufferCache = await importCache();
+            await importCache();
             audioBufferCache.set('pcm', makeAudioBuffer([new Float32Array([0.5])]));
             await flushIndexedDbTasks();
 

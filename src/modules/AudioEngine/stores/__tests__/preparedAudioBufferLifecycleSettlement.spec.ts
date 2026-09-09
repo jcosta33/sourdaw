@@ -18,6 +18,7 @@ import {
 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let reclaimPreparedBufferOrphans: typeof import('../audioBufferCache').reclaimPreparedBufferOrphans;
 
@@ -54,6 +55,8 @@ beforeEach(async () => {
     installTestAudioBufferConstructor();
     ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
         await import('../audioBufferCache'));
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
 });
 
 afterEach(() => {
@@ -1367,6 +1370,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
         vi.resetModules();
         ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
             await import('../audioBufferCache'));
+        ({ garbageCollectCachedAudioBuffersBySize } =
+            await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
         controls.pauseWriteSettlements();
 
         const reclamation = reclaimPreparedBufferOrphans({
@@ -1457,7 +1462,7 @@ describe('prepared audio-buffer settlement and recovery', () => {
             return operation;
         };
         await expect(settlePausedWrite(audioBufferCache.garbageCollectByAge(-1))).resolves.toBe(0);
-        await expect(settlePausedWrite(audioBufferCache.garbageCollectBySize(0))).resolves.toBe(0);
+        await expect(settlePausedWrite(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 }))).resolves.toBe(0);
         await expect(
             settlePausedWrite(
                 reclaimPreparedBufferOrphans({ createdBeforeMs: Number.MAX_SAFE_INTEGER, liveLeaseIds: [] })

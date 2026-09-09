@@ -20,6 +20,7 @@ import {
 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let reclaimPreparedBufferOrphans: typeof import('../audioBufferCache').reclaimPreparedBufferOrphans;
 let lockManager: ReturnType<typeof createControlledLockManager>;
@@ -35,6 +36,8 @@ beforeEach(async () => {
         { audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans },
         { setDurableAudioBufferOwnershipProvider },
     ] = await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -178,7 +181,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
         });
         controls.committedMeta.set('recent-ordinary', { lastAccessed: 10_000, sizeInBytes: 4 });
 
-        await expect(audioBufferCache.garbageCollectBySize(4)).resolves.toBe(1);
+        await expect(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 4 })).resolves.toBe(1);
         expect(controls.committedRecovery.has('quota-buffer')).toBe(false);
         expect(controls.committed.has('recent-ordinary')).toBe(true);
 
@@ -202,7 +205,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committedRecovery.has('reserved-buffer')).toBe(true);
 
         controls.committedRecovery.set('markerless-pcm', new Float32Array([0.125, 0.25]));
-        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(2);
+        await expect(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 })).resolves.toBe(2);
         expect(controls.committedRecovery.has('markerless-pcm')).toBe(false);
         expect(controls.committedRecovery.has('reserved-buffer')).toBe(true);
         expect(controls.committedRecovery.has(0)).toBe(true);
@@ -282,7 +285,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
         };
         controls.committedRecovery.set(id, recovery);
         controls.pauseWriteSettlements();
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         let collectionSettled = false;
         void collection.then(
             () => {
@@ -345,7 +348,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
             stagedAtMs: 1,
         });
         controls.pauseWriteSettlements();
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         while (controls.pendingWriteSettlementCount() === 0) {
             await flushIndexedDbTasks(1);
         }
@@ -488,7 +491,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
         controls.committedRecovery.set(id, value() as unknown as StoredRecoveryValue);
         controls.committedRecovery.set('four-byte-survivor', 'ok' as unknown as StoredRecoveryValue);
 
-        await expect(audioBufferCache.garbageCollectBySize(5)).resolves.toBe(1);
+        await expect(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 5 })).resolves.toBe(1);
         expect(controls.committedRecovery.has(id)).toBe(false);
         expect(controls.committedRecovery.get('four-byte-survivor')).toBe('ok');
     });
@@ -554,7 +557,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
             if (collector === 'age') {
                 await audioBufferCache.garbageCollectByAge(-1);
             } else {
-                await audioBufferCache.garbageCollectBySize(0);
+                await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
             }
 
             expect(controls.committed.has(id)).toBe(true);
@@ -609,7 +612,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
             const deleted =
                 collector === 'age'
                     ? await audioBufferCache.garbageCollectByAge(1)
-                    : await audioBufferCache.garbageCollectBySize(8);
+                    : await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 8 });
 
             expect(deleted).toBe(1);
             expect(controls.committed.has(ordinaryId)).toBe(false);

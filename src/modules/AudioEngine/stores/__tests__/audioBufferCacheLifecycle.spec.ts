@@ -7,6 +7,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let lockManager: ReturnType<typeof createControlledLockManager>;
 
@@ -18,6 +19,8 @@ beforeEach(async () => {
         import('../audioBufferCache'),
         import('../durableAudioBufferOwnership'),
     ]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -597,7 +600,7 @@ describe('audioBufferCache lifecycle', () => {
             });
             backing.meta.set('newest', { lastAccessed: 30, sizeInBytes: 100 });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(150);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 150 });
 
             expect(deleted).toBe(2);
             expect(backing.has('oldest')).toBe(false);
@@ -615,7 +618,7 @@ describe('audioBufferCache lifecycle', () => {
                 sizeInBytes: 100,
             });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(1_000);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 1_000 });
 
             expect(deleted).toBe(0);
             expect(backing.has('only')).toBe(true);
