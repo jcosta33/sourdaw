@@ -126,17 +126,30 @@ export const StatusBar = (): ReactElement => {
 
     useEffect(() => {
         const target = restoreFocusAfterModeChangeRef.current;
-        if (target === null) {
-            return;
+        let frame: number | null = null;
+        if (target !== null) {
+            restoreFocusAfterModeChangeRef.current = null;
+            const selector =
+                target === 'compact'
+                    ? 'button[aria-label="More application status"]'
+                    : 'button[aria-label="Project links"]';
+            frame = window.requestAnimationFrame(() => {
+                const activeElement = document.activeElement;
+                const focusMovedOutsideFooter =
+                    activeElement instanceof HTMLElement &&
+                    activeElement !== document.body &&
+                    activeElement.isConnected &&
+                    !footerRef.current?.contains(activeElement);
+                if (!focusMovedOutsideFooter) {
+                    footerRef.current?.querySelector<HTMLElement>(selector)?.focus();
+                }
+            });
         }
-        restoreFocusAfterModeChangeRef.current = null;
-        const selector =
-            target === 'compact'
-                ? 'button[aria-label="More application status"]'
-                : 'button[aria-label="Project links"]';
-        window.requestAnimationFrame(() => {
-            footerRef.current?.querySelector<HTMLElement>(selector)?.focus();
-        });
+        return () => {
+            if (frame !== null) {
+                window.cancelAnimationFrame(frame);
+            }
+        };
     }, [compactMode]);
 
     const setMorePopoverOpen = (open: boolean): void => {

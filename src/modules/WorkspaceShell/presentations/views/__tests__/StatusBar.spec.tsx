@@ -173,6 +173,72 @@ describe('StatusBar', () => {
             expect(outsideFooter).toHaveFocus();
             expect(screen.getByRole('button', { name: 'More application status' })).not.toHaveFocus();
         });
+
+        it('keeps focus moved outside the footer before deferred mode restoration runs', () => {
+            const scheduledFrames: FrameRequestCallback[] = [];
+            const requestAnimationFrameSpy = vi
+                .spyOn(window, 'requestAnimationFrame')
+                .mockImplementation((callback) => {
+                    scheduledFrames.push(callback);
+                    return scheduledFrames.length;
+                });
+
+            try {
+                setViewportWidth(1199);
+                renderWithTooltip(
+                    <>
+                        <button type="button">Outside footer</button>
+                        <StatusBar />
+                    </>
+                );
+                const outsideFooter = screen.getByRole('button', { name: 'Outside footer' });
+                screen.getByRole('button', { name: 'More application status' }).focus();
+
+                setViewportWidth(1200);
+                act(() => {
+                    window.dispatchEvent(new Event('resize'));
+                });
+
+                expect(scheduledFrames).toHaveLength(1);
+                outsideFooter.focus();
+                act(() => {
+                    scheduledFrames[0](performance.now());
+                });
+
+                expect(outsideFooter).toHaveFocus();
+            } finally {
+                requestAnimationFrameSpy.mockRestore();
+            }
+        });
+
+        it('cancels deferred footer restoration when the status bar unmounts', () => {
+            const scheduledFrames: FrameRequestCallback[] = [];
+            const requestAnimationFrameSpy = vi
+                .spyOn(window, 'requestAnimationFrame')
+                .mockImplementation((callback) => {
+                    scheduledFrames.push(callback);
+                    return scheduledFrames.length;
+                });
+            const cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+            try {
+                setViewportWidth(1199);
+                const view = renderWithTooltip(<StatusBar />);
+                screen.getByRole('button', { name: 'More application status' }).focus();
+
+                setViewportWidth(1200);
+                act(() => {
+                    window.dispatchEvent(new Event('resize'));
+                });
+
+                expect(scheduledFrames).toHaveLength(1);
+                view.unmount();
+                expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(1);
+            } finally {
+                cancelAnimationFrameSpy.mockRestore();
+                requestAnimationFrameSpy.mockRestore();
+            }
+        });
     });
 
     describe('LLM status badge', () => {

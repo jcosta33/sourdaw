@@ -64,4 +64,4 @@ Before treating rendered acceptance as evidence for a lane, verify that the serv
 
 For a fixed-height status strip, measure the effective CSS viewport at every admitted UI scale. Keep engine and active monitoring states direct, and move optional metrics or actions through one React-owned disclosure; CSS-hidden duplicate trees leave stale portals, focus, and mutable DOM refs. This escaped #4054.
 
-When a footer disclosure owns a portaled nested menu, track the menu content ref in each responsive mode. On a mode change, close both portals and restore focus only when the active element belongs to the footer or that portal; preserving an unrelated focus target avoids stealing keyboard control. This escaped #4056.
+When a footer disclosure owns a portaled nested menu, track the menu content ref in each responsive mode. On a mode change, close both portals and restore focus only when the active element belongs to the footer or that portal; recheck focus immediately before an asynchronous handoff and cancel it on cleanup so a newly chosen outside target keeps keyboard control. This escaped #4056.
