@@ -120,6 +120,17 @@ describe('offline AudioWorklet trace admission', () => {
         ).toBe('refused');
     });
 
+    it('refuses callbacks bound to different AudioWorkletNode instances', () => {
+        const mixedPointers = validTrace().map((event) =>
+            event.name === HANDLER && event.ts === 50 ? { ...event, args: { ...event.args, this: '0x2' } } : event
+        );
+
+        expect(admission(mixedPointers)).toEqual({
+            status: 'refused',
+            reason: 'outer callbacks do not share one AudioWorkletNode trace pointer',
+        });
+    });
+
     it('refuses a missing or wrong-thread author execution', () => {
         expect(admission(withoutName(validTrace(), AUTHOR, 32)).status).toBe('refused');
         expect(
