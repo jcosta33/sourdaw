@@ -47,6 +47,7 @@
         "lane:strand": "node scripts/removeLane.ts --strand",
         "lane:prune": "node scripts/pruneLane.ts",
         "review:prepare": "node scripts/prepareReview.ts",
+        "review:accept": "node scripts/trustedGithubWriteBootstrap.ts review:accept",
         "review:publish": "node scripts/trustedGithubWriteBootstrap.ts review:publish",
         "review:publish:recover": "node scripts/trustedGithubWriteBootstrap.ts review:publish:recover",
         "review:resolve": "node scripts/trustedGithubWriteBootstrap.ts review:resolve",

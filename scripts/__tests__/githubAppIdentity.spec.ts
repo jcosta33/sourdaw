@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
+    isHistoricalMergerActor,
+    isOrchestratorUserNodeId,
     AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotNodeId,
@@ -43,6 +47,98 @@ const PUBLISHING_HEAD = 'a'.repeat(40);
 const PUBLISHING_BASE = 'b'.repeat(40);
 const RENAMED_AUTHOR_LOGIN = 'hplovecraft208[bot]';
 const RENAMED_REVIEWER_LOGIN = 'tmckenna1611[bot]';
+
+describe('orchestrator authentication', () => {
+    it('uses stored github.com authentication and verifies the user in an isolated session', async () => {
+        const parent = {
+            PATH: '/usr/bin',
+            GH_TOKEN: 'hostile',
+            GH_HOST: 'evil.test',
+            GH_CONFIG_DIR: '/evil',
+            GITHUB_TOKEN: 'hostile',
+            GIT_CONFIG_COUNT: '1',
+            NODE_OPTIONS: '--require evil',
+        };
+        let verifiedConfigDir = '';
+        const authentication = await authenticateOrchestrator({
+            env: parent,
+            capture: (command, args, options) => {
+                expect(command).toBe('gh');
+                if (args[0] === 'auth') {
+                    expect(args).toEqual(['auth', 'token', '--hostname', 'github.com', '--user', 'jcosta33']);
+                    for (const key of Object.keys(parent).filter((key) => key !== 'PATH')) {
+                        expect(options.env[key]).toBeUndefined();
+                    }
+                    return 'stored-token';
+                }
+                expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
+                expect(options.env.GH_TOKEN).toBe('stored-token');
+                expect(options.env.GH_CONFIG_DIR).not.toBe('/evil');
+                verifiedConfigDir = options.env.GH_CONFIG_DIR ?? '';
+                expect(existsSync(verifiedConfigDir)).toBe(true);
+                return JSON.stringify({ type: 'User', node_id: ORCHESTRATOR_USER_NODE_ID, login: 'renamed-user' });
+            },
+        });
+        expect(authentication.minted.actorNodeId).toBe(ORCHESTRATOR_USER_NODE_ID);
+        authentication.session.dispose();
+        expect(existsSync(verifiedConfigDir)).toBe(false);
+        expect(parent.GH_TOKEN).toBe('hostile');
+    });
+
+    it.each([
+        { type: 'User', node_id: 'foreign-user' },
+        { type: 'Bot', node_id: ORCHESTRATOR_USER_NODE_ID },
+    ])('rejects wrong identity or actor type and disposes its session: %j', async (actor) => {
+        let configDir = '';
+        await expect(
+            authenticateOrchestrator({
+                capture: (_command, args, options) => {
+                    if (args[0] === 'auth') {
+                        return 'stored-token';
+                    }
+                    configDir = options.env.GH_CONFIG_DIR ?? '';
+                    return JSON.stringify(actor);
+                },
+            })
+        ).rejects.toThrow(/orchestrator/);
+        expect(configDir).not.toBe('');
+        expect(existsSync(configDir)).toBe(false);
+    });
+
+    it('disposes the session and hides credential-provider errors', async () => {
+        let configDir = '';
+        await expect(
+            authenticateOrchestrator({
+                capture: (_command, args, options) => {
+                    if (args[0] === 'auth') {
+                        return 'stored-token';
+                    }
+                    configDir = options.env.GH_CONFIG_DIR ?? '';
+                    throw new Error('stored-token');
+                },
+            })
+        ).rejects.toThrow('cannot verify orchestrator authentication');
+        expect(existsSync(configDir)).toBe(false);
+        await expect(
+            authenticateOrchestrator({
+                capture: () => {
+                    throw new Error('secret-token');
+                },
+            })
+        ).rejects.toThrow('cannot read stored orchestrator authentication');
+    });
+
+    it('pins user identity and historical merger identity together with actor type', () => {
+        expect(isOrchestratorUserNodeId(ORCHESTRATOR_USER_NODE_ID)).toBe(true);
+        expect(isOrchestratorUserNodeId(AUTHOR_BOT_NODE_ID)).toBe(false);
+        expect(isHistoricalMergerActor(AUTHOR_BOT_NODE_ID, 'Bot')).toBe(true);
+        expect(isHistoricalMergerActor(ORCHESTRATOR_USER_NODE_ID, 'User')).toBe(true);
+        expect(isHistoricalMergerActor(AUTHOR_BOT_NODE_ID, 'User')).toBe(false);
+        expect(isHistoricalMergerActor(ORCHESTRATOR_USER_NODE_ID, 'Bot')).toBe(false);
+        expect(isHistoricalMergerActor(REVIEWER_BOT_NODE_ID, 'Bot')).toBe(false);
+        expect(isHistoricalMergerActor(undefined, undefined)).toBe(false);
+    });
+});
 
 const authorFile = `SOURDAW_GITHUB_APP_ID=4650613
 SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409

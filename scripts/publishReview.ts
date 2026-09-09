@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
-    isReviewerBotNodeId,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -27,6 +27,11 @@ import {
     readPullRequestMutationLockOwner,
     withPullRequestReviewPublicationMutationLock,
 } from './pullRequestMutationLock.ts';
+import {
+    readPullRequestReviewState,
+    assertIndependentReviewerApproval,
+    type ReviewState,
+} from './pullRequestReviewState.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
@@ -70,13 +75,14 @@ export type PublishReviewPort = {
     pullRequest: (number: number) => { state: string; head: string };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
+    reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
         number: number;
         commitId: string;
         event: ReviewEvent;
         body: string;
         comments: ReviewComment[];
-    }) => { id: number; actorNodeId: string; login: string };
+    }) => { id: number; actorNodeId: string; login: string; actorType?: string; commitId?: string };
     log: (message: string) => void;
 };
 
@@ -104,7 +110,10 @@ export type PublishReviewCoordinatorDependencies = {
     ) => number;
 };
 
-export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
+export function parsePublishReviewArgs(
+    args: string[],
+    command: 'review:publish' | 'review:accept' = 'review:publish'
+): { number?: number; help: boolean } {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
@@ -113,7 +122,7 @@ export function parsePublishReviewArgs(args: string[]): { number?: number; help:
     }
     const value = Number(args[0]);
     if (!Number.isSafeInteger(value) || value <= 0 || args.length !== 1) {
-        fail('usage: pnpm review:publish <pr-number>');
+        fail(`usage: pnpm ${command} <pr-number>`);
     }
     return { number: value, help: false };
 }
@@ -231,16 +240,22 @@ export type PreparedReviewPublication = {
     payloadDigest: string;
 };
 
-function prepareReviewPublication(number: number, port: PublishReviewPort): PreparedReviewPublication {
+function prepareReviewPublication(
+    number: number,
+    port: PublishReviewPort,
+    actorNodeId = REVIEWER_BOT_NODE_ID
+): PreparedReviewPublication {
     const head = port.pullRequest(number).head;
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    const documentName = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? 'acceptance.json' : 'review.json';
     let parsed: unknown;
     try {
-        parsed = port.readReviewJson(join(bundle, 'review.json'));
+        parsed = port.readReviewJson(join(bundle, documentName));
     } catch {
-        fail(`missing review.json at ${join(bundle, 'review.json')}`);
+        fail(`missing ${documentName} at ${join(bundle, documentName)}`);
     }
-    const document = parseReviewDocument(parsed);
+    const document =
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     return {
@@ -257,7 +272,8 @@ function prepareReviewPublication(number: number, port: PublishReviewPort): Prep
     };
 }
 
-export function publishPreparedReview(
+function publishPreparedReviewForActor(
+    actorNodeId: string,
     number: number,
     prepared: PreparedReviewPublication,
     port: PublishReviewPort,
@@ -270,7 +286,13 @@ export function publishPreparedReview(
     if (pullRequest.head !== prepared.head) {
         fail('pull-request head moved; refusing to post a stale review');
     }
-    const document = parseReviewDocument(prepared.document);
+    const document =
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID
+            ? parseAcceptanceDocument(prepared.document)
+            : parseReviewDocument(prepared.document);
+    if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        assertAcceptancePreconditions(number, prepared.head, port);
+    }
     assertPublicationEvidence(document, pullRequest.head);
     const payloadDigest = reviewPublicationPayloadDigest(
         reviewPublicationPayload({
@@ -286,7 +308,7 @@ export function publishPreparedReview(
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
         payloadDigest: prepared.payloadDigest,
-        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+        reviewerActorNodeId: actorNodeId,
     });
     const posted = port.postReview({
         number,
@@ -295,11 +317,54 @@ export function publishPreparedReview(
         body: document.body,
         comments: document.comments,
     });
-    if (!isReviewerBotNodeId(posted.actorNodeId)) {
-        fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);
+    if (posted.actorNodeId !== actorNodeId) {
+        fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${actorNodeId}`);
+    }
+    if (
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID &&
+        (posted.actorType !== 'User' || posted.commitId !== prepared.head)
+    ) {
+        fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
     port.log(String(posted.id));
     return posted.id;
+}
+
+export function parseAcceptanceDocument(value: unknown): ReviewDocument {
+    const document = parseReviewDocument(value);
+    if (document.event !== 'APPROVE') {
+        fail('acceptance.json must APPROVE');
+    }
+    const attribution = 'Orchestrator acceptance on behalf of jcosta33';
+    return {
+        ...document,
+        body: document.body.startsWith(`${attribution}\n\n`) ? document.body : `${attribution}\n\n${document.body}`,
+    };
+}
+
+function assertAcceptancePreconditions(number: number, head: string, port: PublishReviewPort): void {
+    if (port.reviewState === undefined) {
+        fail('orchestrator acceptance requires a complete independent review-state reader');
+    }
+    assertIndependentReviewerApproval(number, port.reviewState(number, head));
+}
+
+export function publishPreparedReview(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    return publishPreparedReviewForActor(REVIEWER_BOT_NODE_ID, number, prepared, port, boundary);
+}
+
+export function publishPreparedAcceptance(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    return publishPreparedReviewForActor(ORCHESTRATOR_USER_NODE_ID, number, prepared, port, boundary);
 }
 
 export function publishReview(
@@ -335,6 +400,7 @@ export function shellPort(
             }
             return { state: pullRequest.state, head: pullRequest.headRefOid };
         },
+        reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
         postReview: ({ number, commitId, event, body, comments }) => {
@@ -358,7 +424,8 @@ export function shellPort(
             const response = parseJson<{
                 id: number;
                 state?: string;
-                user?: { node_id?: string; login?: string };
+                user?: { node_id?: string; login?: string; type?: string };
+                commit_id?: string;
             }>(created, 'create review');
             if (!Number.isSafeInteger(response.id) || response.id <= 0) {
                 fail('create review returned an unreadable id');
@@ -373,6 +440,8 @@ export function shellPort(
                 id: response.id,
                 actorNodeId: response.user?.node_id ?? '',
                 login: response.user?.login ?? '',
+                actorType: response.user?.type,
+                commitId: response.commit_id,
             };
         },
         log: (message) => {
@@ -470,16 +539,17 @@ export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoor
     };
 }
 
-export async function coordinatePublishReview(
+async function coordinateReviewPublication(
     number: number,
-    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+    dependencies: PublishReviewCoordinatorDependencies,
+    actorNodeId: string
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
     try {
         const auth = await dependencies.authenticateReviewer(primaryRoot);
         try {
-            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+            if (auth.minted.actorNodeId !== actorNodeId) {
+                fail(`authenticated actor ${auth.minted.actorNodeId} is not ${actorNodeId}`);
             }
             assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
             const preflightPort = dependencies.reviewPort(
@@ -488,7 +558,10 @@ export async function coordinatePublishReview(
                 () => undefined,
                 () => undefined
             );
-            const prepared = prepareReviewPublication(number, preflightPort);
+            const prepared = prepareReviewPublication(number, preflightPort, actorNodeId);
+            if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+                assertAcceptancePreconditions(number, prepared.head, preflightPort);
+            }
             await dependencies.serializeMutation(
                 primaryRoot,
                 number,
@@ -524,6 +597,29 @@ export async function coordinatePublishReview(
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`${message}; retained exact review-publication owner: ${recovery}`, { cause: error });
     }
+}
+
+export async function coordinatePublishReview(
+    number: number,
+    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+): Promise<void> {
+    return coordinateReviewPublication(number, dependencies, REVIEWER_BOT_NODE_ID);
+}
+
+export type AcceptReviewCoordinatorDependencies = Omit<PublishReviewCoordinatorDependencies, 'authenticateReviewer'> & {
+    authenticateOrchestrator: () => Promise<PublishReviewAuthentication>;
+};
+
+export async function coordinateOrchestratorAcceptance(
+    number: number,
+    dependencies: AcceptReviewCoordinatorDependencies
+): Promise<void> {
+    const { authenticateOrchestrator: authenticate, ...shared } = dependencies;
+    return coordinateReviewPublication(
+        number,
+        { ...shared, authenticateReviewer: authenticate },
+        ORCHESTRATOR_USER_NODE_ID
+    );
 }
 
 function retainedReviewPublicationRecoveryCommand(primaryRoot: string, number: number): string | undefined {

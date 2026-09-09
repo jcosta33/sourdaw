@@ -31,6 +31,7 @@ import {
 } from '../deliverPullRequest';
 import {
     AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
@@ -257,7 +258,13 @@ function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: ()
             },
             run: () => undefined,
         },
-        { markRemoteMutationAttempt }
+        {
+            markRemoteMutationAttempt,
+            mergeCapture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify({ merged: true, message: 'merged' });
+            },
+        }
     );
     return { captures, port };
 }
@@ -330,6 +337,16 @@ function reviewStateResponse(
     });
 }
 
+function acceptanceReview() {
+    return {
+        id: 'orchestrator-acceptance',
+        state: 'APPROVED',
+        submittedAt: '2026-09-09T00:00:00Z',
+        author: { id: ORCHESTRATOR_USER_NODE_ID, login: 'jcosta33', __typename: 'User' },
+        commit: { oid: 'head' },
+    };
+}
+
 function stackedDeliveryPort(finalSettings: MergeSettings) {
     const captures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
@@ -392,6 +409,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                             },
                                             commit: { oid: 'head' },
                                         },
+                                        acceptanceReview(),
                                     ],
                                     pageInfo: { hasPreviousPage: false, startCursor: null },
                                 },
@@ -519,7 +537,9 @@ function shellPullRequest(snapshot: PullRequestSnapshot): Omit<PullRequestSnapsh
     };
 }
 
-function shellMergedByGraphql(mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User' } | null): string {
+function shellMergedByGraphql(
+    mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User'; id?: string } | null
+): string {
     return JSON.stringify({
         data: {
             repository: {
@@ -927,7 +947,11 @@ function fakePort(input: FakeInput = {}) {
             return (
                 reviewStateAfterReceipt ??
                 reviewStates.shift() ??
-                input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
+                input.review ?? {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                }
             );
         },
         dependents: (baseBranch) => {
@@ -970,7 +994,7 @@ function fakePort(input: FakeInput = {}) {
                 state: 'MERGED',
                 mergedByActorNodeId:
                     input.mergedByActorNodeIdAfterMerge === undefined
-                        ? AUTHOR_BOT_NODE_ID
+                        ? ORCHESTRATOR_USER_NODE_ID
                         : input.mergedByActorNodeIdAfterMerge,
                 ...input.mergedPrimaryAfterMerge,
             };
@@ -1169,7 +1193,7 @@ function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError 
     };
 
     try {
-        shellPort('jcosta33/sourdaw', shell).merge(42, 'head', false);
+        shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).merge(42, 'head', false);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             return error;
@@ -1251,10 +1275,10 @@ describe('pull-request delivery', () => {
         }
     });
 
-    it('queries bot review author IDs through a Bot fragment', () => {
-        const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+    it('queries review actor IDs through typed Bot and User fragments', () => {
+        const source = readFileSync(join(import.meta.dirname, '../pullRequestReviewState.ts'), 'utf8');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
-        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(1);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\} \.\.\. on User\{id\}\}/g)).toHaveLength(1);
     });
 
     it('completes the canonical Closes issue only after merge and dependent retargeting', () => {
@@ -1445,13 +1469,17 @@ describe('pull-request delivery', () => {
             dependentSets: [[]],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /not merged by the author App or orchestrator user/
+        );
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
         ]);
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /not merged by the author App or orchestrator user/
+        );
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
         expect(calls).not.toContain('merge:42:head');
     });
@@ -1687,7 +1715,9 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ state: 'MERGED', mergedByActorNodeId: actorNodeId })],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /not merged by the author App or orchestrator user/
+        );
         expect(calls).not.toContain('receipts:42');
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
@@ -1713,8 +1743,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1778,8 +1812,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1835,8 +1873,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1919,9 +1961,17 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], [], []],
             receipts: [
@@ -2416,8 +2466,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -2475,8 +2529,8 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyY }),
-                pullRequest({ state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
             ],
             dependentSets: [[], []],
         });
@@ -3655,9 +3709,9 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[], []],
@@ -5260,8 +5314,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -5303,16 +5361,32 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             reviewStates: [
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'CHANGES_REQUESTED', unresolvedThreads: 0 },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'CHANGES_REQUESTED',
+                    unresolvedThreads: 0,
+                },
             ],
             dependentSets: [[], [], [], []],
         });
@@ -5345,8 +5419,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -6008,13 +6086,30 @@ describe('pull-request delivery', () => {
         expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main']));
     });
 
-    it('refuses tracker completion when the post-merge snapshot names a foreign merger', () => {
-        const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: REVIEWER_BOT_NODE_ID });
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'refuses tracker completion when a fresh merge names bot %s',
+        (actor) => {
+            const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: actor });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /fresh merge was not performed by the orchestrator user/
+            );
 
-        expect(calls).toContain('merge:42:head');
-        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+            expect(calls).toContain('merge:42:head');
+            expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+        }
+    );
+
+    it.each([false, true])('requires acceptance at both validation points, later=%s', (later) => {
+        const approved = {
+            latestReviewerStateOnHead: 'APPROVED',
+            orchestratorAcceptedAfterReviewer: true,
+            unresolvedThreads: 0,
+        };
+        const absent = { ...approved, orchestratorAcceptedAfterReviewer: false };
+        const { port, calls, tracker } = fakePort({ reviewStates: later ? [approved, absent] : [absent] });
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow('requires orchestrator acceptance');
+        expect(calls.some((call) => call.startsWith('merge:') || call.startsWith('complete:'))).toBe(false);
     });
 
     it('rejects head drift during delivery', () => {
@@ -6178,14 +6273,22 @@ describe('pull-request delivery', () => {
     });
 
     it('rejects unresolved review before merge', () => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 } });
+        const { port, calls } = fakePort({
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 1,
+            },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review/);
         expect(calls).not.toContain('merge:42:head');
     });
 
     it('rejects missing reviewer approval on the current head', () => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: null, unresolvedThreads: 0 } });
+        const { port, calls } = fakePort({
+            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved by the required reviewer actor/);
         expect(calls).not.toContain('merge:42:head');
@@ -6194,8 +6297,12 @@ describe('pull-request delivery', () => {
     it('rejects reviewer approval drift between the first and second pre-merge checks', () => {
         const { port, calls } = fakePort({
             reviewStates: [
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
             ],
         });
 
@@ -6205,7 +6312,11 @@ describe('pull-request delivery', () => {
 
     it('rejects a review thread opened during receipt I/O at the post-receipt review check', () => {
         const { port, calls } = fakePort({
-            reviewStateOnReceiptRead: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
+            reviewStateOnReceiptRead: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 1,
+            },
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review thread/);
@@ -6223,7 +6334,9 @@ describe('pull-request delivery', () => {
     });
 
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
+        const { port, calls } = fakePort({
+            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: state, unresolvedThreads: 0 },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved/);
         expect(calls).not.toContain('merge:42:head');
@@ -7635,7 +7748,11 @@ describe('pull-request delivery', () => {
         const child = stacked();
         const sibling = stacked({ number: 44, headRefName: 'feat/sibling', headRefOid: 'sibling-head' });
         const { port, calls } = fakePort({
-            primary: [pullRequest(), pullRequest(), pullRequest({ state: 'MERGED' })],
+            primary: [
+                pullRequest(),
+                pullRequest(),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED' }),
+            ],
             dependentSets: [[child, sibling], [child, sibling], [sibling]],
             failRetargetOnce: 44,
         });
@@ -8947,7 +9064,10 @@ describe('delivery shell boundary', () => {
         expect(rollupCaptures(captures)).toHaveLength(1);
     });
 
-    it('queries and normalizes the immutable merged-by actor node ID', () => {
+    it.each([
+        { __typename: 'Bot' as const, id: AUTHOR_BOT_NODE_ID },
+        { __typename: 'User' as const, id: ORCHESTRATOR_USER_NODE_ID },
+    ])('normalizes the typed historical merger $id', (actor) => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (command, args) => {
@@ -8964,7 +9084,7 @@ describe('delivery shell boundary', () => {
                             'api',
                             'graphql',
                             '-f',
-                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}',
                             '-f',
                             'owner=jcosta33',
                             '-f',
@@ -8972,7 +9092,7 @@ describe('delivery shell boundary', () => {
                             '-F',
                             'number=42',
                         ].join('\u0000')
-                        ? shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID })
+                        ? shellMergedByGraphql(actor)
                         : shellMergedByGraphql({ __typename: 'Bot', id: REVIEWER_BOT_NODE_ID });
                 }
                 throw new Error(`unexpected capture: ${command} ${joined}`);
@@ -8980,13 +9100,13 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         });
 
-        expect(port.pullRequest(42).mergedByActorNodeId).toBe(AUTHOR_BOT_NODE_ID);
+        expect(port.pullRequest(42).mergedByActorNodeId).toBe(actor.id);
         expect(captures[0]?.args.join(' ')).toContain('mergedBy');
         expect(captures[1]?.args).toEqual([
             'api',
             'graphql',
             '-f',
-            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}',
             '-f',
             'owner=jcosta33',
             '-f',
@@ -9520,7 +9640,7 @@ describe('delivery shell boundary', () => {
             merger: 'foreign',
             shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
             graphQlMergedBy: { __typename: 'Bot' as const, id: REVIEWER_BOT_NODE_ID },
-            expectedError: /not merged by the author App/,
+            expectedError: /merger cannot be verified/,
         },
         {
             merger: 'null',
@@ -10131,6 +10251,7 @@ describe('delivery shell boundary', () => {
                                             },
                                             commit: { oid: 'head' },
                                         },
+                                        acceptanceReview(),
                                     ],
                                     hasPreviousPage: false,
                                     startCursor: null,
@@ -11058,6 +11179,7 @@ describe('delivery shell boundary', () => {
                                                 },
                                                 commit: { oid: 'head' },
                                             },
+                                            acceptanceReview(),
                                         ],
                                         pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
@@ -11100,9 +11222,13 @@ describe('delivery shell boundary', () => {
             },
             run: (command, args) => runs.push({ command, args }),
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
-        expect(port.reviewState(42, 'head')).toEqual({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 });
+        expect(port.reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: true,
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
         port.merge(42, 'head', false, 'feat(delivery): committed subject');
@@ -11203,7 +11329,7 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         try {
             port.merge(42, 'head', false);
@@ -11232,7 +11358,7 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         try {
             port.merge(42, 'head', false);
@@ -11329,7 +11455,7 @@ describe('delivery shell boundary', () => {
         }
     });
 
-    it('reads every review page before choosing the latest reviewer state on the expected head', () => {
+    it('reads every review page and refuses a later wrong-head reviewer approval', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
@@ -11382,8 +11508,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
-            latestReviewerStateOnHead: 'APPROVED',
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
+            latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
         expect(captures).toHaveLength(4);
@@ -11456,7 +11583,10 @@ describe('delivery shell boundary', () => {
                 run: () => undefined,
             };
 
-            expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            expect(
+                shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+            ).toEqual({
+                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
             });
@@ -11513,7 +11643,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -11560,7 +11691,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -11611,9 +11743,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1);
     });
 
@@ -11651,9 +11783,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove stable review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove stable review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11677,9 +11809,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11707,9 +11839,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11737,9 +11869,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
         expect(captures[1]).toContain('threadsAfter=later-threads');
     });
@@ -11766,9 +11898,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1_000);
     });
 
@@ -11805,7 +11937,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -11830,9 +11963,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1);
     });
 
@@ -11857,9 +11990,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
         expect(captures[1]).toContain(
             connection === 'review' ? 'reviewsBefore=same-review-cursor' : 'threadsAfter=same-thread-cursor'
@@ -11905,7 +12038,8 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -11950,7 +12084,8 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });

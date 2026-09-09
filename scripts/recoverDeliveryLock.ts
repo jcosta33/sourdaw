@@ -22,6 +22,7 @@ import {
     assertRequiredRepository,
     authenticateRole,
     isAuthorBotNodeId,
+    isOrchestratorUserNodeId,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
@@ -358,7 +359,7 @@ function assertRecoverableMergeActor(number: number, remote: JournaledRecoveryRe
         }
         return;
     }
-    if (!isAuthorBotNodeId(actorNodeId)) {
+    if (!isAuthorBotNodeId(actorNodeId) && !isOrchestratorUserNodeId(actorNodeId)) {
         fail(`PR #${number} was merged by ${actorNodeId}, which is not the author App`);
     }
 }
