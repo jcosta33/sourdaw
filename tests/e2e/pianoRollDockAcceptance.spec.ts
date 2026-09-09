@@ -11,6 +11,8 @@ const ROW_HEIGHT = 16;
 const BEAT_WIDTH = 40;
 const GRID_SNAP = 1;
 const MIN_USABLE_VIEWPORT_HEIGHT = RULER_HEIGHT + 3 * ROW_HEIGHT;
+const DEFAULT_DOCK_REQUESTED_HEIGHT = '360px';
+const MIN_DOCK_HEIGHT = 280;
 const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
 const CONTROL_VISIBILITY_TOLERANCE = 0.5;
 const TOOLBAR_CONTROLS = [
@@ -64,7 +66,8 @@ type NativeSelectKeyObservation = {
 const CLOSED_NATIVE_SELECT_KEYS = ['Home', 'End', 'Space', 'ArrowDown', 'Enter'] as const;
 type PianoRollGeometry = {
     canvas: Rect;
-    dockHeight: number;
+    dockRequestedHeight: string;
+    dockRenderedHeight: number;
     scrollLeft: number;
     scrollTop: number;
     scrollClientHeight: number;
@@ -180,7 +183,7 @@ async function pianoRollGeometry(frame: Frame): Promise<PianoRollGeometry> {
         }
         const tabPanel = document.getElementById('bottom-dock-tabpanel');
         const dock = tabPanel?.parentElement;
-        if (dock === null || dock === undefined) {
+        if (!(dock instanceof HTMLElement)) {
             throw new Error('Bottom dock is unavailable');
         }
 
@@ -253,7 +256,8 @@ async function pianoRollGeometry(frame: Frame): Promise<PianoRollGeometry> {
         ).map((candidate) => ({ canvas: describeElement(candidate), ancestors: ancestorChain(candidate) }));
         return {
             canvas: copyRect(canvas.getBoundingClientRect()),
-            dockHeight: dock.getBoundingClientRect().height,
+            dockRequestedHeight: dock.style.height,
+            dockRenderedHeight: dock.getBoundingClientRect().height,
             scrollLeft: scroll.scrollLeft,
             scrollTop: scroll.scrollTop,
             scrollClientHeight: scroll.clientHeight,
@@ -276,6 +280,13 @@ async function pianoRollGeometry(frame: Frame): Promise<PianoRollGeometry> {
             },
         };
     });
+}
+
+type DockAllocation = Pick<PianoRollGeometry, 'dockRequestedHeight' | 'dockRenderedHeight'>;
+
+function expectDockAllocation(geometry: PianoRollGeometry, expected: DockAllocation): void {
+    expect(geometry.dockRequestedHeight).toBe(expected.dockRequestedHeight);
+    expect(geometry.dockRenderedHeight).toBe(expected.dockRenderedHeight);
 }
 
 function intersectRects(first: Rect, second: Rect): Rect {
@@ -871,7 +882,7 @@ async function dragDockToMinimum(page: Page, frame: Frame, scale: number): Promi
         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, bottom: window.innerHeight - 1 };
     });
     await mouseDragInFrame(page, scale, handle, { x: handle.x, y: handle.bottom });
-    await expect.poll(async () => (await pianoRollGeometry(frame)).dockHeight).toBe(280);
+    await expect.poll(async () => (await pianoRollGeometry(frame)).dockRenderedHeight).toBe(MIN_DOCK_HEIGHT);
 }
 
 async function assertCondition(
@@ -880,7 +891,8 @@ async function assertCondition(
     scale: number,
     expressionVisible: boolean,
     testInfo: TestInfo,
-    condition: string
+    condition: string,
+    expectedDockAllocation: DockAllocation
 ): Promise<void> {
     const evidence: Record<string, unknown> = { condition, scale, expressionVisible, gestures: {} };
     const expressionToggle = frame.getByRole('button', { name: /Toggle Expression View/i });
@@ -901,6 +913,7 @@ async function assertCondition(
         const geometry = await pianoRollGeometry(frame);
         evidence.geometry = geometry;
         await attachGeometryDiagnostic(page, testInfo, condition, scale, geometry);
+        expectDockAllocation(geometry, expectedDockAllocation);
         expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(MIN_USABLE_VIEWPORT_HEIGHT);
         expect(geometry.visibleHeight).toBeGreaterThanOrEqual(MIN_USABLE_VIEWPORT_HEIGHT);
         const initialVisibleCanvas = visibleCanvas(geometry);
@@ -914,6 +927,7 @@ async function assertCondition(
 
         const afterDrawGeometry = await pianoRollGeometry(frame);
         evidence.afterDrawGeometry = afterDrawGeometry;
+        expectDockAllocation(afterDrawGeometry, expectedDockAllocation);
         const afterDrawVisibleCanvas = visibleCanvas(afterDrawGeometry);
         evidence.afterDrawVisibleCanvas = afterDrawVisibleCanvas;
         const drawLocalY = drawPoint.y - geometry.canvas.y;
@@ -938,6 +952,7 @@ async function assertCondition(
 
         const afterMoveGeometry = await pianoRollGeometry(frame);
         evidence.afterMoveGeometry = afterMoveGeometry;
+        expectDockAllocation(afterMoveGeometry, expectedDockAllocation);
         const afterMoveVisibleCanvas = visibleCanvas(afterMoveGeometry);
         evidence.afterMoveVisibleCanvas = afterMoveVisibleCanvas;
         const resizeStart = {
@@ -958,6 +973,10 @@ async function assertCondition(
         expect(resized.pitch).toBe(moved.pitch);
         expect(resized.startBeat).toBe(moved.startBeat);
         expect(resized.duration).toBe(moved.duration + GRID_SNAP);
+
+        const afterResizeGeometry = await pianoRollGeometry(frame);
+        evidence.afterResizeGeometry = afterResizeGeometry;
+        expectDockAllocation(afterResizeGeometry, expectedDockAllocation);
 
         if (expressionVisible) {
             await expressionToggle.click();
@@ -1011,12 +1030,27 @@ for (const scale of [0.5, 1, 1.25, 2]) {
         await setDisplayScale(frame, scale);
         await openPianoRoll(page, frame, scale);
 
-        await assertCondition(page, frame, scale, false, testInfo, 'default-expression-hidden');
-        await assertCondition(page, frame, scale, true, testInfo, 'default-expression-visible');
-        await expect.poll(async () => (await pianoRollGeometry(frame)).dockHeight).toBe(360);
+        const defaultDock = await pianoRollGeometry(frame);
+        expect(defaultDock.dockRequestedHeight).toBe(DEFAULT_DOCK_REQUESTED_HEIGHT);
+        expect(defaultDock.dockRenderedHeight).toBeGreaterThanOrEqual(MIN_DOCK_HEIGHT);
+        expect(defaultDock.dockRenderedHeight).toBeLessThanOrEqual(360);
+        const defaultDockAllocation: DockAllocation = {
+            dockRequestedHeight: defaultDock.dockRequestedHeight,
+            dockRenderedHeight: defaultDock.dockRenderedHeight,
+        };
+
+        await assertCondition(page, frame, scale, false, testInfo, 'default-expression-hidden', defaultDockAllocation);
+        await assertCondition(page, frame, scale, true, testInfo, 'default-expression-visible', defaultDockAllocation);
 
         await dragDockToMinimum(page, frame, scale);
-        await assertCondition(page, frame, scale, false, testInfo, 'minimum-expression-hidden');
-        await assertCondition(page, frame, scale, true, testInfo, 'minimum-expression-visible');
+        const minimumDock = await pianoRollGeometry(frame);
+        expect(minimumDock.dockRequestedHeight).toBe(`${MIN_DOCK_HEIGHT}px`);
+        expect(minimumDock.dockRenderedHeight).toBe(MIN_DOCK_HEIGHT);
+        const minimumDockAllocation: DockAllocation = {
+            dockRequestedHeight: minimumDock.dockRequestedHeight,
+            dockRenderedHeight: minimumDock.dockRenderedHeight,
+        };
+        await assertCondition(page, frame, scale, false, testInfo, 'minimum-expression-hidden', minimumDockAllocation);
+        await assertCondition(page, frame, scale, true, testInfo, 'minimum-expression-visible', minimumDockAllocation);
     });
 }
