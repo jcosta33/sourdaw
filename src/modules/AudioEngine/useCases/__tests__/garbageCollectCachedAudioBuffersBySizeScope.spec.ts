@@ -84,18 +84,21 @@ describe('size-based cache collection lock ownership', () => {
         expect(controls.committed.has('ordinary')).toBe(false);
     });
 
-    it('rejects an expired scoped collector before it opens storage', async () => {
+    it('collects through an authentic active scope', async () => {
+        seedOrdinaryBuffer();
+        await withProjectAudioStorageLock(async (scope) => {
+            await expect(garbageCollectAudioBufferCacheBySize(0, scope)).resolves.toBe(1);
+        });
+        expect(controls.committed.has('ordinary')).toBe(false);
+        expect(durableOwnershipProvider).toHaveBeenCalledOnce();
+    });
+
+    it('rejects an expired scoped collector before durable ownership or storage access', async () => {
         seedOrdinaryBuffer();
         let expiredScope: ProjectAudioStorageLockScope | undefined;
         await withProjectAudioStorageLock(async (scope) => {
-            await expect(garbageCollectAudioBufferCacheBySize(0, scope)).resolves.toBe(1);
-            expect(controls.committed.has('ordinary')).toBe(false);
-        });
-        await withProjectAudioStorageLock(async (scope) => {
             expiredScope = scope;
         });
-        controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
-        seedOrdinaryBuffer();
         durableOwnershipProvider.mockClear();
         if (!expiredScope) {
             throw new TypeError('Expected the owner to mint a storage scope');
