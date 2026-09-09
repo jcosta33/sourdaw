@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
@@ -26,6 +26,11 @@ const renderQueueValue = vi.hoisted(() => ({
 }));
 const toggleCollaborationPanelMock = vi.hoisted(() => vi.fn());
 const toggleUndoHistoryMock = vi.hoisted(() => vi.fn());
+const originalInnerWidth = window.innerWidth;
+
+const setViewportWidth = (width: number): void => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+};
 
 vi.mock('#/infra/store/useStore', () => ({
     // Distinguish the two useStore calls by their default-value argument:
@@ -79,6 +84,11 @@ describe('StatusBar', () => {
         renderQueueValue.entries = [];
         toggleCollaborationPanelMock.mockClear();
         toggleUndoHistoryMock.mockClear();
+        setViewportWidth(1440);
+    });
+
+    afterAll(() => {
+        setViewportWidth(originalInnerWidth);
     });
 
     describe('master output readout', () => {
@@ -90,6 +100,56 @@ describe('StatusBar', () => {
 
             expect(screen.getByText('n/a')).toBeInTheDocument();
             expect(screen.queryByText('-∞ dB')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('responsive status disclosure', () => {
+        it('keeps essential device status direct and defers the remaining status controls at the measured boundary', () => {
+            setViewportWidth(1199);
+            renderWithTooltip(<StatusBar />);
+
+            expect(screen.getByRole('button', { name: 'More application status' })).toBeInTheDocument();
+            expect(screen.getByText('Rate', { exact: true })).toBeInTheDocument();
+            expect(screen.getByText('Latency', { exact: true })).toBeInTheDocument();
+            expect(screen.getByTitle('Engine: suspended')).toBeInTheDocument();
+            expect(screen.queryByText('UI CPU', { exact: true })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Project links' })).not.toBeInTheDocument();
+        });
+
+        it('makes deferred metrics and actions reachable through one disclosure', async () => {
+            setViewportWidth(1199);
+            renderWithTooltip(<StatusBar />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'More application status' }));
+            const details = screen.getByRole('dialog', { name: 'More application status' });
+
+            for (const label of ['UI CPU', 'MEM', 'AI Model', 'Out']) {
+                expect(details).toHaveTextContent(label);
+            }
+            expect(screen.getByRole('button', { name: 'Third-party licenses' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Project links' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Toggle collaboration panel' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Toggle undo history panel' })).toBeInTheDocument();
+
+            fireEvent.pointerDown(screen.getByRole('button', { name: 'Project links' }), { pointerId: 1 });
+            await waitFor(() => {
+                expect(screen.getByRole('menuitem', { name: 'Source' })).toBeInTheDocument();
+            });
+        });
+
+        it('closes the inactive disclosure and restores footer focus across the admission boundary', () => {
+            setViewportWidth(1199);
+            renderWithTooltip(<StatusBar />);
+            const more = screen.getByRole('button', { name: 'More application status' });
+            fireEvent.click(more);
+
+            setViewportWidth(1200);
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            expect(screen.queryByRole('dialog', { name: 'More application status' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Project links' })).toHaveFocus();
         });
     });
 
