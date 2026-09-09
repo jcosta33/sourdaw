@@ -26,7 +26,6 @@ jobs:
       BUILD_WORKFLOW_SHA: ${{ github.workflow_sha }}
       BUILD_RUN_ID: ${{ github.run_id }}
       BUILD_RUN_ATTEMPT: ${{ github.run_attempt }}
-      BUILD_OUTPUT_DIRECTORY: ${{ runner.temp }}/qualified-wasm-artifacts
     steps:
       - name: Checkout source head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,6 +62,8 @@ jobs:
 
       - name: Build and qualify complete artifact
         if: steps.plan.outputs.selected == 'true'
+        env:
+          BUILD_OUTPUT_DIRECTORY: ${{ runner.temp }}/qualified-wasm-artifacts
         run: pnpm wasm:hosted build
 
       - name: Upload qualified artifact

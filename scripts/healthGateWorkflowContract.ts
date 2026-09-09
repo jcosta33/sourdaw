@@ -460,19 +460,20 @@ export function assertWorkflowSnapshotMatch(recorded: WorkflowSnapshot, fresh: W
     }
 }
 
-export function assertHostedWasmWorkflow(value: unknown): void {
-    function record(candidate: unknown): Record<string, unknown> {
-        if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
-            throw new Error('Invalid hosted WASM workflow mapping');
-        }
-        return Object.fromEntries(Object.keys(candidate).map((key) => [key, Reflect.get(candidate, key)]));
+function readHostedWasmWorkflowMapping(candidate: unknown): Record<string, unknown> {
+    if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+        throw new Error('Invalid hosted WASM workflow mapping');
     }
+    return Object.fromEntries(Object.keys(candidate).map((key) => [key, Reflect.get(candidate, key)]));
+}
+
+export function assertHostedWasmWorkflow(value: unknown): void {
     function requireEqual(actual: unknown, expected: unknown, label: string): void {
         if (JSON.stringify(actual) !== JSON.stringify(expected)) {
             throw new Error(`Hosted WASM workflow must retain ${label}`);
         }
     }
-    const workflow = record(value);
+    const workflow = readHostedWasmWorkflowMapping(value);
     requireEqual(
         workflow.on,
         { pull_request: { branches: ['main'], types: ['opened', 'synchronize', 'reopened'] } },
@@ -484,9 +485,9 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         { group: 'wasm-artifacts-${{ github.event.pull_request.number }}', 'cancel-in-progress': true },
         'bounded PR concurrency'
     );
-    const jobs = record(workflow.jobs);
+    const jobs = readHostedWasmWorkflowMapping(workflow.jobs);
     requireEqual(Object.keys(jobs), ['build-artifacts'], 'the standalone job');
-    const job = record(jobs['build-artifacts']);
+    const job = readHostedWasmWorkflowMapping(jobs['build-artifacts']);
     requireEqual(job.name, 'Build WASM artifacts', 'its distinct check name');
     requireEqual(job['runs-on'], 'ubuntu-latest', 'a standard hosted runner');
     requireEqual(job['timeout-minutes'], 45, 'its timeout');
@@ -496,7 +497,7 @@ export function assertHostedWasmWorkflow(value: unknown): void {
     if (!Array.isArray(job.steps)) {
         throw new TypeError('Hosted WASM workflow has no steps');
     }
-    const steps = job.steps.map(record);
+    const steps = job.steps.map(readHostedWasmWorkflowMapping);
     requireEqual(
         steps.map((step) => step.name),
         STEP_INVENTORY['wasm-artifacts.yml']?.['build-artifacts'],
@@ -520,6 +521,11 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         named('Build and qualify complete artifact').run,
         'pnpm wasm:hosted build',
         'complete build and provenance qualification'
+    );
+    requireEqual(
+        named('Build and qualify complete artifact').env,
+        { BUILD_OUTPUT_DIRECTORY: '${{ runner.temp }}/qualified-wasm-artifacts' },
+        'the private qualified directory in the runner-bound build step'
     );
     requireEqual(
         named('Upload qualified artifact').uses,
@@ -549,13 +555,9 @@ export function assertHostedWasmWorkflow(value: unknown): void {
             'selection-only build conditions'
         );
     }
-    const env = record(job.env);
+    const env = readHostedWasmWorkflowMapping(job.env);
     requireEqual(env.BUILD_HEAD_SHA, '${{ github.event.pull_request.head.sha }}', 'head-bound provenance');
-    requireEqual(
-        env.BUILD_OUTPUT_DIRECTORY,
-        '${{ runner.temp }}/qualified-wasm-artifacts',
-        'the private qualified directory'
-    );
+    requireEqual(env.BUILD_OUTPUT_DIRECTORY, undefined, 'no job-level output directory');
     if (JSON.stringify(workflow).includes('secrets.')) {
         throw new Error('Hosted WASM workflow must not consume secrets');
     }

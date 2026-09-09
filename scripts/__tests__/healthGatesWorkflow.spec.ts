@@ -1686,6 +1686,19 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 }
 
 describe('health gates workflow contract', () => {
+    it('resolves the hosted WASM output directory only after a runner is assigned', () => {
+        const job = jobAt(hostedWasm, 'build-artifacts');
+        expect(recordAt(job, 'env').BUILD_OUTPUT_DIRECTORY).toBeUndefined();
+        expect(recordAt(stepNamed(job, 'Build and qualify complete artifact'), 'env')).toEqual({
+            BUILD_OUTPUT_DIRECTORY: '${{ runner.temp }}/qualified-wasm-artifacts',
+        });
+
+        const invalidJobEnvironment = structuredClone(hostedWasm);
+        recordAt(jobAt(invalidJobEnvironment, 'build-artifacts'), 'env').BUILD_OUTPUT_DIRECTORY =
+            '${{ runner.temp }}/qualified-wasm-artifacts';
+        expect(() => assertHostedWasmWorkflow(invalidJobEnvironment)).toThrow('no job-level output directory');
+    });
+
     it('keeps hosted WASM generation unprivileged, head-bound and complete', () => {
         expect(() => assertHostedWasmWorkflow(hostedWasm)).not.toThrow();
         const gate = structuredClone(hostedWasm);

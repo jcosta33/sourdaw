@@ -1945,8 +1945,7 @@
           "BUILD_WORKFLOW_REF": "${{ github.workflow_ref }}",
           "BUILD_WORKFLOW_SHA": "${{ github.workflow_sha }}",
           "BUILD_RUN_ID": "${{ github.run_id }}",
-          "BUILD_RUN_ATTEMPT": "${{ github.run_attempt }}",
-          "BUILD_OUTPUT_DIRECTORY": "${{ runner.temp }}/qualified-wasm-artifacts"
+          "BUILD_RUN_ATTEMPT": "${{ github.run_attempt }}"
         },
         "steps": [
           {
@@ -1993,6 +1992,9 @@
           {
             "name": "Build and qualify complete artifact",
             "if": "steps.plan.outputs.selected == 'true'",
+            "env": {
+              "BUILD_OUTPUT_DIRECTORY": "${{ runner.temp }}/qualified-wasm-artifacts"
+            },
             "run": "pnpm wasm:hosted build"
           },
           {
