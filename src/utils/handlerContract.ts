@@ -888,6 +888,20 @@ type GeneratedMidiReplayOperation =
           notes: MidiClipNoteSnapshot[];
       };
 
+/**
+ * Content-bound authority over gesture automation recording for one static
+ * parameter edit. A fader ride and a model-proposed "set this parameter" reach
+ * the same setter, and the setter decides from live transport and automation
+ * mode alone — so an edit issued while the transport plays in write/touch/latch
+ * would open or extend a recording pass and let the next loop wrap or stop
+ * flush it over the lane. `'suppressed'` travels with the command's own
+ * arguments (runtime schema, digest, content hash, persisted undo entry) so the
+ * decision cannot drift from the edit it belongs to, and so undo, redo and
+ * replay of that edit stay equally silent. Absent means the ordinary manual
+ * gesture behaviour.
+ */
+export type AutomationRecordingPolicy = 'suppressed';
+
 export type AppAction =
     | {
           type: 'importStemSet';
@@ -1306,6 +1320,7 @@ export type AppAction =
               expectedTrackFrozen?: boolean;
               /** Internal replay flag: restore the parameter map to an absent property. */
               deleteParameter?: boolean;
+              automationRecordingPolicy?: AutomationRecordingPolicy;
           };
       }
     | {
@@ -1639,8 +1654,24 @@ export type AppAction =
       }
     | { type: 'scaleAllVelocities'; payload: { clipId: string; factor: number } }
     | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
-    | { type: 'setTrackGain'; payload: { trackId: string; gain: number; expectedGain: number } }
-    | { type: 'setTrackPan'; payload: { trackId: string; pan: number; expectedPan: number } }
+    | {
+          type: 'setTrackGain';
+          payload: {
+              trackId: string;
+              gain: number;
+              expectedGain: number;
+              automationRecordingPolicy?: AutomationRecordingPolicy;
+          };
+      }
+    | {
+          type: 'setTrackPan';
+          payload: {
+              trackId: string;
+              pan: number;
+              expectedPan: number;
+              automationRecordingPolicy?: AutomationRecordingPolicy;
+          };
+      }
     | { type: 'setTrackColor'; payload: { trackId: string; color: string; expectedColor?: string } }
     | { type: 'copyClip'; payload?: undefined }
     | { type: 'cutClip'; payload?: undefined }

@@ -1,13 +1,14 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AutomationRecordingPolicy, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
 import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/setDeviceParameter';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -84,25 +85,25 @@ function executionGuardsMatch(
 }
 
 function handleGuardedSetDeviceParameter(
-    action: { payload: { deviceId: string; paramId: string; value: number; deleteParameter?: boolean } },
+    action: {
+        payload: {
+            deviceId: string;
+            paramId: string;
+            value: number;
+            deleteParameter?: boolean;
+            automationRecordingPolicy?: AutomationRecordingPolicy;
+        };
+    },
     context?: HandlerValidationContext
 ) {
     if (!executionGuardsMatch(action)) {
         return { status: 'conflict' as const };
     }
-    let didWrite: boolean;
-    if (action.payload.deleteParameter) {
-        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
-            deleteParameter: true,
-            ...(context?.executionMode === 'isolated-preview' ? { projectOnly: true } : {}),
-        });
-    } else if (context?.executionMode === 'isolated-preview') {
-        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
-            projectOnly: true,
-        });
-    } else {
-        didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value);
-    }
+    const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
+        ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
+        ...(context?.executionMode === 'isolated-preview' ? { projectOnly: true } : {}),
+        automationRecordingPolicy: action.payload.automationRecordingPolicy,
+    });
     return toHandlerExecutionResult(didWrite);
 }
 
@@ -159,7 +160,12 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         action.payload.expectedValuePresent !== undefined,
     validate: (action, context) => executionGuardsMatch(action, context),
     prepareAbort: (action) => {
-        const rollbackAutomationRecording = captureAutomationRecordingRollback();
+        // A suppressed edit cannot reach the recording maps, so snapshotting and
+        // restoring them would only be able to discard a pass some other writer
+        // legitimately owns. The runtime parameter rollback below is unaffected:
+        // the engine write happens under either policy.
+        const rollbackAutomationRecording =
+            action.payload.automationRecordingPolicy === 'suppressed' ? null : captureAutomationRecordingRollback();
         const owner = getTrackStoreState()?.tracks.find((track) =>
             track.devices.some((device) => device.id === action.payload.deviceId)
         );
@@ -172,7 +178,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                   ?.defaultValue
             : undefined;
         return () => {
-            const effects: Array<() => void> = [rollbackAutomationRecording];
+            const effects: Array<() => void> = rollbackAutomationRecording ? [rollbackAutomationRecording] : [];
             const runtimeRollbackValue = previousValue ?? defaultValue;
             if (owner && runtimeRollbackValue !== undefined) {
                 effects.unshift(() => {
@@ -197,6 +203,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         };
     },
     execute: handleGuardedSetDeviceParameter,
+    validateSessionEntry: sessionEntryAgreesOnAutomationRecordingPolicy,
     isNoop: (action) => {
         if (!executionGuardsMatch(action)) {
             return false;
@@ -236,6 +243,10 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                   value: alpha.payload.value,
               })
             : undefined;
+        // Both replay legs inherit the forward policy: undoing or redoing a
+        // static edit is still not a knob gesture.
+        const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
+        const carriedPolicy = automationRecordingPolicy === undefined ? {} : { automationRecordingPolicy };
         return {
             label: exactLabel ?? `Set ${alpha.payload.paramId}`,
             inverseAction:
@@ -257,6 +268,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                               expectedValuePresent: true,
                               ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
                               ...(expectedPreviousValuePresent ? {} : { deleteParameter: true }),
+                              ...carriedPolicy,
                           },
                       }
                     : null,
@@ -278,6 +290,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                               expectedValue: expectedPreviousValuePresent ? expectedPreviousValue : undefined,
                               expectedValuePresent: expectedPreviousValuePresent,
                               ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
+                              ...carriedPolicy,
                           },
                       }
                     : undefined,

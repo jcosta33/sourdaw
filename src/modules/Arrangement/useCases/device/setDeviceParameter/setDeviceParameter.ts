@@ -1,6 +1,7 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clampDeviceParameterValue, isInternalDeviceParameter } from '../../../models/DeviceParameterLaw';
 import { getTrackState } from '../../../repositories/track/getTrackState';
@@ -13,6 +14,11 @@ const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 
 type SetDeviceParameterOptions = {
     deleteParameter?: boolean;
     projectOnly?: boolean;
+    /**
+     * Independent of `projectOnly`: a suppressed write still reaches the audio
+     * engine, it just is not a gesture and so opens no recording pass.
+     */
+    automationRecordingPolicy?: AutomationRecordingPolicy;
 };
 
 export function setDeviceParameter(
@@ -84,9 +90,15 @@ export function setDeviceParameter(
         }),
     }));
 
-    // Record automation if playing in a recording mode
+    // Record automation if playing in a recording mode, unless this write
+    // declares itself a static edit rather than a gesture.
     const transport = transportStore.value;
-    if (!options.projectOnly && transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
+    if (
+        !options.projectOnly &&
+        options.automationRecordingPolicy !== 'suppressed' &&
+        transport?.isPlaying &&
+        RECORDING_MODES.has(track.automationMode)
+    ) {
         recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, transport.playheadPosition);
     }
 

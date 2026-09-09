@@ -165,6 +165,21 @@ describe('setDeviceParameter', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('writes engine and project but records nothing when the edit suppresses the recording policy', () => {
+        const track = makeTrack('t1');
+        track.automationMode = 'write';
+        setTrackState([track]);
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        const didWrite = setDeviceParameter('d1', 'cutoff', 1000, { automationRecordingPolicy: 'suppressed' });
+
+        expect(didWrite).toBe(true);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 1000);
+        const updater = mocks.updateTrack.mock.calls[0]![1];
+        expect(updater(track).devices[0]).toMatchObject({ id: 'd1', parameterValues: { cutoff: 1000 } });
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+    });
+
     it('bails if value is not finite', () => {
         const didWrite = setDeviceParameter('d1', 'gain', NaN);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();

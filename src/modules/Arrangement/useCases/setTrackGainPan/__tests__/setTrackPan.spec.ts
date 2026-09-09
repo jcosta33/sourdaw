@@ -120,6 +120,29 @@ describe('setTrackPan', () => {
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -0.2, 10);
     });
 
+    it('writes engine and store but records nothing when the edit suppresses the recording policy', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackPan('t1', -10, false, { automationRecordingPolicy: 'suppressed' });
+
+        expect(mocks.engineSetTrackPan).toHaveBeenCalledWith('t1', -10);
+        const updater = mocks.updateTrack.mock.calls[0]![1] as (t: { pan: number }) => { pan: number };
+        expect(updater({ pan: 0 })).toEqual({ pan: -10 });
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+    });
+
+    it('records nothing from a suppressed transient change while playing in write mode', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackPan('t1', -10, true, { automationRecordingPolicy: 'suppressed' });
+
+        expect(mocks.engineSetTrackPan).toHaveBeenCalledWith('t1', -10);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+    });
+
     it('records nothing from a transient change while the transport is stopped', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: false };
