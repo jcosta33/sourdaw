@@ -5092,6 +5092,263 @@ const schemaDefinitions = [
         required: ['clipId', 'semitones'],
         additionalProperties: false,
     },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            paramId: 0,
+            value: 1,
+            expectedValue: 1,
+        },
+        required: ['processorId', 'paramId', 'value'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'note',
+    },
+    {
+        type: 'literal',
+        value: 'rest',
+    },
+    {
+        type: 'literal',
+        value: 'tie',
+    },
+    {
+        type: 'literal',
+        value: 'chord',
+    },
+    {
+        anyOf: [84, 624, 625, 626, 627],
+    },
+    {
+        type: 'literal',
+        value: 'next',
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 629,
+        },
+        required: ['type'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'previous',
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 631,
+        },
+        required: ['type'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'index',
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 633,
+            index: 1,
+        },
+        required: ['type', 'index'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 84,
+        },
+        required: ['type'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'lowest',
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 636,
+        },
+        required: ['type'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'highest',
+    },
+    {
+        type: 'object',
+        properties: {
+            type: 638,
+        },
+        required: ['type'],
+        additionalProperties: false,
+    },
+    {
+        anyOf: [630, 632, 634, 635, 637, 639],
+    },
+    {
+        type: 'object',
+        properties: {
+            active: 42,
+            stepType: 628,
+            noteSelector: 640,
+            velocity: 1,
+            velocityOverride: 42,
+            gateMul: 1,
+            octaveOffset: 1,
+            semitoneOffset: 1,
+            probability: 1,
+            ratchet: 1,
+        },
+        required: [
+            'active',
+            'stepType',
+            'noteSelector',
+            'velocity',
+            'velocityOverride',
+            'gateMul',
+            'octaveOffset',
+            'semitoneOffset',
+            'probability',
+            'ratchet',
+        ],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 641,
+    },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            steps: 642,
+            expectedSteps: 642,
+        },
+        required: ['processorId', 'steps'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            bypassed: 42,
+            expectedBypassed: 42,
+        },
+        required: ['processorId', 'bypassed', 'expectedBypassed'],
+        additionalProperties: false,
+    },
+    {
+        type: 'literal',
+        value: 'chordMemory',
+    },
+    {
+        type: 'literal',
+        value: 'scale',
+    },
+    {
+        type: 'literal',
+        value: 'harmonizer',
+    },
+    {
+        type: 'literal',
+        value: 'repeater',
+    },
+    {
+        type: 'literal',
+        value: 'velocity',
+    },
+    {
+        type: 'literal',
+        value: 'humanizer',
+    },
+    {
+        type: 'literal',
+        value: 'transposer',
+    },
+    {
+        type: 'literal',
+        value: 'groove',
+    },
+    {
+        type: 'literal',
+        value: 'ccGenerator',
+    },
+    {
+        type: 'literal',
+        value: 'euclidean',
+    },
+    {
+        type: 'literal',
+        value: 'markov',
+    },
+    {
+        type: 'literal',
+        value: 'mutation',
+    },
+    {
+        anyOf: [412, 578, 627, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656],
+    },
+    {
+        type: 'object',
+        properties: {
+            id: 0,
+            type: 657,
+            name: 0,
+            bypassed: 42,
+            params: 208,
+        },
+        required: ['id', 'type', 'name', 'bypassed'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            processor: 658,
+            atIndex: 1,
+        },
+        required: ['processor', 'atIndex'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            type: 657,
+            name: 0,
+            restore: 659,
+        },
+        required: ['processorId', 'type', 'name'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            expectedProcessor: 658,
+            expectedIndex: 1,
+        },
+        required: ['processorId', 'expectedProcessor', 'expectedIndex'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            processorId: 0,
+            toIndex: 1,
+            expectedOrder: 20,
+        },
+        required: ['processorId', 'toIndex', 'expectedOrder'],
+        additionalProperties: false,
+    },
 ] as const satisfies readonly SchemaDefinition[];
 
 const schemaIdByActionType = {
@@ -5431,6 +5688,12 @@ const schemaIdByActionType = {
     enableWarping: 171,
     setWarpAlgorithm: 621,
     setWarpPitchShift: 622,
+    setYeastProcessorParam: 623,
+    setYeastArpPattern: 643,
+    setYeastProcessorBypass: 644,
+    addYeastProcessor: 660,
+    removeYeastProcessor: 661,
+    reorderYeastProcessor: 662,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
