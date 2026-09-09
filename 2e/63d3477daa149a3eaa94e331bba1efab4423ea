@@ -1,0 +1,49 @@
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_6edc456d0959c9 23-25
+src/modules/Transport/useCases/transportControls/startSchedulerWhenNativeSessionSettles.ts
+  s_9b530f08172a54::t_fca9e3ff36ab65 66
+  s_9b530f08172a54::t_4b13fd8f08454f 20,28-33,36
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_9b530f08172a54::t_cd97c5522adf3c 150-151
+  s_9b530f08172a54::t_9bf34fe004afd0 134-137
+  s_9b530f08172a54::t_13284946a882ee 49
+  s_9b530f08172a54::t_114d78048ceb33 366-461
+src/modules/Transport/useCases/transportControls/togglePlayback.ts
+  s_9b530f08172a54::t_3d22cc748f5ac1 15
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_9b530f08172a54::t_32d7793fa6046a 292-295,303-308,310-313
+  s_9b530f08172a54::t_b77f4588da5aaf 10
+  s_9b530f08172a54::t_690592a72b5a44 397,399-405
+  s_9b530f08172a54::t_3aedb52f31cfa9 362-384
+src/modules/Transport/useCases/transportControls/setPlayback.ts
+  s_9b530f08172a54::t_510c91a003c94e 13
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_33241aceb3efd1 7-8
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_9b530f08172a54::t_c260529e14d042 209
+  s_9b530f08172a54::t_eef84dc246ddc4 115-116,119-124
+  s_9b530f08172a54::t_51c8004eba49ed 66
+  s_9b530f08172a54::t_9580fa27fb965a 27-38
+  s_9b530f08172a54::t_dae206eca81656 61-65
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_9dcdaf4b248e2a 81
+  s_9b530f08172a54::t_2eeb4eeb914d16 17-24
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_8555987892eb08 237-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2e63d3477daa149a3eaa94e331bba1efab4423ea",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
