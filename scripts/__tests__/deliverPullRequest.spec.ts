@@ -1470,7 +1470,7 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-            /not merged by the author App or orchestrator user/
+            /fresh merge was not performed by the orchestrator user/
         );
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
@@ -1484,13 +1484,13 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('recovers a stable final author-App merge without re-reviewing or merging again', () => {
+    it('recovers a stable final orchestrator-user merge without re-reviewing or merging again', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
             ],
             dependentSets: [[child], [child]],
         });
@@ -1627,7 +1627,7 @@ describe('pull-request delivery', () => {
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
-    it('recovers a final UNKNOWN refresh that becomes a merged author-App head without re-reviewing', () => {
+    it('recovers a final UNKNOWN refresh that becomes a merged orchestrator-user head without re-reviewing', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
@@ -1638,7 +1638,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[child], [child]],
@@ -1654,6 +1654,33 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
     });
 
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'refuses a raced bot merge %s before recovery effects',
+        (actor) => {
+            const closes = relationshipBody('Closes #2372');
+            const child = stacked();
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({ body: closes }),
+                    pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: actor }),
+                ],
+                dependentSets: [[child], [child]],
+            });
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                'fresh merge was not performed by the orchestrator user'
+            );
+            expect(
+                calls.some(
+                    (call) =>
+                        call.startsWith('retarget:') ||
+                        call.startsWith('complete:') ||
+                        call.startsWith('receipt-authority:write:terminal:') ||
+                        call.startsWith('receipt-authority:write:merge-authorized:')
+                )
+            ).toBe(false);
+        }
+    );
+
     it('fails closed when the final refresh is already merged on a different closing target than the armed receipt', () => {
         const closesX = relationshipBody('Closes #2372');
         const closesY = relationshipBody('Closes #2373');
@@ -1663,7 +1690,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closesY,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -1685,7 +1712,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -2552,8 +2579,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -2605,11 +2632,11 @@ describe('pull-request delivery', () => {
             const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
                 primary: [
                     pullRequest({ body: closes }),
-                    pullRequest({ state: 'MERGED', body: closes }),
+                    pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                     pullRequest({
                         state: 'MERGED',
                         body: closes,
-                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                         ...mergedPrimaryAfterRecovery,
                     }),
                 ],
@@ -2692,8 +2719,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[], []],
         });
@@ -2734,8 +2761,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closesY }),
-                pullRequest({ state: 'MERGED', body: closesX }),
-                pullRequest({ state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
             ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
@@ -2795,8 +2822,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -4797,11 +4824,11 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ state: 'CLOSED', body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[], [], []],

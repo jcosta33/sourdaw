@@ -2623,6 +2623,12 @@ function completeIssueAfterMerge(
     }
 }
 
+function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
+    if (!isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} fresh merge was not performed by the orchestrator user`);
+    }
+}
+
 function validateHistoricalMerger(pullRequest: PullRequestSnapshot): void {
     if (
         pullRequest.state !== 'MERGED' ||
@@ -2730,6 +2736,7 @@ function deliverPullRequestWithCiAdmission(
         port
     );
     if (finalSnapshot.state === 'MERGED') {
+        validateFreshMerger(finalSnapshot);
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
@@ -2834,9 +2841,7 @@ function deliverPullRequestWithCiAdmission(
         throw error;
     }
     const mergedSnapshot = port.pullRequest(number);
-    if (!isOrchestratorUserNodeId(mergedSnapshot.mergedByActorNodeId)) {
-        fail(`PR #${number} fresh merge was not performed by the orchestrator user`);
-    }
+    validateFreshMerger(mergedSnapshot);
     validatePostMergeSnapshot(
         persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
         mergedSnapshot,

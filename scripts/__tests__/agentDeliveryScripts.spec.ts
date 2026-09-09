@@ -740,7 +740,7 @@ describe('package scripts and gitignore', () => {
         const final = pullRequestSnapshot({
             state: 'MERGED',
             mergeable: 'UNKNOWN',
-            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+            mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
         });
         const dependentBefore: StackedPullRequest = {
             number: 2601,
@@ -3130,6 +3130,11 @@ describe('package scripts and gitignore', () => {
             clearDeliveryReceiptAuthority: () => undefined,
             log: () => undefined,
         };
+        const orchestratorSession = {
+            env: { GH_TOKEN: 'user-merge-sentinel' },
+            configDir: '/orchestrator-only',
+            dispose: () => undefined,
+        };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
@@ -3149,7 +3154,7 @@ describe('package scripts and gitignore', () => {
             },
             authenticateOrchestrator: async () => ({
                 minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
+                session: orchestratorSession,
             }),
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
@@ -3157,7 +3162,9 @@ describe('package scripts and gitignore', () => {
                 seen.push(`repository:${session.env.GH_TOKEN ?? ''}`);
                 return 'jcosta33/sourdaw';
             },
-            deliveryPort: (_repository, auth) => {
+            deliveryPort: (_repository, auth, _root, _markAttempt, mergeSession) => {
+                expect(mergeSession).toBe(orchestratorSession);
+                expect(mergeSession).not.toBe(auth.session);
                 seen.push(`delivery:${auth.session.env.GH_TOKEN ?? ''}`);
                 return deliveryPort;
             },
