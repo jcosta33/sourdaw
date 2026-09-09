@@ -1,0 +1,43 @@
+src/modules/AudioEngine/useCases/__tests__/garbageCollectCachedAudioBuffers.spec.ts
+  s_87ab0a2f60ccf8::t_2a788c9071fabf 14-17,25-29,35,58-59
+  s_87ab0a2f60ccf8::t_45ef3c9e25b1d1 7-8,60-61,66-67
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_0b96d5d9e70039 3118-3122,3125-3157,3159-3179,3181-3186,3188-3201,3207-3208
+  s_87ab0a2f60ccf8::t_47fed86bb7fe10 3116
+src/modules/AudioEngine/useCases/garbageCollectCachedAudioBuffersBySize.ts
+  s_87ab0a2f60ccf8::t_0b96d5d9e70039 1-4,12,15-24
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_87ab0a2f60ccf8::t_39d92aaee1b1b7 13,24-25,759,816
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_37ee3773e60488 23,150-151,203,234,273-276,904,1232-1235
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheLifecycle.spec.ts
+  s_87ab0a2f60ccf8::t_16c524bc65ae18 10,22-23,603,621
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_87ab0a2f60ccf8::t_90cdd4f8322e99 68-69,71,74,76,104,137,157,177,185,205,235,266,282,299,324,329,339,343,357,377,403,456,480,499,519,537,560,575,588,622
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWaveform.spec.ts
+  s_87ab0a2f60ccf8::t_06d237ee5f7b3c 10,19-20,479
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWriteObservation.spec.ts
+  s_87ab0a2f60ccf8::t_fb8886404b7ab7 43-44,46,49,51,77,100,117,141,170,197,221,236,252,257,266,270
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRecovery.spec.ts
+  s_87ab0a2f60ccf8::t_5d530fd70b3e54 23,39-40,184,208,288,351,494,560,615
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_87ab0a2f60ccf8::t_04cd679e454e1f 21,58-59,1373-1374,1465
+src/modules/AudioEngine/useCases/__tests__/garbageCollectCachedAudioBuffersBySizeScope.spec.ts
+  s_87ab0a2f60ccf8::t_b3cc08a8a12195 1-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0fb024c067cdc79c80cae1b1ee3e3f8947a53832",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
