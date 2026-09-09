@@ -228,7 +228,7 @@ function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEve
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
             author.ts <= callback.ts ||
-            intervalEnd(author) >= intervalEnd(callback)
+            intervalEnd(author) > intervalEnd(callback)
         ) {
             return 'outer callback lacks one unambiguous contained author execution';
         }

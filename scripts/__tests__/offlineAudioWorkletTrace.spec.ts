@@ -17,19 +17,19 @@ type FixtureEvent = {
     args: Record<string, unknown>;
 };
 
-function callback(ts: number, outerDuration: number): FixtureEvent[] {
+function callback(ts: number, outerDuration: number, pid = 1, tid = 2, handlerThis = '0x1'): FixtureEvent[] {
     return [
         {
             name: HANDLER,
             ph: 'X',
             ts,
             dur: outerDuration + 4,
-            pid: 1,
-            tid: 2,
-            args: { 'node type': 'AudioWorkletNode', this: '0x1' },
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: ts + 1, dur: outerDuration + 2, pid: 1, tid: 2, args: {} },
-        { name: AUTHOR, ph: 'X', ts: ts + 2, dur: outerDuration, pid: 1, tid: 2, args: {} },
+        { name: OUTER, ph: 'X', ts: ts + 1, dur: outerDuration + 2, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: ts + 2, dur: outerDuration, pid, tid, args: {} },
     ];
 }
 
@@ -60,6 +60,28 @@ function withoutName(events: readonly FixtureEvent[], name: string, timestamp: n
     return events.filter((event) => event.name !== name || event.ts !== timestamp);
 }
 
+function observedEqualEndpointTrace(authorDuration = 10): FixtureEvent[] {
+    const pid = 4024;
+    const tid = 4032;
+    const handlerThis = '0x123c006da700';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 425_593_194,
+            dur: 19,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 425_593_196, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 425_593_201, dur: authorDuration, pid, tid, args: {} },
+        ...callback(425_593_230, 3, pid, tid, handlerThis),
+        ...callback(425_593_250, 8, pid, tid, handlerThis),
+        ...callback(425_593_280, 12, pid, tid, handlerThis),
+    ];
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -72,6 +94,24 @@ describe('offline AudioWorklet trace admission', () => {
             measuredDurationsUs: [5, 10],
             terminalDurationUs: 14,
             bareHandlers: 1,
+        });
+    });
+
+    it('admits the observed equal author/outer endpoint and refuses a one-microsecond overrun', () => {
+        expect(admission(observedEqualEndpointTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 4024,
+            tid: 4032,
+            handlerThis: '0x123c006da700',
+            warmupDurationsUs: [15],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualEndpointTrace(11))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
         });
     });
 
