@@ -1,0 +1,39 @@
+public/wasm/manifest.json
+  s_87ab0a2f60ccf8::t_e6dadeb43912bb 26,29-32,34-35,40,43-46,48-49
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_87ab0a2f60ccf8::t_5252a0c00856f4 1,15,29,49,55
+public/wasm/proof-chamber/proof_chamber.js
+  s_87ab0a2f60ccf8::t_2498f4390ad9a2 25-31,87-88
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_87ab0a2f60ccf8::t_46d096effa9d58 1,8,14
+public/wasm/scoring/scoring.d.ts
+  s_87ab0a2f60ccf8::t_6cfa69f2364030 1,11,51,73,87
+public/wasm/scoring/scoring.js
+  s_87ab0a2f60ccf8::t_5e3e78329e8683 35-41,168-169
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_87ab0a2f60ccf8::t_fe75db83795318 1,10,24
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_87ab0a2f60ccf8::t_f56dab01441792 1,15,29,49,55
+src/modules/AudioEngine/wasm/proof_chamber.js
+  s_87ab0a2f60ccf8::t_5e940ec214d32c 202-208,264-265
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_87ab0a2f60ccf8::t_fb57b00f1f7e37 1,11,51,73,87
+src/modules/AudioEngine/wasm/scoring.js
+  s_87ab0a2f60ccf8::t_a64249e88bdc7a 212-218,345-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "104f43b361b569c0431af9f7c88949bb32caba5a",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
