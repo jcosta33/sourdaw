@@ -1,0 +1,60 @@
+.github/workflows/wasm-artifacts.yml
+  s_87ab0a2f60ccf8::t_65426b74a50240 1-75
+scripts/__tests__/hostedWasmArtifacts.spec.ts
+  s_87ab0a2f60ccf8::t_9e5a7eebe9d430 1-4,7-8,48-49,61-63,67-69,77-79,83-94,105-119,129,137,141-142,158-163,170-178,184-192,212,214,231-233,237-244,251-278,288-289,324-326,377-380,384-388,404-407,432
+  s_87ab0a2f60ccf8::t_7c5967d92aeb22 345-360,375
+  s_87ab0a2f60ccf8::t_016371bffc1dc0 6,9-18,21-23,50-60,64-66,70-76,80-82,95-104,120-128,130-136,138-140,143-157,164-169,179-183,193-211,213,215-230,234-236,245-250,279-287,290-323,327-344,361-374,376,381-383,389-403,408-431,433-470
+  s_87ab0a2f60ccf8::t_0a3fc4b4d0ceea 5,19-20,24-47,471
+package.json
+  s_87ab0a2f60ccf8::t_65426b74a50240 90-91
+scripts/test-health-gate-scripts.sh
+  s_87ab0a2f60ccf8::t_9e40ca1ee45dc3 954,1472
+  s_87ab0a2f60ccf8::t_8cb53ce7b90d4d 185,198-199,1005,1407
+  s_87ab0a2f60ccf8::t_67077d0d708b3b 983
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_8cb53ce7b90d4d 17,309,317,1689-1696
+  s_87ab0a2f60ccf8::t_2b8b189e982cfd 892
+  s_87ab0a2f60ccf8::t_26420c7d66f48c 318-324,396,887-891,893,896,906,935,1697-1712,2312
+scripts/hostedWasmZip.ts
+  s_87ab0a2f60ccf8::t_08910bdbf0f5ca 1-138
+  s_87ab0a2f60ccf8::t_dc75b2a8053f31 139-141
+  s_8e35f8d780faba::t_030f626e3480d9 142-191
+scripts/hostedWasmArtifacts.ts
+  s_87ab0a2f60ccf8::t_c36b49442c8c81 1-2,15-17,19-22,24-28,30-89,106-109,117-175,180-187,191-192,194-203,205-212,214-250,255-258,264-296,305-322,324-346,504,543-551,556-560,567-571
+  s_87ab0a2f60ccf8::t_7c5967d92aeb22 297-304,323,424,499
+  s_87ab0a2f60ccf8::t_72814600074371 90-92,100-105,193
+  s_87ab0a2f60ccf8::t_dd4e0b759cd344 347-361,363-397,404-408,410-419,423,425,439-443,466,477-480,482-486,488-498,500-503,505,523-526,541-542
+  s_87ab0a2f60ccf8::t_3f97d4852c5ca8 3-14,18,23,29,93-99,110-116,176-179,188-190,204,213,251-254,259-263,362,398-403,409,420-422,426-438,444-465,467-476,481,487,506-522,527-540,552-555,561-566
+  s_87ab0a2f60ccf8::t_980bb981c0f1ec 572-586
+scripts/healthGateWorkflowContract.ts
+  s_87ab0a2f60ccf8::t_e1ef6505216d55 39,64,71-82,381,462-510
+  s_87ab0a2f60ccf8::t_4b76e0ae26f2b5 2,17,19,511-562
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_87ab0a2f60ccf8::t_9e40ca1ee45dc3 36-51
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_87ab0a2f60ccf8::t_a7ff8698b8525c 6-7,1913-2011
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5e54b3be6e91a466fd2668658a6f0b6cea17fb42",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8e35f8d780faba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a083e3-bc76-7bb0-a21d-903efd798d41",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
