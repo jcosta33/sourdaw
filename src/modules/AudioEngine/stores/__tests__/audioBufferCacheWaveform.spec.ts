@@ -140,6 +140,8 @@ function installFakeIndexedDb(): FakeBacking {
     const metaStore = makeStore(metaBacking);
     const recoveryStore = makeStore(recoveryBacking);
     const retentionStore = makeStore(retentionBacking);
+    const checkpointVersionStore = makeStore(new Map<IDBValidKey, unknown>());
+    const checkpointVersionMetaStore = makeStore(new Map<IDBValidKey, unknown>());
     function storeFor(name: string) {
         if (name === 'buffers') {
             return objectStore;
@@ -152,6 +154,12 @@ function installFakeIndexedDb(): FakeBacking {
         }
         if (name === 'checkpointRetentions') {
             return retentionStore;
+        }
+        if (name === 'checkpointAudioVersions') {
+            return checkpointVersionStore;
+        }
+        if (name === 'checkpointAudioVersionMeta') {
+            return checkpointVersionMetaStore;
         }
         throw new Error(`Unexpected IndexedDB object store: ${name}`);
     }

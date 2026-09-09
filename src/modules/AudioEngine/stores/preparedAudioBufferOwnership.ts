@@ -1,3 +1,5 @@
+import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
+
 export type PreparedAudioBufferOwner = {
     schemaVersion: 1;
     createdAtMs?: number;
@@ -15,12 +17,8 @@ export type PreparedAudioBufferMetadata = {
     sizeInBytes: number;
 };
 
-export type PreparedSerializedAudioBuffer = {
-    sampleRate: number;
-    numberOfChannels: number;
-    channelData: Float32Array[];
+export type PreparedSerializedAudioBuffer = SerializedAudioBuffer & {
     lastAccessed: number;
-    sizeInBytes: number;
 };
 
 export type PreparedAudioBufferRecoveryMetadata = {
@@ -104,34 +102,11 @@ export function readPreparedAudioRecoveryRecord(value: unknown): PreparedAudioBu
     return recovery as PreparedAudioBufferRecoveryRecord;
 }
 
-function isFloat32Array(value: unknown): value is Float32Array {
-    return Object.prototype.toString.call(value) === '[object Float32Array]';
-}
-
 export function isValidPreparedSerializedAudioBuffer(data: unknown): data is PreparedSerializedAudioBuffer {
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-        return false;
-    }
-    const candidate = data as Record<string, unknown>;
-    const channelData = candidate.channelData;
-    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
-        return false;
-    }
-    const length = channelData[0]?.length ?? 0;
-    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
     return (
-        typeof candidate.sampleRate === 'number' &&
-        Number.isFinite(candidate.sampleRate) &&
-        candidate.sampleRate > 0 &&
-        typeof candidate.numberOfChannels === 'number' &&
-        Number.isInteger(candidate.numberOfChannels) &&
-        candidate.numberOfChannels > 0 &&
-        length > 0 &&
-        channelData.length === candidate.numberOfChannels &&
-        channelData.every((channel) => channel.length === length) &&
-        typeof candidate.lastAccessed === 'number' &&
-        Number.isFinite(candidate.lastAccessed) &&
-        candidate.sizeInBytes === sizeInBytes
+        isValidSerializedAudioBuffer(data) &&
+        typeof (data as Record<string, unknown>).lastAccessed === 'number' &&
+        Number.isFinite((data as Record<string, unknown>).lastAccessed)
     );
 }
 
