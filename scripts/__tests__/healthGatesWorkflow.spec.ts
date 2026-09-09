@@ -307,6 +307,23 @@ const SHARD_FAILURE_REPORT_CONDITION = "${{ !cancelled() && steps.run_shard.outc
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
 const DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
 const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`;
+// The decide job's changed-paths filter lists a pull request's files through
+// the GitHub REST API on its shallow checkout, and that API intermittently
+// answers 500 (#3592). The first attempt may fail softly so the retry step can
+// re-run the identical filter; `Resolve scope` coalesces the retry's verdicts
+// first and refuses an empty one, so a persistent API failure fails the job
+// instead of reading as an all-false scope that silently skips every lane.
+const PATHS_FILTER_ACTION = 'dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d';
+const PATHS_FILTER_FIRST_ATTEMPT_STEP = 'Filter changed paths';
+const PATHS_FILTER_RETRY_STEP = 'Retry changed-paths filter after a transient API failure';
+const PATHS_FILTER_RETRY_CONDITION = "steps.filter.outcome == 'failure'";
+const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
+    ['RUST', 'rust'],
+    ['SERVER', 'server'],
+    ['E2E', 'e2e'],
+    ['WEB', 'web'],
+    ['UNCLASSIFIED', 'unclassified'],
+];
 // Every step condition in the registered workflows, keyed by file, job, and step
 // name. A step condition is legitimate only when it is one of these exact,
 // individually pinned exceptions — the shard-failure reporters, the blob
@@ -323,6 +340,12 @@ const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
             condition: "steps.plan.outputs.selected == 'true'",
         })
     ),
+    {
+        workflow: 'validation.yml',
+        job: 'decide',
+        step: PATHS_FILTER_RETRY_STEP,
+        condition: PATHS_FILTER_RETRY_CONDITION,
+    },
     {
         workflow: 'validation.yml',
         job: 'unit',
@@ -366,6 +389,14 @@ const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         step,
         condition: DEPLOY_CHANGED_REVISION_CONDITION,
     })),
+];
+// The one continue-on-error the lane admits. The first filter attempt defers
+// to the retry that re-runs it, and `Resolve scope` fails the job when neither
+// attempt produced verdicts, so this softening defers to a louder failure
+// rather than swallowing one.
+type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
+const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
+    { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
@@ -554,6 +585,49 @@ function assertUnclassifiedFallback(candidate: UnknownRecord): void {
     const metadata = exempt.find((pattern) => pattern.includes('.github'));
     if (metadata !== undefined) {
         throw new Error(`repository metadata is machine-read and must not be exempt: ${metadata}`);
+    }
+}
+
+// The decide filter runs twice by design: a transient changed-files API
+// failure must not fail the job, yet a persistent one must. The first attempt
+// may fail softly only because the retry re-runs the identical filter, and
+// `Resolve scope` coalesces the retry's verdicts first and refuses one neither
+// attempt produced — drop any of those legs and an API outage either blocks
+// Gate again or reads as an all-false scope that silently skips every lane.
+function assertDecideFilterRetryContract(candidate: UnknownRecord): void {
+    const decide = jobAt(candidate, 'decide');
+    const firstAttempt = stepNamed(decide, PATHS_FILTER_FIRST_ATTEMPT_STEP);
+    if (firstAttempt.id !== 'filter') {
+        throw new Error('the first paths-filter attempt must retain the filter step id its retry keys on');
+    }
+    if (firstAttempt['continue-on-error'] !== true) {
+        throw new Error(
+            'the first paths-filter attempt must continue on error so its retry can absorb a transient API failure'
+        );
+    }
+    if (firstAttempt.uses !== PATHS_FILTER_ACTION) {
+        throw new Error('the first paths-filter attempt must stay on its pinned action revision');
+    }
+    const retry = stepNamed(decide, PATHS_FILTER_RETRY_STEP);
+    if (retry.id !== 'filter-retry') {
+        throw new Error(
+            'the retry paths-filter attempt must retain the filter-retry step id the scope coalescing reads'
+        );
+    }
+    if (retry.if !== PATHS_FILTER_RETRY_CONDITION) {
+        throw new Error('the retry must run exactly when the first paths-filter attempt failed');
+    }
+    if (retry.uses !== PATHS_FILTER_ACTION) {
+        throw new Error('the retry must pin the same paths-filter action revision as the first attempt');
+    }
+    if (JSON.stringify(retry.with) !== JSON.stringify(firstAttempt.with)) {
+        throw new Error("the retry must duplicate the first attempt's filter options verbatim");
+    }
+    const scopeEnv = recordAt(stepNamed(decide, 'Resolve scope'), 'env');
+    for (const [name, output] of PATHS_FILTER_VERDICT_ENV) {
+        if (scopeEnv[name] !== `\${{ steps.filter-retry.outputs.${output} || steps.filter.outputs.${output} }}`) {
+            throw new Error(`the ${name} verdict must coalesce the retry attempt before the first attempt`);
+        }
     }
 }
 
@@ -963,8 +1037,13 @@ function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
 // proved, and one on any step reports that step green whatever it ran. The
 // position-enumerated pins above each cover one named job or step; the sweep
 // covers every job in every file, because a softened leg reports a failing
-// proof as a passing summary wherever it lands.
+// proof as a passing summary wherever it lands. The single pinned exception is
+// the first paths-filter attempt, whose softening only hands the question to
+// its retry and the Resolve scope verdict guard.
 function assertNoContinueOnError(set: WorkflowSet): void {
+    const pins = new Map(
+        CONTINUE_ON_ERROR_STEP_PINS.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
+    );
     for (const [file, candidate] of workflowFiles(set)) {
         for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
             const job = asRecord(jobValue, `${file} job ${jobId}`);
@@ -972,8 +1051,13 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 throw new Error(`${file} job ${jobId} must not continue on error`);
             }
             for (const step of jobSteps(file, jobId, job)) {
-                if (step['continue-on-error'] !== undefined) {
-                    throw new Error(`${stepLabel(file, jobId, step)} must not continue on error`);
+                if (step['continue-on-error'] === undefined) {
+                    continue;
+                }
+                const label = stepLabel(file, jobId, step);
+                const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (pin === undefined || step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must not continue on error`);
                 }
             }
         }
@@ -2006,6 +2090,74 @@ describe('health gates workflow contract', () => {
         expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
     });
 
+    it('retries a transient changed-paths API failure and refuses to resolve an empty verdict', () => {
+        expect(() => assertDecideFilterRetryContract(validationWorkflow)).not.toThrow();
+
+        // A real verdict resolves the scope whatever produced it; an empty
+        // verdict — both attempts failed or never ran — must fail the script
+        // rather than read as false and skip every lane under a green job.
+        const scopeScript = assertScopeContract(validationWorkflow);
+        expect(runScopeScript(scopeScript, 'pull_request')).toEqual({
+            heavy: 'false',
+            rust: 'false',
+            server: 'false',
+            e2e: 'false',
+            web: 'false',
+            code: 'false',
+        });
+        for (const [name] of PATHS_FILTER_VERDICT_ENV) {
+            expect(() => runScopeScript(scopeScript, 'pull_request', { [name]: '' })).toThrow('No scope verdict');
+        }
+
+        // Mutation-kill: a first attempt that fails the job on a transient 500
+        // blocks Gate again, and a retry carrying its own softening would
+        // report green whatever it ran.
+        const hardenedFirstAttempt = asRecord(structuredClone(validationWorkflow), 'hardened first filter attempt');
+        delete stepNamed(jobAt(hardenedFirstAttempt, 'decide'), PATHS_FILTER_FIRST_ATTEMPT_STEP)['continue-on-error'];
+        expect(() => assertDecideFilterRetryContract(hardenedFirstAttempt)).toThrow(
+            'the first paths-filter attempt must continue on error so its retry can absorb a transient API failure'
+        );
+        const softenedRetry = cloneWorkflows('softened retry filter attempt');
+        stepNamed(jobAt(softenedRetry.validation, 'decide'), PATHS_FILTER_RETRY_STEP)['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedRetry)).toThrow(
+            `validation.yml job decide step ${PATHS_FILTER_RETRY_STEP} must not continue on error`
+        );
+
+        // Mutation-kill: a retry gated on anything but the first attempt's
+        // failure either never runs or runs on every outcome.
+        const widenedRetry = asRecord(structuredClone(validationWorkflow), 'widened retry condition');
+        stepNamed(jobAt(widenedRetry, 'decide'), PATHS_FILTER_RETRY_STEP).if = '${{ !cancelled() }}';
+        expect(() => assertDecideFilterRetryContract(widenedRetry)).toThrow(
+            'the retry must run exactly when the first paths-filter attempt failed'
+        );
+
+        // Mutation-kill: a retry from a different action revision is an
+        // unpinned action in the required lane.
+        const driftingRetry = asRecord(structuredClone(validationWorkflow), 'drifting retry action');
+        stepNamed(jobAt(driftingRetry, 'decide'), PATHS_FILTER_RETRY_STEP).uses = 'dorny/paths-filter@main';
+        expect(() => assertDecideFilterRetryContract(driftingRetry)).toThrow(
+            'the retry must pin the same paths-filter action revision as the first attempt'
+        );
+
+        // Mutation-kill: a retry that filters differently resolves the scope
+        // from rules no pin reads.
+        const divergingRetry = asRecord(structuredClone(validationWorkflow), 'diverging retry filters');
+        recordAt(stepNamed(jobAt(divergingRetry, 'decide'), PATHS_FILTER_RETRY_STEP), 'with')['predicate-quantifier'] =
+            'some';
+        expect(() => assertDecideFilterRetryContract(divergingRetry)).toThrow(
+            "the retry must duplicate the first attempt's filter options verbatim"
+        );
+
+        // Mutation-kill: reading the first attempt alone reverts to failing
+        // the job on the transient API failure this retry exists to absorb.
+        const firstAttemptOnlyEnv = asRecord(structuredClone(validationWorkflow), 'first-attempt-only verdict env');
+        recordAt(stepNamed(jobAt(firstAttemptOnlyEnv, 'decide'), 'Resolve scope'), 'env').RUST =
+            '${{ steps.filter.outputs.rust }}';
+        expect(() => assertDecideFilterRetryContract(firstAttemptOnlyEnv)).toThrow(
+            'the RUST verdict must coalesce the retry attempt before the first attempt'
+        );
+    });
+
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -2255,6 +2407,14 @@ describe('health gates workflow contract', () => {
         removeStepNamed(jobAt(orphanedPin.validation, 'unit'), 'Report shard failure');
         expect(() => assertUnconditionalSteps(orphanedPin)).toThrow(
             'validation.yml job unit step Report shard failure must carry its pinned condition'
+        );
+
+        // Mutation-kill: the retry's condition drifting from its pin decides
+        // when the filter re-runs while every other pin stays green.
+        const widenedRetryCondition = cloneWorkflows('widened retry filter condition');
+        stepNamed(jobAt(widenedRetryCondition.validation, 'decide'), PATHS_FILTER_RETRY_STEP).if = 'false';
+        expect(() => assertUnconditionalSteps(widenedRetryCondition)).toThrow(
+            `validation.yml job decide step ${PATHS_FILTER_RETRY_STEP} must retain its pinned condition`
         );
 
         // Mutation-kill: widening the build condition runs the production

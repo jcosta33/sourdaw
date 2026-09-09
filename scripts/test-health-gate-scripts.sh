@@ -958,7 +958,15 @@ expect(
 // proved, and one on any step reports that step green whatever it ran. The
 // pins above each cover one named job or step; this sweep covers every job in
 // every file, because a softened leg reports a failing proof as a passing
-// summary wherever it lands.
+// summary wherever it lands. The single exception is the first changed-paths
+// filter attempt: its softening only hands the question to its retry step and
+// to the Resolve scope verdict guard, which fail the job when neither attempt
+// produced verdicts.
+expect(
+    stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
+    'the first changed-paths filter attempt must continue on error so its retry can absorb a transient API failure'
+);
+const continueOnErrorStepPins = new Set(['validation.ymldecideFilter changed paths']);
 for (const [file, parsed] of [
     ['health-gates.yml', workflow],
     ['validation.yml', validationWorkflow],
@@ -973,8 +981,11 @@ for (const [file, parsed] of [
             `${file} job ${id} must not continue on error, which would conclude the leg success whatever it proved`
         );
         for (const step of job?.steps ?? []) {
+            if (step?.['continue-on-error'] === undefined) {
+                continue;
+            }
             expect(
-                step?.['continue-on-error'] === undefined,
+                step?.['continue-on-error'] === true && continueOnErrorStepPins.has(`${file}${id}${step?.name}`),
                 `${file} job ${id} step ${step?.name ?? '<unnamed>'} must not continue on error, which would report the step green whatever it ran`
             );
         }
@@ -1420,6 +1431,7 @@ expect(
 // condition while every other pin stays green.
 const allowedStepConditions = [
     ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map((step) => ['wasm-artifacts.yml', 'build-artifacts', step, "steps.plan.outputs.selected == 'true'"]),
+    ['validation.yml', 'decide', 'Retry changed-paths filter after a transient API failure', "steps.filter.outcome == 'failure'"],
     ['validation.yml', 'unit', 'Report shard failure', shardFailureCondition],
     ['heavy-gates.yml', 'e2e', 'Report shard failure', shardFailureCondition],
     ['heavy-gates.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],

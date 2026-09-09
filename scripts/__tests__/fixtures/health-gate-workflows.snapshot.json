@@ -415,6 +415,17 @@
           {
             "name": "Filter changed paths",
             "id": "filter",
+            "continue-on-error": true,
+            "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
+            "with": {
+              "predicate-quantifier": "some-with-excludes",
+              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+            }
+          },
+          {
+            "name": "Retry changed-paths filter after a transient API failure",
+            "id": "filter-retry",
+            "if": "steps.filter.outcome == 'failure'",
             "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
             "with": {
               "predicate-quantifier": "some-with-excludes",
@@ -426,13 +437,13 @@
             "id": "scope",
             "env": {
               "EVENT": "${{ github.event_name }}",
-              "RUST": "${{ steps.filter.outputs.rust }}",
-              "SERVER": "${{ steps.filter.outputs.server }}",
-              "E2E": "${{ steps.filter.outputs.e2e }}",
-              "WEB": "${{ steps.filter.outputs.web }}",
-              "UNCLASSIFIED": "${{ steps.filter.outputs.unclassified }}"
+              "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
+              "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
+              "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
+              "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
+              "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },

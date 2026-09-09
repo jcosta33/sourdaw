@@ -109,7 +109,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         gate: ['Require every job to have succeeded or been skipped'],
     },
     'validation.yml': {
-        decide: ['Checkout', 'Filter changed paths', 'Resolve scope'],
+        decide: [
+            'Checkout',
+            'Filter changed paths',
+            'Retry changed-paths filter after a transient API failure',
+            'Resolve scope',
+        ],
         static: [
             'Checkout',
             'Enable Corepack',
