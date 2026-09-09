@@ -1,0 +1,29 @@
+scripts/hostedWasmArtifacts.ts
+  s_87ab0a2f60ccf8::t_8f2c56c630c124 27,37-38
+scripts/__tests__/hostedWasmArtifacts.spec.ts
+  s_8e35f8d780faba::t_5f54c54e147954 51,60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f9638750c81844236ef0c20797b01f18dbddceb8",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8e35f8d780faba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a083e3-bc76-7bb0-a21d-903efd798d41",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
