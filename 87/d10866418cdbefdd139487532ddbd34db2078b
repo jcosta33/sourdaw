@@ -1,0 +1,31 @@
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_9b530f08172a54::t_47acc508e7c819 1-2,20
+  s_9b530f08172a54::t_4297a688e3fa1d 403
+  s_9b530f08172a54::t_448890d0bfbb14 3
+  s_9b530f08172a54::t_ce6dc3ff58a33d 306-308,310-312,314-345,348-349,351,361-362,366,379-380,382-383,387-402,404-415
+  s_9b530f08172a54::t_75fb2c94d1c12a 416-448,450-452
+scripts/desktopLatencyConnect.ts
+  s_9b530f08172a54::t_85b83f4fa5f986 294-299,302
+  s_9b530f08172a54::t_767f8159a75843 37
+scripts/desktopLatencyReadings.ts
+  s_9b530f08172a54::t_9eecb2563aa58a 83-98,100-104
+  s_9b530f08172a54::t_810205d7ed44a7 115,119
+  s_9b530f08172a54::t_94e1e922fe5538 117
+  s_9b530f08172a54::t_d509163388a073 116,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "87d10866418cdbefdd139487532ddbd34db2078b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
