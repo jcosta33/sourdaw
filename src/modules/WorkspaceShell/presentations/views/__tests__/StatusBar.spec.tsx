@@ -137,7 +137,7 @@ describe('StatusBar', () => {
             });
         });
 
-        it('closes the inactive disclosure and restores footer focus across the admission boundary', () => {
+        it('closes the inactive disclosure and restores footer focus across the admission boundary', async () => {
             setViewportWidth(1199);
             renderWithTooltip(<StatusBar />);
             const more = screen.getByRole('button', { name: 'More application status' });
@@ -149,7 +149,29 @@ describe('StatusBar', () => {
             });
 
             expect(screen.queryByRole('dialog', { name: 'More application status' })).not.toBeInTheDocument();
-            expect(screen.getByRole('button', { name: 'Project links' })).toHaveFocus();
+            await waitFor(() => {
+                expect(screen.getByRole('button', { name: 'Project links' })).toHaveFocus();
+            });
+        });
+
+        it('keeps unrelated focus outside the footer through a mode change', () => {
+            setViewportWidth(1200);
+            renderWithTooltip(
+                <>
+                    <button type="button">Outside footer</button>
+                    <StatusBar />
+                </>
+            );
+            const outsideFooter = screen.getByRole('button', { name: 'Outside footer' });
+            outsideFooter.focus();
+
+            setViewportWidth(1199);
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            expect(outsideFooter).toHaveFocus();
+            expect(screen.getByRole('button', { name: 'More application status' })).not.toHaveFocus();
         });
     });
 

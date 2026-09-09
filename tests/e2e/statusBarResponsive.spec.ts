@@ -1,4 +1,4 @@
-import { expect, test, type Frame, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Frame, type FrameLocator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
@@ -40,7 +40,7 @@ async function findApplicationFrame(page: Page): Promise<Frame> {
     return frame;
 }
 
-async function openPreferences(app: Locator, frame: Frame): Promise<void> {
+async function openPreferences(app: FrameLocator, frame: Frame): Promise<void> {
     const compactTransport = await frame.evaluate(() => window.innerWidth <= 1199);
     if (compactTransport) {
         await app.getByRole('button', { name: 'View and panel controls' }).click();
@@ -50,7 +50,7 @@ async function openPreferences(app: Locator, frame: Frame): Promise<void> {
     await app.getByRole('button', { name: 'Open Preferences' }).click();
 }
 
-async function setDisplayScale(app: Locator, frame: Frame, scale: number): Promise<void> {
+async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<void> {
     await openPreferences(app, frame);
     const dialog = app.getByRole('dialog').filter({ hasText: /Preferences/i });
     await expect(dialog).toBeVisible();
@@ -66,7 +66,7 @@ async function setDisplayScale(app: Locator, frame: Frame, scale: number): Promi
     await dialog.getByRole('button', { name: 'Done', exact: true }).click();
 }
 
-async function runPaletteCommand(page: Page, app: Locator, label: string): Promise<void> {
+async function runPaletteCommand(page: Page, app: FrameLocator, label: string): Promise<void> {
     await page.keyboard.press(`${MODIFIER}+k`);
     const palette = app.getByRole('dialog', { name: /Command Palette/i });
     await expect(palette).toBeVisible();
@@ -296,3 +296,83 @@ for (const scale of [0.5, 1, 1.25, 2]) {
         }
     });
 }
+
+test('restores focus from portaled Project Links items after each mode change at 2 UI scale', async ({
+    page,
+}, testInfo) => {
+    test.setTimeout(240_000);
+    const evidence: Record<string, unknown> = { outerViewport: OUTER_VIEWPORT, scale: 2 };
+    await page.setViewportSize(OUTER_VIEWPORT);
+    const alphaDismissed = superjsonStringify(true);
+    await page.addInitScript((dismissed) => {
+        if (window.parent !== window) {
+            return;
+        }
+        window.localStorage.clear();
+        window.localStorage.setItem('wd:onboarding-completed', '1');
+        window.localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
+        window.localStorage.setItem('wd:first-load-hint-shown', '1');
+    }, alphaDismissed);
+
+    try {
+        await page.goto('/');
+        const frame = await findApplicationFrame(page);
+        const app = page.frameLocator('iframe[title="Sourdaw"]');
+        await expect(app.getByLabel('Sourdaw — start a project')).toBeVisible({
+            timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+        });
+        await app.locator('#launch-new-project').click();
+        await expect(app.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
+        await setDisplayScale(app, frame, 2);
+
+        const more = app.getByRole('button', { name: 'More application status' });
+        await more.click();
+        const details = app.getByRole('dialog', { name: 'More application status' });
+        const projectLinks = details.getByRole('button', { name: 'Project links' });
+        await projectLinks.click();
+        const source = app.getByRole('menuitem', { name: 'Source' });
+        await expect(source).toBeVisible();
+        await projectLinks.press('ArrowDown');
+        await expect(source).toBeFocused();
+
+        await page.setViewportSize({ width: 2400, height: OUTER_VIEWPORT.height });
+        evidence.effectiveWidth = await frame.evaluate(() => window.innerWidth);
+        await expect.poll(() => frame.evaluate(() => window.innerWidth)).toBe(1200);
+        await expect(source).toHaveCount(0);
+        await expect(details).toHaveCount(0);
+        evidence.focusAfterResize = await frame.evaluate(() => {
+            const active = document.activeElement;
+            return active instanceof HTMLElement
+                ? {
+                      ariaLabel: active.getAttribute('aria-label'),
+                      tagName: active.tagName,
+                      text: active.textContent?.trim() ?? '',
+                  }
+                : null;
+        });
+        const expandedProjectLinks = app.getByRole('button', { name: 'Project links' });
+        await expect(expandedProjectLinks).toBeFocused();
+
+        await expandedProjectLinks.click();
+        await expect(source).toBeVisible();
+        await page.keyboard.press('ArrowDown');
+        await expect(source).toBeFocused();
+        await page.setViewportSize(OUTER_VIEWPORT);
+        evidence.effectiveWidthAfterCompactResize = await frame.evaluate(() => window.innerWidth);
+        await expect.poll(() => frame.evaluate(() => window.innerWidth)).toBe(575);
+        await expect(source).toHaveCount(0);
+        await expect(app.getByRole('dialog', { name: 'More application status' })).toHaveCount(0);
+        evidence.focusAfterCompactResize = await frame.evaluate(() => {
+            const active = document.activeElement;
+            return active instanceof HTMLElement
+                ? { ariaLabel: active.getAttribute('aria-label'), tagName: active.tagName }
+                : null;
+        });
+        await expect(app.getByRole('button', { name: 'More application status' })).toBeFocused();
+    } finally {
+        await testInfo.attach('portaled-focus-mode-change', {
+            body: Buffer.from(JSON.stringify(evidence, null, 2)),
+            contentType: 'application/json',
+        });
+    }
+});

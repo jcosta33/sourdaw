@@ -56,6 +56,7 @@ export const StatusBar = (): ReactElement => {
     const moreSurfaceRef = useRef<HTMLDivElement>(null);
     const moreOpenRef = useRef(false);
     const projectLinksTriggerRef = useRef<HTMLButtonElement>(null);
+    const projectLinksContentRef = useRef<HTMLDivElement>(null);
     const projectLinksOpenRef = useRef(false);
     const compactModeRef = useRef(isCompactStatusBarViewport());
     const restoreFocusAfterModeChangeRef = useRef<'compact' | 'expanded' | null>(null);
@@ -104,7 +105,9 @@ export const StatusBar = (): ReactElement => {
             const activeElement = document.activeElement;
             const footerOwnsFocus = activeElement instanceof Node && footerRef.current?.contains(activeElement);
             const moreOwnsFocus = activeElement instanceof Node && moreSurfaceRef.current?.contains(activeElement);
-            if (footerOwnsFocus || moreOwnsFocus) {
+            const projectLinksOwnFocus =
+                activeElement instanceof Node && projectLinksContentRef.current?.contains(activeElement);
+            if (footerOwnsFocus || moreOwnsFocus || projectLinksOwnFocus) {
                 restoreFocusAfterModeChangeRef.current = nextCompactMode ? 'compact' : 'expanded';
             }
             compactModeRef.current = nextCompactMode;
@@ -127,14 +130,13 @@ export const StatusBar = (): ReactElement => {
             return;
         }
         restoreFocusAfterModeChangeRef.current = null;
-        if (document.activeElement !== document.body) {
-            return;
-        }
         const selector =
             target === 'compact'
                 ? 'button[aria-label="More application status"]'
                 : 'button[aria-label="Project links"]';
-        footerRef.current?.querySelector<HTMLElement>(selector)?.focus();
+        window.requestAnimationFrame(() => {
+            footerRef.current?.querySelector<HTMLElement>(selector)?.focus();
+        });
     }, [compactMode]);
 
     const setMorePopoverOpen = (open: boolean): void => {
@@ -324,7 +326,7 @@ export const StatusBar = (): ReactElement => {
                         </Button>
                     </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <DropdownMenuContent align="end" side="top">
+                <DropdownMenuContent ref={projectLinksContentRef} align="end" side="top">
                     <DropdownMenuLabel>Sourdaw</DropdownMenuLabel>
                     <DropdownMenuItem asChild>
                         <a href={PROJECT_LINKS.source} target="_blank" rel="noopener noreferrer">
