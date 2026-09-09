@@ -1,0 +1,59 @@
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_4218acdf3681dd 15,458-464,475,477,483-484,930-933,1218
+  s_87ab0a2f60ccf8::t_980290f0814c48 1561-1575
+  s_87ab0a2f60ccf8::t_28fee510d83e62 231,922,968-970,975,1687,1699,1705-1709,1788,1794,1829,1836-1844,1884,1930,1932,1947-1948
+  s_87ab0a2f60ccf8::t_0817ca0a5cc216 1227,1529,1577,1966-1987,1989,2054,2059,2063-2101,2105-2113
+  s_87ab0a2f60ccf8::t_ed74306c112468 1235-1239,1245
+  s_87ab0a2f60ccf8::t_2fbbce9d88189e 2767-2773
+  s_87ab0a2f60ccf8::t_7ef4bb59d8b775 803-833,836-863,866-895,1015,2115
+  s_87ab0a2f60ccf8::t_23157ae1e6cfb0 485-486,715,737,751,757,774,785,896,914,921,925,934-935,971,988,995,1221,1246-1247,1250,1366,1413,1576,1680,1702,1949,2114,2689,2695,2774-2775
+src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts
+  s_87ab0a2f60ccf8::t_42521c77383f2c 13,162-164,199,201-205,207-213
+  s_87ab0a2f60ccf8::t_319684575d5133 198,200,206,214
+  s_87ab0a2f60ccf8::t_7f0ace79fda8ac 215-216
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_87ab0a2f60ccf8::t_acf17b1266e813 238,266-289,1785,1829,1880-1884,1888
+  s_87ab0a2f60ccf8::t_5747664753f3e9 866,1379-1381,1451-1462,1524,1543-1554,1738-1749,1827-1828,1930-1941,1990-2001
+  s_87ab0a2f60ccf8::t_0cedb848f48520 1654,1835
+  s_87ab0a2f60ccf8::t_757e6f45144090 129-136,139,675,681-690,693
+  s_87ab0a2f60ccf8::t_6337bddf5686b9 1207,1787,1885-1887,1942-1943,2014
+  s_87ab0a2f60ccf8::t_d1d925bc297a70 2002-2006
+  s_87ab0a2f60ccf8::t_7d815567076448 1268,1298-1299,1378,1382-1384,1519,1525-1531,1615-1616
+  s_87ab0a2f60ccf8::t_7d4c6447de5ecd 1267,1285,1363,1406,1463-1464,1555-1562
+  s_87ab0a2f60ccf8::t_18786e068269fb 1532,1631,1698-1700,1750-1751
+  s_87ab0a2f60ccf8::t_5db6caedafcc33 848-849,878-882,895-896,986-988,1071-1078,1130-1132,1200-1206
+  s_87ab0a2f60ccf8::t_7aa54f6a73c87e 1617
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_87ab0a2f60ccf8::t_980b68d5c66ca3 107-108,124,140-144
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_92d3cfb13656eb 541-611
+  s_87ab0a2f60ccf8::t_5e0082edce00c9 63-66
+  s_87ab0a2f60ccf8::t_c2ab8e6ec9c87e 485,503-507,514-527
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRecovery.spec.ts
+  s_87ab0a2f60ccf8::t_19afc9e63f3732 588
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_87ab0a2f60ccf8::t_78e3a5a2c6dd56 49
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_391d441c83bde4 92-97
+src/modules/AudioEngine/stores/__tests__/audioBufferPersistentIdentity.spec.ts
+  s_87ab0a2f60ccf8::t_92d3cfb13656eb 1-169,172-177,179-255,257-319
+  s_87ab0a2f60ccf8::t_596a26d64491fa 170-171,178,256
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_980b68d5c66ca3 124-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0296db0d6ba92265aaf8c90c993dab0c43d6f652",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
