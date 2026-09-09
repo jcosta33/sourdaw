@@ -1,0 +1,79 @@
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_9b530f08172a54::t_22158edbaff33f 751
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_9b530f08172a54::t_dc8eef24adc44f 3-6,24,53,264-267
+src/modules/Yeast/handlers/__tests__/setYeastArpPattern.spec.ts
+  s_06adf2b091dc62::t_9ee1f2ffa31a8b 4-5,20,43,66-70,148-151
+src/modules/Yeast/handlers/__tests__/setYeastProcessorBypass.spec.ts
+  s_06adf2b091dc62::t_012341cfff88c5 3-4,19,35,107-110,117-120,126-129
+src/modules/Yeast/handlers/__tests__/setYeastProcessorParam.spec.ts
+  s_06adf2b091dc62::t_1c2757e825deb2 3-4,20,45,150-153,162-165,171-174
+src/modules/Yeast/handlers/__tests__/yeastUndoCoalescing.spec.ts
+  s_06adf2b091dc62::t_e5ed3b74ebe853 9-11,40,72,76,89,97,107,111
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_9b530f08172a54::t_7361d709b0b688 2,9-12,50,65-67,109,111,117-120,122-125,127,143,145,151-153
+src/modules/Yeast/presentations/hooks/__tests__/useYeastParamActions.spec.tsx
+  s_06adf2b091dc62::t_0ead140e8f7a3f 1-2,12-13,15,42,51,97,104,116,119-124
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_06adf2b091dc62::t_bd84ec021a5990 6
+src/modules/Yeast/presentations/views/__tests__/YeastPanelArpStrokeCoalescing.spec.tsx
+  s_06adf2b091dc62::t_f6073361142374 6,75,97,122,125,133,136,151,153
+src/modules/Yeast/stores/__tests__/yeastStoreCollaboration.spec.ts
+  s_06adf2b091dc62::t_09dc53d20f3ad7 9-10,540-545,560,633
+src/modules/Yeast/useCases/getYeastHandlers.ts
+  s_9b530f08172a54::t_1c8158c1dc8b23 1-6
+src/modules/Yeast/useCases/index.ts
+  s_9b530f08172a54::t_ccecd40a30be11 16
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_c37a4048a3bc0d::t_5ddf36fad2abb3 1,9-12,164-170,184-190
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_c37a4048a3bc0d::t_f74912eaf076ee 9
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_c37a4048a3bc0d::t_3eec87420ee42e 7
+src/modules/Yeast/handlers/removeYeastProcessor.ts
+  s_c37a4048a3bc0d::t_a19c6c8731dada 4
+src/modules/Yeast/handlers/reorderYeastProcessor.ts
+  s_c37a4048a3bc0d::t_e564d4d5f76aaa 5,15,67-70
+src/modules/Yeast/handlers/setYeastArpPattern.ts
+  s_c37a4048a3bc0d::t_51d1efc853d6d5 6,43-46,54
+src/modules/Yeast/handlers/setYeastProcessorBypass.ts
+  s_c37a4048a3bc0d::t_a6f5153e599705 5,9,30-32
+src/modules/Yeast/handlers/setYeastProcessorParam.ts
+  s_c37a4048a3bc0d::t_eb2074dc5d539b 6
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  s_c37a4048a3bc0d::t_4e428c36499f04 129
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_c37a4048a3bc0d::t_4b6286a74910bf 45,436,563-566,956-960
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b07d173384c518b26955a3515d66b9a03afb4ba4",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c37a4048a3bc0d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae11f60dbb0a747e6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
