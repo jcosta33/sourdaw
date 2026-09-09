@@ -1,0 +1,83 @@
+crates/daw-io/src/audio_decode.rs
+  s_06adf2b091dc62::t_b60a4b2833a7e6 3,162-174,178-183,214-227,442-447,479-482,490,517,867-1329
+public/wasm/manifest.json
+  s_06adf2b091dc62::t_7520e1dd2e13f5 54,58
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_77182668534851 1198,1332,1337,1718
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_06adf2b091dc62::t_7e6f24f2956ef0 47,49-59,61,64-65,257-271
+src/modules/AiRuntime/transformers/llmActionBridgeContracts.ts
+  s_06adf2b091dc62::t_3f3066d8304ddd 27-32
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/trackRoutingDeviceStrategies.spec.ts
+  s_06adf2b091dc62::t_5499a446de7a2e 1-130
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_06adf2b091dc62::t_5e1b58bd36ae5a 1-132
+src/modules/AiRuntime/transformers/llmActionStrategies/coreAutomationStrategy.ts
+  s_06adf2b091dc62::t_8a648c99b7b31e 6
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_06adf2b091dc62::t_4923d1a9a1fdf1 1-204
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_06adf2b091dc62::t_d74930a20fbfa5 12
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_06adf2b091dc62::t_b3a44f4a2677e5 9
+src/modules/AiRuntime/transformers/llmActionStrategies/routingStrategy.ts
+  s_06adf2b091dc62::t_14a866f28f5515 1-274
+src/modules/AiRuntime/transformers/llmActionStrategies/trackStrategy.ts
+  s_06adf2b091dc62::t_1fc41425c326ec 1-311
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_06adf2b091dc62::t_e6d82f06271d62 5
+src/modules/Arrangement/handlers/automationRecordingPolicy.ts
+  s_06adf2b091dc62::t_7808cc426919c8 1-28
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_06adf2b091dc62::t_1c785db00e25f0 59-61,331-475
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_06adf2b091dc62::t_6266fba68e534b 4,11,88-96,102-106,163-168,181,206,246-249,271,293
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackGain.spec.ts
+  s_06adf2b091dc62::t_242b0a37f8f696 6,11-14,76-91,144-235
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackPan.spec.ts
+  s_06adf2b091dc62::t_d8a95649de156e 6,11-14,59-74,120-228
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_06adf2b091dc62::t_7898cd8ca8b060 7,37-43,49-51,54,72-74,83,92
+src/modules/Arrangement/handlers/track/handleSetTrackPan.ts
+  s_06adf2b091dc62::t_11ea1468948548 6,15-21,27-29,32,39-42,52,63
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_06adf2b091dc62::t_8b07005ed5f1ac 168-182
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_06adf2b091dc62::t_e88325d1dd8443 4,17-21,93-94,96-101
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
+  s_06adf2b091dc62::t_c983421f9103d3 189-211
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackPan.spec.ts
+  s_06adf2b091dc62::t_30ef97cc05e953 123-145
+src/modules/Arrangement/useCases/setTrackGainPan/maybeRecordAutomation.ts
+  s_06adf2b091dc62::t_a1e18e4d910a32 2,17-21,26-27,29-35
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts
+  s_06adf2b091dc62::t_77efbff793c8ae 9,33-36,38-43,55-56
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts
+  s_06adf2b091dc62::t_2b6a9c64533912 10,36-39,41-46,59-60
+src/modules/Command/AGENTS.md
+  s_06adf2b091dc62::t_15e19699e7107f 31
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_06adf2b091dc62::t_7198501b6dee99 9,149-150,156
+src/modules/Command/useCases/__tests__/processingOnlyParameterPolicy.spec.ts
+  s_06adf2b091dc62::t_abb4aafdae55b1 1-633
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_06adf2b091dc62::t_480f2eb72d68fc 1761-1764,1778,1790,1806,1814,1846,1857,1892,1897,1940,1945,2031,2054-2055,2078,2097,2105,2114,2125-2127,2141-2143,2174,2180,2189,2200,2208,2219-2220,2234-2235,2260-2261,2319,2328,2386,2404,2410,2458,2466,2475,2484-2485,2490-2495,2530,2537,2553,2561,2621-2622,2693,2704,2744,2750,2800,2815,2820,2838-2839,2859,2873-2874,2883,2885,2897-2898,2906-2907,2947-2948,3022-3023,3101-3102,3228,3239,3320-3321,3348-3349,3371,3385,3394,3416,3430,3437,3444-3446,3487-3490,3512,3517,3529,3536,3541,3543,3549,3554,3556-3557,3576,3583,3591-3592,3598,3601,3645-3646,3655-3656,3719,3725-3726,3737-3738,3760-3761,3795,3802,3807-3808,3824,3829-3830,3842,3852,3859,3865,3870,3879-3880,3901,3906-3907,3944-3945,3965,3979-3980,3988-3989,4078,4085,4091-4092,4099,4113,4128,4142,4147-4150,4179,4185,4199,4205,4250,4252,4267,4276-4277,4279,4292-4293,4296,4303,4308,4335,4340,4435,4442,4470,4478,4484,4492-4493,4533,4544,4552,4558,4565,4570,4578-4579,4790,4806,4823,4830-4831,4834,4865,4878-4881,4891-4892,4937,4951,4956,4958,5006,5011,5029,5034,5058,5063,5130,5139,5151,5163,5184,5196,5202,5208-5209,5234,5240-5241,5305,5311,5322,5332,5334,5343,5429-5436,5443-5473,5476-5481,5485,5487-5504,5507,5509-5519,5521-5522,5530-5562,5568-5569,5572-5576,5578-5579,5581,5583-5593,5597-5599,5601-5607,5609-5611,5613-5625,5627,5629-5631,5636,5639-5642,5646-5651,5656,5658-5659,5661-5662,5665-5677,5681-5685,5687-5689,5693-5694,5696-5703
+src/utils/handlerContract.ts
+  s_06adf2b091dc62::t_45daf7a56a0a17 948-961,1380,1714-1731
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "be0665a54c54dc122bf8a43752dfed5d6419c9b8",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
