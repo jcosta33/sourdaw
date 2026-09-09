@@ -1,0 +1,21 @@
+scripts/__tests__/quantumMeasurementCalibration.spec.ts
+  s_87ab0a2f60ccf8::t_3d183714c9b53a 76-130,145-150,317-327
+  s_87ab0a2f60ccf8::t_b4cf86521f551f 131-144,328-341
+  s_87ab0a2f60ccf8::t_2811e98b28d596 342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e2a7457ffa7485fc685f1671781e98c2010b0100",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
