@@ -1,0 +1,16 @@
+crates/daw-io/src/audio_decode.rs
+  h_1228e573df1f42 3,162-174,178-183,214-227,442-447,479-482,490,517,867-1329
+public/wasm/manifest.json
+  h_1228e573df1f42 54,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cb8697f887761f4a9457a76d5741c0fdeef20f15",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
