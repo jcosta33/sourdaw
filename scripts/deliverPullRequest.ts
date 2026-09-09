@@ -3,18 +3,20 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import {
     AUTHOR_BOT_NODE_ID,
-    REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
+    isOrchestratorUserNodeId,
+    isHistoricalMergerActor,
     assertRequiredRepository,
     authenticateRole,
+    type GhSession,
     authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
     isAuthorBotNodeId,
-    isReviewerBotNodeId,
     REQUIRED_BASE_BRANCH,
     REQUIRED_REPOSITORY,
     resolvePrimaryRoot,
@@ -35,6 +37,11 @@ import {
     type PullRequestRemoteMutationBoundary,
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
+import {
+    readPullRequestReviewState,
+    assertIndependentReviewerApproval,
+    type ReviewState,
+} from './pullRequestReviewState.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import {
     runRecoverDeliveryLockCli,
@@ -70,10 +77,7 @@ export type PullRequestSnapshot = {
     mergedByActorNodeId: string | null;
 };
 
-export type ReviewState = {
-    latestReviewerStateOnHead: string | null;
-    unresolvedThreads: number;
-};
+export type { ReviewState } from './pullRequestReviewState.ts';
 
 export type StackedPullRequest = Pick<
     PullRequestSnapshot,
@@ -1253,13 +1257,9 @@ function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | und
 }
 
 function validateReview(number: number, review: ReviewState): void {
-    if (review.latestReviewerStateOnHead !== 'APPROVED') {
-        fail(
-            `PR #${number} is not approved by the required reviewer actor ${REVIEWER_BOT_NODE_ID} on the current head`
-        );
-    }
-    if (review.unresolvedThreads > 0) {
-        fail(`PR #${number} has ${review.unresolvedThreads} unresolved review thread(s)`);
+    assertIndependentReviewerApproval(number, review);
+    if (!review.orchestratorAcceptedAfterReviewer) {
+        fail(`PR #${number} requires orchestrator acceptance after the independent reviewer on the current head`);
     }
 }
 
@@ -1324,7 +1324,7 @@ function validatePostMergeSnapshot(
     if (expected.title === undefined) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
-    validateAuthorAppMerger(merged);
+    validateHistoricalMerger(merged);
     validateBaseBranch(merged);
     if (expected.title !== merged.title) {
         fail(`PR #${number} title changed during delivery`);
@@ -2623,9 +2623,19 @@ function completeIssueAfterMerge(
     }
 }
 
-function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
-    if (pullRequest.state !== 'MERGED' || !isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
-        fail(`PR #${pullRequest.number} was not merged by the author App`);
+function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
+    if (!isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} fresh merge was not performed by the orchestrator user`);
+    }
+}
+
+function validateHistoricalMerger(pullRequest: PullRequestSnapshot): void {
+    if (
+        pullRequest.state !== 'MERGED' ||
+        (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId) &&
+            !isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId))
+    ) {
+        fail(`PR #${pullRequest.number} was not merged by the author App or orchestrator user`);
     }
 }
 
@@ -2646,8 +2656,11 @@ function deliverPullRequestWithCiAdmission(
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     if (initial.state === 'MERGED') {
+        if (rawInitial.state !== 'MERGED') {
+            validateFreshMerger(initial);
+        }
         validateBaseBranch(initial);
-        validateAuthorAppMerger(initial);
+        validateHistoricalMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
         let receipt: DeliveryReceiptComment;
         let receiptPayload: DeliveryReceiptPayload;
@@ -2726,6 +2739,7 @@ function deliverPullRequestWithCiAdmission(
         port
     );
     if (finalSnapshot.state === 'MERGED') {
+        validateFreshMerger(finalSnapshot);
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
@@ -2830,6 +2844,7 @@ function deliverPullRequestWithCiAdmission(
         throw error;
     }
     const mergedSnapshot = port.pullRequest(number);
+    validateFreshMerger(mergedSnapshot);
     validatePostMergeSnapshot(
         persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
         mergedSnapshot,
@@ -3195,7 +3210,7 @@ function readMergedByActorNodeId(
     shell: Pick<ShellRunner, 'capture'>
 ): string {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}';
     const response = parseJson<{
         data?: {
             repository?: {
@@ -3220,7 +3235,11 @@ function readMergedByActorNodeId(
         `PR #${number} merger query`
     );
     const mergedBy = response.data?.repository?.pullRequest?.mergedBy;
-    if (mergedBy?.__typename !== 'Bot' || typeof mergedBy.id !== 'string') {
+    if (
+        typeof mergedBy?.id !== 'string' ||
+        typeof mergedBy.__typename !== 'string' ||
+        !isHistoricalMergerActor(mergedBy.id, mergedBy.__typename)
+    ) {
         fail(`PR #${number} merger cannot be verified`);
     }
     return mergedBy.id;
@@ -3337,222 +3356,6 @@ function readDeliveryReceiptProofFromGithub(
     };
 }
 
-type PullRequestReviewRecord = {
-    id: string;
-    state: string;
-    submittedAt: string | null;
-    author: { id: string | null; login: string; __typename: string } | null;
-    commitOid: string | null;
-};
-
-type ReviewThreadRecord = {
-    id: string;
-    isResolved: boolean;
-};
-
-type ReviewStatePage = {
-    pullRequestId: string;
-    headRefOid: string;
-    reviews: {
-        nodes: PullRequestReviewRecord[];
-        pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
-    };
-    reviewThreads: {
-        nodes: ReviewThreadRecord[];
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-    };
-};
-
-type CompleteReviewState = {
-    pullRequestId: string;
-    headRefOid: string;
-    reviews: PullRequestReviewRecord[];
-    reviewThreads: ReviewThreadRecord[];
-};
-
-const REVIEW_STATE_PAGE_SIZE = 100;
-const REVIEW_STATE_PAGE_LIMIT = 1_000;
-const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
-
-function invalidReviewState(number: number): never {
-    fail(`cannot prove complete review state for PR #${number}`);
-}
-
-function requiredReviewStateString(value: unknown, number: number): string {
-    if (typeof value !== 'string' || value.trim() === '') {
-        invalidReviewState(number);
-    }
-    return value;
-}
-
-function parseReviewAuthor(value: unknown, number: number): PullRequestReviewRecord['author'] {
-    if (value === null) {
-        return null;
-    }
-    if (!isRecord(value)) {
-        invalidReviewState(number);
-    }
-    if (value.id !== undefined && (typeof value.id !== 'string' || value.id.trim() === '')) {
-        invalidReviewState(number);
-    }
-    return {
-        id: typeof value.id === 'string' ? value.id : null,
-        login: requiredReviewStateString(value.login, number),
-        __typename: requiredReviewStateString(value.__typename, number),
-    };
-}
-
-function parseReviewRecord(value: unknown, number: number): PullRequestReviewRecord {
-    if (!isRecord(value)) {
-        invalidReviewState(number);
-    }
-    if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
-        invalidReviewState(number);
-    }
-    let commitOid: string | null = null;
-    if (value.commit !== null) {
-        if (!isRecord(value.commit)) {
-            invalidReviewState(number);
-        }
-        commitOid = requiredReviewStateString(value.commit.oid, number);
-    }
-    return {
-        id: requiredReviewStateString(value.id, number),
-        state: requiredReviewStateString(value.state, number),
-        submittedAt: value.submittedAt,
-        author: parseReviewAuthor(value.author, number),
-        commitOid,
-    };
-}
-
-function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRecord {
-    if (!isRecord(value) || typeof value.isResolved !== 'boolean') {
-        invalidReviewState(number);
-    }
-    return {
-        id: requiredReviewStateString(value.id, number),
-        isResolved: value.isResolved,
-    };
-}
-
-function parseReviewStatePage(response: string, number: number): ReviewStatePage {
-    const envelope = parseJson<unknown>(response, 'review query');
-    if (
-        !isRecord(envelope) ||
-        (Object.hasOwn(envelope, 'errors') && (!Array.isArray(envelope.errors) || envelope.errors.length > 0)) ||
-        !isRecord(envelope.data) ||
-        !isRecord(envelope.data.repository)
-    ) {
-        invalidReviewState(number);
-    }
-    const pullRequest = envelope.data.repository.pullRequest;
-    if (
-        !isRecord(pullRequest) ||
-        !isRecord(pullRequest.reviews) ||
-        !Array.isArray(pullRequest.reviews.nodes) ||
-        !isRecord(pullRequest.reviews.pageInfo) ||
-        typeof pullRequest.reviews.pageInfo.hasPreviousPage !== 'boolean' ||
-        (pullRequest.reviews.pageInfo.startCursor !== null &&
-            typeof pullRequest.reviews.pageInfo.startCursor !== 'string') ||
-        !isRecord(pullRequest.reviewThreads) ||
-        !Array.isArray(pullRequest.reviewThreads.nodes) ||
-        !isRecord(pullRequest.reviewThreads.pageInfo) ||
-        typeof pullRequest.reviewThreads.pageInfo.hasNextPage !== 'boolean' ||
-        (pullRequest.reviewThreads.pageInfo.endCursor !== null &&
-            typeof pullRequest.reviewThreads.pageInfo.endCursor !== 'string')
-    ) {
-        invalidReviewState(number);
-    }
-    return {
-        pullRequestId: requiredReviewStateString(pullRequest.id, number),
-        headRefOid: requiredReviewStateString(pullRequest.headRefOid, number),
-        reviews: {
-            nodes: pullRequest.reviews.nodes.map((node) => parseReviewRecord(node, number)),
-            pageInfo: {
-                hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
-                startCursor: pullRequest.reviews.pageInfo.startCursor,
-            },
-        },
-        reviewThreads: {
-            nodes: pullRequest.reviewThreads.nodes.map((node) => parseReviewThreadRecord(node, number)),
-            pageInfo: {
-                hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
-                endCursor: pullRequest.reviewThreads.pageInfo.endCursor,
-            },
-        },
-    };
-}
-
-function nextReviewStateCursor(number: number, cursor: string | null, seen: Set<string>): string {
-    if (cursor === null || cursor.trim() === '' || seen.has(cursor)) {
-        fail(`cannot prove complete review state for PR #${number}`);
-    }
-    seen.add(cursor);
-    return cursor;
-}
-
-function assertReviewStatePageBudget(number: number, pagesRead: number): void {
-    if (pagesRead >= REVIEW_STATE_PAGE_LIMIT) {
-        fail(`cannot prove complete review state for PR #${number}`);
-    }
-}
-
-function assertReviewStatePageIdentity(
-    number: number,
-    page: ReviewStatePage,
-    pullRequestId: string,
-    expectedHead: string
-): void {
-    if (page.pullRequestId !== pullRequestId || page.headRefOid !== expectedHead) {
-        invalidReviewState(number);
-    }
-}
-
-function readCompleteReviewState(
-    number: number,
-    expectedHead: string,
-    expectedPullRequestId: string | undefined,
-    readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
-): CompleteReviewState {
-    const initialPage = readPage(null, null);
-    const pullRequestId = expectedPullRequestId ?? initialPage.pullRequestId;
-    assertReviewStatePageIdentity(number, initialPage, pullRequestId, expectedHead);
-    const reviewPages = [initialPage.reviews.nodes];
-    const reviewCursors = new Set<string>();
-    let reviewPage = initialPage.reviews;
-    let reviewPagesRead = 1;
-    while (reviewPage.pageInfo.hasPreviousPage) {
-        assertReviewStatePageBudget(number, reviewPagesRead);
-        const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
-        const nextPage = readPage(cursor, null);
-        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
-        reviewPage = nextPage.reviews;
-        reviewPages.push(reviewPage.nodes);
-        reviewPagesRead += 1;
-    }
-
-    const reviewThreads = [...initialPage.reviewThreads.nodes];
-    const threadCursors = new Set<string>();
-    let threadPage = initialPage.reviewThreads;
-    let threadPagesRead = 1;
-    while (threadPage.pageInfo.hasNextPage) {
-        assertReviewStatePageBudget(number, threadPagesRead);
-        const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
-        const nextPage = readPage(null, cursor);
-        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
-        threadPage = nextPage.reviewThreads;
-        reviewThreads.push(...threadPage.nodes);
-        threadPagesRead += 1;
-    }
-
-    return {
-        pullRequestId,
-        headRefOid: expectedHead,
-        reviews: reviewPages.reverse().flat(),
-        reviewThreads,
-    };
-}
-
 type BranchRulesetRule = {
     type: string;
     parameters?: {
@@ -3598,6 +3401,7 @@ export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
     options: {
+        mergeCapture?: ShellRunner['capture'];
         gitToken?: string;
         helperDir?: string;
         primaryRoot?: string;
@@ -3681,45 +3485,8 @@ export function shellPort(
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         gateRequiredSkipAliases: () => readGateRequiredSkipAliases(),
         requiredStatusCheckContexts: () => readRequiredStatusCheckContexts(repository, shell),
-        reviewState: (number, expectedHead) => {
-            const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
-                parseReviewStatePage(
-                    shell.capture('gh', [
-                        'api',
-                        'graphql',
-                        '-f',
-                        `query=${REVIEW_STATE_QUERY}`,
-                        '-f',
-                        `owner=${owner}`,
-                        '-f',
-                        `name=${name}`,
-                        '-F',
-                        `number=${number}`,
-                        ...(reviewsBefore === null ? [] : ['-f', `reviewsBefore=${reviewsBefore}`]),
-                        ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
-                    ]),
-                    number
-                );
-            const firstScan = readCompleteReviewState(number, expectedHead, undefined, readPage);
-            const secondScan = readCompleteReviewState(number, expectedHead, firstScan.pullRequestId, readPage);
-            if (!isDeepStrictEqual(firstScan, secondScan)) {
-                fail(`cannot prove stable review state for PR #${number}`);
-            }
-            const review = secondScan;
-            const onHead = review.reviews.filter(
-                (candidate) =>
-                    candidate.state !== 'DISMISSED' &&
-                    candidate.state !== 'PENDING' &&
-                    candidate.commitOid === expectedHead &&
-                    candidate.author?.__typename === 'Bot' &&
-                    isReviewerBotNodeId(candidate.author.id)
-            );
-            onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
-            return {
-                latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
-                unresolvedThreads: review.reviewThreads.filter((thread) => !thread.isResolved).length,
-            };
-        },
+        reviewState: (number, expectedHead) =>
+            readPullRequestReviewState(number, expectedHead, repository, (args) => shell.capture('gh', args)),
         dependents: (baseBranch) => {
             const pages = parseJson<
                 Array<
@@ -3754,6 +3521,7 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
+            const mergeCapture = options.mergeCapture ?? fail('orchestrator-authenticated merge runner is required');
             options.markRemoteMutationAttempt?.();
             const mergeArgs = [
                 'api',
@@ -3768,7 +3536,7 @@ export function shellPort(
             ];
             let response: string;
             try {
-                response = shell.capture('gh', mergeArgs);
+                response = mergeCapture('gh', mergeArgs);
             } catch (error) {
                 const rejection = classifyGithubMergeRejection(number, error);
                 if (rejection !== undefined) {
@@ -4406,13 +4174,15 @@ export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    authenticateOrchestrator: () => Promise<{ minted: { actorNodeId: string }; session: GhSession }>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (
         repository: string,
         authentication: DeliveryAuthentication,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        orchestratorSession: GhSession
     ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
@@ -4429,13 +4199,14 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
         primaryRoot: () => resolvePrimaryRoot(),
         serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        authenticateOrchestrator,
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt, orchestratorSession) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
                     spawnCapture(command, args, {
@@ -4455,6 +4226,8 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
                     }),
             };
             return shellPort(repository, shell, {
+                mergeCapture: (command, args) =>
+                    spawnCapture(command, args, { env: orchestratorSession.env, cwd: primaryRoot }),
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
                 primaryRoot,
@@ -4495,9 +4268,15 @@ export async function coordinateDelivery(
         async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
             const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
             let trackerAuth: DeliveryAuthentication | undefined;
+            let orchestratorSession: GhSession | undefined;
             try {
                 if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
                     fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+                }
+                const orchestrator = await dependencies.authenticateOrchestrator();
+                orchestratorSession = orchestrator.session;
+                if (!isOrchestratorUserNodeId(orchestrator.minted.actorNodeId)) {
+                    fail(`authenticated merge actor is not ${ORCHESTRATOR_USER_NODE_ID}`);
                 }
                 const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
                 assertRequiredRepository(repository);
@@ -4509,7 +4288,13 @@ export async function coordinateDelivery(
                 );
                 dependencies.deliver(
                     number,
-                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                    dependencies.deliveryPort(
+                        repository,
+                        authorAuth,
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        orchestratorSession
+                    ),
                     {
                         complete: (issueNumber) =>
                             dependencies.completeIssue(
@@ -4521,6 +4306,7 @@ export async function coordinateDelivery(
                     markRemoteMutationKnownAbsent
                 );
             } finally {
+                orchestratorSession?.dispose();
                 trackerAuth?.session.dispose();
                 authorAuth.session.dispose();
             }

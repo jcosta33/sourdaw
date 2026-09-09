@@ -5,9 +5,13 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
+import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
+    parseAcceptanceDocument,
+    publishPreparedAcceptance,
+    type AcceptReviewCoordinatorDependencies,
     defaultPublishReviewCoordinatorDependencies,
     parsePublishReviewArgs,
     parseReviewDocument,
@@ -3284,7 +3288,7 @@ describe('shellPort postReview state verification', () => {
                 reviewerActorNodeId: 'other-actor',
             }),
             () => undefined,
-            /retained reviewer actor does not match the authenticated reviewer/,
+            /retained an unknown actor/,
         ],
     ])('retains a prepared v3 lock when its stored %s drifts', async (_label, mutate, prepare, error) => {
         const fixture = createJournaledRecoveryFixture('prepared');
@@ -3691,6 +3695,190 @@ describe('shellPort postReview state verification', () => {
             expect(authenticated).toBe(false);
         } finally {
             removeTemporaryDirectory(root);
+        }
+    });
+});
+
+describe('orchestrator acceptance', () => {
+    it('reports the trusted acceptance command for invalid arguments', async () => {
+        await expect(runAcceptReviewCli([])).rejects.toThrow('usage: pnpm review:accept');
+    });
+    function acceptanceFixture(
+        input: {
+            authActor?: string;
+            postedActor?: string;
+            postedType?: string;
+            postedHead?: string;
+            laterHead?: string;
+            missingReviewer?: boolean;
+            unresolved?: boolean;
+            revokeAtFence?: boolean;
+            evidenceHead?: string;
+        } = {}
+    ) {
+        const fake = fakePort({
+            actorNodeId: input.postedActor ?? ORCHESTRATOR_USER_NODE_ID,
+            laterHead: input.laterHead,
+            json: { event: 'APPROVE', body: 'Final contract held.', evidence: approvalEvidence(input.evidenceHead) },
+        });
+        const journal = vi.fn();
+        const serialize = vi.fn();
+        let inFence = false;
+        const port: PublishReviewPort = {
+            ...fake.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead:
+                    input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
+                orchestratorAcceptedAfterReviewer: false,
+                unresolvedThreads: input.unresolved ? 1 : 0,
+            }),
+            postReview: (review) => ({
+                ...fake.port.postReview(review),
+                actorType: input.postedType ?? 'User',
+                commitId: input.postedHead ?? 'headsha',
+            }),
+        };
+        const dependencies: AcceptReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: input.authActor ?? ORCHESTRATOR_USER_NODE_ID },
+                session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            serializeMutation: async (_root, _number, operation, options) => {
+                serialize(options);
+                inFence = true;
+                return operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                });
+            },
+            publish: publishPreparedAcceptance,
+        };
+        return { ...fake, dependencies, journal, serialize };
+    }
+
+    it('posts attributed acceptance.json with user actor journal after reviewer verification', async () => {
+        const fixture = acceptanceFixture();
+        await coordinateAcceptReview(42, fixture.dependencies);
+        expect(fixture.calls[0]).toContain('/acceptance.json');
+        expect(fixture.posted.review?.body).toContain('Orchestrator acceptance on behalf of jcosta33');
+        expect(fixture.posted.review?.body).toContain('Verification for headsha');
+        expect(fixture.journal).toHaveBeenCalledWith(
+            expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
+        );
+    });
+
+    it.each([
+        { authActor: REVIEWER_BOT_NODE_ID },
+        { authActor: 'other' },
+        { missingReviewer: true },
+        { unresolved: true },
+        { revokeAtFence: true },
+        { laterHead: 'moved' },
+        { evidenceHead: 'stale' },
+    ])('refuses invalid admission before journal or POST %j', async (input) => {
+        const fixture = acceptanceFixture(input);
+        await expect(coordinateAcceptReview(42, fixture.dependencies)).rejects.toThrow();
+        expect(fixture.journal).not.toHaveBeenCalled();
+        expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it.each([{ postedActor: REVIEWER_BOT_NODE_ID }, { postedType: 'Bot' }, { postedHead: 'wrong' }])(
+        'refuses a coerced posted actor or head %j',
+        async (input) => {
+            const fixture = acceptanceFixture(input);
+            await expect(coordinateAcceptReview(42, fixture.dependencies)).rejects.toThrow();
+            expect(fixture.logs).toEqual([]);
+        }
+    );
+
+    it('refuses requests for changes in acceptance.json', () => {
+        expect(() =>
+            parseAcceptanceDocument({ event: 'REQUEST_CHANGES', body: 'no', comments: [validComment] })
+        ).toThrow('must APPROVE');
+    });
+
+    it.each([false, true])('recovers an exact acceptance publication, altered=%s', async (altered) => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
+            const document = parseAcceptanceDocument({
+                event: 'APPROVE',
+                body: 'Final contract held.',
+                evidence: approvalEvidence(fixture.head),
+            });
+            writeFileSync(
+                join(bundle, 'acceptance.json'),
+                JSON.stringify(altered ? { ...document, body: 'altered' } : document)
+            );
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('expected publication owner');
+            }
+            const ownerOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...owner,
+                    reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({ commitId: fixture.head, ...document })
+                    ),
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                ownerOid,
+                fixture.ownerOid,
+            ]);
+            const inspect = vi.fn(() => ({
+                state: 'OPEN',
+                head: fixture.head,
+                reviews: [
+                    {
+                        id: 99,
+                        state: 'APPROVED',
+                        body: document.body,
+                        commitId: fixture.head,
+                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        comments: [],
+                    },
+                ],
+            }));
+            const dependencies = {
+                ...recoveryDependencies(fixture.root, inspect),
+                authenticateReviewer: async () => expect.fail('acceptance recovery must not mint reviewer'),
+                authenticateOrchestrator: async () => ({
+                    minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                    session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+                }),
+            };
+            const recovery = runRecoverPublishReviewLockCli(
+                [String(fixture.number), '--owner', ownerOid],
+                dependencies
+            );
+            if (altered) {
+                await expect(recovery).rejects.toThrow('payload does not match');
+                expect(inspect).not.toHaveBeenCalled();
+                expect(
+                    readPullRequestMutationLockOid(
+                        fixture.root,
+                        pullRequestMutationLockRef(fixture.number),
+                        fixture.number
+                    )
+                ).toBe(ownerOid);
+            } else {
+                await expect(recovery).resolves.toBe(0);
+                expect(inspect).toHaveBeenCalledTimes(2);
+            }
+        } finally {
+            removeTemporaryDirectory(fixture.root);
         }
     });
 });

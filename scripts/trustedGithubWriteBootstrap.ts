@@ -15,7 +15,13 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:publish:recover' | 'review:resolve';
+    | 'deliver'
+    | 'issue:reconcile'
+    | 'lane:publish'
+    | 'review:accept'
+    | 'review:publish'
+    | 'review:publish:recover'
+    | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -90,7 +96,12 @@ type SnapshotRunner = (
  * live, and recovery can prove the crashed owner gone.
  */
 function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
-    return command === 'deliver' || command === 'review:publish' || command === 'review:publish:recover';
+    return (
+        command === 'deliver' ||
+        command === 'review:accept' ||
+        command === 'review:publish' ||
+        command === 'review:publish:recover'
+    );
 }
 
 export function trustedSnapshotRunsDetached(
@@ -130,6 +141,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
+        'scripts/pullRequestReviewState.ts',
         'scripts/recoverDeliveryLock.ts',
         'scripts/deliveryLockLegacyIncidents.ts',
         'scripts/deliveryRemoteInspection.ts',
@@ -152,9 +164,21 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:accept': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/acceptReview.ts',
+        'scripts/publishReview.ts',
+        'scripts/pullRequestReviewState.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -165,6 +189,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/recoverPublishReviewLock.ts',
         'scripts/publishReview.ts',
+        'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewPublicationLegacyIncidents.ts',
         'scripts/reviewPublicationRecoveryReceipt.ts',
@@ -186,6 +211,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
+    'review:accept': { path: 'scripts/acceptReview.ts', runner: 'runAcceptReviewCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
@@ -1262,6 +1288,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'deliver' ||
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
+        value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
         value === 'review:resolve'
@@ -1269,7 +1296,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:accept|review:publish|review:publish:recover|review:resolve> [args...]'
     );
 }
 

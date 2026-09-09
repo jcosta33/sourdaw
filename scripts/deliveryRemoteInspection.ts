@@ -3,7 +3,13 @@ import {
     type RecoveryIncident,
     type RejectedMergeIncident,
 } from './deliveryLockLegacyIncidents.ts';
-import { isAuthorBotNodeId, parseJson, spawnCapture, type GhSession } from './githubAppIdentity.ts';
+import {
+    isHistoricalMergerActor,
+    isAuthorBotNodeId,
+    parseJson,
+    spawnCapture,
+    type GhSession,
+} from './githubAppIdentity.ts';
 import { parseDeliveryReceipt, fail } from './prContract.ts';
 
 export type RejectedMergeRecoveryRemoteState = {
@@ -167,7 +173,13 @@ function readMergedByActorNodeId(pullRequest: Record<string, unknown>): string |
     if (mergedBy === null || mergedBy === undefined) {
         return undefined;
     }
-    return text(record(mergedBy, 'pull-request merge actor').node_id, 'pull-request merge actor');
+    const actor = record(mergedBy, 'pull-request merge actor');
+    const id = text(actor.node_id, 'pull-request merge actor');
+    const actorType = text(actor.type, 'pull-request merge actor type');
+    if (!isHistoricalMergerActor(id, actorType)) {
+        fail('pull-request merge actor is not the author App or orchestrator user');
+    }
+    return id;
 }
 
 export function defaultJournaledRemoteState(
