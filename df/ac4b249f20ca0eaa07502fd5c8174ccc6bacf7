@@ -1,0 +1,28 @@
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_87ab0a2f60ccf8::t_b14849f6bdd40b 2
+  s_87ab0a2f60ccf8::t_d9967dfcb148ec 114-117
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_5ee20e8bb1b8e6 22,179,199-202,256,309-342
+  s_87ab0a2f60ccf8::t_cda9043863156f 208,307-308
+  s_87ab0a2f60ccf8::t_f3ec834d503ef7 182-196
+  s_87ab0a2f60ccf8::t_586f855c0be485 198
+  s_87ab0a2f60ccf8::t_a2a958d826f5fc 176-178,180-181
+  s_87ab0a2f60ccf8::t_1b351528077069 204,257
+  s_87ab0a2f60ccf8::t_22475e9d0540c2 343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "dfac4b249f20ca0eaa07502fd5c8174ccc6bacf7",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
