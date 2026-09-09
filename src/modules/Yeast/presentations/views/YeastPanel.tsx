@@ -413,6 +413,9 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     // later never merges with (and gets reverted by the undo of) a stale move.
     const strokeDispatchCountRef = useRef(0);
     const lastStrokeSettleTimeRef = useRef(0);
+    // Dispatches serialize so a stroke's cells land in paint order and each
+    // payload is built from the pattern the previous write just left behind.
+    const pendingPatternDispatchRef = useRef<Promise<void>>(Promise.resolve());
     if (!arp) {
         return (
             <div className="text-micro leading-3 text-muted-foreground/60">
@@ -422,7 +425,10 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     }
 
     const steps = decodeArpPatternParams(arp.params);
-    const commitPattern = (next: readonly ArpStep[], withinStroke: boolean): void => {
+    const commitPattern = (
+        buildSteps: (live: readonly ArpStep[]) => readonly ArpStep[],
+        withinStroke: boolean
+    ): void => {
         let coalesceWithPrevious = false;
         if (withinStroke) {
             if (strokeDispatchCountRef.current > 0) {
@@ -435,19 +441,24 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
             }
             strokeDispatchCountRef.current += 1;
         }
-        // The expected guard reads the LIVE pattern at commit time, not the
-        // render-scoped prop — a peer write that landed since the last render
-        // is what the guard must lock against.
-        const expectedSteps = decodeArpPatternParams(
-            yeastStore.value?.processors.find((candidate) => candidate.id === arp.id)?.params
-        );
-        void executeUserAppAction(
-            {
-                type: 'setYeastArpPattern',
-                payload: { processorId: arp.id, steps: next, expectedSteps },
-            },
-            coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined
-        );
+        pendingPatternDispatchRef.current = pendingPatternDispatchRef.current
+            .catch(() => undefined)
+            .then(() => {
+                // Payload and guard both read LIVE truth at execute time — not
+                // the render-scoped steps, which a fast stroke would stale.
+                // The guard equals the pre-write pattern, so a peer's write
+                // that lands first conflicts instead of being overwritten.
+                const live = decodeArpPatternParams(
+                    yeastStore.value?.processors.find((candidate) => candidate.id === arp.id)?.params
+                );
+                return executeUserAppAction(
+                    {
+                        type: 'setYeastArpPattern',
+                        payload: { processorId: arp.id, steps: [...buildSteps(live)], expectedSteps: live },
+                    },
+                    coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined
+                );
+            });
     };
 
     return (
@@ -465,21 +476,22 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
                     lastStrokeSettleTimeRef.current = performance.now();
                 }}
                 onStepChange={(index, step, source) => {
-                    const next = [...steps];
-                    next[index] = step;
                     // A cell reached through a paint stroke coalesces; a
-                    // discrete toggle, cycle or length change is its own
+                    // discrete toggle, cycle or badge edit is its own
                     // single-dispatch undo unit.
-                    commitPattern(next, source?.stroke === true);
+                    commitPattern((live) => {
+                        const next = [...live];
+                        next[index] = step;
+                        return next;
+                    }, source?.stroke === true);
                 }}
                 onLengthChange={(length) => {
                     const nextLength = clampArpPatternLength(length);
-                    commitPattern(
-                        nextLength > steps.length
-                            ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
-                            : steps.slice(0, nextLength),
-                        false
-                    );
+                    const resize = (live: readonly ArpStep[]): readonly ArpStep[] =>
+                        nextLength > live.length
+                            ? [...live, ...createDefaultPattern(nextLength - live.length)]
+                            : live.slice(0, nextLength);
+                    commitPattern(resize, false);
                 }}
             />
         </div>

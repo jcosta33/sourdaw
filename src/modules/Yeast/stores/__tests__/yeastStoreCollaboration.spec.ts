@@ -1,13 +1,18 @@
 import { change, clone, from, getHeads, merge, type Doc } from '@automerge/automerge';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
+import { undoStore } from '#/modules/Command/stores/undoStore';
+import { executeAppAction } from '#/modules/Command/useCases';
+import { undo } from '#/modules/Command/useCases/undo';
 
 import { createYeastAutomergeStorage } from '../yeastAutomergeStorage';
-import { type YeastProcessorInfo, type YeastState } from '../yeastStore';
+import { setActiveYeastDevice, yeastStore, type YeastProcessorInfo, type YeastState } from '../yeastStore';
 
 type RootDocument = { yeast?: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
@@ -496,5 +501,134 @@ describe('Yeast collaboration storage', () => {
             // The concurrent param edit on the moved row survives.
             expect(merged?.processors.find((processor) => processor.id === 'c')?.params).toEqual({ depth: 0.75 });
         }
+    });
+});
+
+// ── Undo against a concurrent peer (#2111) ──────────────────────────────────
+//
+// The collaboration constraint the guarded Yeast actions exist for: a peer's
+// edit to a DIFFERENT processor (or a different key of the same one) never
+// blocks a local undo, while a diverged SAME key refuses instead of silently
+// overwriting the peer. The peer arrives the way a real hydrate does — its
+// document merge lands in the port, and the store re-hydrates over it.
+
+const UNDO_DEVICE_ID = 'device-undo';
+
+const notifyUserMock = vi.hoisted(() => vi.fn());
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
+
+type PersistedUndoRack = { processors: Record<string, { value: YeastProcessorInfo }> };
+type PersistedUndoYeast = { yeast: { racks: Record<string, PersistedUndoRack> } };
+
+function paramProcessor(id: string, params: Record<string, number>): YeastProcessorInfo {
+    return { id, type: 'filter', name: id, bypassed: false, params };
+}
+
+describe('Yeast undo against a concurrent peer (#2111)', () => {
+    let document: Doc<RootDocument>;
+
+    function peerRenames(doc: Doc<RootDocument>, processorId: string, name: string): Doc<RootDocument> {
+        return change(clone(doc), (draft) => {
+            const yeast = (draft as unknown as PersistedUndoYeast).yeast;
+            for (const rack of Object.values(yeast.racks)) {
+                const entry = rack.processors[processorId];
+                if (entry) {
+                    entry.value.name = name;
+                }
+            }
+        });
+    }
+
+    function peerWritesParam(doc: Doc<RootDocument>, processorId: string, paramId: string, value: number): Doc<RootDocument> {
+        return change(clone(doc), (draft) => {
+            const yeast = (draft as unknown as PersistedUndoYeast).yeast;
+            for (const rack of Object.values(yeast.racks)) {
+                const entry = rack.processors[processorId];
+                if (entry?.value.params) {
+                    entry.value.params[paramId] = value;
+                }
+            }
+        });
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        notifyUserMock.mockClear();
+        undoStore.set({ past: [], future: [] });
+        document = from({});
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+            },
+        });
+        yeastStore.hydrate();
+        setActiveYeastDevice(UNDO_DEVICE_ID);
+        yeastStore.set({
+            processors: [paramProcessor('mine', { gate: 0.8 }), paramProcessor('theirs', { gate: 0.6 })],
+            uiLevel: 3,
+        });
+        flushAutomergeStorageWrites();
+
+        clearHandlerRegistry();
+        for (const handlerMap of getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true })) {
+            registerHandlerMap(handlerMap);
+        }
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        setActiveYeastDevice(null);
+        clearHandlerRegistry();
+    });
+
+    it('undoes a param edit while a peer renamed a DIFFERENT processor: both survive', async () => {
+        await executeAppAction({
+            type: 'setYeastProcessorParam',
+            payload: { processorId: 'mine', paramId: 'gate', value: 1.4, expectedValue: 0.8 },
+        });
+
+        // A peer renames 'theirs' concurrently; the merged doc re-hydrates.
+        const peerDoc = peerRenames(document, 'theirs', 'Theirs renamed');
+        document = merge(document, peerDoc);
+        yeastStore.hydrate();
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'theirs')?.name).toBe(
+            'Theirs renamed'
+        );
+
+        const result = await undo();
+
+        expect(result.headConsumed).toBe(true);
+        // The undo landed…
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'mine')?.params?.gate).toBe(0.8);
+        // …and the peer's rename survived it.
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'theirs')?.name).toBe(
+            'Theirs renamed'
+        );
+    });
+
+    it('refuses an undo whose key a peer diverged, retaining the entry on past', async () => {
+        await executeAppAction({
+            type: 'setYeastProcessorParam',
+            payload: { processorId: 'mine', paramId: 'gate', value: 1.4, expectedValue: 0.8 },
+        });
+
+        // A peer writes the SAME key concurrently.
+        const peerDoc = peerWritesParam(document, 'mine', 'gate', 0.5);
+        document = merge(document, peerDoc);
+        yeastStore.hydrate();
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'mine')?.params?.gate).toBe(0.5);
+
+        const result = await undo();
+
+        expect(result.headConsumed).toBe(false);
+        // The peer's value stands and the undo entry stays retryable on past.
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'mine')?.params?.gate).toBe(0.5);
+        expect(undoStore.value?.past).toHaveLength(1);
+        // The refusal was reported to the user, not swallowed.
+        expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Cannot undo'), 'warning');
     });
 });

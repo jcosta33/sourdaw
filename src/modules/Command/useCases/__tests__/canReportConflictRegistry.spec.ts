@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { change, from, type Doc } from '@automerge/automerge';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
@@ -86,6 +92,104 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         actionType: 'setTrackGain',
         divergedAction: { type: 'setTrackGain', payload: { trackId: 'track-live', gain: 0.5, expectedGain: 0.5 } },
     },
+    {
+        // Live Yeast processor 'yeast-live' carries gate 0.8; the guard expects 0.5.
+        title: 'setYeastProcessorParam refuses to write against a diverged document',
+        actionType: 'setYeastProcessorParam',
+        divergedAction: {
+            type: 'setYeastProcessorParam',
+            payload: { processorId: 'yeast-live', paramId: 'gate', value: 0.4, expectedValue: 0.5 },
+        },
+    },
+    {
+        // Live Yeast arpeggiator decodes to the default 8-step pattern; the
+        // guard expects an edited single-step pattern.
+        title: 'setYeastArpPattern refuses to write against a diverged document',
+        actionType: 'setYeastArpPattern',
+        divergedAction: {
+            type: 'setYeastArpPattern',
+            payload: {
+                processorId: 'yeast-arp',
+                steps: [
+                    {
+                        active: true,
+                        stepType: 'note',
+                        noteSelector: { type: 'next' },
+                        velocity: 64,
+                        velocityOverride: true,
+                        gateMul: 1,
+                        octaveOffset: 0,
+                        semitoneOffset: 0,
+                        probability: 1,
+                        ratchet: 1,
+                    },
+                ],
+                expectedSteps: [
+                    {
+                        active: true,
+                        stepType: 'note',
+                        noteSelector: { type: 'next' },
+                        velocity: 99,
+                        velocityOverride: true,
+                        gateMul: 1,
+                        octaveOffset: 0,
+                        semitoneOffset: 0,
+                        probability: 1,
+                        ratchet: 1,
+                    },
+                ],
+            },
+        },
+    },
+    {
+        // Live Yeast processor 'yeast-live' is bypassed=false; the guard expects true.
+        title: 'setYeastProcessorBypass refuses to write against a diverged document',
+        actionType: 'setYeastProcessorBypass',
+        divergedAction: {
+            type: 'setYeastProcessorBypass',
+            payload: { processorId: 'yeast-live', bypassed: false, expectedBypassed: true },
+        },
+    },
+    {
+        // The restore leg refuses when the processor is no longer absent.
+        title: 'addYeastProcessor refuses a restore over a present processor',
+        actionType: 'addYeastProcessor',
+        divergedAction: {
+            type: 'addYeastProcessor',
+            payload: {
+                processorId: 'yeast-live',
+                type: 'filter',
+                name: 'Filter',
+                restore: {
+                    processor: { id: 'yeast-live', type: 'filter', name: 'Filter', bypassed: false, params: { gate: 0.8 } },
+                    atIndex: 0,
+                },
+            },
+        },
+    },
+    {
+        // Live processor 'yeast-live' was edited since the snapshot (name differs).
+        title: 'removeYeastProcessor refuses to write against a diverged processor',
+        actionType: 'removeYeastProcessor',
+        divergedAction: {
+            type: 'removeYeastProcessor',
+            payload: {
+                processorId: 'yeast-live',
+                expectedProcessor: { id: 'yeast-live', type: 'filter', name: 'Renamed elsewhere', bypassed: false, params: { gate: 0.8 } },
+                expectedIndex: 0,
+            },
+        },
+    },
+    {
+        // Live rack order is ['yeast-live', 'yeast-arp']; the guard expects a
+        // sequence that no longer matches.
+        title: 'reorderYeastProcessor refuses to write against a diverged rack order',
+        actionType: 'reorderYeastProcessor',
+        divergedAction: {
+            type: 'reorderYeastProcessor',
+            payload: { processorId: 'yeast-live', toIndex: 1, expectedOrder: ['yeast-arp', 'yeast-live'] },
+        },
+    },
 ];
 
 /** Every action type a fixture proves — the one legal flagged set. */
@@ -136,6 +240,36 @@ function seedLiveProjectState(): void {
     });
 }
 
+/** The live Yeast rack the divergence guards above are checked against. */
+type YeastRootDocument = { yeast?: unknown };
+
+function seedLiveYeastRack(): void {
+    let document: Doc<YeastRootDocument> = from({});
+    configureAutomergeStoragePort({
+        getDoc: () => document,
+        getSemanticMessage: () => undefined,
+        hasDoc: () => true,
+        mutateDoc: ({ changeFn }) => {
+            document = change(document, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+        },
+    });
+    yeastStore.hydrate();
+    setActiveYeastDevice('device-registry');
+    yeastStore.set({
+        processors: [
+            { id: 'yeast-live', type: 'filter', name: 'Filter', bypassed: false, params: { gate: 0.8 } },
+            { id: 'yeast-arp', type: 'arpeggiator', name: 'Arp', bypassed: false, params: {} },
+        ],
+        uiLevel: 3,
+    });
+}
+
+function resetLiveYeastRack(): void {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    setActiveYeastDevice(null);
+}
+
 describe('canReportConflict handler registry honesty (#2881)', () => {
     beforeEach(() => {
         clearHandlerRegistry();
@@ -143,9 +277,11 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
             registerHandlerMap(handlerMap);
         }
         seedLiveProjectState();
+        seedLiveYeastRack();
     });
 
     afterEach(() => {
+        resetLiveYeastRack();
         clearHandlerRegistry();
     });
 
@@ -162,10 +298,10 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
         expect(flagged).toEqual(FIXTURE_PROVEN_ACTION_TYPES);
     });
 
-    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', ({ divergedAction }) => {
+    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', async ({ divergedAction }) => {
         const handler = getCommandHandler(divergedAction);
 
         expect(handler?.canReportConflict).toBe(true);
-        expect(handler?.execute(divergedAction)).toEqual({ status: 'conflict' });
+        expect(await handler?.execute(divergedAction)).toEqual({ status: 'conflict' });
     });
 });
