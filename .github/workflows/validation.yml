@@ -75,6 +75,10 @@ jobs:
 
       - name: Filter changed paths
         id: filter
+        # A transient GitHub API failure while listing the changed files must
+        # not fail the job; the retry step below re-runs this filter, and
+        # `Resolve scope` fails the job when neither attempt produced verdicts.
+        continue-on-error: true
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           # Negated patterns only subtract under this quantifier. The default
@@ -139,17 +143,103 @@ jobs:
               - '!playwright.config.ts'
               - '!tsconfig*.json'
 
+      # On a pull request's shallow checkout the filter lists the changed files
+      # through the GitHub REST API, which intermittently answers 500; that one
+      # transient answer used to fail the whole job and block Gate (#3592). The
+      # retry re-runs the identical filter, and `Resolve scope` fails loudly
+      # when neither attempt produced verdicts, so a persistent failure cannot
+      # read as an all-false scope that silently skips every lane.
+      - name: Retry changed-paths filter after a transient API failure
+        id: filter-retry
+        # An explicit `if` fully replaces the implicit `success()`, so this
+        # runs despite the first attempt's failure.
+        if: steps.filter.outcome == 'failure'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # Must stay identical to the `Filter changed paths` step's `with:`
+          # block above: a retry that filtered differently would resolve the
+          # scope from rules no pin reads.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'scripts/health-gates-server.sh'
+            server:
+              - 'server/**'
+              - 'scripts/health-gates-server.sh'
+              - 'package.json'
+              - 'vite.config.ts'
+              - 'scripts/checkVitestCollectionScope.ts'
+              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/nightly.yml'
+            e2e:
+              - 'src/**'
+              - 'public/**'
+              - 'tests/e2e/**'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            web:
+              - 'src/**'
+              - 'public/**'
+              - 'electron/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+            # Everything the scopes above do not claim, minus the two places
+            # that hold nothing but prose. Repository metadata is machine-read,
+            # not documentation: issue templates, the pull-request template and
+            # workflow definitions all land here and force the fast lane that
+            # polices them. A path nobody has classified lands here too, which
+            # is the point — an unknown path costs a full lane rather than
+            # silently skipping the checks that would have observed it.
+            unclassified:
+              - '**'
+              - '!docs/**'
+              - '!*.md'
+              - '!crates/**'
+              - '!Cargo.toml'
+              - '!Cargo.lock'
+              - '!rust-toolchain.toml'
+              - '!server/**'
+              - '!src/**'
+              - '!public/**'
+              - '!electron/**'
+              - '!scripts/**'
+              - '!tests/e2e/**'
+              - '!package.json'
+              - '!pnpm-lock.yaml'
+              - '!vite.config.ts'
+              - '!playwright.config.ts'
+              - '!tsconfig*.json'
+
       - name: Resolve scope
         id: scope
         env:
           EVENT: ${{ github.event_name }}
-          RUST: ${{ steps.filter.outputs.rust }}
-          SERVER: ${{ steps.filter.outputs.server }}
-          E2E: ${{ steps.filter.outputs.e2e }}
-          WEB: ${{ steps.filter.outputs.web }}
-          UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
+          # The retry attempt's verdict wins; its empty outputs (it never ran,
+          # or it failed too) fall through to the first attempt's, and both
+          # being empty leaves the value empty for the guard below to refuse.
+          RUST: ${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}
+          SERVER: ${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}
+          E2E: ${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}
+          WEB: ${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}
+          UNCLASSIFIED: ${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
+          # An empty verdict means both filter attempts failed or never ran;
+          # letting it read as `false` would skip every lane under a green job.
+          for verdict in "$RUST" "$SERVER" "$E2E" "$WEB" "$UNCLASSIFIED"; do
+            if [ "$verdict" != "true" ] && [ "$verdict" != "false" ]; then
+              printf 'No scope verdict: both "Filter changed paths" and "Retry changed-paths filter after a transient API failure" failed or produced no output.\n' >&2
+              exit 1
+            fi
+          done
           heavy=false
           if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
           rust=$RUST
