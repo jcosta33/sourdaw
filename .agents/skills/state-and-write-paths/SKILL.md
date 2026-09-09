@@ -78,6 +78,15 @@ Edit project truth through domain writes, then invalidate or refetch. The query 
 
 **Why:** cache-as-truth reimplements a worse store without ownership or undo.
 
+## Anti-patterns
+
+### Durable ownership must authenticate the exact current source
+
+PR #3943 acquired checkpoint retention from raw audio buffer IDs, so a replaced runtime source could publish ownership
+over stale disk PCM. Review every acquisition route with a genuine durability receipt and active storage scope, then
+change the source after retention commits and prove exact-token cleanup either removes the row or reports retained
+ownership explicitly.
+
 ## Prepared settlement review crosses module instances
 
 Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Reuse
