@@ -1,4 +1,5 @@
 import { type recordAutomationValue } from '#/modules/Automation/useCases';
+import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { type getTrackById } from '../../repositories/track/getTrackById';
 import { type AutomationMode } from '../../stores/trackStore';
@@ -13,12 +14,25 @@ type AutomationRecordDeps = {
     recordAutomationValue: typeof recordAutomationValue;
 };
 
+/** Carried by every writer that can reach a gesture recording pass. */
+export type AutomationRecordingOptions = {
+    automationRecordingPolicy?: AutomationRecordingPolicy;
+};
+
 export function maybeRecordAutomation(
     deps: AutomationRecordDeps,
     trackId: string,
     parameterId: string,
-    value: number
+    value: number,
+    options: AutomationRecordingOptions = {}
 ): void {
+    // The suppression decision belongs at the writer, not at each caller: undo,
+    // redo and persisted replay all arrive back here, and each of them would
+    // otherwise reopen the pass the original edit refused to start.
+    if (options.automationRecordingPolicy === 'suppressed') {
+        return;
+    }
+
     const transport = deps.getTransportValue();
     if (!transport?.isPlaying) {
         return;

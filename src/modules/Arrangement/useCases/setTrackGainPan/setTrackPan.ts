@@ -7,7 +7,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getAllTracks } from '../getAllTracks';
 
 import { syncToasterPadParam } from './helpers';
-import { maybeRecordAutomation } from './maybeRecordAutomation';
+import { type AutomationRecordingOptions, maybeRecordAutomation } from './maybeRecordAutomation';
 
 /**
  * Full-left to full-right on the track's own `pan` field. The automation lane is
@@ -33,8 +33,17 @@ const PAN_FIELD_FULL_SCALE = 50;
  * sweep was performed. It also drew the curve 50x outside the editor's own grid
  * and left the RDP tolerance 50x too tight, so pan under-thinned by an order of
  * magnitude. The lane's units are the ones that cross the boundary.
+ *
+ * `options.automationRecordingPolicy` is the separate question of whether this
+ * write is a gesture at all; `'suppressed'` reaches the engine, the pad mirror
+ * and the store exactly as before and never touches a recording pass.
  */
-export function setTrackPan(trackId: string, pan: number, isTransient = false): void {
+export function setTrackPan(
+    trackId: string,
+    pan: number,
+    isTransient = false,
+    options: AutomationRecordingOptions = {}
+): void {
     const clamped = Math.max(-PAN_FIELD_FULL_SCALE, Math.min(PAN_FIELD_FULL_SCALE, pan));
     engineSetTrackPan(trackId, clamped);
     syncToasterPadParam(trackId, 'pan', clamped / PAN_FIELD_FULL_SCALE, { updateDeviceParam, getAllTracks });
@@ -47,6 +56,7 @@ export function setTrackPan(trackId: string, pan: number, isTransient = false): 
         { getTransportValue: () => transportStore.value, getTrackById, recordAutomationValue },
         trackId,
         'pan',
-        clamped / PAN_FIELD_FULL_SCALE
+        clamped / PAN_FIELD_FULL_SCALE,
+        options
     );
 }
