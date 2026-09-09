@@ -1128,4 +1128,62 @@ describe('versioned command contract', () => {
         });
         expect(execute).not.toHaveBeenCalled();
     });
+
+    it('attaches the divergence classification to a device-version conflict like confirmation admission does', async () => {
+        const execute = vi.fn(() => ({ status: 'written' as const }));
+        registerHandlerMap({
+            addDevice: {
+                execute,
+                describe: () => ({
+                    label: 'Add compressor',
+                    inverseAction: {
+                        type: 'removeDevice',
+                        payload: { trackId: 'track-1', deviceId: 'device-command-1' },
+                    },
+                }),
+                undoable: true,
+            },
+        });
+        const command = createExecutionCommandEnvelope({
+            action: {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-1',
+                    deviceType: 'builtin-compressor',
+                    deviceId: 'device-command-1',
+                },
+            },
+            expectedEffect: 'Add a compressor.',
+            normalizedProjectRevision: 'revision-live',
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-live');
+        commandDeviceVersionsPort.setResolver(() => 'descriptor-v1:changed');
+        commandProjectDivergencePort.setProvider(({ targetIds }) => ({
+            kind: 'ambiguous-same-object',
+            mayReapply: false,
+            repairCandidates: [{ kind: 'review-ambiguous-target', targetIds }],
+            targetIds,
+        }));
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command.envelope)],
+        });
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch base revision does not match current project state',
+            divergence: { kind: 'ambiguous-same-object', mayReapply: false },
+        });
+        expect(execute).not.toHaveBeenCalled();
+
+        commandProjectDivergencePort.setProvider(null);
+        const unclassifiedResult = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(command.envelope)],
+        });
+        expect(unclassifiedResult).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch base revision does not match current project state',
+        });
+        expect(unclassifiedResult).not.toHaveProperty('divergence');
+    });
 });
