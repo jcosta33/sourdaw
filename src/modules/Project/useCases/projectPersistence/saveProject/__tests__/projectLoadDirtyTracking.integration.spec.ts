@@ -19,6 +19,7 @@
  * user sees an unsaved-changes marker on a freshly opened project.
  */
 
+import { change, init } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -172,11 +173,39 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mockSetAutoSaveHandle }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mockStopActiveAutoSave }));
+vi.mock('../../helpers/resetModuleStoresToDefault', async () => {
+    const { defaultTrackState, trackStore } = await import('#/modules/Arrangement/stores');
+    return {
+        resetModuleStoresToDefault: () => trackStore.set(structuredClone(defaultTrackState)),
+    };
+});
+vi.mock('../../helpers/runProjectLoadTransaction', async () => {
+    const actual = await vi.importActual<typeof import('../../helpers/runProjectLoadTransaction')>(
+        '../../helpers/runProjectLoadTransaction'
+    );
+    return {
+        projectLoadEpoch: actual.projectLoadEpoch,
+        runProjectLoadTransaction: () => ({
+            prepare: () => Promise.resolve(true),
+            activate: () => true,
+            canActivate: () => true,
+            isCurrent: () => true,
+            signal: new AbortController().signal,
+        }),
+    };
+});
 
+import { Container } from '#/infra/di/Container';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { ArrangementEventBus } from '#/modules/Arrangement/useCases/arrangementEventBus';
 
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
+import { newProject } from '../../newProject';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
@@ -224,6 +253,8 @@ describe('project load dirty tracking (audit M-011)', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
+        Container.set(ArrangementEventBus, { emit: () => Promise.resolve() } as ArrangementEventBus);
         stopDirtyTracking();
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
@@ -272,5 +303,42 @@ describe('project load dirty tracking (audit M-011)', () => {
         });
 
         expect(projectStore.value?.dirty).toBe(true);
+    });
+
+    it('drains fresh-project track initialization before publishing its clean metadata', async () => {
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
+        let doc = init<Record<string, unknown>>();
+        let mutations = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            hasDoc: () => true,
+            getSemanticMessage: () => undefined,
+            mutateDoc: ({ changeFn }) => {
+                doc = change(doc, (draft) => changeFn(draft));
+                mutations += 1;
+            },
+        });
+
+        try {
+            await expect(newProject('Fresh Project')).resolves.toBe(true);
+
+            expect(mutations).toBeGreaterThan(0);
+            expect(trackStore.value?.tracks.some((track) => track.kind === 'master')).toBe(true);
+            expect(projectStore.value?.dirty).toBe(false);
+
+            const current = trackStore.value ?? defaultTrackState;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) =>
+                    track.kind === 'master' ? { ...track, name: 'Master (renamed by user)' } : track
+                ),
+            });
+
+            expect(projectStore.value?.dirty).toBe(true);
+        } finally {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
     });
 });

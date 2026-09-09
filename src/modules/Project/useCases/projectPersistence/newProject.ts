@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
@@ -110,6 +111,10 @@ async function activateNewProject({
     runCommittedStep('module store reset', () => resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true }));
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
     runCommittedStep('master track creation', () => addTrack({ name: 'Master', kind: 'master', select: false }));
+    // The reset and master creation enqueue CRDT-backed store writes. Commit them
+    // while loading is still true so their terminal projection cannot mark a
+    // freshly created project dirty after clean metadata is published.
+    runCommittedStep('initial Automerge storage write drain', flushAutomergeStorageWrites);
     let publishedProjectId: string | undefined;
     runCommittedStep('project metadata publication', () => {
         const metadata = createFreshProjectMetadata({
