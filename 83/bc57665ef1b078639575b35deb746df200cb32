@@ -1,0 +1,46 @@
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_65f87973a7c1f5 84-87
+  s_9b530f08172a54::t_9dc8bb44ad969f 15,88-92
+src/modules/AudioEngine/useCases/livePlayback/__tests__/claimNativeSessionRearm.spec.ts
+  s_9b530f08172a54::t_73036bc2dd5d8f 8-11,19,52-76
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_1946b2e70195ca 331-335,340-343,1083-1113,1165-1199
+src/modules/AudioEngine/useCases/livePlayback/__tests__/retireOrphanedNativeEngine.spec.ts
+  s_9b530f08172a54::t_58c2029ca09309 16-18,32-42,59-65,74,162-194
+src/modules/AudioEngine/useCases/livePlayback/claimNativeSessionRearm.ts
+  s_9b530f08172a54::t_3f9c50828d1c05 8-11
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_d5d22234717e13 161-166
+src/modules/AudioEngine/useCases/livePlayback/nativeSessionRearmClaimHolds.ts
+  s_9b530f08172a54::t_d1dbb7739cd69c 5-9
+src/modules/AudioEngine/useCases/livePlayback/retireOrphanedNativeEngine.ts
+  s_9b530f08172a54::t_b1876601975b83 38-44,84,98-105
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_23147afc0f33cf 147-152,154-169,178-186,524-529,713-718,732-739,741,745,945-951
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_cb57821b384980 41-46,75-78,83-87,116,129-138,147-148,154,270-273,289-290,294
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_9b530f08172a54::t_30dbd910637f10 26-33,45-51,238-243,319-330,333,348-355,363-367,427,445-446,450-454
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_9f7ef698886c43 67-71
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_6174e031c84886 11-16
+src/modules/Transport/useCases/transportControls/startSchedulerWhenNativeSessionSettles.ts
+  s_9b530f08172a54::t_69f022dcea9568 36-37,46-52,56-64,67-68,86-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "83bc57665ef1b078639575b35deb746df200cb32",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
