@@ -68,7 +68,7 @@ try {
 
 ### 8. Keep native select popups outside DOM-key claims
 
-Native `<select>` popups are browser and OS UI. Observe each keyboard key from a focused, closed selector; after every key, use Escape and a real click on neutral non-control background, then prove `:open` is false, focus is restored, and application state is unchanged before the next key. Do not generalize a local browser result to hosted platforms, and cover native popup option choice separately from DOM key delivery.
+Native `<select>` popups are browser and OS UI. Observe each keyboard key from a focused, closed selector; after every key, use Escape and a real click on neutral non-control background to reset the popup, then prove `:open` is false, focus is restored, and global playhead and workspace state are unchanged before the next key. Native option selection may change the selected value normally; verify that value and its rendered lane separately, and do not manufacture that proof during popup cleanup. Do not generalize a local browser result to hosted platforms.
 
 ## References
 
