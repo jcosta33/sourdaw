@@ -312,6 +312,58 @@ pub struct ProofChamberInstance {
     fdn_damping_version: u8,
 }
 
+impl ProofChamberInstance {
+    pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32 {
+        let size = (frames as usize).min(1024);
+        self.out_left[..size].copy_from_slice(&left_in[..size]);
+        self.out_right[..size].copy_from_slice(&right_in[..size]);
+        self.process_outputs(size)
+    }
+
+    fn process_outputs(&mut self, size: usize) -> *const f32 {
+        // One match on the active discriminant per block, exactly as before:
+        // the engines moved out of the enum, the dispatch did not change shape
+        // and no per-sample branch was added.
+        match &mut self.active {
+            ReverbEngine::Plate => self
+                .engines
+                .plate
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Fdn8 => self
+                .engines
+                .fdn8
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Fdn16 => self
+                .engines
+                .fdn16
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Spring => self
+                .engines
+                .spring
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Reverse => self
+                .engines
+                .reverse
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Convolution(c) => {
+                c.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+            ReverbEngine::Hybrid(h) => {
+                h.process(&mut self.out_left[..size], &mut self.out_right[..size])
+            }
+        }
+
+        // Apply vintage character
+        self.vintage
+            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
+
+        self.nan_flush_count += sanitize_block(&mut self.out_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.out_right[..size]) as u64;
+
+        self.out_left.as_ptr()
+    }
+}
+
 #[wasm_bindgen]
 impl ProofChamberInstance {
     #[wasm_bindgen(constructor)]
@@ -428,51 +480,14 @@ impl ProofChamberInstance {
         }
     }
 
-    pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32 {
+    #[wasm_bindgen(js_name = process)]
+    pub fn process_in_place(&mut self, frames: u32) -> *const f32 {
         let size = (frames as usize).min(1024);
-        self.out_left[..size].copy_from_slice(&left_in[..size]);
-        self.out_right[..size].copy_from_slice(&right_in[..size]);
+        self.process_outputs(size)
+    }
 
-        // One match on the active discriminant per block, exactly as before:
-        // the engines moved out of the enum, the dispatch did not change shape
-        // and no per-sample branch was added.
-        match &mut self.active {
-            ReverbEngine::Plate => self
-                .engines
-                .plate
-                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Fdn8 => self
-                .engines
-                .fdn8
-                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Fdn16 => self
-                .engines
-                .fdn16
-                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Spring => self
-                .engines
-                .spring
-                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Reverse => self
-                .engines
-                .reverse
-                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
-            ReverbEngine::Convolution(c) => {
-                c.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
-            ReverbEngine::Hybrid(h) => {
-                h.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
-        }
-
-        // Apply vintage character
-        self.vintage
-            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
-
-        self.nan_flush_count += sanitize_block(&mut self.out_left[..size]) as u64;
-        self.nan_flush_count += sanitize_block(&mut self.out_right[..size]) as u64;
-
-        self.out_left.as_ptr()
+    pub fn get_left_ptr(&mut self) -> *mut f32 {
+        self.out_left.as_mut_ptr()
     }
 
     /// Number of non-finite output samples scrubbed to silence since
@@ -482,8 +497,8 @@ impl ProofChamberInstance {
         self.nan_flush_count as f64
     }
 
-    pub fn get_right_ptr(&self) -> *const f32 {
-        self.out_right.as_ptr()
+    pub fn get_right_ptr(&mut self) -> *mut f32 {
+        self.out_right.as_mut_ptr()
     }
 
     /// Report plugin latency in samples for PDC (delay compensation).

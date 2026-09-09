@@ -454,6 +454,23 @@ pub struct ScoringInstance {
     scale_name: String,
 }
 
+impl ScoringInstance {
+    pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32 {
+        let size = (frames as usize).min(1024);
+        self.out_left[..size].copy_from_slice(&left_in[..size]);
+        self.out_right[..size].copy_from_slice(&right_in[..size]);
+        self.process_outputs(size)
+    }
+
+    fn process_outputs(&mut self, size: usize) -> *const f32 {
+        self.engine
+            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
+        self.nan_flush_count += sanitize_block(&mut self.out_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.out_right[..size]) as u64;
+        self.out_left.as_ptr()
+    }
+}
+
 #[wasm_bindgen]
 impl ScoringInstance {
     #[wasm_bindgen(constructor)]
@@ -471,15 +488,14 @@ impl ScoringInstance {
         self.engine.set_param(name, value);
     }
 
-    pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32 {
+    #[wasm_bindgen(js_name = process)]
+    pub fn process_in_place(&mut self, frames: u32) -> *const f32 {
         let size = (frames as usize).min(1024);
-        self.out_left[..size].copy_from_slice(&left_in[..size]);
-        self.out_right[..size].copy_from_slice(&right_in[..size]);
-        self.engine
-            .process(&mut self.out_left[..size], &mut self.out_right[..size]);
-        self.nan_flush_count += sanitize_block(&mut self.out_left[..size]) as u64;
-        self.nan_flush_count += sanitize_block(&mut self.out_right[..size]) as u64;
-        self.out_left.as_ptr()
+        self.process_outputs(size)
+    }
+
+    pub fn get_left_ptr(&mut self) -> *mut f32 {
+        self.out_left.as_mut_ptr()
     }
 
     /// Number of non-finite output samples scrubbed to silence since
@@ -489,8 +505,8 @@ impl ScoringInstance {
         self.nan_flush_count as f64
     }
 
-    pub fn get_right_ptr(&self) -> *const f32 {
-        self.out_right.as_ptr()
+    pub fn get_right_ptr(&mut self) -> *mut f32 {
+        self.out_right.as_mut_ptr()
     }
 
     // Telemetry accessors (called from JS to read current state)

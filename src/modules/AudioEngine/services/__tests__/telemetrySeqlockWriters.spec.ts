@@ -164,6 +164,9 @@ class ScoringInstanceMock {
     process(): number {
         return SCORING_PTR.outLeft;
     }
+    get_left_ptr(): number {
+        return SCORING_PTR.outLeft;
+    }
     get_right_ptr(): number {
         return SCORING_PTR.outRight;
     }

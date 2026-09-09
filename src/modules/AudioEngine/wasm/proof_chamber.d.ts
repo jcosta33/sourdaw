@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:c8a0a57b6d31aad8ecba8cf17c93fa38be14326cb47ad2bad3a88ab0632711b4
+// @wasm-bindgen-dts crate-source: sha256:e8a283ab2f17a1863bcadfa28d05408c3102fd92add6bcfea106c0884bfc8aae
 /* tslint:disable */
 /* eslint-disable */
 
@@ -12,6 +12,7 @@ export class ProofChamberInstance {
      * segment offsets, and the head/dry reference takes the remaining 128.
      */
     get_latency(): number;
+    get_left_ptr(): number;
     /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
@@ -25,7 +26,7 @@ export class ProofChamberInstance {
      */
     load_ir(ir_data: Float32Array, channels: number): void;
     constructor(sample_rate: number);
-    process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
+    process(frames: number): number;
     set_param(name: string, value: number): void;
     set_param_by_id(param_id: number, value: number): void;
 }
@@ -45,12 +46,13 @@ export interface InitOutput {
     readonly __wbg_proofchamberinstance_free: (a: number, b: number) => void;
     readonly init_panic_hook: () => void;
     readonly proofchamberinstance_get_latency: (a: number) => number;
+    readonly proofchamberinstance_get_left_ptr: (a: number) => number;
     readonly proofchamberinstance_get_nan_flush_count: (a: number) => number;
     readonly proofchamberinstance_get_param_names: (a: number) => [number, number];
     readonly proofchamberinstance_get_right_ptr: (a: number) => number;
     readonly proofchamberinstance_load_ir: (a: number, b: number, c: number, d: number) => void;
     readonly proofchamberinstance_new: (a: number) => number;
-    readonly proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly proofchamberinstance_process: (a: number, b: number) => number;
     readonly proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly proofchamberinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

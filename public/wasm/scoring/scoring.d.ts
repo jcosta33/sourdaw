@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:fdc14d31c9aa73e443fdc521ea62860bea986719d33504f21a8af42df76f0aec
+// @wasm-bindgen-dts crate-source: sha256:478fb9e79e31c3d9d602de19200fc20f4f6d0a54764f77733c9851ab1d4bfbb1
 /* tslint:disable */
 /* eslint-disable */
 
@@ -8,6 +8,7 @@ export class ScoringInstance {
     get_cents(): number;
     get_confidence(): number;
     get_frequency(): number;
+    get_left_ptr(): number;
     get_midi_note(): number;
     /**
      * Number of non-finite output samples scrubbed to silence since
@@ -47,7 +48,7 @@ export class ScoringInstance {
     is_active(): boolean;
     is_poly_string_active(idx: number): boolean;
     constructor(sample_rate: number);
-    process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
+    process(frames: number): number;
     scale_description(): string;
     set_param(name: string, value: number): void;
 }
@@ -69,6 +70,7 @@ export interface InitOutput {
     readonly scoringinstance_get_cents: (a: number) => number;
     readonly scoringinstance_get_confidence: (a: number) => number;
     readonly scoringinstance_get_frequency: (a: number) => number;
+    readonly scoringinstance_get_left_ptr: (a: number) => number;
     readonly scoringinstance_get_midi_note: (a: number) => number;
     readonly scoringinstance_get_nan_flush_count: (a: number) => number;
     readonly scoringinstance_get_note_index: (a: number) => number;
@@ -82,7 +84,7 @@ export interface InitOutput {
     readonly scoringinstance_is_active: (a: number) => number;
     readonly scoringinstance_is_poly_string_active: (a: number, b: number) => number;
     readonly scoringinstance_new: (a: number) => number;
-    readonly scoringinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly scoringinstance_process: (a: number, b: number) => number;
     readonly scoringinstance_scale_description: (a: number) => [number, number];
     readonly scoringinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

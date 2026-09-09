@@ -28,6 +28,7 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const paramCalls: Array<{ name: string; value: number }> = [];
 const processCalls: number[] = [];
+const processInputs: Array<{ frames: number; leftFirst: number; rightFirst: number; rightLast: number }> = [];
 let isActive = false;
 let processShouldThrow = false;
 
@@ -35,7 +36,7 @@ class ScoringInstanceMock {
     set_param(name: string, value: number): void {
         paramCalls.push({ name, value });
     }
-    process(leftIn: Float32Array, _rightIn: Float32Array, frames: number): number {
+    process(frames: number): number {
         processCalls.push(frames);
         if (processShouldThrow) {
             throw new Error('wasm trap');
@@ -43,8 +44,16 @@ class ScoringInstanceMock {
         // passthrough: copy left input into both output windows.
         const left = new RealFloat32Array(memory.buffer, OUT_LEFT_PTR, frames);
         const right = new RealFloat32Array(memory.buffer, OUT_RIGHT_PTR, frames);
-        left.set(leftIn);
-        right.set(leftIn);
+        processInputs.push({
+            frames,
+            leftFirst: left[0] ?? 0,
+            rightFirst: right[0] ?? 0,
+            rightLast: right[frames - 1] ?? 0,
+        });
+        right.set(left);
+        return OUT_LEFT_PTR;
+    }
+    get_left_ptr(): number {
         return OUT_LEFT_PTR;
     }
     get_right_ptr(): number {
@@ -100,6 +109,7 @@ function stereo(frames: number, fill: number): Float32Array[] {
 function resetRecording(): void {
     paramCalls.length = 0;
     processCalls.length = 0;
+    processInputs.length = 0;
     isActive = false;
     processShouldThrow = false;
 }
@@ -236,6 +246,89 @@ describe('ScoringProcessor process & telemetry', () => {
         proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);
         expect(processCalls).toEqual([]);
     });
+
+    it('copies mono input into both preallocated channels', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+        const mono = new Float32Array(FRAMES).fill(0.625);
+        const output = stereo(FRAMES, 0);
+
+        proc.process([[mono]], [output]);
+
+        expect(processInputs).toEqual([{ frames: FRAMES, leftFirst: 0.625, rightFirst: 0.625, rightLast: 0.625 }]);
+        expect(output[0]).toEqual(mono);
+        expect(output[1]).toEqual(mono);
+    });
+
+    it('copies distinct stereo inputs for exactly the active left-channel length', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+        const left = new Float32Array(FRAMES).fill(0.25);
+        const right = new Float32Array(FRAMES * 2).fill(0.75);
+        right[FRAMES] = 0.95;
+        const beyondActiveRight = new RealFloat32Array(
+            memory.buffer,
+            OUT_RIGHT_PTR + FRAMES * Float32Array.BYTES_PER_ELEMENT,
+            1
+        );
+        beyondActiveRight[0] = -0.5;
+
+        proc.process([[left, right]], [stereo(FRAMES, 0)]);
+
+        expect(processInputs).toEqual([{ frames: FRAMES, leftFirst: 0.25, rightFirst: 0.75, rightLast: 0.75 }]);
+        expect(beyondActiveRight[0]).toBe(-0.5);
+    });
+
+    it('processes the full 1024-frame preallocated boundary and skips zero frames', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        resetRecording();
+
+        proc.process([stereo(1024, 0.2)], [stereo(1024, 0)]);
+        proc.process([[new Float32Array(0)]], [[new Float32Array(0)]]);
+
+        expect(processCalls).toEqual([1024]);
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+    });
+
+    it.each(['1025 frames', 'short right input', 'short output'] as const)(
+        'faults before mutating WASM input memory for %s',
+        async (shape) => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            resetRecording();
+            proc.port.postMessage.mockClear();
+            const wasmLeft = new RealFloat32Array(memory.buffer, OUT_LEFT_PTR, 1024);
+            const wasmRight = new RealFloat32Array(memory.buffer, OUT_RIGHT_PTR, 1024);
+            wasmLeft.fill(-0.25);
+            wasmRight.fill(-0.75);
+            const beforeLeft = Array.from(wasmLeft);
+            const beforeRight = Array.from(wasmRight);
+            const leftFrames = shape === '1025 frames' ? 1025 : FRAMES;
+            const rightFrames = shape === 'short right input' ? FRAMES / 2 : leftFrames;
+            const outputFrames = shape === 'short output' ? FRAMES / 2 : leftFrames;
+            const input = [new Float32Array(leftFrames).fill(0.25), new Float32Array(rightFrames).fill(0.75)];
+            const output = [new Float32Array(outputFrames), new Float32Array(outputFrames)];
+
+            expect(() => proc.process([input], [output])).not.toThrow();
+            expect(processCalls).toEqual([]);
+            expect(Array.from(wasmLeft)).toEqual(beforeLeft);
+            expect(Array.from(wasmRight)).toEqual(beforeRight);
+            const expectedLeft = new Float32Array(outputFrames);
+            const expectedRight = new Float32Array(outputFrames);
+            expectedLeft.set(input[0]!.subarray(0, outputFrames));
+            expectedRight.set(input[1]!.subarray(0, outputFrames));
+            expect(output[0]).toEqual(expectedLeft);
+            expect(output[1]).toEqual(expectedRight);
+            expect(proc.port.postMessage.mock.calls.filter((call) => call[0]?.type === 'error')).toHaveLength(1);
+
+            proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+            expect(processCalls).toEqual([]);
+            expect(proc.port.postMessage.mock.calls.filter((call) => call[0]?.type === 'error')).toHaveLength(1);
+        }
+    );
 });
 
 /**
