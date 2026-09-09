@@ -1,0 +1,18 @@
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  h_1228e573df1f42 1-203
+scripts/offlineAudioWorkletTrace.ts
+  h_1228e573df1f42 1-292
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  h_1228e573df1f42 1-487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3cbf584f89c8c970e37200836571c5b1ccb44032",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
