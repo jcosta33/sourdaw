@@ -1,0 +1,27 @@
+crates/proof-chamber/src/lib.rs
+  s_87ab0a2f60ccf8::t_aabfbd795060cb 489-490,500-501
+crates/proof-chamber/tests/in_place_parity.rs
+  s_87ab0a2f60ccf8::t_aabfbd795060cb 10-11,15-17,19,22-23,55-56
+.agents/skills/web-audio-engine/SKILL.md
+  s_87ab0a2f60ccf8::t_aabfbd795060cb 59
+crates/scoring/tests/in_place_parity.rs
+  s_87ab0a2f60ccf8::t_aabfbd795060cb 10-11,15-17,19,22-23,51-52
+crates/scoring/src/lib.rs
+  s_87ab0a2f60ccf8::t_aabfbd795060cb 497-498,508-509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "139750b7b9db401162680b335eb624bb108c88ae",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
