@@ -7,7 +7,7 @@
  * Level 4 (Route):  Live note activity, CC routing
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
-import { type ComponentProps, type ReactElement, useEffect, useState } from 'react';
+import { type ComponentProps, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -20,6 +20,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import {
     getScopedGrooveConsumerId,
@@ -35,19 +36,19 @@ import {
 } from '../../models/ArpPattern';
 import { PROCESSOR_PARAM_DEFAULTS, PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { setActiveYeastDevice, yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
-import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
-import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
-import { reorderYeastProcessor } from '../../useCases/reorderYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
-import { setYeastArpPattern } from '../../useCases/setYeastArpPattern';
-import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
-import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
-import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
 import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
+import { useYeastParamActions } from '../hooks/useYeastParamActions';
 import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
+import {
+    dispatchAddYeastProcessor,
+    dispatchRemoveYeastProcessor,
+    dispatchReorderYeastProcessor,
+    dispatchSetYeastProcessorBypass,
+} from '../rackActions';
 
 import { GrooveDropTarget } from './GrooveDropTarget';
 import { GrooveTemplateLifecycleControls } from './GrooveTemplateLifecycleControls';
@@ -63,9 +64,13 @@ const LEVEL_OPTIONS = [
     { level: 5 as const, label: 'Lab', detail: 'Mutate' },
 ];
 
-function handleSetYeastProcessorParam(id: string, name: string, value: number, isTransient?: boolean): void {
-    void setYeastProcessorParam(id, name, value, isTransient).catch(() => undefined);
-}
+/**
+ * How soon after a stroke ends the NEXT stroke may coalesce into the same undo
+ * group — two strokes in quick succession read as one paint move; a stroke
+ * minutes later must not merge into a stale group. Same window the knobs and
+ * the mixer strip use.
+ */
+const STEP_STROKE_COALESCE_WINDOW_MS = 500;
 
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
     <DawPluginMetricTile className="yeast-window min-w-[92px]" label={label} value={value} detail={detail} />
@@ -213,6 +218,7 @@ const GROOVE_EXTRACTION_SUBDIVISIONS = getSupportedGrooveSubdivisions();
 
 const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
+    const paramActions = useYeastParamActions();
     const [extractionSubdivision, setExtractionSubdivision] = useState('1/16');
     // Derive the assignment from the SUBSCRIBED state, not from an impure
     // store read: React Compiler memoizes getYeastGrooveAssignment(processor.id)
@@ -244,13 +250,19 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
             <ProcessorParams
                 processorId={processor.id}
                 processorType={processor.type}
-                params={processor.params}
-                onSetParam={handleSetYeastProcessorParam}
+                // The gesture overlay rides on params so every knob below
+                // draws the thumb value while a drag is open.
+                params={paramActions.displayParams(processor.id, processor.params)}
+                onSetParam={paramActions.setParam}
                 onCommand={sendYeastProcessorCommand}
                 grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
                 selectedGrooveTemplateId={selectedGrooveTemplateId}
-                grooveAmount={assignment?.amount ?? processor.params?.amount ?? 0.5}
-                onSetGrooveTemplate={setYeastGrooveTemplate}
+                grooveAmount={paramActions.displayValue(
+                    processor.id,
+                    'amount',
+                    assignment?.amount ?? processor.params?.amount ?? 0.5
+                )}
+                onSetGrooveTemplate={paramActions.setGrooveAmount}
             />
             {processor.type === 'groove' ? (
                 <Stack gap={1} className="px-1">
@@ -329,7 +341,7 @@ const ProcessorRackChain = ({
                         className="text-micro leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
-                            reorderYeastProcessor(index, index - 1);
+                            dispatchReorderYeastProcessor(proc.id, index - 1);
                         }}
                     >
                         ↑
@@ -343,7 +355,7 @@ const ProcessorRackChain = ({
                         className="text-micro leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
-                            reorderYeastProcessor(index, index + 1);
+                            dispatchReorderYeastProcessor(proc.id, index + 1);
                         }}
                     >
                         ↓
@@ -355,7 +367,7 @@ const ProcessorRackChain = ({
                         shape="soft"
                         onClick={(event) => {
                             event.stopPropagation();
-                            setYeastProcessorBypass(proc.id, !proc.bypassed);
+                            dispatchSetYeastProcessorBypass(proc.id);
                         }}
                     >
                         {proc.bypassed ? 'Off' : 'On'}
@@ -367,7 +379,7 @@ const ProcessorRackChain = ({
                         className="text-nano text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
-                            removeYeastProcessor(proc.id);
+                            dispatchRemoveYeastProcessor(proc.id);
                         }}
                     >
                         ✕
@@ -394,6 +406,13 @@ const ProcessorRackChain = ({
  */
 const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     const arp = state.processors.find((processor) => processor.type === 'arpeggiator');
+    // Stroke coalescing state: the open stroke's dispatch count plus when the
+    // previous stroke settled. Every cell of one stroke joins the stroke's own
+    // group; a NEW stroke joins it only when it starts within the coalescing
+    // window — otherwise it starts a fresh group, so a correction minutes
+    // later never merges with (and gets reverted by the undo of) a stale move.
+    const strokeDispatchCountRef = useRef(0);
+    const lastStrokeSettleTimeRef = useRef(0);
     if (!arp) {
         return (
             <div className="text-micro leading-3 text-muted-foreground/60">
@@ -403,8 +422,32 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     }
 
     const steps = decodeArpPatternParams(arp.params);
-    const commitPattern = (next: readonly ArpStep[]): void => {
-        void setYeastArpPattern(arp.id, next).catch(() => undefined);
+    const commitPattern = (next: readonly ArpStep[], withinStroke: boolean): void => {
+        let coalesceWithPrevious = false;
+        if (withinStroke) {
+            if (strokeDispatchCountRef.current > 0) {
+                coalesceWithPrevious = true;
+            } else if (
+                performance.now() - lastStrokeSettleTimeRef.current <= STEP_STROKE_COALESCE_WINDOW_MS
+            ) {
+                coalesceWithPrevious = true;
+                lastStrokeSettleTimeRef.current = 0;
+            }
+            strokeDispatchCountRef.current += 1;
+        }
+        // The expected guard reads the LIVE pattern at commit time, not the
+        // render-scoped prop — a peer write that landed since the last render
+        // is what the guard must lock against.
+        const expectedSteps = decodeArpPatternParams(
+            yeastStore.value?.processors.find((candidate) => candidate.id === arp.id)?.params
+        );
+        void executeUserAppAction(
+            {
+                type: 'setYeastArpPattern',
+                payload: { processorId: arp.id, steps: next, expectedSteps },
+            },
+            coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined
+        );
     };
 
     return (
@@ -415,17 +458,27 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
             <StepPatternEditor
                 steps={steps}
                 currentStep={0}
-                onStepChange={(index, step) => {
+                onStrokeStart={() => {
+                    strokeDispatchCountRef.current = 0;
+                }}
+                onStrokeEnd={() => {
+                    lastStrokeSettleTimeRef.current = performance.now();
+                }}
+                onStepChange={(index, step, source) => {
                     const next = [...steps];
                     next[index] = step;
-                    commitPattern(next);
+                    // A cell reached through a paint stroke coalesces; a
+                    // discrete toggle, cycle or length change is its own
+                    // single-dispatch undo unit.
+                    commitPattern(next, source?.stroke === true);
                 }}
                 onLengthChange={(length) => {
                     const nextLength = clampArpPatternLength(length);
                     commitPattern(
                         nextLength > steps.length
                             ? [...steps, ...createDefaultPattern(nextLength - steps.length)]
-                            : steps.slice(0, nextLength)
+                            : steps.slice(0, nextLength),
+                        false
                     );
                 }}
             />
@@ -497,7 +550,7 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                         <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
                             <Row wrap gap={1.5}>
                                 {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
-                                    <YeastChip key={processor.type} onClick={() => addYeastProcessor(processor.type)}>
+                                    <YeastChip key={processor.type} onClick={() => dispatchAddYeastProcessor(processor.type)}>
                                         + {processor.name}
                                     </YeastChip>
                                 ))}
@@ -593,9 +646,10 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
 const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
+    const paramActions = useYeastParamActions();
     const arp = state.processors.find((param) => param.type === 'arpeggiator');
     const hasArp = arp !== undefined;
-    // Latch is processor param state, not view state: handleSetYeastProcessorParam
+    // Latch is processor param state, not view state: the guarded param action
     // commits it to yeastStore, and a reload or undo that restores the
     // arpeggiator must restore its latch with it.
     const latchOn = arp?.params?.latch === 1;
@@ -613,9 +667,9 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 caps
                 onClick={() => {
                     if (arp) {
-                        removeYeastProcessor(arp.id);
+                        dispatchRemoveYeastProcessor(arp.id);
                     } else {
-                        addYeastProcessor('arpeggiator');
+                        dispatchAddYeastProcessor('arpeggiator');
                     }
                 }}
             >
@@ -631,7 +685,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     aria-label="Mode"
                     onChange={(event) => {
                         if (arp) {
-                            handleSetYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
+                            paramActions.setParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
                     value={arp?.params?.mode ?? 0}
@@ -651,10 +705,14 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 <span className="text-micro text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     aria-label="Rate"
-                    value={arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!}
-                    onChange={(value) => {
+                    value={paramActions.displayValue(
+                        arp?.id ?? '',
+                        'rate_denom',
+                        arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!
+                    )}
+                    onChange={(value, isTransient) => {
                         if (arp) {
-                            handleSetYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
+                            paramActions.setParam(arp.id, 'rate_denom', Math.round(value), isTransient);
                         }
                     }}
                     min={1}
@@ -675,7 +733,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 onClick={() => {
                     const next = !latchOn;
                     if (arp) {
-                        handleSetYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
+                        paramActions.setParam(arp.id, 'latch', next ? 1 : 0);
                     }
                 }}
             >
@@ -688,18 +746,22 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
 const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
+    const paramActions = useYeastParamActions();
     const arp = state.processors.find((param) => param.type === 'arpeggiator');
 
     return (
         <Row align="start" justify="around" className="flex-1 px-4 py-3">
             <KnobCol
                 label="Gate"
-                value={arp?.params?.gate ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.gate!}
-                onChange={(value) => {
-                    if (!arp) {
-                        return;
+                value={paramActions.displayValue(
+                    arp?.id ?? '',
+                    'gate',
+                    arp?.params?.gate ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.gate!
+                )}
+                onChange={(value, isTransient) => {
+                    if (arp) {
+                        paramActions.setParam(arp.id, 'gate', value, isTransient);
                     }
-                    handleSetYeastProcessorParam(arp.id, 'gate', value);
                 }}
                 min={0.01}
                 max={2}
@@ -713,12 +775,15 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Swing"
-                value={arp?.params?.swing ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.swing!}
-                onChange={(value) => {
-                    if (!arp) {
-                        return;
+                value={paramActions.displayValue(
+                    arp?.id ?? '',
+                    'swing',
+                    arp?.params?.swing ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.swing!
+                )}
+                onChange={(value, isTransient) => {
+                    if (arp) {
+                        paramActions.setParam(arp.id, 'swing', value, isTransient);
                     }
-                    handleSetYeastProcessorParam(arp.id, 'swing', value);
                 }}
                 min={0}
                 max={1}
@@ -728,12 +793,15 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Octaves"
-                value={arp?.params?.octave_range ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.octave_range!}
-                onChange={(value) => {
-                    if (!arp) {
-                        return;
+                value={paramActions.displayValue(
+                    arp?.id ?? '',
+                    'octave_range',
+                    arp?.params?.octave_range ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.octave_range!
+                )}
+                onChange={(value, isTransient) => {
+                    if (arp) {
+                        paramActions.setParam(arp.id, 'octave_range', value, isTransient);
                     }
-                    handleSetYeastProcessorParam(arp.id, 'octave_range', value);
                 }}
                 min={1}
                 max={4}
@@ -743,12 +811,15 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             />
             <KnobCol
                 label="Velocity"
-                value={arp?.params?.fixed_velocity ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.fixed_velocity!}
-                onChange={(value) => {
-                    if (!arp) {
-                        return;
+                value={paramActions.displayValue(
+                    arp?.id ?? '',
+                    'fixed_velocity',
+                    arp?.params?.fixed_velocity ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.fixed_velocity!
+                )}
+                onChange={(value, isTransient) => {
+                    if (arp) {
+                        paramActions.setParam(arp.id, 'fixed_velocity', value, isTransient);
                     }
-                    handleSetYeastProcessorParam(arp.id, 'fixed_velocity', value);
                 }}
                 min={1}
                 max={127}
@@ -786,7 +857,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
             {/* Add processor */}
             <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 3).map((pt) => (
-                    <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                    <YeastChip key={pt.type} onClick={() => dispatchAddYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
                     </YeastChip>
                 ))}
@@ -822,7 +893,7 @@ const Level4Route = ({
             {/* Add — includes Route-level processors */}
             <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                    <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                    <YeastChip key={pt.type} onClick={() => dispatchAddYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
                     </YeastChip>
                 ))}
@@ -857,7 +928,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
                             <YeastChip
                                 key={pt.type}
                                 tone="mint"
-                                onClick={() => addYeastProcessor(pt.type)}
+                                onClick={() => dispatchAddYeastProcessor(pt.type)}
                                 title={pt.description}
                             >
                                 + {pt.name}
@@ -869,7 +940,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
                     </span>
                     <Row wrap gap={1}>
                         {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                            <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                            <YeastChip key={pt.type} onClick={() => dispatchAddYeastProcessor(pt.type)} title={pt.description}>
                                 + {pt.name}
                             </YeastChip>
                         ))}
@@ -910,7 +981,7 @@ const KnobCol = ({
 }: {
     label: string;
     value: number;
-    onChange: (v: number) => void;
+    onChange: (v: number, isTransient?: boolean) => void;
     min: number;
     max: number;
     /** Quantization step. Integer-domain params (octave count, velocity) must pass 1 — the
