@@ -991,6 +991,13 @@ export type AppAction =
     | { type: 'selectTrack'; payload: { trackId: string } }
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
+    | {
+          /** Guarded self-inverse of comp take selection. `expectedSelectedTakeId`
+           *  optimistic-locks the lane's current selection: `undefined` asserts
+           *  nothing (fresh user intent), `null` asserts no take is selected. */
+          type: 'selectTake';
+          payload: { trackId: string; takeId: string; expectedSelectedTakeId?: string | null };
+      }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
     | {

@@ -667,6 +667,17 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'selectTake',
+        "Select one take as a track's active comp take.",
+        {
+            trackId: { type: 'string' },
+            takeId: { type: 'string', description: "Existing take ID on that track's take lane" },
+        },
+        ['trackId', 'takeId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setSoloSafe',
         'Enable or disable solo-safe protection for a track.',
         {
@@ -1872,6 +1883,12 @@ const EXPECTED_GROUNDING = [
                 falsePhrases: ['unsolo'],
             },
         ],
+    },
+    {
+        actionType: 'selectTake',
+        intentPhrases: ['select take', 'set active take', 'comp take'],
+        targetRules: [{ argument: 'trackId', capability: 'track' }],
+        valueRules: [],
     },
     {
         actionType: 'setSoloSafe',

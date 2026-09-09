@@ -1330,6 +1330,20 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'selectTake',
+        risk: 'bounded-reversible',
+        description: "Select one take as a track's active comp take.",
+        intentPhrases: ['select take', 'set active take', 'comp take'],
+        targetRules: trackTargetRules,
+        parameters: {
+            properties: {
+                trackId: { type: 'string' },
+                takeId: { type: 'string', description: "Existing take ID on that track's take lane" },
+            },
+            required: ['trackId', 'takeId'],
+        },
+    },
+    {
         actionType: 'setSoloSafe',
         risk: 'bounded-reversible',
         description: 'Enable or disable solo-safe protection for a track.',
@@ -2716,6 +2730,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     renameTrack: TRACK_MUTATION_IDENTITY,
     muteTrack: TRACK_MUTATION_IDENTITY,
     soloTrack: TRACK_MUTATION_IDENTITY,
+    selectTake: TRACK_MUTATION_IDENTITY,
     setSoloSafe: TRACK_MUTATION_IDENTITY,
     clearSolos: SINGLETON_MUTATION_IDENTITY,
     armTrack: TRACK_MUTATION_IDENTITY,
@@ -2821,6 +2836,7 @@ export const executableAppActionMutationIdempotenceByType = {
     renameTrack: false,
     muteTrack: true,
     soloTrack: true,
+    selectTake: true,
     setSoloSafe: true,
     clearSolos: false,
     armTrack: true,
