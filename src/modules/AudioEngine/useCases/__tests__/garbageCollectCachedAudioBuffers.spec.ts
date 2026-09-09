@@ -4,25 +4,35 @@ import { garbageCollectCachedAudioBuffersByAge } from '../garbageCollectCachedAu
 import { garbageCollectCachedAudioBuffersBySize } from '../garbageCollectCachedAudioBuffersBySize';
 import { garbageCollectFreezeAudioBuffers } from '../garbageCollectFreezeAudioBuffers';
 
+import type { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
+
 const mocks = vi.hoisted(() => ({
     audioBufferCacheGarbageCollectFreezeFiles: vi
         .fn<(input: { activeIds: Set<string>; projectId: number }) => Promise<void>>()
         .mockResolvedValue(),
     audioBufferCacheGarbageCollectByAge: vi.fn<(maxAgeDays: number) => Promise<number>>().mockResolvedValue(0),
-    audioBufferCacheGarbageCollectBySize: vi.fn<(maxSizeBytes: number) => Promise<number>>().mockResolvedValue(0),
+    garbageCollectAudioBufferCacheBySize: vi
+        .fn<(maxSizeBytes: number, scope: object) => Promise<number>>()
+        .mockResolvedValue(0),
+    withProjectAudioStorageLock: vi.fn<typeof withProjectAudioStorageLock>(),
 }));
 
 vi.mock('../../stores/audioBufferCache', () => ({
     audioBufferCache: {
         garbageCollectFreezeFiles: mocks.audioBufferCacheGarbageCollectFreezeFiles,
         garbageCollectByAge: mocks.audioBufferCacheGarbageCollectByAge,
-        garbageCollectBySize: mocks.audioBufferCacheGarbageCollectBySize,
     },
+    garbageCollectAudioBufferCacheBySize: mocks.garbageCollectAudioBufferCacheBySize,
+}));
+
+vi.mock('#/infra/storage/withProjectAudioStorageLock', () => ({
+    withProjectAudioStorageLock: mocks.withProjectAudioStorageLock,
 }));
 
 describe('garbage collect cached audio buffers use cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.withProjectAudioStorageLock.mockImplementation(async (operation) => operation({}));
     });
 
     it('should delegate freeze garbage collection to the private audio buffer cache', async () => {
@@ -45,12 +55,15 @@ describe('garbage collect cached audio buffers use cases', () => {
         expect(mocks.audioBufferCacheGarbageCollectByAge).toHaveBeenCalledWith(30);
     });
 
-    it('should delegate size garbage collection to the private audio buffer cache', async () => {
-        mocks.audioBufferCacheGarbageCollectBySize.mockResolvedValueOnce(4);
+    it('owns the size-collection lock and delegates through its active scope', async () => {
+        const scope = {};
+        mocks.withProjectAudioStorageLock.mockImplementationOnce(async (operation) => operation(scope));
+        mocks.garbageCollectAudioBufferCacheBySize.mockResolvedValueOnce(4);
 
         const deletedCount = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 2 * 1024 * 1024 * 1024 });
 
         expect(deletedCount).toBe(4);
-        expect(mocks.audioBufferCacheGarbageCollectBySize).toHaveBeenCalledWith(2 * 1024 * 1024 * 1024);
+        expect(mocks.withProjectAudioStorageLock).toHaveBeenCalledOnce();
+        expect(mocks.garbageCollectAudioBufferCacheBySize).toHaveBeenCalledWith(2 * 1024 * 1024 * 1024, scope);
     });
 });

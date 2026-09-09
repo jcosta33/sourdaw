@@ -7,6 +7,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 
@@ -15,6 +16,8 @@ beforeEach(async () => {
     vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     [{ audioBufferCache, clearRuntimeAudioBufferCache }, { setDurableAudioBufferOwnershipProvider }] =
         await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -473,7 +476,7 @@ describe('audioBufferCache garbage collection', () => {
         backing.meta.set('small', { lastAccessed: now, sizeInBytes: 4 });
         audioBufferCache.set('small', createAudioBuffer({ length: 1 }));
 
-        const removed = await audioBufferCache.garbageCollectBySize(4);
+        const removed = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 4 });
         // 'big' (16 bytes, older) is evicted to bring total <= 4; 'small' pinned.
         expect(removed).toBeGreaterThanOrEqual(1);
         expect(audioBufferCache.get('small')).toBeDefined();

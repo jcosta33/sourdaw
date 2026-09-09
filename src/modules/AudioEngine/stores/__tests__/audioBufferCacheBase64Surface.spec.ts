@@ -163,7 +163,6 @@ function buildInvocations(): Record<string, () => unknown> {
                 projectId: 200,
             }),
         garbageCollectByAge: () => audioBufferCache.garbageCollectByAge(30),
-        garbageCollectBySize: () => audioBufferCache.garbageCollectBySize(2 ** 31),
     };
 }
 

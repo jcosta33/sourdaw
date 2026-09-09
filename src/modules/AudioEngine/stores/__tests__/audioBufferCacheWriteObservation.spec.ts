@@ -40,11 +40,17 @@ function storedRecord(channelData: Float32Array[], lastAccessed: number): Stored
     };
 }
 
+let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
+
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const [module, ownership] = await Promise.all([
+    const [module, ownership, useCases] = await Promise.all([
         import('../audioBufferCache'),
         import('../durableAudioBufferOwnership'),
+        import('../../useCases/garbageCollectCachedAudioBuffersBySize'),
     ]);
+    audioBufferCache = module.audioBufferCache;
+    garbageCollectCachedAudioBuffersBySize = useCases.garbageCollectCachedAudioBuffersBySize;
     ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
@@ -70,7 +76,7 @@ describe('audioBufferCache write observation', () => {
     // and resolving on the put request instead reds `committed.get('pcm')`,
     // because the staged value is not visible until the transaction commits.
     it('commits raw Float32 PCM for a cached buffer before the persist settles', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         const left = new Float32Array([0.25, -0.5, 0.75]);
         const right = new Float32Array([-0.25, 0.5, -0.75]);
 
@@ -93,7 +99,7 @@ describe('audioBufferCache write observation', () => {
     // `expect(mocks.loggerWarn).toHaveBeenCalledWith(…)` — the promise hangs and
     // nothing is ever reported.
     it('reports a buffer persist whose transaction aborts', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.abortWrites();
 
         audioBufferCache.set('pcm', makeAudioBuffer([new Float32Array([0.5])]));
@@ -110,7 +116,7 @@ describe('audioBufferCache write observation', () => {
     // reds `expect(...committedMeta...lastAccessed).toBe(70_000)` — the
     // age-based garbage collector would then delete buffers of an open project.
     it('commits a refreshed access time when a cached buffer is read', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         const now = vi.spyOn(Date, 'now');
         now.mockReturnValue(1_000);
 
@@ -134,7 +140,7 @@ describe('audioBufferCache write observation', () => {
     // Mutation: moving the `store.put` back inside `req.onsuccess` and dropping
     // the transaction await reds `expect(mocks.loggerWarn).toHaveBeenCalledWith(…)`.
     it('reports an access-time refresh whose transaction aborts', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('pcm', storedRecord([new Float32Array([0.5])], 1_000));
         // An already-migrated record: the row exists at 1 000, so the refresh
         // has a stamp to move and the absence of movement below is the abort
@@ -163,7 +169,7 @@ describe('audioBufferCache write observation', () => {
     // the caller is told the collection finished before a single delete is
     // even issued.
     it('resolves the freeze-file collection only once the deletes have committed', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('freeze-project-200-track-active-1', storedRecord([new Float32Array([0.1])], 1_000));
         controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
         controls.committed.set('audio-1', storedRecord([new Float32Array([0.3])], 1_000));
@@ -190,7 +196,7 @@ describe('audioBufferCache write observation', () => {
     // Mutation: removing the `onabort` rejection from the freeze collection reds
     // `expect(mocks.loggerWarn).toHaveBeenCalledWith(…)`.
     it('reports a freeze-file collection whose transaction aborts', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('freeze-project-200-track-stale-2', storedRecord([new Float32Array([0.2])], 1_000));
         controls.committedMeta.set('freeze-project-200-track-stale-2', {
             freezeProjectId: 200,
@@ -214,7 +220,7 @@ describe('audioBufferCache write observation', () => {
     // from DB_VERSION 2 on, so seeding it is what keeps this measuring the
     // abort rather than the "no row, do not collect" rule.
     it('reports zero collected buffers when the age-based collection aborts', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('old', storedRecord([new Float32Array([0.2])], 0));
         controls.committedMeta.set('old', { lastAccessed: 0, sizeInBytes: 4 });
         controls.abortWrites();
@@ -229,7 +235,7 @@ describe('audioBufferCache write observation', () => {
     // Presence pin for the assertion above: the same call really does collect
     // when the transaction commits.
     it('counts age-collected buffers that committed', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('old', storedRecord([new Float32Array([0.2])], 0));
         controls.committed.set('fresh', storedRecord([new Float32Array([0.3])], Date.now()));
         controls.committedMeta.set('old', { lastAccessed: 0, sizeInBytes: 4 });
@@ -245,12 +251,12 @@ describe('audioBufferCache write observation', () => {
     // Mutation: returning `deletedCount` before awaiting the transaction reds
     // `expect(deleted).toBe(0)`.
     it('reports zero collected buffers when the size-based collection aborts', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('bulky', storedRecord([new Float32Array(64)], 1_000));
         controls.committedMeta.set('bulky', { lastAccessed: 1_000, sizeInBytes: 256 });
         controls.abortWrites();
 
-        const deleted = await audioBufferCache.garbageCollectBySize(1);
+        const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 1 });
 
         expect(deleted).toBe(0);
         expect(controls.committed.has('bulky')).toBe(true);
@@ -259,11 +265,11 @@ describe('audioBufferCache write observation', () => {
 
     // Presence pin for the assertion above.
     it('counts size-collected buffers that committed', async () => {
-        const audioBufferCache = await importCache();
+        await importCache();
         controls.committed.set('bulky', storedRecord([new Float32Array(64)], 1_000));
         controls.committedMeta.set('bulky', { lastAccessed: 1_000, sizeInBytes: 256 });
 
-        const deleted = await audioBufferCache.garbageCollectBySize(1);
+        const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 1 });
 
         expect(deleted).toBe(1);
         expect([...controls.committed.keys()]).toEqual([]);

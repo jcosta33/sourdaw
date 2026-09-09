@@ -3113,93 +3113,96 @@ export const audioBufferCache = {
         }
         return deletedCount;
     },
+};
 
-    async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
+export function garbageCollectAudioBufferCacheBySize(
+    maxSizeBytes: number,
+    scope: ProjectAudioStorageLockScope
+): Promise<number> {
+    return runInProjectAudioStorageLock(scope, async () => {
         let deletedCount = 0;
         try {
-            await withProjectAudioStorageLock(async () => {
-                const durableOwnedIds = await readDurableOwnedIdsOrAbort();
-                if (durableOwnedIds === null) {
-                    return;
-                }
-                const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
-                deletedCount += recoveryCollection.count;
-                const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
-                const db = await openDb();
-                const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                const metaStore = tx.objectStore(META_STORE_NAME);
-                // Metadata rows, for the same reason as `garbageCollectByAge`, and
-                // with the same consequence: a record with no row is neither a
-                // deletion candidate nor part of `currentTotal`.
-                //
-                // This collector does not sweep for un-migrated records itself.
-                // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
-                // before it, and that pass seeds or reaps them, so by the time this
-                // runs the rows exist for everything the budget reached. Doing the
-                // sweep in both would double the migration read for no gain.
-                //
-                // Until then those records are out of the total, so this collector
-                // evicts *less* than it should. That is the direction to be wrong
-                // in — the alternative is counting a record whose size is unknown as
-                // zero, which under-reports the total just as badly *and* makes it
-                // a candidate that frees nothing when deleted, so the loop would
-                // walk the whole store deleting audio without the total ever
-                // falling.
-                const [metas, keys, checkpointRetainedIds] = await Promise.all([
-                    awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
-                    awaitRequest(metaStore.getAllKeys()),
-                    readCheckpointRetainedBufferIds(tx),
-                ]);
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return deletedCount;
+            }
+            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
+            deletedCount += recoveryCollection.count;
+            const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
+            const db = await openDb();
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            // Metadata rows, for the same reason as `garbageCollectByAge`, and
+            // with the same consequence: a record with no row is neither a
+            // deletion candidate nor part of `currentTotal`.
+            //
+            // This collector does not sweep for un-migrated records itself.
+            // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
+            // before it, and that pass seeds or reaps them, so by the time this
+            // runs the rows exist for everything the budget reached. Doing the
+            // sweep in both would double the migration read for no gain.
+            //
+            // Until then those records are out of the total, so this collector
+            // evicts *less* than it should. That is the direction to be wrong
+            // in — the alternative is counting a record whose size is unknown as
+            // zero, which under-reports the total just as badly *and* makes it
+            // a candidate that frees nothing when deleted, so the loop would
+            // walk the whole store deleting audio without the total ever
+            // falling.
+            const [metas, keys, checkpointRetainedIds] = await Promise.all([
+                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                awaitRequest(metaStore.getAllKeys()),
+                readCheckpointRetainedBufferIds(tx),
+            ]);
 
-                // Sort by access time ascending (oldest first)
-                const entries = metas
-                    .map((meta, index) => ({
-                        id: keys[index]! as string,
-                        lastAccessed: meta.lastAccessed,
-                        protected:
-                            durableOwnedIds.has(keys[index]! as string) ||
-                            checkpointRetainedIds.has(keys[index]! as string) ||
-                            isProtectedFromCollection(meta),
-                        size: meta.sizeInBytes,
-                    }))
-                    .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
-                    .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
+            // Sort by access time ascending (oldest first)
+            const entries = metas
+                .map((meta, index) => ({
+                    id: keys[index]! as string,
+                    lastAccessed: meta.lastAccessed,
+                    protected:
+                        durableOwnedIds.has(keys[index]! as string) ||
+                        checkpointRetainedIds.has(keys[index]! as string) ||
+                        isProtectedFromCollection(meta),
+                    size: meta.sizeInBytes,
+                }))
+                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
+                .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
-                let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
-                const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
-                let pendingDeletedCount = 0;
+            let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
+            const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
+            let pendingDeletedCount = 0;
 
-                for (const entry of entries) {
-                    if (currentTotal <= ordinarySizeBudget) {
-                        break;
-                    }
-                    if (
-                        persistenceGenerationById.has(entry.id) ||
-                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) ||
-                        entry.protected
-                    ) {
-                        continue;
-                    }
-                    collectedSources.set(entry.id, durabilitySourceById.get(entry.id));
-                    store.delete(entry.id);
-                    metaStore.delete(entry.id);
-                    currentTotal -= entry.size;
-                    pendingDeletedCount++;
+            for (const entry of entries) {
+                if (currentTotal <= ordinarySizeBudget) {
+                    break;
                 }
-                // The count is reported only for deletes that committed.
-                await awaitTransaction(tx);
-                for (const [key, source] of collectedSources) {
-                    if (durabilitySourceById.get(key) === source) {
-                        evictCachedBuffer(key);
-                    }
+                if (
+                    persistenceGenerationById.has(entry.id) ||
+                    preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) ||
+                    entry.protected
+                ) {
+                    continue;
                 }
-                deletedCount += pendingDeletedCount;
-            });
+                collectedSources.set(entry.id, durabilitySourceById.get(entry.id));
+                store.delete(entry.id);
+                metaStore.delete(entry.id);
+                currentTotal -= entry.size;
+                pendingDeletedCount++;
+            }
+            // The count is reported only for deletes that committed.
+            await awaitTransaction(tx);
+            for (const [key, source] of collectedSources) {
+                if (durabilitySourceById.get(key) === source) {
+                    evictCachedBuffer(key);
+                }
+            }
+            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Size-based collection failed', { error });
             return deletedCount;
         }
         return deletedCount;
-    },
-};
+    });
+}

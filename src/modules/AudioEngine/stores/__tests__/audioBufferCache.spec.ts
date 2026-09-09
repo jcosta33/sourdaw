@@ -10,6 +10,7 @@ import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupp
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 
 beforeEach(async () => {
@@ -20,6 +21,8 @@ beforeEach(async () => {
         import('../audioBufferCache'),
         import('../durableAudioBufferOwnership'),
     ]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -753,7 +756,7 @@ describe('audioBufferCache conversions', () => {
             throw new TypeError('Expected discarded PCM persistence to commit');
         }
         await expect(audioBufferCache.garbageCollectByAge(-1)).resolves.toBe(0);
-        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(0);
+        await expect(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 })).resolves.toBe(0);
         expect(backing.has('discarded-pcm')).toBe(true);
         await expect(
             audioBufferCache.releasePreparedBuffer({
@@ -810,7 +813,7 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get(ids[0]!)).toBeDefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
         await expect(audioBufferCache.garbageCollectByAge(-1)).resolves.toBe(0);
-        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(0);
+        await expect(garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 })).resolves.toBe(0);
         expect(audioBufferCache.get(ids[0]!)).toBeDefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
 
