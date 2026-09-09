@@ -1,0 +1,21 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/coreAutomationStrategy.ts
+  s_06adf2b091dc62::t_f5c4a1eef803be 6
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_06adf2b091dc62::t_da484632c7a4c8 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d3e359c30ac55483acbb66030efa005e2c68872d",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
