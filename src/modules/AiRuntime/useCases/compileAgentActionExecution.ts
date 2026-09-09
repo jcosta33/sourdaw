@@ -101,10 +101,14 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         protectedTargetIds: envelope.scope.protectedTargetIds,
         runId: envelope.runId,
     });
+    // The compiled approval stays exposed on the allow path so execution sites
+    // can re-bind it with an observer-capable approval binding and observe the
+    // validator's staleness classification; the compile-minted binding inside
+    // `commandBatch` is replaced by that re-binding.
     return {
         commandBatch,
         commandEnvelopes: proposed.commandEnvelopes,
-        agentApproval: null,
+        agentApproval,
         interactionMode: mode,
         requiresConfirmation: false as const,
     };
