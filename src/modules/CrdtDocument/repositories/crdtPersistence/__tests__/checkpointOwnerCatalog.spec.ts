@@ -479,24 +479,66 @@ describe('checkpoint owner catalog persistence', () => {
             artifactStore.index(repository.CHECKPOINT_OWNER_PROJECT_INDEX_NAME)
         ) as IDBIndex;
         const valueReads: string[] = [];
-        for (const method of ['get', 'getAll', 'openCursor'] as const) {
-            const original = storePrototype[method];
-            vi.spyOn(storePrototype, method).mockImplementation(function (this: IDBObjectStore, ...args: never[]) {
-                if (this.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
-                    valueReads.push(`store.${method}`);
-                }
-                return original.apply(this, args);
-            } as never);
-        }
-        for (const method of ['get', 'getAll', 'openCursor'] as const) {
-            const original = indexPrototype[method];
-            vi.spyOn(indexPrototype, method).mockImplementation(function (this: IDBIndex, ...args: never[]) {
-                if (this.objectStore.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
-                    valueReads.push(`index.${method}`);
-                }
-                return original.apply(this, args);
-            } as never);
-        }
+        const originalStoreGet = storePrototype.get;
+        vi.spyOn(storePrototype, 'get').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args: Parameters<IDBObjectStore['get']>
+        ) {
+            if (this.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('store.get');
+            }
+            return originalStoreGet.apply(this, args);
+        });
+        const originalStoreGetAll = storePrototype.getAll;
+        vi.spyOn(storePrototype, 'getAll').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args: Parameters<IDBObjectStore['getAll']>
+        ) {
+            if (this.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('store.getAll');
+            }
+            return originalStoreGetAll.apply(this, args);
+        });
+        const originalStoreOpenCursor = storePrototype.openCursor;
+        vi.spyOn(storePrototype, 'openCursor').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args: Parameters<IDBObjectStore['openCursor']>
+        ) {
+            if (this.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('store.openCursor');
+            }
+            return originalStoreOpenCursor.apply(this, args);
+        });
+        const originalIndexGet = indexPrototype.get;
+        vi.spyOn(indexPrototype, 'get').mockImplementation(function (
+            this: IDBIndex,
+            ...args: Parameters<IDBIndex['get']>
+        ) {
+            if (this.objectStore.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('index.get');
+            }
+            return originalIndexGet.apply(this, args);
+        });
+        const originalIndexGetAll = indexPrototype.getAll;
+        vi.spyOn(indexPrototype, 'getAll').mockImplementation(function (
+            this: IDBIndex,
+            ...args: Parameters<IDBIndex['getAll']>
+        ) {
+            if (this.objectStore.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('index.getAll');
+            }
+            return originalIndexGetAll.apply(this, args);
+        });
+        const originalIndexOpenCursor = indexPrototype.openCursor;
+        vi.spyOn(indexPrototype, 'openCursor').mockImplementation(function (
+            this: IDBIndex,
+            ...args: Parameters<IDBIndex['openCursor']>
+        ) {
+            if (this.objectStore.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                valueReads.push('index.openCursor');
+            }
+            return originalIndexOpenCursor.apply(this, args);
+        });
 
         await expect(repository.readCheckpointCatalog(ownerA)).resolves.toMatchObject({
             checkpoints: [{ checkpointId: 'checkpoint-a', ownerProjectId: ownerA }],
@@ -531,7 +573,7 @@ describe('checkpoint owner catalog persistence', () => {
             .objectStore(repository.CHECKPOINT_ARTIFACT_STORE_NAME);
         const prototype = Object.getPrototypeOf(artifactStore) as IDBObjectStore;
         const originalGet = artifactStore.get;
-        const selectedReads: IDBValidKey[] = [];
+        const selectedReads: Parameters<IDBObjectStore['get']>[0][] = [];
         vi.spyOn(prototype, 'get').mockImplementation(function (
             this: IDBObjectStore,
             ...args: Parameters<IDBObjectStore['get']>
