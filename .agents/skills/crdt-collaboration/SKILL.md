@@ -105,6 +105,13 @@ For an import that creates project truth, exercise actual serialized source byte
 
 ## Anti-patterns
 
+### External checkpoint catalogs must prove scoped metadata and atomic authority
+
+PR #3945 introduced checkpoint catalog hydration by reading every stored root. Review external branch catalogs with
+actual owner-filtered metadata-only reads, and validate only a selected root on the separate artifact route. Prove
+publication on transaction completion, including an abort after queued request successes, and race two independent
+connections against one expected revision so split writes and read-then-write conflict checks cannot pass.
+
 ### Checkpoint isolation escape
 
 Commit `3d0ca035df506e27e9cd868e71c17b411911ba47` introduced the singleton checkpoint catalog and both

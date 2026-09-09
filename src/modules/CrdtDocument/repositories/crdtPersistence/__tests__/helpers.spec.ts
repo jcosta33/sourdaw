@@ -7,6 +7,12 @@ type MockOpenRequest = {
     onsuccess: (() => void) | null;
     onerror: (() => void) | null;
     onblocked: (() => void) | null;
+    transaction: { objectStore: ReturnType<typeof vi.fn> };
+};
+
+type MockObjectStore = {
+    createIndex: ReturnType<typeof vi.fn>;
+    indexNames: { contains: (name: string) => boolean };
 };
 
 type MockDatabase = {
@@ -16,16 +22,25 @@ type MockDatabase = {
     onversionchange: (() => void) | null;
 };
 
-function createMockDatabase(): MockDatabase {
+function createMockObjectStore(): MockObjectStore {
+    return { createIndex: vi.fn(), indexNames: { contains: () => false } };
+}
+
+function createMockDatabase(stores = new Map<string, MockObjectStore>()): MockDatabase {
+    const createObjectStore = vi.fn((name: string) => {
+        const store = createMockObjectStore();
+        stores.set(name, store);
+        return store;
+    });
     return {
         objectStoreNames: { contains: () => true },
-        createObjectStore: vi.fn(),
+        createObjectStore,
         close: vi.fn(),
         onversionchange: null,
     };
 }
 
-function createMockRequest(database: MockDatabase): MockOpenRequest {
+function createMockRequest(database: MockDatabase, stores = new Map<string, MockObjectStore>()): MockOpenRequest {
     return {
         result: database,
         error: null,
@@ -33,6 +48,7 @@ function createMockRequest(database: MockDatabase): MockOpenRequest {
         onsuccess: null,
         onerror: null,
         onblocked: null,
+        transaction: { objectStore: vi.fn((name: string) => stores.get(name)) },
     };
 }
 
@@ -75,9 +91,10 @@ describe('crdt persistence database helper', () => {
     });
 
     it('creates the document and checkpoint stores during the initial upgrade', async () => {
-        const database = createMockDatabase();
+        const stores = new Map<string, MockObjectStore>();
+        const database = createMockDatabase(stores);
         database.objectStoreNames.contains = () => false;
-        const request = createMockRequest(database);
+        const request = createMockRequest(database, stores);
         open.mockReturnValue(request);
         const { openDatabase } = await import('../helpers');
 
@@ -87,25 +104,68 @@ describe('crdt persistence database helper', () => {
         expect(database.createObjectStore).toHaveBeenCalledWith('documents');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-artifacts');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-catalog');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-owner-catalogs');
+        expect(stores.get('checkpoint-artifacts')?.createIndex).toHaveBeenCalledWith(
+            'ownerProjectId',
+            'ownerProjectId'
+        );
+        expect(stores.get('checkpoint-catalog')?.createIndex).toHaveBeenCalledWith('ownerProjectId', 'ownerProjectId');
         request.onsuccess?.();
 
         await expect(openPromise).resolves.toBe(database);
     });
 
     it('adds checkpoint stores when upgrading an existing document database', async () => {
-        const database = createMockDatabase();
+        const stores = new Map<string, MockObjectStore>();
+        const database = createMockDatabase(stores);
         database.objectStoreNames.contains = (name) => name === 'documents';
-        const request = createMockRequest(database);
+        const request = createMockRequest(database, stores);
         open.mockReturnValue(request);
         const { openDatabase } = await import('../helpers');
 
         const openPromise = openDatabase();
         request.onupgradeneeded?.();
 
-        expect(open).toHaveBeenCalledWith('sourdaw-crdt-docs', 2);
+        expect(open).toHaveBeenCalledWith('sourdaw-crdt-docs', 3);
         expect(database.createObjectStore).not.toHaveBeenCalledWith('documents');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-artifacts');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-catalog');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-owner-catalogs');
+        expect(stores.get('checkpoint-artifacts')?.createIndex).toHaveBeenCalledWith(
+            'ownerProjectId',
+            'ownerProjectId'
+        );
+        expect(stores.get('checkpoint-catalog')?.createIndex).toHaveBeenCalledWith('ownerProjectId', 'ownerProjectId');
+        request.onsuccess?.();
+
+        await expect(openPromise).resolves.toBe(database);
+    });
+
+    it('adds owner indexes and state when upgrading an existing checkpoint database', async () => {
+        const stores = new Map<string, MockObjectStore>([
+            ['checkpoint-artifacts', createMockObjectStore()],
+            ['checkpoint-catalog', createMockObjectStore()],
+        ]);
+        const database = createMockDatabase(stores);
+        database.objectStoreNames.contains = (name) =>
+            name === 'documents' || name === 'checkpoint-artifacts' || name === 'checkpoint-catalog';
+        const request = createMockRequest(database, stores);
+        open.mockReturnValue(request);
+        const { openDatabase } = await import('../helpers');
+
+        const openPromise = openDatabase();
+        request.onupgradeneeded?.();
+
+        expect(database.createObjectStore).not.toHaveBeenCalledWith('checkpoint-artifacts');
+        expect(database.createObjectStore).not.toHaveBeenCalledWith('checkpoint-catalog');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-owner-catalogs');
+        expect(request.transaction.objectStore).toHaveBeenCalledWith('checkpoint-artifacts');
+        expect(request.transaction.objectStore).toHaveBeenCalledWith('checkpoint-catalog');
+        expect(stores.get('checkpoint-artifacts')?.createIndex).toHaveBeenCalledWith(
+            'ownerProjectId',
+            'ownerProjectId'
+        );
+        expect(stores.get('checkpoint-catalog')?.createIndex).toHaveBeenCalledWith('ownerProjectId', 'ownerProjectId');
         request.onsuccess?.();
 
         await expect(openPromise).resolves.toBe(database);
