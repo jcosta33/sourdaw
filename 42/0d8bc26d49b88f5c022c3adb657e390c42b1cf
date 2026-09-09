@@ -1,0 +1,67 @@
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_87ab0a2f60ccf8::t_eddd00409ee04e 498-503
+  s_87ab0a2f60ccf8::t_50c497d6ddc606 50,63-65
+  s_87ab0a2f60ccf8::t_e5b08dae952504 37,57-62,110,439-497,504-510
+  s_87ab0a2f60ccf8::t_8fbfb984f04b39 511
+src/modules/AudioEngine/services/__tests__/proofChamberProcessorShippedMalloc.spec.ts
+  s_87ab0a2f60ccf8::t_d6b25b251fa6c9 89
+  s_87ab0a2f60ccf8::t_7d3dd5c3c6750d 115
+  s_87ab0a2f60ccf8::t_6bb0af8f7e1ae1 1-37,43-88,90-98,100-104,108-113,116
+  s_87ab0a2f60ccf8::t_a3b0f979f979a7 38-42
+  s_87ab0a2f60ccf8::t_d2d1a1672a31e1 99,105-107,114
+.agents/skills/web-audio-engine/SKILL.md
+  s_87ab0a2f60ccf8::t_919a75ce15dede 59-60
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_87ab0a2f60ccf8::t_bb7d33879dce19 50-53,118-124,164-167,171-174,177-179,181,183-194,200,202,204
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_87ab0a2f60ccf8::t_bb7d33879dce19 68-71,168-174,199-201,211,214-216,220,222-233,239,241-242
+crates/proof-chamber/src/lib.rs
+  s_87ab0a2f60ccf8::t_830e918143df9a 315-366,483-484,486-487,489
+src/modules/AudioEngine/services/__tests__/scoringProcessor.spec.ts
+  s_87ab0a2f60ccf8::t_91c0a52fe3ddf2 31,47-52,112,249-318,325-331
+  s_87ab0a2f60ccf8::t_eddd00409ee04e 319-324
+  s_87ab0a2f60ccf8::t_50c497d6ddc606 39,53-56
+crates/proof-chamber/tests/in_place_parity.rs
+  s_87ab0a2f60ccf8::t_d2d1a1672a31e1 7-8,16-17
+  s_87ab0a2f60ccf8::t_536f00c67448af 1-6,9-15,18-64
+  s_87ab0a2f60ccf8::t_e5f0b6fa3954c8 65-67
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_87ab0a2f60ccf8::t_919a75ce15dede 185-187,1062-1064,1079-1083,1088,1090-1095,1103,1114-1115,1118-1122,1129-1134,1142
+crates/scoring/tests/in_place_parity.rs
+  s_87ab0a2f60ccf8::t_d2d1a1672a31e1 7-8,16-17
+  s_87ab0a2f60ccf8::t_536f00c67448af 1-6,9-15,18-78
+  s_87ab0a2f60ccf8::t_65701e64d140c2 79-87
+src/modules/AudioEngine/services/__tests__/telemetrySeqlockWriters.spec.ts
+  s_87ab0a2f60ccf8::t_50c497d6ddc606 167-169
+crates/scoring/src/lib.rs
+  s_87ab0a2f60ccf8::t_545825e0740027 457-473,491-492,494-497
+src/modules/AudioEngine/services/__tests__/scoringProcessorShippedMalloc.spec.ts
+  s_87ab0a2f60ccf8::t_7d3dd5c3c6750d 86
+  s_87ab0a2f60ccf8::t_d2d1a1672a31e1 88-120
+  s_87ab0a2f60ccf8::t_6bb0af8f7e1ae1 1-36,42-85,87,121
+  s_87ab0a2f60ccf8::t_a3b0f979f979a7 37-41
+src/modules/AudioEngine/services/__tests__/scoringProcessorWasmViews.spec.ts
+  s_87ab0a2f60ccf8::t_50c497d6ddc606 54,59-60
+  s_87ab0a2f60ccf8::t_c5140e461a9e05 33,55-58,96,134-147
+  s_87ab0a2f60ccf8::t_1195707c961f32 148
+src/modules/AudioEngine/services/__tests__/proofChamberProcessorWasmViews.spec.ts
+  s_87ab0a2f60ccf8::t_c5140e461a9e05 33,44-49,98,136-159
+  s_87ab0a2f60ccf8::t_50c497d6ddc606 60-62
+  s_87ab0a2f60ccf8::t_efcd9f27d5a03c 160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "420d8bc26d49b88f5c022c3adb657e390c42b1cf",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
