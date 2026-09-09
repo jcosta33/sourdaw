@@ -1,6 +1,6 @@
 import { type AutomationPointSnapshot, type ClipAutomationLaneActionSnapshot } from '#/utils/handlerContract';
 
-import { type AutomationPoint } from '../../models/Automation';
+import { type AutomationPoint, type AutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 function controlPointsMatch(
@@ -30,11 +30,20 @@ function pointsMatch(current: readonly AutomationPoint[], expected: readonly Aut
     );
 }
 
+/**
+ * Same expected-lane match `restoreClipAutomationMoveState` writes against.
+ * `projectedLanes` replaces the live store for a batch-aware preflight (#3814):
+ * a prior sibling's restore has not executed yet, so the member validates
+ * against the lanes that sibling re-establishes. Execution omits it and reads
+ * live.
+ */
 export function clipAutomationMoveStateMatches(
     clipId: string,
-    expected: readonly ClipAutomationLaneActionSnapshot[]
+    expected: readonly ClipAutomationLaneActionSnapshot[],
+    projectedLanes?: readonly AutomationLane[]
 ): boolean {
-    const current = (automationStore.value?.lanes ?? [])
+    const laneSource = projectedLanes ?? automationStore.value?.lanes ?? [];
+    const current = laneSource
         .filter((lane) => lane.clipId === clipId)
         .sort((left, right) => left.id.localeCompare(right.id));
     const sortedExpected = [...expected].sort((left, right) => left.id.localeCompare(right.id));

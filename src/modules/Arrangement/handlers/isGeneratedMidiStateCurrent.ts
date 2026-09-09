@@ -5,14 +5,16 @@ import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
-import { serializeClipSatelliteEntries } from '../stores/clipSatelliteState';
+import { serializeClipSatelliteEntries, serializeProjectedClipSatelliteEntries } from '../stores/clipSatelliteState';
 import { getEnvelope } from '../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { hasNonDefaultWarpState } from '../stores/warpStates';
 import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeClipScopedAutomationLanes';
+import { serializeProjectedClipScopedAutomationLanes } from '../useCases/clip/serializeProjectedClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 import { isJsonEntityEqual } from './isJsonEntityEqual';
+import { type ProjectedClipState } from './projectClipThroughPriorBatchActions';
 
 type IsGeneratedMidiStateCurrentInput = {
     entityId: string;
@@ -20,6 +22,14 @@ type IsGeneratedMidiStateCurrentInput = {
     guard: GeneratedMidiStateGuard;
     allowedReferencingTrackIds?: readonly string[];
     projectedMidiNotesByClipId?: ReturnType<typeof projectMidiNotesByClipIdThroughRestores>;
+    /**
+     * Prior batch siblings' restore projection for the clip named by `entityId`
+     * (#3814). Present only when a sibling touched the clip's state; the guard
+     * then reads what that sibling re-establishes where the plain live read
+     * would falsely fail — at preflight time the sibling has not executed yet.
+     * Track-entity guards ignore it.
+     */
+    readonly projectedClipState?: ProjectedClipState;
 };
 
 function hasEnvelopeOrWarpState(clipIds: readonly string[]): boolean {
@@ -45,67 +55,148 @@ function hasClipSatelliteState(clipIds: readonly string[]): boolean {
  * that leg on the absence check, so a regeneration guard that captured nothing
  * still disqualifies on any satellite state at all.
  */
-function clipSatelliteStateMatches(clipIds: readonly string[], guard: GeneratedMidiStateGuard): boolean {
+function clipSatelliteStateMatches(
+    clipIds: readonly string[],
+    guard: GeneratedMidiStateGuard,
+    projected: ProjectedClipState | undefined
+): boolean {
     if (guard.clipSatellitesJson === undefined && guard.clipAutomationLanesJson === undefined) {
-        return !hasClipSatelliteState(clipIds);
+        return !hasProjectedClipSatelliteState(clipIds, projected);
     }
     return (
-        clipSatelliteEntriesMatch(clipIds, guard.clipSatellitesJson) &&
-        clipAutomationLanesMatch(clipIds, guard.clipAutomationLanesJson)
+        clipSatelliteEntriesMatch(clipIds, guard.clipSatellitesJson, projected) &&
+        clipAutomationLanesMatch(clipIds, guard.clipAutomationLanesJson, projected)
     );
 }
 
-function clipSatelliteEntriesMatch(clipIds: readonly string[], captured: string | undefined): boolean {
+/**
+ * Post-sibling satellite state for the clip: the entry a prior `restoreTrack`
+ * re-establishes, or — when it re-establishes none — whatever the live stores
+ * hold, because `writeClipSatelliteEntry` only runs for captured entries.
+ */
+function hasProjectedClipSatelliteState(
+    clipIds: readonly string[],
+    projected: ProjectedClipState | undefined
+): boolean {
+    const restoredEntry = projected?.restoredSatelliteEntry;
+    if (restoredEntry !== null && restoredEntry !== undefined) {
+        return true;
+    }
+    if (projected === undefined) {
+        return hasClipSatelliteState(clipIds);
+    }
+    return hasEnvelopeOrWarpState(clipIds) || projected.clipScopedLanes.length > 0;
+}
+
+function clipSatelliteEntriesMatch(
+    clipIds: readonly string[],
+    captured: string | undefined,
+    projected: ProjectedClipState | undefined
+): boolean {
+    const restoredEntry = projected?.restoredSatelliteEntry;
+    if (restoredEntry !== null && restoredEntry !== undefined) {
+        // The sibling overwrites the stores with exactly this entry, so the
+        // projected comparison reads the entry, never the stale live state.
+        // A capture-side entry always carries state, so an absence capture
+        // can never match a sibling that re-establishes one.
+        if (captured === undefined) {
+            return false;
+        }
+        return serializeProjectedClipSatelliteEntries([restoredEntry], clipIds) === captured;
+    }
     if (captured === undefined) {
         return !hasEnvelopeOrWarpState(clipIds);
     }
     return serializeClipSatelliteEntries(clipIds) === captured;
 }
 
-function clipAutomationLanesMatch(clipIds: readonly string[], captured: string | undefined): boolean {
-    if (captured === undefined) {
-        return !hasClipScopedAutomationLane(clipIds);
+function clipAutomationLanesMatch(
+    clipIds: readonly string[],
+    captured: string | undefined,
+    projected: ProjectedClipState | undefined
+): boolean {
+    if (projected === undefined) {
+        if (captured === undefined) {
+            return !hasClipScopedAutomationLane(clipIds);
+        }
+        return serializeClipScopedAutomationLanes(clipIds) === captured;
     }
-    return serializeClipScopedAutomationLanes(clipIds) === captured;
+    const projectedSerialization = serializeProjectedClipScopedAutomationLanes(projected.clipScopedLanes);
+    if (captured === undefined) {
+        return projected.clipScopedLanes.length === 0;
+    }
+    return projectedSerialization === captured;
 }
 
+type GuardedEntity = {
+    readonly entity: object;
+    readonly clipIds: readonly string[];
+};
+
+/**
+ * The guarded entity plus the clip ids its satellite/notes state hangs off. For
+ * a clip the projected candidate from a prior restoreTrack sibling joins the
+ * live matches, and the guard still demands exactly one holder of the id — a
+ * live clip AND a sibling-restored one is external interference, not replay.
+ */
+function resolveGuardedEntity(
+    state: NonNullable<ReturnType<typeof getTrackStoreState>>,
+    entityId: string,
+    entityType: 'clip' | 'track',
+    projectedClipState: ProjectedClipState | undefined
+): GuardedEntity | null {
+    if (entityType === 'clip') {
+        const liveMatches = state.tracks.flatMap((track) => track.clips.filter((clip) => clip.id === entityId));
+        const projectedClip = projectedClipState?.locatedClip?.clip ?? null;
+        const candidates = projectedClip ? [...liveMatches, projectedClip] : liveMatches;
+        const [clip] = candidates;
+        if (!clip || candidates.length !== 1) {
+            return null;
+        }
+        return { entity: clip, clipIds: [entityId] };
+    }
+    const track = state.tracks.find((candidate) => candidate.id === entityId);
+    if (!track) {
+        return null;
+    }
+    return { entity: track, clipIds: collectTrackClipIds(track) };
+}
+
+/**
+ * Whether the generated entity still carries exactly the state its generation
+ * left behind.
+ *
+ * #3814: inside a grouped-undo replay preflight, a prior sibling's restore may
+ * be what re-establishes the guarded state — a `removeTrack` member purges
+ * every clip store its track held, and only the batch's own `restoreTrack`
+ * inverse brings them back. The projected legs above read that sibling's
+ * snapshot; the remaining legs below stay live because no sibling can move
+ * them (see the linked-clip note).
+ */
 export function isGeneratedMidiStateCurrent({
     entityId,
     entityType,
     guard,
     allowedReferencingTrackIds = [],
     projectedMidiNotesByClipId,
+    projectedClipState,
 }: IsGeneratedMidiStateCurrentInput): boolean {
     const state = getTrackStoreState();
     if (!state) {
         return false;
     }
-
-    let entity: object;
-    let clipIds: string[];
-    if (entityType === 'clip') {
-        const matches = state.tracks.flatMap((track) => track.clips.filter((clip) => clip.id === entityId));
-        const [clip] = matches;
-        if (!clip || matches.length !== 1) {
-            return false;
-        }
-        entity = clip;
-        clipIds = [entityId];
-    } else {
-        const track = state.tracks.find((candidate) => candidate.id === entityId);
-        if (!track) {
-            return false;
-        }
-        entity = track;
-        clipIds = collectTrackClipIds(track);
+    const guarded = resolveGuardedEntity(state, entityId, entityType, projectedClipState);
+    if (!guarded) {
+        return false;
     }
+    const { entity, clipIds } = guarded;
 
     if (!isJsonEntityEqual(entity, guard.entityJson)) {
         return false;
     }
     if (
         serializeMidiStateForClips(clipIds, projectedMidiNotesByClipId) !== guard.midiByClipIdJson ||
-        !clipSatelliteStateMatches(clipIds, guard)
+        !clipSatelliteStateMatches(clipIds, guard, projectedClipState)
     ) {
         return false;
     }
