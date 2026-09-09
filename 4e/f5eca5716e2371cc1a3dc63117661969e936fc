@@ -1,0 +1,27 @@
+.github/workflows/wasm-artifacts.yml
+  s_87ab0a2f60ccf8::t_591705ab4e63a1 65-66
+scripts/healthGateWorkflowContract.ts
+  s_87ab0a2f60ccf8::t_591705ab4e63a1 526-529,560
+  s_87ab0a2f60ccf8::t_d56f37cb2cf337 463-465,467-470,476,488,490,500,558
+  s_87ab0a2f60ccf8::t_f7208f3e568c8f 525
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_768087b7ae6bc2 1689-1701
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_87ab0a2f60ccf8::t_4ab79ed20684b8 1948,1995-1997
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4ef5eca5716e2371cc1a3dc63117661969e936fc",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
