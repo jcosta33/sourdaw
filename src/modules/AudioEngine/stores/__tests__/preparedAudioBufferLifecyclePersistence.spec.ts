@@ -4,6 +4,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -20,7 +23,16 @@ let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRunt
 let lockManager: ReturnType<typeof createControlledLockManager>;
 
 function installCurrentAudioIndexedDb() {
-    return installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+    return installFakeAudioIndexedDb({
+        existingStores: [
+            BUFFER_STORE,
+            META_STORE,
+            RECOVERY_STORE,
+            CHECKPOINT_RETENTION_STORE,
+            CHECKPOINT_AUDIO_VERSION_STORE,
+            CHECKPOINT_AUDIO_VERSION_META_STORE,
+        ],
+    });
 }
 
 beforeEach(async () => {
