@@ -200,9 +200,22 @@ type PendingAutomergeStorageWrite = {
     readonly prepare: () => PendingWritePreparation;
 };
 
+type AutomergeStorageTransactionLifecycle = 'open' | 'committing' | 'committed' | 'aborted';
+
 type ActiveAutomergeStorageTransaction = {
     readonly commitOwner: object;
     readonly snapshotTransaction: object | undefined;
+    lifecycle: AutomergeStorageTransactionLifecycle;
+};
+
+const assertAutomergeStorageTransactionOpen = (transaction: ActiveAutomergeStorageTransaction): void => {
+    if (transaction.lifecycle === 'open') {
+        return;
+    }
+    if (transaction.lifecycle === 'committing') {
+        throw new Error('Automerge storage transaction is committing');
+    }
+    throw new Error(`Automerge storage transaction has already settled (${transaction.lifecycle})`);
 };
 
 /**
@@ -669,11 +682,7 @@ export function captureAutomergeStorageTransactionScope(): AutomergeStorageTrans
     }
 
     return (callback) => {
-        if (!openAutomergeStorageCommitOwners.has(capturedTransaction.commitOwner)) {
-            // The commit owner is closed: a write attached to it now would
-            // never flush. Fail loudly rather than swallow it.
-            throw new Error('Automerge storage transaction has already settled');
-        }
+        assertAutomergeStorageTransactionOpen(capturedTransaction);
         const previous = activeAutomergeStorageTransaction;
         activeAutomergeStorageTransaction = capturedTransaction;
         try {
@@ -697,21 +706,17 @@ export function runWithAutomergeStorageTransaction<Result>(
     const previousTransaction = activeAutomergeStorageTransaction;
     const transaction: ActiveAutomergeStorageTransaction = {
         commitOwner: Object.freeze({}),
+        lifecycle: 'open',
         snapshotTransaction,
     };
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
-    let terminalState: 'open' | 'committed' | 'aborted' = 'open';
     const commitValidators: Array<() => string | null> = [];
     const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
     const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
-        if (terminalState !== 'open') {
-            // The commit owner is closed: a write attached to it now would
-            // never flush. Fail loudly rather than swallow it.
-            throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
-        }
+        assertAutomergeStorageTransactionOpen(transaction);
         const previous = activeAutomergeStorageTransaction;
         activeAutomergeStorageTransaction = transaction;
         try {
@@ -732,10 +737,11 @@ export function runWithAutomergeStorageTransaction<Result>(
     const control: AutomergeStorageTransactionControl = {
         scope,
         abort(): void {
-            if (terminalState !== 'open') {
+            if (transaction.lifecycle === 'committed' || transaction.lifecycle === 'aborted') {
                 return;
             }
-            terminalState = 'aborted';
+            assertAutomergeStorageTransactionOpen(transaction);
+            transaction.lifecycle = 'aborted';
             openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
             for (const pending of [...pendingAutomergeStorageWrites]) {
                 if (
@@ -747,17 +753,19 @@ export function runWithAutomergeStorageTransaction<Result>(
             }
         },
         commit(): void {
-            if (terminalState !== 'open') {
+            if (transaction.lifecycle === 'committed' || transaction.lifecycle === 'aborted') {
                 return;
             }
-            for (const validateCommit of commitValidators) {
-                const validationFailure = validateCommit();
-                if (validationFailure) {
-                    throw new AutomergeStorageTransactionValidationError(validationFailure);
-                }
-            }
-            openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
+            assertAutomergeStorageTransactionOpen(transaction);
+            transaction.lifecycle = 'committing';
             try {
+                for (const validateCommit of commitValidators) {
+                    const validationFailure = validateCommit();
+                    if (validationFailure) {
+                        throw new AutomergeStorageTransactionValidationError(validationFailure);
+                    }
+                }
+                openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
                 flushMatchingAutomergeStorageWrites(
                     (pending) =>
                         pending.commitOwner === transaction.commitOwner &&
@@ -766,7 +774,7 @@ export function runWithAutomergeStorageTransaction<Result>(
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
-                    terminalState = 'committed';
+                    transaction.lifecycle = 'committed';
                     for (const pending of [...pendingAutomergeStorageWrites]) {
                         if (
                             pending.commitOwner === transaction.commitOwner &&
@@ -778,21 +786,18 @@ export function runWithAutomergeStorageTransaction<Result>(
                     throw new AutomergeStorageTransactionCommittedError(error.failure);
                 }
 
+                transaction.lifecycle = 'open';
                 openAutomergeStorageCommitOwners.add(transaction.commitOwner);
                 throw error instanceof AutomergeStorageFlushError ? error.failure : error;
             }
-            terminalState = 'committed';
+            transaction.lifecycle = 'committed';
         },
         validateCommit(validator): void {
-            if (terminalState !== 'open') {
-                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
-            }
+            assertAutomergeStorageTransactionOpen(transaction);
             commitValidators.push(validator);
         },
         validateDocument(docId, validator): void {
-            if (terminalState !== 'open') {
-                throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
-            }
+            assertAutomergeStorageTransactionOpen(transaction);
             if (documentValidators.has(docId)) {
                 throw new Error(`Automerge storage transaction already has a validator for document: ${docId}`);
             }
@@ -1229,6 +1234,7 @@ export const createAutomergeStorage = <TData>(
 
     const getWriteContext = (): AutomergeStorageWriteContext => {
         if (activeAutomergeStorageTransaction) {
+            assertAutomergeStorageTransactionOpen(activeAutomergeStorageTransaction);
             return { ...activeAutomergeStorageTransaction, scoped: true };
         }
 
