@@ -1,0 +1,45 @@
+scripts/quantumMeasurementCalibration.ts
+  s_87ab0a2f60ccf8::t_da522b93147b9c 8,35-58,107-135
+  s_87ab0a2f60ccf8::t_1bc1597d6e8099 1-7,10-34,59-84,92-106,136-156
+  s_87ab0a2f60ccf8::t_987d9738d76ac5 9,85-91
+  s_87ab0a2f60ccf8::t_8c745d878091ad 157-170
+crates/daw-dsp/benches/wasm/measurementCensus.mjs
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 15
+crates/daw-dsp/benches/wasm/run.mjs
+  s_87ab0a2f60ccf8::t_da522b93147b9c 101,361-368,467
+  s_87ab0a2f60ccf8::t_6dbfd493152886 100,102-103,468-469,476-478
+  s_87ab0a2f60ccf8::t_72991225315a08 369-381,470-475,585-590
+  s_87ab0a2f60ccf8::t_63b392dc38605b 479,487
+scripts/__tests__/quantumMeasurementCalibration.spec.ts
+  s_87ab0a2f60ccf8::t_829de87a95b108 2-3,5-41,60-145
+  s_87ab0a2f60ccf8::t_da522b93147b9c 4,42-59
+  s_87ab0a2f60ccf8::t_5518176654d5fd 1
+.github/workflows/quantum-measurements.yml
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 36
+.agents/skills/review-stances/correctness.md
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 48-59
+scripts/checkReleaseInventory.ts
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 1706,1721
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 977,2705,3216,3248
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_87ab0a2f60ccf8::t_e02f8c02b003e0 413
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_87ab0a2f60ccf8::t_a3401cdd465869 1956
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "25f4ea41b5143a57e9e09d1cfe6707f03a026c20",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
