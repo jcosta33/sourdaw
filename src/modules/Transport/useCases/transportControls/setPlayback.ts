@@ -10,7 +10,7 @@ export function setPlayback(playing: boolean): void {
     }
 
     if (playing) {
-        startPlayback();
+        void startPlayback();
         return;
     }
 

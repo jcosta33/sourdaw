@@ -14,7 +14,7 @@ export type VersionedCommandBatchEffects = {
     renderJobs: number;
 };
 
-const CREATE_OPERATIONS = new Set([
+export const CREATE_OPERATIONS = new Set([
     'importStemSet',
     'addTrack',
     'createBus',
@@ -39,7 +39,7 @@ const CREATE_OPERATIONS = new Set([
     'addMarker',
     'addSection',
 ]);
-const DELETE_OPERATIONS = new Set([
+export const DELETE_OPERATIONS = new Set([
     'removeTrack',
     'removeClip',
     'removeMarker',
@@ -51,7 +51,7 @@ const DELETE_OPERATIONS = new Set([
     'glueClips',
     'thinAutomation',
 ]);
-const ROUTING_OPERATIONS = new Set([
+export const ROUTING_OPERATIONS = new Set([
     'createBus',
     'addSend',
     'setSend',
@@ -60,8 +60,8 @@ const ROUTING_OPERATIONS = new Set([
     'addSidechainRoute',
     'removeSidechainRoute',
 ]);
-const TEMPO_OPERATIONS = new Set(['setTempo', 'setTimeSignature']);
-const MASTER_OPERATIONS = new Set(['setMasterGain']);
+export const TEMPO_OPERATIONS = new Set(['setTempo', 'setTimeSignature']);
+export const MASTER_OPERATIONS = new Set(['setMasterGain']);
 const FILE_OPERATIONS = new Set(['importStemSet', 'renderProjectSections']);
 const AUDIO_UPLOAD_OPERATIONS = new Set(['importStemSet']);
 const REMOTE_GENERATION_OPERATIONS = new Set<string>();

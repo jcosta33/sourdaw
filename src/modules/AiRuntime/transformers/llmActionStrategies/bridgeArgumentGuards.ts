@@ -63,6 +63,19 @@ export function findTrack(context: ProjectContext, trackId: unknown) {
     return context.tracks.find((track) => track.id === trackId);
 }
 
+export function findClip(context: ProjectContext, clipId: unknown) {
+    if (typeof clipId !== 'string') {
+        return undefined;
+    }
+    for (const track of context.tracks) {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (clip) {
+            return { clip, track };
+        }
+    }
+    return undefined;
+}
+
 export function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
     const source = findTrack(context, trackId);
     if (!source || typeof busId !== 'string') {
@@ -125,6 +138,10 @@ export function isProviderRoutableSource(
 
 export function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
+}
+
+export function normalizeMarkerName(name: string): string {
+    return name.trim().toLocaleLowerCase();
 }
 
 export function rejection(index: number, name: string, reason: string): LlmActionRejection {

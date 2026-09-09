@@ -20,6 +20,10 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),
+    // Present only because the barrel-mock census requires every export of
+    // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
+    // so `false` is the value with no behaviour behind it.
+    nativeLiveGraphSessionOffered: vi.fn(() => false),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

@@ -119,6 +119,8 @@ export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedBy
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
 export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+// Published because the transport has to know, before it can await anything, whether a play here is offered a session.
+export { nativeLiveGraphSessionOffered } from './livePlayback/nativeLiveGraphSessionOffered';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';

@@ -63,3 +63,45 @@ Probe that would have caught it: for any change that puts a network/IPC wait bet
 session and installing it, walk Connect, then leave-the-section-and-return, then Connect-again
 before the first wait settles. Name which runtime is installed. If it is the first, that is the
 finding.
+
+### 2026-09-08 — the window a start steps over (escaped via PR #4020)
+
+PR #4020 aimed the native session's roll at the position Web Audio had reached during the session's
+own start-up (75–88 ms after the click) and located there. The MIDI arm before the roll had queued
+the note pass from the parked position, and the engine scans its store from the block start, so
+every note-on in the skipped window was never delivered — a chord on the downbeat of a
+native-hosted instrument was silent for its whole length. The header justified the skip with "Web
+Audio sounded that stretch" and "the engine counts those late"; both were untraced and both were
+false: the carried strip's Web Audio gate is pinned to zero 50 ms after the claim, a native-hosted
+instrument has no Web Audio voice at all, and the late counter runs at store time against the
+parked playhead.
+
+Blind spot: the stance attacked the seek's effect on queued mixer writes and the loop seam, and took
+the diff's coverage claim about the other carrier as given. A runtime that moves its position
+relative to material another step already queued is stepping over that material; whether anything
+else sounds it is a code question, not a doc sentence.
+
+Probe that would have caught it: for any start, resume or re-arm that changes where the runtime
+begins relative to the position its arms and topology were built for, name the material stamped in
+the difference and trace two things on the head: the store's delivery bound
+(`partition_point(|entry| entry.at_frame < block_start)` in `enqueue_due_midi_notes`) against the
+arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.setNativeCarried`,
+`CARRIER_GATE_LANDING_SEC`; a native-hosted instrument has no Web Audio voice). Material nothing
+delivers is the finding; a claim that "the other carrier covers it" without those two traces is
+discarded.
+
+### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
+
+The repair for the entry above deleted the roll projection from the shared session start rather than
+from the one caller it was wrong for. Holding the Web Audio start is what makes a projection
+unnecessary, and only `startPlayback` can hold; the mid-play re-arm joins a transport that has been
+sounding for seconds and cannot. Removing the correction for both would have left a re-armed engine
+rolling at the beat read before its own start round trips and staying that far behind Web Audio for
+the rest of the play, with the position feed pulling the cursor back. When a change removes a
+correction from a shared start, the reviewer enumerates every caller and states, per caller, what
+replaces it; a caller whose transport is already rolling cannot hold and must project.
+
+Probe: `grep -rn startNativeSessionAtBeat src/modules --include='*.ts' | grep -v __tests__`, then
+read each caller and name what stands in for the deleted correction there. A caller with no answer
+is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
+the callers.
