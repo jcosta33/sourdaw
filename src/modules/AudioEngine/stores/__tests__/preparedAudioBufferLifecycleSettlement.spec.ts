@@ -859,8 +859,14 @@ describe('prepared audio-buffer settlement and recovery', () => {
         controls.releaseNextWriteSettlement();
         await expect(discard).resolves.toEqual({ status: 'failed', reason: 'IDB transaction aborted' });
         const replacementRecovery = [...controls.committedRecovery.values()].find((recovery) => recovery.id === id);
-        expect(replacementRecovery?.data.channelData[0]?.[0]).toBeCloseTo(0.75);
-        expect(replacementRecovery?.metadata.preparedOwner?.persistenceRevision).toBe(replacementRevision);
+        if (!replacementRecovery || replacementRecovery.data === undefined) {
+            throw new TypeError('Expected replacement recovery PCM');
+        }
+        if (replacementRecovery.metadata === undefined) {
+            throw new TypeError('Expected replacement recovery metadata');
+        }
+        expect(replacementRecovery.data.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(replacementRecovery.metadata.preparedOwner?.persistenceRevision).toBe(replacementRevision);
 
         controls.resetByteCounters();
         const durability = instanceA.ensureDurable([id]);
