@@ -103,6 +103,7 @@ import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/cre
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
+import { getAudioContext } from '../engineAccess/getAudioContext';
 import { masterGainState } from '../engineAccess/masterGainState';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
@@ -119,6 +120,7 @@ import {
     type LiveGraphMonitorMode,
     type LiveGraphTopologyInput,
 } from './projectLiveGraphTopology';
+import { projectRollPosition } from './projectRollPosition';
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
@@ -139,9 +141,38 @@ import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
  */
 const DEFAULT_MONITOR: LiveGraphMonitorMode = 'audible';
 
+/**
+ * What the Web Audio transport is doing while this session starts.
+ *
+ * `held` says the caller is holding the Web Audio transport start for this
+ * session's answer: nothing has sounded yet, so the engine rolls at
+ * {@link StartNativeLiveGraphSessionInput.positionSeconds} with no locate, and
+ * the material standing there is this session's to deliver.
+ *
+ * `rolling` says Web Audio has been rolling since `positionSeconds` was read at
+ * `anchoredAtContextSeconds` — both taken in one expression, on the audio
+ * context clock the scheduler integrates to advance the playhead. The roll is
+ * projected to where Web Audio has reached by the time it is sent
+ * ({@link projectRollPosition}) and locates there, because the listener is
+ * already past the position the start was asked for.
+ *
+ * A required union rather than an optional anchor: which of the two a caller is
+ * has to be a stated decision, never a forgotten one. An absent anchor would
+ * silently pick `held` for whoever left it out, and the caller most likely to
+ * leave it out is the mid-play re-arm — the one caller whose transport has been
+ * rolling for seconds before it asks.
+ */
+export type NativeSessionTransport =
+    Readonly<{ kind: 'held' }> | Readonly<{ kind: 'rolling'; anchoredAtContextSeconds: number }>;
+
 export type StartNativeLiveGraphSessionInput = Readonly<{
     /** Where playback begins, on the engine's clock. */
     positionSeconds: number;
+    /**
+     * Whether the Web Audio transport is waiting for this session or already
+     * rolling past it. See {@link NativeSessionTransport}.
+     */
+    transport: NativeSessionTransport;
     /**
      * The arrangement's tempo map, meter map and loop region, already projected
      * into engine coordinates.
@@ -467,18 +498,26 @@ async function applyTopologyBatch(input: {
  * engine — the state is known again, and the caller's existing parked exit is
  * the correct handling of it.
  *
- * ── It starts playback; it must not locate ────────────────────────────────
+ * ── It locates only where the projection moved it ─────────────────────────
  *
- * The topology batch already parked the engine at this very position, so the
- * playhead is where this roll wants it and a second locate would move nothing.
- * What it would do is destroy the mix: a locate seeks, a seek cancels every
- * queued mixer write stamped at or past its frame, and every strip in the batch
- * this roll follows stated its fader, pan and send levels as writes at frame 0.
- * The three batches — topology, maps, roll — normally drain into one
- * `update_graph` before the first block is rendered, so those writes are still
- * pending when the roll's seek would land on them, and pressing play from the
- * session head is exactly the case where the frames coincide. `locate: false`
- * is what keeps a roll a roll ({@link AudioGraphSetTransportCommand}).
+ * The topology batch parked the engine at the position the start was asked for.
+ * A `held` transport leaves the roll aimed at that same position by
+ * construction — there is nothing for it to catch up to — so it never locates.
+ * A `rolling` one aims the roll at where Web Audio has reached since ({@link
+ * projectRollPosition}), and the seek is what actually relocates the transport
+ * onto the live playhead. So the roll locates exactly when the two positions
+ * differ.
+ *
+ * A locate is destructive: it seeks, and a seek cancels every queued mixer
+ * write stamped at or past its frame, while every strip in the batch this roll
+ * follows stated its fader, pan and send levels as writes at frame 0. Those
+ * writes are behind any strictly later target, so a seek forward leaves them
+ * standing. Where the two positions are equal — every held start, and a rolling
+ * one whose context clock did not advance — the roll stays a non-locating roll:
+ * that equal case is the one the #3066 wipe belongs to, where the seek would
+ * land on frame 0 and erase the mix the topology batch had just declared.
+ * `locate: false` is what keeps a roll a roll there ({@link
+ * AudioGraphSetTransportCommand}).
  */
 /**
  * Whether the engine is rolling, and the fence number of the roll that started
@@ -562,13 +601,14 @@ async function parkUnreadableRoll(
 
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
-    positionSeconds: number
+    positionSeconds: number,
+    locate: boolean
 ): Promise<RolledNativeTransport> {
     let rolling: AudioGraphApplyResult;
     try {
         rolling = await backend.apply({
             schemaVersion: 1,
-            commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
+            commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate }],
         });
         reportAttachedPlugins(rolling);
     } catch (error) {
@@ -607,6 +647,8 @@ async function rollSessionTransport(input: {
     carriedStripIds: ReadonlySet<string>;
     transportMaps: EngineTransportMaps;
     positionSeconds: number;
+    /** What Web Audio is doing while this start runs. See {@link NativeSessionTransport}. */
+    transport: NativeSessionTransport;
     sampleRate: number;
     programmeEndSeconds: number;
 }): Promise<string | null> {
@@ -644,7 +686,11 @@ async function rollSessionTransport(input: {
     // starts advancing are simply lost from the head of the take. The region
     // this pass is written into is known here all the same, because the maps
     // above already installed it and the engine has already answered whether it
-    // will wrap.
+    // will wrap. Entered at the position the start was asked for under both
+    // transports, including a `rolling` one whose roll then projects past part
+    // of the window: those onsets are already behind the live playhead on the
+    // carrier that has been sounding them throughout, so they are not this
+    // session's to deliver (chasing them is #4087).
     await armNativeLiveMidiWriter({
         stripTracks: input.stripTracks,
         // The set the standing topology was built from, never a fresh read:
@@ -657,7 +703,28 @@ async function rollSessionTransport(input: {
         sampleRate: input.sampleRate,
         positionSeconds: input.positionSeconds,
     });
-    const rolled = await rollNativeTransport(input.backend, input.positionSeconds);
+    // Here, after the last await this start owes: every round trip the start
+    // paid for is behind the projection, so a `rolling` join carries the whole
+    // of the time Web Audio spent rolling while the session was being built.
+    const rollPositionSeconds =
+        input.transport.kind === 'held'
+            ? input.positionSeconds
+            : projectRollPosition({
+                  positionSeconds: input.positionSeconds,
+                  anchoredAtContextSeconds: input.transport.anchoredAtContextSeconds,
+                  nowContextSeconds: getAudioContext().currentTime,
+                  loopRegion: input.transportMaps.loopRegion,
+                  // The engine's answer about the region, not the request: a
+                  // region it holds without honouring wraps nothing, so a
+                  // projection that wrapped at that seam would aim the roll at
+                  // a position the engine plays straight past.
+                  loopEnabled: maps.applied.loopEnabled,
+              });
+    const rolled = await rollNativeTransport(
+        input.backend,
+        rollPositionSeconds,
+        rollPositionSeconds !== input.positionSeconds
+    );
     nativeLiveGraphSession.rolling = rolled.rolling;
     if (!rolled.rolling) {
         // The notes went out ahead of a roll that never happened. A parked
@@ -674,7 +741,10 @@ async function rollSessionTransport(input: {
         stripTracks: input.stripTracks,
         sampleRate: input.sampleRate,
         programmeEndSeconds: input.programmeEndSeconds,
-        positionSeconds: input.positionSeconds,
+        // Where the engine actually rolled, not where the start was asked for:
+        // a pass entered at the asked-for position would write its first spans
+        // behind the playhead a projected roll just located to.
+        positionSeconds: rollPositionSeconds,
         provenAfterBatch: rolled.provenAfterBatch,
     });
     return null;
@@ -818,6 +888,7 @@ async function installRolledSession(input: {
         carriedStripIds: reboundStripIds,
         transportMaps: session.transportMaps,
         positionSeconds: session.positionSeconds,
+        transport: session.transport,
         sampleRate: session.sampleRate,
         programmeEndSeconds: programmeEndSeconds(installed.programme),
     });

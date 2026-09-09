@@ -7,6 +7,13 @@
  * the same beat-to-seconds conversion, the same freshly read transport maps,
  * and the same handling of a decline.
  *
+ * The two callers differ in exactly one argument, `transport`. `startPlayback`
+ * has held the Web Audio start for this promise, so it passes `held` and the
+ * engine rolls where it was asked to. The re-arm cannot hold — its transport
+ * has been sounding since a play it did not begin — so it passes `rolling` with
+ * the anchor that lets the roll land where Web Audio has reached rather than
+ * where the playhead was read.
+ *
  * The returned promise settles when the start settles, either way: a decline
  * and a failure are outcomes, not rejections, so a caller that waits for the
  * engine waits the same length of time whatever the answer. The re-arm ignores
@@ -20,7 +27,18 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
-export function startNativeSessionAtBeat(startBeat: number, tempo: number): Promise<void> {
+/**
+ * What Web Audio is doing while the session starts, derived from the use case
+ * that takes it rather than imported: AudioEngine keeps its models private, and
+ * the callable contract is the public statement of what a caller has to decide.
+ */
+type NativeSessionTransport = Parameters<typeof startNativeLiveGraphSession>[0]['transport'];
+
+export function startNativeSessionAtBeat(
+    startBeat: number,
+    tempo: number,
+    transport: NativeSessionTransport
+): Promise<void> {
     // D3.c.4a (#3066): the native engine has no start command — the first
     // graph batch boots it — so play is where it starts, carrying this
     // session's topology and, since #3068, its programme. A decline (a browser
@@ -29,6 +47,7 @@ export function startNativeSessionAtBeat(startBeat: number, tempo: number): Prom
     return Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startBeat, tempo),
+            transport,
             // Read here, at the moment of play, so the engine follows the map
             // the timeline holds now rather than the one it held when the
             // session object was made.

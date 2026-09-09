@@ -89,3 +89,19 @@ arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.s
 `CARRIER_GATE_LANDING_SEC`; a native-hosted instrument has no Web Audio voice). Material nothing
 delivers is the finding; a claim that "the other carrier covers it" without those two traces is
 discarded.
+
+### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
+
+The repair for the entry above deleted the roll projection from the shared session start rather than
+from the one caller it was wrong for. Holding the Web Audio start is what makes a projection
+unnecessary, and only `startPlayback` can hold; the mid-play re-arm joins a transport that has been
+sounding for seconds and cannot. Removing the correction for both would have left a re-armed engine
+rolling at the beat read before its own start round trips and staying that far behind Web Audio for
+the rest of the play, with the position feed pulling the cursor back. When a change removes a
+correction from a shared start, the reviewer enumerates every caller and states, per caller, what
+replaces it; a caller whose transport is already rolling cannot hold and must project.
+
+Probe: `grep -rn startNativeSessionAtBeat src/modules --include='*.ts' | grep -v __tests__`, then
+read each caller and name what stands in for the deleted correction there. A caller with no answer
+is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
+the callers.

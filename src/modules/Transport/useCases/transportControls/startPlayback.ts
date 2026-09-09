@@ -79,6 +79,8 @@ export async function startPlayback(): Promise<void> {
     // because its teardown is deferred behind a recording flush — is retired
     // now instead of advancing the playhead through the wait.
     const generation = claimSchedulerSession();
-    const session = startNativeSessionAtBeat(startPosition, state.tempo);
+    // Held: the scheduler below waits for this session, so nothing has sounded
+    // between the gesture and the roll and the engine opens where play asked.
+    const session = startNativeSessionAtBeat(startPosition, state.tempo, { kind: 'held' });
     await startSchedulerWhenNativeSessionSettles(session, generation);
 }

@@ -37,6 +37,13 @@ const mocks = vi.hoisted(() => ({
      * that relation instead of a scripted answer.
      */
     rearm: { claimed: false, epoch: 0 },
+    /**
+     * What the audio context's clock reads. Fixed, because what this file owns
+     * is that the re-arm anchors its start to that clock at all — a start left
+     * unanchored would roll the re-armed engine at the beat read below and
+     * leave it behind the transport that never stopped sounding.
+     */
+    contextSeconds: 12.5,
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
@@ -54,7 +61,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     nativeSessionRearmClaimHolds: (claim: number): boolean => mocks.rearm.claimed && claim === mocks.rearm.epoch,
     startNativeLiveGraphSession: vi.fn(),
-    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
+    getAudioContext: (): { sampleRate: number; currentTime: number } => ({
+        sampleRate: 48_000,
+        currentTime: mocks.contextSeconds,
+    }),
 }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({ getTransportState: vi.fn() }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
@@ -111,7 +121,16 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         expect(ensureTrackStrips).toHaveBeenCalledWith({ collectExternalPluginActivations: true });
         // Beat 8 at 120 BPM is four seconds in: the beat is read at the start,
         // not at the offer, so the engine opens where the transport actually is.
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 4 }));
+        // And it is a rolling join, anchored to the clock reading taken with
+        // that beat: this transport keeps sounding through the start's own
+        // round trips, so a `held` start here would roll the engine at 4 and
+        // leave it that many milliseconds behind for the rest of the play.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                positionSeconds: 4,
+                transport: { kind: 'rolling', anchoredAtContextSeconds: 12.5 },
+            })
+        );
     });
 
     it('waits for the forgotten plugins to reload before it starts the session', async () => {
@@ -240,7 +259,14 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         settleActivation();
 
         await vi.waitFor(() => expect(startNativeLiveGraphSession).toHaveBeenCalledTimes(1));
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 30 }));
+        // The anchor is read with the beat, past the reload, so it dates the
+        // roll's projection from the start rather than from the offer.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                positionSeconds: 30,
+                transport: { kind: 'rolling', anchoredAtContextSeconds: 12.5 },
+            })
+        );
     });
 
     it('re-arms once per play, however many engines the same play loses', async () => {

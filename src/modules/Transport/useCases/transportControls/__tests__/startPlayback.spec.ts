@@ -217,12 +217,13 @@ describe('startPlayback', () => {
         startPlayback();
 
         const request = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0];
-        expect(request).toEqual(expect.objectContaining({ positionSeconds: 2 }));
-        // The beat play opens on is the whole of the position. #4020 added an
-        // audio-clock anchor so the session could roll the engine at wherever
-        // Web Audio had reached by the time it was ready; that locate seeked
-        // past every note-on stamped in between, and nothing else sounded them.
-        expect(request === undefined || 'anchoredAtContextSeconds' in request).toBe(false);
+        // The beat play opens on is the whole of the position, and the start is
+        // held: the scheduler waits for this session, so nothing sounds in
+        // between and the engine owes the material there. #4020 rolled this
+        // start at wherever Web Audio would have reached, and that locate
+        // seeked past every note-on stamped in between with nothing else to
+        // sound them.
+        expect(request).toEqual(expect.objectContaining({ positionSeconds: 2, transport: { kind: 'held' } }));
     });
 
     it('gives the native session the arrangement maps the engine has to follow', () => {
