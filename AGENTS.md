@@ -254,8 +254,8 @@ to overwrite a same-lane receipt with a different head. Delete any leftover loca
 Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
-their work is done. New planning is GitHub issues, never a plan file. Durable decisions belong in
-`.agents/decisions/` and its ADR ledger.
+their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.
+Durable decisions belong in `.agents/decisions/` and its ADR ledger.
 
 `.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with:
 
