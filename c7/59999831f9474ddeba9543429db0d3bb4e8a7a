@@ -1,0 +1,40 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_06adf2b091dc62::t_f269bb5a91103b 9
+src/modules/AiRuntime/transformers/llmActionStrategies/trackStrategy.ts
+  s_06adf2b091dc62::t_bc545ac8d185d4 1-88,90-311
+  s_06adf2b091dc62::t_abc5ac004c56ed 89
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_06adf2b091dc62::t_656cd6d4fc2c65 12
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_06adf2b091dc62::t_e66a390eb72ffa 1-132
+src/modules/AiRuntime/transformers/llmActionStrategies/routingStrategy.ts
+  s_06adf2b091dc62::t_8cbb15c24ed24b 112
+  s_06adf2b091dc62::t_8774ca8529cd54 1-111,113-274
+src/modules/AiRuntime/transformers/llmActionBridgeContracts.ts
+  s_06adf2b091dc62::t_a3df46c56dbbc5 27-32
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_06adf2b091dc62::t_62a1f53f30317f 257-271
+  s_06adf2b091dc62::t_578b0baf07e30c 50
+  s_06adf2b091dc62::t_62e5717ea8f6d3 47,49,51-59,61,64-65
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/trackRoutingDeviceStrategies.spec.ts
+  s_06adf2b091dc62::t_d256bf664dd847 1-130
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_06adf2b091dc62::t_f2e789c844be53 1-108,115-204
+  s_06adf2b091dc62::t_ec450600dffac4 109-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c759999831f9474ddeba9543429db0d3bb4e8a7a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
