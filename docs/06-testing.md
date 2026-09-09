@@ -682,7 +682,7 @@ Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(te
 ### Hosted browser quantum measurements
 
 Changes to the browser quantum harness, its measured DSP closure, or the committed WASM it loads trigger
-`quantum-measurements.yml`. The workflow measures the complete reference project on a standard macOS runner,
+`quantum-measurements.yml`. The workflow measures the complete reference project on a standard Ubuntu runner,
 checks the resulting JSON and Markdown against the checked-out pull-request head, and returns a one-day artifact
 containing those two data files, the raw log, and a receipt bound to the repository, pull request, head, run, and
 attempt. It never commits measurement data.

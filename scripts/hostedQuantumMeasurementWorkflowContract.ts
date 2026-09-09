@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
     GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES,
     GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
@@ -68,6 +70,13 @@ const EXPECTED_STEP_NAMES = [
     'Upload qualified artifact',
 ] as const;
 
+const COMMAND_DIGESTS = {
+    sourceAdmission: '3c0c24939d839589f5baa9e4bf4a01c99d8d633b9d9d23f4f711b786cd76ba49',
+    measurement: '913b063f795ccfafb4da32276097196fbc169c26ad71c712fd41e37efaf4fe92',
+    admission: '2e5c672578933c10c3d17bf53c89bc33eb59d2a19726e9d0208812c240d532c2',
+    assembly: '5bded47b1e78876ed27bd63d81a47a8a6576ca5f4658ef6ef82d32c069343ea3',
+} as const;
+
 function record(value: unknown, label: string): UnknownRecord {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be a mapping`);
@@ -88,12 +97,11 @@ function requireEqual(actual: unknown, expected: unknown, label: string): void {
     }
 }
 
-function requireRun(step: UnknownRecord, fragments: readonly string[], label: string): string {
+function requireRunDigest(step: UnknownRecord, digest: string, label: string): void {
     const run = step.run;
-    if (typeof run !== 'string' || fragments.some((fragment) => !run.includes(fragment))) {
+    if (typeof run !== 'string' || createHash('sha256').update(run).digest('hex') !== digest) {
         throw new Error(`Hosted quantum measurement workflow must retain ${label}`);
     }
-    return run;
 }
 
 function assertStepIsBlocking(step: UnknownRecord): void {
@@ -145,30 +153,16 @@ function assertSetup(named: (name: string) => UnknownRecord): void {
 function assertSourceAdmission(named: (name: string) => UnknownRecord): void {
     const source = named('Verify exact clean source');
     requireEqual(source.shell, 'bash', 'the bash source verifier');
-    requireRun(
-        source,
-        [
-            'set -euo pipefail',
-            'git rev-parse --show-toplevel',
-            'git rev-parse HEAD',
-            '$MEASUREMENT_HEAD_SHA',
-            'git status --porcelain --untracked-files=normal',
-        ],
-        'canonical exact-head and clean-tree admission'
-    );
+    requireRunDigest(source, COMMAND_DIGESTS.sourceAdmission, 'canonical exact-head and clean-tree admission');
     requireEqual(named('Verify committed WASM artifacts').run, 'pnpm wasm:verify', 'WASM freshness admission');
 }
 
 function assertMeasurement(named: (name: string) => UnknownRecord): void {
     const measurement = named('Run full browser measurement');
     requireEqual(measurement.shell, 'bash', 'the bash measurement runner');
-    requireRun(
+    requireRunDigest(
         measurement,
-        [
-            'set -euo pipefail',
-            'node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json',
-            '2>&1 | tee "$RUNNER_TEMP/quantum-measurement.log"',
-        ],
+        COMMAND_DIGESTS.measurement,
         'the full default measurement with fail-fast raw logging'
     );
     requireEqual(
@@ -181,18 +175,11 @@ function assertMeasurement(named: (name: string) => UnknownRecord): void {
         'node crates/daw-dsp/benches/wasm/renderTable.mjs --check',
         'the rendered-table check'
     );
-    const acceptance = requireRun(
+    requireRunDigest(
         named('Verify measurement admission'),
-        [
-            "from './scripts/checkReleaseInventory.ts'",
-            'assertGrandBouleMeasurementAdmission(root);',
-            'assertWholeEngineQuantumCapability(root);',
-        ],
+        COMMAND_DIGESTS.admission,
         'both exported measurement acceptance gates'
     );
-    if (acceptance.includes('assertReleaseInventory(') || acceptance.includes('test:release-inventory')) {
-        throw new Error('Hosted quantum measurement workflow must not run the whole release inventory');
-    }
 }
 
 function assertArtifact(named: (name: string) => UnknownRecord): void {
@@ -202,31 +189,11 @@ function assertArtifact(named: (name: string) => UnknownRecord): void {
         { ARTIFACT_DIRECTORY: '${{ runner.temp }}/qualified-quantum-measurement' },
         'the runner-private artifact directory'
     );
-    const assemblyRun = requireRun(
+    requireRunDigest(
         assembly,
-        [
-            'crates/daw-dsp/benches/quantum-cost-table.json',
-            'crates/daw-dsp/benches/quantum-cost-table.md',
-            'quantum-measurement.log',
-            "join(output, 'receipt.json')",
-            'MEASUREMENT_REPOSITORY',
-            'MEASUREMENT_PR',
-            'MEASUREMENT_HEAD_SHA',
-            'MEASUREMENT_RUN_ID',
-            'MEASUREMENT_RUN_ATTEMPT',
-            "createHash('sha256')",
-            '10 * 1024 * 1024',
-        ],
+        COMMAND_DIGESTS.assembly,
         'the exact bounded data members, identity receipt, and content hashes'
     );
-    const exactDataMembers = `const files = [
-    ['crates/daw-dsp/benches/quantum-cost-table.json', 'crates/daw-dsp/benches/quantum-cost-table.json'],
-    ['crates/daw-dsp/benches/quantum-cost-table.md', 'crates/daw-dsp/benches/quantum-cost-table.md'],
-    [join(process.env.RUNNER_TEMP, 'quantum-measurement.log'), 'quantum-measurement.log'],
-];`;
-    if (!assemblyRun.includes(exactDataMembers)) {
-        throw new Error('Hosted quantum measurement workflow must retain exactly the three qualified data members');
-    }
     const upload = named('Upload qualified artifact');
     requireEqual(
         upload.uses,
@@ -269,7 +236,7 @@ export function assertHostedQuantumMeasurementWorkflow(value: unknown): void {
     requireEqual(Object.keys(jobs), ['measure'], 'one standalone producer job');
     const job = record(jobs.measure, 'measurement job');
     requireEqual(job.name, 'Measure browser audio quanta', 'a distinct non-Gate check name');
-    requireEqual(job['runs-on'], 'macos-14', 'the standard macOS 14 runner');
+    requireEqual(job['runs-on'], 'ubuntu-latest', 'the standard Ubuntu runner');
     requireEqual(job['timeout-minutes'], 60, 'the 60 minute timeout');
     for (const key of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[key], undefined, `no job-level ${key}`);

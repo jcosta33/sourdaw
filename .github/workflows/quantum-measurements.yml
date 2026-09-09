@@ -53,7 +53,7 @@ concurrency:
 jobs:
   measure:
     name: Measure browser audio quanta
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       MEASUREMENT_REPOSITORY: ${{ github.repository }}
@@ -125,8 +125,25 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { createHash } from 'node:crypto';
-          import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+          import { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
           import { dirname, join } from 'node:path';
+
+          function collectRegularFiles(directory, prefix = '') {
+              const files = [];
+              for (const name of readdirSync(directory).sort()) {
+                  const relative = prefix ? join(prefix, name) : name;
+                  const path = join(directory, name);
+                  const entry = lstatSync(path);
+                  if (entry.isDirectory() && !entry.isSymbolicLink()) {
+                      files.push(...collectRegularFiles(path, relative));
+                  } else if (entry.isFile() && !entry.isSymbolicLink()) {
+                      files.push(relative);
+                  } else {
+                      throw new Error(`Qualified quantum measurement contains a non-regular member: ${relative}`);
+                  }
+              }
+              return files;
+          }
 
           const files = [
               ['crates/daw-dsp/benches/quantum-cost-table.json', 'crates/daw-dsp/benches/quantum-cost-table.json'],
@@ -134,14 +151,26 @@ jobs:
               [join(process.env.RUNNER_TEMP, 'quantum-measurement.log'), 'quantum-measurement.log'],
           ];
           const output = process.env.ARTIFACT_DIRECTORY;
-          mkdirSync(output, { recursive: true });
-          const hashes = {};
+          if (!output) {
+              throw new Error('ARTIFACT_DIRECTORY is required');
+          }
+          mkdirSync(output);
           for (const [source, relative] of files) {
               const destination = join(output, relative);
               mkdirSync(dirname(destination), { recursive: true });
               copyFileSync(source, destination);
-              hashes[relative] = `sha256:${createHash('sha256').update(readFileSync(destination)).digest('hex')}`;
           }
+          const dataMembers = files.map(([, relative]) => relative).sort();
+          const actualDataMembers = collectRegularFiles(output);
+          if (JSON.stringify(actualDataMembers) !== JSON.stringify(dataMembers)) {
+              throw new Error(`Qualified quantum measurement data members disagree: ${actualDataMembers.join(', ')}`);
+          }
+          const hashes = Object.fromEntries(
+              actualDataMembers.map((relative) => [
+                  relative,
+                  `sha256:${createHash('sha256').update(readFileSync(join(output, relative))).digest('hex')}`,
+              ])
+          );
           const receipt = {
               version: 1,
               repository: process.env.MEASUREMENT_REPOSITORY,
@@ -152,8 +181,15 @@ jobs:
               files: hashes,
           };
           writeFileSync(join(output, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
-          const members = [...files.map(([, relative]) => relative), 'receipt.json'];
-          const totalBytes = members.reduce((total, relative) => total + statSync(join(output, relative)).size, 0);
+          const members = [...dataMembers, 'receipt.json'].sort();
+          const actualMembers = collectRegularFiles(output);
+          if (JSON.stringify(actualMembers) !== JSON.stringify(members)) {
+              throw new Error(`Qualified quantum measurement members disagree: ${actualMembers.join(', ')}`);
+          }
+          const totalBytes = actualMembers.reduce(
+              (total, relative) => total + lstatSync(join(output, relative)).size,
+              0
+          );
           if (totalBytes > 10 * 1024 * 1024) {
               throw new Error(`Qualified quantum measurement artifact is ${totalBytes} bytes; maximum is 10 MiB`);
           }
