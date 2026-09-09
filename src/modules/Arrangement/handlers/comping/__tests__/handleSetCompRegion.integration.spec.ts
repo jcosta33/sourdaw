@@ -11,6 +11,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -72,6 +73,50 @@ const otherLane = {
 
 function activeRegions(laneId = 'lane-1') {
     return takeLaneStore.value?.lanes.find((candidate) => candidate.id === laneId)?.activeCompRegions;
+}
+
+function holdSnapshotRegionEdit(nextRegions: typeof lane.activeCompRegions) {
+    let applyEdit!: () => void;
+    let releaseTransaction!: () => void;
+    let markTransactionStarted!: () => void;
+    let markEditApplied!: () => void;
+    const editAllowed = new Promise<void>((resolve) => {
+        applyEdit = resolve;
+    });
+    const transactionRelease = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+    });
+    const transactionStarted = new Promise<void>((resolve) => {
+        markTransactionStarted = resolve;
+    });
+    const editApplied = new Promise<void>((resolve) => {
+        markEditApplied = resolve;
+    });
+    const transaction = transactSnapshot(async (snapshotTransaction) => {
+        mutateCrdtDoc<{ commandAdmissionHold?: boolean }>({
+            id: 'root',
+            snapshotTransaction,
+            changeFn: (document) => {
+                document.commandAdmissionHold = true;
+            },
+        });
+        markTransactionStarted();
+        await editAllowed;
+        const current = takeLaneStore.value!;
+        const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+            takeLaneStore.set({
+                lanes: current.lanes.map((candidate) =>
+                    candidate.id === 'lane-1'
+                        ? { ...candidate, activeCompRegions: structuredClone(nextRegions) }
+                        : candidate
+                ),
+            });
+        });
+        storageTransaction.commit();
+        markEditApplied();
+        await transactionRelease;
+    });
+    return { applyEdit, editApplied, releaseTransaction, transaction, transactionStarted };
 }
 
 async function applyBToTwoThroughFour(): Promise<void> {
@@ -356,6 +401,153 @@ describe('setCompRegion command integration', () => {
             { startBeat: 2, endBeat: 4, takeId: 'take-c' },
             { startBeat: 4, endBeat: 8, takeId: 'take-a' },
         ]);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('refuses a batch when the admitted interval changes while it waits for a snapshot transaction', async () => {
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        const held = holdSnapshotRegionEdit(expected);
+        await held.transactionStarted;
+
+        const execution = executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            { groupId: 'held-comp-selection' }
+        );
+        held.applyEdit();
+        await held.editApplied;
+        held.releaseTransaction();
+        await held.transaction;
+
+        await expect(execution).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: setCompRegion',
+            actions: [],
+        });
+        expect(activeRegions()).toEqual(expected);
+        flushAutomergeStorageWrites();
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('preserves a compatible outside edit while an admitted batch waits', async () => {
+        const outsideEdit = [
+            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        const held = holdSnapshotRegionEdit(outsideEdit);
+        await held.transactionStarted;
+
+        const execution = executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            { groupId: 'compatible-outside-edit' }
+        );
+        held.applyEdit();
+        await held.editApplied;
+        held.releaseTransaction();
+        await held.transaction;
+
+        await expect(execution).resolves.toMatchObject({ status: 'committed' });
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+        flushAutomergeStorageWrites();
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('commits two disjoint comp selections as one batch', async () => {
+        await expect(
+            executeAppActionBatch(
+                [
+                    {
+                        type: 'setCompRegion',
+                        payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                    },
+                    {
+                        type: 'setCompRegion',
+                        payload: { trackId: 'track-1', startBeat: 5, endBeat: 6, takeId: 'take-c' },
+                    },
+                ],
+                { groupId: 'disjoint-comp-selections' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+        flushAutomergeStorageWrites();
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }, { label: 'Set comp region' }]);
+    });
+
+    it('refuses a two-action batch atomically when one admitted interval changes', async () => {
+        const insideEdit = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        const held = holdSnapshotRegionEdit(insideEdit);
+        await held.transactionStarted;
+
+        const execution = executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 5, endBeat: 6, takeId: 'take-c' },
+                },
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            { groupId: 'atomic-comp-refusal' }
+        );
+        held.applyEdit();
+        await held.editApplied;
+        held.releaseTransaction();
+        await held.transaction;
+
+        await expect(execution).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: setCompRegion',
+            actions: [],
+        });
+        expect(activeRegions()).toEqual(insideEdit);
+        flushAutomergeStorageWrites();
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(insideEdit);
         expect(undoStore.value).toEqual({ past: [], future: [] });
     });
 });

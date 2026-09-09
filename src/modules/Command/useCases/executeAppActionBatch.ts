@@ -135,6 +135,11 @@ type CanonicalizedBatchAction = {
     suppliedEnvelope: VersionedCommandEnvelope | undefined;
 };
 
+type AdmissionMaterializedBatchAction = {
+    action: AppAction;
+    handler: ActionHandler;
+};
+
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
 
 class AppActionBatchCancelledError extends Error {
@@ -624,6 +629,27 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 };
             }
 
+            const admissionMaterializedActions: Array<AdmissionMaterializedBatchAction | undefined> = [];
+            for (const action of actions) {
+                const handler = getCommandHandler(action);
+                if (handler?.materializeCommandArgumentsAt !== 'admission') {
+                    admissionMaterializedActions.push(undefined);
+                    continue;
+                }
+                try {
+                    admissionMaterializedActions.push({
+                        action: materializeCommandHandlerArguments(action, handler),
+                        handler,
+                    });
+                } catch (error) {
+                    return {
+                        status: 'rejected',
+                        reason: `Could not preflight ${action.type}: ${failureReason(error)}`,
+                        actions: [],
+                    };
+                }
+            }
+
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
             try {
                 const preExecutionFailure = options?.preExecutionValidation?.() ?? null;
@@ -674,11 +700,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const canonicalizedActions: CanonicalizedBatchAction[] = [];
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
+                const admissionMaterialized = admissionMaterializedActions[index];
+                const capturedAction = admissionMaterialized?.action ?? requestedAction;
                 const materialized = suppliedEnvelope
-                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
-                    : materializeCommandApplicationIds(requestedAction);
+                    ? { action: capturedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    : materializeCommandApplicationIds(capturedAction);
                 let action = materialized.action;
-                const handler = getCommandHandler(action);
+                const handler = admissionMaterialized?.handler ?? getCommandHandler(action);
                 if (!handler) {
                     return {
                         status: 'rejected',
@@ -687,7 +715,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 try {
-                    action = materializeCommandHandlerArguments(action, handler);
+                    if (!admissionMaterialized) {
+                        action = materializeCommandHandlerArguments(action, handler);
+                    }
                     if (
                         suppliedEnvelope &&
                         (suppliedEnvelope.operation !== action.type ||

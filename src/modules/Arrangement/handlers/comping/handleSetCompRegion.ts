@@ -27,6 +27,7 @@ export const handleSetCompRegion = createHandler<'setCompRegion'>({
         action.payload.expected = patch.expected;
         action.payload.replacement = patch.replacement;
     },
+    materializeCommandArgumentsAt: 'admission',
     validateMaterializedCommandArguments: compRegionInterval.isCompleteSetPayload,
     validate: (action) => {
         const patch = getPatch(action);

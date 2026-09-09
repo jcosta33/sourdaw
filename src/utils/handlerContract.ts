@@ -2520,6 +2520,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
+    /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
+    materializeCommandArgumentsAt?: 'admission';
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Owner-provided strict validation for an internal persisted replay payload. */
