@@ -4,6 +4,8 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
     CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
@@ -27,13 +29,23 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: mocks.loggerWarn, error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE] as const;
+const CURRENT_STORES = [
+    BUFFER_STORE,
+    META_STORE,
+    RECOVERY_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+] as const;
 const PROJECT_OWNER_ID = 'project-owner';
 
 type RetentionApi = {
     acquire: typeof import('../acquireCheckpointAudioRetention').acquireCheckpointAudioRetention;
     cache: typeof import('../cacheAudioBuffer').cacheAudioBuffer;
     ensure: typeof import('../ensureCachedAudioBuffersDurable').ensureCachedAudioBuffersDurable;
+    get: typeof import('../getCachedAudioBuffer').getCachedAudioBuffer;
+    importBuffers: typeof import('../importCachedAudioBuffers').importCachedAudioBuffers;
+    read: typeof import('../readCheckpointAudioRetention').readCheckpointAudioRetention;
     release: typeof import('../releaseCheckpointAudioRetention').releaseCheckpointAudioRetention;
     collectByAge: typeof import('../garbageCollectCachedAudioBuffersByAge').garbageCollectCachedAudioBuffersByAge;
     collectBySize: typeof import('../garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
@@ -53,6 +65,9 @@ async function importApi(): Promise<RetentionApi> {
         acquire,
         cache,
         ensure,
+        get,
+        importBuffers,
+        read,
         release,
         collectByAge,
         collectBySize,
@@ -66,6 +81,9 @@ async function importApi(): Promise<RetentionApi> {
         import('../acquireCheckpointAudioRetention'),
         import('../cacheAudioBuffer'),
         import('../ensureCachedAudioBuffersDurable'),
+        import('../getCachedAudioBuffer'),
+        import('../importCachedAudioBuffers'),
+        import('../readCheckpointAudioRetention'),
         import('../releaseCheckpointAudioRetention'),
         import('../garbageCollectCachedAudioBuffersByAge'),
         import('../garbageCollectCachedAudioBuffersBySize'),
@@ -82,6 +100,9 @@ async function importApi(): Promise<RetentionApi> {
         acquire: acquire.acquireCheckpointAudioRetention,
         cache: cache.cacheAudioBuffer,
         ensure: ensure.ensureCachedAudioBuffersDurable,
+        get: get.getCachedAudioBuffer,
+        importBuffers: importBuffers.importCachedAudioBuffers,
+        read: read.readCheckpointAudioRetention,
         release: release.releaseCheckpointAudioRetention,
         collectByAge: collectByAge.garbageCollectCachedAudioBuffersByAge,
         collectBySize: collectBySize.garbageCollectCachedAudioBuffersBySize,
@@ -127,6 +148,10 @@ function seedBuffer(
     });
 }
 
+function versionKey(id: string, persistenceRevision = `${id}-persistence`): string {
+    return JSON.stringify([id, persistenceRevision]);
+}
+
 function sparseBufferIds(): string[] {
     const bufferIds: string[] = [];
     bufferIds.length = 1;
@@ -141,6 +166,34 @@ async function waitForHeldWrite(controls: FakeAudioIndexedDbControls): Promise<v
         await flushIndexedDbTasks(1);
     }
     throw new Error('Expected a held IndexedDB write transaction');
+}
+
+async function waitForHeldReadonly(controls: FakeAudioIndexedDbControls): Promise<void> {
+    await vi.waitFor(() => expect(controls.pendingReadonlySettlementCount()).toBeGreaterThan(0));
+}
+
+function seedRecovery(controls: FakeAudioIndexedDbControls, id: string, values: readonly number[]): void {
+    controls.committedRecovery.set(id, {
+        data: {
+            ...storedBuffer(values),
+            lastAccessed: 1,
+        },
+        id,
+        metadata: {
+            lastAccessed: 1,
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId: `${id}-lease`,
+                persistenceRevision: `${id}-persistence`,
+                status: 'temporary',
+            },
+            sizeInBytes: values.length * Float32Array.BYTES_PER_ELEMENT,
+        },
+        operation: 'discard',
+        revision: `${id}-recovery`,
+        schemaVersion: 1,
+        stagedAtMs: 1,
+    });
 }
 
 function audioContext(): BaseAudioContext {
@@ -279,12 +332,16 @@ describe('checkpoint audio retention', () => {
         expect(ownership.ownershipToken).toEqual(expect.any(String));
         expect(ownership.ownershipToken.length).toBeGreaterThan(0);
         expect(controls.committedCheckpointRetentions.get('checkpoint-a')).toEqual({
-            schemaVersion: 1,
+            schemaVersion: 2,
             checkpointId: 'checkpoint-a',
             projectOwnerId: PROJECT_OWNER_ID,
-            bufferIds: ['buffer-a', 'buffer-b'],
             ownershipToken: ownership.ownershipToken,
+            versionKeys: [versionKey('buffer-a'), versionKey('buffer-b')],
         });
+        expect([...controls.committedCheckpointAudioVersions.keys()]).toEqual([
+            versionKey('buffer-a'),
+            versionKey('buffer-b'),
+        ]);
 
         await expect(
             acquireCurrentRetention(api, {
@@ -303,6 +360,173 @@ describe('checkpoint audio retention', () => {
         expect(controls.committedCheckpointRetentions.get('checkpoint-a')?.ownershipToken).toBe(
             ownership.ownershipToken
         );
+    });
+
+    it('reads immutable retained PCM across ordinary replacement, restart, and caller mutation', async () => {
+        seedBuffer(controls, 'same-id', [0.25]);
+        const api = await importApi();
+        const first = await acquireCurrentRetention(api, {
+            checkpointId: 'checkpoint-a',
+            bufferIds: ['same-id'],
+        });
+        const firstBacking = controls.committedCheckpointAudioVersions.get(versionKey('same-id'));
+        const second = await acquireCurrentRetention(api, {
+            checkpointId: 'checkpoint-b',
+            bufferIds: ['same-id'],
+        });
+        expect(controls.committedCheckpointAudioVersions.size).toBe(1);
+        expect(controls.committedCheckpointAudioVersions.get(versionKey('same-id'))).toBe(firstBacking);
+
+        const replacement = await api.importBuffers({
+            audioContext: audioContext(),
+            buffers: {},
+            decodedBuffers: { 'same-id': runtimeBuffer(0.75) },
+            cacheIds: ['same-id'],
+        });
+        expect(replacement?.publish()).toBe(1);
+        await expect(replacement?.persist()).resolves.toBe(true);
+        const replacementReceipt = await requireDurabilityReceipt(api, ['same-id']);
+        const replacementRevision = controls.committedMeta.get('same-id')?.persistenceRevision;
+        if (typeof replacementRevision !== 'string') {
+            throw new TypeError('Expected the ordinary replacement to commit a canonical revision');
+        }
+        const third = await api.withStorageLock((scope) =>
+            api.acquire({
+                checkpointId: 'checkpoint-c',
+                projectOwnerId: PROJECT_OWNER_ID,
+                durabilityReceipt: replacementReceipt,
+                scope,
+            })
+        );
+        replacementReceipt.release();
+        expect(third).toEqual({ status: 'retained', ownershipToken: expect.any(String) });
+        if (third.status !== 'retained') {
+            throw new Error('Expected replacement retention');
+        }
+        expect(controls.committedCheckpointAudioVersions.size).toBe(2);
+        expect(controls.committedCheckpointAudioVersions.get(versionKey('same-id'))?.channelData[0]?.[0]).toBe(0.25);
+        expect(
+            controls.committedCheckpointAudioVersions.get(versionKey('same-id', replacementRevision))
+                ?.channelData[0]?.[0]
+        ).toBe(0.75);
+
+        vi.resetModules();
+        const reopened = await importApi();
+        const ordinary = await reopened.prepare({ audioContext: audioContext(), bufferIds: ['same-id'] });
+        expect(ordinary?.publish()).toBe(1);
+        expect(reopened.get({ bufferId: 'same-id' })?.getChannelData(0)[0]).toBe(0.75);
+
+        const btoa = vi.spyOn(globalThis, 'btoa');
+        const retainedA = await reopened.read({
+            checkpointId: 'checkpoint-a',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: first.ownershipToken,
+            expectedBufferIds: ['same-id', 'same-id'],
+            audioContext: audioContext(),
+        });
+        const retainedB = await reopened.read({
+            checkpointId: 'checkpoint-b',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: second.ownershipToken,
+            expectedBufferIds: ['same-id'],
+            audioContext: audioContext(),
+        });
+        const retainedC = await reopened.read({
+            checkpointId: 'checkpoint-c',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: third.ownershipToken,
+            expectedBufferIds: ['same-id'],
+            audioContext: audioContext(),
+        });
+        expect(retainedA.status === 'read' && retainedA.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
+            0.25
+        );
+        expect(retainedB.status === 'read' && retainedB.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
+            0.25
+        );
+        expect(retainedC.status === 'read' && retainedC.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
+            0.75
+        );
+        expect(btoa).not.toHaveBeenCalled();
+
+        if (retainedA.status !== 'read') {
+            throw new Error('Expected retained checkpoint PCM');
+        }
+        retainedA.decodedAudioBuffers['same-id']!.getChannelData(0)[0] = -1;
+        retainedA.decodedAudioBuffers['same-id'] = runtimeBuffer(-2);
+        const reread = await reopened.read({
+            checkpointId: 'checkpoint-a',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: first.ownershipToken,
+            expectedBufferIds: ['same-id'],
+            audioContext: audioContext(),
+        });
+        expect(reread.status === 'read' && reread.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(0.25);
+
+        await reopened.release({
+            checkpointId: 'checkpoint-a',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: first.ownershipToken,
+        });
+        expect(controls.committedCheckpointAudioVersions.has(versionKey('same-id'))).toBe(true);
+        await reopened.release({
+            checkpointId: 'checkpoint-b',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: second.ownershipToken,
+        });
+        expect(controls.committedCheckpointAudioVersions.has(versionKey('same-id'))).toBe(false);
+        expect(controls.committedCheckpointAudioVersions.has(versionKey('same-id', replacementRevision))).toBe(true);
+        expect(btoa).not.toHaveBeenCalled();
+    });
+
+    it('returns own-property-safe decoded records and refuses before reading backing', async () => {
+        seedBuffer(controls, '__proto__', [0.25]);
+        const api = await importApi();
+        const ownership = await acquireCurrentRetention(api, {
+            checkpointId: 'prototype-checkpoint',
+            bufferIds: ['__proto__'],
+        });
+        controls.failRequestsFrom(CHECKPOINT_AUDIO_VERSION_STORE);
+        await expect(
+            api.read({
+                checkpointId: 'prototype-checkpoint',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: 'wrong-token',
+                expectedBufferIds: ['__proto__'],
+                audioContext: audioContext(),
+            })
+        ).resolves.toEqual({ status: 'refused' });
+        await expect(
+            api.read({
+                checkpointId: 'prototype-checkpoint',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: ownership.ownershipToken,
+                expectedBufferIds: [],
+                audioContext: audioContext(),
+            })
+        ).resolves.toEqual({ status: 'refused' });
+        controls.allowRequests();
+        const result = await api.read({
+            checkpointId: 'prototype-checkpoint',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: ownership.ownershipToken,
+            expectedBufferIds: ['__proto__'],
+            audioContext: audioContext(),
+        });
+        expect(result.status).toBe('read');
+        expect(result.status === 'read' && Object.hasOwn(result.decodedAudioBuffers, '__proto__')).toBe(true);
+        expect(result.status === 'read' && result.decodedAudioBuffers.__proto__?.getChannelData(0)[0]).toBe(0.25);
+
+        controls.committedCheckpointAudioVersionMeta.delete(versionKey('__proto__'));
+        await expect(
+            api.read({
+                checkpointId: 'prototype-checkpoint',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: ownership.ownershipToken,
+                expectedBufferIds: ['__proto__'],
+                audioContext: audioContext(),
+            })
+        ).rejects.toThrow(/metadata is invalid/i);
     });
 
     it('does not acquire stale disk PCM after the runtime replaces a durable buffer ID', async () => {
@@ -379,9 +603,9 @@ describe('checkpoint audio retention', () => {
             })
         );
         expect(retained).toEqual({ status: 'retained', ownershipToken: expect.any(String) });
-        expect(controls.committedCheckpointRetentions.get('canonical-checkpoint')?.bufferIds).toEqual([
-            'buffer-a',
-            'buffer-b',
+        expect(controls.committedCheckpointRetentions.get('canonical-checkpoint')?.versionKeys).toEqual([
+            versionKey('buffer-a'),
+            versionKey('buffer-b'),
         ]);
         receipt.release();
         receipt.release();
@@ -425,7 +649,7 @@ describe('checkpoint audio retention', () => {
                 })
             );
             expect(empty).toEqual({ status: 'retained', ownershipToken: expect.any(String) });
-            expect(controls.committedCheckpointRetentions.get('empty-checkpoint')?.bufferIds).toEqual([]);
+            expect(controls.committedCheckpointRetentions.get('empty-checkpoint')?.versionKeys).toEqual([]);
             if (empty.status !== 'retained') {
                 throw new Error('Expected empty retention ownership');
             }
@@ -470,6 +694,10 @@ describe('checkpoint audio retention', () => {
     it('cleans exact ownership when the source becomes stale after retention commits', async () => {
         seedBuffer(controls, 'same-id', [0.25]);
         const api = await importApi();
+        const stable = await acquireCurrentRetention(api, {
+            checkpointId: 'stable-checkpoint',
+            bufferIds: ['same-id'],
+        });
         const receipt = await requireDurabilityReceipt(api, ['same-id']);
         controls.pauseWriteSettlements();
         try {
@@ -487,9 +715,17 @@ describe('checkpoint audio retention', () => {
             await waitForHeldWrite(controls);
             const cleanupScope = controls.transactionScopes().at(-1);
             controls.releaseNextWriteSettlement();
-            expect(cleanupScope).toEqual([CHECKPOINT_RETENTION_STORE]);
+            expect(cleanupScope).toEqual([
+                CHECKPOINT_RETENTION_STORE,
+                CHECKPOINT_AUDIO_VERSION_STORE,
+                CHECKPOINT_AUDIO_VERSION_META_STORE,
+            ]);
             await expect(acquisition).resolves.toEqual({ status: 'superseded' });
             expect(controls.committedCheckpointRetentions.has('committed-stale')).toBe(false);
+            expect(controls.committedCheckpointRetentions.get('stable-checkpoint')?.ownershipToken).toBe(
+                stable.ownershipToken
+            );
+            expect(controls.committedCheckpointAudioVersions.has(versionKey('same-id'))).toBe(true);
 
             await waitForHeldWrite(controls);
             controls.releaseNextWriteSettlement();
@@ -522,7 +758,11 @@ describe('checkpoint audio retention', () => {
             await waitForHeldWrite(controls);
             const cleanupScope = controls.transactionScopes().at(-1);
             controls.releaseNextWriteSettlement();
-            expect(cleanupScope).toEqual([CHECKPOINT_RETENTION_STORE]);
+            expect(cleanupScope).toEqual([
+                CHECKPOINT_RETENTION_STORE,
+                CHECKPOINT_AUDIO_VERSION_STORE,
+                CHECKPOINT_AUDIO_VERSION_META_STORE,
+            ]);
             const result = await acquisition;
             expect(result).toEqual({ status: 'cleanup-failed', ownershipToken: expect.any(String) });
             if (result.status !== 'cleanup-failed') {
@@ -570,6 +810,78 @@ describe('checkpoint audio retention', () => {
         expect(controls.committedCheckpointRetentions.size).toBe(0);
     });
 
+    it('rejects a one-sided existing version pair before writing any missing version', async () => {
+        seedBuffer(controls, 'a-new');
+        seedBuffer(controls, 'z-corrupt');
+        controls.committedCheckpointAudioVersions.set(versionKey('z-corrupt'), {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            sizeInBytes: 4,
+        });
+        const api = await importApi();
+        const receipt = await requireDurabilityReceipt(api, ['a-new', 'z-corrupt']);
+        try {
+            await expect(
+                api.withStorageLock((scope) =>
+                    api.acquire({
+                        checkpointId: 'corrupt-pair',
+                        projectOwnerId: PROJECT_OWNER_ID,
+                        durabilityReceipt: receipt,
+                        scope,
+                    })
+                )
+            ).rejects.toThrow(/incomplete/i);
+            expect([...controls.committedCheckpointAudioVersions.keys()]).toEqual([versionKey('z-corrupt')]);
+            expect(controls.committedCheckpointAudioVersionMeta.size).toBe(0);
+            expect(controls.committedCheckpointRetentions.size).toBe(0);
+        } finally {
+            receipt.release();
+        }
+    });
+
+    it('preserves valid identifier whitespace and refuses noncanonical version-key bytes', async () => {
+        const spacedId = ' spaced ';
+        seedBuffer(controls, spacedId);
+        const api = await importApi();
+        const ownership = await acquireCurrentRetention(api, {
+            checkpointId: ' spaced-checkpoint ',
+            projectOwnerId: ' spaced-owner ',
+            bufferIds: [spacedId],
+        });
+        expect(controls.committedCheckpointRetentions.get(' spaced-checkpoint ')?.versionKeys).toEqual([
+            versionKey(spacedId),
+        ]);
+
+        controls.committedCheckpointRetentions.set('noncanonical', {
+            schemaVersion: 2,
+            checkpointId: 'noncanonical',
+            projectOwnerId: PROJECT_OWNER_ID,
+            ownershipToken: 'token',
+            versionKeys: ['["spaced", "spaced-persistence"]'],
+        });
+        controls.failRequestsFrom(CHECKPOINT_AUDIO_VERSION_STORE);
+        await expect(
+            api.read({
+                checkpointId: 'noncanonical',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: 'token',
+                expectedBufferIds: ['spaced'],
+                audioContext: audioContext(),
+            })
+        ).resolves.toEqual({ status: 'refused' });
+        controls.allowRequests();
+        await expect(
+            api.read({
+                checkpointId: ' spaced-checkpoint ',
+                projectOwnerId: ' spaced-owner ',
+                ownershipToken: ownership.ownershipToken,
+                expectedBufferIds: [spacedId],
+                audioContext: audioContext(),
+            })
+        ).resolves.toMatchObject({ status: 'read' });
+    });
+
     it('publishes no ownership when the acquisition transaction aborts', async () => {
         seedBuffer(controls, 'buffer-a');
         const api = await importApi();
@@ -586,8 +898,16 @@ describe('checkpoint audio retention', () => {
                     })
                 )
             ).rejects.toThrow();
-            expect(controls.transactionScopes().at(-1)).toEqual([BUFFER_STORE, META_STORE, CHECKPOINT_RETENTION_STORE]);
+            expect(controls.transactionScopes().at(-1)).toEqual([
+                BUFFER_STORE,
+                META_STORE,
+                CHECKPOINT_RETENTION_STORE,
+                CHECKPOINT_AUDIO_VERSION_STORE,
+                CHECKPOINT_AUDIO_VERSION_META_STORE,
+            ]);
             expect(controls.committedCheckpointRetentions.size).toBe(0);
+            expect(controls.committedCheckpointAudioVersions.size).toBe(0);
+            expect(controls.committedCheckpointAudioVersionMeta.size).toBe(0);
         } finally {
             receipt.release();
         }
@@ -667,6 +987,120 @@ describe('checkpoint audio retention', () => {
         expect(controls.committed.has('shared')).toBe(false);
     });
 
+    it('reserves each shared immutable version once before recovery and ordinary size collection', async () => {
+        const api = await importApi();
+        const seedEqualRecoveries = () => {
+            controls.committedRecovery.clear();
+            seedRecovery(controls, 'recovery-a', [0.5, 0.75]);
+            seedRecovery(controls, 'recovery-b', [0.5, 0.75]);
+        };
+        let upperBudget = 1;
+        seedEqualRecoveries();
+        while ((await api.collectBySize({ maxSizeBytes: upperBudget })) !== 0) {
+            upperBudget *= 2;
+            seedEqualRecoveries();
+        }
+        let lowerBudget = 0;
+        while (lowerBudget < upperBudget) {
+            const candidateBudget = Math.floor((lowerBudget + upperBudget) / 2);
+            seedEqualRecoveries();
+            const deletedCount = await api.collectBySize({ maxSizeBytes: candidateBudget });
+            if (deletedCount === 0) {
+                upperBudget = candidateBudget;
+            } else {
+                lowerBudget = candidateBudget + 1;
+            }
+        }
+
+        seedEqualRecoveries();
+        seedBuffer(controls, 'shared', [0.25]);
+        await acquireCurrentRetention(api, { checkpointId: 'checkpoint-a', bufferIds: ['shared'] });
+        await acquireCurrentRetention(api, { checkpointId: 'checkpoint-b', bufferIds: ['shared'] });
+
+        await expect(api.collectBySize({ maxSizeBytes: upperBudget })).resolves.toBe(1);
+        expect([...controls.committedRecovery.keys()]).toEqual(['recovery-b']);
+        const survivingRecovery = controls.committedRecovery.get('recovery-b');
+        expect(survivingRecovery).toMatchObject({
+            id: 'recovery-b',
+            revision: 'recovery-b-recovery',
+            schemaVersion: 1,
+        });
+        expect(Array.from(survivingRecovery?.data?.channelData[0] ?? [])).toEqual([0.5, 0.75]);
+        expect(controls.committed.has('shared')).toBe(true);
+        expect(controls.committedCheckpointAudioVersions.size).toBe(1);
+        expect(controls.committedCheckpointAudioVersionMeta.size).toBe(1);
+    });
+
+    it('holds the named lock from immutable census through acquire and release admission', async () => {
+        seedBuffer(controls, 'shared', [0.25]);
+        const api = await importApi();
+        const first = await acquireCurrentRetention(api, { checkpointId: 'checkpoint-a', bufferIds: ['shared'] });
+        const receipt = await requireDurabilityReceipt(api, ['shared']);
+        controls.pauseReadonlySettlements();
+        let collectionSettled = false;
+        const collection = api.collectBySize({ maxSizeBytes: 8 }).then((result) => {
+            collectionSettled = true;
+            return result;
+        });
+        await waitForHeldReadonly(controls);
+
+        let releaseSettled = false;
+        const release = api
+            .release({
+                checkpointId: 'checkpoint-a',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: first.ownershipToken,
+            })
+            .then((result) => {
+                releaseSettled = true;
+                return result;
+            });
+        let acquisitionSettled = false;
+        const acquisition = api
+            .withStorageLock((scope) =>
+                api.acquire({
+                    checkpointId: 'checkpoint-b',
+                    projectOwnerId: PROJECT_OWNER_ID,
+                    durabilityReceipt: receipt,
+                    scope,
+                })
+            )
+            .then((result) => {
+                acquisitionSettled = true;
+                return result;
+            });
+        expect(releaseSettled).toBe(false);
+        expect(acquisitionSettled).toBe(false);
+
+        controls.releaseNextReadonlySettlement();
+        await vi.waitFor(() => {
+            if (controls.pendingReadonlySettlementCount() > 0) {
+                controls.releaseNextReadonlySettlement();
+            }
+            expect(collectionSettled).toBe(true);
+        });
+        await expect(collection).resolves.toBe(0);
+        await expect(release).resolves.toBe(true);
+        await expect(acquisition).resolves.toEqual({ status: 'retained', ownershipToken: expect.any(String) });
+        receipt.release();
+    });
+
+    it('refuses immutable census corruption before deleting recovery PCM', async () => {
+        seedRecovery(controls, 'recoverable', [0.5, 0.75]);
+        const malformedKey = JSON.stringify(['broken', 'revision']);
+        controls.committedCheckpointAudioVersions.set(malformedKey, {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            sizeInBytes: 4,
+        });
+        const api = await importApi();
+
+        await expect(api.collectBySize({ maxSizeBytes: 0 })).resolves.toBe(0);
+        expect(controls.committedRecovery.has('recoverable')).toBe(true);
+        expect(mocks.loggerWarn).toHaveBeenCalled();
+    });
+
     it('preserves retained ordinary and freeze PCM through every deletion route and module restart', async () => {
         const retainedIds = ['freeze-retained', 'age-retained', 'size-retained', 'remove-retained', 'clear-retained'];
         for (const id of retainedIds) {
@@ -728,11 +1162,11 @@ describe('checkpoint audio retention', () => {
             seedBuffer(controls, id, [0.25], id.startsWith('freeze-') ? 200 : undefined);
         }
         controls.committedCheckpointRetentions.set('invalid', {
-            schemaVersion: 1,
+            schemaVersion: 2,
             checkpointId: 'invalid',
             projectOwnerId: PROJECT_OWNER_ID,
-            bufferIds: ['not-sorted', 'also-not-sorted'],
             ownershipToken: 'token',
+            versionKeys: ['not-sorted', 'also-not-sorted'],
         });
         const api = await importApi();
 
@@ -750,11 +1184,11 @@ describe('checkpoint audio retention', () => {
     it('fails deletion closed when a retention row contains a sparse buffer list', async () => {
         seedBuffer(controls, 'candidate');
         controls.committedCheckpointRetentions.set('sparse', {
-            schemaVersion: 1,
+            schemaVersion: 2,
             checkpointId: 'sparse',
             projectOwnerId: PROJECT_OWNER_ID,
-            bufferIds: sparseBufferIds(),
             ownershipToken: 'token',
+            versionKeys: sparseBufferIds(),
         });
         const { collectBySize } = await importApi();
 

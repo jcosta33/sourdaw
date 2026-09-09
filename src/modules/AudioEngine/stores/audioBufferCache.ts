@@ -5,6 +5,14 @@ import {
     withProjectAudioStorageLock,
 } from '#/infra/storage/withProjectAudioStorageLock';
 
+import {
+    CHECKPOINT_AUDIO_VERSION_META_STORE_NAME,
+    CHECKPOINT_AUDIO_VERSION_STORE_NAME,
+    CHECKPOINT_RETENTION_STORE_NAME,
+    readCheckpointAudioRetention,
+    readCheckpointAudioVersionKey,
+} from '../models/checkpointAudioRetention';
+
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
 import {
     createPreparedAudioBufferLifecycle,
@@ -182,7 +190,7 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
 }
 
 const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_NAME = 'buffers';
 
 /** Everything the age and size collectors read, split out of the record so that
@@ -208,17 +216,7 @@ const STORE_NAME = 'buffers';
  * for a record written before this store existed. */
 const META_STORE_NAME = 'bufferMeta';
 const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
-const CHECKPOINT_RETENTION_STORE_NAME = 'checkpointRetentions';
-
 type BufferMeta = PreparedAudioBufferMetadata;
-
-type CheckpointAudioRetention = {
-    schemaVersion: 1;
-    checkpointId: string;
-    projectOwnerId: string;
-    bufferIds: string[];
-    ownershipToken: string;
-};
 
 type CheckpointRetentionDurabilityReceipt = {
     status: 'durable';
@@ -231,11 +229,6 @@ type CheckpointRetentionDurabilityAuthority = {
     expectedPersistenceRevisionById: ReadonlyMap<string, string>;
     isCurrent: () => boolean;
 };
-
-type CheckpointRetentionAcquisitionResult =
-    | { status: 'retained'; ownershipToken: string }
-    | { status: 'superseded' }
-    | { status: 'cleanup-failed'; ownershipToken: string };
 
 const checkpointRetentionAuthorityByReceipt = new WeakMap<
     CheckpointRetentionDurabilityReceipt,
@@ -349,8 +342,9 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             settled = true;
             reject(new Error(OPEN_BLOCKED_MESSAGE));
         };
-        req.onupgradeneeded = () => {
-            // Creates stores and nothing else. A v1 -> v2 back-fill that walked
+        req.onupgradeneeded = (event) => {
+            // Creates stores and clears obsolete checkpoint-retention ownership.
+            // A v1 -> v2 back-fill that walked
             // the records here would hold the upgrade transaction — and every
             // context waiting on it — for as long as it takes to read a store
             // the freeze cleanup allows to reach 2 GiB, on the startup path.
@@ -374,6 +368,19 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             }
             if (!db.objectStoreNames.contains(CHECKPOINT_RETENTION_STORE_NAME)) {
                 db.createObjectStore(CHECKPOINT_RETENTION_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(CHECKPOINT_AUDIO_VERSION_STORE_NAME)) {
+                db.createObjectStore(CHECKPOINT_AUDIO_VERSION_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(CHECKPOINT_AUDIO_VERSION_META_STORE_NAME)) {
+                db.createObjectStore(CHECKPOINT_AUDIO_VERSION_META_STORE_NAME);
+            }
+            if (event.oldVersion < 5 && event.oldVersion >= 4) {
+                const upgradeTransaction = req.transaction;
+                if (upgradeTransaction === null) {
+                    throw new Error('Audio buffer cache upgrade transaction is unavailable.');
+                }
+                upgradeTransaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME).clear();
             }
         };
         req.onsuccess = () => {
@@ -408,7 +415,7 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
     });
 }
 
-function openDb(): Promise<IDBDatabase> {
+export function openAudioBufferCacheDatabase(): Promise<IDBDatabase> {
     if (versionChangeLatched) {
         return Promise.reject(new Error(VERSION_CHANGE_LATCH_MESSAGE));
     }
@@ -431,6 +438,8 @@ function openDb(): Promise<IDBDatabase> {
     });
     return dbPromise;
 }
+
+const openDb = openAudioBufferCacheDatabase;
 
 /** Resolve with a request's result. An IndexedDB request's `success` fires
  * before the transaction commits (IDB 3.0 §5.6), so this is only ever used to
@@ -1765,52 +1774,6 @@ function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
-function isDenseNonEmptyStringArray(values: readonly unknown[]): values is readonly string[] {
-    for (let index = 0; index < values.length; index++) {
-        if (!Object.hasOwn(values, index) || !isNonEmptyString(values[index])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function canonicalAudioBufferIds(bufferIds: readonly unknown[]): string[] {
-    if (!isDenseNonEmptyStringArray(bufferIds)) {
-        throw new Error('Checkpoint audio retention requires non-empty buffer IDs.');
-    }
-    return [...new Set(bufferIds)].toSorted();
-}
-
-function readCheckpointAudioRetention(value: unknown, key: IDBValidKey): CheckpointAudioRetention | null {
-    if (value === null || typeof value !== 'object' || Array.isArray(value) || typeof key !== 'string') {
-        return null;
-    }
-    const candidate = value as Record<string, unknown>;
-    const bufferIds = candidate.bufferIds;
-    if (
-        candidate.schemaVersion !== 1 ||
-        candidate.checkpointId !== key ||
-        !isNonEmptyString(candidate.checkpointId) ||
-        !isNonEmptyString(candidate.projectOwnerId) ||
-        !isNonEmptyString(candidate.ownershipToken) ||
-        !Array.isArray(bufferIds) ||
-        !isDenseNonEmptyStringArray(bufferIds)
-    ) {
-        return null;
-    }
-    const canonicalIds = canonicalAudioBufferIds(bufferIds);
-    if (canonicalIds.length !== bufferIds.length || canonicalIds.some((id, index) => id !== bufferIds[index])) {
-        return null;
-    }
-    return {
-        schemaVersion: 1,
-        checkpointId: candidate.checkpointId,
-        projectOwnerId: candidate.projectOwnerId,
-        bufferIds: canonicalIds,
-        ownershipToken: candidate.ownershipToken,
-    };
-}
-
 async function readCheckpointRetainedBufferIds(transaction: IDBTransaction): Promise<Set<string>> {
     const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
     const [values, keys] = await Promise.all([
@@ -1826,157 +1789,21 @@ async function readCheckpointRetainedBufferIds(transaction: IDBTransaction): Pro
         if (retention === null) {
             throw new Error('Checkpoint audio retention ownership is invalid.');
         }
-        for (const id of retention.bufferIds) {
-            retainedIds.add(id);
+        for (const versionKey of retention.versionKeys) {
+            retainedIds.add(readCheckpointAudioVersionKey(versionKey)![0]);
         }
     }
     return retainedIds;
 }
 
-async function acquireCheckpointAudioRetentionInIdb({
-    checkpointId,
-    projectOwnerId,
-    bufferIds,
-    expectedPersistenceRevisionById,
-    isCurrent,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    bufferIds: readonly string[];
-    expectedPersistenceRevisionById: ReadonlyMap<string, string>;
-    isCurrent: () => boolean;
-}): Promise<{ status: 'retained'; ownershipToken: string } | { status: 'superseded' }> {
-    if (!isNonEmptyString(checkpointId) || !isNonEmptyString(projectOwnerId)) {
-        throw new Error('Checkpoint audio retention requires checkpoint and project owner IDs.');
+export function authenticateCheckpointAudioRetentionReceipt(
+    durabilityReceipt: CheckpointRetentionDurabilityReceipt
+): CheckpointRetentionDurabilityAuthority {
+    const authority = checkpointRetentionAuthorityByReceipt.get(durabilityReceipt);
+    if (!authority) {
+        throw new Error('Checkpoint audio retention requires an authentic active durability receipt.');
     }
-    const canonicalBufferIds = canonicalAudioBufferIds(bufferIds);
-    if (!isCurrent()) {
-        return { status: 'superseded' };
-    }
-    const database = await openDb();
-    if (!isCurrent()) {
-        return { status: 'superseded' };
-    }
-    const transaction = database.transaction(
-        [STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
-        'readwrite'
-    );
-    const bufferStore = transaction.objectStore(STORE_NAME);
-    const metadataStore = transaction.objectStore(META_STORE_NAME);
-    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
-    const [retentionKeys, durablePairs] = await Promise.all([
-        awaitRequest(retentionStore.getAllKeys()),
-        Promise.all(
-            canonicalBufferIds.map((id) =>
-                Promise.all([
-                    awaitRequest(bufferStore.get(id) as IDBRequest<SerializedBuffer | undefined>),
-                    awaitRequest(metadataStore.get(id) as IDBRequest<BufferMeta | undefined>),
-                ])
-            )
-        ),
-    ]);
-    let refusal: Error | undefined;
-    if (retentionKeys.includes(checkpointId)) {
-        refusal = new Error(`Checkpoint audio retention already exists for ${checkpointId}.`);
-    } else if (durablePairs.some(([data, metadata]) => readDurableAudioBufferRevision(data, metadata) === null)) {
-        refusal = new Error('Checkpoint audio retention has missing or invalid PCM.');
-    }
-    if (refusal) {
-        await awaitTransaction(transaction);
-        throw refusal;
-    }
-    const revisionsMatch = canonicalBufferIds.every(
-        (id, index) =>
-            readDurableAudioBufferRevision(durablePairs[index]?.[0], durablePairs[index]?.[1]) ===
-            expectedPersistenceRevisionById.get(id)
-    );
-    if (!revisionsMatch) {
-        await awaitTransaction(transaction);
-        return { status: 'superseded' };
-    }
-    if (!isCurrent()) {
-        await awaitTransaction(transaction);
-        return { status: 'superseded' };
-    }
-    const ownershipToken = crypto.randomUUID();
-    retentionStore.put(
-        {
-            schemaVersion: 1,
-            checkpointId,
-            projectOwnerId,
-            bufferIds: canonicalBufferIds,
-            ownershipToken,
-        } satisfies CheckpointAudioRetention,
-        checkpointId
-    );
-    await awaitTransaction(transaction);
-    return { status: 'retained', ownershipToken };
-}
-
-function acquireCheckpointAudioRetention({
-    checkpointId,
-    projectOwnerId,
-    durabilityReceipt,
-    scope,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    durabilityReceipt: CheckpointRetentionDurabilityReceipt;
-    scope: ProjectAudioStorageLockScope;
-}): Promise<CheckpointRetentionAcquisitionResult> {
-    return runInProjectAudioStorageLock(scope, async () => {
-        const authority = checkpointRetentionAuthorityByReceipt.get(durabilityReceipt);
-        if (!authority) {
-            throw new Error('Checkpoint audio retention requires an authentic active durability receipt.');
-        }
-        const acquisition = await acquireCheckpointAudioRetentionInIdb({
-            checkpointId,
-            projectOwnerId,
-            bufferIds: authority.bufferIds,
-            expectedPersistenceRevisionById: authority.expectedPersistenceRevisionById,
-            isCurrent: authority.isCurrent,
-        });
-        if (acquisition.status === 'superseded' || authority.isCurrent()) {
-            return acquisition;
-        }
-        try {
-            const cleaned = await releaseCheckpointAudioRetentionInIdb({
-                checkpointId,
-                projectOwnerId,
-                ownershipToken: acquisition.ownershipToken,
-            });
-            return cleaned
-                ? { status: 'superseded' }
-                : { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
-        } catch {
-            return { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
-        }
-    });
-}
-
-async function releaseCheckpointAudioRetentionInIdb({
-    checkpointId,
-    projectOwnerId,
-    ownershipToken,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    ownershipToken: string;
-}): Promise<boolean> {
-    const database = await openDb();
-    const transaction = database.transaction(CHECKPOINT_RETENTION_STORE_NAME, 'readwrite');
-    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
-    const value = await awaitRequest(retentionStore.get(checkpointId) as IDBRequest<unknown>);
-    const retention = readCheckpointAudioRetention(value, checkpointId);
-    const matches =
-        retention !== null &&
-        retention.projectOwnerId === projectOwnerId &&
-        retention.ownershipToken === ownershipToken;
-    if (matches) {
-        retentionStore.delete(checkpointId);
-    }
-    await awaitTransaction(transaction);
-    return matches;
+    return authority;
 }
 
 async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
@@ -2276,10 +2103,6 @@ export const audioBufferCache = {
     },
 
     ensureDurable: ensureDurableAudioBuffers,
-
-    acquireCheckpointRetention: acquireCheckpointAudioRetention,
-
-    releaseCheckpointRetention: releaseCheckpointAudioRetentionInIdb,
 
     persistPreparedBuffer,
 
@@ -3117,7 +2940,8 @@ export const audioBufferCache = {
 
 export function garbageCollectAudioBufferCacheBySize(
     maxSizeBytes: number,
-    scope: ProjectAudioStorageLockScope
+    scope: ProjectAudioStorageLockScope,
+    checkpointRetainedIds: ReadonlySet<string>
 ): Promise<number> {
     return runInProjectAudioStorageLock(scope, async () => {
         let deletedCount = 0;
@@ -3130,7 +2954,7 @@ export function garbageCollectAudioBufferCacheBySize(
             deletedCount += recoveryCollection.count;
             const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
             const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
             // Metadata rows, for the same reason as `garbageCollectByAge`, and
@@ -3150,10 +2974,9 @@ export function garbageCollectAudioBufferCacheBySize(
             // a candidate that frees nothing when deleted, so the loop would
             // walk the whole store deleting audio without the total ever
             // falling.
-            const [metas, keys, checkpointRetainedIds] = await Promise.all([
+            const [metas, keys] = await Promise.all([
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
-                readCheckpointRetainedBufferIds(tx),
             ]);
 
             // Sort by access time ascending (oldest first)

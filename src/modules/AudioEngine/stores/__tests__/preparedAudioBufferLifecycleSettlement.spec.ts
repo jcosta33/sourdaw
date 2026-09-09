@@ -120,6 +120,9 @@ describe('prepared audio-buffer settlement and recovery', () => {
             buffer,
             leaseId: 'same-lease-promotion-lease',
         });
+        const canonicalRevision =
+            controls.committedMeta.get('same-lease-promotion')?.preparedOwner?.persistenceRevision;
+        expect(canonicalRevision).toEqual(expect.any(String));
         clearRuntimeAudioBufferCache();
         controls.pauseWriteSettlements();
 
@@ -155,6 +158,38 @@ describe('prepared audio-buffer settlement and recovery', () => {
         await expect(audioBufferCache.exportBuffers(['same-lease-promotion'])).resolves.toHaveProperty(
             'same-lease-promotion'
         );
+        expect(controls.committedMeta.get('same-lease-promotion')?.preparedOwner?.persistenceRevision).toBe(
+            canonicalRevision
+        );
+
+        const receipt = await audioBufferCache.ensureDurable(['same-lease-promotion']);
+        if (receipt.status !== 'durable' || typeof canonicalRevision !== 'string') {
+            throw new Error('Expected the promoted prepared PCM to remain durably identifiable');
+        }
+        const [{ acquireCheckpointAudioRetention }, { withProjectAudioStorageLock }] = await Promise.all([
+            import('../../useCases/acquireCheckpointAudioRetention'),
+            import('#/infra/storage/withProjectAudioStorageLock'),
+        ]);
+        const acquire = (checkpointId: string) =>
+            withProjectAudioStorageLock((scope) =>
+                acquireCheckpointAudioRetention({
+                    checkpointId,
+                    projectOwnerId: 'prepared-project',
+                    durabilityReceipt: receipt,
+                    scope,
+                })
+            );
+        const firstAcquisition = acquire('prepared-checkpoint-a');
+        await settlePendingWrites(controls, [firstAcquisition]);
+        await expect(firstAcquisition).resolves.toEqual({ status: 'retained', ownershipToken: expect.any(String) });
+        const versionKey = JSON.stringify(['same-lease-promotion', canonicalRevision]);
+        const sharedBacking = controls.committedCheckpointAudioVersions.get(versionKey);
+        const secondAcquisition = acquire('prepared-checkpoint-b');
+        await settlePendingWrites(controls, [secondAcquisition]);
+        await expect(secondAcquisition).resolves.toEqual({ status: 'retained', ownershipToken: expect.any(String) });
+        expect(controls.committedCheckpointAudioVersions.size).toBe(1);
+        expect(controls.committedCheckpointAudioVersions.get(versionKey)).toBe(sharedBacking);
+        receipt.release();
     });
 
     it('aborts every overlapping promotion retry at a project transition', async () => {

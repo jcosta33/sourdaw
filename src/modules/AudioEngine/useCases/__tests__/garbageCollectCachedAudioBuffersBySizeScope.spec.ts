@@ -4,6 +4,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     META_STORE,
     RECOVERY_STORE,
     installFakeAudioIndexedDb,
@@ -26,7 +29,16 @@ beforeEach(async () => {
     lockManager = createControlledLockManager();
     vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
     installTestAudioBufferConstructor();
-    controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+    controls = installFakeAudioIndexedDb({
+        existingStores: [
+            BUFFER_STORE,
+            META_STORE,
+            RECOVERY_STORE,
+            CHECKPOINT_RETENTION_STORE,
+            CHECKPOINT_AUDIO_VERSION_STORE,
+            CHECKPOINT_AUDIO_VERSION_META_STORE,
+        ],
+    });
     [
         { withProjectAudioStorageLock },
         { garbageCollectCachedAudioBuffersBySize },
@@ -69,6 +81,9 @@ describe('size-based cache collection lock ownership', () => {
         vi.resetModules();
         const lockModule = await import('#/infra/storage/withProjectAudioStorageLock');
         vi.doMock('../../stores/audioBufferCache', () => ({
+            openAudioBufferCacheDatabase: async () => {
+                throw new Error('The lock-owner probe must not open IndexedDB');
+            },
             garbageCollectAudioBufferCacheBySize: (_maxSizeBytes: number, scope: ProjectAudioStorageLockScope) =>
                 lockModule.runInProjectAudioStorageLock(scope, async () => {
                     collectionEntered();
@@ -77,6 +92,11 @@ describe('size-based cache collection lock ownership', () => {
                     });
                     return 1;
                 }),
+        }));
+        vi.doMock('../../repositories/checkpointAudioRetention', () => ({
+            createCheckpointAudioRetentionRepository: () => ({
+                collectCensus: async () => ({ immutableBytes: 0, retainedBufferIds: new Set<string>() }),
+            }),
         }));
         try {
             const { garbageCollectCachedAudioBuffersBySize: collect } =
@@ -102,6 +122,7 @@ describe('size-based cache collection lock ownership', () => {
         } finally {
             releaseCollection?.();
             vi.doUnmock('../../stores/audioBufferCache');
+            vi.doUnmock('../../repositories/checkpointAudioRetention');
             vi.resetModules();
         }
     });
@@ -134,7 +155,7 @@ describe('size-based cache collection lock ownership', () => {
     it('collects through an authentic active scope', async () => {
         seedOrdinaryBuffer();
         await withProjectAudioStorageLock(async (scope) => {
-            await expect(garbageCollectAudioBufferCacheBySize(0, scope)).resolves.toBe(1);
+            await expect(garbageCollectAudioBufferCacheBySize(0, scope, new Set())).resolves.toBe(1);
         });
         expect(controls.committed.has('ordinary')).toBe(false);
         expect(durableOwnershipProvider).toHaveBeenCalledOnce();
@@ -151,7 +172,7 @@ describe('size-based cache collection lock ownership', () => {
             throw new TypeError('Expected the owner to mint a storage scope');
         }
 
-        await expect(garbageCollectAudioBufferCacheBySize(0, expiredScope)).rejects.toThrow(
+        await expect(garbageCollectAudioBufferCacheBySize(0, expiredScope, new Set())).rejects.toThrow(
             'Project audio storage lock scope is invalid or expired'
         );
         expect(durableOwnershipProvider).not.toHaveBeenCalled();

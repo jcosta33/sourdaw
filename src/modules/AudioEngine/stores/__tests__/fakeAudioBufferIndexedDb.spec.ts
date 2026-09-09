@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -173,5 +175,46 @@ describe('fakeAudioBufferIndexedDb', () => {
         await expect(transactionSettled(transaction)).rejects.toThrow('The request failed.');
         expect(controls.committed.size).toBe(0);
         expect(controls.committedMeta.size).toBe(0);
+    });
+
+    it('commits or aborts immutable checkpoint PCM and metadata together', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [
+                BUFFER_STORE,
+                META_STORE,
+                CHECKPOINT_AUDIO_VERSION_STORE,
+                CHECKPOINT_AUDIO_VERSION_META_STORE,
+            ],
+        });
+        const database = await openDatabase(5);
+        controls.abortWritesTo(CHECKPOINT_AUDIO_VERSION_META_STORE);
+        const transaction = database.transaction(
+            [CHECKPOINT_AUDIO_VERSION_STORE, CHECKPOINT_AUDIO_VERSION_META_STORE],
+            'readwrite'
+        );
+        const versionKey = JSON.stringify(['immutable', 'revision']);
+        transaction.objectStore(CHECKPOINT_AUDIO_VERSION_STORE).put(
+            {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [new Float32Array([0.25])],
+                sizeInBytes: 4,
+            },
+            versionKey
+        );
+        transaction.objectStore(CHECKPOINT_AUDIO_VERSION_META_STORE).put(
+            {
+                schemaVersion: 1,
+                versionKey,
+                bufferId: 'immutable',
+                persistenceRevision: 'revision',
+                sizeInBytes: 4,
+            },
+            versionKey
+        );
+
+        await expect(transactionSettled(transaction)).rejects.toThrow();
+        expect(controls.committedCheckpointAudioVersions.size).toBe(0);
+        expect(controls.committedCheckpointAudioVersionMeta.size).toBe(0);
     });
 });

@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 
-import { garbageCollectAudioBufferCacheBySize } from '../stores/audioBufferCache';
+import { createCheckpointAudioRetentionRepository } from '../repositories/checkpointAudioRetention';
+import { garbageCollectAudioBufferCacheBySize, openAudioBufferCacheDatabase } from '../stores/audioBufferCache';
 
 type GarbageCollectCachedAudioBuffersBySizeInput = {
     maxSizeBytes: number;
@@ -15,7 +16,12 @@ export async function garbageCollectCachedAudioBuffersBySize({
     let deletedCount = 0;
     try {
         return await withProjectAudioStorageLock(async (scope) => {
-            deletedCount = await garbageCollectAudioBufferCacheBySize(maxSizeBytes, scope);
+            const checkpointRetention = createCheckpointAudioRetentionRepository({
+                openDatabase: openAudioBufferCacheDatabase,
+            });
+            const census = await checkpointRetention.collectCensus();
+            const mutableBudget = Math.max(0, maxSizeBytes - census.immutableBytes);
+            deletedCount = await garbageCollectAudioBufferCacheBySize(mutableBudget, scope, census.retainedBufferIds);
             return deletedCount;
         });
     } catch (error) {

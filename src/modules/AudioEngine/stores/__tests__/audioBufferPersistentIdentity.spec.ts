@@ -4,6 +4,8 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
     CHECKPOINT_RETENTION_STORE,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -16,7 +18,14 @@ import {
     installTestAudioBufferConstructor,
 } from './preparedAudioBufferTestSupport';
 
-const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE] as const;
+const CURRENT_STORES = [
+    BUFFER_STORE,
+    META_STORE,
+    RECOVERY_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+] as const;
 const PROJECT_OWNER_ID = 'project-owner';
 
 type AudioRealm = {
@@ -26,6 +35,7 @@ type AudioRealm = {
     ensure: typeof import('../../useCases/ensureCachedAudioBuffersDurable').ensureCachedAudioBuffersDurable;
     get: typeof import('../../useCases/getCachedAudioBuffer').getCachedAudioBuffer;
     prepare: typeof import('../../useCases/prepareCachedAudioBuffersFromIdb').prepareCachedAudioBuffersFromIdb;
+    release: typeof import('../../useCases/releaseCheckpointAudioRetention').releaseCheckpointAudioRetention;
     setOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
     withStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
 };
@@ -62,13 +72,14 @@ function committedSample(id: string): number | null {
 }
 
 async function loadRealm(): Promise<AudioRealm> {
-    const [acquire, cache, store, ensure, get, prepare, ownership, storage] = await Promise.all([
+    const [acquire, cache, store, ensure, get, prepare, release, ownership, storage] = await Promise.all([
         import('../../useCases/acquireCheckpointAudioRetention'),
         import('../../useCases/cacheAudioBuffer'),
         import('../audioBufferCache'),
         import('../../useCases/ensureCachedAudioBuffersDurable'),
         import('../../useCases/getCachedAudioBuffer'),
         import('../../useCases/prepareCachedAudioBuffersFromIdb'),
+        import('../../useCases/releaseCheckpointAudioRetention'),
         import('../durableAudioBufferOwnership'),
         import('#/infra/storage/withProjectAudioStorageLock'),
     ]);
@@ -80,6 +91,7 @@ async function loadRealm(): Promise<AudioRealm> {
         ensure: ensure.ensureCachedAudioBuffersDurable,
         get: get.getCachedAudioBuffer,
         prepare: prepare.prepareCachedAudioBuffersFromIdb,
+        release: release.releaseCheckpointAudioRetention,
         setOwnershipProvider: ownership.setDurableAudioBufferOwnershipProvider,
         withStorageLock: storage.withProjectAudioStorageLock,
     };
@@ -242,6 +254,77 @@ describe('audio buffer persistent identity across module instances', () => {
         await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('upgrades schema 4 by clearing obsolete retention while preserving ordinary and recovery PCM', async () => {
+        controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE],
+        });
+        controls.committed.set('ordinary', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        controls.committedMeta.set('ordinary', {
+            lastAccessed: 1,
+            persistenceRevision: 'ordinary-revision',
+            sizeInBytes: 4,
+        });
+        controls.committedRecovery.set('recovery', new Float32Array([0.5]));
+        controls.committedCheckpointRetentions.set('old-checkpoint', {
+            schemaVersion: 1,
+            checkpointId: 'old-checkpoint',
+            projectOwnerId: PROJECT_OWNER_ID,
+            bufferIds: ['ordinary'],
+            ownershipToken: 'old-token',
+        } as never);
+
+        vi.resetModules();
+        const realm = await loadRealm();
+        const prepared = await realm.prepare({ audioContext: audioContext(), bufferIds: ['ordinary'] });
+        expect(prepared?.publish()).toBe(1);
+        expect(controls.storeNames()).toEqual(expect.arrayContaining(CURRENT_STORES));
+        expect(controls.committedCheckpointRetentions.size).toBe(0);
+        expect(controls.committed.get('ordinary')?.channelData[0]?.[0]).toBe(0.25);
+        expect(controls.committedRecovery.has('recovery')).toBe(true);
+        await expect(
+            realm.release({
+                checkpointId: 'old-checkpoint',
+                projectOwnerId: PROJECT_OWNER_ID,
+                ownershipToken: 'old-token',
+            })
+        ).resolves.toBe(false);
+    });
+
+    it('leaves schema 4 intact when the version upgrade aborts', async () => {
+        controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE],
+        });
+        controls.committed.set('ordinary', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        });
+        controls.committedCheckpointRetentions.set('old-checkpoint', {
+            schemaVersion: 1,
+            checkpointId: 'old-checkpoint',
+            projectOwnerId: PROJECT_OWNER_ID,
+            bufferIds: ['ordinary'],
+            ownershipToken: 'old-token',
+        } as never);
+        controls.abortNextWrite();
+
+        vi.resetModules();
+        const { openAudioBufferCacheDatabase } = await import('../audioBufferCache');
+        await expect(openAudioBufferCacheDatabase()).rejects.toThrow(/upgrade was aborted/i);
+        expect(controls.storeNames()).not.toContain(CHECKPOINT_AUDIO_VERSION_STORE);
+        expect(controls.storeNames()).not.toContain(CHECKPOINT_AUDIO_VERSION_META_STORE);
+        expect(controls.committed.has('ordinary')).toBe(true);
+        expect(controls.committedCheckpointRetentions.has('old-checkpoint')).toBe(true);
     });
 
     it('refuses a fresh durable result for a previously durable source replaced by another module instance', async () => {

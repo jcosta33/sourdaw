@@ -104,6 +104,8 @@ function installFakeIndexedDb(): FakeBacking {
         [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
     ]);
     const retentionBacking = new Map<IDBValidKey, unknown>();
+    const checkpointVersionBacking = new Map<IDBValidKey, unknown>();
+    const checkpointVersionMetaBacking = new Map<IDBValidKey, unknown>();
     backing.meta = metaBacking;
     function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
@@ -133,6 +135,12 @@ function installFakeIndexedDb(): FakeBacking {
         }
         if (name === 'checkpointRetentions') {
             return retentionStore;
+        }
+        if (name === 'checkpointAudioVersions') {
+            return makeStore(checkpointVersionBacking);
+        }
+        if (name === 'checkpointAudioVersionMeta') {
+            return makeStore(checkpointVersionMetaBacking);
         }
         throw new Error(`Unexpected IndexedDB object store: ${name}`);
     }
