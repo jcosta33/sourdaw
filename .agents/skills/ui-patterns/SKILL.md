@@ -61,3 +61,7 @@ View models shape data for display. Validation, persistence, cross-feature mutat
 When reviewing dock allocation, exercise the editor and virtual keyboard together and inspect the rendered main and editor viewports. Individual pane state or class assertions cannot prove that the remaining canvas stays usable; this escaped #4027.
 
 Before treating rendered acceptance as evidence for a lane, verify that the served deciding source and port belong to that lane. A reused shared dev server does not prove a lane's layout; isolate it without stopping a foreign server. This escaped #4032.
+
+For a fixed-height status strip, measure the effective CSS viewport at every admitted UI scale. Keep engine and active monitoring states direct, and move optional metrics or actions through one React-owned disclosure; CSS-hidden duplicate trees leave stale portals, focus, and mutable DOM refs. This escaped #4054.
+
+When a footer disclosure owns a portaled nested menu, track the menu content ref in each responsive mode. On a mode change, close both portals and restore focus only when the active element belongs to the footer or that portal; recheck focus immediately before an asynchronous handoff and cancel it on cleanup so a newly chosen outside target keeps keyboard control. This escaped #4056.
