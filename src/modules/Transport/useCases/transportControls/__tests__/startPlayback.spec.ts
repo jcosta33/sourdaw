@@ -23,6 +23,14 @@ const { timeSignatureMapStore } = vi.hoisted(
         timeSignatureMapStore: { value: { changes: [] } },
     })
 );
+/**
+ * What the audio context's clock reads. The hold writes this reading into the
+ * held transport when it gives up on a slow session, so a case about the cap
+ * has to be able to tell that reading apart from zero.
+ */
+const { audioClock } = vi.hoisted((): { audioClock: { currentTime: number } } => ({
+    audioClock: { currentTime: 0 },
+}));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -34,9 +42,13 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
     nativeLiveGraphSessionOffered: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
-    // The rate the native session is told to place its programme on. A device
-    // rate is all `startPlayback` reads, so a live context is not needed here.
-    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
+    // The rate the native session is told to place its programme on, and the
+    // clock the hold dates its release by. A live context is not needed for
+    // either.
+    getAudioContext: (): { sampleRate: number; currentTime: number } => ({
+        sampleRate: 48_000,
+        currentTime: audioClock.currentTime,
+    }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -223,7 +235,12 @@ describe('startPlayback', () => {
         // start at wherever Web Audio would have reached, and that locate
         // seeked past every note-on stamped in between with nothing else to
         // sound them.
-        expect(request).toEqual(expect.objectContaining({ positionSeconds: 2, transport: { kind: 'held' } }));
+        expect(request).toEqual(
+            expect.objectContaining({
+                positionSeconds: 2,
+                transport: { kind: 'held', webAudioRollingSince: expect.any(Function) },
+            })
+        );
     });
 
     it('gives the native session the arrangement maps the engine has to follow', () => {
@@ -299,8 +316,21 @@ describe('startPlayback', () => {
             new Promise((resolve) => {
                 setTimeout(resolve, 0);
             });
+        /**
+         * What the session's own roll would read out of the held transport it
+         * was started with: `null` for as long as the hold stands, and the
+         * context instant Web Audio opened at once the hold has given up.
+         */
+        const webAudioRollingSince = (): number | null | undefined => {
+            const transport = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0].transport;
+            if (transport?.kind !== 'held') {
+                return undefined;
+            }
+            return transport.webAudioRollingSince();
+        };
 
         beforeEach(() => {
+            audioClock.currentTime = 0;
             transportState = {
                 ...defaultTransportState,
                 isPlaying: false,
@@ -315,10 +345,14 @@ describe('startPlayback', () => {
         });
 
         it('does not start the scheduler until the native session has answered', async () => {
-            vi.mocked(startNativeLiveGraphSession).mockResolvedValue({
-                outcome: 'started',
-                runtimeRevision: 1,
-                reports: [],
+            audioClock.currentTime = 3.25;
+            let rollingSinceAtRoll: number | null | undefined = 0;
+            vi.mocked(startNativeLiveGraphSession).mockImplementation(async () => {
+                // Where the real session reads the hold: once, at the end of its
+                // own round trips, immediately before it rolls.
+                await Promise.resolve();
+                rollingSinceAtRoll = webAudioRollingSince();
+                return { outcome: 'started', runtimeRevision: 1, reports: [] };
             });
 
             startPlayback();
@@ -326,6 +360,11 @@ describe('startPlayback', () => {
             expect(startPlayheadScheduler).not.toHaveBeenCalled();
             await drainHold();
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            // The hold stood for the whole start, so the roll happened where
+            // play asked and had nothing to catch up to. A release written
+            // before the wait would read 3.25 here and seek the engine past
+            // material Web Audio never sounded.
+            expect(rollingSinceAtRoll).toBeNull();
         });
 
         it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
@@ -385,6 +424,7 @@ describe('startPlayback', () => {
 
         it('gives up on the native session after the hold cap rather than never starting', async () => {
             vi.useFakeTimers();
+            audioClock.currentTime = 3.25;
             let answer = (): void => {};
             vi.mocked(startNativeLiveGraphSession).mockReturnValue(
                 new Promise((resolve) => {
@@ -402,9 +442,16 @@ describe('startPlayback', () => {
                 // short of it.
                 await vi.advanceTimersByTimeAsync(249);
                 expect(startPlayheadScheduler).not.toHaveBeenCalled();
+                // And the session, asked now, would still roll where play asked.
+                expect(webAudioRollingSince()).toBeNull();
 
                 await vi.advanceTimersByTimeAsync(1);
                 expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+                // Web Audio is rolling from 3.25 now, so the session — still
+                // starting, since it has not answered — has to project its roll
+                // from there. Left unsaid, the engine would roll at the parked
+                // position a cap behind a transport nobody stopped.
+                expect(webAudioRollingSince()).toBe(3.25);
 
                 // The session answering after the cap has nothing left to start:
                 // the transport is already rolling on the fallback.

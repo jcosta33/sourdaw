@@ -328,14 +328,19 @@ const LOOPED_MAPS_ONE_SECOND = {
 };
 
 /**
- * A start whose caller held the Web Audio transport for it — what pressing play
- * does, and what every case here is about except the rolling-join ones, which
- * call {@link startNativeLiveGraphSession} directly with their own anchor.
+ * A start whose caller held the Web Audio transport for it and never gave the
+ * hold up — what pressing play does when the session answers inside the cap,
+ * and what every case here is about except the rolling-join ones, which call
+ * {@link startNativeLiveGraphSession} directly with their own anchor, and the
+ * released-hold one, which answers the reader mid-start.
  */
 function startHeldSession(
     input: Omit<StartNativeLiveGraphSessionInput, 'transport'>
 ): Promise<NativeLiveGraphSessionResult> {
-    return startNativeLiveGraphSession({ ...input, transport: { kind: 'held' } });
+    return startNativeLiveGraphSession({
+        ...input,
+        transport: { kind: 'held', webAudioRollingSince: () => null },
+    });
 }
 
 /** The feed's snapshot of a rolling engine, as a re-arm reads it. */
@@ -1075,6 +1080,37 @@ describe('startNativeLiveGraphSession', () => {
         expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBe(2.5);
     });
 
+    it('projects a held roll the caller released while the session was still starting', async () => {
+        // The hold has a cap, and a start slower than it starts Web Audio at
+        // the parked position and tells the session when it did. Leaving the
+        // roll parked there would put the engine a cap's worth behind a
+        // transport that is already sounding, for the whole of the play, and
+        // the cursor would snap back on the engine's first reading.
+        mocks.contextSeconds = 10;
+        mocks.mapsInstallSeconds = 0.08;
+        const release = { contextSeconds: null as number | null };
+        // The probe is the first thing a start awaits, so releasing here puts
+        // the cap inside the start rather than before it — the maps install
+        // below then advances the clock the 80 ms the roll has to make up.
+        mocks.onProbe.mockImplementation(() => {
+            release.contextSeconds = mocks.contextSeconds;
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transport: { kind: 'held', webAudioRollingSince: () => release.contextSeconds },
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // Projected by the 80 ms Web Audio spent rolling since the release, and
+        // locating there — an absent `locate` is how the wire says so.
+        expect(appliedBatches()[1]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: expect.closeTo(2.58, 9) },
+        ]);
+        expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.58, 9);
+    });
+
     it('rolls at the position Web Audio reached while the session was starting', async () => {
         // The measured defect (#3577), which survives for the caller that
         // cannot hold: a mid-play re-arm's transport keeps sounding across the
@@ -1123,6 +1159,41 @@ describe('startNativeLiveGraphSession', () => {
         const roll = appliedBatches()[1];
         expect(roll?.commands).toEqual([
             { kind: 'set-transport', playing: true, positionSeconds: expect.closeTo(2.03, 9) },
+        ]);
+    });
+
+    it('leaves a roll unwrapped when the engine declined the region the maps requested', async () => {
+        // The request said loop, and the engine answered that it will not wrap
+        // — a region under its own floor is held, not honoured. Wrapping the
+        // projection at a seam the engine plays straight through would aim the
+        // roll a whole loop behind where the engine is about to be.
+        mocks.contextSeconds = 10;
+        mocks.mapsInstallSeconds = 0.08;
+        mocks.setEngineTransportMaps.mockImplementationOnce((): Promise<SetEngineTransportMapsResult> => {
+            mocks.contextSeconds += mocks.mapsInstallSeconds;
+            return Promise.resolve({
+                outcome: 'applied',
+                applied: {
+                    sampleRate: 48_000,
+                    tempoSegments: 1,
+                    timeSignatureSegments: 1,
+                    loopEnabled: false,
+                    admittedBatch: 1,
+                },
+            });
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 2.95,
+            transport: { kind: 'rolling', anchoredAtContextSeconds: 10 },
+            transportMaps: LOOPED_MAPS_ONE_SECOND,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // 2.95 + 0.08, straight past the requested end at 3 — not the 2.03 the
+        // same projection wraps to when the engine says it will honour it.
+        expect(appliedBatches()[1]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: expect.closeTo(3.03, 9) },
         ]);
     });
 

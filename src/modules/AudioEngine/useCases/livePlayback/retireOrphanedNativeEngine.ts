@@ -35,6 +35,13 @@
  * is an offer on `nativeEngineRearmStore`, and Transport's
  * `rearmNativeSessionAfterEngineRetire` decides what to do with it.
  *
+ * ── A start requested mid-retire supersedes the offer ─────────────────────
+ *
+ * The orphan release still runs, and so does the forget: both are about the
+ * engine this call retired, whichever play is current. The offer is not, so it
+ * is withheld when `rearmEpoch` has moved — a start bumps it synchronously, so
+ * a Stop-then-Play landing inside this round trip is visible here.
+ *
  * Queued on the session's own command chain, exactly like the park, so it
  * orders after any start or stop already queued on it.
  */
@@ -74,6 +81,7 @@ export function retireOrphanedNativeEngine(): Promise<void> {
         if (orphan === null) {
             return;
         }
+        const epoch = nativeLiveGraphSession.rearmEpoch;
         try {
             const result = await retireNativeEngine();
             if (result.outcome === 'rendering') {
@@ -87,6 +95,14 @@ export function retireOrphanedNativeEngine(): Promise<void> {
                 return;
             }
             forgetRetiredPluginInstances(result.retiredInstanceIds);
+            if (nativeLiveGraphSession.rearmEpoch !== epoch) {
+                // A start was requested while this command was in flight, so it
+                // owns the session now. The offer is for the play whose engine
+                // died; publishing it would anchor a `rolling` join against a
+                // transport that has not moved yet, and the roll would land a
+                // whole hold ahead of what anybody can hear.
+                return;
+            }
             offerNativeSessionRearm();
         } catch (error) {
             // The command answered, but the answer could not be read, so which

@@ -12,7 +12,7 @@ import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSessio
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
-import { startSchedulerWhenNativeSessionSettles } from './startSchedulerWhenNativeSessionSettles';
+import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
 
 /**
  * Resolves once the scheduler start has been decided, so a caller that has to
@@ -81,6 +81,13 @@ export async function startPlayback(): Promise<void> {
     const generation = claimSchedulerSession();
     // Held: the scheduler below waits for this session, so nothing has sounded
     // between the gesture and the roll and the engine opens where play asked.
-    const session = startNativeSessionAtBeat(startPosition, state.tempo, { kind: 'held' });
-    await startSchedulerWhenNativeSessionSettles(session, generation);
+    // The holder is what the hold writes if it gives up on a session slower
+    // than its cap; the session reads it as it rolls, and projects from there
+    // rather than opening behind a transport that is already sounding.
+    const release: HoldRelease = { contextSeconds: null };
+    const session = startNativeSessionAtBeat(startPosition, state.tempo, {
+        kind: 'held',
+        webAudioRollingSince: () => release.contextSeconds,
+    });
+    await startSchedulerWhenNativeSessionSettles(session, generation, release);
 }

@@ -38,10 +38,12 @@ const mocks = vi.hoisted(() => ({
      */
     rearm: { claimed: false, epoch: 0 },
     /**
-     * What the audio context's clock reads. Fixed, because what this file owns
-     * is that the re-arm anchors its start to that clock at all — a start left
-     * unanchored would roll the re-armed engine at the beat read below and
-     * leave it behind the transport that never stopped sounding.
+     * What the audio context's clock reads. It advances when the plugin reload
+     * settles, the way a real one does across seconds of round trips, because
+     * what this file owns is that the anchor is read past that reload: an
+     * anchor taken before it dates the roll's projection from the offer and
+     * leaves the re-armed engine behind the transport that never stopped
+     * sounding.
      */
     contextSeconds: 12.5,
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
@@ -70,8 +72,17 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({ getTranspo
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
+/** What the clock reads before the reload, and after it. */
+const CONTEXT_SECONDS_AT_OFFER = 12.5;
+const CONTEXT_SECONDS_AFTER_RELOAD = 14;
+
 function offerRearm(): void {
     nativeEngineRearmStore.update((state) => ({ offers: (state?.offers ?? 0) + 1 }));
+}
+
+/** Move the clock the way the awaited reload does, as it settles. */
+function reloadElapsed(): void {
+    mocks.contextSeconds = CONTEXT_SECONDS_AFTER_RELOAD;
 }
 
 type ExternalPluginActivation = Extract<
@@ -102,6 +113,7 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         vi.mocked(startNativeLiveGraphSession).mockResolvedValue({ outcome: 'declined', reason: 'no desktop bridge' });
         mocks.rearm.claimed = false;
         mocks.rearm.epoch = 0;
+        mocks.contextSeconds = CONTEXT_SECONDS_AT_OFFER;
         mocks.logger.warn.mockClear();
         mocks.logger.info.mockClear();
         mocks.logger.debug.mockClear();
@@ -114,6 +126,16 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
     it('rebuilds the strips and restarts the session at the live playhead', async () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
         playheadPositionRef.current = 8;
+        // The reload costs 1.5 s on the context clock, spent inside the await
+        // the start is taken after.
+        vi.mocked(ensureTrackStrips).mockReturnValue(
+            readyStrips([
+                Promise.resolve().then(() => {
+                    reloadElapsed();
+                    return { status: 'active' } as const;
+                }),
+            ])
+        );
 
         offerRearm();
 
@@ -122,13 +144,14 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         // Beat 8 at 120 BPM is four seconds in: the beat is read at the start,
         // not at the offer, so the engine opens where the transport actually is.
         // And it is a rolling join, anchored to the clock reading taken with
-        // that beat: this transport keeps sounding through the start's own
+        // that beat — past the reload, at 14 rather than the 12.5 the offer
+        // arrived at. This transport keeps sounding through the start's own
         // round trips, so a `held` start here would roll the engine at 4 and
         // leave it that many milliseconds behind for the rest of the play.
         expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
             expect.objectContaining({
                 positionSeconds: 4,
-                transport: { kind: 'rolling', anchoredAtContextSeconds: 12.5 },
+                transport: { kind: 'rolling', anchoredAtContextSeconds: CONTEXT_SECONDS_AFTER_RELOAD },
             })
         );
     });
@@ -244,7 +267,10 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         playheadPositionRef.current = 30;
         let settleActivation = (): void => undefined;
         const activation = new Promise<{ status: 'active' }>((resolve) => {
-            settleActivation = () => resolve({ status: 'active' });
+            settleActivation = () => {
+                reloadElapsed();
+                resolve({ status: 'active' });
+            };
         });
         vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activation]));
 
@@ -260,11 +286,12 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
 
         await vi.waitFor(() => expect(startNativeLiveGraphSession).toHaveBeenCalledTimes(1));
         // The anchor is read with the beat, past the reload, so it dates the
-        // roll's projection from the start rather than from the offer.
+        // roll's projection from the start rather than from the offer — 14,
+        // not the 12.5 standing when this offer arrived.
         expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
             expect.objectContaining({
                 positionSeconds: 30,
-                transport: { kind: 'rolling', anchoredAtContextSeconds: 12.5 },
+                transport: { kind: 'rolling', anchoredAtContextSeconds: CONTEXT_SECONDS_AFTER_RELOAD },
             })
         );
     });

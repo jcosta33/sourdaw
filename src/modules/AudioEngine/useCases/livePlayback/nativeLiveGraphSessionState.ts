@@ -158,7 +158,12 @@ export type NativeLiveGraphSession = {
      * would hand the guard back to the very session it exists to bound.
      */
     rearmClaimed: boolean;
-    /** The epoch names the play a claim belongs to; the stop bumps it so a claim taken before the stop can never start a session for the play after it. */
+    /**
+     * The epoch names the play a claim belongs to. The stop bumps it, so a
+     * claim taken before the stop can never start a session for the play after
+     * it; a start bumps it too, so a recovery in flight for an earlier session
+     * cannot re-arm or offer against the play that superseded it.
+     */
     rearmEpoch: number;
     /**
      * The strips this session is sounding, as it last claimed them.

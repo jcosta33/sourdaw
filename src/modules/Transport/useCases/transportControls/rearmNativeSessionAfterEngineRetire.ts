@@ -64,9 +64,11 @@ async function rearmNativeSession(claim: number): Promise<void> {
     }
     // Nothing waits on a re-arm, and nothing can: the transport keeps rolling
     // through this start's own round trips, so by the time the roll is sent Web
-    // Audio is already past the beat read on the line below. The anchor is
-    // taken with that beat, in one expression, and is what lets the roll land
-    // where Web Audio has reached rather than where this line read.
+    // Audio is already past the beat read on the line below. The anchor and
+    // that beat are both read here, one statement after the other and after
+    // every await this function owes, so no time passes between them — which is
+    // what lets the roll land where Web Audio has reached rather than where the
+    // beat was read.
     const ctxNow = getAudioContext().currentTime;
     void startNativeSessionAtBeat(playheadPositionRef.current, state.tempo, {
         kind: 'rolling',

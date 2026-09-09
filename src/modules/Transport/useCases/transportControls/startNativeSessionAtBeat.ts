@@ -8,11 +8,12 @@
  * and the same handling of a decline.
  *
  * The two callers differ in exactly one argument, `transport`. `startPlayback`
- * has held the Web Audio start for this promise, so it passes `held` and the
- * engine rolls where it was asked to. The re-arm cannot hold — its transport
- * has been sounding since a play it did not begin — so it passes `rolling` with
- * the anchor that lets the roll land where Web Audio has reached rather than
- * where the playhead was read.
+ * has held the Web Audio start for this promise, so it passes `held` with the
+ * reader that answers `null` for as long as the hold stands and names the
+ * instant it ended if the hold's cap gave up first. The re-arm cannot hold —
+ * its transport has been sounding since a play it did not begin — so it passes
+ * `rolling` with the anchor it already has. Either way the roll lands where Web
+ * Audio has reached rather than where the playhead was read.
  *
  * The returned promise settles when the start settles, either way: a decline
  * and a failure are outcomes, not rejections, so a caller that waits for the

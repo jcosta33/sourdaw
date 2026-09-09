@@ -33,6 +33,8 @@
  * can reach the end of the wait with the generation it opened on.
  */
 
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
@@ -41,14 +43,29 @@ import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadSchedu
  * The nightly desktop-latency record measures the roll landing 75–88 ms after
  * the click, so the cap sits at about three times that: an addon that hangs
  * cannot silence Play, it only costs this long before the transport falls back
- * to the old behaviour — Web Audio ahead of the engine, and the cursor snapping
- * back when the engine's first reading arrives.
+ * to starting Web Audio without the engine's answer.
+ *
+ * Falling back is not leaving the engine behind. The session is told where the
+ * hold ended, so its roll — still ahead of it, on a start this slow — projects
+ * to where Web Audio has reached since and locates there. The two carriers
+ * still meet, and nothing snaps the cursor back when the engine's first reading
+ * arrives.
  */
 const NATIVE_SESSION_HOLD_CAP_MS = 250;
 
+/**
+ * Where this hold ended, written once and read by the session's roll.
+ *
+ * A mutable holder rather than a return value: the session was started before
+ * the hold opened, so the only channel back into it is one both sides hold.
+ * `null` means the hold still stands and nothing has sounded.
+ */
+export type HoldRelease = { contextSeconds: number | null };
+
 export async function startSchedulerWhenNativeSessionSettles(
     session: Promise<void>,
-    generation: number
+    generation: number,
+    release: HoldRelease
 ): Promise<void> {
     let capTimerId: ReturnType<typeof setTimeout> | null = null;
     const holdCap = new Promise<void>((resolve) => {
@@ -66,5 +83,10 @@ export async function startSchedulerWhenNativeSessionSettles(
     if (schedulerSession.generation !== generation || getTransportState()?.isPlaying !== true) {
         return;
     }
+    // Past the guard, because a hold this play no longer owns released nothing.
+    // On the same clock reading the scheduler snaps `lastTickTime` to, so the
+    // instant the session projects its roll from is the instant Web Audio
+    // actually opened at.
+    release.contextSeconds = getAudioContext().currentTime;
     startPlayheadScheduler();
 }
