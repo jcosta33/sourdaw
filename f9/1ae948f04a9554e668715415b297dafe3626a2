@@ -1,0 +1,43 @@
+release/dependency-license-proofs.json
+  s_87ab0a2f60ccf8::t_a55d1dcdd3fb78 64
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_77071830889452 166,1690
+scripts/deliverPullRequest.ts
+  s_62b3b5c89e6ae2::t_127fad122be613 2626-2631,2739,2844
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_825f39b39d1953::t_9a15f0ec6b9785 743,3133-3137,3157,3165-3167
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_825f39b39d1953::t_f6609284da2a25 1473,1487,1493,1630,1641,1657-1683,1693,1715,2582-2583,2635,2639,2722-2723,2764-2765,2825-2826,4827,4831
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f91ae948f04a9554e668715415b297dafe3626a2",
+  "prompts": {},
+  "sessions": {
+    "s_62b3b5c89e6ae2": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2211d1c1-0f4d-4eae-8187-e1ff43d8a869",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_825f39b39d1953": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08575-6be4-7942-9f4b-4abcda8f18a0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
