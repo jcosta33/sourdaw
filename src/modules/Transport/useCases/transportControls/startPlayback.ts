@@ -8,7 +8,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
-import { schedulerSession } from '../playheadScheduler/schedulerSession';
+import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
@@ -73,10 +73,12 @@ export async function startPlayback(): Promise<void> {
         return;
     }
 
-    // Read before the session is asked for, so it names the generation this
-    // play is about to open rather than one a stop inside the hold has since
-    // replaced.
-    const generation = schedulerSession.generation;
+    // Claimed before the session is asked for, so the hold names the generation
+    // this play opened rather than one a stop inside the hold has since
+    // replaced, and so any session still ticking — one a pause left running
+    // because its teardown is deferred behind a recording flush — is retired
+    // now instead of advancing the playhead through the wait.
+    const generation = claimSchedulerSession();
     const session = startNativeSessionAtBeat(startPosition, state.tempo);
     await startSchedulerWhenNativeSessionSettles(session, generation);
 }

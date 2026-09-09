@@ -415,6 +415,31 @@ describe('startPlayback', () => {
             }
         });
 
+        it('retires the scheduler session a pause left ticking the moment Play is pressed', async () => {
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+            // A pause whose teardown is still queued behind its recording flush
+            // leaves this session's worker posting ticks, and the flush's
+            // continuation stands down once Play flips `isPlaying` back. Only
+            // the generation retires those ticks, and it has to happen before
+            // the hold, not after it.
+            const pausedGeneration = schedulerSession.generation;
+
+            void startPlayback();
+
+            expect(schedulerSession.generation).toBeGreaterThan(pausedGeneration);
+
+            answer();
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
         it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {
             vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
 

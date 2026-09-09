@@ -416,6 +416,54 @@ describe('toggleRecording', () => {
         expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.8, 9);
     });
 
+    it('places a take stopped inside the hold against the clock at its stop', async () => {
+        // Record pressed again while the roll is still being waited for stops
+        // the take from inside the hold, so the finaliser runs before the roll
+        // has answered. The wait it has to charge is the whole one so far —
+        // 50 ms here — on top of the 20 ms of hardware latency: at 120 BPM,
+        // 4 - (0.02 + 0.05) * 2.
+        const recordingClip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 4,
+            endBeat: 4,
+        };
+        audioClock.currentTime = 10;
+        audioClock.baseLatency = 0.02;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+        // The roll never answers, which is what the stop lands inside of.
+        mocks.startPlayback.mockReturnValue(new Promise<void>(() => {}));
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startPlayback).toHaveBeenCalledOnce());
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        // The stop, 50 ms into a hold that is still open.
+        audioClock.currentTime = 10.05;
+        captured({ kind: 'completed', buffer: { duration: 2 } });
+        await Promise.resolve();
+
+        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        if (!clipUpdate) {
+            throw new Error('Expected recording clip to be updated');
+        }
+        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.86, 9);
+    });
+
     it('places a take engaged mid-play on hardware latency alone, with no roll to wait for', async () => {
         // Record engaged while the transport is already rolling never calls
         // `startPlayback`, so there is no wait to subtract: the placement is the

@@ -25,11 +25,21 @@ import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
 /**
- * How long the transport was asked to wait before it rolled, filled in after
- * the finaliser closure below is created — the wait is not known until the roll
- * has happened, and the closure has to read whatever it turned out to be.
+ * The two instants that bound the wait for the roll, on the clock the capture
+ * runs on. Instants rather than a duration because the finaliser can run before
+ * the roll answers — Record pressed again inside the hold stops the take from
+ * within it — and a duration written after the roll would still read zero there.
+ * Both stay null while nothing has been asked to roll.
  */
-type TransportHold = { seconds: number };
+type TransportHold = { requestedAtContextSeconds: number | null; rolledAtContextSeconds: number | null };
+
+/** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
+function heldTransportSeconds(hold: TransportHold, nowContextSeconds: number): number {
+    if (hold.requestedAtContextSeconds === null) {
+        return 0;
+    }
+    return Math.max((hold.rolledAtContextSeconds ?? nowContextSeconds) - hold.requestedAtContextSeconds, 0);
+}
 
 async function beginActualRecording(
     startToken: number,
@@ -63,7 +73,8 @@ async function beginActualRecording(
                 // the buffer's first sample predates the beat the clip is
                 // anchored on by that wait. It is subtracted like hardware
                 // latency.
-                const offsetBeats = (totalLatencySec + transportHold.seconds) * (bpm / 60);
+                const offsetBeats =
+                    (totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime)) * (bpm / 60);
                 const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
                 const durationBeats = buffer.duration * (bpm / 60);
                 const exactEndBeat = newStartBeat + durationBeats;
@@ -112,16 +123,16 @@ async function beginActualRecording(
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
-    const transportHold = { seconds: 0 };
+    const transportHold: TransportHold = { requestedAtContextSeconds: null, rolledAtContextSeconds: null };
     void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
             const ctx = getAudioContext();
             // The instant the transport is asked to roll, read on the clock the
             // capture runs on: the take opened here is placed against it.
-            const heldFromContextSeconds = ctx.currentTime;
+            transportHold.requestedAtContextSeconds = ctx.currentTime;
             await startPlayback();
-            transportHold.seconds = Math.max(ctx.currentTime - heldFromContextSeconds, 0);
+            transportHold.rolledAtContextSeconds = ctx.currentTime;
         }
         return null;
     });
@@ -152,6 +163,14 @@ const COUNT_IN_BOUNDARY_TOLERANCE_SEC = 0.05;
  * Cancellation keeps its existing semantics: `stopActiveRecording` clears the
  * pending timer, and the identity guard drops a wake that a cancel or a newer
  * arm somehow left behind.
+ *
+ * On a desktop build the take opens on the counted downbeat here, and only then
+ * does the roll wait for the native session to answer (75–88 ms measured), so
+ * the arrangement begins that much behind the click the musician counted to.
+ * The take is still placed consistently with the arrangement, which is why this
+ * is accepted rather than blocking; the counted downbeat and the arrangement's
+ * downbeat can only meet once the session is pre-armed during the count-in, and
+ * #4088 tracks that.
  */
 function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec: number, boundaryBeat: number): void {
     let wakeTimerId: ReturnType<typeof setTimeout> | null = null;
