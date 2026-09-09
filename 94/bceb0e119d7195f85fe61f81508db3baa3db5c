@@ -1,0 +1,27 @@
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_035c6846e9b039 81-89
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_87ab0a2f60ccf8::t_963405ef830908 3,113-133
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_3d549e388acd80 222-242,1654,1659-1660,1665-1667,1669-1671,1700-1703,1716-1756,1896-1897,1899-1902,1908,1912-1913,2011
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_88e2ae9f4f1053 35-36,44,52-78,83-84,92,151-245,268,270,287,294,305-311,313-360,362-363,365-366,368-372,374-375,377-535,537-566,572-590,595-597,637-639,644,675,784,788,795-820
+src/modules/AudioEngine/useCases/acquireCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_42ad49f7a3d9b1 3-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "94bceb0e119d7195f85fe61f81508db3baa3db5c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
