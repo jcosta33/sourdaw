@@ -12,9 +12,15 @@ import {
     rmSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    admitHostedWasmCheckouts,
+    admitHostedWasmReturnRoot,
+    loadHostedWasmSourceContext,
+    type HostedWasmSourceContext,
+} from './hostedWasmSourceContext.ts';
 import { assertCanonicalArtifactPath, hostedWasmOutputLimit, readHostedArtifactZip } from './hostedWasmZip.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -27,6 +33,7 @@ const sharedInputs = new Set([
     '.cargo/config.toml',
     '.github/workflows/wasm-artifacts.yml',
     'scripts/hostedWasmArtifacts.ts',
+    'scripts/hostedWasmSourceContext.ts',
     'scripts/hostedWasmZip.ts',
     'scripts/wasm-artifacts.ts',
     'scripts/wasmToolchainPins.ts',
@@ -44,7 +51,6 @@ const generators: Record<string, string> = {
     scoring: 'scripts/gen-scoring-worklet.ts',
     'proof-chamber': 'scripts/gen-proof-chamber-worklet.ts',
 };
-
 type Command = (command: string, args: string[]) => void;
 type Capture = (command: string, args: string[]) => string;
 type BuildIdentity = {
@@ -71,7 +77,6 @@ type BuildReceipt = BuildIdentity & {
     toolchain: Toolchain;
     files: Record<string, string>;
 };
-
 function packageSpec(id: string) {
     if (!supportedIds.some((supported) => supported === id)) {
         throw new Error(`Unsupported hosted WASM package: ${id}`);
@@ -82,7 +87,6 @@ function packageSpec(id: string) {
     }
     return spec;
 }
-
 export function selectHostedWasmPackages(input: {
     manifest: WasmManifest;
     sourceHashes: Record<string, string>;
@@ -125,7 +129,6 @@ export function selectHostedWasmPackages(input: {
     }
     return selected;
 }
-
 function required(env: NodeJS.ProcessEnv, key: string, pattern: RegExp): string {
     const value = env[key];
     if (!value || !pattern.test(value)) {
@@ -133,7 +136,6 @@ function required(env: NodeJS.ProcessEnv, key: string, pattern: RegExp): string 
     }
     return value;
 }
-
 export function readHostedBuildIdentity(env: NodeJS.ProcessEnv): BuildIdentity {
     const repository = required(env, 'BUILD_REPOSITORY', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
     const workflowRef = required(env, 'BUILD_WORKFLOW_REF', /^[^\s]+$/);
@@ -151,34 +153,30 @@ export function readHostedBuildIdentity(env: NodeJS.ProcessEnv): BuildIdentity {
         runAttempt: Number(required(env, 'BUILD_RUN_ATTEMPT', /^[1-9][0-9]{0,5}$/)),
     };
 }
-
 function captureAt(root: string): Capture {
     return (command, args) => execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trimEnd();
 }
-
 function runAt(root: string): Command {
     return (command, args) => {
         console.log(`Running ${command} ${args.join(' ')}`);
         execFileSync(command, args, { cwd: root, stdio: 'inherit' });
     };
 }
-
 function assertHead(capture: Capture, expected: string): void {
     if (capture('git', ['rev-parse', 'HEAD']) !== expected) {
         throw new Error('Checkout does not match the requested source head');
     }
 }
-
 function changedWorktreePaths(capture: Capture): string[] {
     return [
         capture('git', ['diff', '--name-only', '-z', 'HEAD']),
         capture('git', ['ls-files', '--others', '--exclude-standard', '-z']),
     ].flatMap((output) => output.split('\0').filter(Boolean));
 }
-
 export function planHostedWasmBuild(
     identity: BuildIdentity,
-    capture: Capture = captureAt(wasmArtifacts.repoRoot)
+    capture: Capture = captureAt(wasmArtifacts.repoRoot),
+    source: HostedWasmSourceContext = { root: wasmArtifacts.repoRoot, toolkit: wasmArtifacts }
 ): string[] {
     assertHead(capture, identity.headSha);
     if (changedWorktreePaths(capture).length > 0) {
@@ -191,13 +189,12 @@ export function planHostedWasmBuild(
     const changedPaths = capture('git', ['diff', '--name-only', '-z', mergeBase, identity.headSha])
         .split('\0')
         .filter(Boolean);
-    const manifest = wasmArtifacts.readManifest();
+    const manifest = source.toolkit.readManifest();
     const sourceHashes = Object.fromEntries(
-        wasmArtifacts.packages.map((spec) => [spec.id, wasmArtifacts.hashCrateClosure(spec.crateDir)])
+        source.toolkit.packages.map((spec) => [spec.id, source.toolkit.hashCrateClosure(spec.crateDir)])
     );
     return selectHostedWasmPackages({ manifest, sourceHashes, changedPaths });
 }
-
 export function hostedArtifactPaths(selected: readonly string[]): string[] {
     if (new Set(selected).size !== selected.length) {
         throw new Error('Duplicate selected package');
@@ -211,7 +208,6 @@ export function hostedArtifactPaths(selected: readonly string[]): string[] {
     }
     return paths.sort();
 }
-
 function readRegularFile(root: string, path: string): Buffer {
     assertCanonicalArtifactPath(path);
     let current = root;
@@ -228,11 +224,9 @@ function readRegularFile(root: string, path: string): Buffer {
     }
     return readFileSync(current);
 }
-
 function digest(bytes: Uint8Array): string {
     return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
-
 export function collectHostedArtifacts(root: string, selected: readonly string[]): Map<string, Buffer> {
     const files = new Map<string, Buffer>();
     let size = 0;
@@ -246,13 +240,12 @@ export function collectHostedArtifacts(root: string, selected: readonly string[]
     }
     return files;
 }
-
-function readToolchain(root: string, capture: Capture): Toolchain {
+function readToolchain(root: string, capture: Capture, source: HostedWasmSourceContext): Toolchain {
     const wasmPack = capture('wasm-pack', ['--version']);
     const rustToolchain = capture('rustup', ['show', 'active-toolchain']);
-    const expectedRust = wasmArtifacts.rustToolchainChannel();
+    const expectedRust = source.toolkit.rustToolchainChannel();
     if (
-        wasmPack !== `wasm-pack ${wasmArtifacts.pinnedToolchain.wasmPack}` ||
+        wasmPack !== `wasm-pack ${source.toolkit.pinnedToolchain.wasmPack}` ||
         !rustToolchain.startsWith(`${expectedRust}-`)
     ) {
         throw new Error('Installed WASM generation toolchain differs from repository pins');
@@ -272,10 +265,9 @@ function readToolchain(root: string, capture: Capture): Toolchain {
         rustc: capture('rustc', ['--version']),
         rustToolchain,
         wasmPack,
-        wasmBindgen: wasmArtifacts.wasmBindgenLockVersion(),
+        wasmBindgen: source.toolkit.wasmBindgenLockVersion(),
     };
 }
-
 function publishFiles(outputDirectory: string, files: Map<string, Buffer>, receipt: BuildReceipt): void {
     const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
     const size = [...files.values()].reduce((total, bytes) => total + bytes.length, receiptBytes.length);
@@ -296,7 +288,6 @@ function publishFiles(outputDirectory: string, files: Map<string, Buffer>, recei
         rmSync(temporary, { recursive: true, force: true });
     }
 }
-
 function assertPrivateOutput(root: string, outputDirectory: string): void {
     const parent = realpathSync(dirname(resolve(outputDirectory)));
     const outputRelative = relative(realpathSync(root), join(parent, 'output'));
@@ -304,7 +295,6 @@ function assertPrivateOutput(root: string, outputDirectory: string): void {
         throw new Error('Verified output must be outside the source checkout');
     }
 }
-
 export function buildHostedWasmArtifacts(input: {
     root: string;
     outputDirectory: string;
@@ -312,6 +302,7 @@ export function buildHostedWasmArtifacts(input: {
     identity: BuildIdentity;
     run?: Command;
     capture?: Capture;
+    source?: HostedWasmSourceContext;
 }): BuildReceipt | undefined {
     if (input.selected.length === 0) {
         return undefined;
@@ -319,12 +310,16 @@ export function buildHostedWasmArtifacts(input: {
     const allowed = hostedArtifactPaths(input.selected);
     const run = input.run ?? runAt(input.root);
     const capture = input.capture ?? captureAt(input.root);
+    const source = input.source ?? { root: realpathSync(input.root), toolkit: wasmArtifacts };
+    if (realpathSync(input.root) !== source.root) {
+        throw new Error('Build root does not match source toolkit root');
+    }
     assertHead(capture, input.identity.headSha);
     if (changedWorktreePaths(capture).length > 0) {
         throw new Error('Hosted build requires a clean source checkout');
     }
     assertPrivateOutput(input.root, input.outputDirectory);
-    const toolchain = readToolchain(input.root, capture);
+    const toolchain = readToolchain(input.root, capture, source);
     console.log(`Building source ${input.identity.headSha}: ${input.selected.join(', ')}`);
     for (const id of input.selected) {
         run('pnpm', [packageSpec(id).buildScript]);
@@ -348,7 +343,6 @@ export function buildHostedWasmArtifacts(input: {
     console.log(`Qualified ${files.size} files for upload; receipt source ${receipt.headSha}`);
     return receipt;
 }
-
 function object(value: unknown, label: string): Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new Error(`Invalid ${label}`);
@@ -359,21 +353,18 @@ function object(value: unknown, label: string): Record<string, unknown> {
     }
     return result;
 }
-
 function string(value: unknown, label: string): string {
     if (typeof value !== 'string') {
         throw new TypeError(`Invalid ${label}`);
     }
     return value;
 }
-
 function positiveInteger(value: unknown, label: string): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
         throw new Error(`Invalid ${label}`);
     }
     return value;
 }
-
 function parseReceipt(value: unknown): BuildReceipt {
     const record = object(value, 'receipt');
     if (record.version !== 1 || !Array.isArray(record.packages) || record.packages.length === 0) {
@@ -408,7 +399,6 @@ function parseReceipt(value: unknown): BuildReceipt {
         files: Object.fromEntries(Object.entries(files).map(([path, hash]) => [path, string(hash, 'file hash')])),
     };
 }
-
 type ReturnInput = {
     zip: Buffer;
     run: unknown;
@@ -421,7 +411,6 @@ type ReturnInput = {
     outputDirectory: string;
     capture?: Capture;
 };
-
 function validateApiArtifact(
     input: ReturnInput,
     run: Record<string, unknown>,
@@ -451,7 +440,6 @@ function validateApiArtifact(
     }
     return expectedHead;
 }
-
 function validateReceiptIdentity(
     input: ReturnInput,
     run: Record<string, unknown>,
@@ -478,7 +466,6 @@ function validateReceiptIdentity(
         throw new Error('Receipt differs from the requested GitHub PR/run/attempt');
     }
 }
-
 export function verifyHostedWasmReturn(input: ReturnInput): BuildReceipt {
     const run = object(input.run, 'API run');
     const artifact = object(input.artifact, 'API artifact');
@@ -519,48 +506,68 @@ export function verifyHostedWasmReturn(input: ReturnInput): BuildReceipt {
     return receipt;
 }
 
-function main(): void {
-    if (process.argv[2] === 'verify-return') {
-        const [zipPath, runPath, artifactPath, repository, pr, runId, artifactId, outputDirectory] =
-            process.argv.slice(3);
-        if (
-            !zipPath ||
-            !runPath ||
-            !artifactPath ||
-            !repository ||
-            !pr ||
-            !runId ||
-            !artifactId ||
-            !outputDirectory ||
-            process.argv.length !== 11 ||
-            !/^[1-9][0-9]*$/.test(pr)
-        ) {
-            throw new Error(
-                'Usage: node scripts/hostedWasmArtifacts.ts verify-return <zip> <run.json> <artifact.json> <owner/repo> <PR> <run ID> <artifact ID> <private-output-directory>'
-            );
-        }
-        if (lstatSync(zipPath).size > outputLimit) {
-            throw new Error('ZIP exceeds 10 MiB');
-        }
-        const receipt = verifyHostedWasmReturn({
-            zip: readFileSync(zipPath),
-            run: JSON.parse(readFileSync(runPath, 'utf8')),
-            artifact: JSON.parse(readFileSync(artifactPath, 'utf8')),
-            repository,
-            pullRequest: Number(pr),
-            runId,
-            artifactId,
-            root: wasmArtifacts.repoRoot,
-            outputDirectory,
-        });
-        console.log(
-            `Verified run ${receipt.runId} attempt ${receipt.runAttempt}, source ${receipt.headSha}; private files: ${outputDirectory}`
+function verifyReturnedArtifact(): void {
+    const [sourceRoot, zipPath, runPath, artifactPath, repository, pr, runId, artifactId, outputDirectory] =
+        process.argv.slice(3);
+    if (
+        !sourceRoot ||
+        !zipPath ||
+        !runPath ||
+        !artifactPath ||
+        !repository ||
+        !pr ||
+        !runId ||
+        !artifactId ||
+        !outputDirectory ||
+        process.argv.length !== 12 ||
+        !/^[1-9][0-9]*$/.test(pr)
+    ) {
+        throw new Error(
+            'Usage: node scripts/hostedWasmArtifacts.ts verify-return <source-root> <zip> <run.json> <artifact.json> <owner/repo> <PR> <run ID> <artifact ID> <private-output-directory>'
         );
+    }
+    const root = admitHostedWasmReturnRoot(sourceRoot);
+    if (lstatSync(zipPath).size > outputLimit) {
+        throw new Error('ZIP exceeds 10 MiB');
+    }
+    const receipt = verifyHostedWasmReturn({
+        zip: readFileSync(zipPath),
+        run: JSON.parse(readFileSync(runPath, 'utf8')),
+        artifact: JSON.parse(readFileSync(artifactPath, 'utf8')),
+        repository,
+        pullRequest: Number(pr),
+        runId,
+        artifactId,
+        root,
+        outputDirectory,
+    });
+    console.log(
+        `Verified run ${receipt.runId} attempt ${receipt.runAttempt}, source ${receipt.headSha}; private files: ${outputDirectory}`
+    );
+}
+
+async function main(): Promise<void> {
+    if (process.argv[2] === 'verify-return') {
+        verifyReturnedArtifact();
         return;
     }
     const identity = readHostedBuildIdentity(process.env);
-    const selected = planHostedWasmBuild(identity);
     const mode = process.argv[2];
+    const sourceRoot = process.argv[3];
+    if ((mode !== 'plan' && mode !== 'build') || !sourceRoot || process.argv.length !== 4) {
+        throw new Error('Usage: hostedWasmArtifacts.ts plan|build <absolute-source-root>');
+    }
+    if (!isAbsolute(sourceRoot)) {
+        throw new Error('Hosted WASM source root must be absolute');
+    }
+    const admitted = admitHostedWasmCheckouts({
+        controlRoot: wasmArtifacts.repoRoot,
+        sourceRoot,
+        workflowSha: identity.workflowSha,
+        sourceSha: identity.headSha,
+    });
+    const source = await loadHostedWasmSourceContext(admitted.sourceRoot);
+    const selected = planHostedWasmBuild(identity, captureAt(source.root), source);
     if (mode === 'plan') {
         console.log(`Source ${identity.headSha}; selected: ${selected.join(', ') || 'none (no build or upload)'}`);
         const output = process.env.GITHUB_OUTPUT;
@@ -569,21 +576,21 @@ function main(): void {
         }
         appendFileSync(
             output,
-            `selected=${selected.length > 0}\nwasm-pack=${wasmArtifacts.pinnedToolchain.wasmPack}\nrust-toolchain=${wasmArtifacts.rustToolchainChannel()}\n`
+            `selected=${selected.length > 0}\nwasm-pack=${source.toolkit.pinnedToolchain.wasmPack}\nrust-toolchain=${source.toolkit.rustToolchainChannel()}\n`
         );
         return;
     }
-    if (mode !== 'build' || !process.env.BUILD_OUTPUT_DIRECTORY) {
-        throw new Error('Usage: hostedWasmArtifacts.ts plan|build with hosted build environment');
+    if (!process.env.BUILD_OUTPUT_DIRECTORY) {
+        throw new Error('Missing hosted build output directory');
     }
     buildHostedWasmArtifacts({
-        root: wasmArtifacts.repoRoot,
+        root: source.root,
         outputDirectory: process.env.BUILD_OUTPUT_DIRECTORY,
         selected,
         identity,
+        source,
     });
 }
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    main();
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+    await main();
 }

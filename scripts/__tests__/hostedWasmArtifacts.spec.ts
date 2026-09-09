@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -50,6 +59,7 @@ describe('hosted WASM package selection', () => {
     it.each([
         '.cargo/config.toml',
         'scripts/hostedWasmArtifacts.ts',
+        'scripts/hostedWasmSourceContext.ts',
         'scripts/hostedWasmZip.ts',
         'scripts/wasm-artifacts.ts',
         'scripts/wasmToolchainPins.ts',
@@ -190,6 +200,37 @@ describe('hosted build qualification', () => {
             ['pnpm', 'wasm:manifest', '--package', 'scoring'],
             ['pnpm', 'wasm:verify'],
         ]);
+    });
+
+    it('takes generation toolchain pins from the admitted source context', () => {
+        const input = fixture();
+        const source = {
+            root: realpathSync(input.root),
+            toolkit: {
+                ...wasmArtifacts,
+                pinnedToolchain: { ...wasmArtifacts.pinnedToolchain, wasmPack: '9.9.9' },
+                rustToolchainChannel: () => 'nightly-source',
+                wasmBindgenLockVersion: () => '0.2.source',
+            },
+        };
+        const receipt = buildHostedWasmArtifacts({
+            ...input,
+            source,
+            capture: (command, args) => {
+                if (command === 'wasm-pack') {
+                    return 'wasm-pack 9.9.9';
+                }
+                if (command === 'rustup') {
+                    return 'nightly-source-x86_64-unknown-linux-gnu';
+                }
+                return input.capture(command, args);
+            },
+        });
+        expect(receipt?.toolchain).toMatchObject({
+            wasmPack: 'wasm-pack 9.9.9',
+            rustToolchain: 'nightly-source-x86_64-unknown-linux-gnu',
+            wasmBindgen: '0.2.source',
+        });
     });
 
     it('does no command or output work when nothing is selected', () => {

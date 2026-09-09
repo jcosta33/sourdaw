@@ -1949,19 +1949,30 @@
         },
         "steps": [
           {
+            "name": "Checkout workflow control",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.workflow_sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false,
+              "path": "control"
+            }
+          },
+          {
             "name": "Checkout source head",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
               "ref": "${{ github.event.pull_request.head.sha }}",
               "fetch-depth": 0,
-              "persist-credentials": false
+              "persist-credentials": false,
+              "path": "source"
             }
           },
           {
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
-              "package_json_file": "package.json"
+              "package_json_file": "source/package.json"
             }
           },
           {
@@ -1973,12 +1984,13 @@
           },
           {
             "name": "Install helper dependencies",
+            "working-directory": "source",
             "run": "pnpm install --frozen-lockfile --ignore-scripts"
           },
           {
             "name": "Select affected packages",
             "id": "plan",
-            "run": "node scripts/hostedWasmArtifacts.ts plan"
+            "run": "node control/scripts/hostedWasmArtifacts.ts plan \"$GITHUB_WORKSPACE/source\""
           },
           {
             "name": "Install pinned generation toolchain",
@@ -1995,7 +2007,7 @@
             "env": {
               "BUILD_OUTPUT_DIRECTORY": "${{ runner.temp }}/qualified-wasm-artifacts"
             },
-            "run": "node scripts/hostedWasmArtifacts.ts build"
+            "run": "node control/scripts/hostedWasmArtifacts.ts build \"$GITHUB_WORKSPACE/source\""
           },
           {
             "name": "Upload qualified artifact",
