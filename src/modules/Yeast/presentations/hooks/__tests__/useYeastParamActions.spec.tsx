@@ -30,7 +30,7 @@ type RootDocument = { yeast?: unknown };
 
 const DEVICE_ID = 'device-hook';
 
-function Harness({ onReady }: { onReady: (actions: YeastParamActions) => void }): ReactElement {
+function Harness({ onReady }: { onReady: (actions: YeastParamActions) => void }): ReactElement | null {
     const actions = useYeastParamActions();
     onReady(actions);
     return null;

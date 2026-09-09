@@ -23,8 +23,8 @@ const DEVICE_ID = 'device-mirror';
 type RootDocument = { yeast?: unknown };
 
 async function flushPersistence(): Promise<void> {
-    await new Promise((resolve) => queueMicrotask(resolve));
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,7 +104,9 @@ describe('Yeast undo session mirror (#2111)', () => {
         const groupIds = new Set(past.map((entry) => (isRecord(entry) ? entry.groupId : undefined)));
         expect(groupIds.size).toBe(1);
         for (const entry of past) {
-            expect(isRecord(entry)).toBe(true);
+            if (!isRecord(entry)) {
+                throw new Error('Expected every mirrored entry to be a record');
+            }
             for (const key of ['action', 'inverseAction', 'redoAction'] as const) {
                 const replayed = entry[key];
                 if (replayed === null || replayed === undefined) {

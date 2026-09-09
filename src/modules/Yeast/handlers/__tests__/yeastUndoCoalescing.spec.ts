@@ -107,8 +107,13 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
         const members = undoHistoryStore.value?.past ?? [];
         expect(members).toHaveLength(2);
         for (const entry of members) {
-            expect(entry.inverseAction).not.toBeNull();
-            expect(getHandlerMap()[entry.inverseAction!.type]?.canReportConflict).toBe(true);
+            if (entry.kind !== 'action') {
+                throw new Error('Expected an action entry for every group member');
+            }
+            if (entry.inverseAction === null) {
+                throw new Error('Expected every group member to carry an inverse');
+            }
+            expect(getHandlerMap()[entry.inverseAction.type]?.canReportConflict).toBe(true);
         }
     });
 });

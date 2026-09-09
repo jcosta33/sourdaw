@@ -125,6 +125,9 @@ describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
         const past = undoHistoryStore.value?.past ?? [];
         expect(new Set(past.map((entry) => entry.groupId)).size).toBe(1);
         for (const entry of past) {
+            if (entry.kind !== 'action') {
+                throw new Error('Expected every stroke entry to be an action entry');
+            }
             expect(entry.label).toBe('Set arp pattern');
             expect(entry.inverseAction).not.toBeNull();
         }
