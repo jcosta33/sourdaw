@@ -13,9 +13,14 @@ type AddPayload = {
     name: string;
 };
 
-/** What a fresh add appends, byte for byte — `addYeastProcessor` creates
- *  exactly this shape, so the forward `describe()` can name the processor its
- *  remove-inverse has to guard against before anything is written. */
+/**
+ * What a fresh add appends, byte for byte: the use case writes
+ * `payload.name` verbatim (this handler always supplies it), so the forward
+ * `describe()` can name the processor its remove-inverse has to guard against
+ * before anything is written. Deriving the name anywhere else — e.g. from the
+ * catalog — would guard a name the write never landed and wedge the entry's
+ * undo forever.
+ */
 function toCreatedSnapshot(payload: AddPayload): YeastProcessorSnapshot {
     return { id: payload.processorId, type: payload.type, name: payload.name, bypassed: false, params: {} };
 }
@@ -55,7 +60,7 @@ export const handleAddYeastProcessor = createHandler<'addYeastProcessor'>({
             commitYeastProjection(processors);
             return { status: 'written' };
         }
-        addYeastProcessor(action.payload.type, action.payload.processorId);
+        addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);
         return { status: 'written' };
     },
     isNoop: (action) => {

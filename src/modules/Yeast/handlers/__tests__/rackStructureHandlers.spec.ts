@@ -22,6 +22,16 @@ vi.mock('../../stores/yeastStore', () => ({
         }),
     },
     setActiveYeastDevice: vi.fn(),
+    // The real commitYeastProjection's groove reconcile reads the rack union.
+    readAllYeastRacks: () => [mocks.storeValue.value ?? { processors: [], uiLevel: 1 }],
+}));
+// Full stub rather than a spread: importing the real engine module spins up
+// worker machinery that pushes this one pin against the default test timeout.
+vi.mock('../../engine/yeastRuntime', () => ({
+    setYeastRuntimeProjection: vi.fn(),
+    applyYeastRuntimeProjection: vi.fn(() => Promise.resolve()),
+    getYeastRuntimeStatus: vi.fn(() => 'ready'),
+    getYeastRuntimeError: vi.fn(() => undefined),
 }));
 vi.mock('../../useCases/addYeastProcessor', () => ({
     addYeastProcessor: mocks.addUseCase,
@@ -62,7 +72,7 @@ describe('handleAddYeastProcessor', () => {
         });
 
         expect(result).toEqual({ status: 'written' });
-        expect(mocks.addUseCase).toHaveBeenCalledWith('chord', 'chord-9');
+        expect(mocks.addUseCase).toHaveBeenCalledWith('chord', 'chord-9', 'Chord');
     });
 
     it('conflicts when the materialized id is already taken', () => {
@@ -129,6 +139,43 @@ describe('handleAddYeastProcessor', () => {
 
         expect(result).toEqual({ status: 'conflict' });
         expect(mocks.commitProjection).not.toHaveBeenCalled();
+    });
+
+    // `resetModules` forces the real use-case chain (MIDI barrel included) to
+    // re-evaluate inside this test, which rides past the default timeout.
+    it('lands the payload name the remove-inverse guards (real use case)', { timeout: 30_000 }, async () => {
+        // The catalog display name for 'arpeggiator' is 'Arpeggiator'; this
+        // payload deliberately carries a custom one. The write must land the
+        // payload name — the remove-inverse guards exactly that snapshot, so a
+        // catalog-derived write here would fail the guard on undo forever.
+        vi.doUnmock('../../useCases/addYeastProcessor');
+        vi.doUnmock('../../useCases/commitYeastProjection');
+        vi.doUnmock('../../useCases/removeYeastProcessor');
+        vi.resetModules();
+        const { handleAddYeastProcessor: realAdd } = await import('../addYeastProcessor');
+        const { handleRemoveYeastProcessor: realRemove } = await import('../removeYeastProcessor');
+
+        seedRack([]);
+        const payload = { processorId: 'arp-9', type: 'arpeggiator' as const, name: 'Custom Calliope' };
+        const described = realAdd.describe({ type: 'addYeastProcessor', payload });
+        expect(described.inverseAction?.type).toBe('removeYeastProcessor');
+        if (described.inverseAction?.type !== 'removeYeastProcessor') {
+            throw new Error('Expected a remove inverse');
+        }
+        expect(described.inverseAction.payload.expectedProcessor.name).toBe('Custom Calliope');
+
+        const result = await realAdd.execute({ type: 'addYeastProcessor', payload });
+        expect(result).toEqual({ status: 'written' });
+        // The write landed exactly the name the inverse guards.
+        expect(mocks.storeValue.value?.processors.find((processor) => processor.id === 'arp-9')?.name).toBe(
+            'Custom Calliope'
+        );
+
+        // Undo of the add: the guarded remove accepts the state the write
+        // landed and empties the rack again.
+        const undone = await realRemove.execute(described.inverseAction);
+        expect(undone).toEqual({ status: 'written' });
+        expect(mocks.storeValue.value?.processors.some((processor) => processor.id === 'arp-9')).toBe(false);
     });
 
     it('is undoable and declares conflict capability', () => {
