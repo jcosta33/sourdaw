@@ -17,14 +17,14 @@ import { detachActiveInput } from './detachActiveInput';
 import type { GetWebMidiTrackStrip, ReleaseNativeLiveNote } from '../engineStripAccess';
 
 /**
- * Full teardown of the live MIDI input: detach, close the native handle, release
- * every held voice, disarm MIDI learn, and drop the discovered input list.
+ * Full teardown of the live MIDI input: detach, close the native handle,
+ * release every held voice, disarm MIDI learn, and drop the discovered input
+ * list.
  *
- * No production caller reaches this today — the only exercise is its own spec
- * (issue #1837 F6). It is kept rather than deleted because it is the sole caller
- * of the `close_midi_input` native command, so deleting it would drop the only
- * path that releases the native device. Wiring it to a real teardown lifecycle
- * (app shutdown, or a MIDI-disable toggle) is an open decision.
+ * Wired to the app's `beforeunload` teardown via the `destroyWebMidi` use case
+ * (#2016), which injects the strip access and the native-note release. The
+ * `close_midi_input` command it invokes has one other production caller: the
+ * name-mismatch backout in `selectMidiInputNative`, so the command must stay.
  */
 export function destroyWebMidi(input: {
     getTrackStrip: GetWebMidiTrackStrip;

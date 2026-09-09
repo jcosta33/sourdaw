@@ -132,6 +132,7 @@ import {
     createGrooveMidiEventProjector,
     resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
+    destroyWebMidi,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
@@ -350,6 +351,9 @@ function disposeYeastRealtimeBridge(): void {
 }
 
 function handleBeforeUnload(): void {
+    // Before the Yeast teardown: the release events destroyWebMidi emits route
+    // through runtimes the bridge disposal is about to retire.
+    destroyWebMidi();
     disposeYeastRealtimeBridge();
     // Attempt GC on window close. `cleanupUnusedFreezeFiles` stands down on its
     // own when the track store is not authoritative — see the guard there.

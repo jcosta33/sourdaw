@@ -67,6 +67,34 @@ impl Default for MidiState {
     }
 }
 
+impl MidiState {
+    /// Close the open input connection, answering whether there was one.
+    ///
+    /// This is the exit cascade's MIDI step: a poisoned lock is still read
+    /// (the slot's content survives a panic elsewhere) because exit is the
+    /// last chance the device handle has to be released at all, and refusing
+    /// to read it would turn one panic elsewhere into a device held until the
+    /// process dies.
+    pub fn close_open_input(&self) -> bool {
+        let mut connection = crate::state::locked_or_poisoned(&self.connection);
+        connection.take().is_some_and(|connection| {
+            connection.close();
+            true
+        })
+    }
+}
+
+#[cfg(test)]
+impl MidiState {
+    /// Adopt an already-open connection, for tests that need a `MidiState`
+    /// holding one without a physical device to open.
+    pub(crate) fn with_connection_for_test(connection: MidiInputConnection<()>) -> Self {
+        Self {
+            connection: Mutex::new(Some(connection)),
+        }
+    }
+}
+
 struct PushConnection {
     model: String,
     midi_input: MidiInputConnection<()>,
