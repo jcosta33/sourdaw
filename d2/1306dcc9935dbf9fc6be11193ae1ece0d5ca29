@@ -1,0 +1,26 @@
+scripts/offlineAudioWorkletTrace.ts
+  s_87ab0a2f60ccf8::t_4951af1479e067 199
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_87ab0a2f60ccf8::t_5c1a8dd7fb1e34 85-106,140-155
+  s_87ab0a2f60ccf8::t_9cbe05c857c0b3 156-157
+.agents/skills/review-stances/correctness.md
+  s_87ab0a2f60ccf8::t_f2b4b3a5c833f1 181-191
+.agents/skills/review-stances/test-validity.md
+  s_87ab0a2f60ccf8::t_f2b4b3a5c833f1 117-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d21306dcc9935dbf9fc6be11193ae1ece0d5ca29",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
