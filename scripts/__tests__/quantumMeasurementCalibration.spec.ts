@@ -73,6 +73,81 @@ await exercise();
 `;
 }
 
+function successfulRunnerFixtureSource(): string {
+    const source = readFileSync(runnerPath, 'utf8');
+    const statisticalHelpers = extractBetween(source, 'function quantile(', 'function machineRecord(');
+    const reporter = extractBetween(
+        source,
+        'function reportFailedRun(',
+        '/**\n * The reference project, defined here because'
+    );
+    const analysis = extractBetween(
+        source,
+        '    const calibration = calibrateQuantumMeasurementPayload(payload);',
+        '    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));'
+    );
+    return `
+import { writeFileSync } from 'node:fs';
+import {
+    calibrateQuantumMeasurementPayload,
+    calibrationFailureReport,
+} from ${JSON.stringify(helperUrl)};
+
+const FLOOR_QUANTILE = 0.01;
+const STATIONARITY_TOLERANCE_PCT = 10;
+const MEDIAN_TRUSTWORTHY_SPREAD_PCT = 25;
+const MAX_ZERO_TICK_FRACTION = 0.01;
+const COST_SITE = { grand_boule: 'fixture' };
+const DUTY_CYCLE = {};
+const os = { loadavg: () => [1] };
+
+${statisticalHelpers}
+${reporter}
+
+async function exercise() {
+    const sampleCount = 20_000;
+    const payload = {
+        results: [{
+            id: 'grand_boule',
+            label: 'Grand Boule',
+            note: 'fixture',
+            samplesTicks: Array.from({ length: sampleCount }, () => 20_000),
+            segmentIndex: Array.from({ length: sampleCount }, () => 2),
+            segmentRates: [100_000, 0, 200_000, 400_000],
+            harnessFloorTicks: [20_000],
+            warmupTotalTicks: 80_000_000,
+            mainThreadWallMs: 2_400,
+            timedStartedAtMs: 0,
+            timedFinishedAtMs: 20,
+            warmVerify: { ok: true, detail: 'fixture' },
+            lateVerify: { ok: true, detail: 'fixture' },
+            zeroTickSamples: 0,
+        }],
+    };
+    const machine = { platform: 'fixture' };
+    const options = { json: null };
+    const loadTimeline = [{ atMs: 10, load: 1 }];
+${analysis}
+    const row = rows[0];
+    console.log(JSON.stringify({
+        id: row.id,
+        sampleCount: row.samplesMs.length,
+        firstSampleMs: row.samplesMs[0],
+        stats: {
+            n: row.stats.n,
+            floor: row.stats.floor,
+            median: row.stats.median,
+            p95: row.stats.p95,
+        },
+        medianTicksPerMs: row.calibration.medianTicksPerMs,
+        timedTotalMs: row.timedTotalMs,
+    }));
+}
+
+await exercise();
+`;
+}
+
 function input(overrides: Partial<QuantumMeasurementCalibrationInput> = {}): QuantumMeasurementCalibrationInput {
     return {
         deviceId: 'grand_boule',
@@ -238,5 +313,31 @@ describe('quantum measurement calibration', () => {
             ],
         });
         expect(failedRun).not.toHaveProperty('rows');
+    });
+
+    it('executes actual runner row analysis with original sparse segment identity', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-quantum-calibration-'));
+        temporaryDirectories.push(directory);
+        const programPath = join(directory, 'runner-analysis.mjs');
+        writeFileSync(programPath, successfulRunnerFixtureSource());
+
+        const result = spawnSync(process.execPath, [programPath], { encoding: 'utf8' });
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+        const summary: unknown = JSON.parse(result.stdout);
+        expect(summary).toEqual({
+            id: 'grand_boule',
+            sampleCount: 20_000,
+            firstSampleMs: 0.1,
+            stats: {
+                n: 20_000,
+                floor: 0.1,
+                median: 0.1,
+                p95: 0.1,
+            },
+            medianTicksPerMs: 200_000,
+            timedTotalMs: expect.closeTo(2_000),
+        });
     });
 });
