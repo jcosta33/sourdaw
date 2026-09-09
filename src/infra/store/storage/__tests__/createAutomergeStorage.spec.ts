@@ -614,19 +614,21 @@ describe('createAutomergeStorage', () => {
             capturedScope = captureAutomergeStorageTransactionScope();
             primaryStorage.set({ count: 1 });
         });
-        if (!suppliedScope || !capturedScope) {
+        const validatedSuppliedScope = suppliedScope;
+        const validatedCapturedScope = capturedScope;
+        if (!validatedSuppliedScope || !validatedCapturedScope) {
             throw new Error('transaction scopes were not captured');
         }
         transaction.validateCommit(() => {
             switch (attempt) {
                 case 'supplied scope':
-                    suppliedScope(() => {
+                    validatedSuppliedScope(() => {
                         validatorCallbackEntries += 1;
                         secondaryStorage.set({ count: 1 });
                     });
                     break;
                 case 'captured scope':
-                    capturedScope(() => {
+                    validatedCapturedScope(() => {
                         validatorCallbackEntries += 1;
                         secondaryStorage.set({ count: 1 });
                     });
@@ -734,19 +736,21 @@ describe('createAutomergeStorage', () => {
             storageA.set({ count: 1 });
             storageB.set({ count: 1 });
         });
-        if (!suppliedScope || !capturedScope) {
+        const validatedSuppliedScope = suppliedScope;
+        const validatedCapturedScope = capturedScope;
+        if (!validatedSuppliedScope || !validatedCapturedScope) {
             throw new Error('transaction scopes were not captured');
         }
 
         expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
         let callbackEntries = 0;
         expect(() =>
-            suppliedScope(() => {
+            validatedSuppliedScope(() => {
                 callbackEntries += 1;
             })
         ).toThrow(Error);
         expect(() =>
-            capturedScope(() => {
+            validatedCapturedScope(() => {
                 callbackEntries += 1;
             })
         ).toThrow(Error);
