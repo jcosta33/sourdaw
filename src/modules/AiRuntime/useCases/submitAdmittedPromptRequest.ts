@@ -370,7 +370,10 @@ export async function submitAdmittedPromptRequest(
                 executionMode: planned.result.executionMode,
                 signal,
                 runId,
-                prepared: compiled,
+                // The allow path carries its compiled approval separately from
+                // the confirmation-flow approval; either one binds the batch to
+                // an observer-capable approval binding.
+                prepared: { ...compiled, agentApproval: compiled.allowApproval ?? compiled.agentApproval },
                 ...(successVerb ? { successVerb } : {}),
                 ...(onResourceOwnershipAcquired ? { onResourceOwnershipAcquired } : {}),
             });
