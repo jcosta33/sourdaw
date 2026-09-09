@@ -12,6 +12,7 @@ import {
 } from './preparedAudioBufferLifecycle';
 import {
     isValidPreparedSerializedAudioBuffer,
+    readPersistentPcmRevision,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -227,6 +228,7 @@ type CheckpointRetentionDurabilityReceipt = {
 
 type CheckpointRetentionDurabilityAuthority = {
     bufferIds: readonly string[];
+    expectedPersistenceRevisionById: ReadonlyMap<string, string>;
     isCurrent: () => boolean;
 };
 
@@ -453,6 +455,13 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
 
 type SerializedBuffer = PreparedSerializedAudioBuffer;
 
+type PersistentPcmIdentity =
+    | { status: 'candidate'; revision: string }
+    | { status: 'authenticated'; revision: string }
+    | { status: 'unauthenticated' };
+
+type CachedAudioPersistenceSettlement = { status: 'committed'; persistenceRevision: string } | { status: 'failed' };
+
 type OrdinaryStoredBuffer = Omit<SerializedBuffer, 'lastAccessed' | 'sizeInBytes'> & {
     lastAccessed?: number;
     sizeInBytes?: number;
@@ -463,16 +472,18 @@ type CachedAudioDurabilitySource = {
     data: SerializedBuffer | undefined;
     dataFactory: (() => SerializedBuffer) | undefined;
     freezeProjectId: number | undefined;
+    identity: PersistentPcmIdentity;
     isAuthoritative: () => boolean;
-    persistence: Promise<boolean> | undefined;
+    persistence: Promise<CachedAudioPersistenceSettlement> | undefined;
     revision: number;
     status: 'durable' | 'external' | 'failed' | 'pending' | 'removed' | 'unpersisted';
 };
 
 type RetainedCachedAudioDurabilitySource = Readonly<
-    Pick<CachedAudioDurabilitySource, 'data' | 'dataFactory' | 'freezeProjectId' | 'persistence'> & {
-        status: 'durable' | 'failed' | 'pending' | 'unpersisted';
-    }
+    Pick<
+        CachedAudioDurabilitySource,
+        'data' | 'dataFactory' | 'freezeProjectId' | 'identity' | 'persistence' | 'status'
+    >
 >;
 
 let nextDurabilitySourceRevision = 0;
@@ -701,6 +712,7 @@ function recordCachedAudioDurabilitySource(
         data,
         dataFactory: undefined,
         freezeProjectId,
+        identity: { status: 'candidate', revision: crypto.randomUUID() },
         isAuthoritative: () => true,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -722,6 +734,7 @@ function recordLazyCachedAudioDurabilitySource(
         data: undefined,
         dataFactory,
         freezeProjectId,
+        identity: { status: 'candidate', revision: crypto.randomUUID() },
         isAuthoritative,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -735,11 +748,13 @@ function invalidateCachedAudioDurabilitySource(
     id: string,
     status: CachedAudioDurabilitySource['status'] = 'external'
 ): void {
+    const existing = durabilitySourceById.get(id);
     durabilitySourceById.set(id, {
         attempt: undefined,
         data: undefined,
         dataFactory: undefined,
         freezeProjectId: undefined,
+        identity: existing?.identity ?? { status: 'unauthenticated' },
         isAuthoritative: () => true,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -756,6 +771,7 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
               data: existing.data,
               dataFactory: existing.dataFactory,
               freezeProjectId: existing.freezeProjectId,
+              identity: existing.identity,
               isAuthoritative: existing.isAuthoritative,
               persistence: undefined,
               revision: ++nextDurabilitySourceRevision,
@@ -766,6 +782,7 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
               data: undefined,
               dataFactory: undefined,
               freezeProjectId: undefined,
+              identity: { status: 'unauthenticated' },
               isAuthoritative: () => true,
               persistence: undefined,
               revision: ++nextDurabilitySourceRevision,
@@ -783,14 +800,99 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
     return source;
 }
 
-function captureCachedAudioDurabilitySourceInvalidation(id: string): () => boolean {
-    const source = durabilitySourceById.get(id);
-    return () => {
-        if (durabilitySourceById.get(id) !== source || (source !== undefined && !source.isAuthoritative())) {
+type PreparedPcmPublicationAuthority = {
+    acceptsRead: (persistenceRevision: string | undefined) => boolean;
+    invalidate: () => boolean;
+    isCurrent: () => boolean;
+    publishCommitted: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string) => boolean;
+    publishRead: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string | undefined) => boolean;
+};
+
+function capturePreparedPcmPublicationAuthority(id: string): PreparedPcmPublicationAuthority {
+    let expectedRuntime = cache.get(id);
+    let expectedSource = durabilitySourceById.get(id);
+    if (expectedSource === undefined && expectedRuntime !== undefined) {
+        expectedSource = {
+            attempt: undefined,
+            data: undefined,
+            dataFactory: undefined,
+            freezeProjectId: residentFreezeProjectIdById.get(id),
+            identity: { status: 'unauthenticated' },
+            isAuthoritative: () => true,
+            persistence: undefined,
+            revision: ++nextDurabilitySourceRevision,
+            status: 'external',
+        };
+        durabilitySourceById.set(id, expectedSource);
+    }
+    const isCurrent = (): boolean =>
+        durabilitySourceById.get(id) === expectedSource &&
+        cache.get(id) === expectedRuntime &&
+        (expectedSource === undefined || expectedSource.isAuthoritative());
+    const acceptsRead = (persistenceRevision: string | undefined): boolean => {
+        if (!isCurrent() || !isNonEmptyString(persistenceRevision)) {
             return false;
         }
-        invalidateCachedAudioDurabilitySource(id);
+        if (expectedSource === undefined) {
+            return expectedRuntime === undefined;
+        }
+        return (
+            expectedSource.identity.status === 'authenticated' &&
+            expectedSource.identity.revision === persistenceRevision
+        );
+    };
+    const publish = (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string): boolean => {
+        if (!isCurrent()) {
+            return false;
+        }
+        writeAudioCacheEntry(id, buffer, undefined, true);
+        expectedRuntime = buffer;
+        expectedSource = {
+            attempt: undefined,
+            data: undefined,
+            dataFactory: undefined,
+            freezeProjectId: undefined,
+            identity: { status: 'authenticated', revision: persistenceRevision },
+            isAuthoritative: () => true,
+            persistence: undefined,
+            revision: ++nextDurabilitySourceRevision,
+            status: 'durable',
+        };
+        durabilitySourceById.set(id, expectedSource);
+        clearWaveformCachesForId(id);
+        accessRefreshStampById.set(id, lastAccessed);
         return true;
+    };
+    return {
+        acceptsRead,
+        invalidate: () => {
+            if (!isCurrent()) {
+                return false;
+            }
+            const identity = expectedSource?.identity ?? { status: 'unauthenticated' as const };
+            expectedSource = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: undefined,
+                identity,
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'external',
+            };
+            durabilitySourceById.set(id, expectedSource);
+            return true;
+        },
+        isCurrent,
+        publishCommitted: (buffer, lastAccessed, persistenceRevision) =>
+            isNonEmptyString(persistenceRevision) && publish(buffer, lastAccessed, persistenceRevision),
+        publishRead: (buffer, lastAccessed, persistenceRevision) => {
+            if (!acceptsRead(persistenceRevision)) {
+                return false;
+            }
+            return publish(buffer, lastAccessed, persistenceRevision!);
+        },
     };
 }
 
@@ -809,23 +911,28 @@ function materializeCachedAudioDurabilitySource(source: CachedAudioDurabilitySou
 function trackCachedAudioDurabilityAttempt(
     id: string,
     source: CachedAudioDurabilitySource,
-    persistence: Promise<boolean>
+    persistence: Promise<CachedAudioPersistenceSettlement>
 ): Promise<boolean> {
     if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
         return Promise.resolve(false);
     }
     source.status = 'pending';
     const settlement = persistence.then(
-        (persisted) => persisted,
-        () => false
+        (result) => result,
+        (): CachedAudioPersistenceSettlement => ({ status: 'failed' })
     );
     source.persistence = settlement;
-    const attempt = settlement.then((persisted) => {
+    const attempt = settlement.then((result) => {
         if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
             return false;
         }
         source.persistence = undefined;
-        if (persisted) {
+        if (
+            result.status === 'committed' &&
+            source.identity.status === 'candidate' &&
+            source.identity.revision === result.persistenceRevision
+        ) {
+            source.identity = { status: 'authenticated', revision: result.persistenceRevision };
             source.status = 'durable';
             source.data = undefined;
             source.dataFactory = undefined;
@@ -858,10 +965,14 @@ function startCachedAudioDurabilityAttempt(
     if (!data) {
         return Promise.resolve(false);
     }
+    if (source.identity.status !== 'candidate') {
+        source.status = 'failed';
+        return Promise.resolve(false);
+    }
     return trackCachedAudioDurabilityAttempt(
         id,
         source,
-        persistSerializedToIdb(id, data, source.freezeProjectId, scope)
+        persistSerializedToIdb(id, data, source.identity.revision, source.freezeProjectId, scope)
     );
 }
 
@@ -874,13 +985,14 @@ function captureRetainedCachedAudioDurabilitySources(
             continue;
         }
         const source = durabilitySourceById.get(id);
-        if (!source || !source.isAuthoritative() || source.status === 'external' || source.status === 'removed') {
+        if (!source || !source.isAuthoritative()) {
             continue;
         }
         retainedSources.set(id, {
             data: source.data,
             dataFactory: source.dataFactory,
             freezeProjectId: source.freezeProjectId,
+            identity: source.identity,
             persistence: source.persistence,
             status: source.status,
         });
@@ -900,6 +1012,7 @@ function restoreRetainedCachedAudioDurabilitySources(
             data: retained.data,
             dataFactory: retained.dataFactory,
             freezeProjectId: retained.freezeProjectId,
+            identity: retained.identity,
             isAuthoritative: () => true,
             persistence: undefined,
             revision: ++nextDurabilitySourceRevision,
@@ -1102,15 +1215,16 @@ function refreshAccessTime(id: string): void {
 function persistSerializedToIdb(
     id: string,
     data: SerializedBuffer,
+    persistenceRevision: string,
     freezeProjectId?: number,
     scope?: ProjectAudioStorageLockScope
-): Promise<boolean> {
+): Promise<CachedAudioPersistenceSettlement> {
     return runAudioStorageWrite(scope, async () => {
         const generation = claimPersistenceGeneration(id);
         try {
             const db = await openDb();
             if (persistenceGenerationById.get(id) !== generation) {
-                return false;
+                return { status: 'failed' };
             }
             // One transaction over both stores. Two transactions would let the
             // record commit while its metadata row rolled back (or the reverse),
@@ -1118,16 +1232,22 @@ function persistSerializedToIdb(
             // collector evicting the wrong things or nothing at all.
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             tx.objectStore(STORE_NAME).put(data, id);
-            const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
+            const metadata: BufferMeta = {
+                lastAccessed: data.lastAccessed,
+                persistenceRevision,
+                sizeInBytes: data.sizeInBytes,
+            };
             if (freezeProjectId !== undefined) {
                 metadata.freezeProjectId = freezeProjectId;
             }
             tx.objectStore(META_STORE_NAME).put(metadata, id);
             await awaitTransaction(tx);
-            return persistenceGenerationById.get(id) === generation;
+            return persistenceGenerationById.get(id) === generation
+                ? { status: 'committed', persistenceRevision }
+                : { status: 'failed' };
         } catch (error) {
             logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
-            return false;
+            return { status: 'failed' };
         } finally {
             if (persistenceGenerationById.get(id) === generation) {
                 persistenceGenerationById.delete(id);
@@ -1243,7 +1363,7 @@ function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
 
 const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     bufferStoreName: STORE_NAME,
-    captureDurabilitySourceInvalidation: captureCachedAudioDurabilitySourceInvalidation,
+    capturePcmPublicationAuthority: capturePreparedPcmPublicationAuthority,
     claimDurableMutation: claimPersistenceGeneration,
     createRuntimeBuffer,
     evictRuntime: dropCachedBufferEntry,
@@ -1258,11 +1378,6 @@ const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     isValidSerializedBuffer,
     metadataStoreName: META_STORE_NAME,
     openDatabase: openDb,
-    publishRuntime: (id, buffer, lastAccessed) => {
-        writeAudioCacheEntry(id, buffer, undefined, true);
-        clearWaveformCachesForId(id);
-        accessRefreshStampById.set(id, lastAccessed);
-    },
     recoveryStoreName: RECOVERY_STORE_NAME,
 });
 
@@ -1295,7 +1410,7 @@ async function prepareBuffersFromIdb({
     if (ids !== undefined) {
         recordAudioStorageIntent(ids);
     }
-    const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
+    const staged: Array<{ id: string; buffer: AudioBuffer; metadata: BufferMeta | undefined }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
     let candidateSettled = false;
@@ -1411,7 +1526,7 @@ async function prepareBuffersFromIdb({
             for (let channel = 0; channel < data.numberOfChannels; channel++) {
                 buffer.getChannelData(channel).set(data.channelData[channel]!);
             }
-            staged.push({ id, buffer });
+            staged.push({ id, buffer, metadata: meta });
         }
     } catch {
         releaseReservations();
@@ -1443,8 +1558,23 @@ async function prepareBuffersFromIdb({
             published = true;
             candidateSettled = true;
             publishProjectReservations();
-            for (const { id, buffer } of staged) {
-                audioCacheSet(id, buffer);
+            for (const { id, buffer, metadata } of staged) {
+                audioCacheSet(id, buffer, metadata?.freezeProjectId, metadata !== undefined);
+                const persistenceRevision = readPersistentPcmRevision(metadata);
+                durabilitySourceById.set(id, {
+                    attempt: undefined,
+                    data: undefined,
+                    dataFactory: undefined,
+                    freezeProjectId: metadata?.freezeProjectId,
+                    identity:
+                        typeof persistenceRevision === 'string'
+                            ? { status: 'authenticated', revision: persistenceRevision }
+                            : { status: 'unauthenticated' },
+                    isAuthoritative: () => true,
+                    persistence: undefined,
+                    revision: ++nextDurabilitySourceRevision,
+                    status: typeof persistenceRevision === 'string' ? 'durable' : 'external',
+                });
             }
             return staged.length;
         },
@@ -1547,14 +1677,14 @@ type CachedAudioBuffersDurabilityResult =
           status: 'superseded';
       };
 
-function isDurableAudioBufferPair(data: unknown, metadata: unknown): boolean {
+function readDurableAudioBufferRevision(data: unknown, metadata: unknown): string | null {
     if (
         !isValidSerializedBuffer(data) ||
         metadata === null ||
         typeof metadata !== 'object' ||
         Array.isArray(metadata)
     ) {
-        return false;
+        return null;
     }
     const candidate = metadata as Record<string, unknown>;
     if (
@@ -1566,13 +1696,17 @@ function isDurableAudioBufferPair(data: unknown, metadata: unknown): boolean {
                 !Number.isSafeInteger(candidate.freezeProjectId) ||
                 candidate.freezeProjectId < 0))
     ) {
-        return false;
+        return null;
     }
     const owner = readPreparedOwner(metadata);
-    return (
+    if (!(
         owner === null ||
         (owner !== 'invalid' && owner.status === 'project-owned' && !requiresPromotionReconciliation(owner))
-    );
+    )) {
+        return null;
+    }
+    const revision = readPersistentPcmRevision(metadata);
+    return typeof revision === 'string' ? revision : null;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -1651,11 +1785,13 @@ async function acquireCheckpointAudioRetentionInIdb({
     checkpointId,
     projectOwnerId,
     bufferIds,
+    expectedPersistenceRevisionById,
     isCurrent,
 }: {
     checkpointId: string;
     projectOwnerId: string;
     bufferIds: readonly string[];
+    expectedPersistenceRevisionById: ReadonlyMap<string, string>;
     isCurrent: () => boolean;
 }): Promise<{ status: 'retained'; ownershipToken: string } | { status: 'superseded' }> {
     if (!isNonEmptyString(checkpointId) || !isNonEmptyString(projectOwnerId)) {
@@ -1690,12 +1826,21 @@ async function acquireCheckpointAudioRetentionInIdb({
     let refusal: Error | undefined;
     if (retentionKeys.includes(checkpointId)) {
         refusal = new Error(`Checkpoint audio retention already exists for ${checkpointId}.`);
-    } else if (durablePairs.some(([data, metadata]) => !isDurableAudioBufferPair(data, metadata))) {
+    } else if (durablePairs.some(([data, metadata]) => readDurableAudioBufferRevision(data, metadata) === null)) {
         refusal = new Error('Checkpoint audio retention has missing or invalid PCM.');
     }
     if (refusal) {
         await awaitTransaction(transaction);
         throw refusal;
+    }
+    const revisionsMatch = canonicalBufferIds.every(
+        (id, index) =>
+            readDurableAudioBufferRevision(durablePairs[index]?.[0], durablePairs[index]?.[1]) ===
+            expectedPersistenceRevisionById.get(id)
+    );
+    if (!revisionsMatch) {
+        await awaitTransaction(transaction);
+        return { status: 'superseded' };
     }
     if (!isCurrent()) {
         await awaitTransaction(transaction);
@@ -1736,6 +1881,7 @@ function acquireCheckpointAudioRetention({
             checkpointId,
             projectOwnerId,
             bufferIds: authority.bufferIds,
+            expectedPersistenceRevisionById: authority.expectedPersistenceRevisionById,
             isCurrent: authority.isCurrent,
         });
         if (acquisition.status === 'superseded' || authority.isCurrent()) {
@@ -1781,9 +1927,9 @@ async function releaseCheckpointAudioRetentionInIdb({
     return matches;
 }
 
-async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<string[]> {
+async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
     if (ids.length === 0) {
-        return [];
+        return new Map();
     }
     const database = await openDb();
     const transaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
@@ -1798,7 +1944,9 @@ async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<str
         )
     );
     await awaitTransaction(transaction);
-    return ids.filter((_, index) => !isDurableAudioBufferPair(pairs[index]?.[0], pairs[index]?.[1]));
+    return new Map(
+        ids.map((id, index) => [id, readDurableAudioBufferRevision(pairs[index]?.[0], pairs[index]?.[1])] as const)
+    );
 }
 
 async function ensureDurableAudioBuffersInScope(
@@ -1815,11 +1963,30 @@ async function ensureDurableAudioBuffersInScope(
     ) {
         return { status: 'superseded' };
     }
-    const sourceRevisionById = new Map(
-        requiredIds.map((id) => [id, durabilitySourceById.get(id)?.revision ?? null] as const)
-    );
+    const capturedSourceById = new Map<string, CachedAudioDurabilitySource | undefined>();
+    const runtimeAbsentAtCaptureById = new Map<string, boolean>();
+    for (const id of requiredIds) {
+        const runtimeAbsent = !cache.has(id);
+        runtimeAbsentAtCaptureById.set(id, runtimeAbsent);
+        let source = durabilitySourceById.get(id);
+        if (source === undefined && !runtimeAbsent) {
+            source = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: residentFreezeProjectIdById.get(id),
+                identity: { status: 'unauthenticated' },
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'external',
+            };
+            durabilitySourceById.set(id, source);
+        }
+        capturedSourceById.set(id, source);
+    }
     const isSourceCurrent = (): boolean =>
-        requiredIds.every((id) => (durabilitySourceById.get(id)?.revision ?? null) === sourceRevisionById.get(id));
+        requiredIds.every((id) => durabilitySourceById.get(id) === capturedSourceById.get(id));
     const capturedAttempts = requiredIds.flatMap((id) => {
         const source = durabilitySourceById.get(id);
         if (!source) {
@@ -1884,18 +2051,68 @@ async function ensureDurableAudioBuffersInScope(
         if (recovery === 'failed') {
             return failAndRelease(requiredIds);
         }
-        const failedIds = await findNonDurableAudioBufferIds(requiredIds);
+        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds);
         if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
         }
+        const failedIds = requiredIds.filter((id) => durableRevisionById.get(id) === null);
         if (failedIds.length > 0) {
             return failAndRelease(failedIds);
         }
+        for (const id of requiredIds) {
+            const revision = durableRevisionById.get(id)!;
+            const source = capturedSourceById.get(id);
+            if (source !== undefined) {
+                if (source.identity.status !== 'authenticated') {
+                    return failAndRelease([id]);
+                }
+                if (source.identity.revision !== revision) {
+                    reservations.release();
+                    return { status: 'superseded' };
+                }
+                continue;
+            }
+            if (runtimeAbsentAtCaptureById.get(id) !== true || cache.has(id) || durabilitySourceById.has(id)) {
+                reservations.release();
+                return { status: 'superseded' };
+            }
+        }
+        for (const id of requiredIds) {
+            if (capturedSourceById.get(id) !== undefined) {
+                continue;
+            }
+            const source: CachedAudioDurabilitySource = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: undefined,
+                identity: { status: 'authenticated', revision: durableRevisionById.get(id)! },
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'durable',
+            };
+            durabilitySourceById.set(id, source);
+            capturedSourceById.set(id, source);
+        }
+        const expectedPersistenceRevisionById = new Map(
+            requiredIds.map((id) => [id, durableRevisionById.get(id)!] as const)
+        );
         let released = false;
         const authority: CheckpointRetentionDurabilityAuthority = {
             bufferIds: requiredIds.toSorted(),
-            isCurrent: () => !released && isCurrent(),
+            expectedPersistenceRevisionById,
+            isCurrent: () =>
+                !released &&
+                isCurrent() &&
+                requiredIds.every((id) => {
+                    const source = capturedSourceById.get(id);
+                    return (
+                        source?.identity.status === 'authenticated' &&
+                        source.identity.revision === expectedPersistenceRevisionById.get(id)
+                    );
+                }),
         };
         const receipt: CheckpointRetentionDurabilityReceipt = {
             status: 'durable',
@@ -2469,12 +2686,13 @@ export const audioBufferCache = {
                     for (const entry of entriesToPersist) {
                         const source = entry.durabilitySource;
                         const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
-                        if (!data) {
+                        if (!data || source?.identity.status !== 'candidate') {
                             throw new Error('Imported audio source is unavailable');
                         }
                         objectStore.put(data, entry.id);
                         const metadata: BufferMeta = {
                             lastAccessed: data.lastAccessed,
+                            persistenceRevision: source.identity.revision,
                             sizeInBytes: data.sizeInBytes,
                         };
                         if (entry.freezeProjectId !== undefined) {
@@ -2546,7 +2764,15 @@ export const audioBufferCache = {
                 const sourcesToPersist = sources.filter(([, source]) => source.status !== 'durable');
                 const batchPersistence = persistImportBatch();
                 const sourceAttempts = sourcesToPersist.map(([id, source]) =>
-                    trackCachedAudioDurabilityAttempt(id, source, batchPersistence)
+                    trackCachedAudioDurabilityAttempt(
+                        id,
+                        source,
+                        batchPersistence.then((committed): CachedAudioPersistenceSettlement =>
+                            committed && source.identity.status === 'candidate'
+                                ? { status: 'committed', persistenceRevision: source.identity.revision }
+                                : { status: 'failed' }
+                        )
+                    )
                 );
                 persistenceAttempt = Promise.all(sourceAttempts).then((results) => {
                     const succeeded =

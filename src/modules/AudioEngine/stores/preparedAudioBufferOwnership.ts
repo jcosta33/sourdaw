@@ -10,6 +10,7 @@ export type PreparedAudioBufferOwner = {
 export type PreparedAudioBufferMetadata = {
     freezeProjectId?: number;
     lastAccessed: number;
+    persistenceRevision?: string;
     preparedOwner?: PreparedAudioBufferOwner;
     sizeInBytes: number;
 };
@@ -158,6 +159,9 @@ export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner |
     if (owner === null || typeof owner !== 'object' || Array.isArray(owner)) {
         return 'invalid';
     }
+    if ((metadata as Record<string, unknown>).persistenceRevision !== undefined) {
+        return 'invalid';
+    }
     const candidate = owner as Record<string, unknown>;
     const createdAtMs = candidate.createdAtMs;
     const leaseId = candidate.leaseId;
@@ -189,6 +193,25 @@ export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner |
         validated.promotionRevision = promotionRevision;
     }
     return validated;
+}
+
+export function readPersistentPcmRevision(metadata: unknown): string | null {
+    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return null;
+    }
+    const candidate = metadata as Record<string, unknown>;
+    const ordinaryRevision = candidate.persistenceRevision;
+    const owner = readPreparedOwner(metadata);
+    if (owner === 'invalid') {
+        return null;
+    }
+    if (owner !== null) {
+        return owner.persistenceRevision ?? null;
+    }
+    if (ordinaryRevision === undefined) {
+        return null;
+    }
+    return typeof ordinaryRevision === 'string' && ordinaryRevision.trim().length > 0 ? ordinaryRevision : null;
 }
 
 export function isValidPreparedAudioBufferPair(
