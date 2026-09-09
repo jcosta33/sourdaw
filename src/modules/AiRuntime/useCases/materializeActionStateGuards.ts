@@ -10,6 +10,7 @@ import { type DrumPreviewBranchesRequestScope } from './agentReference/getDrumPr
 import { type MidiOverlapTransformRequestScope } from './agentReference/getMidiOverlapTransformPromptScope';
 import { type SyncopatedArpeggioRequestScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { type ProjectContext, type ProjectContextAdjustmentLayer, type ProjectContextTrack } from './getProjectContext';
+import { stampProcessingOnlyParameterPolicy } from './stampProcessingOnlyParameterPolicy';
 
 type MaterializeActionStateGuardsResult =
     { status: 'accepted'; actions: AppAction[] } | { status: 'rejected'; reason: string };
@@ -745,5 +746,5 @@ export function materializeActionStateGuards(
         materialized.push(action);
     }
 
-    return { status: 'accepted', actions: materialized };
+    return { status: 'accepted', actions: stampProcessingOnlyParameterPolicy(materialized) };
 }

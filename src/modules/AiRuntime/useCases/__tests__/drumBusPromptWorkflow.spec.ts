@@ -1355,7 +1355,12 @@ describe('drum bus prompt workflow', () => {
             },
             {
                 type: 'setTrackGain',
-                payload: { trackId: parallelBusId, gain: targetGain, expectedGain: 1 },
+                payload: {
+                    trackId: parallelBusId,
+                    gain: targetGain,
+                    expectedGain: 1,
+                    automationRecordingPolicy: 'suppressed',
+                },
             },
             {
                 type: 'renderProjectSections',
