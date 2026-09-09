@@ -74,3 +74,14 @@ success and with a same-ID replacement before the old attempt settles; neither a
 old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
+
+## Lesson from the PR #806 transaction-scope escape
+
+PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until
+after commit flushing. A repository publication listener could re-enter it after the flush had snapshotted pending
+writes, update another adapter's cache, and leave that document write to land after `commit()` returned.
+
+Treat transaction lifecycle as one owner-wide authority. Use an atomic test port that publishes document A and then
+synchronously invokes a listener: both supplied and captured scopes must refuse before entering their callbacks while
+A commits, and document B, its cache, and the pending-write count must remain unchanged after a later flush. Also enter
+a scope before calling commit or abort, then attempt both `set` and `clear`; neither may mutate cache or durable truth.

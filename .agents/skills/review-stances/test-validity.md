@@ -125,6 +125,17 @@ add one case with equal end timestamps and one with the enclosure ending a singl
 early. The first must admit only a unique enclosure; the second and the existing overlap fixtures
 must refuse.
 
+### 2026-09-09 — transaction tests skipped the committing window (escaped via PR #806)
+
+The captured-scope test entered only after settlement. It never exercised the separately supplied scope while commit
+was publishing, nor a scope entered before commit whose callback continued with a later write, so one guard could mask
+the absence of the other.
+
+Probe that would have caught it: publish document A through the real atomic port shape and synchronously re-enter each
+scope from its listener. Assert callback entry count is zero separately from cache, document, and pending-write state.
+Then enter a scope before commit or abort and attempt `set` and `clear` afterward; reverting only the write-context guard
+must fail that case while reverting only a scope-entry guard must fail its callback-entry assertion.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
