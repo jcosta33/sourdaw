@@ -148,6 +148,73 @@ function seedBuffer(
     });
 }
 
+type PcmFixture = {
+    sampleRate: number;
+    channels: readonly (readonly number[])[];
+};
+
+function seedPcmBuffer(controls: FakeAudioIndexedDbControls, id: string, fixture: PcmFixture): void {
+    const channelData = fixture.channels.map((values) => new Float32Array(values));
+    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
+    controls.committed.set(id, {
+        sampleRate: fixture.sampleRate,
+        numberOfChannels: channelData.length,
+        channelData,
+        lastAccessed: 100,
+        sizeInBytes,
+    });
+    controls.committedMeta.set(id, {
+        lastAccessed: 100,
+        persistenceRevision: `${id}-persistence`,
+        sizeInBytes,
+    });
+}
+
+function runtimePcm(fixture: PcmFixture): AudioBuffer {
+    const buffer = new AudioBuffer({
+        length: fixture.channels[0]!.length,
+        numberOfChannels: fixture.channels.length,
+        sampleRate: fixture.sampleRate,
+    });
+    for (const [index, values] of fixture.channels.entries()) {
+        buffer.getChannelData(index).set(values);
+    }
+    return buffer;
+}
+
+function expectRuntimePcm(actual: AudioBuffer | undefined, expected: PcmFixture): void {
+    if (actual === undefined) {
+        throw new Error('Expected runtime PCM');
+    }
+    expect(actual.sampleRate).toBe(expected.sampleRate);
+    expect(actual.numberOfChannels).toBe(expected.channels.length);
+    expect(actual.length).toBe(expected.channels[0]!.length);
+    for (const [index, values] of expected.channels.entries()) {
+        expect(Array.from(actual.getChannelData(index))).toEqual(values);
+    }
+}
+
+function expectSerializedPcm(
+    actual:
+        | {
+              sampleRate: number;
+              numberOfChannels: number;
+              channelData: readonly Float32Array[];
+          }
+        | undefined,
+    expected: PcmFixture
+): void {
+    if (actual === undefined) {
+        throw new Error('Expected serialized PCM');
+    }
+    expect(actual.sampleRate).toBe(expected.sampleRate);
+    expect(actual.numberOfChannels).toBe(expected.channels.length);
+    expect(actual.channelData[0]?.length).toBe(expected.channels[0]!.length);
+    for (const [index, values] of expected.channels.entries()) {
+        expect(Array.from(actual.channelData[index] ?? [])).toEqual(values);
+    }
+}
+
 function versionKey(id: string, persistenceRevision = `${id}-persistence`): string {
     return JSON.stringify([id, persistenceRevision]);
 }
@@ -198,8 +265,9 @@ function seedRecovery(controls: FakeAudioIndexedDbControls, id: string, values: 
 
 function audioContext(): BaseAudioContext {
     return createTestContext(
-        vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
-            createAudioBuffer({ length, sampleRate })
+        vi.fn(
+            (numberOfChannels: number, length: number, sampleRate: number) =>
+                new AudioBuffer({ length, numberOfChannels, sampleRate })
         )
     );
 }
@@ -363,7 +431,21 @@ describe('checkpoint audio retention', () => {
     });
 
     it('reads immutable retained PCM across ordinary replacement, restart, and caller mutation', async () => {
-        seedBuffer(controls, 'same-id', [0.25]);
+        const originalPcm: PcmFixture = {
+            sampleRate: 44_100,
+            channels: [
+                [0.25, -0.5, 0.75, -1],
+                [0.125, -0.25, 0.5, -0.75],
+            ],
+        };
+        const replacementPcm: PcmFixture = {
+            sampleRate: 48_000,
+            channels: [
+                [-0.125, 0.375, -0.625, 0.875],
+                [1, -0.875, 0.625, -0.375],
+            ],
+        };
+        seedPcmBuffer(controls, 'same-id', originalPcm);
         const api = await importApi();
         const btoa = vi.spyOn(globalThis, 'btoa');
         const first = await acquireCurrentRetention(api, {
@@ -377,11 +459,12 @@ describe('checkpoint audio retention', () => {
         });
         expect(controls.committedCheckpointAudioVersions.size).toBe(1);
         expect(controls.committedCheckpointAudioVersions.get(versionKey('same-id'))).toBe(firstBacking);
+        expectSerializedPcm(firstBacking, originalPcm);
 
         const replacement = await api.importBuffers({
             audioContext: audioContext(),
             buffers: {},
-            decodedBuffers: { 'same-id': runtimeBuffer(0.75) },
+            decodedBuffers: { 'same-id': runtimePcm(replacementPcm) },
             cacheIds: ['same-id'],
         });
         expect(replacement?.publish()).toBe(1);
@@ -405,17 +488,17 @@ describe('checkpoint audio retention', () => {
             throw new Error('Expected replacement retention');
         }
         expect(controls.committedCheckpointAudioVersions.size).toBe(2);
-        expect(controls.committedCheckpointAudioVersions.get(versionKey('same-id'))?.channelData[0]?.[0]).toBe(0.25);
-        expect(
-            controls.committedCheckpointAudioVersions.get(versionKey('same-id', replacementRevision))
-                ?.channelData[0]?.[0]
-        ).toBe(0.75);
+        expectSerializedPcm(controls.committedCheckpointAudioVersions.get(versionKey('same-id')), originalPcm);
+        expectSerializedPcm(
+            controls.committedCheckpointAudioVersions.get(versionKey('same-id', replacementRevision)),
+            replacementPcm
+        );
 
         vi.resetModules();
         const reopened = await importApi();
         const ordinary = await reopened.prepare({ audioContext: audioContext(), bufferIds: ['same-id'] });
         expect(ordinary?.publish()).toBe(1);
-        expect(reopened.get({ bufferId: 'same-id' })?.getChannelData(0)[0]).toBe(0.75);
+        expectRuntimePcm(reopened.get({ bufferId: 'same-id' }), replacementPcm);
 
         const retainedA = await reopened.read({
             checkpointId: 'checkpoint-a',
@@ -438,21 +521,16 @@ describe('checkpoint audio retention', () => {
             expectedBufferIds: ['same-id'],
             audioContext: audioContext(),
         });
-        expect(retainedA.status === 'read' && retainedA.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
-            0.25
-        );
-        expect(retainedB.status === 'read' && retainedB.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
-            0.25
-        );
-        expect(retainedC.status === 'read' && retainedC.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(
-            0.75
-        );
-        expect(btoa).not.toHaveBeenCalled();
-
-        if (retainedA.status !== 'read') {
+        if (retainedA.status !== 'read' || retainedB.status !== 'read' || retainedC.status !== 'read') {
             throw new Error('Expected retained checkpoint PCM');
         }
-        retainedA.decodedAudioBuffers['same-id']!.getChannelData(0)[0] = -1;
+        expectRuntimePcm(retainedA.decodedAudioBuffers['same-id'], originalPcm);
+        expectRuntimePcm(retainedB.decodedAudioBuffers['same-id'], originalPcm);
+        expectRuntimePcm(retainedC.decodedAudioBuffers['same-id'], replacementPcm);
+        expect(btoa).not.toHaveBeenCalled();
+
+        retainedA.decodedAudioBuffers['same-id']!.getChannelData(0)[2] = -0.25;
+        retainedA.decodedAudioBuffers['same-id']!.getChannelData(1)[3] = 0.25;
         retainedA.decodedAudioBuffers['same-id'] = runtimeBuffer(-2);
         const reread = await reopened.read({
             checkpointId: 'checkpoint-a',
@@ -461,7 +539,10 @@ describe('checkpoint audio retention', () => {
             expectedBufferIds: ['same-id'],
             audioContext: audioContext(),
         });
-        expect(reread.status === 'read' && reread.decodedAudioBuffers['same-id']?.getChannelData(0)[0]).toBe(0.25);
+        if (reread.status !== 'read') {
+            throw new Error('Expected retained checkpoint PCM reread');
+        }
+        expectRuntimePcm(reread.decodedAudioBuffers['same-id'], originalPcm);
 
         await reopened.release({
             checkpointId: 'checkpoint-a',
