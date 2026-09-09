@@ -361,4 +361,28 @@ describe('executeImmediatePromptCommand', () => {
             })
         );
     });
+
+    it('executes on the compile-minted binding when no compiled approval is available', async () => {
+        const { commandBatch, parsedCommandBatch } = await createFixture();
+        mocks.executePlannedActions.mockResolvedValue({ status: 'no-op' });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        expect(mocks.issueApprovalBinding).not.toHaveBeenCalled();
+        const input = mocks.executePlannedActions.mock.calls[0]?.[0];
+        expect(input?.commandBatch).toBe(commandBatch);
+        expect(input?.commandBatch).not.toHaveProperty('approvalBinding');
+    });
 });

@@ -321,7 +321,7 @@ async function dispatchPromptPlan(input: {
             projectRevision,
             executionMode: result.executionMode,
             group: commandGroup,
-            agentApproval: compiledActionExecution.agentApproval,
+            agentApproval: compiledActionExecution.allowApproval,
             commandBatch,
             parsedCommandBatch,
             onExecutionSettlementWarning: (warning) => {

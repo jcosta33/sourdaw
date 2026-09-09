@@ -32,7 +32,7 @@ type ExecuteImmediatePromptCommandInput = {
     projectRevision: string;
     executionMode: ExecuteInput['executionMode'];
     group: ReturnType<typeof generateGroupId>;
-    agentApproval: AgentApproval;
+    agentApproval?: AgentApproval | null;
     commandBatch: CommandExecutionInput['commandBatch'];
     parsedCommandBatch: ParsedCommandBatch;
     onExecutionSettlementWarning: (warning: string | null) => void;
@@ -122,21 +122,23 @@ export async function executeImmediatePromptCommand(
         controller: abortController,
         reason: 'User cancelled the run while command execution was active.',
     });
-    // The approval binding re-validates during the batch's own authorization;
-    // its staleness classification is observed here and read back by planned
-    // -action settlement through the getter below. This re-binding replaces the
+    // The compiled allow-path approval is re-bound here with an observer so the
+    // validator's staleness classification is read back by planned-action
+    // settlement through the getter below; this re-binding replaces the
     // observer-less binding minted at compile time.
     const approvalBindingRejectionRef: { current: { reason: string; stale: boolean } | null } = { current: null };
-    const boundCommandBatch = {
-        ...commandBatch,
-        approvalBinding: issueAgentCommandApprovalBinding({
-            approval: input.agentApproval,
-            commandBatch,
-            onRejection: (rejection) => {
-                approvalBindingRejectionRef.current = rejection;
-            },
-        }),
-    };
+    const boundCommandBatch = input.agentApproval
+        ? {
+              ...commandBatch,
+              approvalBinding: issueAgentCommandApprovalBinding({
+                  approval: input.agentApproval,
+                  commandBatch,
+                  onRejection: (rejection) => {
+                      approvalBindingRejectionRef.current = rejection;
+                  },
+              }),
+          }
+        : commandBatch;
     let execution: Awaited<ReturnType<typeof executePlannedActions>>;
     try {
         execution = await executePlannedActions({
