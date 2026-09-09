@@ -1,0 +1,105 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_9b530f08172a54::t_01b4561621fd0e 66-107
+AGENTS.md
+  s_9b530f08172a54::t_fe0c1b5c0e5d60 23-28,257-258
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_9b530f08172a54::t_e033f0c6cb4c23 23,46,48,54,57,62,165-167,170-172,175-177
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/automationRangeStrategy.spec.ts
+  s_9b530f08172a54::t_2a74cbe2e659f3 1-148
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  s_9b530f08172a54::t_296941d2d858b6 1-431
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/midiStrategy.spec.ts
+  s_9b530f08172a54::t_6db68cc6788887 1-211
+src/modules/AiRuntime/transformers/llmActionStrategies/automationRangeStrategy.ts
+  s_9b530f08172a54::t_f3a83a5e7933ce 1-228
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_9b530f08172a54::t_95a68eb9889030 66-78,143-146
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_9b530f08172a54::t_b00cfa45f19549 1-475
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  s_9b530f08172a54::t_b98932025ca127 1-348
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategy.ts
+  s_9b530f08172a54::t_202c711936a8f3 1-32
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategyGuards.ts
+  s_9b530f08172a54::t_7718b4c653abc6 1-22
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategyTypes.ts
+  s_9b530f08172a54::t_0ff1e364876c8f 1-57
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_9b530f08172a54::t_09e8cd096544cd 12
+src/modules/AiRuntime/transformers/llmActionStrategies/midiStrategy.ts
+  s_9b530f08172a54::t_9eeb1764fd8ef6 1-389
+src/modules/AudioEngine/repositories/nativeGraph/isNativeGraphRuntime.ts
+  s_9b530f08172a54::t_729c7f52d3f826 1-16
+src/modules/AudioEngine/repositories/nativeGraph/probeNativeGraphTransport.ts
+  s_9b530f08172a54::t_2fa3337a7aa2f5 6,32
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_ec066b8e875081 122-123
+src/modules/AudioEngine/useCases/livePlayback/__tests__/claimNativeSessionRearm.spec.ts
+  s_9b530f08172a54::t_5d05a50ec8cbb7 8-11,19,52-76
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_3007501fc3959c 45-49,80,86-89,323,330-345,643,663,686,696,725,773,797,821,863,905,932,949,982,1022,1040,1065-1126,1128-1132,1138,1144-1145,1155,1167,1178-1212,1215-1216,1225,1242,1266,1280,1298,1342,1371,1401,1415,1422,1438,1446,1469,1482,1485,1491,1502,1518,1534,1554,1567,1588,1597,1624,1646,1681,1701-1702,1712,1729,1746-1747,1759,1779,1801,1830,1858,1887,1903,1919,1934,1968,1983,2006,2023,2095,2107,2126,2139,2160,2193,2219,2251,2273,2288,2302,2315,2326,2348,2370,2424,2449,2467,2473,2492,2504,2521
+src/modules/AudioEngine/useCases/livePlayback/__tests__/retireOrphanedNativeEngine.spec.ts
+  s_9b530f08172a54::t_fc80977046b511 16-19,33-43,60-66,75-76,164-264
+src/modules/AudioEngine/useCases/livePlayback/claimNativeSessionRearm.ts
+  s_9b530f08172a54::t_4d2f564ddd7bb4 8-11
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionOffered.ts
+  s_9b530f08172a54::t_4aee0644dc4679 1-15
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_464409b232afa3 161-166,168-179,214
+src/modules/AudioEngine/useCases/livePlayback/nativeSessionRearmClaimHolds.ts
+  s_9b530f08172a54::t_7afc51c2669f0c 5-9
+src/modules/AudioEngine/useCases/livePlayback/projectRollPosition.ts
+  s_9b530f08172a54::t_da4ed99cba616e 2-12,15,55
+src/modules/AudioEngine/useCases/livePlayback/retireOrphanedNativeEngine.ts
+  s_9b530f08172a54::t_3a1b6e0704c1b9 38-54,107-115
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_d517bcf81a9c5f 144-187,192-193,195,523-529,535-540,670-671,709-718,732-753,775-777,922,945-956,959-961,963-977,979,982-1034,1036-1093,1095-1099
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_9b530f08172a54::t_835f55929f7464 1-263
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_9b530f08172a54::t_5556eeaef829ef 17,42,54,63-64
+src/modules/Command/useCases/index.ts
+  s_9b530f08172a54::t_db3854db8def08 46
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_9becfeebbed365 237-240
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_9a3ae072feda78 23-26
+src/modules/Transport/useCases/playheadScheduler/claimSchedulerSession.ts
+  s_9b530f08172a54::t_c78e24138681ca 1-22
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_38fdf6233df062 40-48,66-69,75-78,83-87,116,129-138,146-150,152-155,270-273,288-296
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_9b530f08172a54::t_151d4ccafcc78b 3-7,10,15-17,26-33,43,46-51,80-83,220,231-242,247,300-509
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_9b530f08172a54::t_7732ae2257bdc5 49,134-137,150-151,366-509
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_75f88d2d24ae85 35,65-76
+src/modules/Transport/useCases/transportControls/setPlayback.ts
+  s_9b530f08172a54::t_8d5e95144f06f0 13
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_863dbc9e22017e 7-21,31-42,45,48,51
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_2bbe7a38ee0cfc 2,11,15,17-24,70-92
+src/modules/Transport/useCases/transportControls/startSchedulerWhenNativeSessionSettles.ts
+  s_9b530f08172a54::t_539decd49f8d9d 1-92
+src/modules/Transport/useCases/transportControls/togglePlayback.ts
+  s_9b530f08172a54::t_7974ec59d62127 15
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_9b530f08172a54::t_0418a589b15dfa 27-48,71-77,126-127,130-135,166-173,228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8c32a2f99ace82287abc326396c61139b2251008",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
