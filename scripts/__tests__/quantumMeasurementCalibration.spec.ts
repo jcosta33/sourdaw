@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     calibrateQuantumMeasurementPayload,
@@ -6,6 +12,66 @@ import {
     calibrationFailureReport,
     type QuantumMeasurementCalibrationInput,
 } from '../quantumMeasurementCalibration';
+
+const repositoryRoot = resolve(import.meta.dirname, '../..');
+const runnerPath = resolve(repositoryRoot, 'crates/daw-dsp/benches/wasm/run.mjs');
+const helperUrl = pathToFileURL(resolve(repositoryRoot, 'scripts/quantumMeasurementCalibration.ts')).href;
+const temporaryDirectories: string[] = [];
+
+afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0)) {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+function extractBetween(source: string, start: string, end: string): string {
+    const startIndex = source.indexOf(start);
+    const endIndex = source.indexOf(end, startIndex);
+    if (startIndex < 0 || endIndex < 0) {
+        throw new Error(`Missing runner source boundary: ${start} ... ${end}`);
+    }
+    return source.slice(startIndex, endIndex);
+}
+
+function runnerFixtureSource(): string {
+    const source = readFileSync(runnerPath, 'utf8');
+    const reporter = extractBetween(
+        source,
+        'function reportFailedRun(',
+        '/**\n * The reference project, defined here because'
+    );
+    const admission = extractBetween(
+        source,
+        '    const calibration = calibrateQuantumMeasurementPayload(payload);',
+        '    let calibratedRowIndex = 0;'
+    );
+    return `
+import { writeFileSync } from 'node:fs';
+import {
+    calibrateQuantumMeasurementPayload,
+    calibrationFailureReport,
+} from ${JSON.stringify(helperUrl)};
+
+${reporter}
+
+async function exercise() {
+    const payload = {
+        results: [{
+            id: 'grand_boule',
+            samplesTicks: [20000],
+            segmentIndex: [1],
+            segmentRates: [100000, 0, 200000],
+        }],
+    };
+    const machine = { platform: 'fixture' };
+    const options = { json: process.argv[2] };
+${admission}
+    console.log('SUCCESS TABLE');
+}
+
+await exercise();
+`;
+}
 
 function input(overrides: Partial<QuantumMeasurementCalibrationInput> = {}): QuantumMeasurementCalibrationInput {
     return {
@@ -141,5 +207,36 @@ describe('quantum measurement calibration', () => {
             calibrationFailures: [failure],
         });
         expect(report.failedRun).not.toHaveProperty('rows');
+    });
+
+    it('executes the actual runner refusal before statistics or successful output', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-quantum-calibration-'));
+        temporaryDirectories.push(directory);
+        const programPath = join(directory, 'runner-admission.mjs');
+        const jsonPath = join(directory, 'failed.json');
+        writeFileSync(programPath, runnerFixtureSource());
+
+        const result = spawnSync(process.execPath, [programPath, jsonPath], { encoding: 'utf8' });
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('NOT PUBLISHABLE');
+        expect(result.stderr).toContain('grand_boule');
+        expect(result.stderr).toContain('original segment 1, rate 0, ticks 20000');
+        expect(result.stdout).not.toContain('SUCCESS TABLE');
+        const failedRun: unknown = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        expect(failedRun).toMatchObject({
+            machine: { platform: 'fixture' },
+            failures: [expect.stringContaining('calibration refusal')],
+            calibrationFailures: [
+                {
+                    deviceId: 'grand_boule',
+                    sampleIndex: 0,
+                    originalSegmentIndex: 1,
+                    originalSegmentRate: 0,
+                    reason: 'invalid-rate',
+                },
+            ],
+        });
+        expect(failedRun).not.toHaveProperty('rows');
     });
 });
