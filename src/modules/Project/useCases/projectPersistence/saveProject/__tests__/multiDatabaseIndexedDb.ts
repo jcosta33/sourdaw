@@ -11,7 +11,13 @@ type DatabaseState = {
     activeTransaction: FakeTransaction | null;
     pendingTransactions: FakeTransaction[];
     stores: Map<string, Map<IDBValidKey, unknown>>;
+    indexesByStore: Map<string, Set<string>>;
     version: number;
+};
+
+type FakeUpgradeObjectStore = {
+    createIndex: (indexName: string, keyPath: string | string[], options?: IDBIndexParameters) => unknown;
+    indexNames: { contains: (indexName: string) => boolean };
 };
 
 type InstallMultiDatabaseIndexedDbResult = {
@@ -275,12 +281,30 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
         }
         const created: DatabaseState = {
             activeTransaction: null,
+            indexesByStore: new Map(),
             pendingTransactions: [],
             stores: new Map(),
             version: 0,
         };
         databases.set(name, created);
         return created;
+    }
+
+    function upgradeObjectStore(database: DatabaseState, storeName: string): FakeUpgradeObjectStore {
+        const indexes = database.indexesByStore.get(storeName);
+        if (!indexes) {
+            throw new DOMException(`Object store ${storeName} does not exist`, 'NotFoundError');
+        }
+        return {
+            createIndex: (indexName) => {
+                if (indexes.has(indexName)) {
+                    throw new DOMException(`Index ${indexName} already exists`, 'ConstraintError');
+                }
+                indexes.add(indexName);
+                return {};
+            },
+            indexNames: { contains: (indexName) => indexes.has(indexName) },
+        };
     }
 
     function startNext(database: DatabaseState): void {
@@ -300,12 +324,13 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
             const database = databaseState(name);
             const connection = {
                 close: (): void => undefined,
-                createObjectStore: (storeName: string): undefined => {
+                createObjectStore: (storeName: string): FakeUpgradeObjectStore => {
                     if (database.stores.has(storeName)) {
                         throw new DOMException(`Object store ${storeName} already exists`, 'ConstraintError');
                     }
                     database.stores.set(storeName, new Map());
-                    return undefined;
+                    database.indexesByStore.set(storeName, new Set());
+                    return upgradeObjectStore(database, storeName);
                 },
                 objectStoreNames: { contains: (storeName: string): boolean => database.stores.has(storeName) },
                 onclose: null as (() => void) | null,
@@ -340,6 +365,9 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
                 onsuccess: null as (() => void) | null,
                 onupgradeneeded: null as (() => void) | null,
                 result: connection,
+                transaction: {
+                    objectStore: (storeName: string) => upgradeObjectStore(database, storeName),
+                },
             };
             setTimeout(() => {
                 if (version < database.version) {
@@ -348,7 +376,29 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
                     return;
                 }
                 if (version > database.version) {
-                    request.onupgradeneeded?.();
+                    const previousVersion = database.version;
+                    const previousStores = new Map(database.stores);
+                    const previousIndexes = new Map(
+                        [...database.indexesByStore].map(
+                            ([storeName, indexes]) => [storeName, new Set(indexes)] as const
+                        )
+                    );
+                    try {
+                        request.onupgradeneeded?.();
+                    } catch (error) {
+                        database.stores = previousStores;
+                        database.indexesByStore = previousIndexes;
+                        database.version = previousVersion;
+                        request.error =
+                            error instanceof DOMException
+                                ? error
+                                : new DOMException(
+                                      error instanceof Error ? error.message : String(error),
+                                      'UnknownError'
+                                  );
+                        request.onerror?.();
+                        return;
+                    }
                     database.version = version;
                 }
                 request.onsuccess?.();

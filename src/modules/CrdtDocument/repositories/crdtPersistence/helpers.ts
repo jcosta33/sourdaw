@@ -1,10 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 
 export const DB_NAME = 'sourdaw-crdt-docs';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const STORE_NAME = 'documents';
 export const CHECKPOINT_ARTIFACT_STORE_NAME = 'checkpoint-artifacts';
 export const CHECKPOINT_CATALOG_STORE_NAME = 'checkpoint-catalog';
+export const CHECKPOINT_OWNER_CATALOG_STORE_NAME = 'checkpoint-owner-catalogs';
+export const CHECKPOINT_OWNER_PROJECT_INDEX_NAME = 'ownerProjectId';
 let _db: IDBDatabase | null = null;
 let _dbPromise: Promise<IDBDatabase | null> | null = null;
 let _dbGeneration = 0;
@@ -60,11 +62,26 @@ export function openDatabase(): Promise<IDBDatabase | null> {
         if (!database.objectStoreNames.contains(STORE_NAME)) {
             database.createObjectStore(STORE_NAME);
         }
+        let artifactStore: IDBObjectStore;
         if (!database.objectStoreNames.contains(CHECKPOINT_ARTIFACT_STORE_NAME)) {
-            database.createObjectStore(CHECKPOINT_ARTIFACT_STORE_NAME);
+            artifactStore = database.createObjectStore(CHECKPOINT_ARTIFACT_STORE_NAME);
+        } else {
+            artifactStore = request.transaction!.objectStore(CHECKPOINT_ARTIFACT_STORE_NAME);
         }
+        if (!artifactStore.indexNames.contains(CHECKPOINT_OWNER_PROJECT_INDEX_NAME)) {
+            artifactStore.createIndex(CHECKPOINT_OWNER_PROJECT_INDEX_NAME, 'ownerProjectId');
+        }
+        let catalogStore: IDBObjectStore;
         if (!database.objectStoreNames.contains(CHECKPOINT_CATALOG_STORE_NAME)) {
-            database.createObjectStore(CHECKPOINT_CATALOG_STORE_NAME);
+            catalogStore = database.createObjectStore(CHECKPOINT_CATALOG_STORE_NAME);
+        } else {
+            catalogStore = request.transaction!.objectStore(CHECKPOINT_CATALOG_STORE_NAME);
+        }
+        if (!catalogStore.indexNames.contains(CHECKPOINT_OWNER_PROJECT_INDEX_NAME)) {
+            catalogStore.createIndex(CHECKPOINT_OWNER_PROJECT_INDEX_NAME, 'ownerProjectId');
+        }
+        if (!database.objectStoreNames.contains(CHECKPOINT_OWNER_CATALOG_STORE_NAME)) {
+            database.createObjectStore(CHECKPOINT_OWNER_CATALOG_STORE_NAME);
         }
     };
 
