@@ -94,7 +94,9 @@ known durable, hydrated, and evicted PCM, and attack fresh durability checks sep
 older receipt. Reuse one buffer ID and lease with different PCM and persistence revisions, then exercise promotion and
 discard over temporary and already-settled durable owners. Local object identity, runtime tokens, lease equality, and
 scope locks do not establish persistent PCM identity; the source map introduced by #3877 and receipt authentication
-added by #4051 each require this cross-instance proof.
+added by #4051 each require this cross-instance proof. Compose eviction with an explicit retained project reset and
+hydration in one attack: isolated eviction and hydration cases do not prove that the retained transition preserves an
+identity witness when no decoded runtime remains.
 
 ## References
 

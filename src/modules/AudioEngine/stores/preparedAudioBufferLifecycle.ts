@@ -1264,7 +1264,6 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         let attempt: PreparedPersistenceAttempt | undefined;
         let generation: number | undefined;
         let mutationSettlement: PreparedMutationSettlement | undefined;
-        let publicationAuthority: PreparedPcmPublicationAuthority | undefined;
         let activePersistenceRevision: string | undefined;
         let persistenceRevision: string | undefined;
         try {
@@ -1282,7 +1281,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             mutationSettlement = beginMutationSettlement(id);
             transactions.abort(id, 'promotion');
             transactions.abort(id, 'reclamation');
-            publicationAuthority = host.capturePcmPublicationAuthority(id);
+            const publicationAuthority = host.capturePcmPublicationAuthority(id);
             admittedOwner = runtimeOwnerById.get(id);
             admittedToken = nextToken();
             if (admittedOwner?.kind === 'prepared') {

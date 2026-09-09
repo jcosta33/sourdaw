@@ -486,6 +486,10 @@ type RetainedCachedAudioDurabilitySource = Readonly<
     >
 >;
 
+type StoredPcmHydrationAdmission =
+    | { status: 'authenticated'; persistenceRevision: string; sourceStatus: CachedAudioDurabilitySource['status'] }
+    | { status: 'unknown' };
+
 let nextDurabilitySourceRevision = 0;
 const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
 
@@ -981,9 +985,6 @@ function captureRetainedCachedAudioDurabilitySources(
 ): Map<string, RetainedCachedAudioDurabilitySource> {
     const retainedSources = new Map<string, RetainedCachedAudioDurabilitySource>();
     for (const id of retainedIds) {
-        if (!cache.has(id)) {
-            continue;
-        }
         const source = durabilitySourceById.get(id);
         if (!source || !source.isAuthoritative()) {
             continue;
@@ -1004,9 +1005,6 @@ function restoreRetainedCachedAudioDurabilitySources(
     retainedSources: ReadonlyMap<string, RetainedCachedAudioDurabilitySource>
 ): void {
     for (const [id, retained] of retainedSources) {
-        if (!cache.has(id)) {
-            continue;
-        }
         const source: CachedAudioDurabilitySource = {
             attempt: undefined,
             data: retained.data,
@@ -1410,7 +1408,13 @@ async function prepareBuffersFromIdb({
     if (ids !== undefined) {
         recordAudioStorageIntent(ids);
     }
-    const staged: Array<{ id: string; buffer: AudioBuffer; metadata: BufferMeta | undefined }> = [];
+    const staged: Array<{
+        admission: StoredPcmHydrationAdmission;
+        buffer: AudioBuffer;
+        id: string;
+        metadata: BufferMeta | undefined;
+        persistenceRevision: string | null;
+    }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
     let candidateSettled = false;
@@ -1522,11 +1526,28 @@ async function prepareBuffersFromIdb({
             ) {
                 continue;
             }
+            const persistenceRevision = readPersistentPcmRevision(meta);
+            const source = durabilitySourceById.get(id);
+            let admission: StoredPcmHydrationAdmission = { status: 'unknown' };
+            if (source !== undefined) {
+                if (
+                    !source.isAuthoritative() ||
+                    source.identity.status !== 'authenticated' ||
+                    source.identity.revision !== persistenceRevision
+                ) {
+                    continue;
+                }
+                admission = {
+                    status: 'authenticated',
+                    persistenceRevision: source.identity.revision,
+                    sourceStatus: source.status,
+                };
+            }
             const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
             for (let channel = 0; channel < data.numberOfChannels; channel++) {
                 buffer.getChannelData(channel).set(data.channelData[channel]!);
             }
-            staged.push({ id, buffer, metadata: meta });
+            staged.push({ admission, id, buffer, metadata: meta, persistenceRevision });
         }
     } catch {
         releaseReservations();
@@ -1558,9 +1579,21 @@ async function prepareBuffersFromIdb({
             published = true;
             candidateSettled = true;
             publishProjectReservations();
-            for (const { id, buffer, metadata } of staged) {
+            let publishedCount = 0;
+            for (const { admission, id, buffer, metadata, persistenceRevision } of staged) {
+                const currentSource = durabilitySourceById.get(id);
+                const sourceIsCurrent =
+                    admission.status === 'unknown'
+                        ? currentSource === undefined
+                        : currentSource !== undefined &&
+                          currentSource.isAuthoritative() &&
+                          currentSource.status === admission.sourceStatus &&
+                          currentSource.identity.status === 'authenticated' &&
+                          currentSource.identity.revision === admission.persistenceRevision;
+                if (cache.has(id) || !sourceIsCurrent) {
+                    continue;
+                }
                 audioCacheSet(id, buffer, metadata?.freezeProjectId, metadata !== undefined);
-                const persistenceRevision = readPersistentPcmRevision(metadata);
                 durabilitySourceById.set(id, {
                     attempt: undefined,
                     data: undefined,
@@ -1575,8 +1608,9 @@ async function prepareBuffersFromIdb({
                     revision: ++nextDurabilitySourceRevision,
                     status: typeof persistenceRevision === 'string' ? 'durable' : 'external',
                 });
+                publishedCount++;
             }
-            return staged.length;
+            return publishedCount;
         },
     };
 }

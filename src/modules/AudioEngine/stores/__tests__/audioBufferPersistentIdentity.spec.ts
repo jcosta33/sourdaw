@@ -256,6 +256,108 @@ describe('audio buffer persistent identity across module instances', () => {
         await expectFreshEnsureRefusesReplacedSource(setupEvictedSource, 'evicted-fresh', null);
     });
 
+    it('preserves an evicted known source identity when its ID is explicitly retained', async () => {
+        const retentionPutCount = await observeCheckpointRetentionPuts();
+        const id = 'evicted-explicitly-retained';
+        const { source, replacement } = await setupEvictedSource(id);
+        await overwriteWithReplacement(replacement, id);
+
+        source.clearRuntime({ retainedIds: [id] });
+        const result = await source.ensure([id]);
+        try {
+            expect(result.status).not.toBe('durable');
+            expect(retentionPutCount()).toBe(0);
+            expect(controls.committedCheckpointRetentions.size).toBe(0);
+        } finally {
+            if (result.status === 'durable') {
+                result.release();
+            }
+        }
+    });
+
+    it('does not authenticate replacement PCM by hydrating over an evicted known source', async () => {
+        const id = 'evicted-hydration-replacement';
+        const { source, replacement } = await setupEvictedSource(id);
+        await overwriteWithReplacement(replacement, id);
+
+        const candidate = await source.prepare({ audioContext: audioContext(), bufferIds: [id] });
+        const published = candidate?.publish() ?? 0;
+        const result = await source.ensure([id]);
+        try {
+            expect({
+                cachedSample: cachedSample(source, id),
+                ensureStatus: result.status,
+                published,
+            }).toEqual({
+                cachedSample: null,
+                ensureStatus: 'superseded',
+                published: 0,
+            });
+        } finally {
+            if (result.status === 'durable') {
+                result.release();
+            }
+        }
+    });
+
+    it('publishes unknown valid durable PCM with its same-read identity', async () => {
+        const replacement = await loadRealm();
+        await persistSample(replacement, 'unknown-valid-hydration', 0.25);
+
+        vi.resetModules();
+        const source = await loadRealm();
+        const candidate = await source.prepare({
+            audioContext: audioContext(),
+            bufferIds: ['unknown-valid-hydration'],
+        });
+        expect(candidate?.publish()).toBe(1);
+        expect(cachedSample(source, 'unknown-valid-hydration')).toBe(Math.fround(0.25));
+        const receipt = await requireDurableReceipt(source, 'unknown-valid-hydration');
+        receipt.release();
+    });
+
+    it('hydrates matching durable PCM for a known evicted source', async () => {
+        const id = 'matching-evicted-hydration';
+        const { source } = await setupEvictedSource(id);
+        const candidate = await source.prepare({ audioContext: audioContext(), bufferIds: [id] });
+
+        expect(candidate?.publish()).toBe(1);
+        expect(cachedSample(source, id)).toBe(Math.fround(0.25));
+        const receipt = await requireDurableReceipt(source, id);
+        receipt.release();
+    });
+
+    it('publishes matching evicted PCM after the Project prepare-retain-reset order', async () => {
+        const id = 'matching-evicted-retained-hydration';
+        const { source } = await setupEvictedSource(id);
+        const candidate = await source.prepare({ audioContext: audioContext(), bufferIds: [id] });
+
+        source.clearRuntime({ retainedIds: [id] });
+        expect(candidate?.publish()).toBe(1);
+        expect(cachedSample(source, id)).toBe(Math.fround(0.25));
+        const receipt = await requireDurableReceipt(source, id);
+        receipt.release();
+    });
+
+    it('does not overwrite a local replacement published after hydration staging', async () => {
+        const replacement = await loadRealm();
+        await persistSample(replacement, 'staged-local-replacement', 0.25);
+
+        vi.resetModules();
+        const source = await loadRealm();
+        const candidate = await source.prepare({
+            audioContext: audioContext(),
+            bufferIds: ['staged-local-replacement'],
+        });
+        source.cache({ bufferId: 'staged-local-replacement', buffer: runtimeBuffer(0.9) });
+
+        expect(candidate?.publish()).toBe(0);
+        expect(cachedSample(source, 'staged-local-replacement')).toBe(Math.fround(0.9));
+        const receipt = await requireDurableReceipt(source, 'staged-local-replacement');
+        receipt.release();
+        expect(committedSample('staged-local-replacement')).toBe(Math.fround(0.9));
+    });
+
     it('keeps a staged hydration bound to its read token when another module overwrites disk before publish', async () => {
         const replacement = await loadRealm();
         await persistSample(replacement, 'staged-hydration', 0.25);
