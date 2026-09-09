@@ -729,7 +729,14 @@ async function resetNativeSelectToClosed(
 
 async function assertAutomationLaneValueChange(frame: Frame, selector: Locator): Promise<void> {
     const currentValue = await selector.inputValue();
-    expect(['velocity', 'probability']).toContain(currentValue);
+    const enabledValues = await selector.locator('option').evaluateAll((options) =>
+        options.flatMap((option) => {
+            const candidate = option as HTMLOptionElement;
+            return candidate.disabled ? [] : [candidate.value];
+        })
+    );
+    expect(enabledValues).toContain(currentValue);
+    expect(enabledValues).toEqual(expect.arrayContaining(['velocity', 'probability']));
     const nextValue = currentValue === 'velocity' ? 'probability' : 'velocity';
     expect(nextValue).not.toBe(currentValue);
     await selector.selectOption(nextValue);
