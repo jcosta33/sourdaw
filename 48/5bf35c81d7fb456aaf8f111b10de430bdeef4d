@@ -1,0 +1,91 @@
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_06adf2b091dc62::t_63d9286bbb3aef 9
+  s_06adf2b091dc62::t_ab761ded163c13 149-150,156
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackGain.spec.ts
+  s_06adf2b091dc62::t_f52e825d7f98ea 13-14
+  s_06adf2b091dc62::t_19e39c39f6c203 6,11-12
+  s_06adf2b091dc62::t_b25b5793821fe0 76-91
+  s_06adf2b091dc62::t_be6d94666f1184 144-235
+src/modules/Command/AGENTS.md
+  s_06adf2b091dc62::t_7de66097e6357a 31
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_06adf2b091dc62::t_58dd24f130b9cd 331-375,379-475
+  s_06adf2b091dc62::t_eb665536be264c 376-378
+  s_06adf2b091dc62::t_99100871f30448 59-61
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
+  s_06adf2b091dc62::t_a334d93947a64a 189-211
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_c238a8ac7f4e84 1198
+src/modules/Arrangement/useCases/setTrackGainPan/maybeRecordAutomation.ts
+  s_06adf2b091dc62::t_e08206195d849d 2,17-21,26-27,29-35
+src/modules/Arrangement/handlers/track/handleSetTrackPan.ts
+  s_06adf2b091dc62::t_91ec6d689043b5 6
+  s_06adf2b091dc62::t_f64d3fdae76bc1 15-21,27-29,32
+  s_06adf2b091dc62::t_154d2217f13d75 39-42,52,63
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_06adf2b091dc62::t_98821aec0a2cce 168-182
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_06adf2b091dc62::t_f64bf9ba82b323 1761-1764,1778,1790,1806,1814,1846,1857,1892,1897,1940,1945,2031,2054-2055,2078,2097,2105,2114,2125-2127,2141-2143,2174,2180,2189,2200,2208,2219-2220,2234-2235,2260-2261,2319,2328,2386,2404,2410,2458,2466,2475,2484-2485,2490-2495,2530,2537,2553,2561,2621-2622,2693,2704,2744,2750,2800,2815,2820,2838-2839,2859,2873-2874,2883,2885,2897-2898,2906-2907,2947-2948,3022-3023,3101-3102,3228,3239,3320-3321,3348-3349,3371,3385,3394,3416,3430,3437,3444-3446,3487-3490,3512,3517,3529,3536,3541,3543,3549,3554,3556-3557,3576,3583,3591-3592,3598,3601,3645-3646,3655-3656,3719,3725-3726,3737-3738,3760-3761,3795,3802,3807-3808,3824,3829-3830,3842,3852,3859,3865,3870,3879-3880,3901,3906-3907,3944-3945,3965,3979-3980,3988-3989,4078,4085,4091-4092,4099,4113,4128,4142,4147-4150,4179,4185,4199,4205,4250,4252,4267,4276-4277,4279,4292-4293,4296,4303,4308,4335,4340,4435,4442,4470,4478,4484,4492-4493,4533,4544,4552,4558,4565,4570,4578-4579,4790,4806,4823,4830-4831,4834,4865,4878-4881,4891-4892,4937,4951,4956,4958,5006,5011,5029,5034,5058,5063,5172-5179,5186-5216,5219-5224,5228,5230-5247,5250,5252-5262,5264-5265,5273-5305,5311-5312,5315-5319,5321-5322,5324,5326-5336,5340-5342,5344-5350,5352-5354,5356-5368,5370,5372-5374,5379,5382-5385,5389-5394,5399,5401-5402,5404-5405,5408-5420,5424-5428,5430-5432,5436-5437,5439-5440
+src/modules/Command/useCases/__tests__/processingOnlyParameterPolicy.spec.ts
+  s_06adf2b091dc62::t_91172314d216dd 369,374-381,387,392,398
+  s_06adf2b091dc62::t_99d17bd5dadaaf 429,433,437-445
+  s_06adf2b091dc62::t_cddb738014ba1e 1-2,4-27,30-199,208-212,223-245,249-267,269-368,370-373,382-386,388-391,394-397,399-428,430-432,434-436,446-536,541-633
+  s_06adf2b091dc62::t_d871e145e61fd1 393
+  s_06adf2b091dc62::t_4c98d57a6d416d 28-29,200-207,246-248,537-540
+  s_06adf2b091dc62::t_44a3c2b80f351b 3,213-222,268
+src/utils/handlerContract.ts
+  s_06adf2b091dc62::t_21668313f458b7 1657-1674
+  s_06adf2b091dc62::t_0fae0fdcd3a123 891-904
+  s_06adf2b091dc62::t_1960dd3487f372 1323
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_06adf2b091dc62::t_d2eb2a91307058 37-43,49-51,54
+  s_06adf2b091dc62::t_bb85851fc0b001 72-74,83,92
+  s_06adf2b091dc62::t_849cc9893cb02e 7
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts
+  s_06adf2b091dc62::t_c2bc6e05ecc72e 33-36,38-43,55-56
+  s_06adf2b091dc62::t_febdb8ddb77a57 9
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackPan.spec.ts
+  s_06adf2b091dc62::t_682017eb0e01e1 123-145
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackPan.spec.ts
+  s_06adf2b091dc62::t_6422dc0b63a55b 6,11-12
+  s_06adf2b091dc62::t_a61f4083f7a215 59-74
+  s_06adf2b091dc62::t_8f7316e92981ca 13-14
+  s_06adf2b091dc62::t_54e1ce6784da70 120-228
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_06adf2b091dc62::t_e383d5a68fa605 17-21
+  s_06adf2b091dc62::t_aaa6270f8b0e92 4
+  s_06adf2b091dc62::t_d9aada2df640fe 93-94,96-101
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_06adf2b091dc62::t_b81e3f1c2a3b62 246-249
+  s_06adf2b091dc62::t_9905ad164ccd06 271
+  s_06adf2b091dc62::t_5c6492ca8fff30 4
+  s_06adf2b091dc62::t_5d5f736206709b 163-168
+  s_06adf2b091dc62::t_0a1814dfecf176 206
+  s_06adf2b091dc62::t_233dcf57aa8a7c 181
+  s_06adf2b091dc62::t_a0ef6b3d730074 293
+  s_06adf2b091dc62::t_1d14d20850469e 88-96,102-106
+  s_06adf2b091dc62::t_2df94c7dd83839 11
+src/modules/Arrangement/handlers/automationRecordingPolicy.ts
+  s_06adf2b091dc62::t_50772cd0e45304 1-22,25
+  s_06adf2b091dc62::t_c329ab686dff27 26-28
+  s_06adf2b091dc62::t_0e7dc03d0c117f 23-24
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts
+  s_06adf2b091dc62::t_87480c511aca54 36-39,41-46,59-60
+  s_06adf2b091dc62::t_4d9568818ff958 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "485bf35c81d7fb456aaf8f111b10de430bdeef4d",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
