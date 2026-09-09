@@ -178,7 +178,7 @@ function validateCheckpointOwnerGraph(
     for (const checkpoint of checkpoints) {
         const visited = new Set<string>();
         let current: CheckpointCatalogEntry | undefined = checkpoint;
-        while (current?.parentId !== null) {
+        while (current !== undefined && current.parentId !== null) {
             if (visited.has(current.checkpointId)) {
                 throw new Error('[CheckpointPersistence] checkpoint parent cycle detected');
             }
