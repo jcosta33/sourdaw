@@ -1,0 +1,14 @@
+src/modules/Command/useCases/executableAppActionEffects.ts
+  h_1228e573df1f42 559-587
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e91485578a46af3b92988bdc9e11afb243475b47",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
