@@ -1,0 +1,39 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_9b530f08172a54::t_931954cde1be9d 88-91,226,440,492-493,497-504,516-519,524-525,538,541,544-545,550-551,573,581,590-591,599-600,636,643,672,680,690,703-704,742,747-748
+crates/sourdaw-native/src/commands/midi.rs
+  s_864876d15a08b4::t_2d6995fc150521 5,13-18,390-438,440-442,448-465,600-704
+src/modules/MIDI/repositories/webMidi/lifecycle/listNativeMidiInputs.ts
+  s_2ad8c45385b80b::t_a903e1b4ccba36 6-10,19,25,29,45-48,58-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2c90ad2e7cd74ce912daed4d3252ad48cbb4a5dc",
+  "prompts": {},
+  "sessions": {
+    "s_2ad8c45385b80b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adec5da28def4c17d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_864876d15a08b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ade23a0bc35d5da29",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
