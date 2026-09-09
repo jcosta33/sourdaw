@@ -1,0 +1,81 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_06adf2b091dc62::t_00b2c7ecb0534d 6,8-12,95-192,243-272,280,284,301,305
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_06adf2b091dc62::t_9b5956d75b1f66 8,1322-1449,2621-2656,2734
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_06adf2b091dc62::t_b6b0145d7f7e2e 1-296
+src/modules/Yeast/handlers/__tests__/setYeastArpPattern.spec.ts
+  s_06adf2b091dc62::t_7dc907377b0ffe 1-169
+src/modules/Yeast/handlers/__tests__/setYeastProcessorBypass.spec.ts
+  s_06adf2b091dc62::t_7f9c022c7f82c3 1-131
+src/modules/Yeast/handlers/__tests__/setYeastProcessorParam.spec.ts
+  s_06adf2b091dc62::t_3d26b9e909a464 1-177
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_9b530f08172a54::t_724420c0c2199f 1-194
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_9b530f08172a54::t_56179b3de764fe 416-418,428-431,444-461,480,482-486,490-494
+src/modules/Yeast/handlers/__tests__/yeastUndoCoalescing.spec.ts
+  s_4482afbec3b52c::t_7dd9ef7d6d1d05 1-116
+src/modules/Yeast/presentations/hooks/__tests__/useYeastParamActions.spec.tsx
+  s_cd8bf36c2a4f04::t_d9501e02ee2224 1-142
+src/modules/Yeast/presentations/views/__tests__/YeastPanelArpStrokeCoalescing.spec.tsx
+  s_9b5ff2a096b6e9::t_62aaa2715be8b1 1-156
+src/modules/Yeast/stores/__tests__/yeastStoreCollaboration.spec.ts
+  s_b89a17e7bd0539::t_783c781723bc75 2,4,9-12,15,506-634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "28753af46bbe45d62ea83aa1e90e16a546009213",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4482afbec3b52c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa1e675b246ce46b0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b5ff2a096b6e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ada6a6a151da87d33",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b89a17e7bd0539": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9a0253945595fa28",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_cd8bf36c2a4f04": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aef40fb91cede3858",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
