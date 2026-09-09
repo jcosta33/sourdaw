@@ -1,0 +1,64 @@
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_d76731d756ed63 65-67
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionOffered.ts
+  s_9b530f08172a54::t_7b9b311de8f8fa 1-10,12-15
+  s_9b530f08172a54::t_f9393129fb10e0 11
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_6814f24e6caa2c 23,26,29
+  s_9b530f08172a54::t_b43e9474634c51 8-13
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_b6d3977c2027b1 237-239
+src/modules/Transport/useCases/transportControls/startSchedulerWhenNativeSessionSettles.ts
+  s_9b530f08172a54::t_620b0ca19e87e6 1-66
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_e1dfb5108316da 23-25
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_53e056c6e3571c 2,11,15
+  s_9b530f08172a54::t_7e1bbda89ea714 63-74
+src/modules/AudioEngine/repositories/nativeGraph/probeNativeGraphTransport.ts
+  s_9b530f08172a54::t_f9b31df4e2e351 6
+  s_9b530f08172a54::t_c476e54a4c4639 32
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_3358277a0a6681 122-123
+src/modules/AudioEngine/repositories/nativeGraph/isNativeGraphRuntime.ts
+  s_9b530f08172a54::t_4f80fa6950add4 1-16
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_9b530f08172a54::t_cf14dca858dc94 68-71
+  s_9b530f08172a54::t_d03397d3e86b0b 35
+  s_9b530f08172a54::t_f8e15fae5ca945 208,219-225,229
+  s_9b530f08172a54::t_47bd10a0dd0bb0 282-390
+  s_9b530f08172a54::t_cf18d5f79feab9 3-7,15-17
+  s_06adf2b091dc62::t_878b7b0dbe8502 37-39
+.agents/skills/review-stances/session-lifecycle.md
+  s_9b530f08172a54::t_dd0d433dbde329 66-91
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_7f7081082e5c6e 60-61,70-71,929,987,1056,1177,1191,1198,1214,1245,1258,1261,1267,1330,1343,1364,1400,1422,1457,1477-1478,1488,1505,1522-1523,1577,1606,1634,1679,1695,1710,1744,1759,1799,1871,1883,1902,1915,1936,1969,2027,2049,2064,2078,2091,2102,2146,2200,2225,2243,2249,2268,2280,2297
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_fa5e03585d293a 470-481,565,571,660,677
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_2f00d5687a6af5 57,114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "95c255001e22e47d2f52a1c8c4e7c9800a699bed",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
