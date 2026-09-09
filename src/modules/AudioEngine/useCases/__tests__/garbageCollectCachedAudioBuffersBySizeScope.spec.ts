@@ -92,13 +92,16 @@ describe('size-based cache collection lock ownership', () => {
                 'sourdaw:project-audio-storage',
                 'sourdaw:project-audio-storage',
             ]);
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
             expect(trailingOwnerEntered).toBe(false);
 
             releaseCollection();
+            releaseCollection = undefined as never;
             await expect(collection).resolves.toBe(1);
             await trailingOwner;
             expect(trailingOwnerEntered).toBe(true);
         } finally {
+            releaseCollection?.();
             vi.doUnmock('../../stores/audioBufferCache');
             vi.resetModules();
         }
@@ -119,6 +122,7 @@ describe('size-based cache collection lock ownership', () => {
         await holderEnteredPromise;
 
         const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
         expect(lockManager.requestedNames).toEqual(['sourdaw:project-audio-storage', 'sourdaw:project-audio-storage']);
         expect(controls.openRequestCount()).toBe(0);
 
