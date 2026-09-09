@@ -23,6 +23,13 @@ export class ProofChamberInstance {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    get_left_ptr() {
+        const ret = wasm.proofchamberinstance_get_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -74,17 +81,11 @@ export class ProofChamberInstance {
         return this;
     }
     /**
-     * @param {Float32Array} left_in
-     * @param {Float32Array} right_in
      * @param {number} frames
      * @returns {number}
      */
-    process(left_in, right_in, frames) {
-        const ptr0 = passArrayF32ToWasm0(left_in, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArrayF32ToWasm0(right_in, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.proofchamberinstance_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, frames);
+    process(frames) {
+        const ret = wasm.proofchamberinstance_process(this.__wbg_ptr, frames);
         return ret >>> 0;
     }
     /**
