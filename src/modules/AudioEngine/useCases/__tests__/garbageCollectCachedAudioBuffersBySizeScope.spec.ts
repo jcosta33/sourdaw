@@ -96,7 +96,6 @@ describe('size-based cache collection lock ownership', () => {
             expect(trailingOwnerEntered).toBe(false);
 
             releaseCollection();
-            releaseCollection = undefined as never;
             await expect(collection).resolves.toBe(1);
             await trailingOwner;
             expect(trailingOwnerEntered).toBe(true);
