@@ -140,6 +140,10 @@ export function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
 
+export function normalizeMarkerName(name: string): string {
+    return name.trim().toLocaleLowerCase();
+}
+
 export function rejection(index: number, name: string, reason: string): LlmActionRejection {
     return { index, name, reason };
 }

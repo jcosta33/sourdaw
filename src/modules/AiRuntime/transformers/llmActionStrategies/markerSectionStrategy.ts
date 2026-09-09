@@ -9,7 +9,7 @@ import {
 } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
+import { hasExactKeys, isFiniteNumber, normalizeMarkerName, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const markerSectionActionNames = [
@@ -40,10 +40,6 @@ type MarkerSectionStrategyDefinition<Name extends MarkerSectionCallName> = {
         transform: MarkerSectionStrategy<StrategyName>;
     };
 }[Name];
-
-function normalizeMarkerName(name: string): string {
-    return name.trim().toLocaleLowerCase();
-}
 
 const markerSectionStrategyDefinitions = [
     {
