@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_06adf2b091dc62::t_4c69914709f3c0 1358-1363
+src/modules/AiRuntime/useCases/__tests__/stampProcessingOnlyParameterPolicy.spec.ts
+  s_06adf2b091dc62::t_f305514dac062f 91-96
+  s_06adf2b091dc62::t_9be753ea9a1047 296-302
+  s_06adf2b091dc62::t_50d6dc7a6b0f2e 1-90,97-295,303-377
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_06adf2b091dc62::t_8ad6b1564a2436 13
+  s_06adf2b091dc62::t_9edf1401bc6d30 749
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_06adf2b091dc62::t_2f314f4402bfcc 434,448
+  s_06adf2b091dc62::t_929e4a8d30aa65 565,579
+src/modules/AiRuntime/useCases/stampProcessingOnlyParameterPolicy.ts
+  s_06adf2b091dc62::t_3a0da415ea3a50 1-36
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_06adf2b091dc62::t_046f5140763620 451
+  s_06adf2b091dc62::t_cdb221c5d60d8f 452-459,2200-2208,2234-2242,2405-2408
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_06adf2b091dc62::t_81a778df12c3d6 462-464
+  s_06adf2b091dc62::t_fdafc3b0003537 465-488,570-596
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_06adf2b091dc62::t_a0d723a2798782 1080-1085,1097-1102,1114-1119,1131-1136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e9492f18884f21d414c2dd3a4689eeae51efd001",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
