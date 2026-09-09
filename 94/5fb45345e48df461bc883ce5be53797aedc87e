@@ -1,0 +1,21 @@
+tests/e2e/pianoRollDockAcceptance.spec.ts
+  s_87ab0a2f60ccf8::t_0cfe699be8cd7e 14-15,69-70,186,259-260,285-291,885,894-895,916,930,955,977-980,1033-1043,1046-1054
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_0cfe699be8cd7e 19-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "945fb45345e48df461bc883ce5be53797aedc87e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
