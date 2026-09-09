@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { wasmArtifacts, type WasmPackageSpec } from './wasm-artifacts.ts';
@@ -107,6 +107,14 @@ export async function loadHostedWasmSourceContext(sourceRoot: string): Promise<H
     return validateSourceContext(root, toolkit);
 }
 
+/** Admit a return source as a Git root without loading any source-side code. */
+export function admitHostedWasmReturnRoot(sourceRoot: string): string {
+    if (!isAbsolute(sourceRoot)) {
+        throw new Error('Hosted WASM source root must be absolute');
+    }
+    return canonicalGitRoot(sourceRoot, 'Artifact return source').root;
+}
+
 export function admitHostedWasmCheckouts(input: {
     controlRoot: string;
     sourceRoot: string;
@@ -122,6 +130,7 @@ export function admitHostedWasmCheckouts(input: {
     const reverseRelation = relative(source.root, control.root);
     if (
         control.root === source.root ||
+        dirname(control.root) !== dirname(source.root) ||
         (!relation.startsWith('../') && relation !== '') ||
         (!reverseRelation.startsWith('../') && reverseRelation !== '')
     ) {

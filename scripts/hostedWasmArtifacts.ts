@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     admitHostedWasmCheckouts,
+    admitHostedWasmReturnRoot,
     loadHostedWasmSourceContext,
     type HostedWasmSourceContext,
 } from './hostedWasmSourceContext.ts';
@@ -525,9 +526,7 @@ function verifyReturnedArtifact(): void {
             'Usage: node scripts/hostedWasmArtifacts.ts verify-return <source-root> <zip> <run.json> <artifact.json> <owner/repo> <PR> <run ID> <artifact ID> <private-output-directory>'
         );
     }
-    if (!isAbsolute(sourceRoot)) {
-        throw new Error('Hosted WASM source root must be absolute');
-    }
+    const root = admitHostedWasmReturnRoot(sourceRoot);
     if (lstatSync(zipPath).size > outputLimit) {
         throw new Error('ZIP exceeds 10 MiB');
     }
@@ -539,7 +538,7 @@ function verifyReturnedArtifact(): void {
         pullRequest: Number(pr),
         runId,
         artifactId,
-        root: realpathSync(sourceRoot),
+        root,
         outputDirectory,
     });
     console.log(
