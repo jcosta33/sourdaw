@@ -50,9 +50,15 @@ describe('hosted WASM package selection', () => {
     it.each([
         'scripts/hostedWasmArtifacts.ts',
         'scripts/hostedWasmZip.ts',
-        'rust-toolchain.toml',
-        'scripts/gen-wasm-manifest.ts',
         'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/markWasmPackageInternal.ts',
+        'scripts/gen-wasm-manifest.ts',
+        'scripts/verify-wasm-artifacts.ts',
+        'rust-toolchain.toml',
+        'package.json',
+        'pnpm-lock.yaml',
     ])('selects both for shared input %s', (path) => {
         expect(selectHostedWasmPackages({ manifest, sourceHashes, changedPaths: [path] })).toEqual([
             'scoring',
