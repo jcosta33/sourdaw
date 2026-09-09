@@ -1,0 +1,31 @@
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_205b3444db12ad 148
+crates/sourdaw-native/src/commands/midi_watcher.rs
+  s_06adf2b091dc62::t_a29743a59cc614 1-258
+crates/sourdaw-native/src/commands/mod.rs
+  s_06adf2b091dc62::t_f0947983d52aa4 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5211294f297fd4237074afd6de7265b6a9a3ff51",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
