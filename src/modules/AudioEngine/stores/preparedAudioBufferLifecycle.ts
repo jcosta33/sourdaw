@@ -1660,6 +1660,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     ) {
         let admittedProjectEpoch: number | undefined;
         let admittedReservationEpoch: number | undefined;
+        let admittedPreparedRuntimeOwner: Extract<RuntimeOwner, { kind: 'prepared' }> | undefined;
         let admittedRuntimeToken: number | undefined;
         let generation: number | undefined;
         let invalidateDurabilitySource: (() => boolean) | undefined;
@@ -1697,7 +1698,12 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             }
             admittedProjectEpoch = projectEpoch;
             admittedReservationEpoch = projectReservationEpochById.get(id);
-            admittedRuntimeToken = runtimeOwnerById.get(id)?.token;
+            const admittedRuntimeOwner = runtimeOwnerById.get(id);
+            admittedRuntimeToken = admittedRuntimeOwner?.token;
+            admittedPreparedRuntimeOwner =
+                admittedRuntimeOwner?.kind === 'prepared' && admittedRuntimeOwner.leaseId === leaseId
+                    ? admittedRuntimeOwner
+                    : undefined;
             promotionRevision = crypto.randomUUID();
             recoveryRevision = crypto.randomUUID();
             promotionSettlement = disposition === 'project-owned' ? beginPromotionSettlement(id) : undefined;
@@ -1746,6 +1752,13 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (!isValidPreparedAudioBufferPair(data, metadata)) {
                     await awaitPreparedTransaction(transaction);
                     return { status: 'failed' as const, reason: 'Prepared audio PCM metadata is invalid.' };
+                }
+                if (
+                    admittedPreparedRuntimeOwner !== undefined &&
+                    admittedPreparedRuntimeOwner.persistenceRevision !== owner.persistenceRevision
+                ) {
+                    await awaitPreparedTransaction(transaction);
+                    return { status: 'mismatched' as const };
                 }
                 if (!host.isDurableMutationCurrent(id, generation!)) {
                     await abortPreparedTransaction(transaction);

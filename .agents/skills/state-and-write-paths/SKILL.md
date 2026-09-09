@@ -78,6 +78,13 @@ Edit project truth through domain writes, then invalidate or refetch. The query 
 
 **Why:** cache-as-truth reimplements a worse store without ownership or undo.
 
+## Prepared settlement review crosses module instances
+
+Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Reuse
+one buffer ID and lease with different PCM and persistence revisions, then exercise both promotion and discard over
+temporary and already-settled durable owners. Local runtime tokens and lease equality do not establish persistent PCM
+identity; the observed coverage gap was the absence of this cross-instance proof.
+
 ## References
 
 - [docs/03-state-management.md](../../../docs/03-state-management.md) — store patterns and client state.
