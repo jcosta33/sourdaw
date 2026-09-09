@@ -124,13 +124,9 @@ async function createCheckouts(): Promise<{
     for (const file of ['hostedWasmArtifacts.ts', 'hostedWasmSourceContext.ts', 'hostedWasmZip.ts'] as const) {
         copyFileSync(join(wasmArtifacts.repoRoot, 'scripts', file), join(control, 'scripts', file));
     }
-    mkdirSync(join(control, 'node_modules'));
-    execFileSync('cp', ['-R', join(wasmArtifacts.repoRoot, 'node_modules', 'fflate'), join(control, 'node_modules')]);
     git(control, ['init', '--quiet']);
     const workflowSha = commit(control, 'fixture workflow control');
     git(source, ['init', '--quiet']);
-    mkdirSync(join(source, 'verified'));
-    writeFileSync(join(source, 'verified', '.gitkeep'), 'fixture return subdirectory\n');
     const sourceBase = commit(source, 'fixture source baseline');
     return { control, source, sourceBase, workflowSha };
 }
@@ -354,8 +350,8 @@ describe('hosted WASM source context CLI', () => {
                 ],
                 { encoding: 'utf8' }
             );
-        const subdirectoryOutput = join(root, 'subdirectory-output');
-        const subdirectory = invoke(join(input.source, 'verified'), subdirectoryOutput);
+        const subdirectoryOutput = join(input.source, 'verified');
+        const subdirectory = invoke(join(input.source, 'scripts'), subdirectoryOutput);
         expect(subdirectory.status).not.toBe(0);
         expect(subdirectory.stderr).toContain('not a Git top-level');
         expect(existsSync(subdirectoryOutput)).toBe(false);

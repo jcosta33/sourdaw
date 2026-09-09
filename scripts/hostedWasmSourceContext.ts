@@ -14,8 +14,7 @@ type SourceToolkit = Pick<
     | 'hashCrateClosure'
     | 'rustToolchainChannel'
     | 'wasmBindgenLockVersion'
-    | 'pinnedToolchain'
->;
+> & { pinnedToolchain: { wasmPack: string } };
 
 type Capture = (command: string, args: string[]) => string;
 
