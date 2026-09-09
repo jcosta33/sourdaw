@@ -58,8 +58,14 @@ export function destroyWebMidi(input: {
     midiLearn.callback = null;
     setTargetTrackId(null);
 
-    setState({
-        inputs: [],
-        selectedInputId: null,
-    });
+    // Teardown never touches the user's saved preference: dropping the
+    // selected id here would persist `null` and erase the device the next
+    // launch should restore — the same rule the hot-unplug stand-in follows.
+    setState(
+        {
+            inputs: [],
+            selectedInputId: null,
+        },
+        { persistSelection: false }
+    );
 }

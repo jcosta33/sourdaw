@@ -1,0 +1,58 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Pins teardown against the persisted preference with the real state chain:
+ * the use case, the repository teardown, the real `setState` and the real
+ * `persistInputId`/`readPersistedInputId` over real `localStorage`. Mocking
+ * the state layer here is exactly what let the preference erasure slip past
+ * the other destroyWebMidi specs — the write had to be observable at the
+ * storage boundary to be caught at all.
+ */
+vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => true,
+    desktopInvoke: vi.fn<(command: string) => Promise<unknown>>().mockResolvedValue(undefined),
+    desktopListen: vi.fn<() => Promise<() => void>>().mockResolvedValue(() => {}),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        context: { currentTime: 0 },
+        getTrackStrip: () => undefined,
+        sendNativeLiveMidiNote: vi.fn(async () => true),
+    },
+}));
+
+import { getState } from '../../../repositories/webMidi/getState';
+import { readPersistedInputId } from '../../../repositories/webMidi/readPersistedInputId';
+import { setNativeMode } from '../../../repositories/webMidi/setNativeMode';
+import { activeNotes, channelToNote, midiLearn, webMidiRuntime } from '../../../repositories/webMidi/state';
+import { destroyWebMidi } from '../destroyWebMidi';
+
+const SEEDED_ID = '2';
+
+describe('destroyWebMidi leaves the saved device preference alone', () => {
+    beforeEach(() => {
+        window.localStorage.setItem('sourdaw:midi:selectedInputId', SEEDED_ID);
+        activeNotes.clear();
+        channelToNote.clear();
+        midiLearn.active = false;
+        midiLearn.callback = null;
+        webMidiRuntime.midiAccess = null;
+        webMidiRuntime.activeInput = null;
+        webMidiRuntime.midiMessageListener = null;
+        webMidiRuntime.nativeEventUnlisten = null;
+        setNativeMode(true);
+        expect(readPersistedInputId()).toBe(SEEDED_ID);
+    });
+
+    afterEach(() => {
+        window.localStorage.removeItem('sourdaw:midi:selectedInputId');
+    });
+
+    it('clears the session selection but keeps the persisted device on teardown', () => {
+        destroyWebMidi();
+
+        expect(readPersistedInputId()).toBe(SEEDED_ID);
+        expect(getState().selectedInputId).toBeNull();
+    });
+});
