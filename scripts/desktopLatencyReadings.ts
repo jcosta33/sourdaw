@@ -91,11 +91,8 @@ export type StatusBarReading = {
  * function here. That is also why the missing-readout wording below is built
  * inline with a template literal instead of formatted from a shared constant:
  * there is nowhere outside this function's own body a shared value could
- * safely live and still survive the trip into the page. A previous version
- * split this into a page-evaluated copy hand-kept in sync with a tested
- * reference here; the two drifted, and a nightly run broke reading a compact
- * footer the tested reference had a case for. One function evaluated in place
- * cannot drift from itself.
+ * safely live and still survive the trip into the page. One function evaluated
+ * in place cannot drift from a copy, because there is none.
  */
 export function readStatusBarInDocument(input: { selector: string }): StatusBarReading {
     const footer = document.querySelector(input.selector);
