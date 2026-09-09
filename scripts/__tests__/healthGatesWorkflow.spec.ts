@@ -24,6 +24,7 @@ import {
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
+import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -393,6 +394,7 @@ const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-ga
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
+const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
@@ -889,11 +891,19 @@ type WorkflowSet = {
     validation: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
+    hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
-    return { health: workflow, validation: validationWorkflow, heavy: heavyWorkflow, nightly, hostedWasm };
+    return {
+        health: workflow,
+        validation: validationWorkflow,
+        heavy: heavyWorkflow,
+        nightly,
+        hostedQuantumMeasurement,
+        hostedWasm,
+    };
 }
 
 function cloneWorkflows(label: string): WorkflowSet {
@@ -903,6 +913,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         validation: asRecord(clone.validation, `${label} validation`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
+        hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
     };
 }
@@ -932,6 +943,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['validation.yml', set.validation],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
+        ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
     ];
 }
@@ -1143,11 +1155,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
     if (jobAt(set.health, 'gate').if !== GATE_CONDITION) {
         throw new Error('Gate must carry no predicate that could skip it');
     }
-    for (const [file, candidate] of [
-        ['validation.yml', set.validation],
-        ['heavy-gates.yml', set.heavy],
-        ['nightly.yml', set.nightly],
-    ] as const) {
+    for (const [file, candidate] of workflowFiles(set).filter(([file]) => file !== 'health-gates.yml')) {
         for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
             if (jobCheckName(id, job) === REQUIRED_CHECK_NAME) {
                 throw new Error(`${file} must not name a job ${REQUIRED_CHECK_NAME}`);
@@ -1686,6 +1694,10 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 }
 
 describe('health gates workflow contract', () => {
+    it('registers the hosted quantum producer contract in the global workflow set', () => {
+        expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
+    });
+
     it('resolves the hosted WASM output directory only after a runner is assigned', () => {
         const job = jobAt(hostedWasm, 'build-artifacts');
         expect(recordAt(job, 'env').BUILD_OUTPUT_DIRECTORY).toBeUndefined();

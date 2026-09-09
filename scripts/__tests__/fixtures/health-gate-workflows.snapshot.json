@@ -3,6 +3,7 @@
     "health-gates.yml",
     "heavy-gates.yml",
     "nightly.yml",
+    "quantum-measurements.yml",
     "validation.yml",
     "wasm-artifacts.yml"
   ],
@@ -1906,6 +1907,154 @@
               "RESULTS": "${{ toJSON(needs) }}"
             },
             "run": "set -euo pipefail\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[] | select(.value.result == \"failure\") | .key' | paste -sd ', ' -)\ntitle=\"ci(nightly): health gates red on main\"\nbody=$(printf 'The nightly run against `main` failed.\\n\\nFailing jobs: %s\\n\\n%s\\n' \\\n  \"$failed\" \"$RUN_URL\")\nexisting=$(gh issue list --repo \"$GITHUB_REPOSITORY\" --state open --search \"\\\"$title\\\" in:title\" \\\n  --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo \"$GITHUB_REPOSITORY\" --body \"$body\"\nelse\n  gh issue create --repo \"$GITHUB_REPOSITORY\" --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
+          }
+        ]
+      }
+    }
+  },
+  "quantum-measurements.yml": {
+    "name": "Hosted quantum measurements",
+    "on": {
+      "pull_request": {
+        "branches": [
+          "main"
+        ],
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened"
+        ],
+        "paths": [
+          ".github/workflows/quantum-measurements.yml",
+          "crates/daw-dsp/benches/quantum.rs",
+          "crates/daw-dsp/benches/quantum-cost-table.json",
+          "crates/daw-dsp/benches/quantum-cost-table.md",
+          "crates/daw-dsp/benches/wasm/deviceRecipes.js",
+          "crates/daw-dsp/benches/wasm/index.html",
+          "crates/daw-dsp/benches/wasm/measurementCensus.d.mts",
+          "crates/daw-dsp/benches/wasm/measurementCensus.mjs",
+          "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
+          "crates/daw-dsp/benches/wasm/renderTable.d.mts",
+          "crates/daw-dsp/benches/wasm/renderTable.mjs",
+          "crates/daw-dsp/benches/wasm/run.mjs",
+          "crates/daw-dsp/benches/wasm/server.mjs",
+          "crates/daw-dsp/benches/wasm/tickClock.js",
+          "crates/daw-dsp/src/grand_boule/**",
+          "crates/daw-dsp/src/primitives/**",
+          "crates/daw-dsp/src/lib.rs",
+          "crates/daw-dsp/Cargo.toml",
+          "package.json",
+          "pnpm-lock.yaml",
+          "public/wasm/daw-dsp/daw_dsp_bg.wasm",
+          "public/wasm/proof-chamber/proof_chamber_bg.wasm",
+          "public/wasm/scoring/scoring_bg.wasm",
+          "public/wasm/manifest.json",
+          "rust-toolchain.toml",
+          "scripts/checkReleaseInventory.ts",
+          "scripts/healthGateWorkflowContract.ts",
+          "scripts/hostedQuantumMeasurementWorkflowContract.ts",
+          "scripts/recordHealthGateWorkflowSnapshot.ts",
+          "scripts/test-health-gate-scripts.sh",
+          "scripts/wasmToolchainPins.ts",
+          "scripts/__tests__/healthGatesWorkflow.spec.ts",
+          "scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts",
+          "scripts/__tests__/fixtures/health-gate-workflows.snapshot.json",
+          "src/modules/AudioEngine/wasm/daw_dsp.js",
+          "src/modules/AudioEngine/wasm/proof_chamber.js",
+          "src/modules/AudioEngine/wasm/scoring.js"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "concurrency": {
+      "group": "quantum-measurements-${{ github.event.pull_request.number }}",
+      "cancel-in-progress": true
+    },
+    "jobs": {
+      "measure": {
+        "name": "Measure browser audio quanta",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "env": {
+          "MEASUREMENT_REPOSITORY": "${{ github.repository }}",
+          "MEASUREMENT_PR": "${{ github.event.pull_request.number }}",
+          "MEASUREMENT_HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+          "MEASUREMENT_RUN_ID": "${{ github.run_id }}",
+          "MEASUREMENT_RUN_ATTEMPT": "${{ github.run_attempt }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout source head",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Install Google Chrome",
+            "run": "pnpm exec playwright install chrome"
+          },
+          {
+            "name": "Verify committed WASM artifacts",
+            "run": "pnpm wasm:verify"
+          },
+          {
+            "name": "Verify exact clean source",
+            "shell": "bash",
+            "run": "set -euo pipefail\ntest \"$(cd \"$(git rev-parse --show-toplevel)\" && pwd -P)\" = \"$(pwd -P)\"\ntest \"$(git rev-parse HEAD)\" = \"$MEASUREMENT_HEAD_SHA\"\ntest -z \"$(git status --porcelain --untracked-files=normal)\"\n"
+          },
+          {
+            "name": "Run full browser measurement",
+            "shell": "bash",
+            "run": "set -euo pipefail\nnode crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json 2>&1 | tee \"$RUNNER_TEMP/quantum-measurement.log\"\n"
+          },
+          {
+            "name": "Render measurement table",
+            "run": "node crates/daw-dsp/benches/wasm/renderTable.mjs"
+          },
+          {
+            "name": "Verify generated table",
+            "run": "node crates/daw-dsp/benches/wasm/renderTable.mjs --check"
+          },
+          {
+            "name": "Verify measurement admission",
+            "run": "node --input-type=module <<'NODE'\nimport {\n    assertGrandBouleMeasurementAdmission,\n    assertWholeEngineQuantumCapability,\n} from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nassertWholeEngineQuantumCapability(root);\nNODE\n"
+          },
+          {
+            "name": "Assemble qualified artifact",
+            "env": {
+              "ARTIFACT_DIRECTORY": "${{ runner.temp }}/qualified-quantum-measurement"
+            },
+            "run": "node --input-type=module <<'NODE'\nimport { createHash } from 'node:crypto';\nimport { copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';\nimport { dirname, join } from 'node:path';\n\nfunction collectRegularFiles(directory, prefix = '') {\n    const files = [];\n    for (const name of readdirSync(directory).sort()) {\n        const relative = prefix ? join(prefix, name) : name;\n        const path = join(directory, name);\n        const entry = lstatSync(path);\n        if (entry.isDirectory() && !entry.isSymbolicLink()) {\n            files.push(...collectRegularFiles(path, relative));\n        } else if (entry.isFile() && !entry.isSymbolicLink()) {\n            files.push(relative);\n        } else {\n            throw new Error(`Qualified quantum measurement contains a non-regular member: ${relative}`);\n        }\n    }\n    return files;\n}\n\nconst files = [\n    ['crates/daw-dsp/benches/quantum-cost-table.json', 'crates/daw-dsp/benches/quantum-cost-table.json'],\n    ['crates/daw-dsp/benches/quantum-cost-table.md', 'crates/daw-dsp/benches/quantum-cost-table.md'],\n    [join(process.env.RUNNER_TEMP, 'quantum-measurement.log'), 'quantum-measurement.log'],\n];\nconst output = process.env.ARTIFACT_DIRECTORY;\nif (!output) {\n    throw new Error('ARTIFACT_DIRECTORY is required');\n}\nmkdirSync(output);\nfor (const [source, relative] of files) {\n    const destination = join(output, relative);\n    mkdirSync(dirname(destination), { recursive: true });\n    copyFileSync(source, destination);\n}\nconst dataMembers = files.map(([, relative]) => relative).sort();\nconst actualDataMembers = collectRegularFiles(output);\nif (JSON.stringify(actualDataMembers) !== JSON.stringify(dataMembers)) {\n    throw new Error(`Qualified quantum measurement data members disagree: ${actualDataMembers.join(', ')}`);\n}\nconst hashes = Object.fromEntries(\n    actualDataMembers.map((relative) => [\n        relative,\n        `sha256:${createHash('sha256').update(readFileSync(join(output, relative))).digest('hex')}`,\n    ])\n);\nconst receipt = {\n    version: 1,\n    repository: process.env.MEASUREMENT_REPOSITORY,\n    pullRequest: Number(process.env.MEASUREMENT_PR),\n    headSha: process.env.MEASUREMENT_HEAD_SHA,\n    runId: process.env.MEASUREMENT_RUN_ID,\n    runAttempt: Number(process.env.MEASUREMENT_RUN_ATTEMPT),\n    files: hashes,\n};\nwriteFileSync(join(output, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\\n`);\nconst members = [...dataMembers, 'receipt.json'].sort();\nconst actualMembers = collectRegularFiles(output);\nif (JSON.stringify(actualMembers) !== JSON.stringify(members)) {\n    throw new Error(`Qualified quantum measurement members disagree: ${actualMembers.join(', ')}`);\n}\nconst totalBytes = actualMembers.reduce(\n    (total, relative) => total + lstatSync(join(output, relative)).size,\n    0\n);\nif (totalBytes > 10 * 1024 * 1024) {\n    throw new Error(`Qualified quantum measurement artifact is ${totalBytes} bytes; maximum is 10 MiB`);\n}\nNODE\n"
+          },
+          {
+            "name": "Upload qualified artifact",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "quantum-measurement-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/qualified-quantum-measurement",
+              "if-no-files-found": "error",
+              "retention-days": 1
+            }
           }
         ]
       }
