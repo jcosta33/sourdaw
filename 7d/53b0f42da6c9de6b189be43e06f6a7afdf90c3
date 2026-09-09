@@ -1,0 +1,27 @@
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_87ab0a2f60ccf8::t_5b03010a77b448 3-56,58-82,90-108,110-126,128-134,136-151
+  s_87ab0a2f60ccf8::t_e467691a4aaacf 83-89,109,127,135
+scripts/offlineAudioWorkletTrace.ts
+  s_87ab0a2f60ccf8::t_8245cb469f8aed 1-13,21-26,28-38,41-45,47-54,57-63,66-71,73-144,146-148,151-252,254-280,283-287,289-290
+  s_87ab0a2f60ccf8::t_e81dc0ea57749e 253,288
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_87ab0a2f60ccf8::t_c5b451f665c86e 158-166,276-284,317,323,355,397-399
+  s_87ab0a2f60ccf8::t_18d985cbbaa0b4 1-157,167-275,285-316,318-322,324-354,356-396,400-484
+  s_87ab0a2f60ccf8::t_916f2a5dd800b1 485-487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7d53b0f42da6c9de6b189be43e06f6a7afdf90c3",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
