@@ -1,0 +1,39 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_87ab0a2f60ccf8::t_733c6a3536de71 3,113-133
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_523ce0684efabc 222-242,1654,1659-1660,1665-1667,1669-1671,1700-1703,1716-1756,1896-1897,1899-1902,1908,1912-1913,2011
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_39cbad49c98b7e 52-78,198,329-336,373-375,377-394,407,540-541
+  s_87ab0a2f60ccf8::t_7ec60effd3c08d 187-197,199-222
+  s_87ab0a2f60ccf8::t_628929969e9d30 294,308-328,337,339-340,342-343,345-349,351-352,354-372,376,395-406,408-439
+  s_87ab0a2f60ccf8::t_3d93cd86c1ec8b 538
+  s_87ab0a2f60ccf8::t_39c82492346271 547
+  s_87ab0a2f60ccf8::t_23792c3b1befa2 548-565
+  s_87ab0a2f60ccf8::t_08a69b97608299 763,770-795
+  s_87ab0a2f60ccf8::t_fb701206b0a9bd 157-186
+  s_87ab0a2f60ccf8::t_d182ce0f90be96 245,247,264,271
+  s_87ab0a2f60ccf8::t_85f7c165156741 35-36,44,83-84,92,151-156,282-288,290,292-293,303-307
+  s_87ab0a2f60ccf8::t_2fa2b74f13ec68 440,442-510,512-533,570,612,650
+  s_87ab0a2f60ccf8::t_8bc77dd185c985 291,295-302
+  s_87ab0a2f60ccf8::t_d5024aadfa6743 441,534-537,539,571-572,613-614,619,759
+src/modules/AudioEngine/useCases/acquireCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_cf0e41283c889b 3-6
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_a47bf259cc4e81 81-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d2aba2e19dba9789d8e99672f73b222f35aae9b6",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
