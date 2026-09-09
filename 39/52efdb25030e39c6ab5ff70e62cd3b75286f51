@@ -1,0 +1,39 @@
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_06adf2b091dc62::t_7ed2859dbaa333 16-23,63
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  s_9b530f08172a54::t_86b774815e4892 10-12,14-18,26-27
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_10b8bd3c6dc8e0::t_b30831b756d8c5 25-34,75,144-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3952efdb25030e39c6ab5ff70e62cd3b75286f51",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_10b8bd3c6dc8e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac1df4ec123692ec9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
