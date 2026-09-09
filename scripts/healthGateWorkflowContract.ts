@@ -36,6 +36,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
+    'quantum-measurements.yml',
     'wasm-artifacts.yml',
 ] as const;
 
@@ -61,13 +62,35 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
 // reporter); these two files must grant nothing at job level.
-export const JOB_LEVEL_PERMISSION_FREE_FILES = ['health-gates.yml', 'validation.yml', 'wasm-artifacts.yml'] as const;
+export const JOB_LEVEL_PERMISSION_FREE_FILES = [
+    'health-gates.yml',
+    'validation.yml',
+    'quantum-measurements.yml',
+    'wasm-artifacts.yml',
+] as const;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'quantum-measurements.yml': {
+        measure: [
+            'Checkout source head',
+            'Set up pnpm',
+            'Set up Node',
+            'Install dependencies',
+            'Install Google Chrome',
+            'Verify committed WASM artifacts',
+            'Verify exact clean source',
+            'Run full browser measurement',
+            'Render measurement table',
+            'Verify generated table',
+            'Verify measurement admission',
+            'Assemble qualified artifact',
+            'Upload qualified artifact',
+        ],
+    },
     'wasm-artifacts.yml': {
         'build-artifacts': [
             'Checkout workflow control',

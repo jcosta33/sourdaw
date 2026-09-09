@@ -679,6 +679,20 @@ mod tests {
 
 Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(test)]` coverage. Add command tests beside the Rust module they exercise; test the body directly rather than routing through the desktop shell's IPC.
 
+### Hosted browser quantum measurements
+
+Changes to the browser quantum harness, its measured DSP closure, or the committed WASM it loads trigger
+`quantum-measurements.yml`. The workflow measures the complete reference project on a standard macOS runner,
+checks the resulting JSON and Markdown against the checked-out pull-request head, and returns a one-day artifact
+containing those two data files, the raw log, and a receipt bound to the repository, pull request, head, run, and
+attempt. It never commits measurement data.
+
+Treat the returned artifact as a candidate, not repository evidence. Before installing its JSON and Markdown,
+independently obtain the workflow run and artifact metadata, verify the receipt identity and file hashes, and
+compare the recorded source revision, source digests, and full device population with the clean consumer head.
+Failed runs produce no qualified artifact; their Actions log is diagnostic evidence and must not be retried
+unchanged into a passing record.
+
 ---
 
 ## 9. Running tests

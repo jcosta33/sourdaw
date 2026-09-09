@@ -191,11 +191,18 @@ const {
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
+const { assertHostedQuantumMeasurementWorkflow } = await import(
+    `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
+const hostedQuantumMeasurement = parse(
+    readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
+);
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
@@ -422,7 +429,13 @@ function gateNameViolations(file, jobs) {
     }
     return violations;
 }
-for (const [file, parsed] of [['validation.yml', validationWorkflow], ['heavy-gates.yml', heavyWorkflow]]) {
+for (const [file, parsed] of [
+    ['validation.yml', validationWorkflow],
+    ['heavy-gates.yml', heavyWorkflow],
+    ['nightly.yml', nightly],
+    ['quantum-measurements.yml', hostedQuantumMeasurement],
+    ['wasm-artifacts.yml', hostedWasm],
+]) {
     for (const violation of gateNameViolations(file, parsed.jobs ?? {})) {
         expect(false, violation);
     }
@@ -951,6 +964,7 @@ for (const [file, parsed] of [
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
+    ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
@@ -1002,6 +1016,7 @@ const workflowsByFile = {
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,
+    'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
@@ -1469,6 +1484,7 @@ for (const [file, parsed] of [
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
+    ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {

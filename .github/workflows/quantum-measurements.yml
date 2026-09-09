@@ -1,0 +1,168 @@
+name: Hosted quantum measurements
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/quantum-measurements.yml
+      - crates/daw-dsp/benches/quantum.rs
+      - crates/daw-dsp/benches/quantum-cost-table.json
+      - crates/daw-dsp/benches/quantum-cost-table.md
+      - crates/daw-dsp/benches/wasm/deviceRecipes.js
+      - crates/daw-dsp/benches/wasm/index.html
+      - crates/daw-dsp/benches/wasm/measurementCensus.d.mts
+      - crates/daw-dsp/benches/wasm/measurementCensus.mjs
+      - crates/daw-dsp/benches/wasm/quantumCostProcessor.js
+      - crates/daw-dsp/benches/wasm/renderTable.d.mts
+      - crates/daw-dsp/benches/wasm/renderTable.mjs
+      - crates/daw-dsp/benches/wasm/run.mjs
+      - crates/daw-dsp/benches/wasm/server.mjs
+      - crates/daw-dsp/benches/wasm/tickClock.js
+      - crates/daw-dsp/src/grand_boule/**
+      - crates/daw-dsp/src/primitives/**
+      - crates/daw-dsp/src/lib.rs
+      - crates/daw-dsp/Cargo.toml
+      - package.json
+      - pnpm-lock.yaml
+      - public/wasm/daw-dsp/daw_dsp_bg.wasm
+      - public/wasm/proof-chamber/proof_chamber_bg.wasm
+      - public/wasm/scoring/scoring_bg.wasm
+      - public/wasm/manifest.json
+      - rust-toolchain.toml
+      - scripts/checkReleaseInventory.ts
+      - scripts/healthGateWorkflowContract.ts
+      - scripts/hostedQuantumMeasurementWorkflowContract.ts
+      - scripts/recordHealthGateWorkflowSnapshot.ts
+      - scripts/test-health-gate-scripts.sh
+      - scripts/wasmToolchainPins.ts
+      - scripts/__tests__/healthGatesWorkflow.spec.ts
+      - scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+      - scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+      - src/modules/AudioEngine/wasm/daw_dsp.js
+      - src/modules/AudioEngine/wasm/proof_chamber.js
+      - src/modules/AudioEngine/wasm/scoring.js
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quantum-measurements-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Measure browser audio quanta
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      MEASUREMENT_REPOSITORY: ${{ github.repository }}
+      MEASUREMENT_PR: ${{ github.event.pull_request.number }}
+      MEASUREMENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      MEASUREMENT_RUN_ID: ${{ github.run_id }}
+      MEASUREMENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Checkout source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Google Chrome
+        run: pnpm exec playwright install chrome
+
+      - name: Verify committed WASM artifacts
+        run: pnpm wasm:verify
+
+      - name: Verify exact clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cd "$(git rev-parse --show-toplevel)" && pwd -P)" = "$(pwd -P)"
+          test "$(git rev-parse HEAD)" = "$MEASUREMENT_HEAD_SHA"
+          test -z "$(git status --porcelain --untracked-files=normal)"
+
+      - name: Run full browser measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json 2>&1 | tee "$RUNNER_TEMP/quantum-measurement.log"
+
+      - name: Render measurement table
+        run: node crates/daw-dsp/benches/wasm/renderTable.mjs
+
+      - name: Verify generated table
+        run: node crates/daw-dsp/benches/wasm/renderTable.mjs --check
+
+      - name: Verify measurement admission
+        run: |
+          node --input-type=module <<'NODE'
+          import {
+              assertGrandBouleMeasurementAdmission,
+              assertWholeEngineQuantumCapability,
+          } from './scripts/checkReleaseInventory.ts';
+
+          const root = process.cwd();
+          assertGrandBouleMeasurementAdmission(root);
+          assertWholeEngineQuantumCapability(root);
+          NODE
+
+      - name: Assemble qualified artifact
+        env:
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/qualified-quantum-measurement
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+          import { dirname, join } from 'node:path';
+
+          const files = [
+              ['crates/daw-dsp/benches/quantum-cost-table.json', 'crates/daw-dsp/benches/quantum-cost-table.json'],
+              ['crates/daw-dsp/benches/quantum-cost-table.md', 'crates/daw-dsp/benches/quantum-cost-table.md'],
+              [join(process.env.RUNNER_TEMP, 'quantum-measurement.log'), 'quantum-measurement.log'],
+          ];
+          const output = process.env.ARTIFACT_DIRECTORY;
+          mkdirSync(output, { recursive: true });
+          const hashes = {};
+          for (const [source, relative] of files) {
+              const destination = join(output, relative);
+              mkdirSync(dirname(destination), { recursive: true });
+              copyFileSync(source, destination);
+              hashes[relative] = `sha256:${createHash('sha256').update(readFileSync(destination)).digest('hex')}`;
+          }
+          const receipt = {
+              version: 1,
+              repository: process.env.MEASUREMENT_REPOSITORY,
+              pullRequest: Number(process.env.MEASUREMENT_PR),
+              headSha: process.env.MEASUREMENT_HEAD_SHA,
+              runId: process.env.MEASUREMENT_RUN_ID,
+              runAttempt: Number(process.env.MEASUREMENT_RUN_ATTEMPT),
+              files: hashes,
+          };
+          writeFileSync(join(output, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+          const members = [...files.map(([, relative]) => relative), 'receipt.json'];
+          const totalBytes = members.reduce((total, relative) => total + statSync(join(output, relative)).size, 0);
+          if (totalBytes > 10 * 1024 * 1024) {
+              throw new Error(`Qualified quantum measurement artifact is ${totalBytes} bytes; maximum is 10 MiB`);
+          }
+          NODE
+
+      - name: Upload qualified artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quantum-measurement-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qualified-quantum-measurement
+          if-no-files-found: error
+          retention-days: 1
