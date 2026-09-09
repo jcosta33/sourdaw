@@ -1,0 +1,74 @@
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_e440ffdc6997b7::t_cae82b3c0d7cdd 51-52,62-92,104-109,121,129-142
+  s_e440ffdc6997b7::t_6ac899c9fd5e2f 11-14
+  s_e440ffdc6997b7::t_ca18cc2367aed9 53-61,93-103,110-120,122-128
+.github/CODEOWNERS
+  s_e440ffdc6997b7::t_be85bbfe558c3a 7-9
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_e440ffdc6997b7::t_a81b6e7813ed8f 524
+  s_e440ffdc6997b7::t_6ac0e6fb3c2638 661-663,665-682,684-687,689,691-706,710-711
+  s_e440ffdc6997b7::t_1d98b789699bb2 22,30-35,712,790-794,839,841,981,1001,1090,1101-1116,1124,1140,1698-1703,1867-1876,1878-1892,1899,2000-2005,2043,2107-2110,2226-2229,2479,2539-2542,2605-2608,3044-3099,3150-3153
+scripts/githubAppIdentity.ts
+  s_e440ffdc6997b7::t_1c7c5580b6bce2 11-24,496-529
+  s_87ab0a2f60ccf8::t_d6b8ac7be840db 530-536
+AGENTS.md
+  s_e440ffdc6997b7::t_be85bbfe558c3a 101-103,228,273,276-277,282-296,304-309,316-318,320-322,326,368,413-420,474-477
+package.json
+  s_e440ffdc6997b7::t_39417f272276f8 50
+scripts/__tests__/orchestratorReviewState.spec.ts
+  s_87ab0a2f60ccf8::t_c55205c686a035 1-80
+scripts/__tests__/publishReview.spec.ts
+  s_e440ffdc6997b7::t_f9ccb28ee66cde 8-9,12-14,3291,3701-3884
+scripts/__tests__/recoverDeliveryLockGeneral.spec.ts
+  s_87ab0a2f60ccf8::t_fdc3c4d389a83d 9,179-203,205
+scripts/acceptReview.ts
+  s_e440ffdc6997b7::t_5f5a30fef5a234 1-37
+scripts/deliverPullRequest.ts
+  s_e440ffdc6997b7::t_cc0d234c99ae43 9-12,15,40-44,80,1260-1262,1327,2626-2632,2654,2837-2839,3205,3230-3234,3396,3480-3481,3516,3531,4169,4176-4177,4194,4201,4221-4222,4263,4268-4272,4283-4289,4301
+scripts/publishReview.ts
+  s_e440ffdc6997b7::t_d5bb33837868f3 9,30-34,78,85,113-116,125,243-247,250,253,255,257-258,275-276,289-295,311,320-327,333-369,403,427-428,443-444,542,544-545,551-552,561-564,602-624
+scripts/pullRequestReviewState.ts
+  s_87ab0a2f60ccf8::t_1483aa8cf636cf 1-301
+scripts/recoverDeliveryLock.ts
+  s_e440ffdc6997b7::t_15c8d50170cd57 25,362
+scripts/recoverPublishReviewLock.ts
+  s_87ab0a2f60ccf8::t_83113f56c58645 7-8,19,76,114,337-349,399-403
+scripts/trustedGithubWriteBootstrap.ts
+  s_e440ffdc6997b7::t_3696b93266a274 18-24,99-104,144,167-177,181,192,214,1291,1299
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_825f39b39d1953::t_c950d139d7a556 34,261-267,340-349,412,540-542,950-954,997,1196,1278-1279,1281,1472-1474,1480-1482,1718-1720,1746-1751,1815-1820,1876-1881,1964-1974,2469-2474,2532-2533,3712,5317-5322,5364,5367,5370-5389,5422-5427,6089-6092,6094-6096,6098-6112,6276-6282,6289-6291,6300-6305,6315-6319,6337-6339,7751-7755,9067-9070,9087,9095,9103,9109,9643,10254,11182,11225,11227-11231,11332,11361,11458,11511-11513,11586-11589,11646-11647,11694-11695,11746-11748,11786-11788,11812-11814,11842-11844,11872-11874,11901-11903,11940-11941,11966-11968,11993-11995,12041-12042,12087-12088
+scripts/deliveryRemoteInspection.ts
+  s_825f39b39d1953::t_c7247a65332691 6-12,176-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "91c5d4dde1cae3676732b8b4f414d27a095c67f5",
+  "prompts": {},
+  "sessions": {
+    "s_825f39b39d1953": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08575-6be4-7942-9f4b-4abcda8f18a0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
