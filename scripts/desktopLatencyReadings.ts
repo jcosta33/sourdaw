@@ -75,57 +75,33 @@ export type StatusBarReading = {
 };
 
 /**
- * The two wordings a missing readout can be reported with, kept as the one
- * place either side of the `page.evaluate` boundary below reads its text
- * from. `{label}` and `{innerWidth}` are plain substring tokens, not template
- * literal syntax: this file's own `describeMissingReadout` fills them with
- * `.replace()`, and `desktopLatencyConnect.ts`'s in-page walk — which cannot
- * import `describeMissingReadout` itself, only these two strings passed in as
- * `page.evaluate` arguments — fills them the identical way. Keeping the
- * wording here and letting each side format it is what stops the two walks
- * from ever disagreeing on what a missing readout is called.
- */
-export const COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE =
-    'the status bar is in its compact layout at {innerWidth} px; the "{label}" readout sits behind "More application status"';
-export const GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE = 'the status bar has no readout labelled "{label}"';
-
-/**
- * `StatusBar.tsx`'s compact layout (at or below `COMPACT_STATUS_BAR_MAX_WIDTH`)
- * moves "Out" and its neighbouring readouts into a Radix Popover behind
- * `button[aria-label="More application status"]`, whose content portals
- * outside the footer `readStatusBarReadouts` walks. `hasMoreTrigger` is
- * whether that button is present — the walk's own signal that the footer is
- * in that layout — and `innerWidth` is threaded through purely to name the
- * width in the message, not to decide which template applies.
- */
-export function describeMissingReadout(label: string, hasMoreTrigger: boolean, innerWidth: number): string {
-    const template = hasMoreTrigger
-        ? COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE
-        : GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE;
-    return template.replace('{label}', label).replace('{innerWidth}', String(innerWidth));
-}
-
-/**
  * Reads the status bar by structure rather than by class name: a readout is the
  * second of exactly two sibling spans whose first one is the label. Class names
  * on these elements are styling and change without notice; the label beside the
  * value is what the product means.
  *
- * This is the reference the walk is proven against, not the walk
- * `desktopLatencyConnect.ts`'s `readStatusBar` actually runs against the live
- * app: Playwright serialises an evaluated function by its own source text, so
- * a closure over this module's imports — this function itself included —
- * cannot cross into `page.evaluate`, and this repository's conventions refuse
- * reconstructing a serialised closure with `new Function`
- * (`docs/07-conventions.md`, "do not suppress errors with … disabled lint
- * rules" — oxlint's `no-implied-eval`/`no-unsafe-call` refuse exactly that
- * reconstruction, with no in-repo disable route). `readStatusBar` therefore
- * keeps its own copy of this walk inline in the page, sharing only the two
- * message templates above — a real, spec-pinned reference this file's own
- * spec exercises directly, and the one place a future edit to the walk's
- * shape has to be echoed by hand into the in-page copy.
+ * `desktopLatencyConnect.ts`'s `readStatusBar` hands this exact function to
+ * `page.evaluate`, which serialises it by its own source text
+ * (`Function.prototype.toString()`) and runs that text inside the page — a
+ * realm carrying none of this module's imports, module-level constants, or
+ * sibling functions. This function must therefore be entirely self-contained:
+ * every identifier it touches beyond its own parameter has to be a name the
+ * target realm provides on its own — `document`, `window`, `Error` — never an
+ * import, a `const` declared elsewhere in this module, or a call to another
+ * function here. That is also why the missing-readout wording below is built
+ * inline with a template literal instead of formatted from a shared constant:
+ * there is nowhere outside this function's own body a shared value could
+ * safely live and still survive the trip into the page. A previous version
+ * split this into a page-evaluated copy hand-kept in sync with a tested
+ * reference here; the two drifted, and a nightly run broke reading a compact
+ * footer the tested reference had a case for. One function evaluated in place
+ * cannot drift from itself.
  */
-export function readStatusBarReadouts(footer: Element, innerWidth: number): StatusBarReading {
+export function readStatusBarInDocument(input: { selector: string }): StatusBarReading {
+    const footer = document.querySelector(input.selector);
+    if (footer === null) {
+        throw new Error('the status bar is not in the document');
+    }
     const valueSpan = (label: string): HTMLElement => {
         for (const row of footer.querySelectorAll('div')) {
             const spans = row.querySelectorAll(':scope > span');
@@ -136,7 +112,11 @@ export function readStatusBarReadouts(footer: Element, innerWidth: number): Stat
             }
         }
         const hasMoreTrigger = footer.querySelector('button[aria-label="More application status"]') !== null;
-        throw new Error(describeMissingReadout(label, hasMoreTrigger, innerWidth));
+        throw new Error(
+            hasMoreTrigger
+                ? `the status bar is in its compact layout at ${window.innerWidth} px; the "${label}" readout sits behind "More application status"`
+                : `the status bar has no readout labelled "${label}"`
+        );
     };
     const engineDot = footer.querySelector('[title^="Engine: "]');
     if (engineDot === null) {

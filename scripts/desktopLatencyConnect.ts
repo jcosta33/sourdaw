@@ -30,12 +30,11 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
-    COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE,
     findAppPageTarget,
-    GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
+    readStatusBarInDocument,
     type AppPageTarget,
     type StatusBarReading,
 } from './desktopLatencyReadings.ts';
@@ -292,68 +291,15 @@ async function findAppPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * Reads the status bar by structure rather than by class name: a readout is
- * the second of exactly two sibling spans whose first one is the label.
- * Class names on these elements are styling and change without notice; the
- * label beside the value is what the product means.
- *
- * This walk is a hand-kept copy of `desktopLatencyReadings.ts`'s
- * `readStatusBarReadouts`, not a call to it: Playwright serialises an
- * evaluated function by its own source text, so a closure reaching back into
- * this module's imports cannot cross into the page, and reconstructing a
- * serialised closure with `new Function` is exactly what oxlint's
- * `no-implied-eval`/`no-unsafe-call` refuse, with no in-repo disable route
- * (`docs/07-conventions.md` bans suppressing lint errors). What *does* cross
- * safely, as plain data rather than a function, are the two message
- * templates below — so a missing readout is worded identically here and in
- * `readStatusBarReadouts`'s own spec, even though the walk that decides which
- * one applies is written out twice.
+ * Hands `readStatusBarInDocument` itself to `page.evaluate`, which serialises
+ * it by its own source text and runs that text inside the page — the one
+ * walk this harness reads the status bar with, run where the DOM actually is
+ * rather than copied by hand into a second in-page version. See
+ * `readStatusBarInDocument`'s own doc comment in `desktopLatencyReadings.ts`
+ * for why it has to stay self-contained for this to work.
  */
 async function readStatusBar(page: Page): Promise<StatusBarReading> {
-    return page.evaluate(
-        (input: { selector: string; compactTemplate: string; genericTemplate: string }) => {
-            const footer = document.querySelector(input.selector);
-            if (footer === null) {
-                throw new Error('the status bar is not in the document');
-            }
-            const fillMissingReadoutTemplate = (template: string, label: string): string =>
-                template.replace('{label}', label).replace('{innerWidth}', String(window.innerWidth));
-            const valueSpan = (label: string): HTMLElement => {
-                for (const row of footer.querySelectorAll('div')) {
-                    const spans = row.querySelectorAll(':scope > span');
-                    const first = spans[0];
-                    const second = spans[1];
-                    if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
-                        return second;
-                    }
-                }
-                const hasMoreTrigger = footer.querySelector('button[aria-label="More application status"]') !== null;
-                const template = hasMoreTrigger ? input.compactTemplate : input.genericTemplate;
-                throw new Error(fillMissingReadoutTemplate(template, label));
-            };
-            const engineDot = footer.querySelector('[title^="Engine: "]');
-            if (engineDot === null) {
-                throw new Error('the status bar has no engine dot');
-            }
-            const latency = valueSpan('Latency');
-            const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
-            if (latencyTitle === undefined || latencyTitle === null) {
-                throw new Error('the Latency readout carries no title');
-            }
-            return {
-                sampleRateText: valueSpan('Rate').textContent ?? '',
-                latencyText: latency.textContent ?? '',
-                latencyTitle,
-                engineTitle: engineDot.getAttribute('title') ?? '',
-                masterLevelText: valueSpan('Out').textContent ?? '',
-            };
-        },
-        {
-            selector: STATUS_BAR_SELECTOR,
-            compactTemplate: COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE,
-            genericTemplate: GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE,
-        }
-    );
+    return page.evaluate(readStatusBarInDocument, { selector: STATUS_BAR_SELECTOR });
 }
 
 /**

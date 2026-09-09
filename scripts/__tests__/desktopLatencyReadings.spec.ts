@@ -1,24 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { notRunningEngineRtDiagnostics } from '../../src/modules/AudioEngine/models/EngineRtDiagnostics.ts';
 import {
-    COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE,
     computeCounterDeltas,
     computeGaugeReadings,
     decideVerdict,
     describeAudibleFloor,
-    describeMissingReadout,
     findAppPageTarget,
     findQuarantineReason,
     GAUGE_NAMES,
-    GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE,
     hasLivePluginOnTrack,
     MONOTONIC_COUNTER_NAMES,
     parseArgs,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
-    readStatusBarReadouts,
+    readStatusBarInDocument,
 } from '../desktopLatencyReadings.ts';
 
 const argv = (...flags: string[]): string[] => ['node', 'scripts/measureDesktopLatency.ts', ...flags];
@@ -304,60 +303,52 @@ describe('findQuarantineReason', () => {
     });
 });
 
-describe('readStatusBarReadouts', () => {
+describe('readStatusBarInDocument', () => {
+    const SELECTOR = 'footer[aria-label="Application status"]';
+
     // Mirrors `StatusBar.tsx`'s real DOM shape: `DawReadoutRow` renders a
-    // label span and a value span as the row's only two direct span
-    // children; the Latency value span carries one more nested `span[title]`
-    // — `useStatusBarMetrics.ts` sets `.title` on that inner span directly,
+    // label span and a value span as a row's only two direct span children;
+    // the Latency value span carries one more nested `span[title]` —
+    // `useStatusBarMetrics.ts` sets `.title` on that inner span directly,
     // never on the outer one.
-    const buildLabelValueRow = (label: string, populateValue: (value: HTMLSpanElement) => void): HTMLDivElement => {
-        const row = document.createElement('div');
-        const labelSpan = document.createElement('span');
-        labelSpan.textContent = label;
-        const valueSpan = document.createElement('span');
-        populateValue(valueSpan);
-        row.append(labelSpan, valueSpan);
-        return row;
-    };
+    const EXPANDED_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <div><span>Out</span><span>-12.4 dB</span></div>
+            <span title="Engine: running"></span>
+        </footer>
+    `;
 
-    const buildLatencyRow = (text: string, title: string): HTMLDivElement =>
-        buildLabelValueRow('Latency', (value) => {
-            const titled = document.createElement('span');
-            titled.setAttribute('title', title);
-            titled.textContent = text;
-            value.append(titled);
-        });
+    // The compact layout (at or below `COMPACT_STATUS_BAR_MAX_WIDTH`) moves
+    // "Out" behind the Radix Popover trigger; Rate and Latency stay in the
+    // footer.
+    const COMPACT_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <span title="Engine: running"></span>
+            <button aria-label="More application status"></button>
+        </footer>
+    `;
 
-    const buildEngineDot = (title: string): HTMLElement => {
-        const dot = document.createElement('span');
-        dot.setAttribute('title', title);
-        return dot;
-    };
+    const NO_OUT_NO_TRIGGER_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <span title="Engine: running"></span>
+        </footer>
+    `;
 
-    const buildMoreTrigger = (): HTMLButtonElement => {
-        const button = document.createElement('button');
-        button.setAttribute('aria-label', 'More application status');
-        return button;
-    };
-
-    const buildFooter = (children: readonly Element[]): HTMLElement => {
-        const footer = document.createElement('footer');
-        footer.setAttribute('aria-label', 'Application status');
-        footer.append(...children);
-        return footer;
-    };
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
 
     it('reads Rate, Latency and Out from a footer in its expanded layout', () => {
-        const rateRow = buildLabelValueRow('Rate', (value) => {
-            value.textContent = '48kHz';
-        });
-        const latencyRow = buildLatencyRow('2.7ms', '128 frames @ 48000Hz (native engine buffer)');
-        const outRow = buildLabelValueRow('Out', (value) => {
-            value.textContent = '-12.4 dB';
-        });
-        const footer = buildFooter([rateRow, latencyRow, outRow, buildEngineDot('Engine: running')]);
+        document.body.innerHTML = EXPANDED_FOOTER_HTML;
+        window.innerWidth = 1440;
 
-        expect(readStatusBarReadouts(footer, 1440)).toEqual({
+        expect(readStatusBarInDocument({ selector: SELECTOR })).toEqual({
             sampleRateText: '48kHz',
             latencyText: '2.7ms',
             latencyTitle: '128 frames @ 48000Hz (native engine buffer)',
@@ -367,15 +358,12 @@ describe('readStatusBarReadouts', () => {
     });
 
     it('names the compact layout and the More trigger when Out sits behind it', () => {
-        const rateRow = buildLabelValueRow('Rate', (value) => {
-            value.textContent = '48kHz';
-        });
-        const latencyRow = buildLatencyRow('2.7ms', '128 frames @ 48000Hz (native engine buffer)');
-        const footer = buildFooter([rateRow, latencyRow, buildEngineDot('Engine: running'), buildMoreTrigger()]);
+        document.body.innerHTML = COMPACT_FOOTER_HTML;
+        window.innerWidth = 1024;
 
         let thrown: unknown;
         try {
-            readStatusBarReadouts(footer, 1024);
+            readStatusBarInDocument({ selector: SELECTOR });
         } catch (error) {
             thrown = error;
         }
@@ -388,45 +376,79 @@ describe('readStatusBarReadouts', () => {
     });
 
     it('falls back to the generic missing-readout message when there is no More trigger to blame', () => {
-        const rateRow = buildLabelValueRow('Rate', (value) => {
-            value.textContent = '48kHz';
-        });
-        const latencyRow = buildLatencyRow('2.7ms', '128 frames @ 48000Hz (native engine buffer)');
-        const footer = buildFooter([rateRow, latencyRow, buildEngineDot('Engine: running')]);
+        document.body.innerHTML = NO_OUT_NO_TRIGGER_FOOTER_HTML;
+        window.innerWidth = 1024;
 
-        expect(() => readStatusBarReadouts(footer, 1024)).toThrow('the status bar has no readout labelled "Out"');
-    });
-});
-
-describe('describeMissingReadout and its message templates', () => {
-    it('fills the compact-layout template with the label and the width', () => {
-        expect(describeMissingReadout('Out', true, 1024)).toBe(
-            'the status bar is in its compact layout at 1024 px; the "Out" readout sits behind "More application status"'
+        expect(() => readStatusBarInDocument({ selector: SELECTOR })).toThrow(
+            'the status bar has no readout labelled "Out"'
         );
     });
 
-    it('fills the generic template with just the label', () => {
-        expect(describeMissingReadout('Out', false, 1024)).toBe('the status bar has no readout labelled "Out"');
+    it('refuses when the status bar is not in the document', () => {
+        document.body.innerHTML = '';
+
+        expect(() => readStatusBarInDocument({ selector: SELECTOR })).toThrow('the status bar is not in the document');
     });
 
-    // `desktopLatencyConnect.ts`'s in-page walk cannot import
-    // `describeMissingReadout` — a closure over this module's exports cannot
-    // cross the `page.evaluate` boundary, and this repository refuses to
-    // reconstruct a serialised closure with `new Function` (see
-    // `readStatusBarReadouts`'s own comment) — so it fills the two exported
-    // templates with the identical substitution by hand instead. This proves
-    // that hand-kept substitution produces byte-identical text to
-    // `describeMissingReadout`, so the two sides of the boundary cannot
-    // silently disagree on a token name.
-    it('matches the substitution desktopLatencyConnect.ts performs on the same exported templates', () => {
-        const fillTemplateLikeConnectDoes = (template: string, label: string, innerWidth: number): string =>
-            template.replace('{label}', label).replace('{innerWidth}', String(innerWidth));
+    // The whole reason this function exists as one function rather than a
+    // tested reference plus a hand-kept in-page copy: `desktopLatencyConnect.ts`
+    // hands the function itself to `page.evaluate`, which serialises it by
+    // `Function.prototype.toString()` and runs that text in a realm carrying
+    // none of this module's imports, module-level constants, or sibling
+    // functions. Running the serialised text here, in a `vm` context given
+    // only `document`, `window`, `Error` and `HTMLElement` — the exact
+    // identifiers the function's own doc comment claims are the whole
+    // allowance — is what proves the function actually survives that trip
+    // rather than merely reading as if it would.
+    it("survives being serialised by source text and run in a context with none of this module's bindings", () => {
+        document.body.innerHTML = EXPANDED_FOOTER_HTML;
+        window.innerWidth = 1440;
 
-        expect(fillTemplateLikeConnectDoes(COMPACT_LAYOUT_MISSING_READOUT_MESSAGE_TEMPLATE, 'Out', 1024)).toBe(
-            describeMissingReadout('Out', true, 1024)
-        );
-        expect(fillTemplateLikeConnectDoes(GENERIC_MISSING_READOUT_MESSAGE_TEMPLATE, 'Out', 1024)).toBe(
-            describeMissingReadout('Out', false, 1024)
-        );
+        const serialised = runInNewContext(`(${readStatusBarInDocument.toString()})`, {
+            document,
+            window,
+            Error,
+            HTMLElement,
+        }) as typeof readStatusBarInDocument;
+
+        expect(serialised({ selector: SELECTOR })).toEqual(readStatusBarInDocument({ selector: SELECTOR }));
+    });
+
+    // The success path above never reaches the compact-layout wording, so it
+    // alone cannot catch a leak that only that branch takes — such as moving
+    // the compact message into a `const` declared outside the function and
+    // referencing it from inside: the reference resolves fine in this module
+    // (ordinary closure), and the returned reading above never touches it, so
+    // that leak would otherwise ship unnoticed. Running the compact-layout
+    // fixture through the same serialised function is what forces that branch
+    // to execute in the stripped realm and turns a silent closure leak into an
+    // observed `ReferenceError`.
+    it('throws the identical compact-layout message whether serialised or called in this module', () => {
+        document.body.innerHTML = COMPACT_FOOTER_HTML;
+        window.innerWidth = 1024;
+
+        const serialised = runInNewContext(`(${readStatusBarInDocument.toString()})`, {
+            document,
+            window,
+            Error,
+            HTMLElement,
+        }) as typeof readStatusBarInDocument;
+
+        let direct: unknown;
+        try {
+            readStatusBarInDocument({ selector: SELECTOR });
+        } catch (error) {
+            direct = error;
+        }
+        let fromVm: unknown;
+        try {
+            serialised({ selector: SELECTOR });
+        } catch (error) {
+            fromVm = error;
+        }
+
+        expect(direct).toBeInstanceOf(Error);
+        expect(fromVm).toBeInstanceOf(Error);
+        expect((fromVm as Error).message).toBe((direct as Error).message);
     });
 });
