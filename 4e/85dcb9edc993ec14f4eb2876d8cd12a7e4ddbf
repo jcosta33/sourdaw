@@ -1,0 +1,41 @@
+scripts/test-health-gate-scripts.sh
+  s_87ab0a2f60ccf8::t_14b2b29cc13625 194-196,201-203,205,432-438,967,1019,1487
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_976d593d1874db 1697-1700
+  s_87ab0a2f60ccf8::t_719504e15a4504 27,899-906
+  s_87ab0a2f60ccf8::t_1b544055d1c29b 397,894,916,946,1158
+scripts/healthGateWorkflowContract.ts
+  s_87ab0a2f60ccf8::t_0a146296681044 39,65-70,77-84,86-93
+  s_87ab0a2f60ccf8::t_44c009b55cafac 85
+.github/workflows/quantum-measurements.yml
+  s_87ab0a2f60ccf8::t_9d5eb0e62bfc79 1-85,89-168
+  s_87ab0a2f60ccf8::t_44c009b55cafac 86-88
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_87ab0a2f60ccf8::t_2f5a4c272e45d1 1-61,63-131,133-204,206-221,230-309
+  s_87ab0a2f60ccf8::t_947414a53d2896 205,222-229
+  s_87ab0a2f60ccf8::t_35fbaaa888acd6 132
+  s_87ab0a2f60ccf8::t_44c009b55cafac 62
+docs/06-testing.md
+  s_87ab0a2f60ccf8::t_cb2bd2934485fb 682-695
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_87ab0a2f60ccf8::t_d0d43f9e7095ab 1-86,89-123,132-137
+  s_87ab0a2f60ccf8::t_65b549608cd651 87-88,124-131
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_87ab0a2f60ccf8::t_8d220ca1eaee0d 6,1915-2062
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4e85dcb9edc993ec14f4eb2876d8cd12a7e4ddbf",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
