@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_87ab0a2f60ccf8::t_b68c0ec7e32155 26,748-800
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_87ab0a2f60ccf8::t_c80c7b6e410200 284-306,564-657
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_9819df935b14fa::t_7ab69ab5ba89ab 324
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_9819df935b14fa::t_49da4529f77b2d 104-107,111
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_87ab0a2f60ccf8::t_da216c0ae4027c 1131-1188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "29dd3c1401d8fe97a392f8ca5974979429e0ceb6",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9819df935b14fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08565-749b-7231-9c74-837e7f30a03e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
