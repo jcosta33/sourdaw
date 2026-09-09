@@ -5,7 +5,7 @@ import {
     getExecutableAppActionEffect,
     type ExecutableAppActionEffect,
 } from '../executableAppActionEffects';
-import { executableAppActionDescriptors } from '../executableAppActionRegistry';
+import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
 import {
     CREATE_OPERATIONS,
     DELETE_OPERATIONS,
@@ -22,7 +22,10 @@ function hasDuplicates(values: readonly string[]): boolean {
 }
 
 function rowFor(actionType: string): ExecutableAppActionEffect {
-    return executableAppActionEffectsByType[actionType as keyof typeof executableAppActionEffectsByType];
+    if (!isExecutableAppActionType(actionType)) {
+        throw new Error(`unknown executable action type: ${actionType}`);
+    }
+    return executableAppActionEffectsByType[actionType];
 }
 
 function onlyExecutableActionTypes(operations: ReadonlySet<string>): readonly string[] {
@@ -210,6 +213,51 @@ describe('executableAppActionEffectsByType', () => {
             dimensions: ['automation'],
             scope: 'dependents',
             removes: ['automation-point'],
+        });
+    });
+
+    it('pins the exact effect object for setPlayback', () => {
+        expect(executableAppActionEffectsByType.setPlayback).toEqual({
+            dimensions: ['transport'],
+            conditional: [
+                { dimension: 'clip-audio', when: 'recording-in-progress' },
+                { dimension: 'midi-content', when: 'recording-in-progress' },
+                { dimension: 'automation', when: 'transport-playing-in-recording-mode' },
+            ],
+            scope: 'project',
+        });
+    });
+
+    it('pins the exact effect object for splitClip', () => {
+        expect(executableAppActionEffectsByType.splitClip).toEqual({
+            dimensions: ['arrangement', 'clip-audio', 'automation'],
+            conditional: [{ dimension: 'midi-content', when: 'midi-clip' }],
+            scope: 'target',
+            creates: ['clip', 'notes', 'automation-lane'],
+        });
+    });
+
+    it('pins the exact effect object for addTrack', () => {
+        expect(executableAppActionEffectsByType.addTrack).toEqual({
+            dimensions: ['arrangement'],
+            conditional: [{ dimension: 'processing', when: 'midi-track-kind' }],
+            scope: 'target',
+            creates: ['track', 'device'],
+        });
+    });
+
+    it('pins the exact effect object for assignToVca', () => {
+        expect(executableAppActionEffectsByType.assignToVca).toEqual({
+            dimensions: ['routing', 'processing'],
+            scope: 'dependents',
+        });
+    });
+
+    it('pins the exact effect object for armTrack', () => {
+        expect(executableAppActionEffectsByType.armTrack).toEqual({
+            dimensions: ['monitoring'],
+            conditional: [{ dimension: 'routing', when: 'midi-track-kind' }],
+            scope: 'project',
         });
     });
 });

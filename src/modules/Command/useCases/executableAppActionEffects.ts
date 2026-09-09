@@ -72,7 +72,7 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement'],
         conditional: [{ dimension: 'processing', when: 'midi-track-kind' }],
         scope: 'target',
-        creates: ['track'],
+        creates: ['track', 'device'],
     },
     createBus: {
         dimensions: ['arrangement', 'routing'],
@@ -116,7 +116,7 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement', 'clip-audio', 'automation'],
         conditional: [{ dimension: 'midi-content', when: 'midi-clip' }],
         scope: 'target',
-        creates: ['clip'],
+        creates: ['clip', 'notes', 'automation-lane'],
     },
     renameClip: {
         dimensions: ['arrangement'],
@@ -299,12 +299,12 @@ export const executableAppActionEffectsByType = {
     armTrack: {
         dimensions: ['monitoring'],
         conditional: [{ dimension: 'routing', when: 'midi-track-kind' }],
-        scope: 'dependents',
+        scope: 'project',
     },
     duplicateTrack: {
         dimensions: ['arrangement', 'routing', 'processing', 'clip-audio', 'midi-content', 'automation'],
         scope: 'target',
-        creates: ['track', 'device', 'clip', 'notes', 'automation-lane'],
+        creates: ['track', 'device', 'clip', 'notes', 'automation-lane', 'send'],
     },
     setTrackGain: {
         dimensions: ['processing'],
@@ -337,6 +337,7 @@ export const executableAppActionEffectsByType = {
         conditional: [
             { dimension: 'clip-audio', when: 'recording-in-progress' },
             { dimension: 'midi-content', when: 'recording-in-progress' },
+            { dimension: 'automation', when: 'transport-playing-in-recording-mode' },
         ],
         scope: 'project',
     },
@@ -345,6 +346,7 @@ export const executableAppActionEffectsByType = {
         conditional: [
             { dimension: 'clip-audio', when: 'recording-in-progress' },
             { dimension: 'midi-content', when: 'recording-in-progress' },
+            { dimension: 'automation', when: 'transport-playing-in-recording-mode' },
         ],
         scope: 'project',
     },
@@ -353,6 +355,7 @@ export const executableAppActionEffectsByType = {
         conditional: [
             { dimension: 'clip-audio', when: 'recording-in-progress' },
             { dimension: 'midi-content', when: 'recording-in-progress' },
+            { dimension: 'automation', when: 'transport-playing-in-recording-mode' },
         ],
         scope: 'project',
     },
@@ -426,11 +429,11 @@ export const executableAppActionEffectsByType = {
         creates: ['vca-group'],
     },
     assignToVca: {
-        dimensions: ['routing'],
+        dimensions: ['routing', 'processing'],
         scope: 'dependents',
     },
     removeFromVca: {
-        dimensions: ['routing'],
+        dimensions: ['routing', 'processing'],
         scope: 'target',
     },
     // A device that makes a dormant folder track live also spins up live strips for its descendant tracks.
