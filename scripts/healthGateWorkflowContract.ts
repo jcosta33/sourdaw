@@ -1,5 +1,5 @@
 /**
- * The structural pins of the four gate workflows, shared by both health-gate
+ * The structural pins of the registered workflows, shared by both health-gate
  * harnesses — the vitest spec and the shell harness — so the two can never
  * drift apart, and by the record script that blesses a deliberate edit.
  *
@@ -14,9 +14,9 @@
  * suite must fan out across, the files whose jobs must inherit workflow-level
  * permissions, and every job's ordered step names.
  *
- * The snapshot pins the four files' CONTENTS; GitHub runs whatever the
+ * The snapshot pins the registered files' CONTENTS; GitHub runs whatever the
  * directory holds, and a required check is satisfied by the newest run of its
- * name — a `skipped` conclusion included. A fifth workflow the parse never
+ * name — a `skipped` conclusion included. An unregistered workflow the parse never
  * reads could therefore mint a passing `Gate` over a red head, so the sorted
  * *.yml/*.yaml directory listing is pinned beside the contents under
  * `workflowFileInventory`.
@@ -36,6 +36,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
+    'wasm-artifacts.yml',
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
@@ -60,13 +61,25 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
 // reporter); these two files must grant nothing at job level.
-export const JOB_LEVEL_PERMISSION_FREE_FILES = ['health-gates.yml', 'validation.yml'] as const;
+export const JOB_LEVEL_PERMISSION_FREE_FILES = ['health-gates.yml', 'validation.yml', 'wasm-artifacts.yml'] as const;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'wasm-artifacts.yml': {
+        'build-artifacts': [
+            'Checkout source head',
+            'Set up pnpm',
+            'Set up Node',
+            'Install helper dependencies',
+            'Select affected packages',
+            'Install pinned generation toolchain',
+            'Build and qualify complete artifact',
+            'Upload qualified artifact',
+        ],
+    },
     'health-gates.yml': {
         validation: null,
         gate: ['Require every job to have succeeded or been skipped'],
@@ -365,7 +378,7 @@ export function readRecordedWorkflowSnapshot(repositoryRoot: string): WorkflowSn
 }
 
 // GitHub runs every *.yml/*.yaml file in the directory, so the file SET is a
-// dimension the four-file parse never reads: an unpinned workflow can mint a
+// dimension a fixed-file parse never reads: an unpinned workflow can mint a
 // Gate check no pin reads, and a deleted one leaves the record pointing at a
 // gate that no longer exists. Both directions refuse the drift, naming the
 // file.
@@ -444,5 +457,106 @@ export function assertWorkflowSnapshotMatch(recorded: WorkflowSnapshot, fresh: W
                     'and review the snapshot diff'
             );
         }
+    }
+}
+
+export function assertHostedWasmWorkflow(value: unknown): void {
+    function record(candidate: unknown): Record<string, unknown> {
+        if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+            throw new Error('Invalid hosted WASM workflow mapping');
+        }
+        return Object.fromEntries(Object.keys(candidate).map((key) => [key, Reflect.get(candidate, key)]));
+    }
+    function requireEqual(actual: unknown, expected: unknown, label: string): void {
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Hosted WASM workflow must retain ${label}`);
+        }
+    }
+    const workflow = record(value);
+    requireEqual(
+        workflow.on,
+        { pull_request: { branches: ['main'], types: ['opened', 'synchronize', 'reopened'] } },
+        'the unprivileged PR trigger'
+    );
+    requireEqual(workflow.permissions, { contents: 'read' }, 'read-only contents permission');
+    requireEqual(
+        workflow.concurrency,
+        { group: 'wasm-artifacts-${{ github.event.pull_request.number }}', 'cancel-in-progress': true },
+        'bounded PR concurrency'
+    );
+    const jobs = record(workflow.jobs);
+    requireEqual(Object.keys(jobs), ['build-artifacts'], 'the standalone job');
+    const job = record(jobs['build-artifacts']);
+    requireEqual(job.name, 'Build WASM artifacts', 'its distinct check name');
+    requireEqual(job['runs-on'], 'ubuntu-latest', 'a standard hosted runner');
+    requireEqual(job['timeout-minutes'], 45, 'its timeout');
+    for (const forbidden of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
+        requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
+    }
+    if (!Array.isArray(job.steps)) {
+        throw new TypeError('Hosted WASM workflow has no steps');
+    }
+    const steps = job.steps.map(record);
+    requireEqual(
+        steps.map((step) => step.name),
+        STEP_INVENTORY['wasm-artifacts.yml']?.['build-artifacts'],
+        'complete ordered build steps'
+    );
+    const named = (name: string) => {
+        const step = steps.find((candidate) => candidate.name === name);
+        if (!step) {
+            throw new Error(`Missing hosted WASM step ${name}`);
+        }
+        return step;
+    };
+    requireEqual(
+        named('Checkout source head').with,
+        { ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false },
+        'exact head checkout without persisted credentials'
+    );
+    requireEqual(named('Select affected packages').run, 'pnpm wasm:hosted plan', 'the package selection helper');
+    requireEqual(named('Select affected packages').id, 'plan', 'the selection output ID');
+    requireEqual(
+        named('Build and qualify complete artifact').run,
+        'pnpm wasm:hosted build',
+        'complete build and provenance qualification'
+    );
+    requireEqual(
+        named('Upload qualified artifact').uses,
+        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'the pinned artifact uploader'
+    );
+    requireEqual(
+        named('Upload qualified artifact').with,
+        {
+            name: 'wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
+            path: '${{ runner.temp }}/qualified-wasm-artifacts',
+            'if-no-files-found': 'error',
+            'retention-days': 1,
+        },
+        'only qualified output with bounded retention'
+    );
+    for (const step of steps) {
+        requireEqual(step['continue-on-error'], undefined, 'failure propagation');
+        const conditional = [
+            'Install pinned generation toolchain',
+            'Build and qualify complete artifact',
+            'Upload qualified artifact',
+        ].includes(String(step.name));
+        requireEqual(
+            step.if,
+            conditional ? "steps.plan.outputs.selected == 'true'" : undefined,
+            'selection-only build conditions'
+        );
+    }
+    const env = record(job.env);
+    requireEqual(env.BUILD_HEAD_SHA, '${{ github.event.pull_request.head.sha }}', 'head-bound provenance');
+    requireEqual(
+        env.BUILD_OUTPUT_DIRECTORY,
+        '${{ runner.temp }}/qualified-wasm-artifacts',
+        'the private qualified directory'
+    );
+    if (JSON.stringify(workflow).includes('secrets.')) {
+        throw new Error('Hosted WASM workflow must not consume secrets');
     }
 }

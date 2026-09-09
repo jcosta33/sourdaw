@@ -3,7 +3,8 @@
     "health-gates.yml",
     "heavy-gates.yml",
     "nightly.yml",
-    "validation.yml"
+    "validation.yml",
+    "wasm-artifacts.yml"
   ],
   "health-gates.yml": {
     "name": "Health gates",
@@ -1905,6 +1906,105 @@
               "RESULTS": "${{ toJSON(needs) }}"
             },
             "run": "set -euo pipefail\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[] | select(.value.result == \"failure\") | .key' | paste -sd ', ' -)\ntitle=\"ci(nightly): health gates red on main\"\nbody=$(printf 'The nightly run against `main` failed.\\n\\nFailing jobs: %s\\n\\n%s\\n' \\\n  \"$failed\" \"$RUN_URL\")\nexisting=$(gh issue list --repo \"$GITHUB_REPOSITORY\" --state open --search \"\\\"$title\\\" in:title\" \\\n  --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo \"$GITHUB_REPOSITORY\" --body \"$body\"\nelse\n  gh issue create --repo \"$GITHUB_REPOSITORY\" --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
+          }
+        ]
+      }
+    }
+  },
+  "wasm-artifacts.yml": {
+    "name": "Hosted WASM artifacts",
+    "on": {
+      "pull_request": {
+        "branches": [
+          "main"
+        ],
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "concurrency": {
+      "group": "wasm-artifacts-${{ github.event.pull_request.number }}",
+      "cancel-in-progress": true
+    },
+    "jobs": {
+      "build-artifacts": {
+        "name": "Build WASM artifacts",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "env": {
+          "BUILD_REPOSITORY": "${{ github.repository }}",
+          "BUILD_PR": "${{ github.event.pull_request.number }}",
+          "BUILD_HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+          "BUILD_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+          "BUILD_WORKFLOW_REF": "${{ github.workflow_ref }}",
+          "BUILD_WORKFLOW_SHA": "${{ github.workflow_sha }}",
+          "BUILD_RUN_ID": "${{ github.run_id }}",
+          "BUILD_RUN_ATTEMPT": "${{ github.run_attempt }}",
+          "BUILD_OUTPUT_DIRECTORY": "${{ runner.temp }}/qualified-wasm-artifacts"
+        },
+        "steps": [
+          {
+            "name": "Checkout source head",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Install helper dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Select affected packages",
+            "id": "plan",
+            "run": "pnpm wasm:hosted plan"
+          },
+          {
+            "name": "Install pinned generation toolchain",
+            "if": "steps.plan.outputs.selected == 'true'",
+            "env": {
+              "RUST_TOOLCHAIN": "${{ steps.plan.outputs.rust-toolchain }}",
+              "WASM_PACK_VERSION": "${{ steps.plan.outputs.wasm-pack }}"
+            },
+            "run": "rustup toolchain install \"$RUST_TOOLCHAIN\" --profile minimal --target wasm32-unknown-unknown\ncargo install wasm-pack --version \"$WASM_PACK_VERSION\" --locked\n"
+          },
+          {
+            "name": "Build and qualify complete artifact",
+            "if": "steps.plan.outputs.selected == 'true'",
+            "run": "pnpm wasm:hosted build"
+          },
+          {
+            "name": "Upload qualified artifact",
+            "if": "steps.plan.outputs.selected == 'true'",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "${{ runner.temp }}/qualified-wasm-artifacts",
+              "if-no-files-found": "error",
+              "retention-days": 1
+            }
           }
         ]
       }

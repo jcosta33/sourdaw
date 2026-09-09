@@ -182,6 +182,7 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 // vitest spec can never drift apart: the whole-file snapshot, the shard
 // matrices, the permission-free files, and every job's step inventory.
 const {
+    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     JOB_LEVEL_PERMISSION_FREE_FILES,
@@ -194,6 +195,8 @@ const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
+const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+assertHostedWasmWorkflow(hostedWasm);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
@@ -948,6 +951,7 @@ for (const [file, parsed] of [
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
+    ['wasm-artifacts.yml', hostedWasm],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         expect(
@@ -976,7 +980,7 @@ try {
 }
 expect(
     snapshotError === undefined,
-    `the four gate workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
+    `the registered workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
 );
 
 // The snapshot pins the four files' contents; the directory SET is pinned
@@ -998,6 +1002,7 @@ const workflowsByFile = {
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,
+    'wasm-artifacts.yml': hostedWasm,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.
@@ -1399,6 +1404,7 @@ expect(
 // beside their job. An `if` anywhere else retires a proof by flipping the
 // condition while every other pin stays green.
 const allowedStepConditions = [
+    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map((step) => ['wasm-artifacts.yml', 'build-artifacts', step, "steps.plan.outputs.selected == 'true'"]),
     ['validation.yml', 'unit', 'Report shard failure', shardFailureCondition],
     ['heavy-gates.yml', 'e2e', 'Report shard failure', shardFailureCondition],
     ['heavy-gates.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
@@ -1463,6 +1469,7 @@ for (const [file, parsed] of [
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
+    ['wasm-artifacts.yml', hostedWasm],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         for (const step of job?.steps ?? []) {

@@ -33,6 +33,22 @@ The `wasm:*` scripts (`package.json`) run `wasm-pack` per crate into `public/was
 
 Never hand-edit files under `src/modules/AudioEngine/wasm/` — regenerate via the matching `wasm:*` script. `wasm:all` builds all four crates.
 
+### Hosted artifact generation
+
+Publish a Scoring or ProofChamber source change through `pnpm lane:publish` to request a hosted build. The independent **Hosted WASM artifacts** pull-request workflow checks out the exact PR head and selects stale supported packages by the existing crate-closure fingerprint. Changes to the matching generator select its package; changes to shared generation inputs or the hosted workflow/helper select both. Unsupported stale packages fail explicitly. A current head with no generation changes reports no work and uploads nothing.
+
+The isolated Ubuntu job installs the repository's pinned Rust and wasm-pack toolchains, runs the selected package scripts sequentially, regenerates one combined manifest for only successful builds, and runs `wasm:verify`. Generation may change only declared output files and the manifest. Only a successful complete build qualifies an upload; this workflow has no repository-write permission, deployment, or automatic commit path. Existing required validation still rejects a source head whose committed artifacts are stale.
+
+The returned artifact is named `wasm-<source-head>-<run-id>-<attempt>`. It contains each selected package's complete declared output set, `public/wasm/manifest.json`, and `receipt.json`. The receipt records source/workflow/run identity, actual toolchain version output, and file hashes. Outputs are bounded to 10 MiB and expire after one day. A receipt or source fingerprint alone does not prove honest generation: review the workflow and helper at their recorded revision and inspect successful package-build logs.
+
+Download and verify the return before copying files into an author lane:
+
+1. Identify the successful **Hosted WASM artifacts** run and its exact artifact ID. Fetch the run and artifact metadata from GitHub's official REST endpoints, using read-only access: `gh api repos/OWNER/REPO/actions/runs/RUN_ID > run.json`, `gh api repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID > artifact.json`, and `gh api repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID/zip > artifact.zip`. Keep these downloads in private artifact storage. Verify the repository, PR, source head, run attempt, workflow path, and successful build logs before trusting the metadata. The helper treats supplied metadata as caller-trusted API evidence; arbitrary JSON is not proof of GitHub origin.
+2. From the source lane, whose HEAD must still match the built head and whose tracked and untracked source must be clean, run `pnpm wasm:hosted verify-return /absolute/artifact.zip /absolute/run.json /absolute/artifact.json OWNER/REPO PR_NUMBER RUN_ID ARTIFACT_ID /absolute/private/verified-output`. The final directory must not exist and must be outside the source checkout. This checks the archive digest against API metadata, run/head/attempt identity, ZIP structure and size limits, canonical regular-file members, complete package membership, and receipt hashes before publishing any verified files. It neither executes downloaded scripts nor changes the source lane.
+3. Copy only the files named in the verified receipt's `files` mapping from that private directory into the same clean source-head lane, preserving their relative paths. Do not copy `receipt.json`, helper programs, or automatic commits. Run `pnpm wasm:verify`, inspect the resulting diff, stage those exact generated paths, and run `pnpm wasm:verify` after staging. Commit them and publish through the protected primary checkout's `pnpm lane:publish` route. A changed source head requires a new hosted build; do not reuse the old receipt.
+
+The workflow can be introduced and exercised on its own mergeable pull request through normal publication. Its first successful build/upload and verified download are required acceptance evidence before relying on it. Infrastructure bootstrap output remains private evidence rather than an unrelated artifact restamp commit.
+
 ## 2. Loading at runtime
 
 Worklets cannot fetch asynchronously at construction time, so the main thread fetches and

@@ -14,6 +14,7 @@ import {
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
+    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     HEALTH_GATE_WORKFLOW_FILES,
@@ -305,7 +306,7 @@ const SHARD_FAILURE_REPORT_CONDITION = "${{ !cancelled() && steps.run_shard.outc
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
 const DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
 const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`;
-// Every step condition in the four workflows, keyed by file, job, and step
+// Every step condition in the registered workflows, keyed by file, job, and step
 // name. A step condition is legitimate only when it is one of these exact,
 // individually pinned exceptions — the shard-failure reporters, the blob
 // uploads that must outlive their shard, and the deploy legs already pinned
@@ -313,6 +314,14 @@ const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.pr
 // flipping the condition while every other pin stays green.
 type ConditionalStepPin = Readonly<{ workflow: string; job: string; step: string; condition: string }>;
 const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
+        (step) => ({
+            workflow: 'wasm-artifacts.yml',
+            job: 'build-artifacts',
+            step,
+            condition: "steps.plan.outputs.selected == 'true'",
+        })
+    ),
     {
         workflow: 'validation.yml',
         job: 'unit',
@@ -384,6 +393,7 @@ const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-ga
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
+const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
@@ -874,10 +884,16 @@ function assertNativeParityJob(candidate: UnknownRecord): void {
     }
 }
 
-type WorkflowSet = { health: UnknownRecord; validation: UnknownRecord; heavy: UnknownRecord; nightly: UnknownRecord };
+type WorkflowSet = {
+    health: UnknownRecord;
+    validation: UnknownRecord;
+    heavy: UnknownRecord;
+    nightly: UnknownRecord;
+    hostedWasm: UnknownRecord;
+};
 
 function workflowSet(): WorkflowSet {
-    return { health: workflow, validation: validationWorkflow, heavy: heavyWorkflow, nightly };
+    return { health: workflow, validation: validationWorkflow, heavy: heavyWorkflow, nightly, hostedWasm };
 }
 
 function cloneWorkflows(label: string): WorkflowSet {
@@ -887,6 +903,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         validation: asRecord(clone.validation, `${label} validation`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
+        hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
     };
 }
 
@@ -915,6 +932,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['validation.yml', set.validation],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
+        ['wasm-artifacts.yml', set.hostedWasm],
     ];
 }
 
@@ -1668,6 +1686,30 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 }
 
 describe('health gates workflow contract', () => {
+    it('keeps hosted WASM generation unprivileged, head-bound and complete', () => {
+        expect(() => assertHostedWasmWorkflow(hostedWasm)).not.toThrow();
+        const gate = structuredClone(hostedWasm);
+        jobAt(gate, 'build-artifacts').name = 'Gate';
+        expect(() => assertHostedWasmWorkflow(gate)).toThrow('distinct check name');
+        jobAt(gate, 'build-artifacts').name = 'HeavyGate';
+        expect(() => assertHostedWasmWorkflow(gate)).toThrow('distinct check name');
+        const permissions = structuredClone(hostedWasm);
+        recordAt(permissions, 'permissions').contents = 'write';
+        expect(() => assertHostedWasmWorkflow(permissions)).toThrow('read-only');
+        const wrongHead = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(wrongHead, 'build-artifacts'), 'Checkout source head'), 'with').ref =
+            '${{ github.sha }}';
+        expect(() => assertHostedWasmWorkflow(wrongHead)).toThrow('exact head');
+        const privileged = structuredClone(hostedWasm);
+        privileged.on = { pull_request_target: {} };
+        expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
+        const omitted = structuredClone(hostedWasm);
+        removeStepNamed(jobAt(omitted, 'build-artifacts'), 'Build and qualify complete artifact');
+        expect(() => assertHostedWasmWorkflow(omitted)).toThrow('complete ordered build steps');
+        const unqualified = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(unqualified, 'build-artifacts'), 'Upload qualified artifact'), 'with').path = '.';
+        expect(() => assertHostedWasmWorkflow(unqualified)).toThrow('only qualified output');
+    });
     afterEach(() => {
         vi.unstubAllGlobals();
     });
@@ -2267,7 +2309,7 @@ describe('health gates workflow contract', () => {
         ).not.toThrow();
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES])).not.toThrow();
 
-        // Mutation-kill: a fifth workflow the four-file parse never reads can
+        // Mutation-kill: an unregistered workflow the fixed-file parse never reads can
         // still mint a passing Gate over a red head — the review-found hole —
         // so the directory listing itself is pinned.
         expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES, 'shadow.yml'])).toThrow(
