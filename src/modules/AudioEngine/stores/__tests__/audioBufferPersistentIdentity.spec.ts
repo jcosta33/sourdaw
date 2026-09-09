@@ -285,7 +285,7 @@ describe('audio buffer persistent identity across module instances', () => {
         const realm = await loadRealm();
         const prepared = await realm.prepare({ audioContext: audioContext(), bufferIds: ['ordinary'] });
         expect(prepared?.publish()).toBe(1);
-        expect(controls.storeNames()).toEqual(expect.arrayContaining(CURRENT_STORES));
+        expect(controls.storeNames()).toEqual(expect.arrayContaining([...CURRENT_STORES]));
         expect(controls.committedCheckpointRetentions.size).toBe(0);
         expect(controls.committed.get('ordinary')?.channelData[0]?.[0]).toBe(0.25);
         expect(controls.committedRecovery.has('recovery')).toBe(true);

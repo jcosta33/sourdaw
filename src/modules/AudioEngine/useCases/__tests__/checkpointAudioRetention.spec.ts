@@ -182,8 +182,8 @@ function runtimePcm(fixture: PcmFixture): AudioBuffer {
     return buffer;
 }
 
-function expectRuntimePcm(actual: AudioBuffer | undefined, expected: PcmFixture): void {
-    if (actual === undefined) {
+function expectRuntimePcm(actual: AudioBuffer | null | undefined, expected: PcmFixture): void {
+    if (actual === null || actual === undefined) {
         throw new Error('Expected runtime PCM');
     }
     expect(actual.sampleRate).toBe(expected.sampleRate);
