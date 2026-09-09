@@ -14,6 +14,7 @@ export const ACTION_LABELS: Record<string, string> = {
     selectTrack: 'Select track',
     muteTrack: 'Mute/unmute',
     soloTrack: 'Solo/unsolo',
+    selectTake: 'Select take',
     setSoloSafe: 'Set solo safe',
     clearSolos: 'Clear solos',
     armTrack: 'Arm/disarm',

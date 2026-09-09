@@ -9,6 +9,7 @@ const MIRROR_QUOTA_BYTES = 4096;
 const OVERSIZED_STACK_ENTRY_COUNT = 60;
 const SUPPORTED_SESSION_ACTION_TYPES = [
     'replayGeneratedMidi',
+    'selectTake',
     'setMasterGain',
     'setTempo',
     'stopPlayback',
@@ -456,6 +457,43 @@ describe('undoStore / pushUndo', () => {
 
         const reloaded = await loadSubject();
         expect(reloaded.undoStore.value?.past[0]).toMatchObject({
+            redoAction,
+        });
+    });
+
+    it('persists a guarded selectTake undo entry and rehydrates it (#4072)', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        const action = {
+            type: 'selectTake' as const,
+            payload: { trackId: 'track-1', takeId: 'take-b', expectedSelectedTakeId: 'take-a' },
+        };
+        const inverseAction = {
+            type: 'selectTake' as const,
+            payload: { trackId: 'track-1', takeId: 'take-a', expectedSelectedTakeId: 'take-b' },
+        };
+        const redoAction = {
+            type: 'selectTake' as const,
+            payload: { trackId: 'track-1', takeId: 'take-b', expectedSelectedTakeId: 'take-a' },
+        };
+        const entry = createUndoEntry('Select take', action, inverseAction, 'manual', redoAction);
+        pushUndo(entry);
+
+        // Persistence writes are coalesced onto a microtask flush.
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(parsed.past)).toEqual(['Select take']);
+
+        // A fresh load hydrates only what the current argument contracts still
+        // accept, so the entry surviving this round trip proves the generated
+        // selectTake schema accepts its guarded forward, inverse, and redo
+        // payloads.
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past).toHaveLength(1);
+        expect(reloaded.undoStore.value?.past[0]).toMatchObject({
+            label: 'Select take',
+            action,
+            inverseAction,
             redoAction,
         });
     });

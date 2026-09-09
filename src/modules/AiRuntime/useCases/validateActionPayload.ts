@@ -613,6 +613,12 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloed']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloed === 'boolean',
+    // `expectedSelectedTakeId` is internal replay metadata, not a provider argument.
+    selectTake: (param): param is PayloadOf<'selectTake'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'takeId']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.takeId),
     setSoloSafe: (param): param is PayloadOf<'setSoloSafe'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'soloSafe']) &&

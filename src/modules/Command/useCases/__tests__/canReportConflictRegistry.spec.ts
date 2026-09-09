@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
-import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -70,6 +70,15 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
+        // Live lane selects 'take-live'; the guard expects 'take-elsewhere'.
+        title: 'selectTake refuses to write against a diverged document',
+        actionType: 'selectTake',
+        divergedAction: {
+            type: 'selectTake',
+            payload: { trackId: 'track-live', takeId: 'take-live', expectedSelectedTakeId: 'take-elsewhere' },
+        },
+    },
+    {
         // Live track gain is the model default (0.8, `models/Track.ts`); the
         // guard expects 0.5. If that default ever moved to 0.5 the divergence
         // would vanish and this row would red — the reliance is pinned.
@@ -106,6 +115,25 @@ function seedLiveProjectState(): void {
     if (clip === null) {
         throw new Error('Expected live clip fixture');
     }
+    takeLaneStore.set({
+        lanes: [
+            {
+                id: 'take-lane-live',
+                trackId: 'track-live',
+                takes: [
+                    {
+                        id: 'take-live',
+                        clipId: 'clip-live',
+                        name: 'Live take',
+                        startBeat: 0,
+                        endBeat: 8,
+                        selected: true,
+                    },
+                ],
+                activeCompRegions: [],
+            },
+        ],
+    });
 }
 
 describe('canReportConflict handler registry honesty (#2881)', () => {

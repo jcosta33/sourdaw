@@ -9,7 +9,8 @@ import { removeCompRegion } from '../removeCompRegion';
 import { selectTake } from '../selectTake';
 import { setCompRegion } from '../setCompRegion';
 
-const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+    executeUserAppActionMock: vi.fn(),
     pushUndoEntryMock: vi.fn(),
     takeLaneStoreMock: {
         value: null as TakeLaneStoreState | null,
@@ -18,7 +19,7 @@ const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,
 }));
 
@@ -53,22 +54,18 @@ describe('comping undo entries', () => {
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Add take lane');
     });
 
-    it('selectTake skips undo when the take is already selected', () => {
+    it('selectTake dispatches the guarded selection action instead of pushing a callback undo entry (#4072)', async () => {
         const lane = createTakeLane('t1');
         const take = { id: 'tk', clipId: 'c', name: 'n', startBeat: 0, endBeat: 1, selected: true };
         takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [take] }] };
-        selectTake('t1', 'tk');
-        expect(pushUndoEntryMock).not.toHaveBeenCalled();
-    });
 
-    it('selectTake pushes undo when the selected take changes', () => {
-        const lane = createTakeLane('t1');
-        const takeA = { id: 'a', clipId: 'c', name: 'A', startBeat: 0, endBeat: 1, selected: true };
-        const takeB = { id: 'b', clipId: 'c', name: 'B', startBeat: 1, endBeat: 2, selected: false };
-        takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [takeA, takeB] }] };
-        selectTake('t1', 'b');
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Select take');
+        await selectTake('t1', 'tk');
+
+        expect(executeUserAppActionMock).toHaveBeenCalledWith({
+            type: 'selectTake',
+            payload: { trackId: 't1', takeId: 'tk' },
+        });
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('setCompRegion skips undo when no lane matches the track', () => {

@@ -18,13 +18,13 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(250);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(251);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(RUNTIME_ACTION_TYPES).not.toContain('stemSeparate');
         expect(RUNTIME_ACTION_TYPES).toContain('automateSendRanges');
         expect(RUNTIME_ACTION_TYPES).toContain('renderProjectSections');
-        expect(digest >>> 0).toBe(676_755_775);
+        expect(digest >>> 0).toBe(984_001_552);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

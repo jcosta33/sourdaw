@@ -9,6 +9,7 @@ export const RUNTIME_ACTION_TYPES = [
     'selectTrack',
     'muteTrack',
     'soloTrack',
+    'selectTake',
     'setSoloSafe',
     'toggleSoloSafe',
     'armTrack',
