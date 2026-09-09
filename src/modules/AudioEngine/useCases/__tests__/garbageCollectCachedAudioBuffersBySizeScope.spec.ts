@@ -14,7 +14,6 @@ import { installTestAudioBufferConstructor } from '../../stores/__tests__/prepar
 import type { ProjectAudioStorageLockScope } from '#/infra/storage/withProjectAudioStorageLock';
 
 let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
-let runInProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').runInProjectAudioStorageLock;
 let durableOwnershipProvider: ReturnType<typeof vi.fn<() => Promise<readonly string[]>>>;
 let garbageCollectCachedAudioBuffersBySize: typeof import('../garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let garbageCollectAudioBufferCacheBySize: typeof import('../../stores/audioBufferCache').garbageCollectAudioBufferCacheBySize;
@@ -29,7 +28,7 @@ beforeEach(async () => {
     installTestAudioBufferConstructor();
     controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
     [
-        { withProjectAudioStorageLock, runInProjectAudioStorageLock },
+        { withProjectAudioStorageLock },
         { garbageCollectCachedAudioBuffersBySize },
         { garbageCollectAudioBufferCacheBySize },
         { setDurableAudioBufferOwnershipProvider },
@@ -60,34 +59,49 @@ function seedOrdinaryBuffer(): void {
 }
 
 describe('size-based cache collection lock ownership', () => {
-    it('keeps a trailing owner excluded until deferred scoped collection completes', async () => {
+    it('keeps a trailing owner excluded until the public collector completes', async () => {
         let collectionEntered!: () => void;
         const collectionEnteredPromise = new Promise<void>((resolve) => {
             collectionEntered = resolve;
         });
         let releaseCollection!: () => void;
-        const collection = withProjectAudioStorageLock((scope) =>
-            runInProjectAudioStorageLock(scope, async () => {
-                collectionEntered();
-                await new Promise<void>((resolve) => {
-                    releaseCollection = resolve;
-                });
-                return 1;
-            })
-        );
-        await collectionEnteredPromise;
 
-        let trailingOwnerEntered = false;
-        const trailingOwner = withProjectAudioStorageLock(async () => {
-            trailingOwnerEntered = true;
-        });
-        expect(lockManager.requestedNames).toEqual(['sourdaw:project-audio-storage', 'sourdaw:project-audio-storage']);
-        expect(trailingOwnerEntered).toBe(false);
+        vi.resetModules();
+        const lockModule = await import('#/infra/storage/withProjectAudioStorageLock');
+        vi.doMock('../../stores/audioBufferCache', () => ({
+            garbageCollectAudioBufferCacheBySize: (_maxSizeBytes: number, scope: ProjectAudioStorageLockScope) =>
+                lockModule.runInProjectAudioStorageLock(scope, async () => {
+                    collectionEntered();
+                    await new Promise<void>((resolve) => {
+                        releaseCollection = resolve;
+                    });
+                    return 1;
+                }),
+        }));
+        try {
+            const { garbageCollectCachedAudioBuffersBySize: collect } =
+                await import('../garbageCollectCachedAudioBuffersBySize');
+            const collection = collect({ maxSizeBytes: 0 });
+            await collectionEnteredPromise;
 
-        releaseCollection();
-        await expect(collection).resolves.toBe(1);
-        await trailingOwner;
-        expect(trailingOwnerEntered).toBe(true);
+            let trailingOwnerEntered = false;
+            const trailingOwner = lockModule.withProjectAudioStorageLock(async () => {
+                trailingOwnerEntered = true;
+            });
+            expect(lockManager.requestedNames).toEqual([
+                'sourdaw:project-audio-storage',
+                'sourdaw:project-audio-storage',
+            ]);
+            expect(trailingOwnerEntered).toBe(false);
+
+            releaseCollection();
+            await expect(collection).resolves.toBe(1);
+            await trailingOwner;
+            expect(trailingOwnerEntered).toBe(true);
+        } finally {
+            vi.doUnmock('../../stores/audioBufferCache');
+            vi.resetModules();
+        }
     });
     it('queues storage work behind the public owner lock and retains it until deletion commits', async () => {
         seedOrdinaryBuffer();
