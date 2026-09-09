@@ -1077,7 +1077,12 @@ describe('shared vocal FX buses workflow', () => {
             },
             {
                 type: 'setTrackGain',
-                payload: { trackId: 'track-lead-vocal', gain: 0.656, expectedGain: 0.82 },
+                payload: {
+                    trackId: 'track-lead-vocal',
+                    gain: 0.656,
+                    expectedGain: 0.82,
+                    automationRecordingPolicy: 'suppressed',
+                },
             },
             {
                 type: 'removeDevice',
@@ -1089,7 +1094,12 @@ describe('shared vocal FX buses workflow', () => {
             },
             {
                 type: 'setTrackGain',
-                payload: { trackId: 'track-lead-double', gain: 0.518, expectedGain: 0.74 },
+                payload: {
+                    trackId: 'track-lead-double',
+                    gain: 0.518,
+                    expectedGain: 0.74,
+                    automationRecordingPolicy: 'suppressed',
+                },
             },
             {
                 type: 'removeDevice',
@@ -1101,7 +1111,12 @@ describe('shared vocal FX buses workflow', () => {
             },
             {
                 type: 'setTrackGain',
-                payload: { trackId: 'track-bgv-high', gain: 0.402, expectedGain: 0.67 },
+                payload: {
+                    trackId: 'track-bgv-high',
+                    gain: 0.402,
+                    expectedGain: 0.67,
+                    automationRecordingPolicy: 'suppressed',
+                },
             },
             {
                 type: 'removeDevice',
@@ -1113,7 +1128,12 @@ describe('shared vocal FX buses workflow', () => {
             },
             {
                 type: 'setTrackGain',
-                payload: { trackId: 'track-bgv-low', gain: 0.427, expectedGain: 0.61 },
+                payload: {
+                    trackId: 'track-bgv-low',
+                    gain: 0.427,
+                    expectedGain: 0.61,
+                    automationRecordingPolicy: 'suppressed',
+                },
             },
         ]);
         expect(confirmation?.protectedUnchanged).toEqual(
