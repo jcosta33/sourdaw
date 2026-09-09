@@ -1713,6 +1713,10 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongHead, 'build-artifacts'), 'Checkout source head'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongHead)).toThrow('exact head');
+        const wrongControl = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
+            '${{ github.sha }}';
+        expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');

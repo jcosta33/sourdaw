@@ -21,6 +21,21 @@ Keep each lesson short enough to paste into a dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-09 — hosted WASM control and source revisions were assumed identical (introduced via PR #4057)
+
+PR #4057 validated artifact provenance when the workflow helper and checked-out source shared a
+revision, but GitHub executes workflow YAML from the merge revision while the workflow may check out
+an older PR head without that helper.
+
+Blind spot: review inspected a same-head build and receipt path, not the actual control CLI against
+two pinned roots with source-local hashes and pins.
+
+Probe that would have caught it: execute the real control helper against a distinct clean source Git
+root lacking both hosted helpers; exercise relevant and irrelevant source changes plus divergent
+closure hashes and toolchain pins, and require invalid or dirty roots to fail before source-toolkit
+import. For return verification, use a source toolkit sentinel and prove the verifier only reads the
+clean source root and never imports it.
+
 ### 2026-09-05 — the OS temporary directory was called app-owned (introduced via PR #2; retained by PR #3404; fixed by #3642)
 
 PR #2 introduced `std::env::temp_dir()` as an implicit built-in root in commit
