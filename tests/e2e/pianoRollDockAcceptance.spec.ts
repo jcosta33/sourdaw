@@ -672,17 +672,23 @@ async function nativeSelectIsOpen(selector: Locator): Promise<boolean> {
 }
 
 async function automationTrayHeaderNeutralPoint(frame: Frame): Promise<{ x: number; y: number }> {
-    return frame.evaluate(() => {
+    return frame.evaluate((tolerance) => {
         const selector = document.querySelector<HTMLElement>('#lane-selector');
-        const header = selector?.parentElement;
-        const label = header?.querySelector('label[for="lane-selector"]');
-        if (selector === null || header === null || label === null) {
+        if (selector === null) {
+            throw new Error('Automation tray selector is unavailable');
+        }
+        const header = selector.parentElement;
+        if (header === null) {
             throw new Error('Automation tray header is unavailable');
+        }
+        const label = header.querySelector('label[for="lane-selector"]');
+        if (label === null) {
+            throw new Error('Automation tray header label is unavailable');
         }
         const headerRect = header.getBoundingClientRect();
         const selectorRect = selector.getBoundingClientRect();
         const rightGap = headerRect.right - selectorRect.right;
-        if (rightGap <= CONTROL_VISIBILITY_TOLERANCE * 2) {
+        if (rightGap <= tolerance * 2) {
             throw new Error('Automation tray header has no neutral background beside the selector');
         }
         const point = { x: selectorRect.right + rightGap / 2, y: headerRect.y + headerRect.height / 2 };
@@ -696,7 +702,7 @@ async function automationTrayHeaderNeutralPoint(frame: Frame): Promise<{ x: numb
             throw new Error('Automation tray neutral background is not safely clickable');
         }
         return point;
-    });
+    }, CONTROL_VISIBILITY_TOLERANCE);
 }
 
 async function resetNativeSelectToClosed(
