@@ -1484,6 +1484,65 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it.each([false, true])(
+        'refuses an author-bot merge during initial UNKNOWN refresh, recoveryWork=%s',
+        (recoveryWork) => {
+            const body = relationshipBody(recoveryWork ? 'Closes #2372' : 'None.');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({ body, mergeable: 'UNKNOWN' }),
+                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                ],
+                dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+            });
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                'fresh merge was not performed by the orchestrator user'
+            );
+            expect(calls).toEqual(['fetch']);
+        }
+    );
+
+    it.each([
+        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: false },
+        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: true },
+        { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: false },
+        { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: true },
+    ])(
+        'accepts $merger from initial $initialState, recoveryWork=$recoveryWork',
+        ({ initialState, merger, recoveryWork }) => {
+            const body = relationshipBody(recoveryWork ? 'Closes #2372' : 'None.');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        body,
+                        state: initialState,
+                        mergeable: 'UNKNOWN',
+                        mergedByActorNodeId: initialState === 'MERGED' ? merger : null,
+                    }),
+                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: merger }),
+                ],
+                dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+            });
+            deliverPullRequest(42, port, tracker);
+            expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
+            if (recoveryWork) {
+                expect(calls).toContain('retarget:43:main');
+                expect(calls).toContain('complete:2372');
+                expect(calls.some((call) => call.startsWith('receipt-authority:write:terminal:'))).toBe(true);
+            } else {
+                expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+                expect(
+                    calls.some(
+                        (call) =>
+                            call.startsWith('retarget:') ||
+                            call.startsWith('complete:') ||
+                            call.startsWith('receipt-authority:write:')
+                    )
+                ).toBe(false);
+            }
+        }
+    );
+
     it('recovers a stable final orchestrator-user merge without re-reviewing or merging again', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
@@ -1588,7 +1647,7 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
     });
 
-    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
+    it('fails closed when an UNKNOWN initial refresh becomes a merged orchestrator-user head with no persisted receipt authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -1607,7 +1666,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[child]],

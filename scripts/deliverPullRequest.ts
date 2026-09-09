@@ -2656,6 +2656,9 @@ function deliverPullRequestWithCiAdmission(
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     if (initial.state === 'MERGED') {
+        if (rawInitial.state !== 'MERGED') {
+            validateFreshMerger(initial);
+        }
         validateBaseBranch(initial);
         validateHistoricalMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
