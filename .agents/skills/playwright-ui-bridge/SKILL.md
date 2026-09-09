@@ -16,6 +16,10 @@ Look at and poke the running app without polluting the maintained E2E suite. Eph
 
 ## Core rules
 
+### Layout assertions distinguish request from allocation
+
+An element's inline `style.height` is its requested CSS size; its bounding rectangle is the size layout actually allocated. When flex layout can shrink a panel, record and assert both values separately.
+
 ### 1. Agent scripts live in `.agents/ui-scripts/`
 
 Never place an ad-hoc agent script in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions. Throwaway probes and version-controlled gates have opposite lifecycles; mixing them makes the suite flaky and the probes unfindable.
