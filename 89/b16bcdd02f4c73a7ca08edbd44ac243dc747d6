@@ -1,0 +1,35 @@
+src/infra/store/createStore.ts
+  s_87ab0a2f60ccf8::t_977a36c3edd983 114-116
+src/infra/store/__tests__/createStore.sanitizeWriteBack.spec.ts
+  s_87ab0a2f60ccf8::t_05a5c56d41dc88 9,494-605,607-611,615-637,639-717
+  s_87ab0a2f60ccf8::t_2ca0143c93812c 606,612-614
+  s_87ab0a2f60ccf8::t_0afaff8539da09 638
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_0afaff8539da09 1533
+  s_87ab0a2f60ccf8::t_3e7aa37fcff7b2 1529-1532,1534-1554,1584-1614
+  s_87ab0a2f60ccf8::t_994ea46d5faf3e 1555-1583
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_7a951b25c4e42b 100-105
+.agents/skills/review-stances/test-validity.md
+  s_87ab0a2f60ccf8::t_7a951b25c4e42b 198-202
+src/infra/store/storage/createAutomergeStorage.ts
+  s_87ab0a2f60ccf8::t_977a36c3edd983 877,1838-1841,1843,1850-1852,1859-1861,1874,1885,1889,1891-1896,1898-1900,1917-1919,1930-1932,1948,1951,1957-1958,1972-1973,1976-1977,1980-1981,1985,1987-1988,1992-1994
+  s_87ab0a2f60ccf8::t_182848fdc1973c 207,1123,1345-1348,1476-1491,1497-1500,1506-1507,1512-1516,1526-1532,1535-1536,1551
+  s_87ab0a2f60ccf8::t_22206b700c2619 1654-1659,1670,1705,1712,1762-1765,1777-1782
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "89b16bcdd02f4c73a7ca08edbd44ac243dc747d6",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
