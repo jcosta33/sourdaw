@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import { audioBufferCache } from '../audioBufferCache';
@@ -109,13 +110,27 @@ function buildInvocations(): Record<string, () => unknown> {
                 disposition: 'discard',
             }),
         acquireCheckpointRetention: async () => {
-            const ownership = await audioBufferCache.acquireCheckpointRetention({
-                checkpointId: 'base64-surface-checkpoint',
-                projectOwnerId: 'base64-surface-project',
-                bufferIds: ['pcm'],
-            });
-            checkpointOwnershipToken = ownership.ownershipToken;
-            return ownership;
+            const receipt = await audioBufferCache.ensureDurable(['pcm']);
+            if (receipt.status !== 'durable') {
+                throw new Error('Checkpoint retention durability failed');
+            }
+            try {
+                const ownership = await withProjectAudioStorageLock((scope) =>
+                    audioBufferCache.acquireCheckpointRetention({
+                        checkpointId: 'base64-surface-checkpoint',
+                        projectOwnerId: 'base64-surface-project',
+                        durabilityReceipt: receipt,
+                        scope,
+                    })
+                );
+                if (ownership.status !== 'retained') {
+                    throw new Error(`Checkpoint retention acquisition ${ownership.status}`);
+                }
+                checkpointOwnershipToken = ownership.ownershipToken;
+                return ownership;
+            } finally {
+                receipt.release();
+            }
         },
         releaseCheckpointRetention: async () => {
             if (checkpointOwnershipToken === undefined) {

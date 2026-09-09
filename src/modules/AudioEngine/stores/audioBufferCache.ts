@@ -219,6 +219,27 @@ type CheckpointAudioRetention = {
     ownershipToken: string;
 };
 
+type CheckpointRetentionDurabilityReceipt = {
+    status: 'durable';
+    isCurrent: () => boolean;
+    release: () => void;
+};
+
+type CheckpointRetentionDurabilityAuthority = {
+    bufferIds: readonly string[];
+    isCurrent: () => boolean;
+};
+
+type CheckpointRetentionAcquisitionResult =
+    | { status: 'retained'; ownershipToken: string }
+    | { status: 'superseded' }
+    | { status: 'cleanup-failed'; ownershipToken: string };
+
+const checkpointRetentionAuthorityByReceipt = new WeakMap<
+    CheckpointRetentionDurabilityReceipt,
+    CheckpointRetentionDurabilityAuthority
+>();
+
 function isProtectedFromCollection(metadata: BufferMeta): boolean {
     const owner = readPreparedOwner(metadata);
     return (
@@ -1630,16 +1651,24 @@ async function acquireCheckpointAudioRetentionInIdb({
     checkpointId,
     projectOwnerId,
     bufferIds,
+    isCurrent,
 }: {
     checkpointId: string;
     projectOwnerId: string;
     bufferIds: readonly string[];
-}): Promise<{ ownershipToken: string }> {
+    isCurrent: () => boolean;
+}): Promise<{ status: 'retained'; ownershipToken: string } | { status: 'superseded' }> {
     if (!isNonEmptyString(checkpointId) || !isNonEmptyString(projectOwnerId)) {
         throw new Error('Checkpoint audio retention requires checkpoint and project owner IDs.');
     }
     const canonicalBufferIds = canonicalAudioBufferIds(bufferIds);
+    if (!isCurrent()) {
+        return { status: 'superseded' };
+    }
     const database = await openDb();
+    if (!isCurrent()) {
+        return { status: 'superseded' };
+    }
     const transaction = database.transaction(
         [STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
         'readwrite'
@@ -1668,6 +1697,10 @@ async function acquireCheckpointAudioRetentionInIdb({
         await awaitTransaction(transaction);
         throw refusal;
     }
+    if (!isCurrent()) {
+        await awaitTransaction(transaction);
+        return { status: 'superseded' };
+    }
     const ownershipToken = crypto.randomUUID();
     retentionStore.put(
         {
@@ -1680,7 +1713,47 @@ async function acquireCheckpointAudioRetentionInIdb({
         checkpointId
     );
     await awaitTransaction(transaction);
-    return { ownershipToken };
+    return { status: 'retained', ownershipToken };
+}
+
+function acquireCheckpointAudioRetention({
+    checkpointId,
+    projectOwnerId,
+    durabilityReceipt,
+    scope,
+}: {
+    checkpointId: string;
+    projectOwnerId: string;
+    durabilityReceipt: CheckpointRetentionDurabilityReceipt;
+    scope: ProjectAudioStorageLockScope;
+}): Promise<CheckpointRetentionAcquisitionResult> {
+    return runInProjectAudioStorageLock(scope, async () => {
+        const authority = checkpointRetentionAuthorityByReceipt.get(durabilityReceipt);
+        if (!authority) {
+            throw new Error('Checkpoint audio retention requires an authentic active durability receipt.');
+        }
+        const acquisition = await acquireCheckpointAudioRetentionInIdb({
+            checkpointId,
+            projectOwnerId,
+            bufferIds: authority.bufferIds,
+            isCurrent: authority.isCurrent,
+        });
+        if (acquisition.status === 'superseded' || authority.isCurrent()) {
+            return acquisition;
+        }
+        try {
+            const cleaned = await releaseCheckpointAudioRetentionInIdb({
+                checkpointId,
+                projectOwnerId,
+                ownershipToken: acquisition.ownershipToken,
+            });
+            return cleaned
+                ? { status: 'superseded' }
+                : { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
+        } catch {
+            return { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
+        }
+    });
 }
 
 async function releaseCheckpointAudioRetentionInIdb({
@@ -1820,17 +1893,24 @@ async function ensureDurableAudioBuffersInScope(
             return failAndRelease(failedIds);
         }
         let released = false;
-        return {
-            status: 'durable',
+        const authority: CheckpointRetentionDurabilityAuthority = {
+            bufferIds: requiredIds.toSorted(),
             isCurrent: () => !released && isCurrent(),
+        };
+        const receipt: CheckpointRetentionDurabilityReceipt = {
+            status: 'durable',
+            isCurrent: authority.isCurrent,
             release: () => {
                 if (released) {
                     return;
                 }
                 released = true;
+                checkpointRetentionAuthorityByReceipt.delete(receipt);
                 reservations.release();
             },
         };
+        checkpointRetentionAuthorityByReceipt.set(receipt, authority);
+        return receipt;
     } catch {
         return failAndRelease(requiredIds);
     }
@@ -1928,7 +2008,7 @@ export const audioBufferCache = {
 
     ensureDurable: ensureDurableAudioBuffers,
 
-    acquireCheckpointRetention: acquireCheckpointAudioRetentionInIdb,
+    acquireCheckpointRetention: acquireCheckpointAudioRetention,
 
     releaseCheckpointRetention: releaseCheckpointAudioRetentionInIdb,
 
