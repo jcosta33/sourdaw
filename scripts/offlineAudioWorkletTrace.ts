@@ -196,7 +196,7 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
             handlerIndex++;
         }
         const handler = handlers[handlerIndex];
-        if (!handler || handler.ts >= callback.ts || intervalEnd(handler) <= intervalEnd(callback)) {
+        if (!handler || handler.ts >= callback.ts || intervalEnd(handler) < intervalEnd(callback)) {
             return 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler';
         }
         const pointer = handler.args.this;

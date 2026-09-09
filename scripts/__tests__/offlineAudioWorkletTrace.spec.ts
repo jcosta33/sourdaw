@@ -82,6 +82,28 @@ function observedEqualEndpointTrace(authorDuration = 10): FixtureEvent[] {
     ];
 }
 
+function observedEqualHandlerEndpointTrace(handlerDuration = 12): FixtureEvent[] {
+    const pid = 3940;
+    const tid = 3948;
+    const handlerThis = '0x27b400722580';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 651_633_637,
+            dur: handlerDuration,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 651_633_638, dur: 11, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 651_633_641, dur: 7, pid, tid, args: {} },
+        ...callback(651_633_670, 3, pid, tid, handlerThis),
+        ...callback(651_633_690, 8, pid, tid, handlerThis),
+        ...callback(651_633_720, 12, pid, tid, handlerThis),
+    ];
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -112,6 +134,24 @@ describe('offline AudioWorklet trace admission', () => {
         expect(admission(observedEqualEndpointTrace(11))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('admits the observed equal handler/outer endpoint and refuses a one-microsecond overrun', () => {
+        expect(admission(observedEqualHandlerEndpointTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 3940,
+            tid: 3948,
+            handlerThis: '0x27b400722580',
+            warmupDurationsUs: [11],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualHandlerEndpointTrace(11))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
         });
     });
 
