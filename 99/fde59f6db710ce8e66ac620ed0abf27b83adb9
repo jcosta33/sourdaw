@@ -1,0 +1,31 @@
+src/modules/Command/useCases/index.ts
+  s_06adf2b091dc62::t_f62816597dfc59 46
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_06adf2b091dc62::t_04f11970af2454 284-287
+  s_06adf2b091dc62::t_3e7a8987091964 1-2,7-283,288-560
+  s_06adf2b091dc62::t_8ad2833e45930c 3-6
+  s_06adf2b091dc62::t_5446b719897bac 561-563
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_06adf2b091dc62::t_bef9c3b55c4c20 1-215
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_06adf2b091dc62::t_34254c504cee61 42
+  s_06adf2b091dc62::t_a159975236ae70 63-64
+  s_06adf2b091dc62::t_fa14d8e10409b2 17
+  s_06adf2b091dc62::t_ec3cf5aef0e76e 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "99fde59f6db710ce8e66ac620ed0abf27b83adb9",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
