@@ -71,12 +71,12 @@ function sweepLane(laneId: string): (number | null)[] {
     return SWEEP.map((beat) => getAutomationValueAtBeat(laneId, beat));
 }
 
-function expectSweepMatches(actual: (number | null)[], expected: (number | null)[]): void {
+function expectSweepMatches(actual: (number | null)[], expected: (number | null)[], cutBeat: number): void {
     for (let index = 0; index < SWEEP.length; index += 1) {
         const beat = SWEEP[index]!;
         const expectedValue = expected[index];
         const actualValue = actual[index];
-        if (beat < 4) {
+        if (beat < cutBeat) {
             continue;
         }
         expect(expectedValue, `pre-split value at beat ${beat}`).not.toBeNull();
@@ -122,7 +122,7 @@ describe('split seam bezier exactness (#4044)', () => {
         // exactly what the source played before the split — the continued
         // curve, then the held end value past beat 7.
         restoreAutomationSnapshot({ lanes: [plan.rightAutomationLanes[0]!] });
-        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit);
+        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit, 4);
     });
 
     it('derives exact seam cps from the default quad when no cps were authored', () => {
@@ -147,7 +147,43 @@ describe('split seam bezier exactness (#4044)', () => {
         const leftFragment = sweepLane('lane-1');
         expect(leftFragment).toEqual(beforeSplit);
         restoreAutomationSnapshot({ lanes: [plan.rightAutomationLanes[0]!] });
-        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit);
+        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit, 4);
+    });
+
+    it('pairs the raw subdivision value with raw cps when the segment leaves the lane range', () => {
+        // Out-of-range point values are store-admissible (CRDT sync, legacy
+        // import). The source plays the RANGE-CLAMPED curve, but the seam's
+        // cps are the raw subdivision — so the seam's value must be raw too:
+        // the clamped live sample paired with raw cps would play the
+        // continuation offset by the clamp excursion. The fragment evaluator's
+        // own lane-range clamp reproduces the played values, including exactly
+        // the clamped sample at the seam beat.
+        const sourcePoints: SeamSpecPoint[] = [
+            { beat: 1, value: -0.5, curve: 'bezier' },
+            { beat: 7, value: 0.8, curve: 'bezier' },
+        ];
+        restoreAutomationSnapshot({ lanes: [clipLane({ id: 'lane-1', points: sourcePoints })] });
+        const beforeSplit = sweepLane('lane-1');
+        const clampedSeamSample = getAutomationValueAtBeat('lane-1', 2);
+
+        const plan = planFor(2);
+
+        // The fixture really exercises the clamp: the raw continuation starts
+        // below the lane's floor of 0 while the source plays the clamped value.
+        const quad = resolveBezierControls({ firstPoint: sourcePoints[0]!, secondPoint: sourcePoints[1]! });
+        const subdivision = subdivideBezierRightHalf({ ...quad, y0: -0.5, y3: 0.8, cutFraction: 1 / 6 });
+        expect(subdivision.yAtCut).toBeLessThan(0);
+        expect(clampedSeamSample).toBe(0);
+
+        const seam = plan.rightAutomationLanes[0]!.points[0]!;
+        expect(seam.value).toBe(subdivision.yAtCut);
+
+        const leftFragment = sweepLane('lane-1');
+        expect(leftFragment).toEqual(beforeSplit);
+
+        restoreAutomationSnapshot({ lanes: [plan.rightAutomationLanes[0]!] });
+        expect(getAutomationValueAtBeat('auto-split-c2-0', 2)).toBe(clampedSeamSample);
+        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit, 2);
     });
 
     it('mints no seam when an authored point sits on the cut, keeping its cps', () => {
@@ -174,7 +210,7 @@ describe('split seam bezier exactness (#4044)', () => {
         expect(copy.points[0]!.cp1).toEqual(pointOnCut.cp1);
 
         restoreAutomationSnapshot({ lanes: [copy] });
-        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit);
+        expectSweepMatches(sweepLane('auto-split-c2-0'), beforeSplit, 4);
     });
 
     it.each(['linear', 'step', 's-curve', 'smooth'] as const)(

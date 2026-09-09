@@ -137,7 +137,20 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
 }
 
 /**
- * The exact continuation of a straddling `bezier` segment, as the seam's cps.
+ * What a straddling `bezier` seam carries: the raw subdivision value at the
+ * cut and the right half's control points. All three are one polynomial — the
+ * seam's `value` MUST be `yAtCut` when the cps are present (see
+ * {@link bezierSeamControlPoints}). Empty when no continuation applies.
+ */
+type BezierSeamContinuation = {
+    yAtCut?: number;
+    cp1?: AutomationLanePoint['cp1'];
+    cp2?: AutomationLanePoint['cp2'];
+};
+
+/**
+ * The exact continuation of a straddling `bezier` segment, as the seam's value
+ * and cps.
  *
  * #4036 made the seam inherit the straddling segment's curve FAMILY, but a
  * `bezier` seam without cps plays the family-default quad — an audible change
@@ -146,21 +159,28 @@ function splitWarpState(warpState: WarpState, contentSplitBeats: number): SplitW
  * the evaluator's own Newton loop) yields the right half's inner controls: the
  * seam→next segment is then the same polynomial re-parameterized over the
  * remaining span, so the fragment plays, at every absolute beat, exactly what
- * the source played before the split. The seam's own `value` stays the
- * evaluator's live sample — the same curve at the same solved parameter, and
- * the one read that preserves the held-seam lane-range clamp semantics.
+ * the source played before the split.
  *
- * Anything non-bezier returns no cps — those point models carry no cp fields,
- * and their seams are byte-identical to the pre-#4044 shape. A bezier whose
- * held value ends the lane (no next point) has no continuation to carry, and
- * a degenerate (zero-width or reversed) span has nothing the evaluator would
- * play — both return no cps rather than NaN.
+ * The seam's own `value` is part of that polynomial: it must be the RAW
+ * subdivision value `yAtCut`. Pairing the lane-range-CLAMPED live sample with
+ * the raw cps would evaluate a different polynomial — the exact continuation
+ * offset by the clamp excursion — an audible drift wherever the source curve
+ * exceeds the lane's declared range. Out-of-range point values are
+ * store-admissible (CRDT sync, legacy import), so the raw pairing is the
+ * reachable-state-correct one, and the fragment evaluator's own lane-range
+ * clamp reproduces the clamped sample at the seam beat exactly.
+ *
+ * Anything non-bezier returns nothing — those point models carry no cp fields,
+ * and their seams stay the clamped live sample, byte-identical to the
+ * pre-#4044 shape. A bezier whose held value ends the lane (no next point) has
+ * no continuation to carry, and a degenerate (zero-width or reversed) span has
+ * nothing the evaluator would play — both keep the clamped live sample too.
  */
 function bezierSeamControlPoints(
     lastLeft: AutomationLanePoint,
     nextPoint: AutomationLanePoint | undefined,
     absoluteSplitBeats: number
-): Pick<AutomationLanePoint, 'cp1' | 'cp2'> {
+): BezierSeamContinuation {
     if (lastLeft.curve !== 'bezier' || nextPoint === undefined) {
         return {};
     }
@@ -170,7 +190,7 @@ function bezierSeamControlPoints(
     }
     const cutFraction = (absoluteSplitBeats - lastLeft.beat) / beatSpan;
     const { cx1, cx2, cy1, cy2 } = resolveBezierControls({ firstPoint: lastLeft, secondPoint: nextPoint });
-    const { cp1, cp2 } = subdivideBezierRightHalf({
+    const { yAtCut, cp1, cp2 } = subdivideBezierRightHalf({
         cx1,
         cx2,
         cy1,
@@ -179,7 +199,7 @@ function bezierSeamControlPoints(
         y3: nextPoint.value,
         cutFraction,
     });
-    return { cp1, cp2 };
+    return { yAtCut, cp1, cp2 };
 }
 
 /**
@@ -197,7 +217,10 @@ function bezierSeamControlPoints(
  * seam pins it onto the fragment. A point already sitting on the cut IS that
  * seam — a second point beside it would make the interpolation span
  * zero-width. No point left of the cut means the runtime held the first value
- * before its point anyway, which the verbatim copy reproduces for free.
+ * before its point anyway, which the verbatim copy reproduces for free. The
+ * one exception to the live sample is the cps-carrying bezier seam, whose raw
+ * subdivision value replaces it (`bezierSeamControlPoints`) — value and cps
+ * must be one polynomial.
  *
  * The seam inherits the straddling segment's `curve`/`tension`/`stairSteps`
  * from its left point — segment shape is owned by the segment's left point
@@ -230,11 +253,17 @@ function seamPointFor(
     // returned, so this is the evaluator's segment right endpoint
     // (`points[beforeIdx + 1]` for a query at the cut).
     const nextPoint = lane.points.find((point) => point.beat > absoluteSplitBeats);
-    const { cp1, cp2 } = bezierSeamControlPoints(lastLeft, nextPoint, absoluteSplitBeats);
+    const { yAtCut, cp1, cp2 } = bezierSeamControlPoints(lastLeft, nextPoint, absoluteSplitBeats);
     return {
         id: `asp-split-${rightClipId}-${laneIndex}`,
         beat: absoluteSplitBeats,
-        value: seamValue,
+        // Value and cps are one polynomial: a cps-carrying seam uses the RAW
+        // subdivision value, because the lane-range-clamped live sample paired
+        // with raw cps would play the continuation offset by the clamp
+        // excursion. The fragment evaluator's own lane-range clamp then
+        // reproduces the clamped sample at the seam beat exactly. Without cps
+        // the clamped live sample stays (held value, pre-#4044 shape).
+        value: yAtCut ?? seamValue,
         curve: lastLeft.curve,
         tension: lastLeft.tension,
         ...(lastLeft.stairSteps === undefined ? {} : { stairSteps: lastLeft.stairSteps }),
