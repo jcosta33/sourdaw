@@ -1,0 +1,21 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_06adf2b091dc62::t_2e4367e2f0c931 86-87
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  s_06adf2b091dc62::t_0d4d2dbecb3e00 216-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8531aa815850ca110726f60ef6270cd8cedf0b00",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
