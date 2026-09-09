@@ -1,0 +1,20 @@
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_f0b7a9f256884a 151-217,268-270,434-448,462,467,491-495,501,524,527-533,542-544
+  s_87ab0a2f60ccf8::t_6dbdc42a80c8b5 545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "abf178f48f50d9e37a9e2fcd2baa3ffcf9a3f88f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
