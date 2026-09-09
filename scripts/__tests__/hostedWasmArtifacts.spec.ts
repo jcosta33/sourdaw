@@ -48,6 +48,7 @@ describe('hosted WASM package selection', () => {
     });
 
     it.each([
+        '.cargo/config.toml',
         'scripts/hostedWasmArtifacts.ts',
         'scripts/hostedWasmZip.ts',
         'scripts/wasm-artifacts.ts',
@@ -56,6 +57,8 @@ describe('hosted WASM package selection', () => {
         'scripts/markWasmPackageInternal.ts',
         'scripts/gen-wasm-manifest.ts',
         'scripts/verify-wasm-artifacts.ts',
+        'scripts/strictJson.ts',
+        'scripts/workletPolyfills.ts',
         'rust-toolchain.toml',
         'package.json',
         'pnpm-lock.yaml',

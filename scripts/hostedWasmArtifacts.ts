@@ -24,6 +24,7 @@ const outputLimit = hostedWasmOutputLimit;
 const hashPattern = /^sha256:[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 const sharedInputs = new Set([
+    '.cargo/config.toml',
     '.github/workflows/wasm-artifacts.yml',
     'scripts/hostedWasmArtifacts.ts',
     'scripts/hostedWasmZip.ts',
@@ -33,6 +34,8 @@ const sharedInputs = new Set([
     'scripts/markWasmPackageInternal.ts',
     'scripts/gen-wasm-manifest.ts',
     'scripts/verify-wasm-artifacts.ts',
+    'scripts/strictJson.ts',
+    'scripts/workletPolyfills.ts',
     'rust-toolchain.toml',
     'package.json',
     'pnpm-lock.yaml',
