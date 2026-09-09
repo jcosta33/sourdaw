@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
+import { handleAddYeastProcessor } from '../addYeastProcessor';
+import { handleRemoveYeastProcessor } from '../removeYeastProcessor';
+import { handleReorderYeastProcessor } from '../reorderYeastProcessor';
 
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as YeastState | null },
@@ -9,7 +12,6 @@ const mocks = vi.hoisted(() => ({
     reorderUseCase: vi.fn(),
     commitProjection: vi.fn(),
 }));
-
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: {
         get value() {
@@ -19,8 +21,8 @@ vi.mock('../../stores/yeastStore', () => ({
             mocks.storeValue.value = state;
         }),
     },
+    setActiveYeastDevice: vi.fn(),
 }));
-
 vi.mock('../../useCases/addYeastProcessor', () => ({
     addYeastProcessor: mocks.addUseCase,
 }));
@@ -33,10 +35,6 @@ vi.mock('../../useCases/reorderYeastProcessor', () => ({
 vi.mock('../../useCases/commitYeastProjection', () => ({
     commitYeastProjection: mocks.commitProjection,
 }));
-
-import { handleAddYeastProcessor } from '../addYeastProcessor';
-import { handleRemoveYeastProcessor } from '../removeYeastProcessor';
-import { handleReorderYeastProcessor } from '../reorderYeastProcessor';
 
 function seedRack(processors: YeastProcessorInfo[]): void {
     mocks.storeValue.value = { processors, uiLevel: 3 };
@@ -52,6 +50,7 @@ function rack(): YeastProcessorInfo[] {
 describe('handleAddYeastProcessor', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setActiveYeastDevice(null);
     });
 
     it('adds through the use case with the payload id', () => {
@@ -262,7 +261,10 @@ describe('handleReorderYeastProcessor', () => {
         seedRack(rack());
         const context = {
             actions: [
-                { type: 'reorderYeastProcessor' as const, payload: { processorId: 'arp-1', toIndex: 1, expectedOrder: ['arp-1', 'filter-1'] } },
+                {
+                    type: 'reorderYeastProcessor' as const,
+                    payload: { processorId: 'arp-1', toIndex: 1, expectedOrder: ['arp-1', 'filter-1'] },
+                },
             ],
             actionIndex: 1,
         };

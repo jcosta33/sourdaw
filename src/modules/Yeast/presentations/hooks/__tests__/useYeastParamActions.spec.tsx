@@ -1,6 +1,7 @@
+import { type ReactElement } from 'react';
+
 import { change, from, type Doc } from '@automerge/automerge';
 import { act, render, waitFor } from '@testing-library/react';
-import { type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -8,12 +9,11 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { undo } from '#/modules/Command/useCases/undo';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { undo } from '#/modules/Command/useCases';
 
+import { setActiveYeastDevice, yeastStore } from '../../../stores/yeastStore';
 import { useYeastParamActions, type YeastParamActions } from '../useYeastParamActions';
-import { setActiveYeastDevice, yeastStore, type YeastState } from '../../../stores/yeastStore';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyProjection: vi.fn(() => Promise.resolve()),
@@ -39,7 +39,7 @@ function Harness({ onReady }: { onReady: (actions: YeastParamActions) => void })
 /** Lets the chained settle dispatches (and the undo entries they record) land. */
 async function flushDispatches(entryCount = 0): Promise<void> {
     await waitFor(() => {
-        expect(undoStore.value?.past.length ?? 0).toBeGreaterThanOrEqual(entryCount);
+        expect(undoHistoryStore.value?.past.length ?? 0).toBeGreaterThanOrEqual(entryCount);
     });
 }
 
@@ -48,7 +48,7 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
     let actions: YeastParamActions | null = null;
 
     beforeEach(() => {
-        undoStore.set({ past: [], future: [] });
+        undoHistoryStore.set({ past: [], future: [] });
         document = from({});
         configureAutomergeStoragePort({
             getDoc: () => document,
@@ -94,14 +94,14 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
         });
         await flushDispatches(2);
 
-        const past = undoStore.value?.past ?? [];
+        const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(2);
         expect(new Set(past.map((entry) => entry.groupId)).size).toBe(1);
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(1.2);
 
         const result = await undo();
         expect(result.headConsumed).toBe(true);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(0.8);
     });
 
@@ -113,10 +113,15 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
         });
         await flushDispatches();
 
-        const entry = undoStore.value?.past[0];
+        const entry = undoHistoryStore.value?.past[0];
         expect(entry?.kind).toBe('action');
         if (entry?.kind === 'action') {
-            expect(entry.action.payload).toMatchObject({ processorId: 'arp-1', paramId: 'gate', value: 1.0, expectedValue: 0.8 });
+            expect(entry.action.payload).toMatchObject({
+                processorId: 'arp-1',
+                paramId: 'gate',
+                value: 1.0,
+                expectedValue: 0.8,
+            });
         }
     });
 

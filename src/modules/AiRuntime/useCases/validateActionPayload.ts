@@ -748,7 +748,7 @@ const validators = {
         hasExactKeys(param, ['processorId', 'steps']) &&
         isNonEmptyString(param.processorId) &&
         Array.isArray(param.steps) &&
-        param.steps.length >= 1 &&
+        param.steps.length > 0 &&
         param.steps.length <= 32 &&
         param.steps.every(isYeastArpStep),
     setYeastProcessorBypass: (param): param is PayloadOf<'setYeastProcessorBypass'> =>

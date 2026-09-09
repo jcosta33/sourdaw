@@ -3,6 +3,7 @@ import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type ArpStep, decodeArpPatternParams } from '../models/ArpPattern';
 import { setYeastArpPattern } from '../useCases/setYeastArpPattern';
+
 import { findLiveProcessor, isSameSnapshot } from './rackState';
 
 /** The pattern as the batch's preceding same-processor actions leave it. A
@@ -39,7 +40,10 @@ export const handleSetYeastArpPattern = createHandler<'setYeastArpPattern'>({
         if (expectedSteps === undefined) {
             return true;
         }
-        return isSameSnapshot(plannedSteps(decodeArpPatternParams(processor.params), context, action.payload.processorId), expectedSteps);
+        return isSameSnapshot(
+            plannedSteps(decodeArpPatternParams(processor.params), context, action.payload.processorId),
+            expectedSteps
+        );
     },
     execute: async (action) => {
         const processor = findLiveProcessor(action.payload.processorId);
@@ -47,10 +51,7 @@ export const handleSetYeastArpPattern = createHandler<'setYeastArpPattern'>({
             return { status: 'conflict' };
         }
         const { expectedSteps } = action.payload;
-        if (
-            expectedSteps !== undefined &&
-            !isSameSnapshot(decodeArpPatternParams(processor.params), expectedSteps)
-        ) {
+        if (expectedSteps !== undefined && !isSameSnapshot(decodeArpPatternParams(processor.params), expectedSteps)) {
             return { status: 'conflict' };
         }
         // The use case writes the store before its first await, so the write

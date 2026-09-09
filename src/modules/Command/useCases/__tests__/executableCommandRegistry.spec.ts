@@ -5,8 +5,8 @@ import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 

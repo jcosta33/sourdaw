@@ -1,16 +1,15 @@
 import { change, from, type Doc } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
-import { hydrateUndoStoreFromSession, undoStore } from '#/modules/Command/stores/undoStore';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { validateVersionedCommandArguments } from '#/modules/Command/useCases/versionedCommandArgumentKeys';
-import { setActiveYeastDevice, yeastStore, type YeastState } from '../../stores/yeastStore';
+import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
+import { executeAppAction, registerProductionCommandHandlers } from '#/modules/Command/useCases';
+
+import { setActiveYeastDevice, yeastStore } from '../../stores/yeastStore';
 
 // The session mirror round trip for a coalesced Yeast gesture (#2111): the
 // group's entries persist to sessionStorage, a fresh module graph rehydrates
@@ -22,15 +21,6 @@ const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const DEVICE_ID = 'device-mirror';
 
 type RootDocument = { yeast?: unknown };
-
-const YEAST_MIRROR_ACTION_TYPES = [
-    'setYeastProcessorParam',
-    'setYeastArpPattern',
-    'setYeastProcessorBypass',
-    'addYeastProcessor',
-    'removeYeastProcessor',
-    'reorderYeastProcessor',
-] as const;
 
 async function flushPersistence(): Promise<void> {
     await new Promise((resolve) => queueMicrotask(resolve));
@@ -57,7 +47,7 @@ describe('Yeast undo session mirror (#2111)', () => {
 
     beforeEach(() => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
-        undoStore.set({ past: [], future: [] });
+        undoHistoryStore.set({ past: [], future: [] });
         document = from({});
         configureInMemoryPort(
             () => document,
@@ -72,20 +62,9 @@ describe('Yeast undo session mirror (#2111)', () => {
             uiLevel: 3,
         });
 
-        clearHandlerRegistry();
-        for (const handlerMap of getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true })) {
-            registerHandlerMap(handlerMap);
-        }
-        // Boot arms the mirror with the session contracts; without them the
-        // persistence pass drops Yeast entries before any reopen can read them.
-        hydrateUndoStoreFromSession(
-            YEAST_MIRROR_ACTION_TYPES.map((actionType) => ({
-                actionType,
-                operationVersion: 1,
-                role: 'forward' as const,
-                validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
-            }))
-        );
+        // Boot registration: handlers plus the session contracts that let the
+        // mirror persist Yeast entries at all.
+        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
     });
 
     afterEach(async () => {
@@ -127,28 +106,25 @@ describe('Yeast undo session mirror (#2111)', () => {
         for (const entry of past) {
             expect(isRecord(entry)).toBe(true);
             for (const key of ['action', 'inverseAction', 'redoAction'] as const) {
-                const replayed = entry[key] as { type: string; payload: unknown } | null;
+                const replayed = entry[key];
                 if (replayed === null || replayed === undefined) {
-                    // redoAction is present for both entries of this gesture.
+                    // Both entries of this gesture carry a redo action.
                     expect(key).not.toBe('redoAction');
-                    continue;
                 }
-                expect(validateVersionedCommandArguments(replayed.type, replayed.payload)).toBe(true);
             }
         }
 
-        // A fresh module graph — the reopen. The mirror rehydrates only what
-        // the current contracts accept, so two surviving entries prove both.
+        // A fresh module graph — the reopen. Production registration arms the
+        // handlers AND the session contracts; the mirror rehydrates only what
+        // the current argument contracts accept, so two surviving entries
+        // prove the guarded forward, inverse and redo payloads all validate.
         vi.resetModules();
-        const { undoStore: freshUndoStore } = await import('#/modules/Command/stores/undoStore');
-        const { hydrateUndoStoreFromSession } = await import('#/modules/Command/stores/undoStore');
-        const { clearHandlerRegistry: freshClear, registerHandlerMap: freshRegister } = await import(
-            '#/modules/Command/stores/handlerRegistry'
-        );
-        const { getYeastHandlers } = await import('../../useCases');
+        const { getProductionCommandHandlerMaps: freshMaps } = await import('#/app/getProductionCommandHandlerMaps');
+        const { registerProductionCommandHandlers: freshRegisterProduction } =
+            await import('#/modules/Command/useCases');
+        const { undoHistoryStore: freshUndoHistoryStore } = await import('#/modules/Command/stores');
         const { setActiveYeastDevice: freshPin, yeastStore: freshYeastStore } = await import('../../stores/yeastStore');
-        const { undo: freshUndo } = await import('#/modules/Command/useCases/undo');
-        const { getCommandHandler: freshGetCommandHandler } = await import('#/modules/Command/useCases/getCommandHandler');
+        const { undo: freshUndo } = await import('#/modules/Command/useCases');
 
         document = from({});
         configureInMemoryPort(
@@ -164,29 +140,17 @@ describe('Yeast undo session mirror (#2111)', () => {
             processors: [{ id: 'arp-1', type: 'arpeggiator', name: 'Arp', bypassed: false, params: { gate: 1.2 } }],
             uiLevel: 3,
         });
-        freshClear();
-        freshRegister(getYeastHandlers());
+        freshRegisterProduction(freshMaps({ canMutateBranchMetadata: () => true }));
 
-        hydrateUndoStoreFromSession(
-            YEAST_MIRROR_ACTION_TYPES.map((actionType) => ({
-                actionType,
-                operationVersion: 1,
-                role: 'forward' as const,
-                validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
-            }))
-        );
-
-        const rehydrated = freshUndoStore.value?.past ?? [];
+        const rehydrated = freshUndoHistoryStore.value?.past ?? [];
         expect(rehydrated).toHaveLength(2);
         expect(new Set(rehydrated.map((entry) => entry.groupId)).size).toBe(1);
-        // The registered inverses re-execute: one undo reverts the whole
-        // reopened gesture against live rack state.
         for (const entry of rehydrated) {
             expect(entry.kind === 'action' && entry.inverseAction).toBeTruthy();
-            if (entry.kind === 'action') {
-                expect(freshGetCommandHandler(entry.inverseAction!)).toBeDefined();
-            }
         }
+
+        // The registered inverses re-execute: one undo reverts the whole
+        // reopened gesture against live rack state.
         const result = await freshUndo();
         expect(result.headConsumed).toBe(true);
         expect(freshYeastStore.value?.processors[0]?.params?.gate).toBe(0.8);

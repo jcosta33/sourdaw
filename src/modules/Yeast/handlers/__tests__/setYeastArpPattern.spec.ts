@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createDefaultPattern, defaultStep, type ArpStep } from '../../models/ArpPattern';
-import { type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, type YeastState } from '../../stores/yeastStore';
+import { handleSetYeastArpPattern } from '../setYeastArpPattern';
 
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as YeastState | null },
     setPatternUseCase: vi.fn(() => Promise.resolve()),
 }));
-
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: {
         get value() {
@@ -17,13 +17,11 @@ vi.mock('../../stores/yeastStore', () => ({
             mocks.storeValue.value = state;
         }),
     },
+    setActiveYeastDevice: vi.fn(),
 }));
-
 vi.mock('../../useCases/setYeastArpPattern', () => ({
     setYeastArpPattern: mocks.setPatternUseCase,
 }));
-
-import { handleSetYeastArpPattern } from '../setYeastArpPattern';
 
 function seedRack(state: YeastState | null): void {
     mocks.storeValue.value = state;
@@ -42,6 +40,7 @@ function patternWithFirstVelocity(velocity: number): ArpStep[] {
 describe('handleSetYeastArpPattern', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setActiveYeastDevice(null);
     });
 
     it('writes a fresh request through the use case', async () => {
@@ -64,7 +63,11 @@ describe('handleSetYeastArpPattern', () => {
 
         const result = await handleSetYeastArpPattern.execute({
             type: 'setYeastArpPattern',
-            payload: { processorId: 'arp-1', steps: patternWithFirstVelocity(10), expectedSteps: patternWithFirstVelocity(99) },
+            payload: {
+                processorId: 'arp-1',
+                steps: patternWithFirstVelocity(10),
+                expectedSteps: patternWithFirstVelocity(99),
+            },
         });
 
         expect(result).toEqual({ status: 'conflict' });
@@ -142,7 +145,10 @@ describe('handleSetYeastArpPattern', () => {
         seedRack({ processors: [arpProcessor({})], uiLevel: 3 });
         const context = {
             actions: [
-                { type: 'setYeastArpPattern' as const, payload: { processorId: 'arp-1', steps: patternWithFirstVelocity(64) } },
+                {
+                    type: 'setYeastArpPattern' as const,
+                    payload: { processorId: 'arp-1', steps: patternWithFirstVelocity(64) },
+                },
             ],
             actionIndex: 1,
         };

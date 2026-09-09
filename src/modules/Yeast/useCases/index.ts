@@ -13,4 +13,4 @@ export { getYeastSchedulingLookahead } from './getYeastSchedulingLookahead';
 export { createOfflineYeastMidiProcessor } from './createOfflineYeastMidiProcessor';
 export { subscribeYeastPreview } from './subscribeYeastPreview';
 export { reorderYeastProcessor } from './reorderYeastProcessor';
-export { getYeastHandlers } from '../handlers/getYeastHandlers';
+export { getYeastHandlers } from './getYeastHandlers';

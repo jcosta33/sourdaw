@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, type YeastState } from '../../stores/yeastStore';
+import { handleSetYeastProcessorParam } from '../setYeastProcessorParam';
 
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as YeastState | null },
     setParamUseCase: vi.fn(() => Promise.resolve()),
     setGrooveTemplateUseCase: vi.fn(() => Promise.resolve()),
 }));
-
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: {
         get value() {
@@ -17,18 +17,15 @@ vi.mock('../../stores/yeastStore', () => ({
             mocks.storeValue.value = state;
         }),
     },
+    setActiveYeastDevice: vi.fn(),
 }));
-
 vi.mock('../../useCases/setYeastProcessorParam', () => ({
     GROOVE_AMOUNT_PARAM: 'amount',
     setYeastProcessorParam: mocks.setParamUseCase,
 }));
-
 vi.mock('../../useCases/setYeastGrooveTemplate', () => ({
     setYeastGrooveTemplate: mocks.setGrooveTemplateUseCase,
 }));
-
-import { handleSetYeastProcessorParam } from '../setYeastProcessorParam';
 
 function seedRack(state: YeastState | null): void {
     mocks.storeValue.value = state;
@@ -45,6 +42,7 @@ function filterProcessor(): YeastState['processors'][number] {
 describe('handleSetYeastProcessorParam', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setActiveYeastDevice(null);
     });
 
     it('writes a fresh request and routes it through the use case', async () => {
@@ -149,7 +147,10 @@ describe('handleSetYeastProcessorParam', () => {
         seedRack(rackWith([filterProcessor()]));
         const context = {
             actions: [
-                { type: 'setYeastProcessorParam' as const, payload: { processorId: 'filter-1', paramId: 'gate', value: 1.2 } },
+                {
+                    type: 'setYeastProcessorParam' as const,
+                    payload: { processorId: 'filter-1', paramId: 'gate', value: 1.2 },
+                },
             ],
             actionIndex: 1,
         };
@@ -158,13 +159,19 @@ describe('handleSetYeastProcessorParam', () => {
         // must read the projected value, not the live one.
         expect(
             handleSetYeastProcessorParam.validate!(
-                { type: 'setYeastProcessorParam', payload: { processorId: 'filter-1', paramId: 'gate', value: 0.4, expectedValue: 1.2 } },
+                {
+                    type: 'setYeastProcessorParam',
+                    payload: { processorId: 'filter-1', paramId: 'gate', value: 0.4, expectedValue: 1.2 },
+                },
                 context
             )
         ).toBe(true);
         expect(
             handleSetYeastProcessorParam.validate!(
-                { type: 'setYeastProcessorParam', payload: { processorId: 'filter-1', paramId: 'gate', value: 0.4, expectedValue: 0.8 } },
+                {
+                    type: 'setYeastProcessorParam',
+                    payload: { processorId: 'filter-1', paramId: 'gate', value: 0.4, expectedValue: 0.8 },
+                },
                 context
             )
         ).toBe(false);

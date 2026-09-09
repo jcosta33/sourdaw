@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, type YeastState } from '../../stores/yeastStore';
+import { handleSetYeastProcessorBypass } from '../setYeastProcessorBypass';
 
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as YeastState | null },
     bypassUseCase: vi.fn(),
 }));
-
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: {
         get value() {
@@ -16,13 +16,11 @@ vi.mock('../../stores/yeastStore', () => ({
             mocks.storeValue.value = state;
         }),
     },
+    setActiveYeastDevice: vi.fn(),
 }));
-
 vi.mock('../../useCases/setYeastProcessorBypass', () => ({
     setYeastProcessorBypass: mocks.bypassUseCase,
 }));
-
-import { handleSetYeastProcessorBypass } from '../setYeastProcessorBypass';
 
 function seedRack(bypassed: boolean): void {
     mocks.storeValue.value = {
@@ -34,6 +32,7 @@ function seedRack(bypassed: boolean): void {
 describe('handleSetYeastProcessorBypass', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setActiveYeastDevice(null);
     });
 
     it('writes when expectedBypassed matches and routes through the use case', () => {
@@ -105,20 +104,29 @@ describe('handleSetYeastProcessorBypass', () => {
         seedRack(false);
         const context = {
             actions: [
-                { type: 'setYeastProcessorBypass' as const, payload: { processorId: 'filter-1', bypassed: true, expectedBypassed: false } },
+                {
+                    type: 'setYeastProcessorBypass' as const,
+                    payload: { processorId: 'filter-1', bypassed: true, expectedBypassed: false },
+                },
             ],
             actionIndex: 1,
         };
 
         expect(
             handleSetYeastProcessorBypass.validate!(
-                { type: 'setYeastProcessorBypass', payload: { processorId: 'filter-1', bypassed: false, expectedBypassed: true } },
+                {
+                    type: 'setYeastProcessorBypass',
+                    payload: { processorId: 'filter-1', bypassed: false, expectedBypassed: true },
+                },
                 context
             )
         ).toBe(true);
         expect(
             handleSetYeastProcessorBypass.validate!(
-                { type: 'setYeastProcessorBypass', payload: { processorId: 'filter-1', bypassed: false, expectedBypassed: false } },
+                {
+                    type: 'setYeastProcessorBypass',
+                    payload: { processorId: 'filter-1', bypassed: false, expectedBypassed: false },
+                },
                 context
             )
         ).toBe(false);

@@ -2,14 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { setYeastProcessorBypass } from '../useCases/setYeastProcessorBypass';
+
 import { findLiveProcessor } from './rackState';
 
 /** The bypass state as the batch's preceding same-processor actions leave it. */
-function plannedBypassed(
-    liveBypassed: boolean,
-    context: HandlerValidationContext,
-    processorId: string
-): boolean {
+function plannedBypassed(liveBypassed: boolean, context: HandlerValidationContext, processorId: string): boolean {
     let bypassed = liveBypassed;
     for (const action of context.actions.slice(0, context.actionIndex)) {
         if (action.type === 'setYeastProcessorBypass' && action.payload.processorId === processorId) {
@@ -30,7 +27,9 @@ export const handleSetYeastProcessorBypass = createHandler<'setYeastProcessorByp
         if (!processor) {
             return false;
         }
-        return plannedBypassed(processor.bypassed, context, action.payload.processorId) === action.payload.expectedBypassed;
+        return (
+            plannedBypassed(processor.bypassed, context, action.payload.processorId) === action.payload.expectedBypassed
+        );
     },
     execute: (action) => {
         const processor = findLiveProcessor(action.payload.processorId);

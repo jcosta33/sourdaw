@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { reorderYeastProcessor } from '../useCases/reorderYeastProcessor';
+
 import { findLiveProcessor, moveProcessorId, processorOrder, readYeastRackState } from './rackState';
 
 function isSameOrder(left: readonly string[], right: readonly string[]): boolean {
@@ -11,10 +12,7 @@ function isSameOrder(left: readonly string[], right: readonly string[]): boolean
 /** The rack's id sequence as the batch's preceding reorder actions leave it.
  *  An undo batch replays inverses sequentially, so a guard must read the
  *  projected sequence, not the live pre-batch one. */
-function plannedOrder(
-    liveOrder: readonly string[],
-    context: HandlerValidationContext
-): readonly string[] {
+function plannedOrder(liveOrder: readonly string[], context: HandlerValidationContext): readonly string[] {
     let order = liveOrder;
     for (const action of context.actions.slice(0, context.actionIndex)) {
         if (action.type === 'reorderYeastProcessor') {
@@ -66,7 +64,10 @@ export const handleReorderYeastProcessor = createHandler<'reorderYeastProcessor'
         if (!state) {
             return false;
         }
-        return state.processors.findIndex((candidate) => candidate.id === action.payload.processorId) === action.payload.toIndex;
+        return (
+            state.processors.findIndex((candidate) => candidate.id === action.payload.processorId) ===
+            action.payload.toIndex
+        );
     },
     describe: (action) => {
         const state = readYeastRackState();

@@ -1,9 +1,9 @@
-import { handleAddYeastProcessor } from './addYeastProcessor';
-import { handleRemoveYeastProcessor } from './removeYeastProcessor';
-import { handleReorderYeastProcessor } from './reorderYeastProcessor';
-import { handleSetYeastArpPattern } from './setYeastArpPattern';
-import { handleSetYeastProcessorBypass } from './setYeastProcessorBypass';
-import { handleSetYeastProcessorParam } from './setYeastProcessorParam';
+import { handleAddYeastProcessor } from '../handlers/addYeastProcessor';
+import { handleRemoveYeastProcessor } from '../handlers/removeYeastProcessor';
+import { handleReorderYeastProcessor } from '../handlers/reorderYeastProcessor';
+import { handleSetYeastArpPattern } from '../handlers/setYeastArpPattern';
+import { handleSetYeastProcessorBypass } from '../handlers/setYeastProcessorBypass';
+import { handleSetYeastProcessorParam } from '../handlers/setYeastProcessorParam';
 
 /**
  * Merges the Yeast handler map for Command. Does **not** call `createHandler` here.

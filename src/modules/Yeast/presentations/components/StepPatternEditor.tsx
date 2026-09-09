@@ -126,12 +126,7 @@ export const StepPatternEditor = ({
     };
 
     return (
-        <Stack
-            gap={1}
-            onPointerUp={endStroke}
-            onPointerCancel={endStroke}
-            onPointerLeave={endStroke}
-        >
+        <Stack gap={1} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={endStroke}>
             {/* Step grid */}
             <Row align="stretch" className="gap-px overflow-x-auto pb-1">
                 {steps.map((step, index) => {

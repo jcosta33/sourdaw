@@ -6,10 +6,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
-import { undoStore } from '#/modules/Command/stores/undoStore';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { undo } from '#/modules/Command/useCases/undo';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { executeAppAction, undo } from '#/modules/Command/useCases';
 
 import { createYeastAutomergeStorage } from '../yeastAutomergeStorage';
 import { setActiveYeastDevice, yeastStore, type YeastProcessorInfo, type YeastState } from '../yeastStore';
@@ -539,7 +537,12 @@ describe('Yeast undo against a concurrent peer (#2111)', () => {
         });
     }
 
-    function peerWritesParam(doc: Doc<RootDocument>, processorId: string, paramId: string, value: number): Doc<RootDocument> {
+    function peerWritesParam(
+        doc: Doc<RootDocument>,
+        processorId: string,
+        paramId: string,
+        value: number
+    ): Doc<RootDocument> {
         return change(clone(doc), (draft) => {
             const yeast = (draft as unknown as PersistedUndoYeast).yeast;
             for (const rack of Object.values(yeast.racks)) {
@@ -554,7 +557,7 @@ describe('Yeast undo against a concurrent peer (#2111)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         notifyUserMock.mockClear();
-        undoStore.set({ past: [], future: [] });
+        undoHistoryStore.set({ past: [], future: [] });
         document = from({});
         configureAutomergeStoragePort({
             getDoc: () => document,
@@ -627,7 +630,7 @@ describe('Yeast undo against a concurrent peer (#2111)', () => {
         expect(result.headConsumed).toBe(false);
         // The peer's value stands and the undo entry stays retryable on past.
         expect(yeastStore.value?.processors.find((processor) => processor.id === 'mine')?.params?.gate).toBe(0.5);
-        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
         // The refusal was reported to the user, not swallowed.
         expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Cannot undo'), 'warning');
     });

@@ -6,11 +6,9 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { getCommandHandler } from '#/modules/Command/useCases/getCommandHandler';
-import { undo } from '#/modules/Command/useCases/undo';
-import { undoStore } from '#/modules/Command/stores/undoStore';
+import { clearHandlerRegistry, getHandlerMap, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { executeAppAction, undo } from '#/modules/Command/useCases';
+
 import { setActiveYeastDevice, yeastStore, type YeastState } from '../../stores/yeastStore';
 
 type RootDocument = { yeast?: unknown };
@@ -39,7 +37,7 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
     beforeEach(() => {
         // The undo stack is a session-wide singleton; a previous test's
         // entries would coalesce into (or wedge) this test's gesture.
-        undoStore.set({ past: [], future: [] });
+        undoHistoryStore.set({ past: [], future: [] });
         document = from({});
         configureAutomergeStoragePort({
             getDoc: () => document,
@@ -71,11 +69,11 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
         await dispatchGate(1.2, true);
         await dispatchGate(1.4, true);
 
-        const past = undoStore.value?.past ?? [];
+        const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(3);
         const groupIds = new Set(past.map((entry) => entry.groupId));
         expect(groupIds.size).toBe(1);
-        expect([...groupIds][0]).toBeDefined();
+        expect(groupIds.values().next().value).toBeDefined();
         // The gesture is one takeCandidate unit: the whole group shares it.
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(1.4);
     });
@@ -88,7 +86,7 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
         const result = await undo();
 
         expect(result.headConsumed).toBe(true);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(0.8);
     });
 
@@ -96,7 +94,7 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
         await dispatchGate(1.0, false);
         await dispatchGate(1.2, false);
 
-        const past = undoStore.value?.past ?? [];
+        const past = undoHistoryStore.value?.past ?? [];
         expect(past).toHaveLength(2);
         expect(past[0]?.groupId).toBeUndefined();
         expect(past[1]?.groupId).toBeUndefined();
@@ -106,11 +104,11 @@ describe('Yeast knob gesture undo coalescing (#2111)', () => {
         await dispatchGate(1.0, false);
         await dispatchGate(1.2, true);
 
-        const members = undoStore.value?.past ?? [];
+        const members = undoHistoryStore.value?.past ?? [];
         expect(members).toHaveLength(2);
         for (const entry of members) {
             expect(entry.inverseAction).not.toBeNull();
-            expect(getCommandHandler(entry.inverseAction!)?.canReportConflict).toBe(true);
+            expect(getHandlerMap()[entry.inverseAction!.type]?.canReportConflict).toBe(true);
         }
     });
 });

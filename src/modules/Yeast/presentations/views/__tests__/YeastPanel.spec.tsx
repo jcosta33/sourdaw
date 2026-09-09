@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
 
 import { decodeArpPatternParams, defaultStep, withArpPatternParams } from '../../../models/ArpPattern';
 import { type YeastRuntimeStatus } from '../../../models/YeastProcessorProjection';

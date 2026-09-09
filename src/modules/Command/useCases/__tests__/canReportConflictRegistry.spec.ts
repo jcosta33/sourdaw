@@ -1,15 +1,15 @@
+import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
-import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
-import { type AppAction } from '#/utils/handlerContract';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { change, from, type Doc } from '@automerge/automerge';
+import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
@@ -161,7 +161,13 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
                 type: 'filter',
                 name: 'Filter',
                 restore: {
-                    processor: { id: 'yeast-live', type: 'filter', name: 'Filter', bypassed: false, params: { gate: 0.8 } },
+                    processor: {
+                        id: 'yeast-live',
+                        type: 'filter',
+                        name: 'Filter',
+                        bypassed: false,
+                        params: { gate: 0.8 },
+                    },
                     atIndex: 0,
                 },
             },
@@ -175,7 +181,13 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
             type: 'removeYeastProcessor',
             payload: {
                 processorId: 'yeast-live',
-                expectedProcessor: { id: 'yeast-live', type: 'filter', name: 'Renamed elsewhere', bypassed: false, params: { gate: 0.8 } },
+                expectedProcessor: {
+                    id: 'yeast-live',
+                    type: 'filter',
+                    name: 'Renamed elsewhere',
+                    bypassed: false,
+                    params: { gate: 0.8 },
+                },
                 expectedIndex: 0,
             },
         },

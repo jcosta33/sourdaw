@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores/handlerRegistry';
-import { undoStore } from '#/modules/Command/stores/undoStore';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
 
 import { decodeArpPatternParams } from '../../../models/ArpPattern';
@@ -73,7 +72,7 @@ vi.mock('../../../engine/yeastRuntime', async (importOriginal) => ({
  */
 describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
     beforeEach(() => {
-        undoStore.set({ past: [], future: [] });
+        undoHistoryStore.set({ past: [], future: [] });
         storeMock.yeastState = {
             processors: [{ id: 'arp-1', type: 'arpeggiator', name: 'Lead arp lane', bypassed: false, params: {} }],
             uiLevel: 3,
@@ -95,7 +94,7 @@ describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
             x: 0,
             y: 0,
             toJSON: () => ({}),
-        } as DOMRect);
+        });
 
         clearHandlerRegistry();
         for (const handlerMap of getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true })) {
@@ -120,10 +119,10 @@ describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
         });
 
         await waitFor(() => {
-            expect(undoStore.value?.past.length).toBe(2);
+            expect(undoHistoryStore.value?.past.length).toBe(2);
         });
 
-        const past = undoStore.value?.past ?? [];
+        const past = undoHistoryStore.value?.past ?? [];
         expect(new Set(past.map((entry) => entry.groupId)).size).toBe(1);
         for (const entry of past) {
             expect(entry.label).toBe('Set arp pattern');
@@ -131,10 +130,10 @@ describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
         }
 
         // One undo reverts the whole stroke.
-        const { undo } = await import('#/modules/Command/useCases/undo');
+        const { undo } = await import('#/modules/Command/useCases');
         const result = await undo();
         expect(result.headConsumed).toBe(true);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
         const restored = decodeArpPatternParams(storeMock.yeastState?.processors[0]?.params);
         expect(restored[0]?.velocity).toBe(100);
         expect(restored[1]?.velocity).toBe(100);
@@ -149,8 +148,8 @@ describe('YeastPanel arp stroke undo coalescing (#2111)', () => {
         });
 
         await waitFor(() => {
-            expect(undoStore.value?.past.length).toBe(1);
+            expect(undoHistoryStore.value?.past.length).toBe(1);
         });
-        expect(undoStore.value?.past[0]?.groupId).toBeUndefined();
+        expect(undoHistoryStore.value?.past[0]?.groupId).toBeUndefined();
     });
 });

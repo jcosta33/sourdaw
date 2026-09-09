@@ -39,10 +39,10 @@ import { setActiveYeastDevice, yeastStore, type YeastProcessorInfo, type YeastSt
 import { YEAST_GROOVE_OWNER_ID } from '../../useCases/getYeastGrooveAssignment';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
 import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
-import { useYeastParamActions } from '../hooks/useYeastParamActions';
 import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
+import { useYeastParamActions } from '../hooks/useYeastParamActions';
 import {
     dispatchAddYeastProcessor,
     dispatchRemoveYeastProcessor,
@@ -433,9 +433,7 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
         if (withinStroke) {
             if (strokeDispatchCountRef.current > 0) {
                 coalesceWithPrevious = true;
-            } else if (
-                performance.now() - lastStrokeSettleTimeRef.current <= STEP_STROKE_COALESCE_WINDOW_MS
-            ) {
+            } else if (performance.now() - lastStrokeSettleTimeRef.current <= STEP_STROKE_COALESCE_WINDOW_MS) {
                 coalesceWithPrevious = true;
                 lastStrokeSettleTimeRef.current = 0;
             }
@@ -562,7 +560,10 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                         <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
                             <Row wrap gap={1.5}>
                                 {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
-                                    <YeastChip key={processor.type} onClick={() => dispatchAddYeastProcessor(processor.type)}>
+                                    <YeastChip
+                                        key={processor.type}
+                                        onClick={() => dispatchAddYeastProcessor(processor.type)}
+                                    >
                                         + {processor.name}
                                     </YeastChip>
                                 ))}
@@ -952,7 +953,11 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
                     </span>
                     <Row wrap gap={1}>
                         {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                            <YeastChip key={pt.type} onClick={() => dispatchAddYeastProcessor(pt.type)} title={pt.description}>
+                            <YeastChip
+                                key={pt.type}
+                                onClick={() => dispatchAddYeastProcessor(pt.type)}
+                                title={pt.description}
+                            >
                                 + {pt.name}
                             </YeastChip>
                         ))}
