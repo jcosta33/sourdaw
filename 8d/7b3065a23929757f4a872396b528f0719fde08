@@ -1,0 +1,36 @@
+src/app/getProductionCommandHandlerMaps.ts
+  h_1228e573df1f42 33,72
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  h_1228e573df1f42 1-99
+src/modules/Yeast/handlers/getYeastHandlers.ts
+  h_1228e573df1f42 1-23
+src/modules/Yeast/handlers/rackState.ts
+  h_1228e573df1f42 1-50
+src/modules/Yeast/handlers/removeYeastProcessor.ts
+  h_1228e573df1f42 1-68
+src/modules/Yeast/handlers/reorderYeastProcessor.ts
+  h_1228e573df1f42 1-102
+src/modules/Yeast/handlers/setYeastArpPattern.ts
+  h_1228e573df1f42 1-97
+src/modules/Yeast/handlers/setYeastProcessorBypass.ts
+  h_1228e573df1f42 1-76
+src/modules/Yeast/handlers/setYeastProcessorParam.ts
+  h_1228e573df1f42 1-142
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  h_1228e573df1f42 6-11,17
+src/modules/Yeast/useCases/index.ts
+  h_1228e573df1f42 16
+src/modules/Yeast/useCases/setYeastProcessorParam.ts
+  h_1228e573df1f42 12-20,34,76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8d7b3065a23929757f4a872396b528f0719fde08",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
