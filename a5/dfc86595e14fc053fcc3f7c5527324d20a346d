@@ -1,0 +1,39 @@
+src/modules/AudioEngine/repositories/checkpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_73267bb3df8baf 213
+  s_87ab0a2f60ccf8::t_c35ff8feb57f24 14,23
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.spec.ts
+  s_87ab0a2f60ccf8::t_40468ddd9e0020 16,21-26,113-114,116-133,135-149,151-166,168-179,181-184
+  s_87ab0a2f60ccf8::t_73267bb3df8baf 7,115,134,150,167,180
+  s_87ab0a2f60ccf8::t_b25a4718b388af 185
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_87ab0a2f60ccf8::t_35e331158b474c 569-572
+  s_87ab0a2f60ccf8::t_73267bb3df8baf 920-921
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_105895a9290be9 1018-1020,1043
+  s_87ab0a2f60ccf8::t_ee044338cdbe79 1038-1040,1042,1045,1050,1058-1060
+  s_87ab0a2f60ccf8::t_40468ddd9e0020 368
+  s_87ab0a2f60ccf8::t_bf5551329bf98f 1046-1048
+  s_87ab0a2f60ccf8::t_c9492020134116 1017,1021,1037,1041,1044,1049,1051-1057,1061-1062
+src/modules/AudioEngine/models/CheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_b90f406f6e2e0f 1
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_2ec9426ef544bc 14
+src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts
+  s_87ab0a2f60ccf8::t_5b3f6022b525ce 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a5dfc86595e14fc053fcc3f7c5527324d20a346d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
