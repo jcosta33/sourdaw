@@ -60,7 +60,10 @@ function seedOrdinaryBuffer(
     freezeProjectId?: number
 ): void {
     controls.committed.set(id, makeStoredBuffer(values));
-    controls.committedMeta.set(id, makeMetadata(values, freezeProjectId));
+    controls.committedMeta.set(id, {
+        ...makeMetadata(values, freezeProjectId),
+        persistenceRevision: `${id}-persistence`,
+    });
 }
 
 function makeRecovery(id: string, revision: string, values: readonly number[]): StoredRecoveryRecord {
@@ -479,7 +482,7 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.get('accepted-persistence')?.getChannelData(0)[0]).toBeCloseTo(0.6);
     });
 
-    it('invalidates an ordinary failed source when its prepared owner is accepted for discard', async () => {
+    it('refuses to discard an older prepared row over a retained ordinary source candidate', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         await audioBufferCache.persistPreparedBuffer({
             id: 'accepted-discard',
@@ -497,17 +500,31 @@ describe('audio buffer save durability', () => {
         await vi.waitFor(() => expect(controls.committed.size).toBe(65));
         expect(audioBufferCache.has('accepted-discard')).toBe(false);
 
+        const retainedPreparedPcm = controls.committed.get('accepted-discard');
+        const retainedPreparedMetadata = controls.committedMeta.get('accepted-discard');
+        const retainedRecovery = [...controls.committedRecovery];
+        controls.resetByteCounters();
+
         await expect(
             audioBufferCache.releasePreparedBuffer({
                 id: 'accepted-discard',
                 leaseId: 'accepted-discard-lease',
                 disposition: 'discard',
             })
-        ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
-        await expect(audioBufferCache.ensureDurable(['accepted-discard'])).resolves.toEqual({
-            status: 'failed',
-            failedIds: ['accepted-discard'],
-        });
+        ).resolves.toEqual({ status: 'mismatched' });
+        expect(controls.bytesWritten()).toBe(0);
+        expect(controls.committed.get('accepted-discard')).toEqual(retainedPreparedPcm);
+        expect(controls.committedMeta.get('accepted-discard')).toEqual(retainedPreparedMetadata);
+        expect([...controls.committedRecovery]).toEqual(retainedRecovery);
+
+        const receipt = await expectDurableReceipt(['accepted-discard']);
+        expect(controls.committed.get('accepted-discard')?.channelData[0]?.[0]).toBeCloseTo(0.8);
+        expect(controls.committedMeta.get('accepted-discard')?.preparedOwner).toBeUndefined();
+        receipt.release();
+
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['accepted-discard'] });
+        expect(audioBufferCache.get('accepted-discard')?.getChannelData(0)[0]).toBeCloseTo(0.8);
     });
 
     it('accepts a valid current-format durable row when its decoded runtime buffer is absent', async () => {
@@ -519,6 +536,77 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.has('runtime-absent')).toBe(false);
         expect(controls.writeTransactionCount()).toBe(0);
         receipt.release();
+    });
+
+    it.each(['missing', 'malformed', 'dual'] as const)(
+        'rejects a structurally valid PCM pair with %s persistent identity',
+        async (invalidity) => {
+            const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+            seedOrdinaryBuffer(controls, 'invalid-persistent-identity', [0.4]);
+            const metadata = controls.committedMeta.get('invalid-persistent-identity')!;
+            if (invalidity === 'missing') {
+                delete metadata.persistenceRevision;
+            } else if (invalidity === 'malformed') {
+                metadata.persistenceRevision = '   ';
+            } else {
+                metadata.preparedOwner = {
+                    schemaVersion: 1,
+                    leaseId: 'invalid-persistent-identity-lease',
+                    persistenceRevision: 'prepared-revision',
+                    status: 'project-owned',
+                };
+            }
+
+            await expect(audioBufferCache.ensureDurable(['invalid-persistent-identity'])).resolves.toEqual({
+                status: 'failed',
+                failedIds: ['invalid-persistent-identity'],
+            });
+        }
+    );
+
+    it('keeps hydrated unversioned PCM unauthenticated', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'hydrated-unversioned', [0.4]);
+        delete controls.committedMeta.get('hydrated-unversioned')?.persistenceRevision;
+
+        await expect(
+            audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['hydrated-unversioned'] })
+        ).resolves.toBe(1);
+        expect(audioBufferCache.get('hydrated-unversioned')?.getChannelData(0)[0]).toBeCloseTo(0.4);
+        await expect(audioBufferCache.ensureDurable(['hydrated-unversioned'])).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['hydrated-unversioned'],
+        });
+    });
+
+    it('commits distinct persistent identities for ordinary and imported sources', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        audioBufferCache.set('ordinary-identity-a', makeBuffer([0.1]));
+        audioBufferCache.set('ordinary-identity-b', makeBuffer([0.2]));
+        await vi.waitFor(() => expect(controls.committedMeta.size).toBe(2));
+
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            decodedBuffers: {
+                'imported-identity-a': makeBuffer([0.3]),
+                'imported-identity-b': makeBuffer([0.4]),
+            },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(2);
+        await expect(imported.persist()).resolves.toBe(true);
+
+        const revisions = [
+            'ordinary-identity-a',
+            'ordinary-identity-b',
+            'imported-identity-a',
+            'imported-identity-b',
+        ].map((id) => controls.committedMeta.get(id)?.persistenceRevision);
+        expect(revisions).toEqual(revisions.map(() => expect.any(String)));
+        expect(new Set(revisions).size).toBe(revisions.length);
     });
 
     it.each(['missing PCM', 'malformed PCM', 'invalid ownership'] as const)(

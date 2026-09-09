@@ -110,7 +110,13 @@ describe('prepared audio-buffer lifecycle races', () => {
         const invalidateSource = vi.fn(() => sourceCurrent);
         const lifecycle = createPreparedAudioBufferLifecycle({
             bufferStoreName: BUFFER_STORE,
-            captureDurabilitySourceInvalidation: () => invalidateSource,
+            capturePcmPublicationAuthority: () => ({
+                acceptsRead: () => false,
+                invalidate: invalidateSource,
+                isCurrent: () => sourceCurrent,
+                publishCommitted: () => sourceCurrent,
+                publishRead: () => sourceCurrent,
+            }),
             claimDurableMutation: () => 1,
             createRuntimeBuffer: () => createAudioBuffer({ length: 1, sampleRate: 48_000 }),
             evictRuntime: () => undefined,
@@ -121,7 +127,6 @@ describe('prepared audio-buffer lifecycle races', () => {
             isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
             metadataStoreName: META_STORE,
             openDatabase: openAudioDatabase,
-            publishRuntime: () => undefined,
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
@@ -135,7 +140,7 @@ describe('prepared audio-buffer lifecycle races', () => {
             status: 'failed',
             reason: 'Prepared audio persistence was superseded.',
         });
-        expect(invalidateSource).toHaveBeenCalledOnce();
+        expect(invalidateSource).toHaveBeenCalledWith({ kind: 'preserve' });
         expect(controls.committed.has('source-fenced-persistence')).toBe(false);
         expect(controls.committedMeta.has('source-fenced-persistence')).toBe(false);
     });
@@ -143,6 +148,7 @@ describe('prepared audio-buffer lifecycle races', () => {
     it('does not let prepared discard invalidate a newer source after its ownership read', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
         const id = 'source-fenced-discard';
+        const persistenceRevision = 'source-fenced-discard-revision';
         const data = {
             sampleRate: 48_000,
             numberOfChannels: 1,
@@ -153,14 +159,25 @@ describe('prepared audio-buffer lifecycle races', () => {
         controls.committed.set(id, data);
         controls.committedMeta.set(id, {
             lastAccessed: 1,
-            preparedOwner: { schemaVersion: 1, leaseId: 'lease', status: 'temporary' },
+            preparedOwner: { schemaVersion: 1, leaseId: 'lease', persistenceRevision, status: 'temporary' },
             sizeInBytes: 4,
         });
         let sourceCurrent = true;
         const invalidateSource = vi.fn(() => sourceCurrent);
+        const acceptsRead = vi.fn((revision: string | undefined) => {
+            const accepted = sourceCurrent && revision === persistenceRevision;
+            sourceCurrent = false;
+            return accepted;
+        });
         const lifecycle = createPreparedAudioBufferLifecycle({
             bufferStoreName: BUFFER_STORE,
-            captureDurabilitySourceInvalidation: () => invalidateSource,
+            capturePcmPublicationAuthority: () => ({
+                acceptsRead,
+                invalidate: invalidateSource,
+                isCurrent: () => sourceCurrent,
+                publishCommitted: () => sourceCurrent,
+                publishRead: () => sourceCurrent,
+            }),
             claimDurableMutation: () => 1,
             createRuntimeBuffer: () => createAudioBuffer({ length: 1, sampleRate: 48_000 }),
             evictRuntime: () => undefined,
@@ -171,18 +188,17 @@ describe('prepared audio-buffer lifecycle races', () => {
             isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
             metadataStoreName: META_STORE,
             openDatabase: openAudioDatabase,
-            publishRuntime: () => undefined,
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
         const discard = lifecycle.release({ id, leaseId: 'lease', disposition: 'discard' }, runStoragePhase);
-        sourceCurrent = false;
 
         await expect(discard).resolves.toEqual({
             status: 'failed',
             reason: 'Prepared audio discard was superseded.',
         });
-        expect(invalidateSource).toHaveBeenCalledOnce();
+        expect(acceptsRead).toHaveBeenCalledWith(persistenceRevision);
+        expect(invalidateSource).toHaveBeenCalledWith({ kind: 'read', persistenceRevision });
         expect(controls.committed.has(id)).toBe(true);
         expect(controls.committedMeta.has(id)).toBe(true);
     });
@@ -191,6 +207,7 @@ describe('prepared audio-buffer lifecycle races', () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         const id = 'promotion-revision-aba';
         const leaseId = 'shared-promotion-lease';
+        const persistenceRevision = 'promotion-revision-aba-pcm';
         const data = {
             sampleRate: 48_000,
             numberOfChannels: 1,
@@ -201,7 +218,7 @@ describe('prepared audio-buffer lifecycle races', () => {
         controls.committed.set(id, data);
         controls.committedMeta.set(id, {
             lastAccessed: 1,
-            preparedOwner: { schemaVersion: 1, leaseId, status: 'temporary' },
+            preparedOwner: { schemaVersion: 1, leaseId, persistenceRevision, status: 'temporary' },
             sizeInBytes: 4,
         });
 
@@ -210,7 +227,19 @@ describe('prepared audio-buffer lifecycle races', () => {
         const runtimeA = new Map<string, AudioBuffer>();
         const lifecycleA = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
-            captureDurabilitySourceInvalidation: () => () => true,
+            capturePcmPublicationAuthority: (bufferId) => ({
+                acceptsRead: (revision) => revision === persistenceRevision,
+                invalidate: () => true,
+                isCurrent: () => true,
+                publishCommitted: (buffer) => {
+                    runtimeA.set(bufferId, buffer);
+                    return true;
+                },
+                publishRead: (buffer) => {
+                    runtimeA.set(bufferId, buffer);
+                    return true;
+                },
+            }),
             claimDurableMutation: () => 1,
             createRuntimeBuffer: (candidate) => {
                 const buffer = new AudioBuffer({
@@ -239,7 +268,6 @@ describe('prepared audio-buffer lifecycle races', () => {
                 }
                 return openAudioDatabase();
             },
-            publishRuntime: (bufferId, buffer) => runtimeA.set(bufferId, buffer),
             recoveryStoreName: 'preparedBufferRecovery',
         });
         const context = createTestContext(
@@ -270,7 +298,19 @@ describe('prepared audio-buffer lifecycle races', () => {
         const runtimeB = new Map<string, AudioBuffer>();
         const lifecycleB = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
-            captureDurabilitySourceInvalidation: () => () => true,
+            capturePcmPublicationAuthority: (bufferId) => ({
+                acceptsRead: (revision) => revision === persistenceRevision,
+                invalidate: () => true,
+                isCurrent: () => true,
+                publishCommitted: (buffer) => {
+                    runtimeB.set(bufferId, buffer);
+                    return true;
+                },
+                publishRead: (buffer) => {
+                    runtimeB.set(bufferId, buffer);
+                    return true;
+                },
+            }),
             claimDurableMutation: () => 1,
             createRuntimeBuffer: (candidate) => {
                 const buffer = new AudioBuffer({
@@ -291,7 +331,6 @@ describe('prepared audio-buffer lifecycle races', () => {
             isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
             metadataStoreName: 'bufferMeta',
             openDatabase: openAudioDatabase,
-            publishRuntime: (bufferId, buffer) => runtimeB.set(bufferId, buffer),
             recoveryStoreName: 'preparedBufferRecovery',
         });
         let reopened = false;

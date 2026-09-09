@@ -121,7 +121,10 @@ function seedBuffer(
     freezeProjectId?: number
 ): void {
     controls.committed.set(id, storedBuffer(values));
-    controls.committedMeta.set(id, storedMetadata(values, freezeProjectId));
+    controls.committedMeta.set(id, {
+        ...storedMetadata(values, freezeProjectId),
+        persistenceRevision: `${id}-persistence`,
+    });
 }
 
 function sparseBufferIds(): string[] {

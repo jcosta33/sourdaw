@@ -46,6 +46,7 @@ export type StoredAudioBuffer = {
 export type StoredBufferMeta = {
     freezeProjectId?: number;
     lastAccessed: number;
+    persistenceRevision?: string;
     preparedOwner?: {
         schemaVersion: 1;
         createdAtMs?: number;

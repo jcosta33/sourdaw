@@ -89,10 +89,21 @@ ownership explicitly.
 
 ## Prepared settlement review crosses module instances
 
-Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Reuse
-one buffer ID and lease with different PCM and persistence revisions, then exercise both promotion and discard over
-temporary and already-settled durable owners. Local runtime tokens and lease equality do not establish persistent PCM
-identity; the observed coverage gap was the absence of this cross-instance proof.
+Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Test
+known durable, hydrated, and evicted PCM, and attack fresh durability checks separately from acquisition through an
+older receipt. Reuse one buffer ID and lease with different PCM and persistence revisions, then exercise promotion and
+discard over temporary and already-settled durable owners. Local object identity, runtime tokens, lease equality, and
+scope locks do not establish persistent PCM identity; the source map introduced by #3877 and receipt authentication
+added by #4051 each require this cross-instance proof. Compose eviction with an explicit retained project reset and
+hydration in one attack: isolated eviction and hydration cases do not prove that the retained transition preserves an
+identity witness when no decoded runtime remains.
+
+Treat any pre-commit cache invalidation as an identity transition, not cleanup. A cold module can authenticate an exact
+prepared row from its durable revision, stage deletion and then observe an aborted transaction; the unchanged row must
+remain readable and recoverable in that same module. Carry explicit preserved, read-origin and admitted-commit
+witnesses through invalidation, and attack each with a later source replacement before accepting retry or recovery.
+Capture a prepared release's publication authority at mutation admission, before it waits for the storage lock; recapturing
+inside the queued storage phase can authenticate an intervening ordinary replacement as the older prepared commit.
 
 ## References
 

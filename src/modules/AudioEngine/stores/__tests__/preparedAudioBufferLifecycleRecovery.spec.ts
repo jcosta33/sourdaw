@@ -585,6 +585,7 @@ describe('prepared audio-buffer recovery and project admission', () => {
                     schemaVersion: 1,
                     createdAtMs: 1,
                     leaseId,
+                    persistenceRevision: `${id}-persistence`,
                     promotionRevision: `${id}-promotion`,
                     status: 'project-owned',
                 },

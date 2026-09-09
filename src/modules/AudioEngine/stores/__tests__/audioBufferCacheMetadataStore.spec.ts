@@ -104,6 +104,8 @@ describe('audioBufferCache metadata store', () => {
             audioBufferCache.set('pcm', stereoSecond());
             await flushIndexedDbTasks();
             expect(controls.committed.get('pcm')?.channelData[0]?.length).toBe(FRAMES_PER_SECOND);
+            const persistenceRevision = controls.committedMeta.get('pcm')?.persistenceRevision;
+            expect(persistenceRevision).toEqual(expect.any(String));
 
             controls.resetByteCounters();
             // Past the 60 s coalescing window the persist seeded, so this read
@@ -119,6 +121,7 @@ describe('audioBufferCache metadata store', () => {
             // was persisted with. Two different numbers on two different rows,
             // so neither assertion can be satisfied by the other's write.
             expect(controls.committedMeta.get('pcm')?.lastAccessed).toBe(70_000);
+            expect(controls.committedMeta.get('pcm')?.persistenceRevision).toBe(persistenceRevision);
             expect(controls.committed.get('pcm')?.lastAccessed).toBe(1_000);
             expect(mocks.loggerWarn).not.toHaveBeenCalled();
         });
@@ -134,7 +137,11 @@ describe('audioBufferCache metadata store', () => {
             audioBufferCache.set('pcm', stereoSecond());
             await flushIndexedDbTasks();
 
-            expect(controls.committedMeta.get('pcm')).toEqual({ lastAccessed: 1_000, sizeInBytes: PCM_BYTES });
+            expect(controls.committedMeta.get('pcm')).toEqual({
+                lastAccessed: 1_000,
+                persistenceRevision: expect.any(String),
+                sizeInBytes: PCM_BYTES,
+            });
         });
     });
 
