@@ -1,0 +1,23 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/legacyPersistedIdCleanup.spec.ts
+  s_9b530f08172a54::t_6f818174feb680 1-133
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/nativeMidiPortsChanged.spec.ts
+  s_9b530f08172a54::t_6b9153e74c0371 1-187
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_9b530f08172a54::t_d14f725de55af6 2,7,18,23-29,108-265,328-329,338-339,344-346,357-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "55a588f3efb768d2927bf1ac84f248a9021a454c",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
