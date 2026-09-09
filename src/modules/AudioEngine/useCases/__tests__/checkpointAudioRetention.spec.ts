@@ -220,6 +220,29 @@ async function replaceSourceAfterMetadataRead(api: RetentionApi, bufferId: strin
     return () => replacementObserved;
 }
 
+async function observeCheckpointRetentionPuts(): Promise<() => number> {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('sourdaw-audio');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+    });
+    const retentionStore = database.transaction(CHECKPOINT_RETENTION_STORE).objectStore(CHECKPOINT_RETENTION_STORE);
+    const prototype = Object.getPrototypeOf(retentionStore) as IDBObjectStore;
+    database.close();
+    const originalPut = prototype.put;
+    const retentionPutCalls: Parameters<IDBObjectStore['put']>[] = [];
+    vi.spyOn(prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        ...args: Parameters<IDBObjectStore['put']>
+    ) {
+        if (this.name === CHECKPOINT_RETENTION_STORE) {
+            retentionPutCalls.push(args);
+        }
+        return originalPut.apply(this, args);
+    });
+    return () => retentionPutCalls.length;
+}
+
 describe('checkpoint audio retention', () => {
     let controls: FakeAudioIndexedDbControls;
 
@@ -419,6 +442,7 @@ describe('checkpoint audio retention', () => {
         seedBuffer(controls, 'same-id', [0.25]);
         const api = await importApi();
         const receipt = await requireDurabilityReceipt(api, ['same-id']);
+        const retentionPutCount = await observeCheckpointRetentionPuts();
         const replacementObserved = await replaceSourceAfterMetadataRead(api, 'same-id', 0.75);
         try {
             await expect(
@@ -432,6 +456,7 @@ describe('checkpoint audio retention', () => {
                 )
             ).resolves.toEqual({ status: 'superseded' });
             expect(replacementObserved()).toBe(true);
+            expect(retentionPutCount()).toBe(0);
             expect(controls.committedCheckpointRetentions.has('pre-write-stale')).toBe(false);
         } finally {
             receipt.release();
