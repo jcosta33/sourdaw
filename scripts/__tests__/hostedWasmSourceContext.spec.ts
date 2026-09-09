@@ -210,7 +210,7 @@ describe('hosted WASM source context CLI', () => {
         expect(narrowPlan.stdout).toContain('selected: scoring');
     }, 60_000);
 
-    it('refuses dirty, invalid-head, non-top-level, same, nested, and incompatible source roots before import', async () => {
+    it('refuses dirty control/source checkouts, invalid heads, roots, and incompatible source toolkits before import', async () => {
         const input = await createCheckouts();
         writeFileSync(join(input.source, 'sentinel'), 'dirty\n');
         expect(plan(input).stderr).toContain('clean source checkout');
@@ -220,7 +220,26 @@ describe('hosted WASM source context CLI', () => {
             join(input.source, 'scripts', 'wasm-artifacts.ts'),
             'throw new Error("source toolkit imported");\n'
         );
-        commit(input.source, 'fixture source sentinel');
+        const sourceHead = commit(input.source, 'fixture source sentinel');
+        expect(git(input.source, ['rev-parse', 'HEAD'])).toBe(sourceHead);
+
+        const controlCargoPath = join(input.control, 'Cargo.toml');
+        const originalControlCargo = readFileSync(controlCargoPath, 'utf8');
+        writeFileSync(controlCargoPath, `${originalControlCargo}\n# tracked control sentinel\n`);
+        const trackedControl = plan(input);
+        expect(trackedControl.status).not.toBe(0);
+        expect(trackedControl.stderr).toContain('clean workflow control checkout');
+        expect(trackedControl.stderr).not.toContain('source toolkit imported');
+        writeFileSync(controlCargoPath, originalControlCargo);
+
+        const untrackedControlPath = join(input.control, 'untracked-control-sentinel');
+        writeFileSync(untrackedControlPath, 'untracked\n');
+        const untrackedControl = plan(input);
+        expect(untrackedControl.status).not.toBe(0);
+        expect(untrackedControl.stderr).toContain('clean workflow control checkout');
+        expect(untrackedControl.stderr).not.toContain('source toolkit imported');
+        rmSync(untrackedControlPath);
+
         const wrongSourceHead = plan(input, input.source, { BUILD_HEAD_SHA: '0'.repeat(40) });
         expect(wrongSourceHead.stderr).toContain('requested source head');
         expect(wrongSourceHead.stderr).not.toContain('source toolkit imported');
