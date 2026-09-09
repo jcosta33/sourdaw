@@ -12,6 +12,7 @@ export const GRAND_BOULE_MEASUREMENT_SOURCE_FILES = [
     'crates/daw-dsp/benches/quantum.rs',
     'crates/daw-dsp/benches/wasm/deviceRecipes.js',
     'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+    'scripts/quantumMeasurementCalibration.ts',
     'crates/daw-dsp/src/lib.rs',
     'crates/daw-dsp/Cargo.toml',
     'rust-toolchain.toml',

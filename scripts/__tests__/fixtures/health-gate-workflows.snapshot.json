@@ -1953,6 +1953,7 @@
           "scripts/checkReleaseInventory.ts",
           "scripts/healthGateWorkflowContract.ts",
           "scripts/hostedQuantumMeasurementWorkflowContract.ts",
+          "scripts/quantumMeasurementCalibration.ts",
           "scripts/recordHealthGateWorkflowSnapshot.ts",
           "scripts/test-health-gate-scripts.sh",
           "scripts/wasmToolchainPins.ts",
