@@ -1441,16 +1441,26 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
  * there claims provenance over bytes the narrowed census no longer pins.
  */
 export function assertWholeEngineQuantumCapability(root: string): void {
+    const trustedWholeEngineQuantumBudgetMs = (128 / 48_000) * 1000;
     const data = JSON.parse(readFileSync(resolve(root, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')) as {
         budgetMs?: number;
         referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
     };
+    const budgetMs = data.budgetMs;
+    const audioWorstQuantumUpperMs = data.referenceProject?.audioWorstQuantumUpperMs;
+    const workerMedianMs = data.referenceProject?.workerMedianMs;
     if (
-        typeof data.budgetMs !== 'number' ||
-        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
+        typeof budgetMs !== 'number' ||
+        !Number.isFinite(budgetMs) ||
+        budgetMs !== trustedWholeEngineQuantumBudgetMs ||
+        typeof audioWorstQuantumUpperMs !== 'number' ||
+        !Number.isFinite(audioWorstQuantumUpperMs) ||
+        audioWorstQuantumUpperMs < 0 ||
+        audioWorstQuantumUpperMs >= trustedWholeEngineQuantumBudgetMs ||
+        typeof workerMedianMs !== 'number' ||
+        !Number.isFinite(workerMedianMs) ||
+        workerMedianMs < 0 ||
+        workerMedianMs >= trustedWholeEngineQuantumBudgetMs
     ) {
         throw new Error('Whole-engine measured reference project exceeds its render budget');
     }

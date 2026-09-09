@@ -45,6 +45,14 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 
 ## Lessons from escapes
 
+### 2026-09-09 — whole-engine admission trusted its artifact's declared budget (escaped via PR #2725; merge `26a362bbc4a5b9a74d46dd713951eb9f411ded68`)
+
+PR #2725 let the release inventory compare measured costs to a table-controlled budget; the later PR #3018 only extracted that assertion. An inflated budget, negative cost, or non-finite parsed number could therefore admit an invalid whole-engine measurement.
+
+Blind spot: review treated a self-reported threshold and numeric type checks as the runner's fixed deadline contract.
+
+Probe that would have caught it: set each measured cost independently to zero, a valid positive value, the fixed deadline, a negative value, and `1e309`; inflate the artifact budget with a 10 ms cost, and require admission to bind exactly to the producer's `128 / 48_000 * 1000` ms deadline.
+
 ### 2026-09-09 — filtered calibration values lost their producer keys (escaped via PR #974)
 
 The quantum measurement runner filtered invalid segment rates but kept sample indices from the

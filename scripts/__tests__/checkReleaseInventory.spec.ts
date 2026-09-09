@@ -1150,7 +1150,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         sourceDigests,
         browser: 'fixture-browser',
         userAgent: 'fixture-agent',
-        budgetMs: 2.666,
+        budgetMs: (128 / 48_000) * 1000,
         options: { warmupQuanta: 4, measureQuanta: 8 },
         load: { before: 1.25, after: 1.5 },
         referenceProject: {
@@ -3259,18 +3259,76 @@ describe('release inventory', () => {
             expect(() => assertWholeEngineQuantumCapability(root)).not.toThrow();
 
             const original = readFileSync(jsonPath, 'utf8');
-            const overBudget = JSON.parse(original) as {
-                budgetMs: number;
-                referenceProject: { audioWorstQuantumUpperMs: number };
-            };
-            overBudget.referenceProject.audioWorstQuantumUpperMs = overBudget.budgetMs;
-            writeFileSync(jsonPath, JSON.stringify(overBudget));
             const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
-            writeFileSync(markdownPath, renderGeneratedRegion(overBudget));
+            const wholeEngineBudgetMs = (128 / 48_000) * 1000;
+            const writeMeasurement = (measurement: {
+                budgetMs: number;
+                referenceProject: {
+                    audioWorstQuantumUpperMs: number;
+                    workerMedianMs: number;
+                };
+            }) => {
+                writeFileSync(jsonPath, JSON.stringify(measurement));
+                writeFileSync(markdownPath, renderGeneratedRegion(measurement));
+            };
+            const measurementWith = (
+                changes: Partial<{
+                    budgetMs: number;
+                    audioWorstQuantumUpperMs: number;
+                    workerMedianMs: number;
+                }>
+            ) => {
+                const measurement = JSON.parse(original) as {
+                    budgetMs: number;
+                    referenceProject: {
+                        audioWorstQuantumUpperMs: number;
+                        workerMedianMs: number;
+                    };
+                };
+                measurement.budgetMs = changes.budgetMs ?? measurement.budgetMs;
+                measurement.referenceProject.audioWorstQuantumUpperMs =
+                    changes.audioWorstQuantumUpperMs ?? measurement.referenceProject.audioWorstQuantumUpperMs;
+                measurement.referenceProject.workerMedianMs =
+                    changes.workerMedianMs ?? measurement.referenceProject.workerMedianMs;
+                return measurement;
+            };
+            const expectRefusal = (changes: Parameters<typeof measurementWith>[0]) => {
+                writeMeasurement(measurementWith(changes));
+                expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                    'Whole-engine measured reference project exceeds its render budget'
+                );
+            };
+
+            expectRefusal({ budgetMs: 100 });
+            expectRefusal({ budgetMs: 100, audioWorstQuantumUpperMs: 10 });
+            expectRefusal({ budgetMs: 100, workerMedianMs: 10 });
+            expectRefusal({ audioWorstQuantumUpperMs: wholeEngineBudgetMs });
+            expectRefusal({ workerMedianMs: wholeEngineBudgetMs });
+            expectRefusal({ audioWorstQuantumUpperMs: -1 });
+            expectRefusal({ workerMedianMs: -1 });
+            writeFileSync(jsonPath, original.replace(/"budgetMs":[^,]+/u, '"budgetMs":1e309'));
             expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
                 'Whole-engine measured reference project exceeds its render budget'
             );
+            writeFileSync(
+                jsonPath,
+                original.replace('"audioWorstQuantumUpperMs":2.1', '"audioWorstQuantumUpperMs":1e309')
+            );
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
+            );
+            writeFileSync(jsonPath, original.replace('"workerMedianMs":2.2', '"workerMedianMs":1e309'));
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
+            );
+
+            writeMeasurement(measurementWith({ audioWorstQuantumUpperMs: 0, workerMedianMs: 2.5 }));
+            expect(() => assertWholeEngineQuantumCapability(root)).not.toThrow();
+            writeMeasurement(measurementWith({ audioWorstQuantumUpperMs: 2.5, workerMedianMs: 0 }));
+            expect(() => assertWholeEngineQuantumCapability(root)).not.toThrow();
+
             // The descope (ADR 0038): the same over-budget table no longer fails the Grand Boule admission.
+            writeMeasurement(measurementWith({ budgetMs: 100, audioWorstQuantumUpperMs: 10 }));
             expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
 
             const missing = JSON.parse(original) as { referenceProject?: unknown };
