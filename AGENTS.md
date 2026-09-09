@@ -20,8 +20,12 @@ is a blocker, not a question.
 Fix or hand off every encountered defect: observable misbehavior, broken invariants, or documented
 contract contradictions, never style preferences. Existing defects spread through surrounding code
 and agents copying it. Give sizeable defects their own lane; batch small unrelated ones in a hygiene
-lane. Your fix's lane and PR claim it; do not file an issue. File any defect you leave behind, at any
-size, with enough detail for a cold session or another agent to act.
+lane. Your fix's lane and PR claim it; do not file an issue.
+
+The tracker exists to hand work to other agents in the future. File only what you leave behind:
+defects, follow-ups, and designs you are not taking into a lane now, each with enough detail for a
+cold session or another agent to act. Never file an issue for work your own session is about to do,
+and never offer to file or ask whether to file: file it or do it.
 
 ## Delegation
 
