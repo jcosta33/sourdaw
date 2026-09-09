@@ -11,7 +11,7 @@ import {
     readCheckpointAudioVersionMetadata,
     type CheckpointAudioRetention,
     type CheckpointAudioVersionMetadata,
-} from '../models/checkpointAudioRetention';
+} from '../models/CheckpointAudioRetention';
 import {
     isValidPreparedSerializedAudioBuffer,
     readPersistentPcmRevision,
@@ -20,7 +20,7 @@ import {
     type PreparedAudioBufferMetadata,
 } from '../stores/preparedAudioBufferOwnership';
 
-import type { SerializedAudioBuffer } from '../models/serializedAudioBuffer';
+import type { SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
 
 const BUFFER_STORE_NAME = 'buffers';
 const META_STORE_NAME = 'bufferMeta';
@@ -210,7 +210,7 @@ function createAudioBuffer(
         serialized.sampleRate
     );
     for (const [index, channel] of serialized.channelData.entries()) {
-        runtime.copyToChannel(channel, index);
+        runtime.getChannelData(index).set(channel);
     }
     return runtime;
 }

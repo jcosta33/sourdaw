@@ -1,4 +1,4 @@
-import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/serializedAudioBuffer';
+import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
 
 export type PreparedAudioBufferOwner = {
     schemaVersion: 1;

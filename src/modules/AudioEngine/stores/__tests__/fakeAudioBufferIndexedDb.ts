@@ -566,10 +566,10 @@ export type InstallFakeAudioIndexedDbInput = {
      *   no `error`. The silence is the point: a double that fired `blocked` and
      *   then `success` anyway could not show the hang, because the promise
      *   would settle either way.
-     * - `'then-yields'` fires `blocked` and then `success` a task later, as a
-     *   browser does when the blocking context finally closes. This is the only
-     *   way to reach the branch that has to close a connection nobody is
-     *   waiting for any more.
+     * - `'then-yields'` fires `blocked` and then resumes the queued open
+     *   lifecycle, as a browser does when the blocking context finally closes.
+     *   This is the only way to reach the branch that has to close a connection
+     *   nobody is waiting for any more.
      */
     blockOpens?: 'forever' | 'then-yields';
 };
@@ -917,14 +917,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     if (input.blockOpens === 'forever') {
                         return;
                     }
-                    setTimeout(() => {
-                        if (request.requestedVersion > databaseVersion) {
-                            request.onupgradeneeded?.();
-                            databaseVersion = request.requestedVersion;
-                        }
-                        request.result.markEstablished();
-                        request.onsuccess?.();
-                    }, 0);
+                    pendingOpenRequests.push(request);
+                    scheduleOpenProcessing();
                 }, 0);
                 return request;
             }

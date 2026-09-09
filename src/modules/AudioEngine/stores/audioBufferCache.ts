@@ -11,7 +11,7 @@ import {
     CHECKPOINT_RETENTION_STORE_NAME,
     readCheckpointAudioRetention,
     readCheckpointAudioVersionKey,
-} from '../models/checkpointAudioRetention';
+} from '../models/CheckpointAudioRetention';
 
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
 import {

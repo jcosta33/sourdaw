@@ -4,6 +4,7 @@ import {
     BUFFER_STORE,
     CHECKPOINT_AUDIO_VERSION_META_STORE,
     CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -12,12 +13,17 @@ import {
 
 function openDatabase(
     version = 2,
-    onUpgrade?: (database: IDBDatabase) => void,
+    onUpgrade?: (database: IDBDatabase, event: IDBVersionChangeEvent, transaction: IDBTransaction) => void,
     onBlocked?: () => void
 ): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open('sourdaw-audio', version);
-        request.onupgradeneeded = () => onUpgrade?.(request.result);
+        request.onupgradeneeded = (event) => {
+            if (request.transaction === null) {
+                throw new Error('Expected an active version upgrade transaction');
+            }
+            onUpgrade?.(request.result, event, request.transaction);
+        };
         request.onblocked = () => onBlocked?.();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
@@ -102,6 +108,79 @@ describe('fakeAudioBufferIndexedDb', () => {
         expect(retried.version).toBe(3);
         expect(controls.storeNames()).toContain(RECOVERY_STORE);
         expect(controls.committedRecovery.has(0)).toBe(false);
+    });
+
+    it('commits a delayed v4-to-v5 upgrade through its version transaction', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE],
+            blockOpens: 'then-yields',
+        });
+        controls.committedCheckpointRetentions.set('obsolete', {
+            schemaVersion: 2,
+            checkpointId: 'obsolete',
+            projectOwnerId: 'project-owner',
+            ownershipToken: 'ownership-token',
+            versionKeys: [],
+        });
+        let blockedCount = 0;
+
+        const database = await openDatabase(
+            5,
+            (upgradeDatabase, event, transaction) => {
+                expect(event.oldVersion).toBe(4);
+                expect(event.newVersion).toBe(5);
+                upgradeDatabase.createObjectStore(CHECKPOINT_AUDIO_VERSION_STORE);
+                upgradeDatabase.createObjectStore(CHECKPOINT_AUDIO_VERSION_META_STORE);
+                transaction.objectStore(CHECKPOINT_RETENTION_STORE).clear();
+            },
+            () => {
+                blockedCount++;
+            }
+        );
+
+        expect(blockedCount).toBe(1);
+        expect(database.version).toBe(5);
+        expect(controls.storeNames()).toContain(CHECKPOINT_AUDIO_VERSION_STORE);
+        expect(controls.storeNames()).toContain(CHECKPOINT_AUDIO_VERSION_META_STORE);
+        expect(controls.committedCheckpointRetentions.size).toBe(0);
+    });
+
+    it('restores schema and rows when a delayed v4-to-v5 upgrade aborts', async () => {
+        const controls = installFakeAudioIndexedDb({
+            existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE, CHECKPOINT_RETENTION_STORE],
+            blockOpens: 'then-yields',
+        });
+        const obsoleteRetention = {
+            schemaVersion: 2 as const,
+            checkpointId: 'obsolete',
+            projectOwnerId: 'project-owner',
+            ownershipToken: 'ownership-token',
+            versionKeys: [],
+        };
+        controls.committedCheckpointRetentions.set('obsolete', obsoleteRetention);
+        controls.abortNextWrite();
+
+        await expect(
+            openDatabase(5, (database, _event, transaction) => {
+                database.createObjectStore(CHECKPOINT_AUDIO_VERSION_STORE);
+                database.createObjectStore(CHECKPOINT_AUDIO_VERSION_META_STORE);
+                transaction.objectStore(CHECKPOINT_RETENTION_STORE).clear();
+            })
+        ).rejects.toThrow();
+
+        expect(controls.storeNames()).not.toContain(CHECKPOINT_AUDIO_VERSION_STORE);
+        expect(controls.storeNames()).not.toContain(CHECKPOINT_AUDIO_VERSION_META_STORE);
+        expect(controls.committedCheckpointRetentions.get('obsolete')).toEqual(obsoleteRetention);
+
+        let retryOldVersion: number | undefined;
+        await openDatabase(5, (database, event, transaction) => {
+            retryOldVersion = event.oldVersion;
+            database.createObjectStore(CHECKPOINT_AUDIO_VERSION_STORE);
+            database.createObjectStore(CHECKPOINT_AUDIO_VERSION_META_STORE);
+            transaction.objectStore(CHECKPOINT_RETENTION_STORE).clear();
+        });
+        expect(retryOldVersion).toBe(4);
+        expect(controls.committedCheckpointRetentions.size).toBe(0);
     });
 
     it('serializes overlapping readwrite transactions before the later transaction reads', async () => {

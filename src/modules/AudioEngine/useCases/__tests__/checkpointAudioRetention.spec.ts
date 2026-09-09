@@ -365,6 +365,7 @@ describe('checkpoint audio retention', () => {
     it('reads immutable retained PCM across ordinary replacement, restart, and caller mutation', async () => {
         seedBuffer(controls, 'same-id', [0.25]);
         const api = await importApi();
+        const btoa = vi.spyOn(globalThis, 'btoa');
         const first = await acquireCurrentRetention(api, {
             checkpointId: 'checkpoint-a',
             bufferIds: ['same-id'],
@@ -416,7 +417,6 @@ describe('checkpoint audio retention', () => {
         expect(ordinary?.publish()).toBe(1);
         expect(reopened.get({ bufferId: 'same-id' })?.getChannelData(0)[0]).toBe(0.75);
 
-        const btoa = vi.spyOn(globalThis, 'btoa');
         const retainedA = await reopened.read({
             checkpointId: 'checkpoint-a',
             projectOwnerId: PROJECT_OWNER_ID,
@@ -1014,6 +1014,11 @@ describe('checkpoint audio retention', () => {
 
         seedEqualRecoveries();
         seedBuffer(controls, 'shared', [0.25]);
+        const sharedPcmByteLength = controls.committed.get('shared')?.channelData[0]?.byteLength;
+        if (sharedPcmByteLength === undefined) {
+            throw new Error('Expected seeded shared PCM');
+        }
+        expect(sharedPcmByteLength).toBe(4);
         await acquireCurrentRetention(api, { checkpointId: 'checkpoint-a', bufferIds: ['shared'] });
         await acquireCurrentRetention(api, { checkpointId: 'checkpoint-b', bufferIds: ['shared'] });
 
@@ -1029,6 +1034,32 @@ describe('checkpoint audio retention', () => {
         expect(controls.committed.has('shared')).toBe(true);
         expect(controls.committedCheckpointAudioVersions.size).toBe(1);
         expect(controls.committedCheckpointAudioVersionMeta.size).toBe(1);
+
+        const ordinaryAlias = controls.committed.get('shared');
+        const immutableVersion = controls.committedCheckpointAudioVersions.get(versionKey('shared'));
+        const immutableMetadata = controls.committedCheckpointAudioVersionMeta.get(versionKey('shared'));
+        seedEqualRecoveries();
+        const expectedRecoveries = [...controls.committedRecovery.entries()];
+        await expect(api.collectBySize({ maxSizeBytes: upperBudget + sharedPcmByteLength })).resolves.toBe(0);
+        expect([...controls.committedRecovery.keys()]).toEqual(['recovery-a', 'recovery-b']);
+        for (const [recoveryId, expectedRecovery] of expectedRecoveries) {
+            if (typeof recoveryId !== 'string') {
+                throw new TypeError('Expected a string recovery ID');
+            }
+            const recovery = controls.committedRecovery.get(recoveryId);
+            expect(recovery).toBe(expectedRecovery);
+            expect(recovery).toMatchObject({
+                id: recoveryId,
+                revision: `${recoveryId}-recovery`,
+                schemaVersion: 1,
+            });
+            expect(Array.from(recovery?.data?.channelData[0] ?? [])).toEqual([0.5, 0.75]);
+        }
+        expect(controls.committed.get('shared')).toBe(ordinaryAlias);
+        expect(controls.committedCheckpointAudioVersions.get(versionKey('shared'))).toBe(immutableVersion);
+        expect(controls.committedCheckpointAudioVersionMeta.get(versionKey('shared'))).toBe(immutableMetadata);
+        expect([...controls.committedCheckpointAudioVersions.keys()]).toEqual([versionKey('shared')]);
+        expect([...controls.committedCheckpointAudioVersionMeta.keys()]).toEqual([versionKey('shared')]);
     });
 
     it('holds the named lock from immutable census through acquire and release admission', async () => {

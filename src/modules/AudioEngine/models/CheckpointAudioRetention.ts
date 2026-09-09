@@ -1,4 +1,4 @@
-import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from './serializedAudioBuffer';
+import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from './SerializedAudioBuffer';
 
 export const CHECKPOINT_RETENTION_STORE_NAME = 'checkpointRetentions';
 export const CHECKPOINT_AUDIO_VERSION_STORE_NAME = 'checkpointAudioVersions';
