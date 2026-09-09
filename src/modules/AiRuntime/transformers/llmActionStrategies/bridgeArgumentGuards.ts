@@ -63,6 +63,19 @@ export function findTrack(context: ProjectContext, trackId: unknown) {
     return context.tracks.find((track) => track.id === trackId);
 }
 
+export function findClip(context: ProjectContext, clipId: unknown) {
+    if (typeof clipId !== 'string') {
+        return undefined;
+    }
+    for (const track of context.tracks) {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (clip) {
+            return { clip, track };
+        }
+    }
+    return undefined;
+}
+
 export function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
     const source = findTrack(context, trackId);
     if (!source || typeof busId !== 'string') {
