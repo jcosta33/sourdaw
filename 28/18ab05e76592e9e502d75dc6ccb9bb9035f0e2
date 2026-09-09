@@ -1,0 +1,38 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategy.ts
+  s_06adf2b091dc62::t_5daabaeb5b97de 1,4-6,9,11
+  s_06adf2b091dc62::t_4d4958b8e1cf13 2-3,7-8,10,12-32
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_06adf2b091dc62::t_30436a76d438b3 242-246
+  s_06adf2b091dc62::t_a47c410a5b2731 50,60
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_06adf2b091dc62::t_2b05400a30a45c 66-78
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  s_06adf2b091dc62::t_1b5ee65ab81329 1-414
+  s_06adf2b091dc62::t_41d4797a0f689e 415-421
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_06adf2b091dc62::t_4f10476904da3c 380,387-393,396,398,404,409
+  s_06adf2b091dc62::t_a5e66cf12c3da3 72,74-75,77
+  s_06adf2b091dc62::t_db40451de79cd1 1-71,73,76,78-379,381-386,394-395,397,399-403,405-408,410-474
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  s_06adf2b091dc62::t_065cf798fa3c97 1-348
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategyGuards.ts
+  s_06adf2b091dc62::t_49b47fdef46b8a 1-22
+src/modules/AiRuntime/transformers/llmActionStrategies/clipStrategyTypes.ts
+  s_06adf2b091dc62::t_72ae2e10f4cacc 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2818ab05e76592e9e502d75dc6ccb9bb9035f0e2",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
