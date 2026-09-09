@@ -61,6 +61,7 @@ type NativeSelectKeyObservation = {
     defaultPrevented: boolean;
     selectRetainedFocus: boolean;
 };
+const CLOSED_NATIVE_SELECT_KEYS = ['Home', 'End', 'Space', 'ArrowDown', 'Enter'] as const;
 type PianoRollGeometry = {
     canvas: Rect;
     dockHeight: number;
@@ -607,7 +608,7 @@ async function pressBetweenPianoRollAndTray(frame: Frame, key: 'Tab' | 'Shift+Ta
     await expect(expected).toBeFocused();
 }
 
-async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): Promise<NativeSelectKeyObservation[]> {
+async function observeNativeSelectKey(frame: Frame, key: string): Promise<NativeSelectKeyObservation> {
     await frame.evaluate(() => {
         const selector = document.querySelector<HTMLSelectElement>('#lane-selector');
         if (selector === null) {
@@ -633,9 +634,7 @@ async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): P
         selector.addEventListener('keydown', listener);
     });
 
-    for (const key of keys) {
-        await pressFromActiveControl(frame, key);
-    }
+    await pressFromActiveControl(frame, key);
 
     return frame.evaluate(async () => {
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
@@ -655,13 +654,89 @@ async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): P
         }
         selector.removeEventListener('keydown', capture.listener);
         delete element.__pianoRollNativeKeyCapture;
-        return capture.observations;
+        const observation = capture.observations.at(0);
+        if (observation === undefined) {
+            throw new Error('Native select key was not delivered to the closed selector');
+        }
+        return observation;
     });
+}
+
+async function nativeSelectIsOpen(selector: Locator): Promise<boolean> {
+    return selector.evaluate((element) => {
+        if (!CSS.supports('selector(select:open)')) {
+            throw new Error('Browser does not expose native select open state');
+        }
+        return element.matches(':open');
+    });
+}
+
+async function automationTrayHeaderNeutralPoint(frame: Frame): Promise<{ x: number; y: number }> {
+    return frame.evaluate((tolerance) => {
+        const selector = document.querySelector<HTMLElement>('#lane-selector');
+        if (selector === null) {
+            throw new Error('Automation tray selector is unavailable');
+        }
+        const header = selector.parentElement;
+        if (header === null) {
+            throw new Error('Automation tray header is unavailable');
+        }
+        const label = header.querySelector('label[for="lane-selector"]');
+        if (label === null) {
+            throw new Error('Automation tray header label is unavailable');
+        }
+        const headerRect = header.getBoundingClientRect();
+        const selectorRect = selector.getBoundingClientRect();
+        const rightGap = headerRect.right - selectorRect.right;
+        if (rightGap <= tolerance * 2) {
+            throw new Error('Automation tray header has no neutral background beside the selector');
+        }
+        const point = { x: selectorRect.right + rightGap / 2, y: headerRect.y + headerRect.height / 2 };
+        if (
+            point.x < 0 ||
+            point.y < 0 ||
+            point.x > window.innerWidth ||
+            point.y > window.innerHeight ||
+            document.elementFromPoint(point.x, point.y) !== header
+        ) {
+            throw new Error('Automation tray neutral background is not safely clickable');
+        }
+        return point;
+    }, CONTROL_VISIBILITY_TOLERANCE);
+}
+
+async function resetNativeSelectToClosed(
+    page: Page,
+    frame: Frame,
+    scale: number,
+    selector: Locator,
+    playhead: Locator,
+    expectedPlayhead: string,
+    expectedWorkspaceMode: string | null
+): Promise<void> {
+    await pressFromActiveControl(frame, 'Escape');
+    const neutralPoint = await automationTrayHeaderNeutralPoint(frame);
+    // Escape alone does not close every browser's native popup. A click on this
+    // non-interactive header background supplies the browser's blur boundary.
+    await mouseClickInFrame(page, scale, neutralPoint);
+    await expect.poll(() => nativeSelectIsOpen(selector)).toBe(false);
+    await selector.focus();
+    await expect(selector).toBeFocused();
+    await expect.poll(() => nativeSelectIsOpen(selector)).toBe(false);
+    await expect(playhead).toHaveText(expectedPlayhead);
+    await expect.poll(() => workspaceMode(frame)).toBe(expectedWorkspaceMode);
 }
 
 async function assertAutomationLaneValueChange(frame: Frame, selector: Locator): Promise<void> {
     const currentValue = await selector.inputValue();
-    expect(['velocity', 'probability']).toContain(currentValue);
+    const enabledValues = await selector.locator('option').evaluateAll((options) =>
+        options.flatMap((option) => {
+            const candidate = option as HTMLOptionElement;
+            return candidate.disabled ? [] : [candidate.value];
+        })
+    );
+    expect(enabledValues).toContain(currentValue);
+    expect(enabledValues).toEqual(expect.arrayContaining(['velocity', 'probability']));
     const nextValue = currentValue === 'velocity' ? 'probability' : 'velocity';
     expect(nextValue).not.toBe(currentValue);
     await selector.selectOption(nextValue);
@@ -670,7 +745,7 @@ async function assertAutomationLaneValueChange(frame: Frame, selector: Locator):
     await expect(frame.getByTestId('clip-editor-tray').getByRole('group', { name: `${laneLabel} lane` })).toBeVisible();
 }
 
-async function assertAutomationTray(frame: Frame): Promise<void> {
+async function assertAutomationTray(page: Page, frame: Frame, scale: number): Promise<void> {
     const toggle = frame.getByRole('button', { name: 'Toggle automation lane' });
     const selector = frame.getByRole('combobox', { name: 'Automation lane type' });
     const pianoRoll = frame.getByLabel('Piano roll editor');
@@ -697,7 +772,23 @@ async function assertAutomationTray(frame: Frame): Promise<void> {
     await pressBetweenPianoRollAndTray(frame, 'Tab', selector);
     await expect(selector).toBeFocused();
     await expect.poll(() => workspaceMode(frame)).toBe(initialWorkspaceMode);
-    const nativeKeyObservations = await observeNativeSelectKeys(frame, ['Home', 'End', 'Space', 'ArrowDown', 'Enter']);
+    const nativeKeyObservations: NativeSelectKeyObservation[] = [];
+    for (const nativeKey of CLOSED_NATIVE_SELECT_KEYS) {
+        await expect.poll(() => nativeSelectIsOpen(selector)).toBe(false);
+        await expect(selector).toBeFocused();
+        const observation = await observeNativeSelectKey(frame, nativeKey);
+        expect(observation.selectRetainedFocus).toBe(true);
+        nativeKeyObservations.push(observation);
+        await resetNativeSelectToClosed(
+            page,
+            frame,
+            scale,
+            selector,
+            playhead,
+            playheadAtClipEnd,
+            initialWorkspaceMode
+        );
+    }
     expect(nativeKeyObservations).toEqual([
         { key: 'Home', defaultPrevented: false, selectRetainedFocus: true },
         { key: 'End', defaultPrevented: false, selectRetainedFocus: true },
@@ -804,7 +895,7 @@ async function assertCondition(
             await expect(expressionLane).toHaveCount(0);
         }
 
-        await assertAutomationTray(frame);
+        await assertAutomationTray(page, frame, scale);
         await assertToolbarKeyboardTraversal(page, frame, scale, expressionVisible);
 
         const geometry = await pianoRollGeometry(frame);
