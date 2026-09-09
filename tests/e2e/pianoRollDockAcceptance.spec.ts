@@ -61,6 +61,13 @@ type NativeSelectKeyObservation = {
     defaultPrevented: boolean;
     selectRetainedFocus: boolean;
 };
+const CLOSED_NATIVE_SELECT_KEYS = [
+    { key: 'Home', opensNativePopup: false },
+    { key: 'End', opensNativePopup: false },
+    { key: 'Space', opensNativePopup: true },
+    { key: 'ArrowDown', opensNativePopup: false },
+    { key: 'Enter', opensNativePopup: false },
+] as const;
 type PianoRollGeometry = {
     canvas: Rect;
     dockHeight: number;
@@ -607,7 +614,7 @@ async function pressBetweenPianoRollAndTray(frame: Frame, key: 'Tab' | 'Shift+Ta
     await expect(expected).toBeFocused();
 }
 
-async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): Promise<NativeSelectKeyObservation[]> {
+async function observeNativeSelectKey(frame: Frame, key: string): Promise<NativeSelectKeyObservation> {
     await frame.evaluate(() => {
         const selector = document.querySelector<HTMLSelectElement>('#lane-selector');
         if (selector === null) {
@@ -633,9 +640,7 @@ async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): P
         selector.addEventListener('keydown', listener);
     });
 
-    for (const key of keys) {
-        await pressFromActiveControl(frame, key);
-    }
+    await pressFromActiveControl(frame, key);
 
     return frame.evaluate(async () => {
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
@@ -655,8 +660,25 @@ async function observeNativeSelectKeys(frame: Frame, keys: readonly string[]): P
         }
         selector.removeEventListener('keydown', capture.listener);
         delete element.__pianoRollNativeKeyCapture;
-        return capture.observations;
+        const observation = capture.observations.at(0);
+        if (observation === undefined) {
+            throw new Error('Native select key was not delivered to the closed selector');
+        }
+        return observation;
     });
+}
+
+async function dismissNativeSelectPopup(
+    frame: Frame,
+    selector: Locator,
+    playhead: Locator,
+    expectedPlayhead: string,
+    expectedWorkspaceMode: string | null
+): Promise<void> {
+    await pressFromActiveControl(frame, 'Escape');
+    await expect(selector).toBeFocused();
+    await expect(playhead).toHaveText(expectedPlayhead);
+    await expect.poll(() => workspaceMode(frame)).toBe(expectedWorkspaceMode);
 }
 
 async function assertAutomationLaneValueChange(frame: Frame, selector: Locator): Promise<void> {
@@ -697,7 +719,16 @@ async function assertAutomationTray(frame: Frame): Promise<void> {
     await pressBetweenPianoRollAndTray(frame, 'Tab', selector);
     await expect(selector).toBeFocused();
     await expect.poll(() => workspaceMode(frame)).toBe(initialWorkspaceMode);
-    const nativeKeyObservations = await observeNativeSelectKeys(frame, ['Home', 'End', 'Space', 'ArrowDown', 'Enter']);
+    const nativeKeyObservations: NativeSelectKeyObservation[] = [];
+    for (const nativeKey of CLOSED_NATIVE_SELECT_KEYS) {
+        await expect(selector).toBeFocused();
+        nativeKeyObservations.push(await observeNativeSelectKey(frame, nativeKey.key));
+        if (nativeKey.opensNativePopup) {
+            // Native popup option choice is OS UI. Close it before observing the
+            // next key at the selector's DOM boundary.
+            await dismissNativeSelectPopup(frame, selector, playhead, playheadAtClipEnd, initialWorkspaceMode);
+        }
+    }
     expect(nativeKeyObservations).toEqual([
         { key: 'Home', defaultPrevented: false, selectRetainedFocus: true },
         { key: 'End', defaultPrevented: false, selectRetainedFocus: true },

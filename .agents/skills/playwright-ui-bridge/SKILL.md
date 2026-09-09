@@ -66,6 +66,10 @@ try {
 }
 ```
 
+### 8. Keep native select popups outside DOM-key claims
+
+Native `<select>` popups are browser and OS UI. Observe each keyboard key from a focused, closed selector; after a popup-opening key, use Escape and prove focus plus application state before the next key. Do not generalize a local browser result to hosted platforms, and cover native popup option choice separately from DOM key delivery.
+
 ## References
 
 - `.agents/ui-scripts/utils.ts` — `setupAgentBrowser` shared launcher.
