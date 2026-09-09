@@ -56,6 +56,8 @@ Rebuild the graph from project truth. Never piggyback on live playback state or 
 
 Never on an RT-adjacent path: unbounded allocation, locks, DOM/React updates, filesystem/network I/O, desktop bridge calls, JSON parse, noisy logging, create/destroy churn in hot loops. Schedule with look-ahead or equivalent. Never bind audio correctness to React render, mount order, rAF, or visibility.
 
+For wasm-bindgen DSP, slice arguments allocate and copy in generated glue even when the TypeScript call site creates no arrays. Expose fixed input pointers and a numeric frame-count process ABI, validate every channel span before touching linear memory, cache typed views by memory-buffer identity, and refresh them both before input copy and after processing can grow memory. Prove shipped steady state by wrapping the allocator export of the actual committed WASM module; a mock cannot observe generated marshalling.
+
 **Why:** a missed audio deadline is an audible dropout; UI timing is best-effort and pausable.
 
 ### 8. Engine executes; project truth decides

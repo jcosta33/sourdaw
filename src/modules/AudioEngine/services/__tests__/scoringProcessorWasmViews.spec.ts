@@ -30,6 +30,7 @@ const GROWN_RIGHT_BASE = 300;
 
 const memory = createGrowableMemory(HEAP_BYTES);
 let growOnNextProcess = false;
+let growBeforeNextInput = false;
 
 function seedGrownBuffer(): void {
     growAndSeedRamps(memory, HEAP_BYTES, [
@@ -47,6 +48,13 @@ class ScoringInstanceMock {
         if (growOnNextProcess) {
             growOnNextProcess = false;
             seedGrownBuffer();
+        }
+        return OUT_LEFT_PTR;
+    }
+    get_left_ptr(): number {
+        if (growBeforeNextInput) {
+            growBeforeNextInput = false;
+            growAndSeedRamps(memory, HEAP_BYTES, []);
         }
         return OUT_LEFT_PTR;
     }
@@ -85,6 +93,7 @@ describe('ScoringProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
     beforeEach(() => {
         resetGrowableMemory(memory, HEAP_BYTES);
         growOnNextProcess = false;
+        growBeforeNextInput = false;
     });
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
@@ -121,5 +130,20 @@ describe('ScoringProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
         expect(out0.some((sample) => Number.isNaN(sample))).toBe(false);
         expect(out0).toEqual(ramp(FRAMES, GROWN_LEFT_BASE));
         expect(Array.from(outputs[0]![1]!)).toEqual(ramp(FRAMES, GROWN_RIGHT_BASE));
+    });
+
+    it('maps input views after memory grows while obtaining the channel pointers', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        const warmup = makeBlock();
+        proc.process(warmup.inputs, warmup.outputs);
+
+        growBeforeNextInput = true;
+        const { inputs, outputs } = makeBlock();
+        proc.process(inputs, outputs);
+
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        expect(outputs[0]![0]).toEqual(inputs[0]![0]);
     });
 });

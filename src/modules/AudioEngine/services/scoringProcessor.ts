@@ -47,11 +47,10 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _sabView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
-    // Cached WASM linear-memory views — reused across render quanta so process()
-    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
-    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
-    _outLeftView = new WasmView();
-    _outRightView = new WasmView();
+    // Cached WASM channel views — reused for input and output across render
+    // quanta, and revalidated on memory.grow() (audit RT-1 / RT-7).
+    _leftView = new WasmView();
+    _rightView = new WasmView();
 
     constructor(...args: unknown[]) {
         super();
@@ -116,7 +115,13 @@ class ScoringProcessor extends AudioWorkletProcessor {
             const inCh = input[ch];
             const outCh = output[ch];
             if (inCh && outCh) {
-                outCh.set(inCh);
+                const copiedFrames = Math.min(inCh.length, outCh.length);
+                for (let frame = 0; frame < copiedFrames; frame++) {
+                    outCh[frame] = inCh[frame]!;
+                }
+                for (let frame = copiedFrames; frame < outCh.length; frame++) {
+                    outCh[frame] = 0;
+                }
             }
         }
     }
@@ -151,38 +156,52 @@ class ScoringProcessor extends AudioWorkletProcessor {
             }
             return true;
         }
-        this._telemetryStale = true;
-
         const in0 = input?.[0];
         if (!in0 || !output || output.length === 0) {
             return true;
         }
         const frames = in0.length;
+        if (frames === 0) {
+            return true;
+        }
+        this._telemetryStale = true;
 
         try {
             const inst = this._instance;
-            const mem = this._memory?.buffer;
-            if (!inst || !mem) {
+            const rightIn = input[1] ?? in0;
+            const out0 = output[0];
+            const out1 = output[1];
+            if (!inst || !out0) {
                 return true;
             }
+            if (frames > 1024 || rightIn.length < frames || out0.length < frames || (out1 && out1.length < frames)) {
+                throw new RangeError('ScoringProcessor received an invalid render span');
+            }
 
-            // process() takes Float32Array inputs directly — no manual malloc needed
-            const leftPtr = inst.process(in0, input[1] ?? in0, frames);
+            const leftPtr = inst.get_left_ptr();
             const rightPtr = inst.get_right_ptr();
+            const inputMemory = this._memory?.buffer;
+            if (!inputMemory) {
+                return true;
+            }
+            const leftView = this._leftView.get(inputMemory, leftPtr, frames);
+            const rightView = this._rightView.get(inputMemory, rightPtr, frames);
+            for (let frame = 0; frame < frames; frame++) {
+                leftView[frame] = in0[frame]!;
+                rightView[frame] = rightIn[frame]!;
+            }
+
+            inst.process(frames);
 
             // Re-read the live buffer AFTER process(): a Rust-side allocation can
             // grow the linear memory mid-call and detach the previous buffer, so the
             // output views must map the post-grow buffer (audit RT-7). Steady state
             // leaves the identity unchanged and reuses the cached view.
-            const outMem = this._memory?.buffer ?? mem;
+            const outputMemory = this._memory?.buffer ?? inputMemory;
 
-            const out0 = output[0];
-            if (out0) {
-                out0.set(this._outLeftView.get(outMem, leftPtr, frames));
-            }
-            const out1 = output[1];
+            out0.set(this._leftView.get(outputMemory, leftPtr, frames));
             if (out1) {
-                out1.set(this._outRightView.get(outMem, rightPtr, frames));
+                out1.set(this._rightView.get(outputMemory, rightPtr, frames));
             }
 
             // Send telemetry periodically

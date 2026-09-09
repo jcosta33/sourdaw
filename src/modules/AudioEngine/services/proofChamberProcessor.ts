@@ -65,11 +65,10 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _bypassed = false;
     _paramAutomation: ParamAutomationSchedule[] = [];
-    // Cached WASM linear-memory views — reused across render quanta so process()
-    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
-    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
-    _outLeftView = new WasmView();
-    _outRightView = new WasmView();
+    // Cached WASM channel views — reused for input and output across render
+    // quanta, and revalidated on memory.grow() (audit RT-1 / RT-7).
+    _leftView = new WasmView();
+    _rightView = new WasmView();
 
     constructor(...args: unknown[]) {
         super();
@@ -166,7 +165,13 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             const inCh = input[ch];
             const outCh = output[ch];
             if (inCh && outCh) {
-                outCh.set(inCh);
+                const copiedFrames = Math.min(inCh.length, outCh.length);
+                for (let frame = 0; frame < copiedFrames; frame++) {
+                    outCh[frame] = inCh[frame]!;
+                }
+                for (let frame = copiedFrames; frame < outCh.length; frame++) {
+                    outCh[frame] = 0;
+                }
             }
         }
     }
@@ -191,6 +196,9 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         }
         const rightIn = input[1] ?? leftIn;
         const frames = leftIn.length;
+        if (frames === 0) {
+            return true;
+        }
 
         const out0 = output[0];
         const out1 = output[1];
@@ -200,24 +208,38 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
 
         try {
             const inst = this._instance;
-            const mem = this._memory?.buffer;
-            if (!inst || !mem) {
+            if (!inst) {
                 return true;
+            }
+            if (frames > 1024 || rightIn.length < frames || out0.length < frames || out1.length < frames) {
+                throw new RangeError('ProofChamberProcessor received an invalid render span');
             }
 
             this._applyParamAutomation(currentFrame);
 
-            const leftPtr = inst.process(leftIn, rightIn, frames);
+            const leftPtr = inst.get_left_ptr();
             const rightPtr = inst.get_right_ptr();
+            const inputMemory = this._memory?.buffer;
+            if (!inputMemory) {
+                return true;
+            }
+            const leftView = this._leftView.get(inputMemory, leftPtr, frames);
+            const rightView = this._rightView.get(inputMemory, rightPtr, frames);
+            for (let frame = 0; frame < frames; frame++) {
+                leftView[frame] = leftIn[frame]!;
+                rightView[frame] = rightIn[frame]!;
+            }
+
+            inst.process(frames);
 
             // Re-read the live buffer AFTER process(): a Rust-side allocation can
             // grow the linear memory mid-call and detach the previous buffer, so the
             // output views must map the post-grow buffer (audit RT-7). Steady state
             // leaves the identity unchanged and reuses the cached view.
-            const outMem = this._memory?.buffer ?? mem;
+            const outputMemory = this._memory?.buffer ?? inputMemory;
 
-            out0.set(this._outLeftView.get(outMem, leftPtr, frames));
-            out1.set(this._outRightView.get(outMem, rightPtr, frames));
+            out0.set(this._leftView.get(outputMemory, leftPtr, frames));
+            out1.set(this._rightView.get(outputMemory, rightPtr, frames));
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

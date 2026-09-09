@@ -182,9 +182,9 @@ export function loopSample(frames) {
  *   does. Input marshalling for pointer-input effects is hoisted into
  *   `feed(frame)`, which the harness calls outside the timed region, because a
  *   worklet pays that copy against `inputs[0]` regardless of which device
- *   consumes it. For `ProofChamberInstance`/`ScoringInstance` the copy is inside
- *   `process` by construction — their exports take `&[f32]` — so their figures
- *   include it, exactly as production does.
+ *   consumes it. `ProofChamberInstance` and `ScoringInstance` expose their
+ *   preallocated input channels, so their recipes perform the production copy
+ *   in `feed(frame)` and keep only numeric `process(frames)` inside the figure.
  * - `feed(frame)` — optional, untimed input marshalling.
  * - `verify()` — `{ ok, detail }`, evaluated after warm-up and again after the
  *   timed run, so a device that fell silent halfway through cannot be reported.
@@ -1059,8 +1059,9 @@ export function buildDevices({
     }
 
     // -- ProofChamber — algorithmic reverb ("Dutch Oven") -------------------
-    // A sibling crate, and a slice-input export: `process(left, right, frames)`
-    // copies through the wasm-bindgen glue, so that copy is inside the figure.
+    // A sibling crate with preallocated input channels and a numeric
+    // `process(frames)` export. The JS-to-wasm copy is untimed in `feed`, matching
+    // every other pointer-input effect in this harness.
     // Two rows, because the algorithm is a user-selected cost: `plate` is the
     // shipped default (`ProofChamberState.ts:30`) and `fdn-16` is the most
     // expensive one a user can actually reach.
@@ -1075,14 +1076,23 @@ export function buildDevices({
         instance.set_param('algorithm', algorithm);
         instance.set_param('mix', 0.4);
         instance.set_param('decay', 0.6);
-        const left = new Float32Array(QUANTUM);
-        const right = new Float32Array(QUANTUM);
+        const leftPtr = instance.get_left_ptr();
+        const rightPtr = instance.get_right_ptr();
+        let inputMemory = chamber.memory.buffer;
+        let left = new Float32Array(inputMemory, leftPtr, QUANTUM);
+        let right = new Float32Array(inputMemory, rightPtr, QUANTUM);
         let lastLeftPtr = 0;
         devices.push({
             id,
             label,
-            note: 'effect; slice-input export, so the JS→wasm input copy is inside the figure',
+            note: 'effect; worklet input copy is outside the measured numeric wasm process call',
             feed(frame) {
+                const currentMemory = chamber.memory.buffer;
+                if (currentMemory !== inputMemory) {
+                    inputMemory = currentMemory;
+                    left = new Float32Array(inputMemory, leftPtr, QUANTUM);
+                    right = new Float32Array(inputMemory, rightPtr, QUANTUM);
+                }
                 for (let i = 0; i < QUANTUM; i += 1) {
                     const [l, r] = excitation(frame * QUANTUM + i);
                     left[i] = l;
@@ -1090,7 +1100,7 @@ export function buildDevices({
                 }
             },
             render() {
-                lastLeftPtr = instance.process(left, right, QUANTUM);
+                lastLeftPtr = instance.process(QUANTUM);
                 return lastLeftPtr;
             },
             verify() {
@@ -1101,18 +1111,27 @@ export function buildDevices({
     }
 
     // -- Scoring — the tuner ------------------------------------------------
-    // Also a slice-input export. Not a mix device: it only runs while the tuner
-    // surface is open, which is why it is excluded from the reference project.
+    // Not a mix device: it only runs while the tuner surface is open, which is
+    // why it is excluded from the reference project.
     if (wanted('scoring')) {
         const instance = new scoring.ScoringInstance(SAMPLE_RATE);
-        const left = new Float32Array(QUANTUM);
-        const right = new Float32Array(QUANTUM);
+        const leftPtr = instance.get_left_ptr();
+        const rightPtr = instance.get_right_ptr();
+        let inputMemory = scoring.memory.buffer;
+        let left = new Float32Array(inputMemory, leftPtr, QUANTUM);
+        let right = new Float32Array(inputMemory, rightPtr, QUANTUM);
         let lastLeftPtr = 0;
         devices.push({
             id: 'scoring',
             label: 'Scoring / Tuner (pitch detection running)',
             note: 'analysis; runs only while the tuner is open, so not in the reference project',
             feed(frame) {
+                const currentMemory = scoring.memory.buffer;
+                if (currentMemory !== inputMemory) {
+                    inputMemory = currentMemory;
+                    left = new Float32Array(inputMemory, leftPtr, QUANTUM);
+                    right = new Float32Array(inputMemory, rightPtr, QUANTUM);
+                }
                 for (let i = 0; i < QUANTUM; i += 1) {
                     const [l, r] = excitation(frame * QUANTUM + i);
                     left[i] = l;
@@ -1120,7 +1139,7 @@ export function buildDevices({
                 }
             },
             render() {
-                lastLeftPtr = instance.process(left, right, QUANTUM);
+                lastLeftPtr = instance.process(QUANTUM);
                 return lastLeftPtr;
             },
             verify() {
