@@ -166,6 +166,18 @@ export type NativeLiveGraphSession = {
      */
     rearmEpoch: number;
     /**
+     * How many `startNativeLiveGraphSession` calls have been requested and have
+     * not settled yet.
+     *
+     * Counted from the call rather than from the moment its queued work runs,
+     * because that window is exactly what a retire has to see: a retire
+     * withholds its offer while any start is pending, since that start owns the
+     * session the offer would re-arm. The epoch cannot say this on its own — a
+     * start queued behind the retire has already bumped it, so the retire reads
+     * an epoch that no longer moves and an orphan the start has not reached yet.
+     */
+    startsPending: number;
+    /**
      * The strips this session is sounding, as it last claimed them.
      *
      * The same set `setNativeCarriedTracks` shuts the Web Audio gates for, held
@@ -199,6 +211,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     nativeChainByStripId: new Map(),
     rearmClaimed: false,
     rearmEpoch: 0,
+    startsPending: 0,
     carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };

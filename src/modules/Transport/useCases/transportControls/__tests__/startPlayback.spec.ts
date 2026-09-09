@@ -377,6 +377,7 @@ describe('startPlayback', () => {
         });
 
         it('leaves the transport alone when the play it was holding for has already ended', async () => {
+            audioClock.currentTime = 3.25;
             let answer = (): void => {};
             vi.mocked(startNativeLiveGraphSession).mockReturnValue(
                 new Promise((resolve) => {
@@ -397,9 +398,14 @@ describe('startPlayback', () => {
 
             await drainHold();
             expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            // And the session is still owed a roll at the beat play asked for.
+            // A release written before the guard would answer 3.25 here, and
+            // the engine would seek there for a transport that never opened.
+            expect(webAudioRollingSince()).toBeNull();
         });
 
         it('leaves a transport paused inside the hold alone, before the pause has bumped the generation', async () => {
+            audioClock.currentTime = 3.25;
             let answer = (): void => {};
             vi.mocked(startNativeLiveGraphSession).mockReturnValue(
                 new Promise((resolve) => {
@@ -420,6 +426,10 @@ describe('startPlayback', () => {
 
             await drainHold();
             expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            // Same duty under the pause: nothing was released, so the session
+            // still rolls where play asked rather than projecting past material
+            // a paused Web Audio never sounded.
+            expect(webAudioRollingSince()).toBeNull();
         });
 
         it('gives up on the native session after the hold cap rather than never starting', async () => {

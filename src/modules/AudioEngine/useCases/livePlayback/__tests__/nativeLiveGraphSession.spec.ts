@@ -1089,11 +1089,24 @@ describe('startNativeLiveGraphSession', () => {
         mocks.contextSeconds = 10;
         mocks.mapsInstallSeconds = 0.08;
         const release = { contextSeconds: null as number | null };
-        // The probe is the first thing a start awaits, so releasing here puts
-        // the cap inside the start rather than before it — the maps install
-        // below then advances the clock the 80 ms the roll has to make up.
-        mocks.onProbe.mockImplementation(() => {
+        // Released from inside the maps install, which is the last round trip
+        // before the roll: the reader is answered `null` for everything the
+        // start does up to here, and the install's own 80 ms is what the roll
+        // then has to make up. A read taken any earlier than the roll itself
+        // sees the hold still standing and leaves the engine parked at 2.5.
+        mocks.setEngineTransportMaps.mockImplementationOnce((maps): Promise<SetEngineTransportMapsResult> => {
             release.contextSeconds = mocks.contextSeconds;
+            mocks.contextSeconds += mocks.mapsInstallSeconds;
+            return Promise.resolve({
+                outcome: 'applied',
+                applied: {
+                    sampleRate: 48_000,
+                    tempoSegments: 1,
+                    timeSignatureSegments: 1,
+                    loopEnabled: (maps as EngineTransportMaps).loopRegion?.enabled === true,
+                    admittedBatch: 1,
+                },
+            });
         });
 
         await startNativeLiveGraphSession({

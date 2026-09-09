@@ -949,142 +949,154 @@ export function startNativeLiveGraphSession(
     // is not handed back here; only a stop does that, because a re-armed start
     // is itself a start (see `nativeLiveGraphSessionState.ts`).
     nativeLiveGraphSession.rearmEpoch += 1;
+    // And the pending count with it, synchronously for the same reason: a
+    // retire already queued ahead of this start would otherwise read an epoch
+    // this bump has left standing still and publish a re-arm offer for the play
+    // this start replaced (`retireOrphanedNativeEngine.ts`).
+    nativeLiveGraphSession.startsPending += 1;
     return queueOnNativeLiveGraphSession(async (): Promise<NativeLiveGraphSessionResult> => {
-        const availability = await probeNativeGraphTransport();
-        if (!availability.available) {
-            return { outcome: 'declined', reason: availability.reason };
-        }
-        const topology = readSessionTopology();
-        // Read after the probe, so the batch describes the project as it stands
-        // when it is actually sent rather than when the gesture happened.
-        //
-        // Parked, not rolling. The loop region arrives with the maps, one
-        // awaited bridge round trip after this batch lands, and an engine
-        // already rolling renders that whole round trip: press play a beat
-        // before the loop end and it crosses the boundary before it is told
-        // where the boundary is. `frames_until_loop_end` then reads a playhead
-        // already past the region and never wraps again for the rest of the
-        // session. A parked transport advances no playhead at all
-        // (`advance_playhead` returns on `!is_playing`), so nothing can be
-        // rendered ahead of the region that governs it.
-        const monitor = input.monitor ?? DEFAULT_MONITOR;
-        const programme = sessionProgramme({
-            topology,
-            attachedInstanceIds: topology.attachedInstanceIds,
-            sampleRate: input.sampleRate,
-        });
-        // Here, because this is where the programme is applied.
-        logProgrammeExclusions(programme);
-        // Material before the batch that names it, always: the native side
-        // refuses a `schedule-clip` whose sample the pool does not hold, and it
-        // refuses the whole batch with it. That ordering lives in
-        // `applyTopologyBatch`, so both of this session's topology batches keep
-        // it.
-        const parked = { playing: false, positionSeconds: input.positionSeconds } as const;
-        const audible = monitor === 'audible';
-        // The programme travels beside the set it was projected against, never
-        // implied from it: the two are one reading of the attach state, and a
-        // batch built from one of each is a strip both carriers refuse.
-        const projectTopology = (
-            attachedInstanceIds: ReadonlySet<string>,
-            against: LiveGraphProgramme
-        ): readonly AudioGraphCommand[] =>
-            projectSessionTopology({
-                ...topology,
-                attachedInstanceIds,
-                transport: parked,
-                monitor,
-                programme: against,
-            });
-        const backend = createNativeLiveGraphBackend({ transport: availability.transport });
-        const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
-        // Everything past the claim, so that every way out of it reopens the
-        // gates — a rejected sample registration, a bridge that drops mid-apply,
-        // a reporter that throws. An unwind that left them shut would silence
-        // every carried track with no session standing to account for it.
         try {
-            // Before the first await, and only for an audible session — see the
-            // header for why the claim is made ahead of the answer rather than after
-            // it. A shadowed session sounds nothing, so it releases instead.
-            claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
-            const started = await applyTopologyBatch({
-                transport: availability.transport,
-                backend,
-                commands: firstCommands,
-            });
-            if (started.outcome !== 'applied') {
-                releaseCarriedStrips();
-                backend.dispose();
-                notifyNativeDecline(started.reason);
-                return { outcome: 'declined', reason: started.reason };
+            const availability = await probeNativeGraphTransport();
+            if (!availability.available) {
+                return { outcome: 'declined', reason: availability.reason };
             }
-            const { resent, installed } = await bindAttachedPlugins({
-                transport: availability.transport,
-                backend,
+            const topology = readSessionTopology();
+            // Read after the probe, so the batch describes the project as it stands
+            // when it is actually sent rather than when the gesture happened.
+            //
+            // Parked, not rolling. The loop region arrives with the maps, one
+            // awaited bridge round trip after this batch lands, and an engine
+            // already rolling renders that whole round trip: press play a beat
+            // before the loop end and it crosses the boundary before it is told
+            // where the boundary is. `frames_until_loop_end` then reads a playhead
+            // already past the region and never wraps again for the rest of the
+            // session. A parked transport advances no playhead at all
+            // (`advance_playhead` returns on `!is_playing`), so nothing can be
+            // rendered ahead of the region that governs it.
+            const monitor = input.monitor ?? DEFAULT_MONITOR;
+            const programme = sessionProgramme({
                 topology,
+                attachedInstanceIds: topology.attachedInstanceIds,
                 sampleRate: input.sampleRate,
-                started,
-                programme,
-                projectTopology,
             });
-            if (resent.outcome === 'unreconciled') {
-                // Half of a topology replacement is neither this batch's graph nor
-                // the one the first batch installed, so there is nothing left to
-                // keep.
-                releaseCarriedStrips();
-                backend.dispose();
-                // The first batch's chains were recorded and are now describing
-                // a graph that is half of two topologies and reachable through
-                // no handle.
-                clearNativeChains();
-                notifyNativeDecline(resent.reason);
-                return { outcome: 'declined', reason: resent.reason };
-            }
-            if (resent.outcome === 'refused') {
-                // Nothing moved: the first batch's topology is still installed and
-                // still a session. Discarding it here would leave the engine parked
-                // with the whole project mirrored while every caller was told there
-                // is no live session to stop, reposition or re-map. What is lost is
-                // the binding, which the next play sends again.
-                logger.warn(`[AudioEngine] native engine refused the plugin-attach re-send: ${resent.reason}`);
-            }
-            const rebound = resent.outcome === 'applied' ? resent : started;
-            // Restated against the batch that actually stands: binding an instance
-            // can move a strip from web to native, and the optimistic claim above
-            // was made before the engine held it.
-            if (audible) {
-                claimCarriersOf({
-                    commands: rebound.commands,
-                    stripTracks: topology.stripTracks,
-                    attachedInstanceIds: installed.attachedInstanceIds,
-                    programme: installed.programme,
-                    inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
+            // Here, because this is where the programme is applied.
+            logProgrammeExclusions(programme);
+            // Material before the batch that names it, always: the native side
+            // refuses a `schedule-clip` whose sample the pool does not hold, and it
+            // refuses the whole batch with it. That ordering lives in
+            // `applyTopologyBatch`, so both of this session's topology batches keep
+            // it.
+            const parked = { playing: false, positionSeconds: input.positionSeconds } as const;
+            const audible = monitor === 'audible';
+            // The programme travels beside the set it was projected against, never
+            // implied from it: the two are one reading of the attach state, and a
+            // batch built from one of each is a strip both carriers refuse.
+            const projectTopology = (
+                attachedInstanceIds: ReadonlySet<string>,
+                against: LiveGraphProgramme
+            ): readonly AudioGraphCommand[] =>
+                projectSessionTopology({
+                    ...topology,
+                    attachedInstanceIds,
+                    transport: parked,
+                    monitor,
+                    programme: against,
                 });
+            const backend = createNativeLiveGraphBackend({ transport: availability.transport });
+            const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
+            // Everything past the claim, so that every way out of it reopens the
+            // gates — a rejected sample registration, a bridge that drops mid-apply,
+            // a reporter that throws. An unwind that left them shut would silence
+            // every carried track with no session standing to account for it.
+            try {
+                // Before the first await, and only for an audible session — see the
+                // header for why the claim is made ahead of the answer rather than after
+                // it. A shadowed session sounds nothing, so it releases instead.
+                claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
+                const started = await applyTopologyBatch({
+                    transport: availability.transport,
+                    backend,
+                    commands: firstCommands,
+                });
+                if (started.outcome !== 'applied') {
+                    releaseCarriedStrips();
+                    backend.dispose();
+                    notifyNativeDecline(started.reason);
+                    return { outcome: 'declined', reason: started.reason };
+                }
+                const { resent, installed } = await bindAttachedPlugins({
+                    transport: availability.transport,
+                    backend,
+                    topology,
+                    sampleRate: input.sampleRate,
+                    started,
+                    programme,
+                    projectTopology,
+                });
+                if (resent.outcome === 'unreconciled') {
+                    // Half of a topology replacement is neither this batch's graph nor
+                    // the one the first batch installed, so there is nothing left to
+                    // keep.
+                    releaseCarriedStrips();
+                    backend.dispose();
+                    // The first batch's chains were recorded and are now describing
+                    // a graph that is half of two topologies and reachable through
+                    // no handle.
+                    clearNativeChains();
+                    notifyNativeDecline(resent.reason);
+                    return { outcome: 'declined', reason: resent.reason };
+                }
+                if (resent.outcome === 'refused') {
+                    // Nothing moved: the first batch's topology is still installed and
+                    // still a session. Discarding it here would leave the engine parked
+                    // with the whole project mirrored while every caller was told there
+                    // is no live session to stop, reposition or re-map. What is lost is
+                    // the binding, which the next play sends again.
+                    logger.warn(`[AudioEngine] native engine refused the plugin-attach re-send: ${resent.reason}`);
+                }
+                const rebound = resent.outcome === 'applied' ? resent : started;
+                // Restated against the batch that actually stands: binding an instance
+                // can move a strip from web to native, and the optimistic claim above
+                // was made before the engine held it.
+                if (audible) {
+                    claimCarriersOf({
+                        commands: rebound.commands,
+                        stripTracks: topology.stripTracks,
+                        attachedInstanceIds: installed.attachedInstanceIds,
+                        programme: installed.programme,
+                        inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
+                    });
+                }
+                await installRolledSession({
+                    session: input,
+                    backend,
+                    topology,
+                    installed,
+                    rebound,
+                    monitor,
+                });
+                // The last topology batch the engine *applied*: a re-send that landed
+                // replaced every strip the first one built, so its reports are the only
+                // ones describing the graph now held — and a re-send the engine refused
+                // built no strips at all, which is why that case reports the first
+                // batch's.
+                return {
+                    outcome: 'started',
+                    runtimeRevision: rebound.result.runtimeRevision,
+                    reports: rebound.result.reports,
+                };
+            } catch (error) {
+                abandonSessionStart(backend);
+                // Rethrown untouched: the gates are the only thing this repairs, and
+                // a caller told the session started when it threw would be worse off
+                // than one that sees the failure.
+                throw error;
             }
-            await installRolledSession({
-                session: input,
-                backend,
-                topology,
-                installed,
-                rebound,
-                monitor,
-            });
-            // The last topology batch the engine *applied*: a re-send that landed
-            // replaced every strip the first one built, so its reports are the only
-            // ones describing the graph now held — and a re-send the engine refused
-            // built no strips at all, which is why that case reports the first
-            // batch's.
-            return {
-                outcome: 'started',
-                runtimeRevision: rebound.result.runtimeRevision,
-                reports: rebound.result.reports,
-            };
-        } catch (error) {
-            abandonSessionStart(backend);
-            // Rethrown untouched: the gates are the only thing this repairs, and
-            // a caller told the session started when it threw would be worse off
-            // than one that sees the failure.
-            throw error;
+        } finally {
+            // Exactly once per request, whichever way this start ended — a
+            // decline, a throw, or an installed session. A count left standing
+            // would withhold every later offer for the rest of the process.
+            nativeLiveGraphSession.startsPending -= 1;
         }
     });
 }
