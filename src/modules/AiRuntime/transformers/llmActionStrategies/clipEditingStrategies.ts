@@ -83,7 +83,8 @@ function isValidCrossfadeSetup(
         durationBeats >= 0 &&
         isFiniteNumber(source.clip.endBeat) &&
         isFiniteNumber(destination.clip.startBeat) &&
-        source.clip.startBeat < destination.clip.startBeat
+        // Negated so a non-finite source start still resolves to the base bridge's accepting verdict.
+        !(source.clip.startBeat >= destination.clip.startBeat)
     );
 }
 

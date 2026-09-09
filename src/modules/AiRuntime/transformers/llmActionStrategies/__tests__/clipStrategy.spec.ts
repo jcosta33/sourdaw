@@ -213,6 +213,16 @@ describe('clipStrategy', () => {
         ).toEqual({ type: 'splitClip', payload: { clipId: 'clip-midi-a', beat: 2 } });
     });
 
+    it('duplicateClip duplicates an available clip', () => {
+        expect(
+            bridgeClipToolCall({
+                call: { name: 'duplicateClip', arguments: { clipId: 'clip-midi-a' } },
+                context: projectContext,
+                index: 0,
+            })
+        ).toEqual({ type: 'duplicateClip', payload: { clipId: 'clip-midi-a' } });
+    });
+
     it('duplicateClipToNextBar duplicates an available clip', () => {
         expect(
             bridgeClipToolCall({
