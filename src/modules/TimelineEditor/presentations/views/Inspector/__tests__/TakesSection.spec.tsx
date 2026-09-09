@@ -170,7 +170,7 @@ describe('TakesSection', () => {
         expect(screen.getByText('Set Active')).toBeInTheDocument();
     });
 
-    it('should call selectTake and setCompRegion when set active is clicked', () => {
+    it('awaits selectTake before writing the comp region when set active is clicked', async () => {
         mockUseStore.mockReturnValue({
             lanes: [
                 {
@@ -182,11 +182,26 @@ describe('TakesSection', () => {
                 },
             ],
         });
+        // The dispatch is async and the region write is ordered after it
+        // settles, so hold the selection open and observe the ordering.
+        let settleSelection: (() => void) | undefined;
+        mockSelectTake.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    settleSelection = resolve;
+                })
+        );
         render(<TakesSection trackId="track-1" />);
         const setActiveButton = screen.getByText('Set Active');
         fireEvent.click(setActiveButton);
+
         expect(mockSelectTake).toHaveBeenCalledWith('track-1', 'take-2');
-        expect(mockSetCompRegion).toHaveBeenCalledWith('track-1', { takeId: 'take-2', startBeat: 16, endBeat: 32 });
+        expect(mockSetCompRegion).not.toHaveBeenCalled();
+
+        settleSelection?.();
+        await vi.waitFor(() =>
+            expect(mockSetCompRegion).toHaveBeenCalledWith('track-1', { takeId: 'take-2', startBeat: 16, endBeat: 32 })
+        );
     });
 
     it('should call flattenComp when flatten button is clicked', () => {

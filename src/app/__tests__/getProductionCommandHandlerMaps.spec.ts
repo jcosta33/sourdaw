@@ -86,7 +86,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(102);
+        expect(registrations).toHaveLength(103);
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);
         expect(
             registrations
