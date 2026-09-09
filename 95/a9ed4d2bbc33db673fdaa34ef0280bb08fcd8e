@@ -1,0 +1,32 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_87ab0a2f60ccf8::t_60b12cb62ae126 156-174
+  s_87ab0a2f60ccf8::t_b27f526dd2fe61 140,152-154
+  s_87ab0a2f60ccf8::t_ffd28cab6ed913 155
+.agents/skills/ui-patterns/SKILL.md
+  s_87ab0a2f60ccf8::t_4c05043b08c387 66-67
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_87ab0a2f60ccf8::t_e2b7596045cf72 138
+  s_87ab0a2f60ccf8::t_efbdb986c6c2fb 59,108-110,329
+  s_87ab0a2f60ccf8::t_7d7d2c8b094736 137,139
+tests/e2e/statusBarResponsive.spec.ts
+  s_87ab0a2f60ccf8::t_0ae04168de5122 299,303-342,372-378
+  s_87ab0a2f60ccf8::t_7fd2fcd1bc34b8 300-302,358
+  s_87ab0a2f60ccf8::t_435f487e25130d 343-352
+  s_87ab0a2f60ccf8::t_b26cfa002b5c87 1,43,53,69,353-357,359-371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "95a9ed4d2bbc33db673fdaa34ef0280bb08fcd8e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
