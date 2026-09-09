@@ -108,6 +108,7 @@ type StoredBufferMeta = {
     preparedOwner?: {
         schemaVersion: 1;
         leaseId: string;
+        persistenceRevision?: string;
         status: 'project-owned' | 'temporary';
     };
 };
@@ -685,7 +686,12 @@ describe('audioBufferCache conversions', () => {
         backing.meta.set('owned-pcm', {
             lastAccessed: 1,
             sizeInBytes: 4,
-            preparedOwner: { schemaVersion: 1, leaseId: 'lease-correct', status: 'temporary' },
+            preparedOwner: {
+                schemaVersion: 1,
+                leaseId: 'lease-correct',
+                persistenceRevision: 'owned-pcm-revision',
+                status: 'temporary',
+            },
         });
         const context = createTestContext(
             vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
