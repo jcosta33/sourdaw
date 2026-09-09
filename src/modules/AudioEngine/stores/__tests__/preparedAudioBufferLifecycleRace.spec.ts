@@ -127,7 +127,6 @@ describe('prepared audio-buffer lifecycle races', () => {
             isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
             metadataStoreName: META_STORE,
             openDatabase: openAudioDatabase,
-            publishRuntime: () => undefined,
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
@@ -189,7 +188,6 @@ describe('prepared audio-buffer lifecycle races', () => {
             isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
             metadataStoreName: META_STORE,
             openDatabase: openAudioDatabase,
-            publishRuntime: () => undefined,
             recoveryStoreName: 'preparedBufferRecovery',
         });
 
