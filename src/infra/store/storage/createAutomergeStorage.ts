@@ -1643,6 +1643,19 @@ export const createAutomergeStorage = <TData>(
                             pendingValue: visiblePending.value,
                             hydratedValue: crdtData,
                         });
+                        // Three-way base-advance (issue #3183): the rebased
+                        // pending value now blends the hydrated truth this
+                        // rebase consumed into the local edits. Re-anchoring
+                        // the base at that hydrated truth (not the rebased
+                        // value) keeps `pending − base` equal to the pure
+                        // local edits, so the NEXT hydrate classifies only
+                        // real local changes as pending edits and never
+                        // replays a remote-absorbed field over a newer remote
+                        // edit. Anchoring at the rebased value instead would
+                        // absorb the local edits into the base too — a
+                        // pending reorder would then lose to the document's
+                        // order on the next hydrate.
+                        visiblePending.baseValue = crdtData;
                     } else if (
                         toCrdt &&
                         visiblePending.value !== null &&
