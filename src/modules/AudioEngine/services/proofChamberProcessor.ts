@@ -176,6 +176,42 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         }
     }
 
+    _processActiveBlock(
+        inst: ProofChamberInstance,
+        leftIn: Float32Array,
+        rightIn: Float32Array,
+        out0: Float32Array,
+        out1: Float32Array,
+        frames: number
+    ): void {
+        if (frames > 1024 || rightIn.length < frames || out0.length < frames || out1.length < frames) {
+            throw new RangeError('ProofChamberProcessor received an invalid render span');
+        }
+
+        this._applyParamAutomation(currentFrame);
+
+        const leftPtr = inst.get_left_ptr();
+        const rightPtr = inst.get_right_ptr();
+        const inputMemory = this._memory?.buffer;
+        if (!inputMemory) {
+            return;
+        }
+        const leftView = this._leftView.get(inputMemory, leftPtr, frames);
+        const rightView = this._rightView.get(inputMemory, rightPtr, frames);
+        for (let frame = 0; frame < frames; frame++) {
+            leftView[frame] = leftIn[frame]!;
+            rightView[frame] = rightIn[frame]!;
+        }
+
+        inst.process(frames);
+
+        // Re-read the live buffer after process(): Rust-side allocation can
+        // grow memory mid-call and detach the input views.
+        const outputMemory = this._memory?.buffer ?? inputMemory;
+        out0.set(this._leftView.get(outputMemory, leftPtr, frames));
+        out1.set(this._rightView.get(outputMemory, rightPtr, frames));
+    }
+
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         const input = inputs[0];
         const output = outputs[0];
@@ -211,35 +247,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             if (!inst) {
                 return true;
             }
-            if (frames > 1024 || rightIn.length < frames || out0.length < frames || out1.length < frames) {
-                throw new RangeError('ProofChamberProcessor received an invalid render span');
-            }
-
-            this._applyParamAutomation(currentFrame);
-
-            const leftPtr = inst.get_left_ptr();
-            const rightPtr = inst.get_right_ptr();
-            const inputMemory = this._memory?.buffer;
-            if (!inputMemory) {
-                return true;
-            }
-            const leftView = this._leftView.get(inputMemory, leftPtr, frames);
-            const rightView = this._rightView.get(inputMemory, rightPtr, frames);
-            for (let frame = 0; frame < frames; frame++) {
-                leftView[frame] = leftIn[frame]!;
-                rightView[frame] = rightIn[frame]!;
-            }
-
-            inst.process(frames);
-
-            // Re-read the live buffer AFTER process(): a Rust-side allocation can
-            // grow the linear memory mid-call and detach the previous buffer, so the
-            // output views must map the post-grow buffer (audit RT-7). Steady state
-            // leaves the identity unchanged and reuses the cached view.
-            const outputMemory = this._memory?.buffer ?? inputMemory;
-
-            out0.set(this._leftView.get(outputMemory, leftPtr, frames));
-            out1.set(this._rightView.get(outputMemory, rightPtr, frames));
+            this._processActiveBlock(inst, leftIn, rightIn, out0, out1, frames);
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

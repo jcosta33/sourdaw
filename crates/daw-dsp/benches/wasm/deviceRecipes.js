@@ -22,6 +22,9 @@ export const QUANTUM = 128;
 /** 128 frames at 48 kHz, in milliseconds. */
 export const BUDGET_MS = (QUANTUM / SAMPLE_RATE) * 1000;
 
+/** @typedef {{ memory: WebAssembly.Memory, ProofChamberInstance: typeof import('../../../../src/modules/AudioEngine/wasm/proof_chamber.js').ProofChamberInstance }} ProofChamberModule */
+/** @typedef {{ memory: WebAssembly.Memory, ScoringInstance: typeof import('../../../../src/modules/AudioEngine/wasm/scoring.js').ScoringInstance }} ScoringModule */
+
 /**
  * Every row of the table, in the order it is measured. The page renders one
  * `OfflineAudioContext` per entry.
@@ -189,6 +192,15 @@ export function loopSample(frames) {
  * - `verify()` — `{ ok, detail }`, evaluated after warm-up and again after the
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
+ * @param {object} modules
+ * @param {*} modules.dsp
+ * @param {ProofChamberModule} modules.chamber
+ * @param {ScoringModule} modules.scoring
+ * @param {*} modules.ring
+ * @param {*} modules.publishGrandBouleConsumerClock
+ * @param {*} modules.readBlockAcquire
+ * @param {string | undefined} modules.only
+ * @param {number | undefined} modules.quantaBudget
  */
 export function buildDevices({
     dsp,
@@ -1065,10 +1077,12 @@ export function buildDevices({
     // Two rows, because the algorithm is a user-selected cost: `plate` is the
     // shipped default (`ProofChamberState.ts:30`) and `fdn-16` is the most
     // expensive one a user can actually reach.
-    for (const [id, algorithm, label] of [
+    /** @type {Array<[string, number, string]>} */
+    const proofChamberRecipes = [
         ['proof_chamber_plate', 0, 'ProofChamber (Plate — shipped default)'],
         ['proof_chamber_fdn16', 2, 'ProofChamber (FDN-16 — heaviest selectable)'],
-    ]) {
+    ];
+    for (const [id, algorithm, label] of proofChamberRecipes) {
         if (!wanted(id)) {
             continue;
         }
