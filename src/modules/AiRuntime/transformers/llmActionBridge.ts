@@ -1,5 +1,3 @@
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import {
     ADD_NOTES_MAX_NOTES_PER_COMMAND,
@@ -22,7 +20,7 @@ import { type DrumRenderComparisonCapability } from '../models/DrumRenderCompari
 import { type DrumRoutingCapability } from '../models/DrumRoutingCapability';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MidiOverlapTransformCapability } from '../models/MidiOverlapTransformCapability';
-import { type ProjectContext, type ProjectContextClip } from '../models/ProjectContext';
+import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
@@ -37,7 +35,6 @@ import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapab
 import { type StemImportCapability } from '../models/StemImportCapability';
 import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioCapability';
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
-import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 import {
     type LlmActionBridgeResult,
@@ -46,15 +43,15 @@ import {
     type SectionPlanningSignature,
     type SidechainRouteDeviceAdmission,
 } from './llmActionBridgeContracts';
+import { bridgeAutomationRangeToolCall } from './llmActionStrategies/automationRangeStrategy';
 import {
     findClip,
     findDeviceTarget,
-    findSend,
     findSupportedSidechainDevices,
     findTrack,
     hasExactKeys,
     isFiniteNumber,
-    isProviderRoutableSource,
+    normalizeMarkerName,
     rejection,
 } from './llmActionStrategies/bridgeArgumentGuards';
 import { bridgeClipToolCall } from './llmActionStrategies/clipStrategy';
@@ -62,13 +59,11 @@ import { bridgeCoreAutomationToolCall } from './llmActionStrategies/coreAutomati
 import { bridgeDeviceToolCall } from './llmActionStrategies/deviceStrategy';
 import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
 import { bridgeMasterVcaToolCall, normalizeVcaGroupName } from './llmActionStrategies/masterVcaStrategy';
+import { bridgeMidiToolCall } from './llmActionStrategies/midiStrategy';
 import { bridgeRoutingToolCall } from './llmActionStrategies/routingStrategy';
 import { bridgeTrackToolCall } from './llmActionStrategies/trackStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
-import { type ClipContentWindow, validateNotesWithinClipWindow } from './validateNotesWithinClipWindow';
-
-type BridgedMidiNote = { pitch: number; startBeat: number; duration: number; velocity?: number };
 
 export type {
     LlmActionBridgeResult,
@@ -93,74 +88,6 @@ type ProjectPunchRegion = (input: {
     edge: 'in' | 'out';
 }) => Partial<PunchRegion> | null;
 
-function findEditableMidiClip(context: ProjectContext, clipId: unknown) {
-    const target = findClip(context, clipId);
-    if (!target || target.clip.type !== 'midi' || target.clip.locked === true || target.clip.noteCount < 1) {
-        return undefined;
-    }
-    return target;
-}
-
-/** A MIDI clip that may receive notes: unlocked, on an unfrozen track, empty or not. */
-function findWritableMidiClip(context: ProjectContext, clipId: unknown) {
-    const target = findClip(context, clipId);
-    if (!target || target.clip.type !== 'midi' || target.clip.locked === true || target.track.frozen === true) {
-        return undefined;
-    }
-    return target;
-}
-
-/**
- * The span of clip content that actually sounds, in the clip's own media coordinates. The scheduler
- * reads notes at `note.startBeat - midiOffsetBeats` and drops everything at or past the clip's loop
- * length, so the window starts at the offset and runs for that length — which `projectClipLoopExpansion`
- * reports as the clip's own duration whenever the clip does not loop.
- *
- * The loop length alone is not the bound, because a clip shorter than its own loop never plays a
- * whole iteration: every scheduler truncates one at the clip end, so the content that sounds is
- * whichever of the two is shorter. A four-beat clip looping every sixty-four beats would otherwise
- * accept a note at beat sixty that no route ever reaches.
- */
-function clipContentWindow(clip: ProjectContextClip): ClipContentWindow | undefined {
-    const startBeat = clip.midiOffsetBeats ?? 0;
-    const { loopLengthBeats } = projectClipLoopExpansion({
-        clipDurationBeats: clip.endBeat - clip.startBeat,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const endBeat = startBeat + Math.min(loopLengthBeats, clip.endBeat - clip.startBeat);
-    // A non-finite bound makes every comparison against it false, so an unguarded window would
-    // admit any note at all rather than refusing the clip that cannot state where its content is.
-    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat)) {
-        return undefined;
-    }
-    return { endBeat, startBeat };
-}
-
-function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {
-    return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
-}
-
-function isBridgedMidiNote(value: unknown): value is BridgedMidiNote {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        return false;
-    }
-    const note: Record<string, unknown> = { ...value };
-    const hasVelocity = Object.hasOwn(note, 'velocity');
-    const expectedKeys = hasVelocity
-        ? ['pitch', 'startBeat', 'duration', 'velocity']
-        : ['pitch', 'startBeat', 'duration'];
-    return (
-        hasExactKeys(note, expectedKeys) &&
-        isIntegerInRange(note.pitch, 0, 127) &&
-        isFiniteNumber(note.startBeat) &&
-        note.startBeat >= 0 &&
-        isFiniteNumber(note.duration) &&
-        note.duration >= MIDI_NOTE_MIN_DURATION_BEATS &&
-        (!hasVelocity || isIntegerInRange(note.velocity, 1, 127))
-    );
-}
-
 function getClipAutomationLaneIds(context: ProjectContext, clipId: string): string[] {
     return (context.automationLanes ?? []).filter((lane) => lane.clipId === clipId).map((lane) => lane.id);
 }
@@ -177,10 +104,6 @@ function getAutomationTransformLaneId(action: RuntimeAction): string | null {
         return action.payload.laneId;
     }
     return null;
-}
-
-function normalizeMarkerName(name: string): string {
-    return name.trim().toLocaleLowerCase();
 }
 
 function serializePromptData(value: unknown): string {
@@ -244,361 +167,14 @@ function bridgeToolCall({
         return clipResult;
     }
 
-    const args = call.arguments;
-
-    if (call.name === 'addAdjustmentRegion') {
-        const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = args;
-        if (
-            !hasExactKeys(args, ['layerId', 'startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats']) ||
-            typeof layerId !== 'string' ||
-            !isFiniteNumber(startBeat) ||
-            startBeat < 0 ||
-            !isFiniteNumber(endBeat) ||
-            endBeat <= startBeat ||
-            !isFiniteNumber(blend) ||
-            blend < 0 ||
-            blend > 1 ||
-            !isFiniteNumber(fadeInBeats) ||
-            fadeInBeats < 0 ||
-            !isFiniteNumber(fadeOutBeats) ||
-            fadeOutBeats < 0 ||
-            fadeInBeats + fadeOutBeats > endBeat - startBeat
-        ) {
-            return rejection(index, call.name, 'Expected one exact bounded adjustment-layer region');
-        }
-        return {
-            type: 'addAdjustmentRegion',
-            payload: { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats },
-        };
+    const midiResult = bridgeMidiToolCall({ call, context, index });
+    if (midiResult !== null) {
+        return midiResult;
     }
 
-    if (call.name === 'automateSendRange') {
-        const trackIds = args.trackIds;
-        const bus = findTrack(context, args.busId);
-        const sectionName = normalizeSafeProjectName(args.sectionName);
-        const sections = sectionSignatures.filter(
-            (section) =>
-                section.sectionId && normalizeMarkerName(section.name) === normalizeMarkerName(sectionName ?? '')
-        );
-        if (
-            !hasExactKeys(args, ['trackIds', 'busId', 'sectionName', 'reductionDb']) ||
-            !Array.isArray(trackIds) ||
-            trackIds.length === 0 ||
-            !trackIds.every((trackId): trackId is string => typeof trackId === 'string') ||
-            new Set(trackIds).size !== trackIds.length ||
-            bus?.kind !== 'bus' ||
-            !sectionName ||
-            sections.length !== 1 ||
-            !isFiniteNumber(args.reductionDb) ||
-            args.reductionDb <= 0 ||
-            args.reductionDb > 60
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected exact source IDs, one existing bus and section, and a positive bounded dB reduction'
-            );
-        }
-        const hasInvalidSource = trackIds.some((trackId) => {
-            const track = findTrack(context, trackId);
-            const send = findSend(context, trackId, bus.id);
-            return (
-                !isProviderRoutableSource(track) ||
-                track.automationMode === 'off' ||
-                !send ||
-                !Number.isFinite(send.level) ||
-                send.level <= 0 ||
-                (context.automationLanes ?? []).some(
-                    (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === `send:${bus.id}`
-                )
-            );
-        });
-        if (hasInvalidSource) {
-            return rejection(
-                index,
-                call.name,
-                'Expected every source to read automation and own a positive send to the bus without existing send automation'
-            );
-        }
-        return {
-            type: 'automateSendRange',
-            payload: {
-                trackIds: [...trackIds],
-                busId: bus.id,
-                sectionName: sections[0]!.name,
-                reductionDb: args.reductionDb,
-            },
-        };
-    }
-
-    if (call.name === 'automateTrackGainRange') {
-        const trackIds = args.trackIds;
-        const sectionName = normalizeSafeProjectName(args.sectionName);
-        const gainDb = args.gainDb;
-        const sections = sectionSignatures.filter(
-            (section) =>
-                section.sectionId && normalizeMarkerName(section.name) === normalizeMarkerName(sectionName ?? '')
-        );
-        if (
-            !hasExactKeys(args, ['trackIds', 'sectionName', 'gainDb']) ||
-            !Array.isArray(trackIds) ||
-            trackIds.length === 0 ||
-            !trackIds.every((trackId): trackId is string => typeof trackId === 'string') ||
-            new Set(trackIds).size !== trackIds.length ||
-            !sectionName ||
-            sections.length !== 1 ||
-            !isFiniteNumber(gainDb) ||
-            gainDb <= 0 ||
-            gainDb > 6
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected exact impact-bus IDs, one existing section, and a positive bounded dB lift'
-            );
-        }
-        const hasInvalidTarget = trackIds.some((trackId) => {
-            const track = findTrack(context, trackId);
-            return (
-                track?.kind !== 'bus' ||
-                track.frozen === true ||
-                track.automationMode === 'off' ||
-                !Number.isFinite(track.gain) ||
-                track.gain <= 0 ||
-                // The lift must land inside the fader's own range, which is
-                // `FADER_MAX_GAIN` and not unity — `handleAutomateTrackGainRange`
-                // admits exactly that, so a unity bound here would reject a bus
-                // at the 0.8 default asked for a 3 dB section lift and leave the
-                // handler's own check unreachable.
-                track.gain * 10 ** (gainDb / 20) > FADER_MAX_GAIN ||
-                (context.automationLanes ?? []).some(
-                    (lane) =>
-                        lane.id === `auto-gain-${encodeURIComponent(trackId)}` ||
-                        (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
-                )
-            );
-        });
-        if (hasInvalidTarget) {
-            return rejection(
-                index,
-                call.name,
-                'Expected every impact bus to have gain headroom, enabled automation, and no existing gain lane'
-            );
-        }
-        return {
-            type: 'automateTrackGainRange',
-            payload: {
-                trackIds: [...trackIds],
-                sectionName: sections[0]!.name,
-                gainDb,
-            },
-        };
-    }
-
-    if (call.name === 'addNotes') {
-        const target = findWritableMidiClip(context, args.clipId);
-        const notes = args.notes;
-        if (
-            !hasExactKeys(args, ['clipId', 'notes']) ||
-            !target ||
-            !Array.isArray(notes) ||
-            notes.length === 0 ||
-            notes.length > ADD_NOTES_MAX_NOTES_PER_COMMAND ||
-            !notes.every(isBridgedMidiNote)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                `Expected one existing unlocked MIDI clip on an unfrozen track and 1 to ${String(ADD_NOTES_MAX_NOTES_PER_COMMAND)} well-formed notes`
-            );
-        }
-        const window = clipContentWindow(target.clip);
-        if (!window) {
-            return rejection(
-                index,
-                call.name,
-                `Clip ${target.clip.id} reports a content window that is not a finite range of beats`
-            );
-        }
-        const noteWindowRejection = validateNotesWithinClipWindow(notes, window, 'Note');
-        if (noteWindowRejection !== null) {
-            return rejection(index, call.name, noteWindowRejection);
-        }
-        return {
-            type: 'addNotes',
-            payload: {
-                clipId: target.clip.id,
-                notes: notes.map((note) => ({
-                    pitch: note.pitch,
-                    startBeat: note.startBeat,
-                    duration: note.duration,
-                    ...(note.velocity === undefined ? {} : { velocity: note.velocity }),
-                })),
-            },
-        };
-    }
-
-    if (call.name === 'quantizeNotes') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'gridSize']) ||
-            !target ||
-            !isFiniteNumber(args.gridSize) ||
-            args.gridSize <= 0 ||
-            args.gridSize > 64
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and a finite gridSize greater than 0 and at most 64'
-            );
-        }
-        return { type: 'quantizeNotes', payload: { clipId: target.clip.id, gridSize: args.gridSize } };
-    }
-
-    if (call.name === 'removeShortMidiOverlaps') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'maximumOverlapMs']) ||
-            !target ||
-            !isFiniteNumber(args.maximumOverlapMs) ||
-            args.maximumOverlapMs <= 0 ||
-            args.maximumOverlapMs > 1_000
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and a finite maximumOverlapMs greater than 0 and at most 1000'
-            );
-        }
-        return {
-            type: 'removeShortMidiOverlaps',
-            payload: { clipId: target.clip.id, maximumOverlapMs: args.maximumOverlapMs },
-        };
-    }
-
-    if (call.name === 'arpeggiate') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'pattern', 'rate', 'octaves', 'gate']) ||
-            !target ||
-            args.pattern !== 'up' ||
-            args.rate !== 8 ||
-            args.octaves !== 1 ||
-            args.gate !== 50
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected the exact application-admitted selected MIDI clip and EX-07 arpeggio settings'
-            );
-        }
-        return {
-            type: 'arpeggiate',
-            payload: { clipId: target.clip.id, pattern: 'up', rate: 8, octaves: 1, gate: 50 },
-        };
-    }
-
-    if (call.name === 'copyMidiArticulations') {
-        const source = findEditableMidiClip(context, args.sourceClipId);
-        const target = findEditableMidiClip(context, args.targetClipId);
-        if (
-            !hasExactKeys(args, ['sourceClipId', 'targetClipId']) ||
-            !source ||
-            !target ||
-            source.clip.id === target.clip.id ||
-            source.track.id !== target.track.id
-        ) {
-            return rejection(index, call.name, 'Expected one exact same-track pair of distinct editable MIDI clips');
-        }
-        return {
-            type: 'copyMidiArticulations',
-            payload: { sourceClipId: source.clip.id, targetClipId: target.clip.id },
-        };
-    }
-
-    if (call.name === 'transposeNotes') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'semitones']) ||
-            !target ||
-            !isFiniteNumber(args.semitones) ||
-            !Number.isInteger(args.semitones) ||
-            args.semitones < -127 ||
-            args.semitones > 127 ||
-            args.semitones === 0
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and a non-zero integer semitone delta from -127 through 127'
-            );
-        }
-        return { type: 'transposeNotes', payload: { clipId: target.clip.id, semitones: args.semitones } };
-    }
-
-    if (call.name === 'invertNotes' || call.name === 'retrogradeNotes') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (!hasExactKeys(args, ['clipId']) || !target || target.clip.noteCount < 2) {
-            return rejection(index, call.name, 'Expected only an unlocked MIDI clip containing at least two notes');
-        }
-        return { type: call.name, payload: { clipId: target.clip.id } };
-    }
-
-    if (call.name === 'quantizeNoteLengths') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'gridSize']) ||
-            !target ||
-            !isFiniteNumber(args.gridSize) ||
-            args.gridSize < 0.03125 ||
-            args.gridSize > 64
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and a finite gridSize from 0.03125 through 64'
-            );
-        }
-        return { type: 'quantizeNoteLengths', payload: { clipId: target.clip.id, gridSize: args.gridSize } };
-    }
-
-    if (call.name === 'scaleAllVelocities') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'factor']) ||
-            !target ||
-            !isFiniteNumber(args.factor) ||
-            args.factor <= 0 ||
-            args.factor > 16 ||
-            args.factor === 1
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and a finite factor greater than 0 and at most 16, excluding 1'
-            );
-        }
-        return { type: 'scaleAllVelocities', payload: { clipId: target.clip.id, factor: args.factor } };
-    }
-
-    if (call.name === 'setAllVelocities') {
-        const target = findEditableMidiClip(context, args.clipId);
-        if (
-            !hasExactKeys(args, ['clipId', 'velocity']) ||
-            !target ||
-            !isFiniteNumber(args.velocity) ||
-            !Number.isInteger(args.velocity) ||
-            args.velocity < 1 ||
-            args.velocity > 127
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an unlocked non-empty MIDI clip and an integer velocity from 1 through 127'
-            );
-        }
-        return { type: 'setAllVelocities', payload: { clipId: target.clip.id, velocity: args.velocity } };
+    const automationRangeResult = bridgeAutomationRangeToolCall({ call, context, index, sectionSignatures });
+    if (automationRangeResult !== null) {
+        return automationRangeResult;
     }
 
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
