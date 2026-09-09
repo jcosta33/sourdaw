@@ -1799,7 +1799,6 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         let admittedRuntimeToken: number | undefined;
         let admittedPersistenceRevisions: ReadonlySet<string> = new Set();
         let generation: number | undefined;
-        let publicationAuthority: PreparedPcmPublicationAuthority | undefined;
         let mutationSettlement: PreparedMutationSettlement | undefined;
         let promotionRevision: string | undefined;
         let recoveryRevision: string | undefined;
@@ -1845,9 +1844,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             promotionRevision = crypto.randomUUID();
             recoveryRevision = crypto.randomUUID();
             promotionSettlement = disposition === 'project-owned' ? beginPromotionSettlement(id) : undefined;
+            const publicationAuthority = host.capturePcmPublicationAuthority(id);
             generation = host.claimDurableMutation(id);
             const primary = await runStoragePhase(async () => {
-                publicationAuthority = host.capturePcmPublicationAuthority(id);
                 const database = await host.openDatabase();
                 const transaction = database.transaction(
                     disposition === 'discard'
@@ -1891,6 +1890,13 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (!isValidPreparedAudioBufferPair(data, metadata)) {
                     await awaitPreparedTransaction(transaction);
                     return { status: 'failed' as const, reason: 'Prepared audio PCM metadata is invalid.' };
+                }
+                if (
+                    disposition === 'project-owned' &&
+                    !isPromotionCurrent(id, leaseId, admittedProjectEpoch!, admittedRuntimeToken)
+                ) {
+                    await abortPreparedTransaction(transaction);
+                    return { status: 'failed' as const, reason: 'Prepared audio promotion was superseded.' };
                 }
                 const acceptsCommittedPersistence =
                     owner.persistenceRevision !== undefined &&

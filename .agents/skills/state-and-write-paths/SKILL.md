@@ -102,6 +102,8 @@ Treat any pre-commit cache invalidation as an identity transition, not cleanup. 
 prepared row from its durable revision, stage deletion and then observe an aborted transaction; the unchanged row must
 remain readable and recoverable in that same module. Carry explicit preserved, read-origin and admitted-commit
 witnesses through invalidation, and attack each with a later source replacement before accepting retry or recovery.
+Capture a prepared release's publication authority at mutation admission, before it waits for the storage lock; recapturing
+inside the queued storage phase can authenticate an intervening ordinary replacement as the older prepared commit.
 
 ## References
 

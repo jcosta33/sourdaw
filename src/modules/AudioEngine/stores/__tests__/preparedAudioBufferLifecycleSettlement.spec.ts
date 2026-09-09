@@ -1104,6 +1104,79 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committedMeta.get('discard-race')?.preparedOwner).toBeUndefined();
     });
 
+    it.each(['discard', 'project-owned'] as const)(
+        'keeps an evicted ordinary replacement durable after overlapping prepared persistence and %s release',
+        async (disposition) => {
+            const controls = installFakeAudioIndexedDb();
+            const id = `${disposition}-active-persistence-ordinary-replacement`;
+            const leaseId = `${id}-lease`;
+            const prepared = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            prepared.getChannelData(0)[0] = 0.25;
+
+            controls.pauseWriteSettlements();
+            const persistence = audioBufferCache.persistPreparedBuffer({ id, buffer: prepared, leaseId });
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBeGreaterThan(0));
+
+            const release = audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition });
+            const ordinary = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+            ordinary.getChannelData(0)[0] = 0.75;
+            audioBufferCache.set(id, ordinary);
+            for (let index = 0; index < 64; index++) {
+                audioBufferCache.set(`${id}-filler-${index}`, createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+            }
+            expect(audioBufferCache.has(id)).toBe(false);
+
+            let operationsSettled = false;
+            void Promise.all([persistence, release]).then(
+                () => {
+                    operationsSettled = true;
+                },
+                () => {
+                    operationsSettled = true;
+                }
+            );
+            await vi.waitFor(
+                () => {
+                    if (controls.pendingWriteSettlementCount() > 0) {
+                        controls.releaseNextWriteSettlement();
+                    }
+                    expect(operationsSettled).toBe(true);
+                },
+                { timeout: 5_000 }
+            );
+            const persistenceResult = await persistence;
+            const releaseResult = await release;
+            const durability = audioBufferCache.ensureDurable([id]);
+            await settlePendingWrites(controls, [durability]);
+            const durabilityResult = await durability;
+            if (durabilityResult.status === 'durable') {
+                durabilityResult.release();
+            }
+
+            expect({
+                persistenceResult,
+                releaseResult,
+                diskSample: controls.committed.get(id)?.channelData[0]?.[0],
+                diskPersistenceRevision: controls.committedMeta.get(id)?.persistenceRevision,
+                diskPreparedOwner: controls.committedMeta.get(id)?.preparedOwner,
+                durabilityStatus: durabilityResult.status,
+            }).toEqual({
+                persistenceResult: {
+                    status: 'failed',
+                    reason: 'Prepared audio persistence was superseded.',
+                },
+                releaseResult:
+                    disposition === 'discard'
+                        ? { status: 'mismatched' }
+                        : { status: 'failed', reason: 'Prepared audio promotion was superseded.' },
+                diskSample: 0.75,
+                diskPersistenceRevision: expect.any(String),
+                diskPreparedOwner: undefined,
+                durabilityStatus: 'durable',
+            });
+        }
+    );
+
     it('does not report or evict discard when newer same-lease persistence commits before cleanup', async () => {
         const controls = installFakeAudioIndexedDb();
         const id = 'discard-same-lease-persistence-race';
