@@ -9,6 +9,7 @@ import {
 } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
+import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const markerSectionActionNames = [
@@ -40,21 +41,8 @@ type MarkerSectionStrategyDefinition<Name extends MarkerSectionCallName> = {
     };
 }[Name];
 
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    return actualKeys.length === expectedKeys.length && expectedKeys.every((key) => Object.hasOwn(value, key));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function normalizeMarkerName(name: string): string {
     return name.trim().toLocaleLowerCase();
-}
-
-function rejection(index: number, name: string, reason: string): LlmActionRejection {
-    return { index, name, reason };
 }
 
 const markerSectionStrategyDefinitions = [

@@ -6,7 +6,6 @@ import {
     MIDI_NOTE_MIN_DURATION_BEATS,
     MIDI_TRANSFORM_MAX_NOTES,
 } from '#/utils/midiNoteBatchLimits';
-import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
@@ -45,18 +44,31 @@ import {
     type LlmActionRejection,
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
+    type SidechainRouteDeviceAdmission,
 } from './llmActionBridgeContracts';
+import {
+    findDeviceTarget,
+    findSend,
+    findSupportedSidechainDevices,
+    findTrack,
+    hasExactKeys,
+    isFiniteNumber,
+    isProviderRoutableSource,
+    isSafeTrackColor,
+    rejection,
+} from './llmActionStrategies/bridgeArgumentGuards';
 import { bridgeCoreAutomationToolCall } from './llmActionStrategies/coreAutomationStrategy';
+import { bridgeDeviceToolCall } from './llmActionStrategies/deviceStrategy';
 import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
 import { bridgeMasterVcaToolCall, normalizeVcaGroupName } from './llmActionStrategies/masterVcaStrategy';
+import { bridgeRoutingToolCall } from './llmActionStrategies/routingStrategy';
+import { bridgeTrackToolCall } from './llmActionStrategies/trackStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
 import { type ClipContentWindow, validateNotesWithinClipWindow } from './validateNotesWithinClipWindow';
 
-type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 type NormalizationMode = 'peak' | 'rms' | 'lufs';
 type BridgedMidiNote = { pitch: number; startBeat: number; duration: number; velocity?: number };
-const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 
 export type {
     LlmActionBridgeResult,
@@ -74,12 +86,6 @@ type BridgeLlmToolCallsInput = {
     sidechainRouteDeviceAdmissions?: readonly SidechainRouteDeviceAdmission[];
 };
 
-type SidechainRouteDeviceAdmission = {
-    sourceTrackId: string;
-    targetDeviceId: string;
-    targetTrackId: string;
-};
-
 type PunchRegion = Pick<ProjectContext, 'punchInBeat' | 'punchOutBeat'>;
 type ProjectPunchRegion = (input: {
     beat: number;
@@ -87,64 +93,8 @@ type ProjectPunchRegion = (input: {
     edge: 'in' | 'out';
 }) => Partial<PunchRegion> | null;
 
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    if (actualKeys.length !== expectedKeys.length) {
-        return false;
-    }
-    return expectedKeys.every((key) => Object.hasOwn(value, key));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isExecutableTrackKind(value: unknown): value is ExecutableTrackKind {
-    return typeof value === 'string' && executableTrackKinds.has(value);
-}
-
 function isNormalizationMode(value: unknown): value is NormalizationMode {
     return value === 'peak' || value === 'rms' || value === 'lufs';
-}
-
-function isValidParameterValue(
-    parameter: NonNullable<ProjectContext['tracks'][number]['devices'][number]['parameters']>[number],
-    value: number
-): boolean {
-    if (value < parameter.minValue || value > parameter.maxValue) {
-        return false;
-    }
-    // A range is not a list of settings. `crust/oversampling` spans 1..32 and
-    // has six settings; a model asking for 9 is asking for a position the
-    // cascade does not build, and passing it would have the engine resolve it
-    // to 8 while the model was told 9 landed.
-    if (parameter.legalValues && !parameter.legalValues.includes(value)) {
-        return false;
-    }
-    if (parameter.type === 'bool') {
-        return value === 0 || value === 1;
-    }
-    if (parameter.type === 'int') {
-        return Number.isInteger(value);
-    }
-    if (parameter.type === 'choice') {
-        if (!Number.isInteger(value)) {
-            return false;
-        }
-        return parameter.choices ? value >= 0 && value < parameter.choices.length : true;
-    }
-    return true;
-}
-
-function hasTrack(context: ProjectContext, trackId: unknown): trackId is string {
-    return typeof trackId === 'string' && context.tracks.some((track) => track.id === trackId);
-}
-
-function findTrack(context: ProjectContext, trackId: unknown) {
-    if (typeof trackId !== 'string') {
-        return undefined;
-    }
-    return context.tracks.find((track) => track.id === trackId);
 }
 
 function findClip(context: ProjectContext, clipId: unknown) {
@@ -241,66 +191,6 @@ function findEditableAudioClip(context: ProjectContext, clipId: unknown) {
     return target;
 }
 
-function isProviderRoutableSource(
-    track: ProjectContext['tracks'][number] | undefined
-): track is ProjectContext['tracks'][number] {
-    return track?.kind === 'audio' || track?.kind === 'midi' || track?.kind === 'bus';
-}
-
-function findProviderOutputTarget(context: ProjectContext, outputId: unknown) {
-    if (typeof outputId !== 'string') {
-        return undefined;
-    }
-    return context.tracks.find((track) => track.id === outputId && (track.kind === 'bus' || track.kind === 'master'));
-}
-
-function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
-    const source = findTrack(context, trackId);
-    if (!source || typeof busId !== 'string') {
-        return undefined;
-    }
-    return source.sends?.find((send) => send.busId === busId);
-}
-
-function findSidechainRoutes(context: ProjectContext, sourceTrackId: string, targetTrackId: string) {
-    return (context.sidechainRoutes ?? []).filter(
-        (route) => route.sourceTrackId === sourceTrackId && route.targetTrackId === targetTrackId
-    );
-}
-
-function findSupportedSidechainDevices(target: ProjectContext['tracks'][number]) {
-    return target.devices.filter((device) => getSidechainTargetCapability(device.type) !== null);
-}
-
-function findDeviceTarget(context: ProjectContext, deviceId: unknown) {
-    if (typeof deviceId !== 'string') {
-        return undefined;
-    }
-    for (const track of context.tracks) {
-        const device = track.devices.find((candidate) => candidate.id === deviceId);
-        if (device) {
-            return { device, track };
-        }
-    }
-    return undefined;
-}
-
-function findDevice(context: ProjectContext, deviceId: unknown) {
-    return findDeviceTarget(context, deviceId)?.device;
-}
-
-function findAvailableDeviceType(context: ProjectContext, assertedType: unknown) {
-    if (typeof assertedType !== 'string') {
-        return undefined;
-    }
-    const normalized = assertedType.toLocaleLowerCase();
-    const matches = (context.availableDeviceTypes ?? []).filter(
-        (deviceType) =>
-            deviceType.id.toLocaleLowerCase() === normalized || deviceType.name.toLocaleLowerCase() === normalized
-    );
-    return matches.length === 1 ? matches[0] : undefined;
-}
-
 function getClipAutomationLaneIds(context: ProjectContext, clipId: string): string[] {
     return (context.automationLanes ?? []).filter((lane) => lane.clipId === clipId).map((lane) => lane.id);
 }
@@ -323,16 +213,8 @@ function normalizeMarkerName(name: string): string {
     return name.trim().toLocaleLowerCase();
 }
 
-function isSafeTrackColor(value: unknown): value is string {
-    return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
-}
-
 function serializePromptData(value: unknown): string {
     return JSON.stringify(value).replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
-}
-
-function rejection(index: number, name: string, reason: string): LlmActionRejection {
-    return { index, name, reason };
 }
 
 function bridgeToolCall({
@@ -370,6 +252,21 @@ function bridgeToolCall({
     const coreAutomationResult = bridgeCoreAutomationToolCall({ call, context, index });
     if (coreAutomationResult !== null) {
         return coreAutomationResult;
+    }
+
+    const trackResult = bridgeTrackToolCall({ call, context, index });
+    if (trackResult !== null) {
+        return trackResult;
+    }
+
+    const routingResult = bridgeRoutingToolCall({ call, context, index, sidechainRouteDeviceAdmissions });
+    if (routingResult !== null) {
+        return routingResult;
+    }
+
+    const deviceResult = bridgeDeviceToolCall({ call, context, index, sectionSignatures });
+    if (deviceResult !== null) {
+        return deviceResult;
     }
 
     const args = call.arguments;
@@ -521,37 +418,6 @@ function bridgeToolCall({
                 gainDb,
             },
         };
-    }
-
-    if (call.name === 'addTrack') {
-        const name = normalizeSafeProjectName(args.name);
-        if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
-            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, or folder');
-        }
-        return {
-            type: 'addTrack',
-            payload: { name, kind: args.kind, select: false },
-        };
-    }
-
-    if (call.name === 'createBus') {
-        const name = normalizeSafeProjectName(args.name);
-        if (!hasExactKeys(args, ['name']) || !name) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only a non-empty bus name no longer than 120 characters without framing or control characters'
-            );
-        }
-        return { type: 'createBus', payload: { name } };
-    }
-
-    if (call.name === 'removeTrack') {
-        const track = findTrack(context, args.trackId);
-        if (!hasExactKeys(args, ['trackId']) || !track || track.kind === 'master') {
-            return rejection(index, call.name, 'Expected only an available non-master trackId');
-        }
-        return { type: 'removeTrack', payload: { trackId: track.id } };
     }
 
     if (call.name === 'addClip') {
@@ -935,35 +801,6 @@ function bridgeToolCall({
         return {
             type: 'arpeggiate',
             payload: { clipId: target.clip.id, pattern: 'up', rate: 8, octaves: 1, gate: 50 },
-        };
-    }
-
-    if (call.name === 'createDrumPreviewBranches') {
-        const varyingRoles = args.varyingRoles;
-        const sectionMatches = sectionSignatures.filter(({ sectionId }) => sectionId === args.sectionId);
-        if (
-            !hasExactKeys(args, ['sectionId', 'candidateCount', 'varyingRoles']) ||
-            typeof args.sectionId !== 'string' ||
-            sectionMatches.length !== 1 ||
-            args.candidateCount !== 3 ||
-            !Array.isArray(varyingRoles) ||
-            varyingRoles.length !== 2 ||
-            varyingRoles[0] !== 'snare' ||
-            varyingRoles[1] !== 'hi-hat'
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected one exact section, exactly three candidates, and ordered Snare then Hi-Hat variation roles'
-            );
-        }
-        return {
-            type: 'createDrumPreviewBranches',
-            payload: {
-                sectionId: args.sectionId,
-                candidateCount: 3,
-                varyingRoles: ['snare', 'hi-hat'],
-            },
         };
     }
 
@@ -1411,417 +1248,6 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Requested clip loop length already matches project state');
         }
         return { type: 'setClipLoopLength', payload: { clipId: source.clip.id, loopLength: args.loopLength } };
-    }
-
-    if (call.name === 'renameTrack') {
-        if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
-            return rejection(index, call.name, 'Expected an available trackId and name');
-        }
-        const name = normalizeSafeProjectName(args.name);
-        if (!name) {
-            return rejection(
-                index,
-                call.name,
-                'Expected a non-empty name no longer than 120 characters without framing or control characters'
-            );
-        }
-        return { type: 'renameTrack', payload: { trackId: args.trackId, name } };
-    }
-
-    if (call.name === 'duplicateTrack') {
-        const source = findTrack(context, args.trackId);
-        if (!hasExactKeys(args, ['trackId']) || !source || !isExecutableTrackKind(source.kind)) {
-            return rejection(index, call.name, 'Expected one duplicable audio, MIDI, bus, or folder source trackId');
-        }
-        return { type: 'duplicateTrack', payload: { trackId: source.id, select: false } };
-    }
-
-    if (call.name === 'muteTrack') {
-        if (
-            !hasExactKeys(args, ['trackId', 'muted']) ||
-            !hasTrack(context, args.trackId) ||
-            typeof args.muted !== 'boolean'
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and boolean muted value');
-        }
-        return { type: 'muteTrack', payload: { trackId: args.trackId, muted: args.muted } };
-    }
-
-    if (call.name === 'soloTrack') {
-        if (
-            !hasExactKeys(args, ['trackId', 'soloed']) ||
-            !hasTrack(context, args.trackId) ||
-            typeof args.soloed !== 'boolean'
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and boolean soloed value');
-        }
-        return { type: 'soloTrack', payload: { trackId: args.trackId, soloed: args.soloed } };
-    }
-
-    if (call.name === 'setSoloSafe') {
-        const track = findTrack(context, args.trackId);
-        if (
-            !hasExactKeys(args, ['trackId', 'soloSafe']) ||
-            !track ||
-            typeof args.soloSafe !== 'boolean' ||
-            args.soloSafe === track.soloSafe
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and changed boolean soloSafe value');
-        }
-        return { type: 'setSoloSafe', payload: { trackId: track.id, soloSafe: args.soloSafe } };
-    }
-
-    if (call.name === 'clearSolos') {
-        if (!hasExactKeys(args, []) || !context.tracks.some((track) => track.soloed)) {
-            return rejection(index, call.name, 'Expected no arguments and at least one currently soloed track');
-        }
-        return { type: 'clearSolos' };
-    }
-
-    if (call.name === 'armTrack') {
-        const track = findTrack(context, args.trackId);
-        if (
-            !hasExactKeys(args, ['trackId', 'armed']) ||
-            !track ||
-            track.kind === 'vca' ||
-            typeof args.armed !== 'boolean'
-        ) {
-            return rejection(index, call.name, 'Expected an armable trackId and boolean armed value');
-        }
-        return { type: 'armTrack', payload: { trackId: track.id, armed: args.armed } };
-    }
-
-    if (call.name === 'setTrackGain') {
-        if (
-            !hasExactKeys(args, ['trackId', 'gain']) ||
-            !hasTrack(context, args.trackId) ||
-            !isFiniteNumber(args.gain) ||
-            args.gain < 0 ||
-            args.gain > FADER_MAX_GAIN
-        ) {
-            return rejection(
-                index,
-                call.name,
-                `Expected an available trackId and finite gain from 0 through ${FADER_MAX_GAIN}`
-            );
-        }
-        return { type: 'setTrackGain', payload: { trackId: args.trackId, gain: args.gain } };
-    }
-
-    if (call.name === 'setTrackPan') {
-        if (
-            !hasExactKeys(args, ['trackId', 'pan']) ||
-            !hasTrack(context, args.trackId) ||
-            !isFiniteNumber(args.pan) ||
-            args.pan < -50 ||
-            args.pan > 50
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and finite pan from -50 through 50');
-        }
-        return { type: 'setTrackPan', payload: { trackId: args.trackId, pan: args.pan } };
-    }
-
-    if (call.name === 'setTrackColor') {
-        if (
-            !hasExactKeys(args, ['trackId', 'color']) ||
-            !hasTrack(context, args.trackId) ||
-            !isSafeTrackColor(args.color)
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and six-digit hexadecimal color');
-        }
-        return { type: 'setTrackColor', payload: { trackId: args.trackId, color: args.color.toLowerCase() } };
-    }
-
-    if (call.name === 'reorderTrack') {
-        if (
-            !hasExactKeys(args, ['trackId', 'newIndex']) ||
-            !hasTrack(context, args.trackId) ||
-            !isFiniteNumber(args.newIndex) ||
-            !Number.isInteger(args.newIndex) ||
-            args.newIndex < 0 ||
-            args.newIndex >= context.tracks.length
-        ) {
-            return rejection(index, call.name, 'Expected an available trackId and an in-range integer newIndex');
-        }
-        return { type: 'reorderTrack', payload: { trackId: args.trackId, newIndex: args.newIndex } };
-    }
-
-    if (call.name === 'setTrackOutput') {
-        const source = findTrack(context, args.trackId);
-        const target = findProviderOutputTarget(context, args.outputId);
-        if (
-            !hasExactKeys(args, ['trackId', 'outputId']) ||
-            !isProviderRoutableSource(source) ||
-            typeof source.outputId !== 'string' ||
-            !target ||
-            source.id === target.id
-        ) {
-            return rejection(index, call.name, 'Expected a routable source track and a distinct bus or master output');
-        }
-        if (
-            wouldCreateRoutingCycle({
-                sourceId: source.id,
-                targetId: target.id,
-                tracks: context.tracks,
-                sidechainRoutes: context.sidechainRoutes ?? [],
-            })
-        ) {
-            return rejection(index, call.name, 'Expected a new acyclic output route');
-        }
-        return {
-            type: 'setTrackOutput',
-            payload: { trackId: source.id, outputId: target.id, expectedOutputId: source.outputId },
-        };
-    }
-
-    if (call.name === 'addDevice') {
-        const track = findTrack(context, args.trackId);
-        const deviceType = findAvailableDeviceType(context, args.deviceType);
-        const hasSupportedKeys =
-            hasExactKeys(args, ['trackId', 'deviceType']) ||
-            hasExactKeys(args, ['trackId', 'deviceType', 'afterDeviceId']);
-        let afterDevice;
-        if (typeof args.afterDeviceId === 'string') {
-            afterDevice = track?.devices.find((device) => device.id === args.afterDeviceId);
-        }
-        if (
-            !hasSupportedKeys ||
-            !track ||
-            track.kind === 'vca' ||
-            track.frozen === true ||
-            !deviceType ||
-            (args.afterDeviceId !== undefined && !afterDevice)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected a non-frozen device-capable track, one platform-available built-in device type, and an optional anchor device on that track'
-            );
-        }
-        return {
-            type: 'addDevice',
-            payload: {
-                trackId: track.id,
-                deviceType: deviceType.id,
-                ...(afterDevice ? { afterDeviceId: afterDevice.id } : {}),
-            },
-        };
-    }
-
-    if (call.name === 'removeDevice') {
-        const target = findDeviceTarget(context, args.deviceId);
-        if (!hasExactKeys(args, ['deviceId']) || !target) {
-            return rejection(index, call.name, 'Expected one existing deviceId');
-        }
-        return { type: 'removeDevice', payload: { deviceId: target.device.id } };
-    }
-
-    if (call.name === 'setDeviceParameter') {
-        if (
-            !hasExactKeys(args, ['deviceId', 'paramId', 'value']) ||
-            typeof args.deviceId !== 'string' ||
-            typeof args.paramId !== 'string' ||
-            !isFiniteNumber(args.value)
-        ) {
-            return rejection(index, call.name, 'Expected an available device parameter and finite value');
-        }
-        const target = findDeviceTarget(context, args.deviceId);
-        const parameter = (target?.device.parameters ?? []).find((candidate) => candidate.id === args.paramId);
-        if (!target || target.track.frozen === true || !parameter || !isValidParameterValue(parameter, args.value)) {
-            return rejection(index, call.name, 'Expected a descriptor-backed parameter value within project bounds');
-        }
-        return {
-            type: 'setDeviceParameter',
-            payload: {
-                deviceId: target.device.id,
-                paramId: parameter.id,
-                value: args.value,
-                expectedTrackId: target.track.id,
-                expectedDeviceType: target.device.type,
-                expectedDeviceIds: target.track.devices.map((device) => device.id),
-                expectedValue: parameter.value,
-                expectedTrackFrozen: false,
-            },
-        };
-    }
-
-    if (call.name === 'bypassDevice') {
-        if (
-            !hasExactKeys(args, ['deviceId', 'bypassed']) ||
-            !findDevice(context, args.deviceId) ||
-            typeof args.deviceId !== 'string' ||
-            typeof args.bypassed !== 'boolean'
-        ) {
-            return rejection(index, call.name, 'Expected an available deviceId and boolean bypassed value');
-        }
-        return { type: 'bypassDevice', payload: { deviceId: args.deviceId, bypassed: args.bypassed } };
-    }
-
-    if (call.name === 'setSend') {
-        const source = findTrack(context, args.trackId);
-        const bus = findProviderOutputTarget(context, args.busId);
-        const existing = findSend(context, args.trackId, args.busId);
-        if (
-            !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
-            !isProviderRoutableSource(source) ||
-            bus?.kind !== 'bus' ||
-            source.id === bus.id ||
-            !existing ||
-            !isFiniteNumber(args.level) ||
-            args.level < 0 ||
-            args.level > 1
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an available source track, distinct bus track, and finite level from 0 through 1'
-            );
-        }
-        return {
-            type: 'setSend',
-            payload: {
-                trackId: source.id,
-                busId: bus.id,
-                level: args.level,
-                expectedLevel: existing.level,
-                expectedPreFader: existing.preFader,
-            },
-        };
-    }
-
-    if (call.name === 'addSend') {
-        const source = findTrack(context, args.trackId);
-        const bus = findProviderOutputTarget(context, args.busId);
-        const existing = findSend(context, args.trackId, args.busId);
-        if (
-            !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
-            !isProviderRoutableSource(source) ||
-            bus?.kind !== 'bus' ||
-            source.id === bus.id ||
-            existing ||
-            !isFiniteNumber(args.level) ||
-            args.level < 0 ||
-            args.level > 1
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an available source, a distinct bus without an existing send, and a finite level from 0 through 1'
-            );
-        }
-        if (
-            wouldCreateRoutingCycle({
-                sourceId: source.id,
-                targetId: bus.id,
-                tracks: context.tracks,
-                sidechainRoutes: context.sidechainRoutes ?? [],
-            })
-        ) {
-            return rejection(index, call.name, 'Expected a new acyclic send route');
-        }
-        return {
-            type: 'addSend',
-            payload: { trackId: source.id, busId: bus.id, level: args.level, expectedAbsent: true },
-        };
-    }
-
-    if (call.name === 'removeSend') {
-        const source = findTrack(context, args.trackId);
-        const bus = findProviderOutputTarget(context, args.busId);
-        const existing = findSend(context, args.trackId, args.busId);
-        if (
-            !hasExactKeys(args, ['trackId', 'busId']) ||
-            !isProviderRoutableSource(source) ||
-            bus?.kind !== 'bus' ||
-            !existing
-        ) {
-            return rejection(index, call.name, 'Expected an existing send from an available source to a bus');
-        }
-        return {
-            type: 'removeSend',
-            payload: {
-                trackId: source.id,
-                busId: bus.id,
-                expectedLevel: existing.level,
-                expectedPreFader: existing.preFader,
-            },
-        };
-    }
-
-    if (call.name === 'addSidechainRoute') {
-        const source = findTrack(context, args.sourceTrackId);
-        const target = findTrack(context, args.targetTrackId);
-        const hasSupportedKeys =
-            hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
-            hasExactKeys(args, ['sourceTrackId', 'targetTrackId', 'targetDeviceId']);
-        if (
-            !hasSupportedKeys ||
-            !isProviderRoutableSource(source) ||
-            !isProviderRoutableSource(target) ||
-            source.id === target.id
-        ) {
-            return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
-        }
-        if (
-            args.targetDeviceId !== undefined &&
-            !sidechainRouteDeviceAdmissions.some(
-                (admission) =>
-                    admission.sourceTrackId === source.id &&
-                    admission.targetTrackId === target.id &&
-                    admission.targetDeviceId === args.targetDeviceId
-            )
-        ) {
-            return rejection(index, call.name, 'targetDeviceId requires an exact application-owned capability');
-        }
-        const supportedDevices = findSupportedSidechainDevices(target);
-        let targetDevice = supportedDevices.find((device) => device.id === args.targetDeviceId);
-        if (args.targetDeviceId === undefined && supportedDevices.length === 1) {
-            targetDevice = supportedDevices[0];
-        }
-        if (!targetDevice) {
-            return rejection(index, call.name, 'Expected one exact supported sidechain compressor on the target track');
-        }
-        const duplicate = (context.sidechainRoutes ?? []).some(
-            (route) => route.sourceTrackId === source.id && route.targetDeviceId === targetDevice.id
-        );
-        const closesCycle = wouldCreateRoutingCycle({
-            sourceId: source.id,
-            targetId: target.id,
-            tracks: context.tracks,
-            sidechainRoutes: context.sidechainRoutes ?? [],
-        });
-        if (duplicate || closesCycle) {
-            return rejection(index, call.name, 'Expected a new acyclic sidechain route');
-        }
-        return {
-            type: 'addSidechainRoute',
-            payload: {
-                sourceTrackId: source.id,
-                targetTrackId: target.id,
-                ...(args.targetDeviceId === undefined ? {} : { targetDeviceId: targetDevice.id }),
-            },
-        };
-    }
-
-    if (call.name === 'removeSidechainRoute') {
-        const source = findTrack(context, args.sourceTrackId);
-        const target = findTrack(context, args.targetTrackId);
-        if (
-            !hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
-            !isProviderRoutableSource(source) ||
-            !isProviderRoutableSource(target) ||
-            source.id === target.id
-        ) {
-            return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
-        }
-        const matches = findSidechainRoutes(context, source.id, target.id);
-        if (matches.length !== 1) {
-            return rejection(index, call.name, 'Expected exactly one existing sidechain route between the tracks');
-        }
-        return {
-            type: 'removeSidechainRoute',
-            payload: { sourceTrackId: source.id, targetTrackId: target.id },
-        };
     }
 
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
