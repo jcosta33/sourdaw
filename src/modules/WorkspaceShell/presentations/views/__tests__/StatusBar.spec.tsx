@@ -200,9 +200,13 @@ describe('StatusBar', () => {
                 });
 
                 expect(scheduledFrames).toHaveLength(1);
+                const scheduledFrame = scheduledFrames[0];
+                if (scheduledFrame === undefined) {
+                    throw new Error('Expected deferred footer restoration frame');
+                }
                 outsideFooter.focus();
                 act(() => {
-                    scheduledFrames[0](performance.now());
+                    scheduledFrame(performance.now());
                 });
 
                 expect(outsideFooter).toHaveFocus();
