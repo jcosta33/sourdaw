@@ -159,7 +159,7 @@ const expectedArtifactHashes = {
     'receipt.json': 'd37cb917278b00bee547f4c207be62b6f6167896f87641ad6a657a19b61bad66',
 } as const;
 
-function createArtifactFixture(json = artifactContents['crates/daw-dsp/benches/quantum-cost-table.json']) {
+function createArtifactFixture(json: string = artifactContents['crates/daw-dsp/benches/quantum-cost-table.json']) {
     const directory = createTemporaryDirectory('quantum-artifact');
     const runnerTemp = join(directory, 'runner-temp');
     mkdirSync(runnerTemp);
