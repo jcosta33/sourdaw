@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    type ProjectAudioStorageLockScope,
-    withProjectAudioStorageLock,
-} from '#/infra/storage/withProjectAudioStorageLock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import {
@@ -15,6 +11,10 @@ import {
 } from '../../stores/__tests__/fakeAudioBufferIndexedDb';
 import { installTestAudioBufferConstructor } from '../../stores/__tests__/preparedAudioBufferTestSupport';
 
+import type { ProjectAudioStorageLockScope } from '#/infra/storage/withProjectAudioStorageLock';
+
+let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
+let durableOwnershipProvider: ReturnType<typeof vi.fn<() => Promise<readonly string[]>>>;
 let garbageCollectCachedAudioBuffersBySize: typeof import('../garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let garbageCollectAudioBufferCacheBySize: typeof import('../../stores/audioBufferCache').garbageCollectAudioBufferCacheBySize;
 let setDurableAudioBufferOwnershipProvider: typeof import('../../stores/durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
@@ -28,15 +28,18 @@ beforeEach(async () => {
     installTestAudioBufferConstructor();
     controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
     [
+        { withProjectAudioStorageLock },
         { garbageCollectCachedAudioBuffersBySize },
         { garbageCollectAudioBufferCacheBySize },
         { setDurableAudioBufferOwnershipProvider },
     ] = await Promise.all([
+        import('#/infra/storage/withProjectAudioStorageLock'),
         import('../garbageCollectCachedAudioBuffersBySize'),
         import('../../stores/audioBufferCache'),
         import('../../stores/durableAudioBufferOwnership'),
     ]);
-    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+    durableOwnershipProvider = vi.fn(() => Promise.resolve([]));
+    setDurableAudioBufferOwnershipProvider(durableOwnershipProvider);
 });
 
 afterEach(() => {
@@ -85,8 +88,15 @@ describe('size-based cache collection lock ownership', () => {
         seedOrdinaryBuffer();
         let expiredScope: ProjectAudioStorageLockScope | undefined;
         await withProjectAudioStorageLock(async (scope) => {
+            await expect(garbageCollectAudioBufferCacheBySize(0, scope)).resolves.toBe(1);
+            expect(controls.committed.has('ordinary')).toBe(false);
+        });
+        await withProjectAudioStorageLock(async (scope) => {
             expiredScope = scope;
         });
+        controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+        seedOrdinaryBuffer();
+        durableOwnershipProvider.mockClear();
         if (!expiredScope) {
             throw new TypeError('Expected the owner to mint a storage scope');
         }
@@ -94,6 +104,7 @@ describe('size-based cache collection lock ownership', () => {
         await expect(garbageCollectAudioBufferCacheBySize(0, expiredScope)).rejects.toThrow(
             'Project audio storage lock scope is invalid or expired'
         );
+        expect(durableOwnershipProvider).not.toHaveBeenCalled();
         expect(controls.openRequestCount()).toBe(0);
         expect(controls.committed.has('ordinary')).toBe(true);
     });

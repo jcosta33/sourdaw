@@ -40,6 +40,7 @@ function storedRecord(channelData: Float32Array[], lastAccessed: number): Stored
     };
 }
 
+let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
@@ -48,6 +49,7 @@ async function importCache(): Promise<typeof import('../audioBufferCache').audio
         import('../durableAudioBufferOwnership'),
         import('../../useCases/garbageCollectCachedAudioBuffersBySize'),
     ]);
+    audioBufferCache = module.audioBufferCache;
     garbageCollectCachedAudioBuffersBySize = useCases.garbageCollectCachedAudioBuffersBySize;
     ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
