@@ -486,8 +486,8 @@ impl ProofChamberInstance {
         self.process_outputs(size)
     }
 
-    pub fn get_left_ptr(&self) -> *const f32 {
-        self.out_left.as_ptr()
+    pub fn get_left_ptr(&mut self) -> *mut f32 {
+        self.out_left.as_mut_ptr()
     }
 
     /// Number of non-finite output samples scrubbed to silence since
@@ -497,8 +497,8 @@ impl ProofChamberInstance {
         self.nan_flush_count as f64
     }
 
-    pub fn get_right_ptr(&self) -> *const f32 {
-        self.out_right.as_ptr()
+    pub fn get_right_ptr(&mut self) -> *mut f32 {
+        self.out_right.as_mut_ptr()
     }
 
     /// Report plugin latency in samples for PDC (delay compensation).

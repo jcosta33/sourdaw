@@ -7,20 +7,20 @@ fn write_inputs(instance: &mut ScoringInstance, left: &[f32], right: &[f32]) {
     // SAFETY: both pointers address the instance's fixed 1024-sample channel
     // arrays, and FRAMES is 128 for the lifetime of this exclusive borrow.
     unsafe {
-        std::slice::from_raw_parts_mut(instance.get_left_ptr() as *mut f32, FRAMES)
-            .copy_from_slice(left);
-        std::slice::from_raw_parts_mut(instance.get_right_ptr() as *mut f32, FRAMES)
-            .copy_from_slice(right);
+        std::slice::from_raw_parts_mut(instance.get_left_ptr(), FRAMES).copy_from_slice(left);
+        std::slice::from_raw_parts_mut(instance.get_right_ptr(), FRAMES).copy_from_slice(right);
     }
 }
 
-fn output(instance: &ScoringInstance) -> (&[f32], &[f32]) {
+fn output(instance: &mut ScoringInstance) -> (&[f32], &[f32]) {
+    let left_ptr = instance.get_left_ptr();
+    let right_ptr = instance.get_right_ptr();
     // SAFETY: both pointers address fixed instance-owned arrays, FRAMES is in
-    // bounds, and the returned slices cannot outlive the shared instance borrow.
+    // bounds, and the returned slices cannot outlive the exclusive instance borrow.
     unsafe {
         (
-            std::slice::from_raw_parts(instance.get_left_ptr(), FRAMES),
-            std::slice::from_raw_parts(instance.get_right_ptr(), FRAMES),
+            std::slice::from_raw_parts(left_ptr, FRAMES),
+            std::slice::from_raw_parts(right_ptr, FRAMES),
         )
     }
 }
@@ -48,8 +48,8 @@ fn native_slice_and_wasm_in_place_paths_match_output_and_telemetry() {
         write_inputs(&mut in_place, &left, &right);
         in_place.process_in_place(FRAMES as u32);
         assert_eq!(
-            output(&sliced),
-            output(&in_place),
+            output(&mut sliced),
+            output(&mut in_place),
             "output diverged at block {block}"
         );
     }
