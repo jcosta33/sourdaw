@@ -64,6 +64,12 @@ function createStorage() {
             localState = state;
             storage.storage.set(state);
         },
+        // Flushes ONLY this view's pending write. The module-wide
+        // flushAutomergeStorageWrites() would also commit every other peer
+        // storage's unflushed pending — against whichever port is configured.
+        flushPending: () => {
+            storage.flushPendingRackWrite();
+        },
     };
 }
 
@@ -307,6 +313,54 @@ describe('Yeast collaboration storage', () => {
             createProcessor('c'),
             createProcessor('a'),
             { ...createProcessor('b'), name: 'Remote renamed' },
+        ]);
+    });
+
+    it('keeps a newer remote field edit over an already rebased pending reorder', () => {
+        // Issue #3183: the first hydrate rebases the pending reorder [c, a, b]
+        // and absorbs the remote b.name B1 into the pending value, but the
+        // pending's base stayed at the original set() snapshot. The next
+        // hydrate then read base b = 'b' vs pending b = B1 as a LOCAL edit and
+        // replayed the stale B1 over the newer remote B2.
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+        const localPeer = createPeer(clone(baseline));
+        const remotePeer = createPeer(clone(baseline));
+        const localStorage = createStorage();
+        const remoteStorage = createStorage();
+
+        configureAutomergeStoragePort(remotePeer.port);
+        remoteStorage.hydrate();
+        remoteStorage.set(
+            createState([createProcessor('a'), { ...createProcessor('b'), name: 'B1' }, createProcessor('c')])
+        );
+        remoteStorage.flushPending();
+
+        configureAutomergeStoragePort(localPeer.port);
+        localStorage.hydrate();
+        localStorage.set(createState([createProcessor('c'), createProcessor('a'), createProcessor('b')]));
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        expect(localStorage.hydrate()).toBe(true);
+        expect(localStorage.get()?.processors).toEqual([
+            createProcessor('c'),
+            createProcessor('a'),
+            { ...createProcessor('b'), name: 'B1' },
+        ]);
+
+        configureAutomergeStoragePort(remotePeer.port);
+        remoteStorage.set(
+            createState([createProcessor('a'), { ...createProcessor('b'), name: 'B2' }, createProcessor('c')])
+        );
+        remoteStorage.flushPending();
+
+        configureAutomergeStoragePort(localPeer.port);
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        expect(localStorage.hydrate()).toBe(true);
+        expect(localStorage.get()?.processors).toEqual([
+            createProcessor('c'),
+            createProcessor('a'),
+            { ...createProcessor('b'), name: 'B2' },
         ]);
     });
 
