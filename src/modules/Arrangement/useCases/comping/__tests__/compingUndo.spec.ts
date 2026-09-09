@@ -9,7 +9,8 @@ import { removeCompRegion } from '../removeCompRegion';
 import { selectTake } from '../selectTake';
 import { setCompRegion } from '../setCompRegion';
 
-const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+    executeUserAppActionMock: vi.fn(),
     pushUndoEntryMock: vi.fn(),
     takeLaneStoreMock: {
         value: null as TakeLaneStoreState | null,
@@ -18,7 +19,7 @@ const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,
 }));
 
@@ -71,18 +72,22 @@ describe('comping undo entries', () => {
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Select take');
     });
 
-    it('setCompRegion skips undo when no lane matches the track', () => {
+    it('setCompRegion skips action dispatch when no lane matches the track', () => {
         takeLaneStoreMock.value = { lanes: [] };
         setCompRegion('missing', { startBeat: 0, endBeat: 4, takeId: 'x' });
-        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+        expect(executeUserAppActionMock).not.toHaveBeenCalled();
     });
 
-    it('setCompRegion pushes undo when region is applied', () => {
+    it('setCompRegion delegates valid undo ownership to Command', () => {
         const lane = createTakeLane('t1');
+        lane.takes = [{ id: 'x', clipId: 'clip-x', name: 'X', startBeat: 0, endBeat: 4, selected: true }];
         takeLaneStoreMock.value = { lanes: [lane] };
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'x' });
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Set comp region');
+        expect(executeUserAppActionMock).toHaveBeenCalledWith({
+            type: 'setCompRegion',
+            payload: { trackId: 't1', startBeat: 0, endBeat: 4, takeId: 'x' },
+        });
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('removeCompRegion skips undo when no matching region exists', () => {

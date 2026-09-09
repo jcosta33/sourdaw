@@ -74,3 +74,13 @@ success and with a same-ID replacement before the old attempt settles; neither a
 old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
+
+## Lesson from the comp-interval escape
+
+A comp selection over `[start, end)` edits only that musical interval. Removing every intersecting
+region also removes the left and right complements, while callback undo over a captured lane-store
+snapshot overwrites later edits in other lanes and outside the requested interval. Review the actual
+selected take at each beat: retain both complement fragments, and require guarded semantic undo and
+redo to apply interval surgery to current state while preserving unrelated lane metadata and
+same-lane selections outside the footprint. A source-count assertion does not prove that the
+resolved playback retains the selected source phase; verify source timing separately.
