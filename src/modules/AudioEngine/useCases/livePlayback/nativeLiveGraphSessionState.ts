@@ -158,8 +158,25 @@ export type NativeLiveGraphSession = {
      * would hand the guard back to the very session it exists to bound.
      */
     rearmClaimed: boolean;
-    /** The epoch names the play a claim belongs to; the stop bumps it so a claim taken before the stop can never start a session for the play after it. */
+    /**
+     * The epoch names the play a claim belongs to. The stop bumps it, so a
+     * claim taken before the stop can never start a session for the play after
+     * it; a start bumps it too, so a recovery in flight for an earlier session
+     * cannot re-arm or offer against the play that superseded it.
+     */
     rearmEpoch: number;
+    /**
+     * How many `startNativeLiveGraphSession` calls have been requested and have
+     * not settled yet.
+     *
+     * Counted from the call rather than from the moment its queued work runs,
+     * because that window is exactly what a retire has to see: a retire
+     * withholds its offer while any start is pending, since that start owns the
+     * session the offer would re-arm. The epoch cannot say this on its own — a
+     * start queued behind the retire has already bumped it, so the retire reads
+     * an epoch that no longer moves and an orphan the start has not reached yet.
+     */
+    startsPending: number;
     /**
      * The strips this session is sounding, as it last claimed them.
      *
@@ -194,6 +211,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     nativeChainByStripId: new Map(),
     rearmClaimed: false,
     rearmEpoch: 0,
+    startsPending: 0,
     carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };

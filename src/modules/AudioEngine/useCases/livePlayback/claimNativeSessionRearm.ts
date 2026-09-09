@@ -5,6 +5,10 @@
  * and `null` to every caller after that, so a headset that keeps re-dying on
  * the rebuilt stream cannot cycle the renderer through an unbounded chain of
  * restarts. Cleared only by `stopNativeLiveGraphSession`.
+ *
+ * The epoch the claim carries is what bounds it to one play: the stop bumps it,
+ * and so does every `startNativeLiveGraphSession`, so a claim taken before
+ * either no longer holds ({@link nativeSessionRearmClaimHolds}).
  */
 
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
