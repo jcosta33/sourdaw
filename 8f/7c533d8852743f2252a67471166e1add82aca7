@@ -1,0 +1,27 @@
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_06adf2b091dc62::t_c0c5210e5cb18b 8
+  s_06adf2b091dc62::t_2f874dd4d552b0 25-28
+  s_06adf2b091dc62::t_eb5c3863b42975 218-262
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_06adf2b091dc62::t_dece9651be34bc 302,307
+  s_06adf2b091dc62::t_4f5ed2ae0c6c5b 340,349,358
+  s_06adf2b091dc62::t_796367cc8bf212 432,436
+  s_06adf2b091dc62::t_cb9a3342ceca1a 75
+  s_06adf2b091dc62::t_576d1a18e9b108 119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8f7c533d8852743f2252a67471166e1add82aca7",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
