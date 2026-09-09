@@ -85,3 +85,15 @@ Treat transaction lifecycle as one owner-wide authority. Use an atomic test port
 synchronously invokes a listener: both supplied and captured scopes must refuse before entering their callbacks while
 A commits, and document B, its cache, and the pending-write count must remain unchanged after a later flush. Also enter
 a scope before calling commit or abort, then attempt both `set` and `clear`; neither may mutate cache or durable truth.
+
+## Lesson from the PR #576 storage-terminal escape
+
+PR #576 (`ecd24df665`) settled a deferred write by copying its pending value into the cache after publication. A
+publication listener could hydrate newer document truth, and a nested public flush could execute the same pending a
+second time, yet the outer terminal still installed the older value or replayed it over the listener's change.
+
+Treat one flush as a claimed immutable execution and treat the current document as terminal authority. From a real
+publish-then-notify port, re-enter hydrate with and without a nested public flush; require one original-owner mutation
+and identical raw, cache, and fresh-decoder results. Also reset projection during preparation and terminal projection,
+and throw from trailing document reads and validators after one document publishes. The old identity must stay inert,
+claims must release, and the error must retain committed classification without replay.

@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore } from '../createStore';
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '../storage/createAutomergeStorage';
 import { createMemoryStorage } from '../storage/createMemoryStorage';
 
@@ -273,5 +275,219 @@ describe('createStore sanitization against a shared document', () => {
         expect(store.value).toEqual({ punchInBeat: 0, punchOutBeat: 1 });
         // The armed write must not carry the combination the sanitizer refused.
         expect(doc.punch).toEqual({ punchOutBeat: 1 });
+    });
+
+    it('does not let constructor sanitization of a visible successor replace a committed clear baseline', () => {
+        type CountState = { count: number };
+        const doc: TestDoc = { state: { count: 7 } };
+        let afterPublication: (() => void) | undefined;
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const candidate = structuredClone(doc);
+                changeFn(candidate);
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+                const listener = afterPublication;
+                afterPublication = undefined;
+                listener?.();
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        let successor: ReturnType<typeof runWithAutomergeStorageTransaction> | undefined;
+        let store: ReturnType<typeof createStore<CountState>> | undefined;
+        const clearing = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.clear();
+        });
+        afterPublication = () => {
+            successor = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ count: 1 });
+            });
+            store = createStore({
+                storage,
+                sanitize: (value) => (value === null ? null : { count: value.count }),
+            });
+        };
+
+        clearing.commit();
+
+        expect(store?.value).toEqual({ count: 1 });
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
+        successor?.abort();
+        expect(store?.value).toBeNull();
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('preserves a fully settled clear beneath a sanitized optimistic successor', () => {
+        type CountState = { count: number };
+        const { doc, port } = createTestPort({ state: { count: 7 } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<CountState>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const clearing = runWithAutomergeStorageTransaction(undefined, () => storage.clear());
+        clearing.commit();
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(storage.get()).toBeNull();
+
+        const successor = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        const store = createStore({
+            storage,
+            sanitize: (value) => (value === null ? null : { count: value.count }),
+        });
+
+        successor.abort();
+
+        expect(store.value).toBeNull();
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('guards hydrated authority independently from a visible pending write', () => {
+        const { doc, port } = createTestPort({ lanes: { lanes: [{ id: 'lane-1', value: 7 }] } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<LaneState>('root', 'lanes');
+        const store = createStore({ storage, sanitize: sanitizeAsOlderBuild });
+        const successor = runWithAutomergeStorageTransaction(undefined, () => {
+            store.set({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+        });
+
+        store.hydrate();
+        successor.abort();
+
+        expect(store.value).toEqual({ lanes: [] });
+        expect(doc.lanes).toEqual({ lanes: [{ id: 'lane-1', value: 7 }] });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('guards a retained decoded baseline when a store registers after hydration', () => {
+        const { doc, port } = createTestPort({ lanes: { lanes: [{ id: 'lane-1', value: 7 }] } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<LaneState>('root', 'lanes');
+        expect(storage.hydrate?.()).toBe(true);
+        const successor = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+        });
+
+        const store = createStore({ storage, sanitize: sanitizeAsOlderBuild });
+        successor.abort();
+
+        expect(store.value).toEqual({ lanes: [] });
+        expect(doc.lanes).toEqual({ lanes: [{ id: 'lane-1', value: 7 }] });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('guards a partial-wire hydrated baseline before an optimistic punch edit aborts', () => {
+        type PunchState = { punchInBeat: number; punchOutBeat: number };
+        const { doc, port } = createTestPort({ punch: { punchOutBeat: 5 } });
+        configureAutomergeStoragePort(port);
+        const sanitizePunch = (value: unknown): PunchState => {
+            const record = value as Partial<PunchState> | null;
+            const punchInBeat = typeof record?.punchInBeat === 'number' ? record.punchInBeat : 0;
+            const punchOutBeat = typeof record?.punchOutBeat === 'number' ? record.punchOutBeat : 1;
+            return punchOutBeat > punchInBeat ? { punchInBeat, punchOutBeat } : { punchInBeat: 0, punchOutBeat: 1 };
+        };
+        const storage = createAutomergeStorage<PunchState>('root', 'punch', {
+            toCrdt: ({ punchOutBeat }) => ({ punchOutBeat }),
+        });
+        const store = createStore({ storage, sanitize: sanitizePunch });
+        const successor = runWithAutomergeStorageTransaction(undefined, () => {
+            store.set({ punchInBeat: 8, punchOutBeat: 10 });
+        });
+
+        store.hydrate();
+        successor.abort();
+
+        expect(store.value).toEqual({ punchInBeat: 0, punchOutBeat: 1 });
+        expect(doc.punch).toEqual({ punchOutBeat: 5 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('guards a missing default before it becomes the baseline beneath an optimistic successor', () => {
+        type CountState = { count: number };
+        const { doc, port, bumpHeads } = createTestPort({ state: { count: 7 } });
+        configureAutomergeStoragePort(port);
+        const error = vi.fn();
+        const storage = createAutomergeStorage<CountState>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const store = createStore({
+            storage,
+            initialData: { count: 9 },
+            logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error, setWriters: vi.fn() },
+            sanitize: (value) => {
+                if (value?.count === 0) {
+                    throw new Error('default rejected');
+                }
+                return value;
+            },
+        });
+        const successor = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+        delete doc.state;
+        bumpHeads();
+
+        store.hydrate();
+        successor.abort();
+
+        expect(store.value).toEqual({ count: 9 });
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'Store sanitization failed' }));
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('uses the configured fallback when an intervening publication cannot be sanitized', () => {
+        type CountState = { count: number };
+        const doc: TestDoc = { state: { count: 0 } };
+        let publishInterveningValue = false;
+        let mutationCount = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutationCount += 1;
+                if (publishInterveningValue) {
+                    publishInterveningValue = false;
+                    doc.state = { count: 2 };
+                }
+            },
+        });
+        const storage = createAutomergeStorage<CountState>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const error = vi.fn();
+        const store = createStore({
+            storage,
+            initialData: { count: 9 },
+            logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error, setWriters: vi.fn() },
+            sanitize: (value) => {
+                if (value?.count === 2) {
+                    throw new Error('intervening value rejected');
+                }
+                return value;
+            },
+        });
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
+        publishInterveningValue = true;
+
+        transaction.commit();
+
+        expect(store.value).toEqual({ count: 9 });
+        expect(doc.state).toEqual({ count: 2 });
+        expect(mutationCount).toBe(1);
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'Store sanitization failed' }));
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
 });

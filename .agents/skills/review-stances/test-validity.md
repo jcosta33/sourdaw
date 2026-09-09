@@ -184,3 +184,14 @@ modules the diff never named. Nothing in the changed lines points at them.
 Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
 reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
 dispatch carries the same command whenever the change adds a barrel export or a barrel import.
+
+### 2026-09-09 — storage tests observed one terminal but not reentrant execution (escaped via PR #576)
+
+The adapter tests exercised an ordinary pending write and its final cache value. They never invoked a synchronous
+publication listener that called the public flush again, never changed a later selected write during an earlier
+preparation callback, and never compared terminal cache against a fresh decode of the actual published document.
+
+Probe that would have caught it: use an atomic publish-then-notify port and assert mutation owner/count, raw document,
+adapter cache, fresh decoder, pending count, and later flush. Delete the whole-snapshot claims, restore terminal pending
+copying, capture a later write only when its preparation starts, remove callback identity checks, and remove the
+post-publication error catch one at a time; each owning case must fail on behavior rather than error wording.

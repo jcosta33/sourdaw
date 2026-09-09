@@ -124,9 +124,15 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      * older build cannot erase a newer schema. Other local storage repairs the
      * backing value because there is no peer or future-schema owner to lose.
      */
-    const sanitizeStorageValue = (value: TData | null): boolean => {
+    const projectStorageValue = ({
+        value,
+        purpose,
+    }: {
+        value: TData | null;
+        purpose: 'baseline' | 'visible';
+    }): TData | null => {
         if (!sanitize) {
-            return false;
+            return value;
         }
 
         let sanitized: TData | null;
@@ -139,6 +145,20 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
             sanitized = options.initialData ?? null;
         }
 
+        const setProjected = storage.setProjected;
+        const shouldProject = storage.shouldProjectSanitizedSource?.(value) ?? true;
+        if (!Object.is(sanitized, value) && purpose === 'visible' && setProjected && shouldProject) {
+            if (logger) {
+                logger.warn(
+                    'Store content this build cannot read was quarantined: withheld from readers, left intact in shared storage.'
+                );
+            }
+        }
+        return sanitized;
+    };
+
+    const sanitizeStorageValue = (value: TData | null): boolean => {
+        const sanitized = projectStorageValue({ value, purpose: 'visible' });
         if (Object.is(sanitized, value)) {
             return false;
         }
@@ -146,11 +166,6 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         const setProjected = storage.setProjected;
         const shouldProject = storage.shouldProjectSanitizedSource?.(value) ?? true;
         if (setProjected && shouldProject) {
-            if (logger) {
-                logger.warn(
-                    'Store content this build cannot read was quarantined: withheld from readers, left intact in shared storage.'
-                );
-            }
             setProjected.call(storage, sanitized);
             return true;
         }
@@ -158,6 +173,12 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         writeDurableValue(sanitized);
         return true;
     };
+
+    let storageGuardsInboundValues = false;
+    if (sanitize && storage.registerInboundProjector) {
+        storage.registerInboundProjector(projectStorageValue);
+        storageGuardsInboundValues = true;
+    }
 
     // Seed initial data if the storage is empty
     const storedValue = storage.get();
@@ -253,7 +274,9 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
                     return;
                 }
                 if (changed) {
-                    sanitizeStorageValue(storage.get());
+                    if (!storageGuardsInboundValues) {
+                        sanitizeStorageValue(storage.get());
+                    }
                     queueStoreNotification(notify);
                 }
             }
