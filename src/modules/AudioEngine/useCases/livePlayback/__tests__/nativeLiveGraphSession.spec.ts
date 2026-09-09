@@ -57,9 +57,8 @@ const mocks = vi.hoisted(() => ({
      * included — not an echo of the request, but derived from it here because
      * this double has no floor a short region could fall under.
      */
-    setEngineTransportMaps: vi.fn((maps: unknown): Promise<SetEngineTransportMapsResult> => {
-        mocks.contextSeconds += mocks.mapsInstallSeconds;
-        return Promise.resolve({
+    setEngineTransportMaps: vi.fn((maps: unknown): Promise<SetEngineTransportMapsResult> =>
+        Promise.resolve({
             outcome: 'applied',
             applied: {
                 sampleRate: 48_000,
@@ -68,23 +67,8 @@ const mocks = vi.hoisted(() => ({
                 loopEnabled: (maps as EngineTransportMaps).loopRegion?.enabled === true,
                 admittedBatch: 1,
             },
-        });
-    }),
-    /**
-     * What the maps install costs on the context clock. Zero by default, so a
-     * case that says nothing about timing sees a start that took no measurable
-     * time; a case about the projection buys the round trip a real bridge
-     * charges for.
-     */
-    mapsInstallSeconds: 0,
-    /**
-     * What the audio context's clock reads. A start moves it forward the way a
-     * real one does — the maps install below advances it — because the roll is
-     * aimed at where Web Audio has reached by the time it is sent, and a clock
-     * frozen at the anchor would make every roll read as a start that cost
-     * nothing.
-     */
-    contextSeconds: 0,
+        })
+    ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
     startLivenessWatch: vi.fn(),
@@ -146,12 +130,6 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 }));
 vi.mock('../../../repositories/engineTransport/setEngineTransportMaps', () => ({
     setEngineTransportMaps: (maps: unknown) => mocks.setEngineTransportMaps(maps),
-}));
-// The rate is spelled out rather than read from `SAMPLE_RATE`: this factory
-// runs while the mocked module is first imported, which is before any const in
-// this file's body has been initialised.
-vi.mock('../../engineAccess/getAudioContext', () => ({
-    getAudioContext: () => ({ currentTime: mocks.contextSeconds, sampleRate: 48_000 }),
 }));
 vi.mock('../startNativeEnginePlayheadFeed', () => ({
     startNativeEnginePlayheadFeed: () => mocks.startPlayheadFeed(),
@@ -312,15 +290,6 @@ const FLAT_MAPS = {
 const LOOPED_MAPS = {
     ...FLAT_MAPS,
     loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
-};
-
-/**
- * A region short enough that a start's own wait crosses its end, which is what
- * makes the roll's wrap observable.
- */
-const LOOPED_MAPS_ONE_SECOND = {
-    ...FLAT_MAPS,
-    loopRegion: { enabled: true, startSeconds: 2, endSeconds: 3 },
 };
 
 /** The feed's snapshot of a rolling engine, as a re-arm reads it. */
@@ -534,8 +503,6 @@ beforeEach(() => {
     mocks.applyGraphCommands.mockReset();
     mocks.applyGraphCommands.mockResolvedValue(APPLIED);
     mocks.setEngineTransportMaps.mockClear();
-    mocks.contextSeconds = 0;
-    mocks.mapsInstallSeconds = 0;
     mocks.startPlayheadFeed.mockClear();
     mocks.stopPlayheadFeed.mockClear();
     mocks.startLivenessWatch.mockClear();
@@ -622,7 +589,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -643,7 +609,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -667,7 +632,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -678,7 +642,6 @@ describe('startNativeLiveGraphSession', () => {
     it('corrects nothing when the start attached no instances', async () => {
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -708,7 +671,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -757,7 +719,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -782,7 +743,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -807,7 +767,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -850,7 +809,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -893,7 +851,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -921,7 +878,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -939,7 +895,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -971,12 +926,7 @@ describe('startNativeLiveGraphSession', () => {
         };
         nativeLiveGraphSession.orphanedBackend = orphan;
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(orphan.dispose).toHaveBeenCalledTimes(1);
         expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
@@ -1018,7 +968,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1035,12 +984,7 @@ describe('startNativeLiveGraphSession', () => {
     });
 
     it('installs the loop region before the engine is ever allowed to roll', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 2.5, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // The engine renders for the whole of the maps round trip. Were it
         // rolling for that stretch, a play started near the loop end would
@@ -1065,79 +1009,6 @@ describe('startNativeLiveGraphSession', () => {
         expect(mapsInstalled).toBeLessThan(mocks.applyGraphCommands.mock.invocationCallOrder[1]!);
     });
 
-    it('rolls at the position Web Audio reached while the session was starting', async () => {
-        // The measured defect (#3577): the engine rolled 75–88 ms after the
-        // Play click, at the gesture position, so the native transport stood
-        // that far behind Web Audio and both the audio and the cursor jumped
-        // back when the session took the carried strips over.
-        mocks.contextSeconds = 10;
-        mocks.mapsInstallSeconds = 0.08;
-
-        await startNativeLiveGraphSession({
-            positionSeconds: 2.5,
-            anchoredAtContextSeconds: 10,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
-
-        const [topology, roll] = appliedBatches();
-        // The park is still the gesture position: the topology batch is sent
-        // before the wait it is being carried across has happened.
-        expect(topology?.commands).toContainEqual({ kind: 'set-transport', playing: false, positionSeconds: 2.5 });
-        // And the roll locates, because the projection moved it. An absent
-        // `locate` is how the wire says so — only the withheld locate travels
-        // — so a `locate: false` appearing here would be the roll refusing to
-        // seek onto the position it just named.
-        expect(roll?.commands).toEqual([
-            { kind: 'set-transport', playing: true, positionSeconds: expect.closeTo(2.58, 9) },
-        ]);
-        // The pass enters where the engine actually rolled, not where the
-        // gesture asked.
-        expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.58, 9);
-    });
-
-    it('wraps the roll position inside the loop region the maps installed', async () => {
-        // Web Audio wrapped at the seam during the start, so an engine rolled
-        // past the loop end would be a whole loop away from what is sounding.
-        mocks.contextSeconds = 10;
-        mocks.mapsInstallSeconds = 0.08;
-
-        await startNativeLiveGraphSession({
-            positionSeconds: 2.95,
-            anchoredAtContextSeconds: 10,
-            transportMaps: LOOPED_MAPS_ONE_SECOND,
-            sampleRate: SAMPLE_RATE,
-        });
-
-        const roll = appliedBatches()[1];
-        expect(roll?.commands).toEqual([
-            { kind: 'set-transport', playing: true, positionSeconds: expect.closeTo(2.03, 9) },
-        ]);
-    });
-
-    it('parks a roll it could not read at the rolled position, not at the gesture', async () => {
-        // The park exists to undo the roll, so it has to name the position the
-        // roll actually carried: parking at the gesture would leave the engine
-        // reporting a playhead the command never sent it to.
-        mocks.contextSeconds = 10;
-        mocks.mapsInstallSeconds = 0.08;
-        mocks.applyGraphCommands
-            .mockResolvedValueOnce(APPLIED)
-            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: Number.NaN });
-
-        await startNativeLiveGraphSession({
-            positionSeconds: 2.5,
-            anchoredAtContextSeconds: 10,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
-
-        expect(appliedBatches()[2]?.commands).toEqual([
-            { kind: 'set-transport', playing: false, positionSeconds: expect.closeTo(2.58, 9), locate: false },
-        ]);
-        expect(nativeLiveGraphSession.rolling).toBe(false);
-    });
-
     it('opens the automation pass once the engine is rolling, stamped with the roll’s own fence', async () => {
         // Topology, then the roll: the second batch carries the fence the
         // pass's snapshots are dated against, and the maps install's fence
@@ -1146,7 +1017,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1171,7 +1041,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1184,12 +1053,7 @@ describe('startNativeLiveGraphSession', () => {
     });
 
     it('installs the transport maps outside the topology batch, and only once it is applied', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // Tempo and meter have a different producer from the live topology, so
         // they travel as their own command. A batch carrying them would make
@@ -1209,7 +1073,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1254,7 +1117,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1284,7 +1146,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 2.5,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1313,12 +1174,7 @@ describe('startNativeLiveGraphSession', () => {
         mocks.setEngineTransportMaps.mockRejectedValueOnce(bridgeFailure);
 
         await expect(
-            startNativeLiveGraphSession({
-                positionSeconds: 0,
-                anchoredAtContextSeconds: 0,
-                transportMaps: FLAT_MAPS,
-                sampleRate: SAMPLE_RATE,
-            })
+            startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE })
         ).rejects.toBe(bridgeFailure);
 
         expect(mocks.carriedClaims).toEqual([
@@ -1332,24 +1188,14 @@ describe('startNativeLiveGraphSession', () => {
     it('does not install maps or open the playhead feed for a session that never started', async () => {
         mocks.availability = { available: false, reason: 'no desktop bridge (browser runtime)', runtime: 'browser' };
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
         expect(mocks.startPlayheadFeed).not.toHaveBeenCalled();
     });
 
     it('opens the monitor by default, and says so on the wire', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // The session is the carrier for every strip it can host (#3564), and a
         // shadowed engine writes true zeros at the device however full its
@@ -1365,12 +1211,7 @@ describe('startNativeLiveGraphSession', () => {
     it('opens at the level the master fader is standing at', async () => {
         masterGainState.gain = 0.35;
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // In the opening group, ahead of every strip it governs, so the first
         // block this session renders is already at the fader's level.
@@ -1380,7 +1221,6 @@ describe('startNativeLiveGraphSession', () => {
     it('shadows the monitor only when the caller asks for a silent mirror', async () => {
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'shadowed',
@@ -1402,12 +1242,7 @@ describe('startNativeLiveGraphSession', () => {
             { kind: 'set-transport', playing: false, positionSeconds: 0 },
         ];
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.wireCalls).toEqual(['register:sample-1', 'apply', 'apply']);
     });
@@ -1420,31 +1255,16 @@ describe('startNativeLiveGraphSession', () => {
             },
             { kind: 'set-transport', playing: false, positionSeconds: 0 },
         ];
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.wireCalls = [];
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.wireCalls.filter((call) => call.startsWith('register:'))).toEqual([]);
     });
 
     it('is not the audible carrier while nothing is scheduled', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // The project holds one bare track with no clip and no plugin, so the
         // live topology carries no strip natively and this engine has nothing
@@ -1457,7 +1277,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'shadowed',
@@ -1474,7 +1293,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'audible',
@@ -1491,7 +1309,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'audible',
@@ -1510,12 +1327,7 @@ describe('startNativeLiveGraphSession', () => {
         // native engine is already sounding them, which is a doubled mix.
         mocks.programmeOverride = PLAYING_PROGRAMME;
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.carriedClaims[0]).toEqual({ ids: ['audio-1'], appliesBefore: 0 });
     });
@@ -1528,12 +1340,7 @@ describe('startNativeLiveGraphSession', () => {
         // longer exists and the parameter stops following its lane.
         mocks.programmeOverride = PLAYING_PROGRAMME;
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect([...nativeLiveGraphSession.carriedStripIds]).toEqual(['audio-1']);
 
@@ -1554,12 +1361,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // The optimistic claim and the restatement behind it, both empty.
         expect(mocks.carriedClaims.map((claim) => claim.ids)).toEqual([[], []]);
@@ -1570,7 +1372,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'shadowed',
@@ -1596,12 +1397,7 @@ describe('startNativeLiveGraphSession', () => {
             .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
             .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2 });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.carriedClaims).toEqual([
             { ids: [], appliesBefore: 0 },
@@ -1623,12 +1419,7 @@ describe('startNativeLiveGraphSession', () => {
             reports: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // A gate left shut for an engine that never sounded anything is a track
         // that plays on neither carrier, and silence is the one outcome no
@@ -1663,12 +1454,7 @@ describe('startNativeLiveGraphSession', () => {
                 reports: [],
             });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // The release is the second claim, made after both batches — the
         // optimistic one alone would leave this path with nothing to reopen.
@@ -1688,18 +1474,8 @@ describe('startNativeLiveGraphSession', () => {
             reason: 'engine-not-running: no default output device',
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // A desktop engine that cannot start fails the same way on every play,
         // and a musician who pressed play twice does not need telling twice.
@@ -1709,12 +1485,7 @@ describe('startNativeLiveGraphSession', () => {
     it('says nothing at all in a browser build, where there is no engine to miss', async () => {
         mocks.availability = { available: false, reason: 'no desktop bridge (browser runtime)', runtime: 'browser' };
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
@@ -1731,12 +1502,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Plugins silent until the native engine can host their tracks:\n' +
@@ -1753,18 +1519,8 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
@@ -1778,7 +1534,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1799,7 +1554,6 @@ describe('startNativeLiveGraphSession', () => {
 
         const result = await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -1820,12 +1574,7 @@ describe('startNativeLiveGraphSession', () => {
             });
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(appliedBatches()[0]?.commands.filter((command) => command.kind === 'create-track-strip')).toHaveLength(
             2
@@ -1854,12 +1603,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
     });
@@ -1887,12 +1631,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(scheduledMidiTargets()).toEqual([]);
     });
@@ -1923,7 +1662,6 @@ describe('startNativeLiveGraphSession', () => {
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
             monitor: 'shadowed',
@@ -1938,12 +1676,7 @@ describe('startNativeLiveGraphSession', () => {
     // #3635: a stall is a fact about the engine whether this session is
     // parked or rolling, so the watch starts on every session the same way.
     it('starts the liveness watch on a started session, with no notice shown yet', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.startLivenessWatch).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -1959,12 +1692,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
     });
 
     it('installs the edited region on a rolling session without touching its topology or its transport', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.setEngineTransportMaps.mockClear();
         const batchesBefore = appliedBatches().length;
 
@@ -1979,12 +1707,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
     });
 
     it('re-arms the pass from where the engine stands when the install changes the region', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         const epochAtStart = nativeLiveAutomationWriter.epoch;
         expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBe(0);
 
@@ -2018,12 +1741,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
 
     it('replaces the stale pair on a session parked by declined maps, and still does not roll it', async () => {
         mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         const batchesBefore = appliedBatches().length;
 
         const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
@@ -2038,12 +1756,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
     });
 
     it('keeps the session when the engine refuses the maps', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.setEngineTransportMaps.mockResolvedValueOnce({
             outcome: 'declined',
             reason: 'no native engine is running',
@@ -2068,7 +1781,6 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
 
         const start = startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -2084,12 +1796,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
     });
 
     it('leaves a burst of loop edits settled on the region issued last, not the one that resolved last', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // Dragging a loop brace commits a region per gesture, and the engine
         // keeps whichever pair reached it *last*. Round trips that resolve out
@@ -2161,12 +1868,7 @@ describe('stopNativeLiveGraphSession', () => {
 
     it('reopens the gates before the park command rather than behind its round trip', async () => {
         mocks.programmeOverride = PLAYING_PROGRAMME;
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         const appliesAtStop = mocks.applyGraphCommands.mock.calls.length;
         mocks.carriedClaims = [];
 
@@ -2178,12 +1880,7 @@ describe('stopNativeLiveGraphSession', () => {
     });
 
     it('tells a started engine that playback stopped, and where the playhead came to rest', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
 
@@ -2202,12 +1899,7 @@ describe('stopNativeLiveGraphSession', () => {
     // correction dropped here leaves the device reporting a plugin that
     // processes no audio while the engine has been rendering it all along.
     it('forwards the instances the stop’s batch took over', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.markExternalPluginEngineAttached.mockClear();
         mocks.applyGraphCommands.mockResolvedValueOnce({
             ...APPLIED,
@@ -2220,12 +1912,7 @@ describe('stopNativeLiveGraphSession', () => {
     });
 
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -2246,12 +1933,7 @@ describe('stopNativeLiveGraphSession', () => {
     // exception to keeping the session — the graph a kept handle would
     // strand is one nothing renders any more, so dropping it strands nothing.
     it('abandons the session when the stop is refused because the engine stopped rendering', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -2284,12 +1966,7 @@ describe('stopNativeLiveGraphSession', () => {
     });
 
     it('keeps the session on an ordinary standing refusal, and shows no abandon notice', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -2317,7 +1994,6 @@ describe('stopNativeLiveGraphSession', () => {
 
         const start = startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -2348,12 +2024,7 @@ describe('repositionNativeLiveGraphSession', () => {
     });
 
     it('locates a rolling engine with the transport alone, re-sending neither topology nor maps', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.setEngineTransportMaps.mockClear();
 
         const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
@@ -2375,12 +2046,7 @@ describe('repositionNativeLiveGraphSession', () => {
     // for the seek to invalidate, so a locate leaves the master level exactly
     // where it stands and a restate here would carry no work.
     it('leaves the master level alone, because a locate cannot reach the fader', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         masterGainState.gain = 0.6;
 
         await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
@@ -2395,12 +2061,7 @@ describe('repositionNativeLiveGraphSession', () => {
     // the session was already rolling is taken by whatever batch comes next,
     // and a locate is a batch.
     it('forwards the instances a locate’s batch took over', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.markExternalPluginEngineAttached.mockClear();
         mocks.applyGraphCommands.mockResolvedValueOnce({
             ...APPLIED,
@@ -2414,12 +2075,7 @@ describe('repositionNativeLiveGraphSession', () => {
 
     it('refuses to roll an engine the session parked because its maps were declined', async () => {
         mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         const batchesBefore = appliedBatches().length;
 
         const result = await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
@@ -2432,12 +2088,7 @@ describe('repositionNativeLiveGraphSession', () => {
     });
 
     it('sends nothing to an engine a stop already parked', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         await stopNativeLiveGraphSession({ positionSeconds: 8 });
         const batchesBefore = appliedBatches().length;
 
@@ -2448,12 +2099,7 @@ describe('repositionNativeLiveGraphSession', () => {
     });
 
     it('keeps the session when the engine refuses the locate', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -2477,7 +2123,6 @@ describe('repositionNativeLiveGraphSession', () => {
 
         const start = startNativeLiveGraphSession({
             positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
             transportMaps: FLAT_MAPS,
             sampleRate: SAMPLE_RATE,
         });
@@ -2498,12 +2143,7 @@ describe('repositionNativeLiveGraphSession', () => {
     });
 
     it('leaves a burst of locates settled where the gesture ended, not where the round trips resolved', async () => {
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         // A drag-scrub emits one seek per pointer frame, and the engine keeps
         // whichever locate reached it *last*. Round trips that resolve out of
@@ -2557,12 +2197,7 @@ describe('repositionNativeLiveGraphSession', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockClear();
 
         await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
@@ -2587,12 +2222,7 @@ describe('the chain record a rolling mirror addresses', () => {
             ],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([
             ['audio-1', ['device-built']],
@@ -2610,23 +2240,13 @@ describe('the chain record a rolling mirror addresses', () => {
             ...APPLIED,
             reports: [{ kind: 'track', id: 'gone-next-time', deviceIds: ['device-a'] }],
         });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             ...APPLIED,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: [] }],
         });
 
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(nativeLiveGraphSession.nativeChainByStripId.has('gone-next-time')).toBe(false);
         expect(nativeLiveGraphSession.nativeChainByStripId.has('audio-1')).toBe(true);
@@ -2645,12 +2265,7 @@ describe('the chain record a rolling mirror addresses', () => {
         mocks.setEngineTransportMaps.mockImplementationOnce(() => Promise.reject(new Error('bridge dropped')));
 
         await expect(
-            startNativeLiveGraphSession({
-                positionSeconds: 0,
-                anchoredAtContextSeconds: 0,
-                transportMaps: FLAT_MAPS,
-                sampleRate: SAMPLE_RATE,
-            })
+            startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE })
         ).rejects.toThrow('bridge dropped');
 
         expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([]);
@@ -2662,12 +2277,7 @@ describe('the chain record a rolling mirror addresses', () => {
             ...APPLIED,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
         });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         await stopNativeLiveGraphSession({ positionSeconds: 3 });
 
@@ -2684,12 +2294,7 @@ describe('the chain record a rolling mirror addresses', () => {
             ...APPLIED,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
         });
-        await startNativeLiveGraphSession({
-            positionSeconds: 0,
-            anchoredAtContextSeconds: 0,
-            transportMaps: FLAT_MAPS,
-            sampleRate: SAMPLE_RATE,
-        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
             acceptance: 'rejected',
             application: 'not-applied',

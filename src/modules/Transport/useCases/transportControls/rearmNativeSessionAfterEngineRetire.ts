@@ -62,7 +62,9 @@ async function rearmNativeSession(claim: number): Promise<void> {
         logger.info('The play that lost its engine ended while the native session reloaded; the re-arm stays down.');
         return;
     }
-    startNativeSessionAtBeat(playheadPositionRef.current, state.tempo);
+    // Nothing waits on a re-arm: the transport is already rolling, and this
+    // session joins it wherever it has got to rather than deciding its start.
+    void startNativeSessionAtBeat(playheadPositionRef.current, state.tempo);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getPrecedingBars } from '../../models/TimeSignatureMap';
@@ -8,9 +8,11 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
+import { startSchedulerWhenNativeSessionSettles } from './startSchedulerWhenNativeSessionSettles';
 
 export function startPlayback(): void {
     const state = getTransportState();
@@ -56,9 +58,18 @@ export function startPlayback(): void {
         startPosition = Math.max(0, preRollBars[0]!.startBeat);
     }
 
-    startNativeSessionAtBeat(startPosition, state.tempo);
-
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
-    startPlayheadScheduler();
+
+    if (!nativeLiveGraphSessionOffered()) {
+        startPlayheadScheduler();
+        return;
+    }
+
+    // Read before the session is asked for, so it names the generation this
+    // play is about to open rather than one a stop inside the hold has since
+    // replaced.
+    const generation = schedulerSession.generation;
+    const session = startNativeSessionAtBeat(startPosition, state.tempo);
+    void startSchedulerWhenNativeSessionSettles(session, generation);
 }

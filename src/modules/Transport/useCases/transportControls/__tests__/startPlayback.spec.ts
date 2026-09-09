@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resumeEngine, startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import {
+    nativeLiveGraphSessionOffered,
+    resumeEngine,
+    startNativeLiveGraphSession,
+} from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -8,6 +12,9 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
+// Real, not mocked: `generation` is the identity the hold compares, so bumping
+// the live holder is the only way to test the relation it actually reads.
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
 
@@ -25,11 +32,11 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
+    nativeLiveGraphSessionOffered: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
-    // The rate the native session is told to place its programme on, and the
-    // clock reading its start position is anchored against. A live context is
-    // not needed for either.
-    getAudioContext: (): { sampleRate: number; currentTime: number } => ({ sampleRate: 48_000, currentTime: 7.25 }),
+    // The rate the native session is told to place its programme on. A device
+    // rate is all `startPlayback` reads, so a live context is not needed here.
+    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -58,6 +65,10 @@ describe('startPlayback', () => {
             outcome: 'declined',
             reason: 'no desktop bridge (browser runtime)',
         });
+        vi.mocked(nativeLiveGraphSessionOffered).mockReset();
+        // A browser build is the default runtime here, so the cases that say
+        // nothing about the native engine take the unheld path they always had.
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
         vi.mocked(notifyUser).mockClear();
         vi.mocked(startPlayheadScheduler).mockClear();
         vi.mocked(ensureTrackStrips).mockClear();
@@ -194,6 +205,7 @@ describe('startPlayback', () => {
         // 4/4 at 120 BPM, so the 2-bar pre-roll opens at beat 4 — two seconds in.
         // Sending the raw playhead would start the native engine four seconds
         // ahead of the Web Audio transport it is meant to shadow.
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -204,15 +216,17 @@ describe('startPlayback', () => {
 
         startPlayback();
 
-        // The context clock is read with that position, not later: the session
-        // carries the pair forward so its own start-up wait can be projected
-        // onto the roll rather than left as an offset behind Web Audio.
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
-            expect.objectContaining({ positionSeconds: 2, anchoredAtContextSeconds: 7.25 })
-        );
+        const request = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0];
+        expect(request).toEqual(expect.objectContaining({ positionSeconds: 2 }));
+        // The beat play opens on is the whole of the position. #4020 added an
+        // audio-clock anchor so the session could roll the engine at wherever
+        // Web Audio had reached by the time it was ready; that locate seeked
+        // past every note-on stamped in between, and nothing else sounded them.
+        expect(request === undefined || 'anchoredAtContextSeconds' in request).toBe(false);
     });
 
     it('gives the native session the arrangement maps the engine has to follow', () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -233,25 +247,6 @@ describe('startPlayback', () => {
                 }),
             })
         );
-    });
-
-    it('starts playback whatever the native engine answers, because it is not the audible path', async () => {
-        vi.mocked(getTransportState).mockReturnValue({
-            ...defaultTransportState,
-            isPlaying: false,
-            playheadPosition: 0,
-            preRollEnabled: false,
-        });
-        vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
-
-        startPlayback();
-
-        expect(startPlayheadScheduler).toHaveBeenCalled();
-        // An unhandled rejection here would fail the run, which is the point:
-        // the native session is fired, never awaited, and never fatal.
-        await vi.waitFor(() => {
-            expect(startNativeLiveGraphSession).toHaveBeenCalled();
-        });
     });
 
     it('should not start when transport state is missing', () => {
@@ -283,5 +278,114 @@ describe('startPlayback', () => {
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
         expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
+    });
+
+    /**
+     * On a desktop build the play gesture starts two carriers of one
+     * arrangement, and they have to open at the same beat: the session's MIDI
+     * arm queues its note pass from the beat play opens on, and the engine
+     * delivers only the notes at or after the block it begins rendering. So
+     * Web Audio waits for the engine's answer rather than the engine skipping
+     * forward to Web Audio.
+     */
+    describe('holding the Web Audio start for the native session', () => {
+        const rollingState = {
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 0,
+            preRollEnabled: false,
+        };
+        /** One macrotask drains the whole chain: session → then → catch → race → await. */
+        const drainHold = (): Promise<void> =>
+            new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+
+        beforeEach(() => {
+            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+            vi.mocked(getTransportState).mockReturnValue(rollingState);
+        });
+
+        it('does not start the scheduler until the native session has answered', async () => {
+            vi.mocked(startNativeLiveGraphSession).mockResolvedValue({
+                outcome: 'started',
+                runtimeRevision: 1,
+                reports: [],
+            });
+
+            startPlayback();
+
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
+            vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
+
+            startPlayback();
+
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves the transport alone when the play it was holding for has already ended', async () => {
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            startPlayback();
+            // What a stop, pause, seek-while-playing or dispose does inside the
+            // hold: each bumps the scheduler generation. `isPlaying` would not
+            // catch this — it is shared by every play, so a stop and a second
+            // play inside the hold leave it true and this continuation would
+            // re-snap the new play's scheduler.
+            schedulerSession.generation += 1;
+            answer();
+
+            await drainHold();
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        });
+
+        it('gives up on the native session after the hold cap rather than never starting', async () => {
+            vi.useFakeTimers();
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            try {
+                startPlayback();
+
+                await vi.advanceTimersByTimeAsync(250);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+
+                // The session answering after the cap has nothing left to start:
+                // the transport is already rolling on the fallback.
+                answer();
+                await vi.advanceTimersByTimeAsync(250);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {
+            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
+
+            startPlayback();
+
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+        });
     });
 });
