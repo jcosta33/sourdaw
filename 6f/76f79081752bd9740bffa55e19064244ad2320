@@ -1,0 +1,20 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/multiDatabaseIndexedDb.ts
+  s_87ab0a2f60ccf8::t_a1bc352b0d3ae5 14,18-22,284,293-309,327,332-333,368-370,379-399,401
+  s_87ab0a2f60ccf8::t_5cfd814ef11d75 400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6f76f79081752bd9740bffa55e19064244ad2320",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
