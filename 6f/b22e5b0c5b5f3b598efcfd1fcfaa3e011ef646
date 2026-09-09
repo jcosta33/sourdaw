@@ -1,0 +1,29 @@
+scripts/deliverPullRequest.ts
+  s_e440ffdc6997b7::t_92f3e8c1d2aec0 2659-2661
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_825f39b39d1953::t_0ee7e3374b7cab 1487-1545,1650,1669
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6fb22e5b0c5b5f3b598efcfd1fcfaa3e011ef646",
+  "prompts": {},
+  "sessions": {
+    "s_825f39b39d1953": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08575-6be4-7942-9f4b-4abcda8f18a0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
