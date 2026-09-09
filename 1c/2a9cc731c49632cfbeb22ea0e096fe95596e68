@@ -1,0 +1,112 @@
+src/modules/AudioEngine/models/checkpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_91beaa7eee4857 1-76,78-88,101-160
+  s_87ab0a2f60ccf8::t_c11c035083b0c9 89-96
+  s_87ab0a2f60ccf8::t_22e5da3c8502f7 77,97-100
+src/modules/AudioEngine/models/serializedAudioBuffer.ts
+  s_87ab0a2f60ccf8::t_91beaa7eee4857 1-35
+src/modules/AudioEngine/repositories/checkpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_1101c7cc8da245 1-21,24-77,105-126,131-196,203-211,215-217,355,375,382,404,435,463,503,527,542,607,609-610,615,617,625
+  s_87ab0a2f60ccf8::t_30f64b3f2008c8 92-104,260-315,384,386,390,392-400,528-534,536-537,581-585
+  s_87ab0a2f60ccf8::t_c2cfebdd3c9cca 535,538
+  s_87ab0a2f60ccf8::t_953072eac69ca3 22-23
+  s_87ab0a2f60ccf8::t_c9717104093a7d 440-442
+  s_87ab0a2f60ccf8::t_22e5da3c8502f7 212-214
+  s_87ab0a2f60ccf8::t_0c6f512cf64e63 433
+  s_87ab0a2f60ccf8::t_16b3d30d287ddd 381
+  s_87ab0a2f60ccf8::t_384d142f4a8ffd 339
+  s_87ab0a2f60ccf8::t_ed209c0933346b 586-587
+  s_87ab0a2f60ccf8::t_537cf00c3f2962 383,385
+  s_87ab0a2f60ccf8::t_6b923aa55f8b79 78-91,127-130,380
+  s_87ab0a2f60ccf8::t_3d36bef72eba64 592
+  s_87ab0a2f60ccf8::t_05d922542e5c23 524
+  s_87ab0a2f60ccf8::t_ef53ece239b211 218-259,316-317,323-338,340-341,344-354,356-374,376-379,387-389,391,401-403,409-432,434,437-439,443-462,468-474,476-502,504-523,525-526,540-541,546-580,588-591,593-606,608,611-614,616
+  s_87ab0a2f60ccf8::t_024bcc5808b62f 197-202,322,342-343
+  s_87ab0a2f60ccf8::t_00c2a759dde2d7 318-321,405-408,464-467,543-545,618-624
+  s_87ab0a2f60ccf8::t_e40b86ab8fa0df 436
+  s_87ab0a2f60ccf8::t_44c86658897bcf 475,539
+src/modules/AudioEngine/stores/preparedAudioBufferOwnership.ts
+  s_87ab0a2f60ccf8::t_91beaa7eee4857 20,107-109
+  s_87ab0a2f60ccf8::t_cbfbdfcc46b859 1-2
+src/modules/AudioEngine/repositories/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_d00abdbd5528e9 1-17,19-153
+  s_87ab0a2f60ccf8::t_953072eac69ca3 18
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleSettlement.spec.ts
+  s_87ab0a2f60ccf8::t_93a352001604b0 123-125,161-191
+  s_87ab0a2f60ccf8::t_dc452f3fd1a3e4 192
+src/modules/AudioEngine/stores/__tests__/audioBufferPersistentIdentity.spec.ts
+  s_87ab0a2f60ccf8::t_2255512e1e119d 7-8,21-28,38,75,82,94,259-328
+  s_87ab0a2f60ccf8::t_f33e3f26657c5f 329
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWaveform.spec.ts
+  s_87ab0a2f60ccf8::t_93d0c84937c34e 143-144,158-163
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheLifecycle.spec.ts
+  s_87ab0a2f60ccf8::t_93d0c84937c34e 107-108,139-144
+src/modules/AudioEngine/useCases/acquireCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_e3cd7387056fdc 1-4,7
+  s_87ab0a2f60ccf8::t_580e797f7db679 6,8-29,31-48
+  s_87ab0a2f60ccf8::t_38d4ed30cc209d 30
+src/modules/AudioEngine/useCases/readCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_580e797f7db679 1-19
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_0e02754cb599d9 990,992-1016,1020-1021
+  s_87ab0a2f60ccf8::t_d6efade6e49f63 813-884
+  s_87ab0a2f60ccf8::t_d9e7683b567cbd 372,378,909-910
+  s_87ab0a2f60ccf8::t_17132fcc01a9eb 48,70,86,105
+  s_87ab0a2f60ccf8::t_22e5da3c8502f7 391,409-410
+  s_87ab0a2f60ccf8::t_acc94c5e5254b4 1040-1044,1076-1081
+  s_87ab0a2f60ccf8::t_fa96c298d210e1 151-154,335,339,341-344,606-608,652,718-722,761-765,901-907,1165,1169,1187,1191
+  s_87ab0a2f60ccf8::t_877b907e8a570b 479
+  s_87ab0a2f60ccf8::t_3ae8f278716318 47,69,85,104,380-387
+  s_87ab0a2f60ccf8::t_fe07886d089d96 1022-1028
+  s_87ab0a2f60ccf8::t_7f18a2c44a4d38 7-8,32-39
+  s_87ab0a2f60ccf8::t_21996cce70b22d 499-507,519-529
+  s_87ab0a2f60ccf8::t_3a5e2e17c76ec2 46,68,84,103,365-371,373-377,379,388-390,392-408,411-478,480-498,508-518
+  s_87ab0a2f60ccf8::t_4e2eb2b96d0210 171-198,530,991,1017-1019,1029-1039,1045-1075,1082-1102
+  s_87ab0a2f60ccf8::t_121567bebf576c 697-700,725-728
+  s_87ab0a2f60ccf8::t_0195d79ec49ad3 531
+  s_87ab0a2f60ccf8::t_c9fe7319634e53 1103
+src/modules/AudioEngine/useCases/releaseCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_580e797f7db679 1-4,12-15
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_87ab0a2f60ccf8::t_ff57e8b20ee26b 544,546,711-716,721-750,755
+  s_87ab0a2f60ccf8::t_042354c2f9058d 80,84-91,94-108,114-115,200-203,582-583,598-599,602-604
+  s_87ab0a2f60ccf8::t_4b6f10fd3250f6 751-754
+  s_87ab0a2f60ccf8::t_db27a70f9ead6d 709-710,909,942-943
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.spec.ts
+  s_87ab0a2f60ccf8::t_42c0461af30cdc 5-6,179-213
+  s_87ab0a2f60ccf8::t_4a14fb719bbda0 214-219
+src/modules/AudioEngine/useCases/__tests__/garbageCollectCachedAudioBuffersBySizeScope.spec.ts
+  s_87ab0a2f60ccf8::t_f933a8bf76c5c6 84-86,96-100,125
+  s_87ab0a2f60ccf8::t_7f18a2c44a4d38 7-9,32-41,158,175
+src/modules/AudioEngine/useCases/garbageCollectCachedAudioBuffersBySize.ts
+  s_87ab0a2f60ccf8::t_44fb9b881084ce 4,19-22
+  s_87ab0a2f60ccf8::t_22e5da3c8502f7 24
+  s_87ab0a2f60ccf8::t_04ea12070e97ea 23
+  s_87ab0a2f60ccf8::t_9c9399fb6591e5 5
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_58130def669d52 1804
+  s_87ab0a2f60ccf8::t_44fb9b881084ce 2943-2944,2957,2977
+  s_87ab0a2f60ccf8::t_a1b4ef5e7119e0 1792-1793,1799-1803,1806
+  s_87ab0a2f60ccf8::t_a275879a0ac158 345-347,372-378,384,418,442
+  s_87ab0a2f60ccf8::t_b680e8e923bebc 379-383
+  s_87ab0a2f60ccf8::t_24d3679933349e 9-14,193
+  s_87ab0a2f60ccf8::t_953072eac69ca3 15
+  s_87ab0a2f60ccf8::t_b76ae232ef5385 8,443
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_580e797f7db679 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1c2a9cc731c49632cfbeb22ea0e096fe95596e68",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
