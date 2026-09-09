@@ -1,0 +1,83 @@
+src/infra/store/storage/types.ts
+  s_87ab0a2f60ccf8::t_c9692cf1b68316 62-65
+.agents/skills/review-stances/test-validity.md
+  s_87ab0a2f60ccf8::t_b43bfa24ef9ced 187-197
+src/modules/CrdtDocument/useCases/projection/setupProjectionBridge.ts
+  s_87ab0a2f60ccf8::t_a72926d0d0f5ab 24-27
+src/infra/store/__tests__/createStore.sanitizeWriteBack.spec.ts
+  s_87ab0a2f60ccf8::t_6e6c4e6758ca91 330-389
+  s_87ab0a2f60ccf8::t_8012a448665db1 329,449-492
+  s_87ab0a2f60ccf8::t_99c56705552c48 402
+  s_87ab0a2f60ccf8::t_923af5f451ef5a 390-401,403-424,426-448
+  s_87ab0a2f60ccf8::t_d55a6574424ae5 425
+  s_87ab0a2f60ccf8::t_16c059a12cc054 6,9,279-328
+src/infra/store/createStore.ts
+  s_87ab0a2f60ccf8::t_29ff3d32357d2d 127-133,135,150,156-168,177-182,277-279
+src/modules/Knead/stores/__tests__/kneadStore.spec.ts
+  s_87ab0a2f60ccf8::t_6c990fa17d389d 3-6,61-70
+  s_87ab0a2f60ccf8::t_e3a293a91ee965 71,73-86
+  s_87ab0a2f60ccf8::t_c26ad11b943ba6 72
+src/modules/MIDI/stores/__tests__/grooveTemplateCollaboration.spec.ts
+  s_87ab0a2f60ccf8::t_efccdcda1e481d 6,8,69-76,104-156
+  s_87ab0a2f60ccf8::t_b556bd8214b2dd 157-160
+src/modules/ControlSurface/stores/midiLearnStore.ts
+  s_87ab0a2f60ccf8::t_1714763e95f167 205-209
+src/infra/store/storage/createAutomergeStorage.ts
+  s_87ab0a2f60ccf8::t_7e6e025195a505 1357-1358
+  s_87ab0a2f60ccf8::t_4f25ec699ade76 1122,1614,1625,1655-1676,1766-1768
+  s_87ab0a2f60ccf8::t_00c72af983bd2e 839-840,849-853,855,858,861,863,865,869-870,980-982,985-992,996-997,999-1001
+  s_87ab0a2f60ccf8::t_849cb422b819ae 629-631,638-644
+  s_87ab0a2f60ccf8::t_78d65eb048b71e 1107,1116,1121,1123,1241-1242,1286-1292
+  s_87ab0a2f60ccf8::t_412c303b8af31e 645,1809-1810,1821-1822,1829-1830,1835-1837,1839,1850,1867-1868,1871,1877-1880,1883,1889-1890,1892,1895-1900,1902,1905,1919-1923,1932
+  s_87ab0a2f60ccf8::t_572a96336c9e35 1359-1360
+  s_87ab0a2f60ccf8::t_1f6b969d9f9a7a 1834,1840-1843,1845,1873-1876,1885-1888
+  s_87ab0a2f60ccf8::t_c9692cf1b68316 37-38,160-161,204-206,208,210
+  s_87ab0a2f60ccf8::t_8286967a4da995 1472,1563
+  s_87ab0a2f60ccf8::t_4f49cd19856f67 207
+  s_87ab0a2f60ccf8::t_11ba3d571f53b3 1297-1309,1315-1325,1334-1346
+  s_87ab0a2f60ccf8::t_f17440329824aa 1831,1838,1844,1846-1849,1869-1870,1872,1881-1882,1884,1901,1903
+  s_87ab0a2f60ccf8::t_1001c131df9973 1296,1310-1313,1326-1333
+  s_87ab0a2f60ccf8::t_a94c665300976a 890-891,917
+  s_87ab0a2f60ccf8::t_51462e3a698807 1488,1494,1496
+  s_87ab0a2f60ccf8::t_99c56705552c48 871-889,892-914,916,918-930,932-938,941-947,949-968,970-973,1124,1314,1374,1560,1833
+  s_87ab0a2f60ccf8::t_87abe5c3bc47cf 978,1369-1373,1392,1419-1423,1441,1473-1487,1489-1493,1495,1497-1503,1510-1515,1517,1546-1559,1561-1562,1564-1580,1592
+src/modules/ControlSurface/stores/__tests__/midiLearnStore.spec.ts
+  s_87ab0a2f60ccf8::t_e3a293a91ee965 55-72
+  s_87ab0a2f60ccf8::t_6c990fa17d389d 1,4-8,10-17,20-54
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_0cb08fa06e7299 88-99
+src/modules/Transport/stores/transportStore.ts
+  s_87ab0a2f60ccf8::t_1714763e95f167 387-394
+src/modules/Transport/stores/__tests__/transportStore.spec.ts
+  s_87ab0a2f60ccf8::t_e3a293a91ee965 145,147-156,158-159
+  s_87ab0a2f60ccf8::t_cfccf6c2ea11e5 43,59-61,81,122-144
+  s_87ab0a2f60ccf8::t_0ae70083dbe184 157
+  s_87ab0a2f60ccf8::t_6c990fa17d389d 3-6,99-121
+  s_87ab0a2f60ccf8::t_6da4625b032716 146
+src/modules/Knead/stores/kneadStore.ts
+  s_87ab0a2f60ccf8::t_1714763e95f167 338-342
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_6e4a0f114facb5 1300-1329
+  s_87ab0a2f60ccf8::t_99c56705552c48 1564
+  s_87ab0a2f60ccf8::t_8012a448665db1 1263-1268,1270-1299,1488-1526
+  s_87ab0a2f60ccf8::t_ea9e7726295c99 13,1227-1262,1330-1401
+  s_87ab0a2f60ccf8::t_4e748545677ac3 1269
+  s_87ab0a2f60ccf8::t_3c146384b4bb2f 1528-1563,1565-1584
+  s_87ab0a2f60ccf8::t_14b6507c77ad41 1402-1487,1527
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "418906cdce4d5c9d4777f1dd388852bc8f6e537b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
