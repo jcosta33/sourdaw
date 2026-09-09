@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipBezierExactness.spec.ts
+  s_87ab0a2f60ccf8::t_f6258d315f6e2b 74,79,125,150-186,213
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_87ab0a2f60ccf8::t_08982b6d94e8e4 140-153,162-171,173-177,183,193,202,220-223,256,260-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4f5a719eb68f0a01bd91afaf6fd199e98bb292b4",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
