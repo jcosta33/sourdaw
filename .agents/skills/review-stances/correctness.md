@@ -178,3 +178,14 @@ producer ships for a freshly created device of that type — read the creation u
 on a non-contributing one; a refusal on either is the finding. Then list every branch of that mapper
 that degrades to omission rather than refusing, and require any refusal reachable on the new type to
 obey the same law.
+
+### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
+
+The unit fixture always gave the enclosing AudioWorkletNode handler extra end margin, while the
+observed equality case covered only the author/outer edge. A real trace whose handler and outer
+callback ended at the same timestamp was therefore refused even though the handler uniquely enclosed
+the callback.
+
+Probe that would have caught it: exercise every independently validated nesting edge at an equal end
+timestamp and again with the enclosure ending one timestamp unit early. Admit the equality only when
+the pairing remains unique, and preserve refusal of the actual overrun and ambiguous overlap cases.

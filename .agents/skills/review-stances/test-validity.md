@@ -114,6 +114,17 @@ plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
 any hit in the same change.
 
+### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
+
+The helper fixture always ended the AudioWorkletNode handler after its outer callback. Its separate
+equal-endpoint case exercised only the author/outer relationship, so reverting the handler/outer
+equality rule still left every test green.
+
+Probe that would have caught it: for every nesting comparison the parser validates independently,
+add one case with equal end timestamps and one with the enclosure ending a single timestamp unit
+early. The first must admit only a unique enclosure; the second and the existing overlap fixtures
+must refuse.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
