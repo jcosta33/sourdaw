@@ -1,0 +1,84 @@
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_a339ca33bdbe35 35
+  s_9b530f08172a54::t_3ecaf3454cccab 65-74
+src/modules/Transport/useCases/transportControls/startNativeSessionAtBeat.ts
+  s_9b530f08172a54::t_64c893acda307f 35
+  s_9b530f08172a54::t_8326deaf777be8 37-41
+  s_9b530f08172a54::t_86f61d70652a35 50
+  s_9b530f08172a54::t_9ac9d8d50dcc9e 10-16
+  s_9b530f08172a54::t_c2dc4861f94fb3 30-34
+  s_06adf2b091dc62::t_81eeb28f50ff3d 36
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_f81be535398b21 64-66,75-91
+  s_9b530f08172a54::t_586e296ba66926 154-159
+  s_9b530f08172a54::t_73e73045f5d485 321-340
+  s_9b530f08172a54::t_dac6495f77ade7 552-553
+  s_9b530f08172a54::t_69e471cb9e9807 1035,1060-1151
+  s_9b530f08172a54::t_544b631a913436 45-49
+  s_2ad8c45385b80b::t_0c6de509ea9526 638,658,681,691,720,768,792,816,858,900,927,944,977,1017,1158,1182,1196,1214,1258,1287,1317,1331,1338,1354,1362,1385,1398,1401,1407,1418,1434,1450,1470,1483,1504,1513,1540,1562,1597,1617-1618,1628,1645,1662-1663,1675,1695,1717,1746,1774,1803,1819,1835,1850,1884,1899,1922,1939,2011,2023,2042,2055,2076,2109,2135,2167,2189,2204,2218,2231,2242,2264,2286,2340,2365,2383,2389,2408,2420,2437
+src/modules/AudioEngine/useCases/livePlayback/projectRollPosition.ts
+  s_9b530f08172a54::t_b06eac9be569d2 55
+  s_9b530f08172a54::t_6a8386b998a575 2-15
+  s_9b530f08172a54::t_cf90c3e878a4b7 1
+  s_9b530f08172a54::t_14a08e3170446f 16-18,52-54
+  s_9b530f08172a54::t_46a11bcf1811e4 56-58
+  s_2ad8c45385b80b::t_a7df5844dd86f9 19-51,59-85
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_81ce88e3e68c0e 40-46
+  s_9b530f08172a54::t_208e03d42d526e 64-67
+  s_9b530f08172a54::t_38c5723c0764a5 262-269
+  s_9b530f08172a54::t_270086ca9e4b8d 124-133
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_0ae585ebe5ce5b 605
+  s_9b530f08172a54::t_9433b98ad17f21 123
+  s_9b530f08172a54::t_5d7f86033f1562 711
+  s_9b530f08172a54::t_24238efee22966 106
+  s_9b530f08172a54::t_b0488739388fde 690-693
+  s_9b530f08172a54::t_acb15294ad79fd 651
+  s_9b530f08172a54::t_eab43c21af9666 745-747
+  s_9b530f08172a54::t_2017ef81c265c9 144-167,171-175
+  s_9b530f08172a54::t_49d25820707d68 501-520
+  s_9b530f08172a54::t_bbb72273e6ab28 707-710,712-727
+  s_9b530f08172a54::t_7f0e9863ec372f 604,611,650,689,706,744,891
+.agents/skills/review-stances/session-lifecycle.md
+  s_9b530f08172a54::t_0ccdab35f2fad9 92-107
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_9b530f08172a54::t_407cd55f403226 220-226
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_5079db53105833 84
+  s_9b530f08172a54::t_0fd35535bc12ac 82-83
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectRollPosition.spec.ts
+  s_9b530f08172a54::t_2f3391e176da2d 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c6c12c988a3273baf99bfeb0ddc30fc0532a9202",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_2ad8c45385b80b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adec5da28def4c17d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
