@@ -804,9 +804,14 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
     return source;
 }
 
+type PreparedPcmInvalidationWitness =
+    | { kind: 'preserve' }
+    | { kind: 'read'; persistenceRevision: string | undefined }
+    | { kind: 'committed'; persistenceRevision: string | undefined };
+
 type PreparedPcmPublicationAuthority = {
     acceptsRead: (persistenceRevision: string | undefined) => boolean;
-    invalidate: () => boolean;
+    invalidate: (witness: PreparedPcmInvalidationWitness) => boolean;
     isCurrent: () => boolean;
     publishCommitted: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string) => boolean;
     publishRead: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string | undefined) => boolean;
@@ -869,11 +874,24 @@ function capturePreparedPcmPublicationAuthority(id: string): PreparedPcmPublicat
     };
     return {
         acceptsRead,
-        invalidate: () => {
-            if (!isCurrent()) {
-                return false;
+        invalidate: (witness) => {
+            let identity: PersistentPcmIdentity;
+            if (witness.kind === 'preserve') {
+                if (!isCurrent()) {
+                    return false;
+                }
+                identity = expectedSource?.identity ?? { status: 'unauthenticated' };
+            } else if (witness.kind === 'read') {
+                if (!isNonEmptyString(witness.persistenceRevision) || !acceptsRead(witness.persistenceRevision)) {
+                    return false;
+                }
+                identity = { status: 'authenticated', revision: witness.persistenceRevision };
+            } else {
+                if (!isCurrent() || !isNonEmptyString(witness.persistenceRevision)) {
+                    return false;
+                }
+                identity = { status: 'authenticated', revision: witness.persistenceRevision };
             }
-            const identity = expectedSource?.identity ?? { status: 'unauthenticated' as const };
             expectedSource = {
                 attempt: undefined,
                 data: undefined,

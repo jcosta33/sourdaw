@@ -702,6 +702,185 @@ describe('prepared audio-buffer settlement and recovery', () => {
         expect(controls.committedRecovery.has(id)).toBe(false);
     });
 
+    it('keeps cold prepared PCM readable and retryable after an aborted discard', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'cold-aborted-discard';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.25;
+        const instanceA = audioBufferCache;
+        await expect(instanceA.persistPreparedBuffer({ id, buffer: source, leaseId })).resolves.toEqual({
+            status: 'persisted',
+            bufferId: id,
+            leaseId,
+        });
+        const durableData = structuredClone(controls.committed.get(id)!);
+        const durableMetadata = structuredClone(controls.committedMeta.get(id)!);
+
+        vi.resetModules();
+        const instanceB = (await import('../audioBufferCache')).audioBufferCache;
+        audioBufferCache = instanceB;
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const abortedDiscard = instanceB.releasePreparedBuffer({ id, leaseId, disposition: 'discard' });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+
+        await expect(abortedDiscard).resolves.toEqual({ status: 'failed', reason: 'IDB transaction aborted' });
+        expect(controls.committed.get(id)).toEqual(durableData);
+        expect(controls.committedMeta.get(id)).toEqual(durableMetadata);
+
+        const reopen = await instanceB.reopenPreparedBuffer({
+            id,
+            leaseId,
+            context: createTestContext(
+                vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                    createAudioBuffer({ length, sampleRate })
+                )
+            ),
+        });
+        const reopenedSample = instanceB.get(id)?.getChannelData(0)[0] ?? null;
+        const retryDiscard = instanceB.releasePreparedBuffer({ id, leaseId, disposition: 'discard' });
+        await settlePendingWrites(controls, [retryDiscard]);
+
+        const retryResult = await retryDiscard;
+        expect({ reopen, reopenedSample, retryResult }).toEqual({
+            reopen: { status: 'reopened', bufferId: id, ownership: 'temporary' },
+            reopenedSample: Math.fround(0.25),
+            retryResult: { status: 'released', disposition: 'discarded' },
+        });
+    });
+
+    it('keeps a cold exact-lease retry reopenable when its transaction aborts', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'cold-aborted-exact-lease-retry';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.25;
+        await expect(audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId })).resolves.toEqual({
+            status: 'persisted',
+            bufferId: id,
+            leaseId,
+        });
+        const durableData = structuredClone(controls.committed.get(id)!);
+        const durableMetadata = structuredClone(controls.committedMeta.get(id)!);
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const retry = audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+
+        await expect(retry).resolves.toEqual({ status: 'failed', reason: 'IDB transaction aborted' });
+        expect(controls.committed.get(id)).toEqual(durableData);
+        expect(controls.committedMeta.get(id)).toEqual(durableMetadata);
+        await expect(
+            audioBufferCache.reopenPreparedBuffer({
+                id,
+                leaseId,
+                context: createTestContext(
+                    vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                        createAudioBuffer({ length, sampleRate })
+                    )
+                ),
+            })
+        ).resolves.toEqual({ status: 'reopened', bufferId: id, ownership: 'temporary' });
+        expect(audioBufferCache.get(id)?.getChannelData(0)[0]).toBeCloseTo(0.25);
+    });
+
+    it('refuses a cold prepared read whose durable identity token is missing', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'cold-missing-prepared-token';
+        const leaseId = `${id}-lease`;
+        const source = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        source.getChannelData(0)[0] = 0.25;
+        await audioBufferCache.persistPreparedBuffer({ id, buffer: source, leaseId });
+        delete controls.committedMeta.get(id)?.preparedOwner?.persistenceRevision;
+        const durableData = structuredClone(controls.committed.get(id));
+        const durableMetadata = structuredClone(controls.committedMeta.get(id));
+        controls.resetByteCounters();
+
+        vi.resetModules();
+        ({ audioBufferCache } = await import('../audioBufferCache'));
+
+        await expect(audioBufferCache.releasePreparedBuffer({ id, leaseId, disposition: 'discard' })).resolves.toEqual({
+            status: 'mismatched',
+        });
+        expect(controls.bytesWritten()).toBe(0);
+        expect(controls.committed.get(id)).toEqual(durableData);
+        expect(controls.committedMeta.get(id)).toEqual(durableMetadata);
+        expect(audioBufferCache.has(id)).toBe(false);
+    });
+
+    it('does not restore replacement recovery PCM over an evicted known source', async () => {
+        const controls = installFakeAudioIndexedDb();
+        const id = 'evicted-source-replacement-recovery';
+        const firstLeaseId = `${id}-first-lease`;
+        const first = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        first.getChannelData(0)[0] = 0.25;
+        const instanceA = audioBufferCache;
+        await instanceA.persistPreparedBuffer({ id, buffer: first, leaseId: firstLeaseId });
+        clearRuntimeAudioBufferCache({ retainedIds: [id] });
+        expect(instanceA.has(id)).toBe(false);
+
+        vi.resetModules();
+        const instanceB = (await import('../audioBufferCache')).audioBufferCache;
+        audioBufferCache = instanceB;
+        await expect(
+            instanceB.releasePreparedBuffer({ id, leaseId: firstLeaseId, disposition: 'discard' })
+        ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
+        const replacementLeaseId = `${id}-replacement-lease`;
+        const replacement = createAudioBuffer({ length: 1, sampleRate: 48_000 });
+        replacement.getChannelData(0)[0] = 0.75;
+        await instanceB.persistPreparedBuffer({ id, buffer: replacement, leaseId: replacementLeaseId });
+        const replacementRevision = controls.committedMeta.get(id)?.preparedOwner?.persistenceRevision;
+        expect(replacementRevision).toEqual(expect.any(String));
+
+        controls.pauseWriteSettlements();
+        const discard = instanceB.releasePreparedBuffer({
+            id,
+            leaseId: replacementLeaseId,
+            disposition: 'discard',
+        });
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        controls.abortNextWrite();
+        while (controls.pendingWriteSettlementCount() === 0) {
+            await flushIndexedDbTasks(1);
+        }
+        controls.releaseNextWriteSettlement();
+        await expect(discard).resolves.toEqual({ status: 'failed', reason: 'IDB transaction aborted' });
+        const replacementRecovery = [...controls.committedRecovery.values()].find((recovery) => recovery.id === id);
+        expect(replacementRecovery?.data.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(replacementRecovery?.metadata.preparedOwner?.persistenceRevision).toBe(replacementRevision);
+
+        controls.resetByteCounters();
+        const durability = instanceA.ensureDurable([id]);
+        await settlePendingWrites(controls, [durability]);
+        const result = await durability;
+        try {
+            expect(result.status).not.toBe('durable');
+            expect(instanceA.has(id)).toBe(false);
+            expect(controls.bytesWritten()).toBe(0);
+            expect(controls.committed.has(id)).toBe(false);
+            expect([...controls.committedRecovery.values()].find((recovery) => recovery.id === id)).toEqual(
+                replacementRecovery
+            );
+        } finally {
+            if (result.status === 'durable') {
+                result.release();
+            }
+        }
+    });
+
     it('reclaims only expired unowned prepared PCM after restart', async () => {
         const controls = installFakeAudioIndexedDb();
         await audioBufferCache.persistPreparedBuffer({
@@ -1003,6 +1182,8 @@ describe('prepared audio-buffer settlement and recovery', () => {
             if (!stored || !metadata) {
                 throw new TypeError('Expected late-pin discard fixture to remain durable');
             }
+            vi.resetModules();
+            ({ audioBufferCache } = await import('../audioBufferCache'));
             controls.pauseWriteSettlements();
             const discard = audioBufferCache.releasePreparedBuffer({
                 id,
@@ -1212,9 +1393,6 @@ describe('prepared audio-buffer settlement and recovery', () => {
         ).toBe(0.625);
 
         controls.allowWrites();
-        vi.resetModules();
-        ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
-            await import('../audioBufferCache'));
         const recovery = audioBufferCache.prepareFromIdb({
             context,
             ids: [id],

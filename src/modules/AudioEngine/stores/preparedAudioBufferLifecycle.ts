@@ -126,9 +126,14 @@ type CollectPreparedAudioBufferRecoveriesInput = {
     staleBeforeMs?: number;
 };
 
+type PreparedPcmInvalidationWitness =
+    | { kind: 'preserve' }
+    | { kind: 'read'; persistenceRevision: string | undefined }
+    | { kind: 'committed'; persistenceRevision: string | undefined };
+
 type PreparedPcmPublicationAuthority = {
     acceptsRead: (persistenceRevision: string | undefined) => boolean;
-    invalidate: () => boolean;
+    invalidate: (witness: PreparedPcmInvalidationWitness) => boolean;
     isCurrent: () => boolean;
     publishCommitted: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string) => boolean;
     publishRead: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string | undefined) => boolean;
@@ -1359,7 +1364,15 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                                 },
                             };
                         }
-                        if (!host.isDurableMutationCurrent(id, generation!) || !publicationAuthority.invalidate()) {
+                        const invalidationWitness: PreparedPcmInvalidationWitness =
+                            existingOwner.persistenceRevision !== undefined &&
+                            publicationAuthority.acceptsRead(existingOwner.persistenceRevision)
+                                ? { kind: 'read', persistenceRevision: existingOwner.persistenceRevision }
+                                : { kind: 'preserve' };
+                        if (
+                            !host.isDurableMutationCurrent(id, generation!) ||
+                            !publicationAuthority.invalidate(invalidationWitness)
+                        ) {
                             await abortRejectedPreparedTransition(transaction);
                             return { kind: 'superseded' as const };
                         }
@@ -1402,7 +1415,10 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                                 },
                             };
                         }
-                        if (!host.isDurableMutationCurrent(id, generation!) || !publicationAuthority.invalidate()) {
+                        if (
+                            !host.isDurableMutationCurrent(id, generation!) ||
+                            !publicationAuthority.invalidate({ kind: 'preserve' })
+                        ) {
                             await abortRejectedPreparedTransition(transaction);
                             return { kind: 'superseded' as const };
                         }
@@ -1885,6 +1901,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     return { status: 'mismatched' as const };
                 }
                 const publicationOrigin = acceptsCommittedPersistence ? 'commit' : 'read';
+                const invalidationWitness: PreparedPcmInvalidationWitness = acceptsCommittedPersistence
+                    ? { kind: 'committed', persistenceRevision: owner.persistenceRevision }
+                    : { kind: 'read', persistenceRevision: owner.persistenceRevision };
                 if (
                     admittedPreparedRuntimeOwner !== undefined &&
                     admittedPreparedRuntimeOwner.persistenceRevision !== owner.persistenceRevision
@@ -2010,7 +2029,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (
                     isDiscardSuperseded(id, admittedProjectEpoch!, admittedReservationEpoch) ||
                     !host.isDurableMutationCurrent(id, generation!) ||
-                    !publicationAuthority.invalidate()
+                    !publicationAuthority.invalidate(invalidationWitness)
                 ) {
                     await abortRejectedPreparedTransition(transaction);
                     return { status: 'failed' as const, reason: 'Prepared audio discard was superseded.' };

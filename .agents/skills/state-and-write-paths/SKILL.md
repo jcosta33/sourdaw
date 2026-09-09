@@ -98,6 +98,11 @@ added by #4051 each require this cross-instance proof. Compose eviction with an 
 hydration in one attack: isolated eviction and hydration cases do not prove that the retained transition preserves an
 identity witness when no decoded runtime remains.
 
+Treat any pre-commit cache invalidation as an identity transition, not cleanup. A cold module can authenticate an exact
+prepared row from its durable revision, stage deletion and then observe an aborted transaction; the unchanged row must
+remain readable and recoverable in that same module. Carry explicit preserved, read-origin and admitted-commit
+witnesses through invalidation, and attack each with a later source replacement before accepting retry or recovery.
+
 ## References
 
 - [docs/03-state-management.md](../../../docs/03-state-management.md) — store patterns and client state.
