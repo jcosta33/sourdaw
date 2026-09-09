@@ -1,0 +1,26 @@
+src/modules/AiRuntime/models/RuntimeAction.ts
+  h_1228e573df1f42 189,230-231,244-246
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  h_1228e573df1f42 21,27
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  h_1228e573df1f42 125-188,737-774
+src/modules/Command/useCases/actionLabels.ts
+  h_1228e573df1f42 80-85
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  h_1228e573df1f42 2488-2633,2936-2943,3050-3055
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_1228e573df1f42 5095-5351,5691-5696
+src/utils/handlerContract.ts
+  h_1228e573df1f42 689-745,2461-2544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "78bfed01b2e48f81c39225196b4656dd2de04078",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
