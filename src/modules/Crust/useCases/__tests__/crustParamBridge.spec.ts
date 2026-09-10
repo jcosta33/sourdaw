@@ -96,6 +96,29 @@ describe('crustParamBridge', () => {
         expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'algorithm', 4);
     });
 
+    it('a style write persists both style and the algorithm it derives, without a second engine push', () => {
+        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }]);
+
+        // 'loud' derives to algorithm 'wall' (STYLE_TO_ALGORITHM), whose encoded
+        // index (7) differs from style 'loud's own encoded index (2) — a bug that
+        // persisted style's encoded number under the algorithm key would still be
+        // caught here. The engine already applied from_style_index from the style
+        // write, so a second flush for 'algorithm' would race it: only 'style'
+        // schedules an engine write. Project truth still follows for both keys so
+        // a reload's `parameterValues.algorithm` matches the engine's own pick.
+        setCrustParamWithAudio('d1', 'style', 'loud');
+
+        expect(setCrustParam).toHaveBeenCalledWith('style', 'loud');
+        expect(setCrustParam).toHaveBeenCalledWith('algorithm', 'wall');
+
+        expect(mockUpdateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'style', 2);
+        expect(mockUpdateDeviceParam).not.toHaveBeenCalledWith('t1', 'd1', 'algorithm', expect.anything());
+
+        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'style', 2);
+        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'algorithm', 7);
+    });
+
     it('writes the store for a store-only key (streamingPreset) that has no engine encoding', () => {
         mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }]);
 

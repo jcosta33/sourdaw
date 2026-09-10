@@ -37,8 +37,16 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
         const algorithm = algorithmFromStyle(value);
         if (algorithm !== null) {
             // Engine already applied from_style_index from the style param;
-            // a second algorithm flush can race. Store-only so L2 chips follow.
+            // a second algorithm flush can race, so this never schedules an
+            // engine push. The store and project truth both follow so the
+            // panel, the web host's record and the native body's record all
+            // name the algorithm the engine actually holds.
             setCrustParam('algorithm', algorithm);
+
+            const encodedAlgorithm = encodeCrustValue('algorithm', algorithm);
+            if (typeof encodedAlgorithm === 'number') {
+                crustBridgeDeps.persistDeviceParam(target.deviceId, 'algorithm', encodedAlgorithm);
+            }
         }
     }
 

@@ -10799,11 +10799,12 @@ mod tests {
 
     /// The loudest sample in the second half of a render.
     ///
-    /// A compressor's gain reduction is not instantaneous — it opens at the
-    /// clip's own level and settles over its attack and release — so the
-    /// loudest sample of a whole render is the onset, which every patch shares.
-    /// The window after the envelope has settled is where two thresholds are
-    /// two different levels.
+    /// A compressor's or limiter's gain reduction is not instantaneous — it
+    /// opens at the clip's own level and settles over its attack (and, for a
+    /// compressor, its release) — so the loudest sample of a whole render is
+    /// the onset, which every patch shares. The window after the envelope has
+    /// settled is where two thresholds, or two ceilings, are two different
+    /// levels.
     fn settled_peak(rendered: &[f32]) -> f32 {
         rendered[rendered.len() / 2..]
             .iter()
@@ -11029,19 +11030,6 @@ mod tests {
             .collect()
     }
 
-    /// The loudest sample in the second half of a render.
-    ///
-    /// A limiter's gain reduction is not instantaneous — it opens at the
-    /// clip's own level and settles over its attack — so the loudest sample of
-    /// a whole render is the onset, which every patch shares. The window after
-    /// the envelope has settled is where two ceilings are two different
-    /// levels.
-    fn settled_crust_peak(rendered: &[f32]) -> f32 {
-        rendered[rendered.len() / 2..]
-            .iter()
-            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
-    }
-
     /// The largest absolute difference between two renders of the same length.
     fn max_abs_difference(left: &[f32], right: &[f32]) -> f32 {
         assert_eq!(left.len(), right.len(), "two renders of different lengths");
@@ -11081,8 +11069,8 @@ mod tests {
         );
 
         let high_ceiling =
-            settled_crust_peak(&render_crust_clip(json!({ "gain": 12.0, "ceiling": -0.3 })));
-        let low_ceiling = settled_crust_peak(&render_crust_clip(
+            settled_peak(&render_crust_clip(json!({ "gain": 12.0, "ceiling": -0.3 })));
+        let low_ceiling = settled_peak(&render_crust_clip(
             json!({ "gain": 12.0, "ceiling": -18.0 }),
         ));
 
