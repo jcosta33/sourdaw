@@ -158,6 +158,58 @@ function tablePatch(
     };
 }
 
+/**
+ * The Bacteria parameter names whose engine arms allocate, and which the
+ * native audio-thread door therefore drops.
+ *
+ * `BACTERIA_CONTROL_THREAD_ONLY` in `crates/daw-engine/src/scheduler.rs` is
+ * the same pair, and that constant carries the reason: `convolutionIr`
+ * rebuilds the cabinet impulse response and `phaserStages` reallocates both
+ * all-pass chains past the six the constructor builds. A persisted record
+ * still carries them — the mapper applies a device's whole record on the
+ * control thread, where those arms are allowed to run — so they stay in
+ * [projectPatch].
+ *
+ * A live single-key write is not refused the same way for every producer.
+ * [addressesParameter] is what `readLiveAutomationWrites` gates an automation
+ * write on, so an automation write of one of these names never reaches the
+ * native door at all. A panel write does not consult [addressesParameter]:
+ * `updateDeviceParam.ts` sends it natively through `nativeBuiltinWriteTarget`
+ * regardless, so it does reach the door, and `BacteriaBody::set_param`
+ * (`crates/daw-engine/src/scheduler.rs`) is what drops it there. Either way
+ * the parameter keeps the value the persisted record's patch gave it.
+ */
+const BACTERIA_CONTROL_THREAD_ONLY: ReadonlySet<string> = new Set(['convolutionIr', 'phaserStages']);
+
+/**
+ * `paramId` with an optional `band{digit}` prefix stripped: the bare name the
+ * engine resolves once it has picked a band.
+ *
+ * The same reading `BacteriaEngine::apply_param`
+ * (`crates/daw-dsp/src/bacteria/engine.rs`) and `bare_bacteria_param_name`
+ * (`crates/daw-engine/src/scheduler.rs`) perform: four bytes of `band`, one
+ * decimal digit, then one character the engine skips without reading —
+ * historically `_`, but `apply_param` never checks that it is, on any digit
+ * rather than only the six bands that exist, because the engine strips first
+ * and bounds-checks the band afterwards. The sixth character is matched by
+ * `.` rather than pinned to `_` for exactly that reason: a stricter pattern
+ * here would read `band00convolutionIr` and `band0XphaserStages` as unmatched
+ * bare names while the engine reads both as band 0's `convolutionIr` and
+ * `phaserStages`, which is the gap this function exists to close rather than
+ * reopen. So `band3_phaserStages`, `band00convolutionIr` and `phaserStages`
+ * all reach the same answer here, while `bandCount` is not a prefixed name at
+ * all and reads as itself.
+ */
+function bareBacteriaParamName(paramId: string): string {
+    const prefixed = /^band\d.(?<bare>.*)$/s.exec(paramId);
+    return prefixed?.groups?.bare ?? paramId;
+}
+
+/** Whether a live write of `paramId` is one the native audio-thread door drops. */
+function isBacteriaControlThreadOnly(paramId: string): boolean {
+    return BACTERIA_CONTROL_THREAD_ONLY.has(bareBacteriaParamName(paramId));
+}
+
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
         'knead',
@@ -245,6 +297,61 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: grinderNeuralSourceOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
+        },
+    ],
+    [
+        'bacteria',
+        {
+            soundsNotes: false,
+            /**
+             * No table, for the same reason as Grinder's entry above:
+             * Bacteria's engine spells its own parameters in camelCase and
+             * project truth authors the same ids, so the id a panel or a lane
+             * writes already is the name `BacteriaEngine::set_param` takes.
+             * Its two addressing families are inside the shape rule rather
+             * than beside it — a `band{N}_` prefix aims a name at one band and
+             * `stepSeqVal_{n}` indexes a sequencer step, and the engine
+             * decodes both itself.
+             *
+             * The record needs no narrowing beyond the shape and the wire's
+             * number: `encodePatchValue`
+             * (`#/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts`)
+             * already index-encodes every string selector before it is
+             * persisted, and a key the engine has no arm for — `routingMode`,
+             * `crossoverSlope`, the modulation flags — falls through its
+             * broadcast to sub-processors that ignore it, exactly as it does
+             * under the worklet.
+             *
+             * `addressesParameter` refuses the two names whose engine arms
+             * allocate, but that only keeps an automation write off the
+             * native door — `readLiveAutomationWrites` gates on this answer
+             * before it builds a write. A panel write skips this gate
+             * entirely (`updateDeviceParam.ts` sends every live write
+             * natively through `nativeBuiltinWriteTarget`), reaches the
+             * native door regardless, and is dropped there by
+             * `BacteriaBody::set_param`. Either way the persisted record
+             * still carries both names, because the mapper applies it
+             * control-side where those arms are legal, and the parameter
+             * keeps the value that record gave it.
+             *
+             * The body declares no latency to the native engine even though
+             * this engine reports a real one. A settled `externalLatencyRegistry`
+             * — filled by the carried strip's gated-shut `BacteriaNode` — does
+             * fold into what `getCompensationDelay` hands the native engine,
+             * but only at the moment a programme is built: the session's
+             * first programme can build before the worklet has reported
+             * anything, and a mid-roll parameter change that moves the
+             * engine's own latency figure does not rebuild the programme
+             * already handed to a running session. Both gaps, and why
+             * declaring a figure here today would still double-compensate
+             * rather than close them, are written out on `BacteriaBody` in
+             * `crates/daw-engine/src/scheduler.rs`; #4153 is the fix, moving
+             * the compensation into the engine through `SetEffectLatency`.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: shapedNumericParametersOnly,
+            addressesParameter: (paramId) =>
+                BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !isBacteriaControlThreadOnly(paramId),
         },
     ],
 ]);

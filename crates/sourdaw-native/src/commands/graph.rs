@@ -1890,9 +1890,11 @@ fn resolved_param_writes<T>(
 /// was written under: knead answers a closed set of names the engine owns, and
 /// the fermenter answers its own. Sounding notes is not what decides it —
 /// gluten and crust are inserts and still answer their own names, and so is
-/// grinder, spelled in its own camelCase rather than the others' snake_case —
-/// because the vocabulary belongs to the DSP the body hosts rather than to the
-/// kind of device it is or the case it spells its names in.
+/// grinder, spelled in its own camelCase rather than the others' snake_case,
+/// and so is bacteria, which spells camelCase too and prefixes most of it with
+/// the band a name aims at (`band0_filterCutoff`) — because the vocabulary
+/// belongs to the DSP the body hosts rather than to the kind of device it is,
+/// the case it spells its names in, or the addressing it folds into them.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1906,7 +1908,8 @@ fn builtin_parameter(
         | BuiltinEffectType::GrandBoule
         | BuiltinEffectType::Gluten
         | BuiltinEffectType::Crust
-        | BuiltinEffectType::Grinder => {
+        | BuiltinEffectType::Grinder
+        | BuiltinEffectType::Bacteria => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2076,9 +2079,17 @@ fn map_device(
     // not of whether it sounds notes. A built-in instrument's patch is dozens
     // of the instrument's own parameters per strip, a gluten's is some
     // forty-five and a crust's some thirty — a grinder's own vocabulary is
-    // wider still, its neural convolution weights dynamically named — and the
-    // command ring is finite, so all of them are written into the instance on
-    // this thread; knead's handful travel as commands behind the registration.
+    // wider still, its neural convolution weights dynamically named, and a
+    // bacteria's is its globals plus six bands' worth of band-prefixed names —
+    // and the command ring is finite, so all of them are written into the
+    // instance on this thread; knead's handful travel as commands behind the
+    // registration.
+    //
+    // For bacteria the thread is not only a budget: two of its names allocate
+    // when they land (`BACTERIA_CONTROL_THREAD_ONLY`,
+    // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
+    // here is the only door that applies them — its audio-thread `set_param`
+    // drops them.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2125,6 +2136,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::grinder_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Bacteria => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::bacteria_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -11395,6 +11416,149 @@ mod tests {
         assert!(
             builtin_param_writes(&mapped.ops).is_empty(),
             "a grinder patch is applied control-side, not over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+    }
+
+    /// A bacteria device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the multi-effect:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a creative multi-effect sounds nothing of its own.
+    #[test]
+    fn a_bacteria_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-bac", "bacteria", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Bacteria(_), None)
+            )),
+            "the bacteria is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a bacteria over a 2 kHz tone.
+    ///
+    /// A tone rather than the sustained step the amp and the limiter are fed:
+    /// the patch below separates two low-pass corners, and a corner is
+    /// inaudible on a step — a low-pass passes DC whatever its cutoff is, so
+    /// both renders would come out identical and the spec would report a patch
+    /// that never landed as one that did. 2 kHz sits well above the 200 Hz
+    /// corner and well below the 18 kHz one, so one render is rolled off and
+    /// the other is not.
+    fn render_bacteria_clip(parameter_values: Value) -> Vec<f32> {
+        const RATE: f32 = 48_000.0;
+        let material: Vec<f32> = (0..48_000)
+            .map(|frame| {
+                let t = frame as f32 / RATE;
+                0.5 * (2.0 * std::f32::consts::PI * 2_000.0 * t).sin()
+            })
+            .collect();
+
+        render_builtin_clip("bacteria", "d-bac", parameter_values, material)
+    }
+
+    /// A bacteria's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust and grinder are held to above, and
+    /// for the same reason: the command ring is finite, and a multi-effect's
+    /// record is its globals plus six bands' worth of band-prefixed names. It
+    /// carries one more reason of its own — two of the engine's names allocate
+    /// when they land, and this thread is the only one allowed to run them
+    /// (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`).
+    ///
+    /// The render is what says the patch was applied rather than merely not
+    /// sent, and the oracle is the largest sample-by-sample difference between
+    /// two whole renders: a filter's output tracks its input on every sample,
+    /// it does not converge to a level.
+    #[test]
+    fn a_bacteria_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 200.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the multi-effect's own names is a bacteria parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the bacteria's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let low_corner = render_bacteria_clip(
+            json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 200.0 }),
+        );
+        let high_corner = render_bacteria_clip(
+            json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 18000.0 }),
+        );
+
+        assert!(
+            high_corner.iter().any(|&sample| sample.abs() > 0.0),
+            "the open-corner render is silence, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&low_corner, &high_corner) > TOLERANCE,
+            "the filter corner in the patch never reached the instance the mapper built \
+             (largest difference {})",
+            max_abs_difference(&low_corner, &high_corner)
+        );
+    }
+
+    /// A band-prefixed key is a bacteria's own spelling, not an address the
+    /// mapper has to decode — it is admitted exactly like any well-shaped
+    /// name, and the engine strips the prefix itself
+    /// (`BacteriaEngine::apply_param`, `crates/daw-dsp/src/bacteria/engine.rs`).
+    ///
+    /// `band0_convolutionSeparation` is the longest name this vocabulary can
+    /// spell at 27 bytes, five under `BUILTIN_PARAM_NAME_CAPACITY`, and
+    /// `stepSeqVal_31` is the widest index of the engine's other dynamically
+    /// named family — the step sequencer's 32 steps. Both parse, so the
+    /// carrier needs no shape change to hold this body's vocabulary.
+    ///
+    /// There is no precedence-draw spec beside this one, unlike crust's and
+    /// grinder's: `BACTERIA_PATCH_PRECEDENCE` is empty because no name in the
+    /// vocabulary rewrites another the same record may carry, so there is no
+    /// draw order for a spec to tell apart.
+    #[test]
+    fn a_band_prefixed_bacteria_key_is_admitted_by_shape() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_convolutionSeparation": 0.7, "stepSeqVal_31": 0.25 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("bacteria's own vocabulary prefixes a band and indexes a step");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "a bacteria patch is applied control-side, not over the command ring: {:?}",
             builtin_param_writes(&mapped.ops)
         );
     }

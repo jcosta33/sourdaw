@@ -92,11 +92,11 @@ describe('holdWebFallbackDeviceParam', () => {
     });
 
     // A type the engine builds no body for is never carried, so its curve
-    // belongs on the ordinary door rather than on this one. Bacteria stays
+    // belongs on the ordinary door rather than on this one. Levain stays
     // bodiless: `BuiltinEffectType::from_name` (`crates/daw-engine/src/scheduler.rs`)
-    // names no `bacteria` arm, so the mapper has no native body to carry it with.
+    // names no `levain` arm, so the mapper has no native body to carry it with.
     it('writes nothing for a built-in the engine builds no native body for', () => {
-        projectHolding(createDevice({ id: 'd1', type: 'bacteria' }));
+        projectHolding(createDevice({ id: 'd1', type: 'levain' }));
 
         holdWebFallbackDeviceParam('t1', 'd1', 'inputGain', 0.75);
 
