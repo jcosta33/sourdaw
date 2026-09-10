@@ -71,6 +71,7 @@ vi.mock('#/modules/Command/useCases', async () => {
         compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
         configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
         executeAppAction: original.executeAppAction,
+        pushUndoEntry: original.pushUndoEntry,
         executeUserAppAction: vi.fn(),
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>

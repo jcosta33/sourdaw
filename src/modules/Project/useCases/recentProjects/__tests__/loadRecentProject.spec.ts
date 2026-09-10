@@ -52,6 +52,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
+    pushUndoEntry: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
