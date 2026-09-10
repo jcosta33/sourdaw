@@ -233,11 +233,13 @@ selectable is reachable through the admission path, not merely present in the ca
 id-minting closure against the statement that consumes it; a counter read inside a variadic call
 observes the pre-call length for every argument.
 
-### 2026-09-10 — one trace-binding edge kept equality at end but refused it at start (escaped via commit 0a4efc74f)
+### 2026-09-10 — strict start comparisons on a microsecond clock survived one fix and one review (introduced in 4266e649b, missed again at 0a4efc74f)
 
-0a4efc74f admitted equal END timestamps for both handler/outer and author/outer nesting while
-keeping both START boundaries strict. A Chrome trace with 2256 of 24001 callbacks tied on handler
-start was therefore refused. The start and end boundaries live on the same quantized clock.
+4266e649b introduced the trace binder with both START comparisons strict and the author/outer
+END already admitting equality. 0a4efc74f admitted the handler/outer END equality and stated
+that strict starts were retained; its review accepted that statement unprobed. The first nightly
+trace then refused 2256 of 24001 callbacks whose enclosing handler started in the callback's own
+microsecond. Start and end live on the same quantized clock.
 
 Blind spot: the stance accepted "retains strict start" as reassurance rather than asking why one
 boundary of a quantized clock differs from the other.
