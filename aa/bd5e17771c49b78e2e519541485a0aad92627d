@@ -1,0 +1,24 @@
+electron/nativeMenuProjectState.ts
+  s_06adf2b091dc62::t_2ae605c62e1881 15-35,40,56-59,62,65-66,69-70
+  s_06adf2b091dc62::t_e5c5192f69a591 36-39
+electron/__tests__/agentWebviewBoundary.spec.ts
+  s_06adf2b091dc62::t_0221a90b25cb81 43
+  s_06adf2b091dc62::t_b197bf6063996d 1-42,44-79,84-294
+  s_06adf2b091dc62::t_09967ff8d1c5af 80-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aabd5e17771c49b78e2e519541485a0aad92627d",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
