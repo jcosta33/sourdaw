@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/getProviderRouteView.ts
+  s_06adf2b091dc62::t_9d1f289c4bc9ea 228
+  s_06adf2b091dc62::t_2ea0bd2e4851db 204-212
+  s_06adf2b091dc62::t_77be7bdefceeaa 138-141,145-150
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_06adf2b091dc62::t_735e29b31ef812 38-40,573-574
+  s_06adf2b091dc62::t_c98c7f6b74b5f1 419-572
+  s_06adf2b091dc62::t_b6ee03724a249d 1,6,9-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7892709379b310d7edbf788df79d2e18e3f629e2",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
