@@ -19,8 +19,7 @@ export function canonicalJson(value: unknown): string {
     return JSON.stringify(value);
 }
 
-export function digest(value: unknown): string {
-    const bytes = new TextEncoder().encode(canonicalJson(value));
+export function digestBytes(bytes: Uint8Array): string {
     const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
     padded.set(bytes);
     padded[bytes.length] = 0x80;
@@ -79,4 +78,8 @@ export function digest(value: unknown): string {
         state[7] = (state[7]! + h!) >>> 0;
     }
     return state.map((word) => word.toString(16).padStart(8, '0')).join('');
+}
+
+export function digest(value: unknown): string {
+    return digestBytes(new TextEncoder().encode(canonicalJson(value)));
 }

@@ -106,6 +106,17 @@ const runtimeMocks = vi.hoisted(() => ({
     renderOffline: vi.fn(),
 }));
 
+function createRenderedSectionBuffer(sampleRate: number) {
+    const channels = [new Float32Array(88_200), new Float32Array(88_200)];
+    return {
+        sampleRate,
+        length: 88_200,
+        numberOfChannels: channels.length,
+        duration: 2,
+        getChannelData: (channel: number) => channels[channel],
+    };
+}
+
 function createRuntimeTestTrack(): Track {
     return {
         id: 'track-bass',
@@ -3546,12 +3557,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 lastRenderAttempted = true;
                 return Promise.reject(new Error('comparison renderer unavailable'));
             }
-            return Promise.resolve({
-                sampleRate: verseJob.sampleRate,
-                length: 88_200,
-                numberOfChannels: 2,
-                duration: 2,
-            });
+            return Promise.resolve(createRenderedSectionBuffer(verseJob.sampleRate));
         });
         // The batch flight awaits durable idempotency completion after its
         // project checkpoint is visible. Land a foreign app action in that
@@ -3702,12 +3708,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             type: 'renderProjectSections',
             payload: { sectionIds: [renderJob.sectionId], jobs: [renderJob] },
         } satisfies RenderSectionsAction;
-        runtimeMocks.renderOffline.mockResolvedValue({
-            sampleRate: renderJob.sampleRate,
-            length: 88_200,
-            numberOfChannels: 2,
-            duration: 2,
-        });
+        runtimeMocks.renderOffline.mockResolvedValue(createRenderedSectionBuffer(renderJob.sampleRate));
         const projectRevision = captureProjectRevision();
         const tempoAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
         const tempoEnvelope = migrateLegacyAppActionToVersionedCommandEnvelope({
@@ -4106,12 +4107,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                         doc.changedDuringRender = true;
                     },
                 });
-                return Promise.resolve({
-                    sampleRate: verseJob.sampleRate,
-                    length: 88_200,
-                    numberOfChannels: 2,
-                    duration: 2,
-                });
+                return Promise.resolve(createRenderedSectionBuffer(verseJob.sampleRate));
             }
             return Promise.reject(new Error('comparison renderer unavailable'));
         });
@@ -4246,12 +4242,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 (options: { onWarning?: (warning: string) => void; sampleRate?: number }) => {
                     options.onWarning?.('tail truncated');
                     options.onWarning?.('peak clipped');
-                    return Promise.resolve({
-                        sampleRate: options.sampleRate ?? renderJob.sampleRate,
-                        length: 88_200,
-                        numberOfChannels: 2,
-                        duration: 2,
-                    });
+                    return Promise.resolve(createRenderedSectionBuffer(options.sampleRate ?? renderJob.sampleRate));
                 }
             );
             const projectRevision = captureProjectRevision();
