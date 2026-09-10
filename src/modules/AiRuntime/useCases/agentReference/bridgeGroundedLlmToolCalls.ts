@@ -2554,7 +2554,7 @@ function clauseNamesToken(clause: PromptClause, tokens: readonly string[]): bool
 type DeviceParameterClauseAttribution = 'other' | 'this';
 
 type DeviceParameterDirectionTokens = {
-    device: readonly string[];
+    owner: readonly string[];
     other: readonly string[];
     parameter: readonly string[];
 };
@@ -2563,16 +2563,23 @@ function getNormalizedTokens(values: readonly string[]): string[] {
     return values.map((value) => normalizePromptText(value)).filter((token) => token.length > 0);
 }
 
+function findOwnerTrack(
+    context: ProjectContext,
+    device: DeviceParameterDirectionDevice
+): ProjectContext['tracks'][number] | undefined {
+    return context.tracks.find((track) => track.devices.some((candidate) => candidate.id === device.id));
+}
+
 /** Every context object a clause could name instead of this one: other parameters, devices and tracks. */
 function getOtherObjectTokens(
     context: ProjectContext,
     parameter: DeviceParameterDirectionParameter,
-    device: DeviceParameterDirectionDevice
+    device: DeviceParameterDirectionDevice,
+    ownerTrack: ProjectContext['tracks'][number] | undefined
 ): readonly string[] {
     const parameterTokens = getNormalizedTokens([parameter.id, parameter.name]);
     const deviceTokens = getNormalizedTokens([device.id, device.type]);
     const devices = context.tracks.flatMap((track) => track.devices);
-    const ownerTrack = context.tracks.find((track) => track.devices.some((candidate) => candidate.id === device.id));
     const otherTracks = context.tracks.filter((track) => track.id !== ownerTrack?.id);
     const everyParameterToken = getNormalizedTokens(
         devices
@@ -2595,20 +2602,20 @@ function attributeDirectionClause(
     if (clauseNamesToken(clause, tokens.parameter)) {
         return 'this';
     }
+    if (clauseNamesToken(clause, tokens.owner)) {
+        return 'this';
+    }
     if (clauseNamesToken(clause, tokens.other)) {
         return 'other';
-    }
-    if (clauseNamesToken(clause, tokens.device)) {
-        return 'this';
     }
     return inherited;
 }
 
 /**
- * The clauses attributed to this parameter, read left to right: a clause naming the parameter, or
- * naming this device without naming another object, is this parameter's, while a clause naming
- * another parameter, device or track belongs to that object. A clause naming nothing inherits the
- * nearest preceding attribution, and is this parameter's when no attributed clause precedes it.
+ * The clauses attributed to this parameter, read left to right: a clause naming this parameter, or
+ * naming this device or its owner track, is this parameter's; a clause naming another parameter,
+ * device or track belongs to that object. A clause naming nothing inherits the nearest preceding
+ * attribution, and is this parameter's when no attributed clause precedes it.
  */
 function selectDeviceParameterDirectionClauses(
     actionScope: ActionPromptScope,
@@ -2616,9 +2623,10 @@ function selectDeviceParameterDirectionClauses(
     device: DeviceParameterDirectionDevice,
     context: ProjectContext
 ): readonly PromptClause[] {
+    const ownerTrack = findOwnerTrack(context, device);
     const tokens: DeviceParameterDirectionTokens = {
-        device: getNormalizedTokens([device.id, device.type]),
-        other: getOtherObjectTokens(context, parameter, device),
+        owner: getNormalizedTokens([device.id, device.type, ownerTrack?.id ?? '', ownerTrack?.name ?? '']),
+        other: getOtherObjectTokens(context, parameter, device, ownerTrack),
         parameter: getNormalizedTokens([parameter.id, parameter.name]),
     };
     const attributed: PromptClause[] = [];

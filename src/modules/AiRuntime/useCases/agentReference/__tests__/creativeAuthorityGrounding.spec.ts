@@ -533,6 +533,27 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expectBrightnessRejected(prompt, 0.3);
     });
 
+    it('attributes a clause naming both this device and another device to this device', () => {
+        const prompt = 'lower the filter more than the eq';
+
+        expectBrightnessRejected(prompt, 0.9);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('attributes a clause naming this device owner track over another track it also names', () => {
+        const prompt = 'the guitar is too bright compared to the bass, turn it down';
+
+        expectBrightnessRejected(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('reads a direction from a clause naming this parameter even after a clause naming another one', () => {
+        const prompt = 'lower the gain, and raise the brightness';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
+    });
+
     it('grounds a bypass intent the request never phrased', () => {
         const result = bridge({
             calls: [{ name: 'bypassDevice', arguments: { deviceId: 'guitar-eq-1', bypassed: true } }],
