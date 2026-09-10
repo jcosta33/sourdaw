@@ -24,8 +24,10 @@ use crate::timeline::{
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
+use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::knead::engine::KneadEngine;
+use daw_dsp::primitives::sanitize::sanitize_block;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
 
@@ -282,6 +284,7 @@ pub enum BuiltinEffectType {
     Knead,
     Fermenter,
     GrandBoule,
+    Gluten,
 }
 
 impl BuiltinEffectType {
@@ -293,6 +296,7 @@ impl BuiltinEffectType {
             Self::Knead => "knead",
             Self::Fermenter => "fermenter",
             Self::GrandBoule => "grand-boule",
+            Self::Gluten => "gluten",
         }
     }
 
@@ -304,6 +308,7 @@ impl BuiltinEffectType {
             "knead" => Some(Self::Knead),
             "fermenter" => Some(Self::Fermenter),
             "grand-boule" => Some(Self::GrandBoule),
+            "gluten" => Some(Self::Gluten),
             _ => None,
         }
     }
@@ -320,6 +325,7 @@ impl BuiltinEffectType {
             Self::Knead => false,
             Self::Fermenter => true,
             Self::GrandBoule => true,
+            Self::Gluten => false,
         }
     }
 }
@@ -950,6 +956,7 @@ pub enum PluginCore {
     Knead(KneadEngine),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
+    Gluten(Box<GlutenBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -965,6 +972,7 @@ impl PluginCore {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
         }
     }
 
@@ -994,6 +1002,22 @@ impl PluginCore {
         Self::GrandBoule(Box::new(body))
     }
 
+    /// Build a Gluten carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a bus compressor's patch is
+    /// some forty-five of the compressor's own parameters per strip and the
+    /// command ring is finite. There is no ordering law over the writes — the
+    /// compressor has no selection routing later writes at a topology, and
+    /// every topology holds its own copy of the names they share — so every
+    /// entry addresses the one compressor whatever order the record is read
+    /// in.
+    pub fn gluten_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GlutenBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Gluten(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1002,6 +1026,7 @@ impl PluginCore {
             Self::Knead(_) => Some(BuiltinEffectType::Knead),
             Self::Fermenter(_) => Some(BuiltinEffectType::Fermenter),
             Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
+            Self::Gluten(_) => Some(BuiltinEffectType::Gluten),
             Self::Native(_) => None,
         }
     }
@@ -1480,6 +1505,96 @@ impl GrandBouleBody {
     }
 }
 
+/// Frames one run of the Gluten body renders, which is the render quantum
+/// the web runtime hands its own instance (`glutenProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`GlutenEngine::process_block`] keeps block-scoped state — the
+/// gain-reduction history ring it pushes one entry per call, the per-block
+/// meters, and the crest and correlation accumulators it resets per call — so
+/// a callback split into runs this size advances that state exactly as the
+/// worklet does rather than once for a device buffer of whatever length the
+/// driver chose. It also keeps every run inside the engine's 4096-frame
+/// external-sidechain buffers, which `process_block` indexes per frame.
+const GLUTEN_RUN_FRAMES: usize = 128;
+
+/// The Gluten bus compressor, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's four
+/// topologies, its four sidechain chains and its two lookahead delay lines
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`GlutenEngine`] rather than `daw_dsp::gluten::GlutenInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input, output and
+/// sidechain buffers so a worklet can write through them, and a host that is
+/// handed the callback's own pair has nothing to do with any of them.
+pub struct GlutenBody {
+    engine: GlutenEngine,
+}
+
+impl GlutenBody {
+    /// Build the compressor on the control thread — it allocates its
+    /// sidechain buffers and its lookahead lines, neither of which the audio
+    /// thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: GlutenEngine::new(sample_rate),
+        }
+    }
+
+    /// Compress the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the uncompressed programme underneath the compressed one.
+    ///
+    /// The block is split into runs of at most [`GLUTEN_RUN_FRAMES`], each one
+    /// a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as the worklet scrubs its own output buffer
+    /// before returning it. The scrubbed count is dropped here: the web path
+    /// reports it as device health over a port this body does not have, and a
+    /// counter no reader can reach would be state carried for nobody.
+    ///
+    /// The external sidechain is never set. The web runtime leaves
+    /// `GlutenNode`'s second input unconnected, so the worklet hands its
+    /// instance silence there; the engine's own buffers are silent from
+    /// construction and nothing here disturbs them, which is the same
+    /// detector source by a shorter route.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the compressor's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GLUTEN_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the compressor's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the compressor resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in patch {
+            self.set_param(name.as_str(), *value);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -1507,6 +1622,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Gluten(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -4658,6 +4777,9 @@ fn process_device(
             body.process(left, right, frames, effect.pending_midi.as_slice());
             effect.pending_midi.clear();
         }
+        PluginCore::Gluten(body) => {
+            body.process(left, right);
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -5682,12 +5804,33 @@ mod tests {
 
     /// `from_name` is the inverse of `name`, so the named boundary and the
     /// addressed command cannot drift into meaning different things.
+    ///
+    /// Every variant is pinned rather than one of them, because the pair is a
+    /// per-variant fact: a body whose two arms disagree is one the mapper
+    /// admits by name and the engine then builds as something else.
     #[test]
     fn builtin_effect_type_from_name_is_the_inverse_of_name() {
-        assert_eq!(
-            BuiltinEffectType::from_name(BuiltinEffectType::Knead.name()),
-            Some(BuiltinEffectType::Knead)
-        );
+        for builtin in [
+            BuiltinEffectType::Knead,
+            BuiltinEffectType::Fermenter,
+            BuiltinEffectType::GrandBoule,
+            BuiltinEffectType::Gluten,
+        ] {
+            // No wildcard: a variant added to the registry and forgotten in
+            // the list above fails to compile here rather than going unpinned.
+            match builtin {
+                BuiltinEffectType::Knead
+                | BuiltinEffectType::Fermenter
+                | BuiltinEffectType::GrandBoule
+                | BuiltinEffectType::Gluten => {}
+            }
+            assert_eq!(
+                BuiltinEffectType::from_name(builtin.name()),
+                Some(builtin),
+                "'{}' does not resolve back to the variant that names it",
+                builtin.name()
+            );
+        }
         assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
     }
 
@@ -7303,6 +7446,99 @@ mod tests {
         /// voice and arms the attack, a note-off applies damping and triggers
         /// the damper-lift transient — and either could allocate without the
         /// other doing so.
+        /// A hosted Gluten compresses a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its sidechain buffers
+        /// and its lookahead lines are legitimately allocated (ADR 0020), and
+        /// it is registered and spliced the way the mapper registers an
+        /// insert — detached with no note store, then placed on the chain — so
+        /// what runs inside the guard is the whole callback path a strip
+        /// carrying the device takes, not the body alone.
+        ///
+        /// The patch drives the compressor into gain reduction and the clip
+        /// gives it material, because `process_block` walks its whole
+        /// per-sample path only while there is signal to compress: a guard
+        /// around a silent render would abort on nothing and prove nothing.
+        #[test]
+        fn a_gluten_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("threshold").expect("a well-shaped name"),
+                    -30.0,
+                ),
+                (
+                    BuiltinParamName::parse("ratio").expect("a well-shaped name"),
+                    8.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::gluten_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no compression"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the compressor never ran"
+            );
+        }
+
         #[test]
         fn a_grand_boule_note_on_and_render_allocate_nothing() {
             const FRAMES: usize = 512;
@@ -14858,5 +15094,232 @@ mod timeline_tests {
             rms(&both_released[TAIL..]),
             rms(&one_released[TAIL..])
         );
+    }
+
+    /// The rate every Gluten spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs different ballistics and the parity spec below
+    /// would be comparing two different compressors.
+    const GLUTEN_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, in the compressor's own
+    /// vocabulary.
+    ///
+    /// Chosen to work the compressor hard on the ramp it is handed: a
+    /// threshold far under the material with a high ratio and a fast attack
+    /// means the output is nowhere near the input, so an equality against the
+    /// reference is earned rather than an agreement between two pass-throughs.
+    const GLUTEN_PATCH: [(&str, f32); 5] = [
+        ("threshold", -30.0),
+        ("ratio", 8.0),
+        ("attack", 0.1),
+        ("release", 20.0),
+        ("makeup", 0.0),
+    ];
+
+    /// One of the compressor's own parameter names, as the mapper resolves it.
+    fn gluten_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`GLUTEN_PATCH`] in the carrier [`PluginCore::gluten_with_patch`] takes.
+    fn gluten_patch() -> Vec<(BuiltinParamName, f32)> {
+        GLUTEN_PATCH
+            .iter()
+            .map(|(name, value)| (gluten_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a ramp clip through a Gluten insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_gluten(harness: &mut Harness, frames: usize, patch: &[(BuiltinParamName, f32)]) {
+        track_with_ramp_clip(harness, 1, 101, frames);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::gluten_with_patch(GLUTEN_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// The material `track_with_ramp_clip` puts on the strip: the sample at
+    /// frame `t` is `t + 1`, and a mono clip at unity reaches both channels
+    /// unchanged.
+    fn gluten_ramp(frames: usize) -> Vec<f32> {
+        (0..frames).map(|frame| frame as f32 + 1.0).collect()
+    }
+
+    /// The largest absolute difference between two renders of the same length.
+    fn max_abs_difference(left: &[f32], right: &[f32]) -> f32 {
+        assert_eq!(left.len(), right.len(), "two renders of different lengths");
+        left.iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max)
+    }
+
+    /// A hosted Gluten renders the samples the worklet's own
+    /// `GlutenInstance` renders for the same material and the same patch.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — and scrubs the returned block
+    /// of non-finite samples. The scheduler hands the body a 256-frame
+    /// callback, so the body is what splits the callback into runs of the
+    /// worklet's size; a body that processed the callback whole, or summed
+    /// its output into the pair instead of replacing it, renders a different
+    /// signal from the reference here.
+    #[test]
+    fn a_hosted_gluten_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::gluten::GlutenInstance;
+
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, RENDERED, &gluten_patch());
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = gluten_ramp(RENDERED);
+        let mut instance = GlutenInstance::new(GLUTEN_RATE);
+        for (name, value) in GLUTEN_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / GLUTEN_RUN_FRAMES {
+            let start = block * GLUTEN_RUN_FRAMES;
+            let run = &ramp[start..start + GLUTEN_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `GlutenInstance::new` sizes every buffer at 4096 frames
+            // and no method resizes one, so a run of GLUTEN_RUN_FRAMES lies
+            // inside the allocation the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, GLUTEN_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, GLUTEN_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(GLUTEN_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are 4096 frames long and
+            // are never resized; nothing mutates the instance between the
+            // render and this copy.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GLUTEN_RUN_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GLUTEN_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            max_abs_difference(&worklet_left, &ramp) > TOLERANCE,
+            "the reference render is its own input, so an equality against it would pass \
+             for a body that compressed nothing"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &ramp) > TOLERANCE,
+            "the hosted render is its own input: the compressor never engaged"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Gluten on the strip, optionally written to after registration, and
+    /// the master it renders beside the diagnostics that count the write.
+    fn render_gluten_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, CALLBACK * CALLBACKS, &[]);
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` carrying one of the compressor's own parameter names
+    /// reaches the body, and is not counted as aimed at the wrong one.
+    ///
+    /// `threshold` is where compression starts, so a write that reached
+    /// nothing renders the samples the unwritten body does.
+    #[test]
+    fn a_gluten_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_gluten_write(None);
+        let (with_threshold, threshold_diagnostics) = render_gluten_write(Some((
+            DeviceParam::BuiltinNamed(gluten_name("threshold")),
+            -40.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_threshold, untouched,
+            "the named write never reached the compressor"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                threshold_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Gluten hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the compressor still ran over, reads as different numbers rather
+    /// than as the same silence.
+    #[test]
+    fn a_bypassed_gluten_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, RENDERED, &gluten_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = gluten_ramp(RENDERED);
+        assert_eq!(left, ramp, "a bypassed compressor moved the left channel");
+        assert_eq!(right, ramp, "a bypassed compressor moved the right channel");
     }
 }

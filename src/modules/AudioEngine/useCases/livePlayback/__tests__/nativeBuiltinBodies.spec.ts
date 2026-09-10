@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
+import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
 import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
@@ -117,6 +118,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('knead')).not.toBeNull();
         expect(nativeBuiltinBody('fermenter')).not.toBeNull();
         expect(nativeBuiltinBody('grand-boule')).not.toBeNull();
+        expect(nativeBuiltinBody('gluten')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -133,6 +135,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('fermenter').soundsNotes).toBe(true);
         expect(bodyOf('grand-boule').soundsNotes).toBe(true);
         expect(bodyOf('knead').soundsNotes).toBe(false);
+        expect(bodyOf('gluten').soundsNotes).toBe(false);
     });
 });
 
@@ -239,6 +242,51 @@ describe('the grand boule body', () => {
         expect(bodyOf('grand-boule').addressesParameter('master_gain')).toBe(false);
         expect(bodyOf('grand-boule').addressesParameter('filterCutoff')).toBe(false);
         expect(bodyOf('grand-boule').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Gluten's vocabulary is welded in a chain, the way Grand Boule's is.
+ * `descriptorEngineParamWeld.spec.ts` holds every `GLUTEN_DESCRIPTOR` parameter
+ * id to an entry in `GLUTEN_DSP_PARAM_NAMES`, and
+ * `models/__tests__/glutenDspParamNames.spec.ts` holds that table to the shape
+ * the engine's parameter carrier admits. What is left for this file is the last
+ * link: that the registry entry actually answers through that table, rather
+ * than through identity or a private copy of it.
+ */
+describe('the gluten body', () => {
+    it('spells a project id in the engine vocabulary the compressor matches on', () => {
+        expect(bodyOf('gluten').parameterName('autoMakeup')).toBe('auto_makeup');
+        expect(bodyOf('gluten').projectPatch({ autoMakeup: 1, scHpfFreq: 80 })).toEqual({
+            auto_makeup: 1,
+            sc_hpf_freq: 80,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the table does not address or the wire cannot send', () => {
+        expect(bodyOf('gluten').projectPatch({ mix: 0.5, presetName: 'Glue', sidechainVisible: true })).toEqual({
+            mix: 0.5,
+        });
+    });
+
+    // The compressor is addressed in camelCase and answers in snake_case, so
+    // the engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        const paramIds = Object.keys(GLUTEN_DSP_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('gluten').addressesParameter(paramId)).toBe(true);
+            expect(bodyOf('gluten').parameterName(paramId)).toBe(GLUTEN_DSP_PARAM_NAMES[paramId]);
+            expect(bodyOf('gluten').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+        }
+        expect(bodyOf('gluten').addressesParameter('auto_makeup')).toBe(false);
+        expect(bodyOf('gluten').addressesParameter('bogus')).toBe(false);
     });
 });
 

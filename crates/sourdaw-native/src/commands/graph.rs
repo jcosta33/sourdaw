@@ -1863,7 +1863,10 @@ fn resolved_param_writes<T>(
 ///
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
-/// the fermenter answers its own.
+/// the fermenter answers its own. Sounding notes is not what decides it —
+/// gluten is an insert and still answers its own snake_case names, because the
+/// vocabulary belongs to the DSP the body hosts rather than to the kind of
+/// device it is.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1873,7 +1876,9 @@ fn builtin_parameter(
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
-        BuiltinEffectType::Fermenter | BuiltinEffectType::GrandBoule => {
+        BuiltinEffectType::Fermenter
+        | BuiltinEffectType::GrandBoule
+        | BuiltinEffectType::Gluten => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2036,11 +2041,12 @@ fn map_device(
     // body at all, because to a strip a device that cannot be built and one
     // that cannot be written are the same missing device.
     //
-    // Which side of the ring a patch is applied on is a property of the body.
-    // A built-in instrument's patch is dozens of the instrument's own
-    // parameters per strip and the command ring is finite, so it is written
-    // into the instance on this thread; knead's handful travel as commands
-    // behind the registration.
+    // Which side of the ring a patch is applied on is a property of the body,
+    // not of whether it sounds notes. A built-in instrument's patch is dozens
+    // of the instrument's own parameters per strip and a gluten's is some
+    // forty-five, and the command ring is finite, so both are written into the
+    // instance on this thread; knead's handful travel as commands behind the
+    // registration.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2057,6 +2063,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::grand_boule_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Gluten => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::gluten_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -10526,6 +10542,180 @@ mod tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the offline render"
+        );
+    }
+
+    /// A gluten device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A store on a compressor would be a
+    /// sink nothing can ever schedule at, and a `Generator` splice would sum
+    /// the compressor's output into the strip beside the signal it was meant
+    /// to replace.
+    #[test]
+    fn a_gluten_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-glu", "gluten", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a gluten device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Gluten(_), None)
+            )),
+            "the gluten is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// A contributing strip carrying one gluten over a constant clip, rendered
+    /// offline, built with `parameter_values` as its patch.
+    ///
+    /// The mapper's own oracle for a patch: what the patch did to the instance
+    /// is audible here, or the patch never reached it. The material is hot
+    /// enough to sit above any threshold the patch names, because a compressor
+    /// handed a signal under its threshold renders its input whatever it is
+    /// set to.
+    fn render_gluten_clip(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 4_800;
+
+        let mut samples = TimelineSamplePool::default();
+        samples.insert(
+            "source-a".to_string(),
+            TimelineSample {
+                left: vec![0.9; 48_000].into(),
+                right: vec![0.9; 48_000].into(),
+                sample_rate: SAMPLE_RATE,
+            },
+        );
+
+        render_offline_batch(
+            &batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Bus",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-glu", "type": "gluten", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-clip",
+                    "playback": {
+                        "trackId": "t1",
+                        "source": { "sourceId": "source-a" },
+                        "startTime": 0,
+                        "sourceOffsetSeconds": 0,
+                        "durationSeconds": 0.1,
+                        "playbackRate": 1,
+                        "gain": 1,
+                        "fade": { "microFadeSeconds": 0 }
+                    }
+                }
+            ])),
+            &samples,
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a gluten renders offline")
+    }
+
+    /// The loudest sample in the second half of a render.
+    ///
+    /// A compressor's gain reduction is not instantaneous — it opens at the
+    /// clip's own level and settles over its attack and release — so the
+    /// loudest sample of a whole render is the onset, which every patch shares.
+    /// The window after the envelope has settled is where two thresholds are
+    /// two different levels.
+    fn settled_peak(rendered: &[f32]) -> f32 {
+        rendered[rendered.len() / 2..]
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// A gluten's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments are held to above, and for the same
+    /// reason: a patch is some forty-five of the compressor's own parameters
+    /// per strip and the command ring is finite. The render is what says the
+    /// patch was applied rather than merely not sent — a lower threshold at a
+    /// higher ratio is more gain reduction, so a patch that reached nothing
+    /// settles at the level an unpatched compressor settles at.
+    #[test]
+    fn a_gluten_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "threshold": -40.0, "ratio": 8.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the compressor's own names is a gluten parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the gluten's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let unpatched = settled_peak(&render_gluten_clip(json!({})));
+        let patched = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -40.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            unpatched > 0.0,
+            "the unpatched render settles at silence, so the comparison below proves nothing"
+        );
+        assert!(
+            patched < unpatched,
+            "the patch never reached the instance the mapper built: it settles at {patched} \
+             where an unpatched compressor settles at {unpatched}"
+        );
+    }
+
+    /// A camelCase key refuses a contributing strip — the fixture's
+    /// `contributesAudio` is `true` — naming the device and the key.
+    ///
+    /// The compressor answers a name it does not know by doing nothing at all,
+    /// so a descriptor id that was never one of its names would otherwise be a
+    /// write the producer believes landed and the mix never heard. `autoMakeup`
+    /// is the descriptor's spelling of a parameter the engine spells
+    /// `auto_makeup`, and it is what a device carries from the moment a panel
+    /// creates it.
+    #[test]
+    fn a_camel_case_gluten_key_is_refused_by_shape() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "autoMakeup": 1 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a key shaped unlike one of the compressor's names must refuse");
+
+        assert!(
+            refusal.contains("autoMakeup") && refusal.contains("d-glu"),
+            "the refusal must name the key and the device, got: {refusal}"
         );
     }
 }
