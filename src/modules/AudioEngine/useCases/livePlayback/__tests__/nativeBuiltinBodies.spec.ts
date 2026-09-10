@@ -381,6 +381,72 @@ describe('the grinder body', () => {
         expect(bodyOf('grinder').addressesParameter('not a name')).toBe(false);
         expect(bodyOf('grinder').addressesParameter('')).toBe(false);
     });
+
+    // Persistence only adds keys and never removes one, so a record that once
+    // selected a factory voice can still carry an imported profile's
+    // `neuralCustom*` keys beside `neuralModelSlot`. `neuralModelMode` says
+    // which source is live, and the projection has to drop the other source's
+    // keys rather than forward both — the native engine rewrites every layer
+    // and scalar from `neuralModelSlot` whatever order it lands in, so a
+    // stale slot next to an imported profile would render the factory voice.
+    it("keeps only the imported profile's keys when neuralModelMode selects the imported source", () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 1,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralCustomTier: 1,
+            neuralCustomConvWeight0_0: 0.1,
+            neuralModelMode: 1,
+        });
+    });
+
+    // The mirror case: a built-in voice record with stale `neuralCustom*`
+    // keys from a profile that was once imported. Harmless only because the
+    // engine happens to apply the slot last — a fixed apply order cannot
+    // serve both records, so the projection drops the custom keys instead.
+    it('keeps only the built-in slot when neuralModelMode selects the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 0,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralModelSlot: 1,
+            neuralModelMode: 0,
+        });
+    });
+
+    // A record from before `neuralModelMode` existed has no mode key at all;
+    // missing means built-in, the same as an explicit 0.
+    it('treats a missing neuralModelMode as the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelSlot: 2,
+                neuralCustomInputDrive: 1.2,
+            })
+        ).toEqual({ neuralModelSlot: 2 });
+    });
+
+    // The live `updateDevicePatch` door sends the worklet's structured patch,
+    // which has no numeric keys at all, so it still projects to nothing.
+    it('still projects a structured patch to nothing', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelMode: 'imported',
+                profile: { inputDrive: 1 },
+            })
+        ).toEqual({});
+    });
 });
 
 describe('the knead body', () => {

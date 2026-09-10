@@ -93,6 +93,29 @@ function shapedNumericParametersOnly(
     );
 }
 
+/**
+ * Mirrors [shapedNumericParametersOnly] for Grinder's own persisted split
+ * between a factory voice and an imported neural capture: persistence only
+ * adds keys and never removes one, so a record that once selected a factory
+ * voice can still carry an imported profile's `neuralCustom*` keys beside
+ * `neuralModelSlot`, or the reverse. `NeuralCapture::load_builtin_model`
+ * rewrites every layer and scalar whenever `neuralModelSlot` reaches it,
+ * whatever order it lands in among the record's other keys, so the record's
+ * own `neuralModelMode` — greater than 0.5 selects the imported profile,
+ * missing or not selects the built-in slot — has to pick which source
+ * travels, because the worklet's structured patch applies only one source at
+ * a time.
+ */
+function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Readonly<Record<string, number>> {
+    const shaped = shapedNumericParametersOnly(patch);
+    const importedIsLive = (shaped.neuralModelMode ?? 0) > 0.5;
+    return Object.fromEntries(
+        Object.entries(shaped).filter(([key]) =>
+            importedIsLive ? key !== 'neuralModelSlot' : !key.startsWith('neuralCustom')
+        )
+    );
+}
+
 /** `DeviceParam::from_name` in `crates/daw-engine/src/timeline.rs`: the closed set of names Knead's body resolves. */
 const KNEAD_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
     'shift_semitones',
@@ -215,10 +238,12 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * A structured patch — the worklet's neural-profile message —
              * projects to nothing here; the Grinder bridge sends that
              * profile as numeric writes in the same names, so the native
-             * door and the record carry it.
+             * door and the record carry it. The record's `neuralModelMode`
+             * picks which neural source those writes carry — see
+             * [grinderNeuralSourceOnly].
              */
             parameterName: (paramId) => paramId,
-            projectPatch: shapedNumericParametersOnly,
+            projectPatch: grinderNeuralSourceOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
         },
     ],
