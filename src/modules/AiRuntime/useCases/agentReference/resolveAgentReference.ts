@@ -2,6 +2,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
+import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import {
     isAgentReferenceCapabilityCandidate,
     type AgentReferenceCapability,
@@ -62,10 +63,6 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
 
 function foldReferenceMarks(value: string): string {
     return value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '');
-}
-
-function escapeRegExp(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 function containsExactPhrase(prompt: string, reference: string): boolean {
