@@ -92,9 +92,11 @@ describe('holdWebFallbackDeviceParam', () => {
     });
 
     // A type the engine builds no body for is never carried, so its curve
-    // belongs on the ordinary door rather than on this one.
+    // belongs on the ordinary door rather than on this one. Grinder stays
+    // bodiless because `GrinderEngine::set_param` matches camelCase names,
+    // which `builtin_named_parameter`'s shape rule refuses.
     it('writes nothing for a built-in the engine builds no native body for', () => {
-        projectHolding(createDevice({ id: 'd1', type: 'crust' }));
+        projectHolding(createDevice({ id: 'd1', type: 'grinder' }));
 
         holdWebFallbackDeviceParam('t1', 'd1', 'drive', 0.75);
 

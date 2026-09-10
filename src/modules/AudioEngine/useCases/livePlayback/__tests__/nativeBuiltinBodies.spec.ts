@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
+import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
 import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
@@ -119,6 +120,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('fermenter')).not.toBeNull();
         expect(nativeBuiltinBody('grand-boule')).not.toBeNull();
         expect(nativeBuiltinBody('gluten')).not.toBeNull();
+        expect(nativeBuiltinBody('crust')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -136,6 +138,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('grand-boule').soundsNotes).toBe(true);
         expect(bodyOf('knead').soundsNotes).toBe(false);
         expect(bodyOf('gluten').soundsNotes).toBe(false);
+        expect(bodyOf('crust').soundsNotes).toBe(false);
     });
 });
 
@@ -287,6 +290,51 @@ describe('the gluten body', () => {
         }
         expect(bodyOf('gluten').addressesParameter('auto_makeup')).toBe(false);
         expect(bodyOf('gluten').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Crust's vocabulary is welded in the same chain Gluten's is.
+ * `descriptorEngineParamWeld.spec.ts` holds every `CRUST_DESCRIPTOR` parameter
+ * id to an entry in `CRUST_DSP_PARAM_NAMES`, and
+ * `models/__tests__/crustDspParamNames.spec.ts` holds that table to the shape
+ * the engine's parameter carrier admits. What is left for this file is the last
+ * link: that the registry entry actually answers through that table, rather
+ * than through identity or a private copy of it.
+ */
+describe('the crust body', () => {
+    it('spells a project id in the engine vocabulary the limiter matches on', () => {
+        expect(bodyOf('crust').parameterName('attackAuto')).toBe('attack_auto');
+        expect(bodyOf('crust').projectPatch({ attackAuto: 1, scHpfFreq: 80 })).toEqual({
+            attack_auto: 1,
+            sc_hpf_freq: 80,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the table does not address or the wire cannot send', () => {
+        expect(bodyOf('crust').projectPatch({ ceiling: -0.3, presetName: 'Master', meterVisible: true })).toEqual({
+            ceiling: -0.3,
+        });
+    });
+
+    // The limiter is addressed in camelCase and answers in snake_case, so the
+    // engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        const paramIds = Object.keys(CRUST_DSP_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('crust').addressesParameter(paramId)).toBe(true);
+            expect(bodyOf('crust').parameterName(paramId)).toBe(CRUST_DSP_PARAM_NAMES[paramId]);
+            expect(bodyOf('crust').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+        }
+        expect(bodyOf('crust').addressesParameter('attack_auto')).toBe(false);
+        expect(bodyOf('crust').addressesParameter('bogus')).toBe(false);
     });
 });
 

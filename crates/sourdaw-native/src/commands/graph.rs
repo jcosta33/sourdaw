@@ -1886,9 +1886,9 @@ fn resolved_param_writes<T>(
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
 /// the fermenter answers its own. Sounding notes is not what decides it —
-/// gluten is an insert and still answers its own snake_case names, because the
-/// vocabulary belongs to the DSP the body hosts rather than to the kind of
-/// device it is.
+/// gluten and crust are inserts and still answer their own snake_case names,
+/// because the vocabulary belongs to the DSP the body hosts rather than to the
+/// kind of device it is.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1900,7 +1900,8 @@ fn builtin_parameter(
         }),
         BuiltinEffectType::Fermenter
         | BuiltinEffectType::GrandBoule
-        | BuiltinEffectType::Gluten => {
+        | BuiltinEffectType::Gluten
+        | BuiltinEffectType::Crust => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2068,10 +2069,10 @@ fn map_device(
     //
     // Which side of the ring a patch is applied on is a property of the body,
     // not of whether it sounds notes. A built-in instrument's patch is dozens
-    // of the instrument's own parameters per strip and a gluten's is some
-    // forty-five, and the command ring is finite, so both are written into the
-    // instance on this thread; knead's handful travel as commands behind the
-    // registration.
+    // of the instrument's own parameters per strip, a gluten's is some
+    // forty-five and a crust's some thirty, and the command ring is finite, so
+    // all of them are written into the instance on this thread; knead's handful
+    // travel as commands behind the registration.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2098,6 +2099,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::gluten_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Crust => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::crust_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -8084,6 +8095,19 @@ mod tests {
         )
     }
 
+    /// Mirrors [`gluten_write`] for the crust fixtures below, for the reason
+    /// given there: the wrapper is the same for any built-in that answers to
+    /// [`BuiltinParamName`], and a crust spec asserting through a wrapper
+    /// named after another device would misname what it asserts.
+    fn crust_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
     fn map_immediate(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
@@ -8229,6 +8253,52 @@ mod tests {
                 expected,
                 "draw {draw}: the macros must lead in descriptor order, and the rest must \
                  follow in name order"
+            );
+        }
+    }
+
+    /// A crust batch routes `style` first, whatever order the wire record
+    /// draws — the same law
+    /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
+    /// proves for the fermenter's own routing key, applied to the one name
+    /// that aliases another of crust's.
+    ///
+    /// `style` and `algorithm` both write the limiter's single algorithm
+    /// slot, so `style` leading is what leaves `algorithm` — the exact pick —
+    /// to land last of the two.
+    #[test]
+    fn set_device_parameters_routes_a_crust_batch_style_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "algorithm": 5.0,
+            "style": 2.0,
+            "ceiling": -6.0,
+            "gain": 12.0
+        });
+        let expected = vec![
+            crust_write("style", 2.0),
+            crust_write("algorithm", 5.0),
+            crust_write("ceiling", -6.0),
+            crust_write("gain", 12.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-cru", BuiltinEffectType::Crust);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-cru", record.clone()),
+                &mut registry,
+            )
+            .expect("a crust answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: `style` must lead, and the rest must follow in name order"
             );
         }
     }
@@ -10660,15 +10730,20 @@ mod tests {
         );
     }
 
-    /// A contributing strip carrying one gluten over a constant clip, rendered
-    /// offline, built with `parameter_values` as its patch.
+    /// A contributing strip carrying one built-in device over `material`,
+    /// rendered offline, built with `parameter_values` as its patch.
     ///
     /// The mapper's own oracle for a patch: what the patch did to the instance
-    /// is audible here, or the patch never reached it. The material is hot
-    /// enough to sit above any threshold the patch names, because a compressor
-    /// handed a signal under its threshold renders its input whatever it is
-    /// set to.
-    fn render_gluten_clip(parameter_values: Value) -> Vec<f32> {
+    /// is audible here, or the patch never reached it. The material is the
+    /// caller's because what makes a patch audible differs by body — a
+    /// compressor separates two thresholds on a sustained level, while a
+    /// limiter's envelope only shows where the level moves.
+    fn render_builtin_clip(
+        device_type: &str,
+        device_id: &str,
+        parameter_values: Value,
+        material: Vec<f32>,
+    ) -> Vec<f32> {
         const SAMPLE_RATE: f32 = 48_000.0;
         const FRAMES: usize = 4_800;
 
@@ -10676,8 +10751,8 @@ mod tests {
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
-                left: vec![0.9; 48_000].into(),
-                right: vec![0.9; 48_000].into(),
+                left: material.clone().into(),
+                right: material.into(),
                 sample_rate: SAMPLE_RATE,
             },
         );
@@ -10689,7 +10764,7 @@ mod tests {
                     "trackId": "t1",
                     "name": "Bus",
                     "state": strip_state(1.0),
-                    "devices": [ { "id": "d-glu", "type": "gluten", "bypassed": false,
+                    "devices": [ { "id": device_id, "type": device_type, "bypassed": false,
                                    "parameterValues": parameter_values } ],
                     "honorMuted": true,
                     "contributesAudio": true
@@ -10712,16 +10787,24 @@ mod tests {
             FRAMES,
             SAMPLE_RATE,
         )
-        .expect("a gluten renders offline")
+        .expect("a built-in body renders offline")
+    }
+
+    /// [`render_builtin_clip`] for a gluten, over material hot enough to sit
+    /// above any threshold the patch names — a compressor handed a signal
+    /// under its threshold renders its input whatever it is set to.
+    fn render_gluten_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("gluten", "d-glu", parameter_values, vec![0.9; 48_000])
     }
 
     /// The loudest sample in the second half of a render.
     ///
-    /// A compressor's gain reduction is not instantaneous — it opens at the
-    /// clip's own level and settles over its attack and release — so the
-    /// loudest sample of a whole render is the onset, which every patch shares.
-    /// The window after the envelope has settled is where two thresholds are
-    /// two different levels.
+    /// A compressor's or limiter's gain reduction is not instantaneous — it
+    /// opens at the clip's own level and settles over its attack (and, for a
+    /// compressor, its release) — so the loudest sample of a whole render is
+    /// the onset, which every patch shares. The window after the envelope has
+    /// settled is where two thresholds, or two ceilings, are two different
+    /// levels.
     fn settled_peak(rendered: &[f32]) -> f32 {
         rendered[rendered.len() / 2..]
             .iter()
@@ -10891,6 +10974,173 @@ mod tests {
         assert!(
             refusal.contains("autoMakeup") && refusal.contains("d-glu"),
             "the refusal must name the key and the device, got: {refusal}"
+        );
+    }
+
+    /// A crust device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A store on a limiter would be a
+    /// sink nothing can ever schedule at, and a `Generator` splice would sum
+    /// the limiter's output into the strip beside the signal it was meant to
+    /// replace.
+    #[test]
+    fn a_crust_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-cru", "crust", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a crust device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Crust(_), None)
+            )),
+            "the crust is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a crust over sustained material 12 dB of
+    /// input gain puts far above any ceiling the patches below name — a
+    /// limiter handed a signal under its ceiling renders its input whatever it
+    /// is set to.
+    fn render_crust_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("crust", "d-cru", parameter_values, vec![0.9; 48_000])
+    }
+
+    /// Material that is far over the ceiling for the first half of the clip
+    /// and far under it for the second.
+    ///
+    /// A limiter on a sustained level settles at its ceiling whatever its
+    /// envelope, so two algorithms render the same samples there. The step is
+    /// what makes the envelope observable: the gain has to travel back to
+    /// unity across the quiet half, and how long that takes is the algorithm.
+    fn crust_step_material() -> Vec<f32> {
+        (0..48_000)
+            .map(|frame| if frame < 2_400 { 0.9 } else { 0.05 })
+            .collect()
+    }
+
+    /// The largest absolute difference between two renders of the same length.
+    fn max_abs_difference(left: &[f32], right: &[f32]) -> f32 {
+        assert_eq!(left.len(), right.len(), "two renders of different lengths");
+        left.iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max)
+    }
+
+    /// A crust's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments are held to above, and for the same
+    /// reason: a patch is some thirty of the limiter's own parameters per
+    /// strip and the command ring is finite. The render is what says the patch
+    /// was applied rather than merely not sent — the ceiling is the level
+    /// everything settles at, so two ceilings over the same material are two
+    /// settled levels, and a patch that reached nothing would give one.
+    #[test]
+    fn a_crust_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-cru",
+                "crust",
+                json!({ "gain": 12.0, "ceiling": -18.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the limiter's own names is a crust parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the crust's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let high_ceiling =
+            settled_peak(&render_crust_clip(json!({ "gain": 12.0, "ceiling": -0.3 })));
+        let low_ceiling = settled_peak(&render_crust_clip(
+            json!({ "gain": 12.0, "ceiling": -18.0 }),
+        ));
+
+        assert!(
+            high_ceiling > 0.0,
+            "the higher-ceiling render settles at silence, so the comparison below proves nothing"
+        );
+        assert!(
+            low_ceiling < high_ceiling,
+            "the ceiling in the patch never reached the instance the mapper built: it settles \
+             at {low_ceiling} where the higher ceiling settles at {high_ceiling}"
+        );
+    }
+
+    /// A crust patch builds one limiter whatever order the record draws, for
+    /// the pair the precedence law exists to order.
+    ///
+    /// `style` and `algorithm` both write the limiter's one algorithm slot —
+    /// `style` through `Algorithm::from_style_index` and `algorithm` through
+    /// `Algorithm::from_index` (`crates/daw-dsp/src/crust/params.rs`) — so a
+    /// record carrying both settles on whichever landed last.
+    /// `BuiltinEffectType::patch_precedence` puts `style` first, so the render
+    /// is `algorithm`'s: style 2 is `Wall` and algorithm 5 is `Bus`, and the
+    /// two release over 12 ms and 260 ms respectively, which is what the
+    /// quiet half of [`crust_step_material`] is long enough to show.
+    ///
+    /// The oracle is the whole render rather than a settled peak: both
+    /// algorithms hold the same ceiling over the hot half, and it is the
+    /// journey back to unity over the quiet half that separates them.
+    #[test]
+    fn a_crust_patch_builds_one_limiter_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        fn render(parameter_values: Value) -> Vec<f32> {
+            render_builtin_clip("crust", "d-cru", parameter_values, crust_step_material())
+        }
+
+        let record = json!({
+            "gain": 12.0,
+            "ceiling": -6.0,
+            "style": 2.0,
+            "algorithm": 5.0
+        });
+
+        let first = render(record.clone());
+        for draw in 0..DRAWS {
+            assert_eq!(
+                max_abs_difference(&render(record.clone()), &first),
+                0.0,
+                "draw {draw}: the same record rendered different samples"
+            );
+        }
+
+        let algorithm_alone = render(json!({ "gain": 12.0, "ceiling": -6.0, "algorithm": 5.0 }));
+        let style_alone = render(json!({ "gain": 12.0, "ceiling": -6.0, "style": 2.0 }));
+
+        assert!(
+            max_abs_difference(&first, &algorithm_alone) <= TOLERANCE,
+            "the exact algorithm did not win over the style that aliases it (largest \
+             difference {})",
+            max_abs_difference(&first, &algorithm_alone)
+        );
+        assert!(
+            max_abs_difference(&first, &style_alone) > TOLERANCE,
+            "the style alone renders the same samples as the algorithm, so this spec cannot \
+             tell the two orders apart"
         );
     }
 }

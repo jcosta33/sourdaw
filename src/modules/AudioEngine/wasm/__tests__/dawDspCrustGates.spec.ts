@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getPluginById, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
+import { CRUST_DSP_PARAM_NAMES } from '../../models/CrustDspParamNames';
 import { initSync, CrustInstance } from '../daw_dsp.js';
 
 const FRAMES = 512;
@@ -40,27 +41,6 @@ const wasmBytes = readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_d
 const wasm = initSync({ module: new WebAssembly.Module(wasmBytes) });
 
 /**
- * The camelCase descriptor ids, mapped exactly as `crustProcessor.ts`'s
- * `PARAM_MAP` maps them. Written out rather than imported because that module
- * ends in `registerProcessor` and cannot be loaded outside a worklet; the weld
- * between the two is held by `descriptorEngineParamWeld.spec.ts`.
- */
-const ENGINE_NAME: Record<string, string> = {
-    attack: 'attack',
-    attackAuto: 'attack_auto',
-    release: 'release',
-    releaseAuto: 'release_auto',
-    satEnabled: 'sat_enabled',
-    satDrive: 'sat_drive',
-    satMix: 'sat_mix',
-    algorithm: 'algorithm',
-    ceiling: 'ceiling',
-    gain: 'gain',
-    lookahead: 'lookahead',
-    oversampling: 'oversampling',
-};
-
-/**
  * Render the probe programme with a patch expressed in **descriptor** ids, each
  * value passed through the delivery law the app applies before the write leaves
  * for the DSP. So a value this file renders is a value the product can actually
@@ -70,7 +50,10 @@ function render(patch: Record<string, number>): Float32Array {
     const crust = new CrustInstance(SAMPLE_RATE);
     try {
         for (const [paramId, value] of Object.entries(patch)) {
-            const engineName = ENGINE_NAME[paramId];
+            // `CRUST_DSP_PARAM_NAMES` is the table both hosts address the
+            // limiter through, so a patch this file renders is spelled the way
+            // the worklet and the native body spell it.
+            const engineName = CRUST_DSP_PARAM_NAMES[paramId];
             if (!engineName) {
                 throw new Error(`no engine name for crust/${paramId}`);
             }

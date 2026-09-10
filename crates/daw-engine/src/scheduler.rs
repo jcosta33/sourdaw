@@ -23,6 +23,7 @@ use crate::timeline::{
     TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
+use daw_dsp::crust::engine::CrustEngine;
 use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
 use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
@@ -285,6 +286,7 @@ pub enum BuiltinEffectType {
     Fermenter,
     GrandBoule,
     Gluten,
+    Crust,
 }
 
 impl BuiltinEffectType {
@@ -297,6 +299,7 @@ impl BuiltinEffectType {
             Self::Fermenter => "fermenter",
             Self::GrandBoule => "grand-boule",
             Self::Gluten => "gluten",
+            Self::Crust => "crust",
         }
     }
 
@@ -309,6 +312,7 @@ impl BuiltinEffectType {
             "fermenter" => Some(Self::Fermenter),
             "grand-boule" => Some(Self::GrandBoule),
             "gluten" => Some(Self::Gluten),
+            "crust" => Some(Self::Crust),
             _ => None,
         }
     }
@@ -326,6 +330,7 @@ impl BuiltinEffectType {
             Self::Fermenter => true,
             Self::GrandBoule => true,
             Self::Gluten => false,
+            Self::Crust => false,
         }
     }
 
@@ -338,11 +343,12 @@ impl BuiltinEffectType {
     /// The body is what states this: only it knows which of its own names
     /// alias others, so [`precedence_first`] never carries that knowledge
     /// itself and cannot drift from what [`FermenterBody::load_patch`] or
-    /// [`GlutenBody::load_patch`] actually does.
+    /// [`GlutenBody::load_patch`] or [`CrustBody::load_patch`] actually does.
     pub fn patch_precedence(self) -> &'static [&'static str] {
         match self {
             Self::Fermenter => &[LAYER_ROUTING_KEY],
             Self::Gluten => GLUTEN_MACRO_KEYS,
+            Self::Crust => CRUST_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -975,6 +981,7 @@ pub enum PluginCore {
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
+    Crust(Box<CrustBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -991,6 +998,7 @@ impl PluginCore {
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Crust => Self::crust_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1037,6 +1045,21 @@ impl PluginCore {
         Self::Gluten(Box::new(body))
     }
 
+    /// Build a Crust carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a mastering limiter's patch
+    /// is some thirty of the limiter's own parameters per strip and the
+    /// command ring is finite. The ordering law here is
+    /// [`CRUST_PATCH_PRECEDENCE`], which [`CrustBody::load_patch`] applies
+    /// through [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
+    pub fn crust_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = CrustBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Crust(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1046,6 +1069,7 @@ impl PluginCore {
             Self::Fermenter(_) => Some(BuiltinEffectType::Fermenter),
             Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
             Self::Gluten(_) => Some(BuiltinEffectType::Gluten),
+            Self::Crust(_) => Some(BuiltinEffectType::Crust),
             Self::Native(_) => None,
         }
     }
@@ -1651,6 +1675,152 @@ impl GlutenBody {
     }
 }
 
+/// Frames one run of the Crust body renders, which is the render quantum the
+/// web runtime hands its own instance (`crustProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`CrustEngine::process_block`] caps a single call at its own `MAX_BLOCK`
+/// of 4096 frames, so a device buffer longer than that would be silently cut
+/// short; and its input and output peak meters are per-call figures decayed
+/// once per block, so a callback split into runs this size advances them as
+/// the worklet does rather than once for a buffer of whatever length the
+/// driver chose. The output samples themselves do not show the split: the
+/// limiting path is per-sample, the gain state carries across calls, and the
+/// look-ahead ring is untouched by a block boundary.
+const CRUST_RUN_FRAMES: usize = 128;
+
+/// The Crust patch keys that must land before every other entry, in the order
+/// they must land.
+///
+/// `style` and `algorithm` are two names for one thing: both arms of
+/// [`CrustEngine::set_param`] write the engine's single `algorithm` field,
+/// `style` through `Algorithm::from_style_index` (the panel's three-way PLAY
+/// control) and `algorithm` through `Algorithm::from_index` (the eight-way
+/// SHAPE list). Leading with `style` leaves the exact pick, `algorithm`, to
+/// land with the rest of the record, so a record carrying both builds the
+/// algorithm it names outright rather than the simplification of it.
+///
+/// This is the body's own law rather than a mirror of the web host's: neither
+/// name is a `CrustDescriptor.ts` parameter id, and the web host applies a
+/// device's record in first-insertion order
+/// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`)
+/// over an open record, so there is no order there to mirror. A PLAY tile
+/// persists `style` and the algorithm it derives, in that order
+/// (`setCrustParamWithAudio.ts`, `createFlushHandlers.ts`); a SHAPE pill
+/// refines `algorithm` alone. `algorithm` is therefore always the engine's
+/// own pick, and this law exists so the exact pick lands last whatever order
+/// a `HashMap` record draws; a record written before this contract (stale
+/// `algorithm` beside a newer `style`) resolves to its exact pick rather than
+/// the simplification of it.
+const CRUST_PATCH_PRECEDENCE: &[&str] = &["style"];
+
+/// Crust, the true-peak mastering limiter, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's five
+/// band limiters, its safety stage, its oversampled saturator and its dry
+/// delay line would set the size of every command the engine sends.
+///
+/// This hosts [`CrustEngine`] rather than `daw_dsp::crust::CrustInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input and output
+/// buffers so a worklet can write through them, and a host that is handed the
+/// callback's own pair has nothing to do with any of them.
+///
+/// ## Why this body declares no latency
+///
+/// Crust's look-ahead is real delay, and it is already compensated — on the
+/// Web Audio side, for the strip the native engine carries. A native-carried
+/// strip's Web Audio chain is built and gated shut rather than torn down
+/// (`startNativeLiveGraphSession.ts`: every carried track is "gated shut at
+/// its Web Audio exits"), so its `CrustNode` goes on receiving
+/// `latency-changed` from the worklet and reporting the figure into
+/// `externalLatencyRegistry` (`wasmDeviceRegistry.ts` calls `reportLatency`
+/// on ready and on every change). `getTrackLatency` and `getCompensationDelay`
+/// turn that into the strip's `compensationDelaySeconds`, which
+/// `projectLiveGraphProgramme.ts` and `projectLiveAutomationWrites.ts` fold
+/// into what the native engine is told to play.
+///
+/// [`GraphCommand::SetEffectLatency`] is therefore reserved for what sounds
+/// only natively — an externally hosted plugin — and `getDeviceLatencyMs`
+/// returns 0 for `external-plugin` for the mirror reason. Declaring Crust's
+/// figure here as well would compensate one delay twice and push every other
+/// device on the strip late by exactly that figure. The `ActiveEffect::dry_delay`
+/// doc — `None` "for a device declaring no latency, which is every built-in the
+/// engine owns" — stays true.
+pub struct CrustBody {
+    engine: CrustEngine,
+}
+
+impl CrustBody {
+    /// Build the limiter on the control thread — it allocates its look-ahead
+    /// rings, its dry delay line, its block scratch and its loudness meters,
+    /// none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: CrustEngine::new(sample_rate),
+        }
+    }
+
+    /// Limit the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the unlimited programme underneath the limited one.
+    ///
+    /// The block is split into runs of at most [`CRUST_RUN_FRAMES`], each one
+    /// a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as `CrustInstance::process` scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here: the web path reports it as device health over a port this body
+    /// does not have, and a counter no reader can reach would be state carried
+    /// for nobody.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the limiter's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(CRUST_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the limiter's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the limiter resolves it by comparison,
+    /// allocating nothing. The engine's own `bypass` name is one of those
+    /// parameters and is forwarded like any other; the device's bypass is the
+    /// graph's own [`GraphCommand::SetBypass`], as it is for every other body.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`CRUST_PATCH_PRECEDENCE`] lands first through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and `style` writes the same algorithm
+    /// slot `algorithm` does — applied anywhere else, the simplified
+    /// three-way pick could silently undo the exact one the record also
+    /// carries by nothing more than an accident of draw order.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Crust.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -1682,6 +1852,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Gluten(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Crust(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -4836,6 +5010,9 @@ fn process_device(
         PluginCore::Gluten(body) => {
             body.process(left, right);
         }
+        PluginCore::Crust(body) => {
+            body.process(left, right);
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -5871,6 +6048,7 @@ mod tests {
             BuiltinEffectType::Fermenter,
             BuiltinEffectType::GrandBoule,
             BuiltinEffectType::Gluten,
+            BuiltinEffectType::Crust,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -5878,7 +6056,8 @@ mod tests {
                 BuiltinEffectType::Knead
                 | BuiltinEffectType::Fermenter
                 | BuiltinEffectType::GrandBoule
-                | BuiltinEffectType::Gluten => {}
+                | BuiltinEffectType::Gluten
+                | BuiltinEffectType::Crust => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -7639,6 +7818,100 @@ mod tests {
                     .zip(0..FRAMES)
                     .any(|(sample, frame)| *sample != frame as f32 + 1.0),
                 "the guarded callback returned its input, so the compressor never ran"
+            );
+        }
+
+        /// A hosted Crust limits a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its look-ahead rings,
+        /// its dry delay line and its loudness meters are legitimately
+        /// allocated (ADR 0020), and it is registered and spliced the way the
+        /// mapper registers an insert — detached with no note store, then
+        /// placed on the chain — so what runs inside the guard is the whole
+        /// callback path a strip carrying the device takes, not the body
+        /// alone.
+        ///
+        /// The patch drives the limiter into gain reduction and the clip gives
+        /// it material well over the ceiling, because `process_block` walks its
+        /// whole per-sample path only while there is signal to limit: a guard
+        /// around a silent render would abort on nothing and prove nothing.
+        #[test]
+        fn a_crust_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("gain").expect("a well-shaped name"),
+                    18.0,
+                ),
+                (
+                    BuiltinParamName::parse("ceiling").expect("a well-shaped name"),
+                    -12.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::crust_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no limiting"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the limiter never ran"
             );
         }
     }
@@ -15241,8 +15514,9 @@ mod timeline_tests {
 
     /// The material `track_with_ramp_clip` puts on the strip: the sample at
     /// frame `t` is `t + 1`, and a mono clip at unity reaches both channels
-    /// unchanged.
-    fn gluten_ramp(frames: usize) -> Vec<f32> {
+    /// unchanged. Named for the clip rather than for one device, because every
+    /// built-in body's specs below render this same strip.
+    fn ramp_clip_material(frames: usize) -> Vec<f32> {
         (0..frames).map(|frame| frame as f32 + 1.0).collect()
     }
 
@@ -15305,7 +15579,7 @@ mod timeline_tests {
         harness.playing();
         let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
 
-        let ramp = gluten_ramp(RENDERED);
+        let ramp = ramp_clip_material(RENDERED);
         let mut instance = GlutenInstance::new(GLUTEN_RATE);
         for (name, value) in GLUTEN_PATCH {
             instance.set_param(name, value);
@@ -15437,8 +15711,333 @@ mod timeline_tests {
         harness.playing();
         let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
 
-        let ramp = gluten_ramp(RENDERED);
+        let ramp = ramp_clip_material(RENDERED);
         assert_eq!(left, ramp, "a bypassed compressor moved the left channel");
         assert_eq!(right, ramp, "a bypassed compressor moved the right channel");
+    }
+
+    // ── Crust ──────────────────────────────────────────────────────────────
+
+    /// The rate every Crust spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs a different look-ahead window and different attack
+    /// ramps, and the parity spec below would be comparing two different
+    /// limiters.
+    const CRUST_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, with `style` ahead of
+    /// `algorithm` as [`CRUST_PATCH_PRECEDENCE`] requires.
+    ///
+    /// `style` is 2 and `algorithm` is 5, and the two name different
+    /// limiters: `Algorithm::from_style_index(2)` is `Wall` while
+    /// `Algorithm::from_index(5)` is `Bus`
+    /// (`crates/daw-dsp/src/crust/params.rs`). The pair is picked for the one
+    /// quantity the rest of this patch leaves free to separate them.
+    /// `release_auto` is off with `release` named outright, so both algorithms
+    /// release identically; `attack_auto` keeps its default of on, so the
+    /// attack is the algorithm's own — `Wall` attacks in 0 ms and `Bus` in
+    /// 0.6 ms, which at this rate is an instant gain step against a 29-sample
+    /// ramp, well inside the 42-sample budget a 1 ms look-ahead leaves after
+    /// the true-peak group delay. A body that applies `algorithm` before
+    /// `style` therefore steps its gain where the reference ramps, and the two
+    /// renders separate over every one of those ramps.
+    ///
+    /// `release` is 1 ms rather than a musical figure so the gain is back at
+    /// unity before the next burst of [`crust_burst_material`] arrives: a
+    /// release longer than the gap between bursts would hold the gain down
+    /// across the whole render, leaving exactly one attack to separate the two
+    /// algorithms instead of one per burst.
+    ///
+    /// The rest works the limiter hard on [`crust_burst_material`]: 12 dB of
+    /// input gain over a ceiling 12 dB down puts every burst far above the
+    /// ceiling, so an equality against the reference is earned by two limiters
+    /// doing the same work rather than by two pass-throughs agreeing.
+    const CRUST_PATCH: [(&str, f32); 8] = [
+        ("style", 2.0),
+        ("gain", 12.0),
+        ("ceiling", -12.0),
+        ("lookahead", 1.0),
+        ("true_peak", 1.0),
+        ("release", 1.0),
+        ("release_auto", 0.0),
+        ("algorithm", 5.0),
+    ];
+
+    /// A quiet bed under isolated bursts far over the ceiling.
+    ///
+    /// What separates two limiter envelopes is what each does while its gain
+    /// is *moving*, and a signal that is over the ceiling throughout never
+    /// moves one: the look-ahead detector settles on one required gain and
+    /// holds it, so two algorithms render the same samples. Each burst here
+    /// enters the detector's window a look-ahead ahead of leaving the delay
+    /// line, and it is the bed under that window — pulled down instantly by
+    /// one attack and over 29 samples by the other — that carries the
+    /// difference into the output.
+    fn crust_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let phase = 2.0 * std::f32::consts::PI * 220.0 * frame as f32 / CRUST_RATE;
+                let burst = if frame % 160 < 8 { 6.0 } else { 0.0 };
+                0.05 * phase.sin() + burst
+            })
+            .collect()
+    }
+
+    /// A track carrying one mono clip of `material` at unity, so a spec can
+    /// choose what the strip plays rather than take the ramp.
+    fn track_with_material_clip(
+        harness: &mut Harness,
+        track_id: usize,
+        clip_id: usize,
+        material: Vec<f32>,
+    ) {
+        let frames = material.len();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                material.into(),
+                [].into(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// One of the limiter's own parameter names, as the mapper resolves it.
+    fn crust_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`CRUST_PATCH`] in the carrier [`PluginCore::crust_with_patch`] takes.
+    fn crust_patch() -> Vec<(BuiltinParamName, f32)> {
+        CRUST_PATCH
+            .iter()
+            .map(|(name, value)| (crust_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a ramp clip through a Crust insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_crust(
+        harness: &mut Harness,
+        material: Vec<f32>,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        track_with_material_clip(harness, 1, 101, material);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::crust_with_patch(CRUST_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// The loudest absolute sample in a render.
+    fn peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |loudest, sample| loudest.max(sample.abs()))
+    }
+
+    /// A hosted Crust renders the samples the worklet's own `CrustInstance`
+    /// renders for the same material and the same patch — sample parity
+    /// against the reference, not merely that both moved.
+    ///
+    /// [`CRUST_PATCH`] crosses to the reference instance in the order it is
+    /// written and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`CrustBody::load_patch`] brings
+    /// `style` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law the reversed
+    /// record would apply `style` last, and `style` and `algorithm` write the
+    /// engine's one algorithm slot: the hosted body would limit as `Wall`
+    /// where the reference limits as `Bus`.
+    ///
+    /// Both renders carry the same look-ahead delay — the body declares none
+    /// to the graph, so no compensation moves either of them — which is what
+    /// lets this be a sample-for-sample equality rather than a correlation.
+    /// That is also the evidence for the declaration: the hosted output stands
+    /// exactly where the worklet's does.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — which is what
+    /// [`CRUST_RUN_FRAMES`] mirrors. The limiting path is per-sample and its
+    /// state carries across calls, so the output samples this spec compares
+    /// cannot show the split; the run size is pinned for the block-scoped
+    /// meters and the 4096-frame call cap, not for these samples.
+    #[test]
+    fn a_hosted_crust_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::crust::CrustInstance;
+
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+        /// How far under its input a render has to sit before it counts as
+        /// limited. The ceiling is 12 dB down and the bursts reach 6.0, so a
+        /// factor of ten is short of what a working limiter delivers and far
+        /// beyond anything the look-ahead delay alone could produce — which a
+        /// bare "the render is not its input" would have accepted.
+        const LIMITED_BY: f32 = 10.0;
+
+        // The hosted body takes the same entries reversed: parity only holds
+        // if `CrustBody::load_patch` restores `style` to the front regardless
+        // of where the record put it.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            crust_patch().into_iter().rev().collect();
+
+        let mut harness = Harness::new(32);
+        let material = crust_burst_material(RENDERED);
+        track_with_crust(&mut harness, material.clone(), &reversed_patch);
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = CrustInstance::new(CRUST_RATE);
+        for (name, value) in CRUST_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / CRUST_RUN_FRAMES {
+            let start = block * CRUST_RUN_FRAMES;
+            let run = &material[start..start + CRUST_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `CrustInstance::new` sizes every buffer at 4096 frames
+            // and no method resizes one, so a run of CRUST_RUN_FRAMES lies
+            // inside the allocation the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, CRUST_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, CRUST_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(CRUST_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are 4096 frames long and
+            // are never resized; nothing mutates the instance between the
+            // render and this copy.
+            unsafe {
+                worklet_left
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    CRUST_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            peak(&worklet_left) * LIMITED_BY < peak(&material),
+            "the reference render is not limited (peak {} against the material's {}), so an \
+             equality against it would pass for a body that limited nothing",
+            peak(&worklet_left),
+            peak(&material)
+        );
+        assert!(
+            peak(&hosted_left) * LIMITED_BY < peak(&material),
+            "the hosted render is not limited (peak {} against the material's {}): the limiter \
+             never engaged",
+            peak(&hosted_left),
+            peak(&material)
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Crust on the strip, optionally written to after registration, and the
+    /// master it renders beside the diagnostics that count the write.
+    fn render_crust_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+
+        let mut harness = Harness::new(32);
+        track_with_crust(
+            &mut harness,
+            crust_burst_material(CALLBACK * CALLBACKS),
+            &[],
+        );
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` carrying one of the limiter's own parameter names reaches
+    /// the body, and is not counted as aimed at the wrong one.
+    ///
+    /// `ceiling` is the level everything is held under, so a write that
+    /// reached nothing renders the samples the unwritten body does.
+    #[test]
+    fn a_crust_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_crust_write(None);
+        let (with_ceiling, ceiling_diagnostics) = render_crust_write(Some((
+            DeviceParam::BuiltinNamed(crust_name("ceiling")),
+            -24.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_ceiling, untouched,
+            "the named write never reached the limiter"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                ceiling_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Crust hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the limiter still ran over, reads as different numbers rather than
+    /// as the same silence. The body declares no latency, so bypass leaves no
+    /// dry line to run in its place and the strip is a pass-through outright.
+    #[test]
+    fn a_bypassed_crust_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_crust(&mut harness, ramp_clip_material(RENDERED), &crust_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed limiter moved the left channel");
+        assert_eq!(right, ramp, "a bypassed limiter moved the right channel");
     }
 }
