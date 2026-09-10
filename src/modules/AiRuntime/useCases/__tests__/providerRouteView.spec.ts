@@ -511,6 +511,124 @@ describe('provider route view', () => {
         expect(view?.fallback.attempted).toBe(true);
     });
 
+    it('does not report a fallback attempt for a single-executor auto run', () => {
+        agentRunLifecycle.create({
+            runId: 'route-auto-single',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'auto',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-auto-single',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 0,
+                outputTokens: 0,
+                provenance: 'provider-reported',
+                correlationId: 'corr-1',
+                status: 'complete',
+                executor: 'webllm',
+                fallbackReason: 'unhealthy',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-auto-single',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.fallback.attempted).toBe(false);
+    });
+
+    it('reports a fallback attempt for an auto run whose counted usage spans executors', () => {
+        agentRunLifecycle.create({
+            runId: 'route-auto-cross-executor',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'auto',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-auto-cross-executor',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 0,
+                outputTokens: 0,
+                provenance: 'provider-reported',
+                correlationId: 'corr-1',
+                status: 'failed',
+                executor: 'webllm',
+                fallbackReason: 'unhealthy',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-auto-cross-executor',
+            usage: {
+                provider: 'anthropic',
+                model: 'fixture-model',
+                inputTokens: 100,
+                outputTokens: 50,
+                provenance: 'provider-reported',
+                correlationId: 'corr-2',
+                status: 'complete',
+                executor: 'cloud',
+                routeId: 'cloud',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-auto-cross-executor',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.fallback.attempted).toBe(true);
+    });
+
+    it('ignores a counted record with no executor when deciding a single-route attempt', () => {
+        agentRunLifecycle.create({
+            runId: 'route-executorless-record',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'webllm',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-executorless-record',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 0,
+                outputTokens: 0,
+                provenance: 'provider-reported',
+                correlationId: 'corr-1',
+                status: 'complete',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-executorless-record',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 10,
+                outputTokens: 5,
+                provenance: 'provider-reported',
+                correlationId: 'corr-2',
+                status: 'complete',
+                executor: 'webllm',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-executorless-record',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.fallback.attempted).toBe(false);
+    });
+
     describe('default candidates', () => {
         beforeEach(() => {
             vi.clearAllMocks();
