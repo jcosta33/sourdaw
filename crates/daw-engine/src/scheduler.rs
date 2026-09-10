@@ -18828,6 +18828,31 @@ mod timeline_tests {
         left
     }
 
+    /// What the A/B compare returns dry: `material` held back by `body`'s own
+    /// [`ProofBody::latency_samples`] — a zero prefix of that length, then
+    /// `material`, truncated back to `material`'s length.
+    ///
+    /// `2016c9002` moved the compare from returning the undelayed input to
+    /// returning it at the delay the chain reports, so a forwarded compare no
+    /// longer equals the raw input either — comparing against this delayed
+    /// line rather than `material` is what still tells a forwarded compare
+    /// from a refused one. `PROOF_SHELF_INTO_CEILING` engages the limiter, so
+    /// a body built from it always reports a nonzero delay; the assertion
+    /// below is what stops a regression to zero delay quietly turning this
+    /// helper back into the identity and the equalities that use it
+    /// degenerate to comparing against the raw input.
+    fn delayed_dry(body: &ProofBody, material: &[f32]) -> Vec<f32> {
+        let delay = body.latency_samples() as usize;
+        assert_ne!(
+            delay, 0,
+            "PROOF_SHELF_INTO_CEILING engages the limiter, so the chain reports a nonzero delay"
+        );
+        let mut delayed = vec![0.0; delay];
+        delayed.extend_from_slice(material);
+        delayed.truncate(material.len());
+        delayed
+    }
+
     /// The largest absolute sample in a render.
     fn proof_peak(rendered: &[f32]) -> f32 {
         rendered
@@ -19109,11 +19134,15 @@ mod timeline_tests {
     /// untouched — so the equality is what says it did not.
     ///
     /// `ab_bypass` is the opposite claim on the same door. Engaged, the chain
-    /// returns the dry input scaled by the A/B gain offset, which opens at 0 dB
-    /// and is re-derived only on a pass the chain processes — so a body that
-    /// has never processed a block returns the input unchanged, sample for
-    /// sample. Released, it processes again. Both directions are asserted
-    /// because a body that dropped the name would satisfy neither.
+    /// returns the dry input at the delay the chain reports, scaled by the
+    /// A/B gain offset — which opens at 0 dB and is re-derived only on a pass
+    /// the chain processes, so a body that has never processed a block
+    /// returns the delayed input at unity gain. Comparing against
+    /// [`delayed_dry`] rather than the raw input is what still tells a
+    /// forwarded compare from a refused one, because a forwarded compare no
+    /// longer equals the raw input either. Released, it processes again.
+    /// Both directions are asserted because a body that dropped the name
+    /// would satisfy neither.
     ///
     /// The pass-through assertion is what stops the equalities passing
     /// vacuously: the patch has to make the chain change the signal, or a body
@@ -19149,9 +19178,10 @@ mod timeline_tests {
         let mut compared = proof_body(PROOF_SHELF_INTO_CEILING);
         compared.set_param("ab_bypass", 1.0);
         let dry_render = proof_render(&mut compared, &material);
+        let delayed = delayed_dry(&compared, &material);
 
         assert_eq!(
-            dry_render, material,
+            dry_render, delayed,
             "the A/B compare never reached the chain, so the body went on processing while the \
              panel's chip read dry"
         );
@@ -19163,6 +19193,10 @@ mod timeline_tests {
             wet_render, material,
             "releasing the A/B compare left the body still returning its input"
         );
+        assert_ne!(
+            wet_render, delayed,
+            "releasing the A/B compare left the body still returning the delayed dry line"
+        );
     }
 
     /// [`PROOF_RECORD_REFUSED`] refuses `ab_bypass` only at the record door
@@ -19171,10 +19205,14 @@ mod timeline_tests {
     ///
     /// The engaged fixture is what makes a refused load distinguishable from
     /// a forwarded one: if `load_patch` had not refused the name, `loaded`'s
-    /// first render would return the dry input unchanged (the A/B compare
-    /// answers before any module runs, so a body that has never processed a
-    /// block returns its input untouched), and the first assertion below
-    /// would fail.
+    /// first render would return the dry input at the delay the chain
+    /// reports (the A/B compare answers before any module runs, so a body
+    /// that has never processed a block returns its input delayed but at
+    /// unity gain), and the first assertion below would fail. That delayed
+    /// line, not the raw input, is what the assertion compares against —
+    /// `2016c9002` moved the compare onto it, so a forwarded compare no
+    /// longer equals the raw input either and only [`delayed_dry`] still
+    /// discriminates a refused load from a forwarded one.
     ///
     /// The live write is proven on a second body built the same way — through
     /// `proof_body`, which is `load_patch` again — rather than by reusing
@@ -19183,8 +19221,9 @@ mod timeline_tests {
     /// pass, and those momentary meters have no warm-up gate the way the
     /// integrated reading does, so `loaded`'s offset is no longer the 0 dB it
     /// opens at once it has rendered a real block. `live` never processes
-    /// before the compare engages, so its render is the exact dry input
-    /// rather than the input scaled by whatever offset a prior pass left.
+    /// before the compare engages, so its render is the dry input at the
+    /// delay the chain reports, rather than that same delayed line scaled by
+    /// whatever offset a prior pass left.
     #[test]
     fn a_proof_body_refuses_a_persisted_ab_bypass_but_a_live_write_still_engages_it() {
         const FRAMES: usize = 4096;
@@ -19198,18 +19237,20 @@ mod timeline_tests {
 
         let mut loaded = proof_body(&record);
         let loaded_render = proof_render(&mut loaded, &material);
+        let loaded_delayed = delayed_dry(&loaded, &material);
 
         assert_ne!(
-            loaded_render, material,
+            loaded_render, loaded_delayed,
             "a persisted ab_bypass reached the chain through load_patch, mapping the body dry"
         );
 
         let mut live = proof_body(PROOF_SHELF_INTO_CEILING);
         live.set_param("ab_bypass", 1.0);
         let live_render = proof_render(&mut live, &material);
+        let live_delayed = delayed_dry(&live, &material);
 
         assert_eq!(
-            live_render, material,
+            live_render, live_delayed,
             "a live set_param on a load_patch-built body did not engage the A/B compare"
         );
     }
