@@ -232,3 +232,19 @@ assert the ids are pairwise distinct and that each object type or dimension the 
 selectable is reachable through the admission path, not merely present in the catalog. Read every
 id-minting closure against the statement that consumes it; a counter read inside a variadic call
 observes the pre-call length for every argument.
+
+### 2026-09-10 — a new provider tool appended to the schema list that the in-browser backend truncates (escaped via PR #4128; fixed in the P4a slice of #3276)
+
+`parsePromptToActions.ts` appended the creative interpretation tool schema last in `providerToolSchemas`
+and told the model to call it, but `inference.ts` classified only the fixed application tools as
+mandatory and trimmed the remaining action tools to the WebLLM cap. Being last, the new tool was the
+first cut, and a provider that obeyed the system prompt was refused with "Provider requested a tool
+that was not advertised for this request." The cloud branch advertises every schema, so every planning
+spec, which mocked `generateToolPlanningOutcome` above the truncation, stayed green while the in-browser
+path could never admit an interpretation.
+
+Probe that would have caught it: for every schema a change adds to a provider request, trace it through
+each backend's advertisement path to the request body actually sent, and read the names out of that
+body under the backend's cap with more action tools than the cap admits. A tool the system prompt
+demands must be in the mandatory set of every backend, and the first end-to-end case must run below
+the mock that hides the backend.
