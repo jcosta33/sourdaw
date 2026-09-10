@@ -1,0 +1,39 @@
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_8a3f08960efd9c::t_f3c6e4375af227 422,432
+.github/workflows/validation.yml
+  s_46fe5a22a25ef0::t_6cc7952ad04855 95,171
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_9b530f08172a54::t_a778fafeaa8d4b 337-344,590,597-618,2119,2163-2176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f2411f0ea2c6c7e6a371af9fdac011d126cb9874",
+  "prompts": {},
+  "sessions": {
+    "s_46fe5a22a25ef0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5f303747a842b9f6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8a3f08960efd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a68e31d8888d95792",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
