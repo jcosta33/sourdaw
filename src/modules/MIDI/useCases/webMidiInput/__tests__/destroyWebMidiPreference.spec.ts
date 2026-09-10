@@ -29,6 +29,7 @@ const invokeDesktopCommand = vi.fn<(command: string, args: unknown[]) => Promise
 
 import { getState } from '../../../repositories/webMidi/getState';
 import { readPersistedInputId } from '../../../repositories/webMidi/readPersistedInputId';
+import { NATIVE_IDENTITY_SCHEME } from '../../../repositories/webMidi/selectedInputIdStorageKeys';
 import { setNativeMode } from '../../../repositories/webMidi/setNativeMode';
 import { activeNotes, channelToNote, midiLearn, webMidiRuntime } from '../../../repositories/webMidi/state';
 import { destroyWebMidi } from '../destroyWebMidi';
@@ -49,7 +50,7 @@ describe('destroyWebMidi leaves the saved device preference alone', () => {
         webMidiRuntime.midiMessageListener = null;
         webMidiRuntime.nativeEventUnlisten = null;
         setNativeMode(true);
-        expect(readPersistedInputId()).toBe(SEEDED_ID);
+        expect(readPersistedInputId(NATIVE_IDENTITY_SCHEME)).toBe(SEEDED_ID);
     });
 
     afterEach(() => {
@@ -62,7 +63,7 @@ describe('destroyWebMidi leaves the saved device preference alone', () => {
 
         // The native handle release still ran through the real adapter seam.
         expect(invokeDesktopCommand).toHaveBeenCalledWith('close_midi_input', []);
-        expect(readPersistedInputId()).toBe(SEEDED_ID);
+        expect(readPersistedInputId(NATIVE_IDENTITY_SCHEME)).toBe(SEEDED_ID);
         expect(getState().selectedInputId).toBeNull();
     });
 });

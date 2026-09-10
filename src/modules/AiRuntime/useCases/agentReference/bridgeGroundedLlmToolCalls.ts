@@ -1,4 +1,5 @@
 import {
+    getAppActionExecutionPolicy,
     getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
@@ -101,7 +102,7 @@ import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPolite
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
-import { resolveAgentReference } from './resolveAgentReference';
+import { resolveAgentReference, type ResolveAgentReferenceResult } from './resolveAgentReference';
 import { resolveCompleteClipReference } from './resolveCompleteClipReference';
 
 type BridgeGroundedLlmToolCallsInput = {
@@ -450,7 +451,8 @@ function containsBatchLocalCreationEvidence(
         if (explicitReference.status === 'resolved') {
             return true;
         }
-        if (explicitReference.reason !== 'ungrounded-target') {
+        // An approximate reading names no existing object either, so the anaphora route still applies.
+        if (explicitReference.reason !== 'ungrounded-target' && explicitReference.reason !== 'low-confidence-target') {
             return false;
         }
     }
@@ -2913,18 +2915,30 @@ type ResolveAgentReferenceArrayResult =
     | { status: 'resolved'; ids: string[] }
     | { status: 'rejected'; reason: 'ambiguous-target' | 'asserted-target-mismatch' | 'ungrounded-target' };
 
+type AgentReferenceEvidence = Extract<ResolveAgentReferenceResult, { status: 'resolved' }>['evidence'];
+
+/**
+ * Whether the evidence read a name out of the request. An approximate reading names the same object
+ * an exact one does, so a duplicate, shadowed or overlapped name is just as undecidable either way.
+ */
+function isNameEvidence(evidence: AgentReferenceEvidence): boolean {
+    return evidence === 'exact-name' || evidence === 'fuzzy-name';
+}
+
 function resolveAgentReferenceArray({
     assertedIds,
     capability,
     context,
     dependencyId,
     prompt,
+    risk,
 }: {
     assertedIds: unknown;
     capability: GroundingRules['targetRules'][number]['capability'];
     context: ProjectContext;
     dependencyId?: unknown;
     prompt: string;
+    risk: ReturnType<typeof getAppActionExecutionPolicy>['risk'];
 }): ResolveAgentReferenceArrayResult {
     if (
         !Array.isArray(assertedIds) ||
@@ -2982,6 +2996,7 @@ function resolveAgentReferenceArray({
             capability,
             context,
             excludedIds: candidates.filter((other) => other.id !== candidate.id).map((other) => other.id),
+            risk,
         });
         if (result.status !== 'resolved') {
             return [];
@@ -2989,7 +3004,7 @@ function resolveAgentReferenceArray({
         return [{ candidate, evidence: result.evidence }];
     });
     const withoutShadowedDuplicateNames = evidenced.filter(({ candidate, evidence }) => {
-        if (evidence !== 'exact-name') {
+        if (!isNameEvidence(evidence)) {
             return true;
         }
         const normalizedName = normalizePromptText(candidate.name);
@@ -2999,14 +3014,14 @@ function resolveAgentReferenceArray({
         );
     });
     const withoutOverlappedNames = withoutShadowedDuplicateNames.filter(({ candidate, evidence }) => {
-        if (evidence !== 'exact-name') {
+        if (!isNameEvidence(evidence)) {
             return true;
         }
         const normalizedName = normalizePromptText(candidate.name);
         return !evidenced.some(
             ({ candidate: other, evidence: otherEvidence }) =>
                 other.id !== candidate.id &&
-                otherEvidence === 'exact-name' &&
+                isNameEvidence(otherEvidence) &&
                 normalizePromptText(other.name).length > normalizedName.length &&
                 ` ${normalizePromptText(other.name)} `.includes(` ${normalizedName} `)
         );
@@ -3015,7 +3030,7 @@ function resolveAgentReferenceArray({
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
     const hasAmbiguousName = withoutOverlappedNames.some(({ candidate, evidence }) => {
-        if (evidence !== 'exact-name') {
+        if (!isNameEvidence(evidence)) {
             return false;
         }
         const normalizedName = normalizePromptText(candidate.name);
@@ -3557,6 +3572,7 @@ function groundToolCall({
                 context,
                 dependencyId: dependencyValue,
                 prompt: targetPrompt,
+                risk: getAppActionExecutionPolicy(call.name).risk,
             });
             if (result.status === 'rejected') {
                 if (result.reason === 'ambiguous-target') {
@@ -3697,6 +3713,7 @@ function groundToolCall({
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
             excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
+            risk: getAppActionExecutionPolicy(call.name).risk,
         });
         if (result.status === 'rejected') {
             if (result.reason === 'ambiguous-target') {

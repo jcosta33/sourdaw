@@ -56,7 +56,7 @@ describe('generateAnthropicToolCalls', () => {
                 maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
-        ).resolves.toEqual([{ id: 'tool-1', name: 'setTempo', arguments: { bpm: 120 } }]);
+        ).resolves.toMatchObject({ calls: [{ id: 'tool-1', name: 'setTempo', arguments: { bpm: 120 } }] });
         expect(requestProvider).toHaveBeenCalledWith(
             expect.objectContaining({
                 sessionId: runtime.session_id,
@@ -183,7 +183,7 @@ describe('generateAnthropicToolCalls', () => {
                 maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
-        ).resolves.toEqual([]);
+        ).resolves.toMatchObject({ calls: [] });
     });
 
     it('rejects prose and incomplete tool batches', async () => {
@@ -266,7 +266,7 @@ describe('generateAnthropicToolCalls', () => {
             signal: new AbortController().signal,
         });
 
-        expect(result).toEqual([{ id: 'tool-1', name: 'project.query', arguments: {} }]);
+        expect(result.calls).toEqual([{ id: 'tool-1', name: 'project.query', arguments: {} }]);
         const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
         if (!request || typeof request.body !== 'string') {
             throw new Error('Expected a JSON request body');

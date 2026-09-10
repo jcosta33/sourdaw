@@ -1,6 +1,7 @@
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { readProviderRequestId } from './readProviderRequestId';
 import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
@@ -24,14 +25,25 @@ type ParsedStreamEvent = {
     finishReason: string | null;
     usage: ModelProviderUsageEvent['usage'] | null;
     unknownEventType: string | null;
+    refused: boolean;
+    providerRequestId: string | null;
 };
 
-export type OpenAiCompatibleFinishReason = 'stop' | 'length';
+type WireFinishReason = 'stop' | 'length';
+
+export type OpenAiCompatibleFinishReason = WireFinishReason | 'refusal';
+
+export type OpenAiCompatibleStreamResult = {
+    finishReason: OpenAiCompatibleFinishReason;
+    providerRequestId: string | null;
+};
 
 type StreamState = {
-    finishReason: OpenAiCompatibleFinishReason | null;
+    finishReason: WireFinishReason | null;
     eventCount: number;
     finalUsageSeen: boolean;
+    refused: boolean;
+    providerRequestId: string | null;
 };
 
 const MAX_STREAM_EVENT_BYTES = 64 * 1_024;
@@ -41,16 +53,24 @@ function parseStreamEvent(event: unknown): ParsedStreamEvent {
     if (!isRecord(event) || 'error' in event) {
         throw new Error('Hosted AI returned an invalid streaming event');
     }
+    const providerRequestId = readProviderRequestId(event.id);
     if (!Array.isArray(event.choices)) {
         if (typeof event.type === 'string') {
-            return { text: null, finishReason: null, usage: null, unknownEventType: event.type };
+            return {
+                text: null,
+                finishReason: null,
+                usage: null,
+                unknownEventType: event.type,
+                refused: false,
+                providerRequestId,
+            };
         }
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const usage = readUsage(event.usage);
     if (event.choices.length === 0) {
         if (usage) {
-            return { text: null, finishReason: null, usage, unknownEventType: null };
+            return { text: null, finishReason: null, usage, unknownEventType: null, refused: false, providerRequestId };
         }
         throw new Error('Hosted AI returned an invalid streaming event');
     }
@@ -68,15 +88,16 @@ function parseStreamEvent(event: unknown): ParsedStreamEvent {
     if (finishReason !== undefined && finishReason !== null && typeof finishReason !== 'string') {
         throw new Error('Hosted AI returned an invalid streaming event');
     }
-    if (firstChoice.delta.refusal !== undefined && firstChoice.delta.refusal !== null) {
-        throw new Error('Hosted AI refused the chat request');
-    }
 
     return {
         text: typeof content === 'string' ? content : null,
         finishReason: typeof finishReason === 'string' ? finishReason : null,
         usage,
         unknownEventType: null,
+        // The refusal text is provider body content: only the fact that the
+        // provider declined leaves this parser.
+        refused: firstChoice.delta.refusal !== undefined && firstChoice.delta.refusal !== null,
+        providerRequestId,
     };
 }
 
@@ -86,7 +107,7 @@ function emitEventData(
     onUsage: ((event: ModelProviderUsageEvent) => void) | undefined,
     onUnknownEvent: ((providerEventType: string) => void) | undefined,
     state: StreamState
-): OpenAiCompatibleFinishReason | null {
+): WireFinishReason | null {
     state.eventCount += 1;
     if (state.eventCount > MAX_STREAM_EVENTS || new TextEncoder().encode(data).byteLength > MAX_STREAM_EVENT_BYTES) {
         throw new Error('Hosted AI chat stream exceeded its event limit');
@@ -104,6 +125,8 @@ function emitEventData(
         throw new Error('Hosted AI returned an invalid streaming event');
     }
     const event = parseStreamEvent(parsed);
+    state.providerRequestId ??= event.providerRequestId;
+    state.refused ||= event.refused;
     if (state.finishReason !== null) {
         if (
             event.usage !== null &&
@@ -152,7 +175,7 @@ export async function streamOpenAiCompatibleChatCompletion({
     maxTokens,
     onUsage,
     onUnknownEvent,
-}: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleFinishReason> {
+}: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleStreamResult> {
     const body = JSON.stringify({
         model: runtime.model,
         messages: messages.filter(
@@ -166,8 +189,14 @@ export async function streamOpenAiCompatibleChatCompletion({
     });
     const decoder = new TextDecoder();
     let buffer = '';
-    let completed: OpenAiCompatibleFinishReason | null = null;
-    const streamState: StreamState = { finishReason: null, eventCount: 0, finalUsageSeen: false };
+    let completed: WireFinishReason | null = null;
+    const streamState: StreamState = {
+        finishReason: null,
+        eventCount: 0,
+        finalUsageSeen: false,
+        refused: false,
+        providerRequestId: null,
+    };
     const consumeLines = (): void => {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
@@ -210,7 +239,10 @@ export async function streamOpenAiCompatibleChatCompletion({
     if (completed === null) {
         throw new Error('Hosted AI chat stream ended unexpectedly');
     }
-    return completed;
+    return {
+        finishReason: streamState.refused ? 'refusal' : completed,
+        providerRequestId: streamState.providerRequestId,
+    };
 }
 
 function readUsage(value: unknown): ModelProviderUsageEvent['usage'] | null {

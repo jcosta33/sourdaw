@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
-import { resolveAgentReference } from '../resolveAgentReference';
+import { resolveAgentReference, type ResolveAgentReferenceInput } from '../resolveAgentReference';
 import { resolveCompleteClipReference } from '../resolveCompleteClipReference';
 
 function createProjectState(): ProjectContext {
@@ -160,6 +160,40 @@ function resolveAutomationLane(prompt: string, assertedId: string, project = cre
     return resolveAgentReference({ prompt, assertedId, capability: 'automation-lane', context: project });
 }
 
+const TIER_CONFIDENCE = {
+    'literal-id': 1,
+    'exact-name': 0.9,
+    selection: 0.85,
+    'owner-qualified': 0.8,
+} as const;
+
+type TierEvidence = keyof typeof TIER_CONFIDENCE;
+
+/** Expected ranked candidate; `evidence` is listed strongest first, as the resolver reports it. */
+function referenceCandidate(id: string, name: string, ...evidence: readonly TierEvidence[]) {
+    return {
+        id,
+        name,
+        confidence: Math.max(...evidence.map((entry) => TIER_CONFIDENCE[entry])),
+        evidence,
+    };
+}
+
+function resolvedTo(id: string, name: string, ...evidence: readonly TierEvidence[]) {
+    const bound = referenceCandidate(id, name, ...evidence);
+    return {
+        status: 'resolved',
+        id,
+        evidence: evidence[0],
+        confidence: bound.confidence,
+        candidates: [bound],
+    };
+}
+
+function rejectedWith(reason: string, candidates: readonly ReturnType<typeof referenceCandidate>[] = []) {
+    return { status: 'rejected', reason, candidates };
+}
+
 describe('resolveAgentReference', () => {
     it('requires a rename source reference to consume its complete text', () => {
         const project = createClipProjectState();
@@ -179,53 +213,36 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        expect(resolveCompleteClip('Intro', 'clip-intro', context)).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'exact-name',
-        });
-        expect(resolveCompleteClip('clip-intro', 'clip-intro', context)).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'literal-id',
-        });
-        expect(resolveCompleteClip('Intro to Road', 'clip-intro', context)).toEqual({
-            status: 'rejected',
-            reason: 'ungrounded-target',
-        });
-        expect(resolveCompleteClip('Road to Nowhere', roadToNowhere.id, context)).toEqual({
-            status: 'resolved',
-            id: roadToNowhere.id,
-            evidence: 'exact-name',
-        });
-        expect(resolveCompleteClip('"Road to Nowhere"', roadToNowhere.id, context)).toEqual({
-            status: 'resolved',
-            id: roadToNowhere.id,
-            evidence: 'exact-name',
-        });
-        expect(resolveCompleteClip('selected clip', 'clip-intro', context)).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'selection',
-        });
+        expect(resolveCompleteClip('Intro', 'clip-intro', context)).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'exact-name')
+        );
+        expect(resolveCompleteClip('clip-intro', 'clip-intro', context)).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'literal-id')
+        );
+        expect(resolveCompleteClip('Intro to Road', 'clip-intro', context)).toEqual(
+            rejectedWith('ungrounded-target', [referenceCandidate('clip-intro', 'Intro', 'exact-name')])
+        );
+        expect(resolveCompleteClip('Road to Nowhere', roadToNowhere.id, context)).toEqual(
+            resolvedTo('clip-road-to-nowhere', 'Road to Nowhere', 'exact-name')
+        );
+        expect(resolveCompleteClip('"Road to Nowhere"', roadToNowhere.id, context)).toEqual(
+            resolvedTo('clip-road-to-nowhere', 'Road to Nowhere', 'exact-name')
+        );
+        expect(resolveCompleteClip('selected clip', 'clip-intro', context)).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'selection')
+        );
     });
 
     it('consumes an exact owner qualification while retaining duplicate-name ambiguity', () => {
-        expect(resolveCompleteClip('Verse on Vocals', 'clip-vocals-verse')).toEqual({
-            status: 'resolved',
-            id: 'clip-vocals-verse',
-            evidence: 'exact-name',
-        });
-        expect(resolveCompleteClip('Verse on Bass', 'clip-bass-verse')).toEqual({
-            status: 'resolved',
-            id: 'clip-bass-verse',
-            evidence: 'exact-name',
-        });
-        expect(resolveCompleteClip('Verse on track-vocals', 'clip-vocals-verse')).toEqual({
-            status: 'resolved',
-            id: 'clip-vocals-verse',
-            evidence: 'exact-name',
-        });
+        expect(resolveCompleteClip('Verse on Vocals', 'clip-vocals-verse')).toEqual(
+            resolvedTo('clip-vocals-verse', 'Verse', 'exact-name', 'owner-qualified')
+        );
+        expect(resolveCompleteClip('Verse on Bass', 'clip-bass-verse')).toEqual(
+            resolvedTo('clip-bass-verse', 'Verse', 'exact-name', 'owner-qualified')
+        );
+        expect(resolveCompleteClip('Verse on track-vocals', 'clip-vocals-verse')).toEqual(
+            resolvedTo('clip-vocals-verse', 'Verse', 'exact-name', 'owner-qualified')
+        );
         expect(resolveCompleteClip('Verse', 'clip-vocals-verse')).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -237,31 +254,31 @@ describe('resolveAgentReference', () => {
             reference: 'selected midi clip',
             assertedId: 'clip-midi',
             selectedId: 'clip-midi',
-            expected: { status: 'resolved', id: 'clip-midi', evidence: 'selection' },
+            expected: resolvedTo('clip-midi', 'Piano MIDI', 'selection'),
         },
         {
             reference: 'selected midi clip',
             assertedId: 'clip-empty-midi',
             selectedId: 'clip-empty-midi',
-            expected: { status: 'resolved', id: 'clip-empty-midi', evidence: 'selection' },
+            expected: resolvedTo('clip-empty-midi', 'Empty MIDI', 'selection'),
         },
         {
             reference: 'selected audio clip',
             assertedId: 'clip-intro',
             selectedId: 'clip-intro',
-            expected: { status: 'resolved', id: 'clip-intro', evidence: 'selection' },
+            expected: resolvedTo('clip-intro', 'Intro', 'selection'),
         },
         {
             reference: 'selected clip "Lead"',
             assertedId: 'clip-intro',
             selectedId: 'clip-intro',
-            expected: { status: 'rejected', reason: 'ungrounded-target' },
+            expected: rejectedWith('ungrounded-target', [referenceCandidate('clip-intro', 'Intro', 'selection')]),
         },
         {
             reference: '"Lead"',
             assertedId: 'clip-lead',
             selectedId: 'clip-intro',
-            expected: { status: 'resolved', id: 'clip-lead', evidence: 'exact-name' },
+            expected: resolvedTo('clip-lead', 'Lead', 'exact-name'),
         },
     ])('accounts for the complete reference $reference', ({ reference, assertedId, selectedId, expected }) => {
         const project = createClipProjectState();
@@ -318,11 +335,9 @@ describe('resolveAgentReference', () => {
         expect(literalClip.type).toBe('audio');
         expect(context.selectedClipIds).toEqual(['clip-intro']);
 
-        expect(resolveCompleteClip('"selected midi clip"', literalClip.id, context)).toEqual({
-            status: 'resolved',
-            id: literalClip.id,
-            evidence: 'exact-name',
-        });
+        expect(resolveCompleteClip('"selected midi clip"', literalClip.id, context)).toEqual(
+            resolvedTo('clip-literal-midi', 'selected midi clip', 'exact-name')
+        );
     });
 
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
@@ -348,7 +363,7 @@ describe('resolveAgentReference', () => {
                 context: project,
                 dependencyId: bass.id,
             })
-        ).toEqual({ status: 'resolved', id: 'device-eq', evidence: 'exact-name' });
+        ).toEqual(resolvedTo('device-eq', 'EQ', 'exact-name'));
         expect(
             resolveAgentReference({
                 prompt: 'insert Compressor after EQ',
@@ -357,7 +372,7 @@ describe('resolveAgentReference', () => {
                 context: project,
                 dependencyId: bass.id,
             })
-        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+        ).toEqual(rejectedWith('asserted-target-mismatch', [referenceCandidate('device-eq', 'EQ', 'exact-name')]));
     });
 
     it('limits sidechain device grounding to supported devices on the owning track', () => {
@@ -400,7 +415,7 @@ describe('resolveAgentReference', () => {
                 context: project,
                 dependencyId: bass.id,
             })
-        ).toEqual({ status: 'resolved', id: 'device-sidechain', evidence: 'exact-name' });
+        ).toEqual(resolvedTo('device-sidechain', 'Sidechain Compressor', 'exact-name', 'owner-qualified'));
         expect(
             resolveAgentReference({
                 prompt: 'route into Sidechain Compressor on Bass',
@@ -409,7 +424,11 @@ describe('resolveAgentReference', () => {
                 context: project,
                 dependencyId: bass.id,
             })
-        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+        ).toEqual(
+            rejectedWith('asserted-target-mismatch', [
+                referenceCandidate('device-sidechain', 'Sidechain Compressor', 'exact-name', 'owner-qualified'),
+            ])
+        );
         expect(
             resolveAgentReference({
                 prompt: 'route into Sidechain Compressor on Bass',
@@ -418,20 +437,18 @@ describe('resolveAgentReference', () => {
                 context: project,
                 dependencyId: bass.id,
             })
-        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+        ).toEqual(
+            rejectedWith('asserted-target-mismatch', [
+                referenceCandidate('device-sidechain', 'Sidechain Compressor', 'exact-name', 'owner-qualified'),
+            ])
+        );
     });
 
     it('resolves unique exact names and explicit selection language', () => {
-        expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
-            status: 'resolved',
-            id: 'track-vocals',
-            evidence: 'exact-name',
-        });
-        expect(resolveTrack('mute the selected track', 'track-vocals')).toEqual({
-            status: 'resolved',
-            id: 'track-vocals',
-            evidence: 'selection',
-        });
+        expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual(resolvedTo('track-vocals', 'Vocals', 'exact-name'));
+        expect(resolveTrack('mute the selected track', 'track-vocals')).toEqual(
+            resolvedTo('track-vocals', 'Vocals', 'selection')
+        );
     });
 
     it('treats quoted reserved track references as literal names', () => {
@@ -442,32 +459,24 @@ describe('resolveAgentReference', () => {
         }
         project.tracks = [...project.tracks, { ...bass, id: 'track-literal-selected', name: 'Selected Track' }];
 
-        expect(resolveTrack('mute selected track', 'track-vocals', project)).toEqual({
-            status: 'resolved',
-            id: 'track-vocals',
-            evidence: 'selection',
-        });
-        expect(resolveTrack('mute "Selected Track"', 'track-literal-selected', project)).toEqual({
-            status: 'resolved',
-            id: 'track-literal-selected',
-            evidence: 'exact-name',
-        });
-        expect(resolveTrack('mute “Selected Track”', 'track-literal-selected', project)).toEqual({
-            status: 'resolved',
-            id: 'track-literal-selected',
-            evidence: 'exact-name',
-        });
+        expect(resolveTrack('mute selected track', 'track-vocals', project)).toEqual(
+            resolvedTo('track-vocals', 'Vocals', 'selection')
+        );
+        expect(resolveTrack('mute "Selected Track"', 'track-literal-selected', project)).toEqual(
+            resolvedTo('track-literal-selected', 'Selected Track', 'exact-name')
+        );
+        expect(resolveTrack('mute “Selected Track”', 'track-literal-selected', project)).toEqual(
+            resolvedTo('track-literal-selected', 'Selected Track', 'exact-name')
+        );
     });
 
     it('grounds an accent-insensitive exact display name', () => {
         const project = createProjectState();
         project.tracks = [{ ...project.tracks[0]!, id: 'track-cafe', name: 'Café' }];
 
-        expect(resolveTrack('mute Cafe', 'track-cafe', project)).toEqual({
-            status: 'resolved',
-            id: 'track-cafe',
-            evidence: 'exact-name',
-        });
+        expect(resolveTrack('mute Cafe', 'track-cafe', project)).toEqual(
+            resolvedTo('track-cafe', 'Café', 'exact-name')
+        );
     });
 
     it('applies capability kind filtering before target evidence is accepted', () => {
@@ -493,7 +502,7 @@ describe('resolveAgentReference', () => {
                 capability: 'output',
                 context: project,
             })
-        ).toEqual({ status: 'resolved', id: 'track-bus', evidence: 'exact-name' });
+        ).toEqual(resolvedTo('track-bus', 'Bus', 'exact-name'));
     });
 
     it('excludes Master before removable-track evidence can make another track ambiguous', () => {
@@ -524,7 +533,7 @@ describe('resolveAgentReference', () => {
                 capability: 'removable-track',
                 context: project,
             })
-        ).toEqual({ status: 'resolved', id: busNamedMaster.id, evidence: 'exact-name' });
+        ).toEqual(resolvedTo('bus-master-name', 'Master', 'exact-name'));
     });
 
     it('rejects ambiguous names, mismatched assertions, and incidental substrings', () => {
@@ -549,27 +558,22 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
-        expect(resolveTrack('mute Vocals', 'track-bass', projectState)).toEqual({
-            status: 'rejected',
-            reason: 'asserted-target-mismatch',
-        });
+        expect(resolveTrack('mute Vocals', 'track-bass', projectState)).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('track-vocals', 'Vocals', 'exact-name')])
+        );
         expect(resolveTrack('mute Vocals Bass', 'track-vocals', projectState)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
         });
-        expect(resolveTrack('mute Lead Vox', 'track-lead', overlappingContext)).toEqual({
-            status: 'rejected',
-            reason: 'asserted-target-mismatch',
-        });
-        expect(resolveTrack('mute Lead Vox', 'track-lead-vox', overlappingContext)).toEqual({
-            status: 'resolved',
-            id: 'track-lead-vox',
-            evidence: 'exact-name',
-        });
-        expect(resolveTrack('adjust the embassy', 'track-bass', projectState)).toEqual({
-            status: 'rejected',
-            reason: 'ungrounded-target',
-        });
+        expect(resolveTrack('mute Lead Vox', 'track-lead', overlappingContext)).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('track-lead-vox', 'Lead Vox', 'exact-name')])
+        );
+        expect(resolveTrack('mute Lead Vox', 'track-lead-vox', overlappingContext)).toEqual(
+            resolvedTo('track-lead-vox', 'Lead Vox', 'exact-name')
+        );
+        expect(resolveTrack('adjust the embassy', 'track-bass', projectState)).toEqual(
+            rejectedWith('ungrounded-target')
+        );
     });
 
     it('resolves a literal track id when a duplicate name is a token of that id', () => {
@@ -586,11 +590,9 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        expect(resolveTrack('delete track-guitar', 'track-guitar', duplicateNameContext)).toEqual({
-            status: 'resolved',
-            id: 'track-guitar',
-            evidence: 'literal-id',
-        });
+        expect(resolveTrack('delete track-guitar', 'track-guitar', duplicateNameContext)).toEqual(
+            resolvedTo('track-guitar', 'Guitar', 'literal-id')
+        );
         expect(resolveTrack('delete Guitar', 'track-guitar', duplicateNameContext)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -619,11 +621,9 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
-        expect(resolveTrack('mute Guitar', 'track-keys', independentNameContext)).toEqual({
-            status: 'resolved',
-            id: 'track-keys',
-            evidence: 'exact-name',
-        });
+        expect(resolveTrack('mute Guitar', 'track-keys', independentNameContext)).toEqual(
+            resolvedTo('track-keys', 'Guitar', 'exact-name')
+        );
     });
 
     it('keeps an accented exact name ambiguous next to a hyphenated literal id that contains the folded name', () => {
@@ -688,11 +688,9 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
-        expect(resolveTrack('mute Café', 'track-keys', asciiNameContext)).toEqual({
-            status: 'resolved',
-            id: 'track-keys',
-            evidence: 'exact-name',
-        });
+        expect(resolveTrack('mute Café', 'track-keys', asciiNameContext)).toEqual(
+            resolvedTo('track-keys', 'Cafe', 'exact-name')
+        );
         expect(resolveTrack('mute Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -800,10 +798,9 @@ describe('resolveAgentReference', () => {
             tracks: [{ ...firstTrack, id: 'track-guitar', name: 'Bass' }],
         };
 
-        expect(resolveTrack('mute track Guitar', 'track-guitar', loneHyphenatedIdContext)).toEqual({
-            status: 'rejected',
-            reason: 'ungrounded-target',
-        });
+        expect(resolveTrack('mute track Guitar', 'track-guitar', loneHyphenatedIdContext)).toEqual(
+            rejectedWith('ungrounded-target')
+        );
     });
 
     it('does not treat a whitespace-separated kind and name as a hyphenated literal id', () => {
@@ -828,24 +825,18 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toEqual({
-            status: 'rejected',
-            reason: 'asserted-target-mismatch',
-        });
-        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toEqual({
-            status: 'resolved',
-            id: 'track-keys',
-            evidence: 'exact-name',
-        });
-        expect(resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)).toEqual({
-            status: 'rejected',
-            reason: 'asserted-target-mismatch',
-        });
-        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toEqual({
-            status: 'resolved',
-            id: 'track-aux',
-            evidence: 'exact-name',
-        });
+        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('track-keys', 'Guitar', 'exact-name')])
+        );
+        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toEqual(
+            resolvedTo('track-keys', 'Guitar', 'exact-name')
+        );
+        expect(resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('track-aux', 'Lead Guitar', 'exact-name')])
+        );
+        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toEqual(
+            resolvedTo('track-aux', 'Lead Guitar', 'exact-name')
+        );
     });
 
     it('does not treat list punctuation as collapsing a name into a hyphenated literal id', () => {
@@ -918,11 +909,9 @@ describe('resolveAgentReference', () => {
         };
         const context = { ...project, tracks: [guitar, overlappingName, guitarist, namedGuitar] };
 
-        expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual({
-            status: 'resolved',
-            id: guitar.id,
-            evidence: 'literal-id',
-        });
+        expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual(
+            resolvedTo('track-guitar', 'Track Guitar', 'literal-id')
+        );
         expect(resolveTrack('mute track-guitar and Track Guitar', guitar.id, context)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -949,11 +938,9 @@ describe('resolveAgentReference', () => {
             name: 'İzmir',
         };
 
-        expect(resolveTrack('mute track-i', dottedI.id, { ...project, tracks: [dottedI] })).toEqual({
-            status: 'resolved',
-            id: dottedI.id,
-            evidence: 'literal-id',
-        });
+        expect(resolveTrack('mute track-i', dottedI.id, { ...project, tracks: [dottedI] })).toEqual(
+            resolvedTo('track-İ', 'İzmir', 'literal-id')
+        );
     });
 
     it('does not ground literal IDs embedded in astral Unicode letters', () => {
@@ -966,29 +953,20 @@ describe('resolveAgentReference', () => {
         const context = { ...project, tracks: [guitar] };
 
         for (const prompt of ['mute 𐐀track-guitar', 'mute track-guitar𐐀']) {
-            expect(resolveTrack(prompt, guitar.id, context), prompt).toEqual({
-                status: 'rejected',
-                reason: 'ungrounded-target',
-            });
+            expect(resolveTrack(prompt, guitar.id, context), prompt).toEqual(rejectedWith('ungrounded-target'));
         }
     });
 
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
-        expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'literal-id',
-        });
-        expect(resolveClip('rename Intro to Opening', 'clip-intro')).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'exact-name',
-        });
-        expect(resolveClip('nudge the selected clip by 2 beats', 'clip-intro')).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'selection',
-        });
+        expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'literal-id')
+        );
+        expect(resolveClip('rename Intro to Opening', 'clip-intro')).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'exact-name')
+        );
+        expect(resolveClip('nudge the selected clip by 2 beats', 'clip-intro')).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'selection')
+        );
     });
 
     it('treats quoted reserved clip references as literal names without masking apostrophes', () => {
@@ -1027,27 +1005,17 @@ describe('resolveAgentReference', () => {
             ...project.tracks.slice(1),
         ];
 
-        expect(resolveClip('rename selected clip', 'clip-intro', project)).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'selection',
-        });
-        expect(resolveClip('rename "Selected Clip"', literalSelectedClip.id, project)).toEqual({
-            status: 'resolved',
-            id: literalSelectedClip.id,
-            evidence: 'exact-name',
-        });
-        expect(resolveClip("rename Drummer's Cut", apostropheClip.id, project)).toEqual({
-            status: 'resolved',
-            id: apostropheClip.id,
-            evidence: 'exact-name',
-        });
+        expect(resolveClip('rename selected clip', 'clip-intro', project)).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'selection')
+        );
+        expect(resolveClip('rename "Selected Clip"', literalSelectedClip.id, project)).toEqual(
+            resolvedTo('clip-literal-selected', 'Selected Clip', 'exact-name')
+        );
+        expect(resolveClip("rename Drummer's Cut", apostropheClip.id, project)).toEqual(
+            resolvedTo('clip-drummer-cut', "Drummer's Cut", 'exact-name')
+        );
         expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', curlyApostropheClip.id, project)).toEqual(
-            {
-                status: 'resolved',
-                id: curlyApostropheClip.id,
-                evidence: 'exact-name',
-            }
+            resolvedTo('clip-curly-selected', 'Drummer’s Selected Clip', 'exact-name')
         );
         expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', 'clip-intro', project)).toMatchObject({
             status: 'rejected',
@@ -1056,16 +1024,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('uses an exact track qualifier to disambiguate duplicate clip names', () => {
-        expect(resolveClip('rename Verse on Vocals to Lead Verse', 'clip-vocals-verse')).toEqual({
-            status: 'resolved',
-            id: 'clip-vocals-verse',
-            evidence: 'exact-name',
-        });
-        expect(resolveClip('rename Verse on Bass to Bass Verse', 'clip-bass-verse')).toEqual({
-            status: 'resolved',
-            id: 'clip-bass-verse',
-            evidence: 'exact-name',
-        });
+        expect(resolveClip('rename Verse on Vocals to Lead Verse', 'clip-vocals-verse')).toEqual(
+            resolvedTo('clip-vocals-verse', 'Verse', 'exact-name', 'owner-qualified')
+        );
+        expect(resolveClip('rename Verse on Bass to Bass Verse', 'clip-bass-verse')).toEqual(
+            resolvedTo('clip-bass-verse', 'Verse', 'exact-name', 'owner-qualified')
+        );
         expect(resolveClip('rename Verse to Lead Verse', 'clip-vocals-verse')).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -1114,11 +1078,9 @@ describe('resolveAgentReference', () => {
             ),
         };
 
-        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toEqual({
-            status: 'resolved',
-            id: 'clip-midi',
-            evidence: 'exact-name',
-        });
+        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toEqual(
+            resolvedTo('clip-midi', 'Piano MIDI', 'exact-name')
+        );
         expect(resolveMidiClip('quantize notes in Intro', 'clip-intro')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
@@ -1138,11 +1100,9 @@ describe('resolveAgentReference', () => {
     });
 
     it('admits empty unlocked MIDI clips but rejects locked MIDI and audio clips for note writes', () => {
-        expect(resolveWritableMidiClip('add notes in Empty MIDI', 'clip-empty-midi')).toEqual({
-            status: 'resolved',
-            id: 'clip-empty-midi',
-            evidence: 'exact-name',
-        });
+        expect(resolveWritableMidiClip('add notes in Empty MIDI', 'clip-empty-midi')).toEqual(
+            resolvedTo('clip-empty-midi', 'Empty MIDI', 'exact-name')
+        );
         expect(resolveWritableMidiClip('add notes in Locked MIDI', 'clip-locked-midi')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
@@ -1166,11 +1126,9 @@ describe('resolveAgentReference', () => {
     });
 
     it('resolves only unlocked audio clips for audio processing', () => {
-        expect(resolveAudioClip('normalize the Intro clip', 'clip-intro')).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'exact-name',
-        });
+        expect(resolveAudioClip('normalize the Intro clip', 'clip-intro')).toEqual(
+            resolvedTo('clip-intro', 'Intro', 'exact-name')
+        );
         expect(resolveAudioClip('normalize the Piano MIDI clip', 'clip-midi')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
@@ -1197,16 +1155,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('scopes duplicate automation-lane names by their owner track', () => {
-        expect(resolveAutomationLane('disable Gain automation on Vocals', 'lane-vocals-gain')).toEqual({
-            status: 'resolved',
-            id: 'lane-vocals-gain',
-            evidence: 'exact-name',
-        });
-        expect(resolveAutomationLane('enable Gain automation on Bass', 'lane-bass-gain')).toEqual({
-            status: 'resolved',
-            id: 'lane-bass-gain',
-            evidence: 'exact-name',
-        });
+        expect(resolveAutomationLane('disable Gain automation on Vocals', 'lane-vocals-gain')).toEqual(
+            resolvedTo('lane-vocals-gain', 'Gain', 'exact-name', 'owner-qualified')
+        );
+        expect(resolveAutomationLane('enable Gain automation on Bass', 'lane-bass-gain')).toEqual(
+            resolvedTo('lane-bass-gain', 'Gain', 'exact-name', 'owner-qualified')
+        );
         expect(resolveAutomationLane('disable Gain automation', 'lane-vocals-gain')).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
@@ -1214,16 +1168,12 @@ describe('resolveAgentReference', () => {
     });
 
     it('supports literal lane IDs and selected-track owner scoping without inventing a lane selection', () => {
-        expect(resolveAutomationLane('disable lane-vocals-gain', 'lane-vocals-gain')).toEqual({
-            status: 'resolved',
-            id: 'lane-vocals-gain',
-            evidence: 'literal-id',
-        });
-        expect(resolveAutomationLane('disable Pan automation on the selected track', 'lane-vocals-pan')).toEqual({
-            status: 'resolved',
-            id: 'lane-vocals-pan',
-            evidence: 'exact-name',
-        });
+        expect(resolveAutomationLane('disable lane-vocals-gain', 'lane-vocals-gain')).toEqual(
+            resolvedTo('lane-vocals-gain', 'Gain', 'literal-id')
+        );
+        expect(resolveAutomationLane('disable Pan automation on the selected track', 'lane-vocals-pan')).toEqual(
+            resolvedTo('lane-vocals-pan', 'Pan', 'exact-name')
+        );
         expect(resolveAutomationLane('disable automation on the selected track', 'lane-vocals-gain')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
@@ -1256,7 +1206,7 @@ describe('resolveAgentReference', () => {
                 capability: 'adjustment-layer',
                 context: project,
             })
-        ).toEqual({ status: 'resolved', id: 'layer-bass-air', evidence: 'exact-name' });
+        ).toEqual(resolvedTo('layer-bass-air', 'Bass Air', 'exact-name'));
         expect(
             resolveAgentReference({
                 prompt: 'add a region to Bass Air',
@@ -1264,6 +1214,174 @@ describe('resolveAgentReference', () => {
                 capability: 'adjustment-layer',
                 context: project,
             })
-        ).toEqual({ status: 'rejected', reason: 'asserted-target-mismatch' });
+        ).toEqual(
+            rejectedWith('asserted-target-mismatch', [referenceCandidate('layer-bass-air', 'Bass Air', 'exact-name')])
+        );
+    });
+});
+
+describe('ranked candidates and effect gating', () => {
+    const FUZZY_CONFIDENCE_FACTOR = 0.7;
+
+    function createRankingProjectState(): ProjectContext {
+        const project = createProjectState();
+        const template = project.tracks[0]!;
+        return {
+            ...project,
+            tracks: [
+                { ...template, id: 'track-drums', name: 'Drums' },
+                { ...template, id: 'track-drum-bus', name: 'Drum Bus' },
+                { ...template, id: 'track-bass', name: 'Bass' },
+                { ...template, id: 'track-lead-vocal', name: 'Lead Vocal' },
+            ],
+            selectedTrackId: 'track-bass',
+        };
+    }
+
+    function resolveRanked(
+        prompt: string,
+        assertedId: string,
+        capability: ResolveAgentReferenceInput['capability'],
+        risk?: ResolveAgentReferenceInput['risk']
+    ) {
+        return resolveAgentReference({
+            prompt,
+            assertedId,
+            capability,
+            context: createRankingProjectState(),
+            risk,
+        });
+    }
+
+    function fuzzyCandidate(id: string, name: string, similarity: number) {
+        return { id, name, confidence: similarity * FUZZY_CONFIDENCE_FACTOR, evidence: ['fuzzy-name'] };
+    }
+
+    it('binds an approximate track name when the requested effect is bounded and reversible', () => {
+        const misspelled = resolveRanked('mute the drms', 'track-drums', 'track', 'bounded-reversible');
+
+        expect(misspelled).toEqual({
+            status: 'resolved',
+            id: 'track-drums',
+            evidence: 'fuzzy-name',
+            confidence: 0.8 * FUZZY_CONFIDENCE_FACTOR,
+            candidates: [fuzzyCandidate('track-drums', 'Drums', 0.8)],
+        });
+        expect(misspelled.status === 'resolved' && misspelled.confidence < 0.75).toBe(true);
+        expect(resolveRanked('mute the drum', 'track-drums', 'track', 'bounded-reversible')).toEqual({
+            status: 'resolved',
+            id: 'track-drums',
+            evidence: 'fuzzy-name',
+            confidence: 0.8 * FUZZY_CONFIDENCE_FACTOR,
+            candidates: [fuzzyCandidate('track-drums', 'Drums', 0.8)],
+        });
+    });
+
+    it('refuses an approximate name for a destructive effect and asks for an explicit preview', () => {
+        const declared = resolveRanked('delete the drms', 'track-drums', 'removable-track', 'destructive-reversible');
+        const undeclared = resolveRanked('delete the drms', 'track-drums', 'removable-track');
+
+        const expected = {
+            status: 'rejected',
+            reason: 'low-confidence-target',
+            requirement: 'explicit-preview',
+            candidates: [fuzzyCandidate('track-drums', 'Drums', 0.8)],
+        };
+        expect(declared).toEqual(expected);
+        expect(undeclared).toEqual(expected);
+    });
+
+    it('ranks several approximate readings by confidence and refuses to choose between them', () => {
+        const rankedCandidates = [
+            fuzzyCandidate('track-drum-bus', 'Drum Bus', 0.875),
+            fuzzyCandidate('track-drums', 'Drums', 0.8),
+        ];
+        const expected = {
+            status: 'rejected',
+            reason: 'low-confidence-target',
+            requirement: 'clarification',
+            candidates: rankedCandidates,
+        };
+
+        expect(resolveRanked('mute the drum bys', 'track-drum-bus', 'track', 'bounded-reversible')).toEqual(expected);
+        expect(rankedCandidates[0]!.confidence).toBeGreaterThan(rankedCandidates[1]!.confidence);
+        expect(
+            resolveRanked('delete the drum bys', 'track-drum-bus', 'removable-track', 'destructive-reversible')
+        ).toEqual(expected);
+    });
+
+    it('refuses a gated approximate reading that clears the fuzzy floor but not the binding floor', () => {
+        const project = createRankingProjectState();
+        const withoutTheCloserName = {
+            ...project,
+            tracks: project.tracks.filter((track) => track.id !== 'track-drums'),
+        };
+
+        const refused = resolveAgentReference({
+            prompt: 'delete the drum bys',
+            assertedId: 'track-drum-bus',
+            capability: 'removable-track',
+            context: withoutTheCloserName,
+            risk: 'destructive-reversible',
+        });
+
+        expect(refused).toEqual({
+            status: 'rejected',
+            reason: 'low-confidence-target',
+            requirement: 'explicit-preview',
+            candidates: [fuzzyCandidate('track-drum-bus', 'Drum Bus', 0.875)],
+        });
+        // The single reading is strong enough to rank and still too weak to act on unasked.
+        expect(refused.candidates[0]!.confidence).toBeGreaterThan(0.6);
+        expect(refused.candidates[0]!.confidence).toBeLessThan(0.75);
+    });
+
+    it('keeps an owner-qualified candidate on its approximate reading', () => {
+        const clipProject = createClipProjectState();
+        const template = clipProject.tracks[0]!;
+        const chorus = { ...template.clips[0]!, id: 'clip-chorus-one', name: 'Chorus 1' };
+        const project: ProjectContext = {
+            ...clipProject,
+            tracks: [{ ...template, id: 'track-drums', name: 'Drums', clipCount: 1, clips: [chorus] }],
+            selectedClipId: null,
+            selectedClipIds: [],
+        };
+
+        expect(
+            resolveAgentReference({
+                prompt: 'mute the clip Chorus 2 on Drums',
+                assertedId: 'clip-chorus-one',
+                capability: 'clip',
+                context: project,
+                risk: 'bounded-reversible',
+            })
+        ).toEqual({
+            status: 'resolved',
+            id: 'clip-chorus-one',
+            evidence: 'fuzzy-name',
+            confidence: 0.875 * FUZZY_CONFIDENCE_FACTOR,
+            candidates: [fuzzyCandidate('clip-chorus-one', 'Chorus 1', 0.875)],
+        });
+    });
+
+    it('leaves an exact name and an explicit selection ungated by the requested effect', () => {
+        expect(resolveRanked('mute Drums', 'track-drums', 'track', 'destructive-reversible')).toEqual(
+            resolvedTo('track-drums', 'Drums', 'exact-name')
+        );
+        expect(resolveRanked('mute the selected track', 'track-bass', 'track', 'destructive-reversible')).toEqual(
+            resolvedTo('track-bass', 'Bass', 'selection')
+        );
+    });
+
+    it('lists every evidence that admitted a candidate, strongest first', () => {
+        expect(resolveRanked('mute the selected track Bass', 'track-bass', 'track', 'bounded-reversible')).toEqual(
+            resolvedTo('track-bass', 'Bass', 'exact-name', 'selection')
+        );
+    });
+
+    it('reports no candidates when the prompt names nothing in the project', () => {
+        expect(resolveRanked('mute the xylophone', 'track-drums', 'track', 'bounded-reversible')).toEqual(
+            rejectedWith('ungrounded-target')
+        );
     });
 });

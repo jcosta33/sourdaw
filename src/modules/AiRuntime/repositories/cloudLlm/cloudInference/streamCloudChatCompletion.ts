@@ -8,6 +8,7 @@ import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
+import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicStream } from './requestAnthropicStream';
 import { streamOpenAiCompatibleChatCompletion } from './streamOpenAiCompatibleChatCompletion';
 
@@ -15,7 +16,57 @@ const MAX_ANTHROPIC_EVENT_BYTES = 64 * 1_024;
 const MAX_ANTHROPIC_STREAM_BYTES = 1_024 * 1_024;
 const MAX_ANTHROPIC_STREAM_EVENTS = 4_096;
 
-export type CloudChatCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+/**
+ * One provider-neutral finish vocabulary for both hosted protocols, matching
+ * `ModelProviderFinish`. `reason` keeps the provider's own wording for logs;
+ * callers branch on `finishReason` so an OpenAI `length` and an Anthropic
+ * `max_tokens` cannot land on different outcomes.
+ */
+export type CloudChatCompletionFinishReason = 'stop' | 'length' | 'refusal' | 'error';
+
+type CloudChatCompletionIncompleteReason = Exclude<CloudChatCompletionFinishReason, 'stop'>;
+
+export type CloudChatCompletionOutcome =
+    | { status: 'complete'; finishReason: 'stop'; providerRequestId: string | null }
+    | {
+          status: 'incomplete';
+          reason: string;
+          finishReason: CloudChatCompletionIncompleteReason;
+          safeMessage: string;
+          providerRequestId: string | null;
+      };
+
+// Provider bodies never reach a user-visible message: each finish reason has one
+// fixed sentence of our own.
+const INCOMPLETE_SAFE_MESSAGES: Record<CloudChatCompletionIncompleteReason, string> = {
+    length: 'The hosted model stopped at its output token limit.',
+    refusal: 'The hosted model declined this request.',
+    error: 'The hosted model provider returned an incomplete response.',
+};
+
+function incompleteOutcome(
+    finishReason: CloudChatCompletionIncompleteReason,
+    reason: string,
+    providerRequestId: string | null
+): CloudChatCompletionOutcome {
+    return {
+        status: 'incomplete',
+        reason,
+        finishReason,
+        safeMessage: INCOMPLETE_SAFE_MESSAGES[finishReason],
+        providerRequestId,
+    };
+}
+
+function readAnthropicFinishReason(stopReason: string): CloudChatCompletionFinishReason {
+    if (stopReason === 'end_turn') {
+        return 'stop';
+    }
+    if (stopReason === 'max_tokens') {
+        return 'length';
+    }
+    return stopReason === 'refusal' ? 'refusal' : 'error';
+}
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
@@ -48,7 +99,7 @@ export async function streamCloudChatCompletion(
 
     try {
         if (runtime.provider !== 'anthropic') {
-            const finishReason = await streamOpenAiCompatibleChatCompletion({
+            const result = await streamOpenAiCompatibleChatCompletion({
                 runtime,
                 messages,
                 onToken,
@@ -58,14 +109,20 @@ export async function streamCloudChatCompletion(
                 onUnknownEvent: options?.onUnknownEvent,
             });
             controller.signal.throwIfAborted();
-            if (finishReason === 'length') {
+            if (result.finishReason === 'length') {
                 logger.warn('[Cloud AI] stream reached its token limit (output may be incomplete)');
-                return { status: 'incomplete', reason: 'token limit' };
+                return incompleteOutcome('length', 'token limit', result.providerRequestId);
             }
-            return { status: 'complete' };
+            if (result.finishReason === 'refusal') {
+                logger.warn('[Cloud AI] stream stopped with reason="refusal" (output may be incomplete)');
+                return incompleteOutcome('refusal', 'refusal', result.providerRequestId);
+            }
+            return { status: 'complete', finishReason: 'stop', providerRequestId: result.providerRequestId };
         }
 
         let incompleteReason: string | null = null;
+        let finishReason: CloudChatCompletionFinishReason = 'stop';
+        let providerRequestId: string | null = null;
         let sawTerminalDelta = false;
         let sawMessageStop = false;
         let eventCount = 0;
@@ -93,6 +150,9 @@ export async function streamCloudChatCompletion(
                 streamedBytes += eventBytes;
                 if (sawMessageStop || (sawTerminalDelta && event.type !== 'message_stop')) {
                     throw new Error('Hosted AI chat stream returned an event after completion');
+                }
+                if (event.type === 'message_start' && isRecord(event.message)) {
+                    providerRequestId ??= readProviderRequestId(event.message.id);
                 }
                 const usageEvent = readAnthropicUsageEvent(event);
                 if (usageEvent) {
@@ -124,6 +184,7 @@ export async function streamCloudChatCompletion(
                     if (stopReason !== null && stopReason !== 'end_turn') {
                         logger.warn(`[Cloud AI] stream stopped with reason="${stopReason}" (output may be incomplete)`);
                         incompleteReason = stopReason;
+                        finishReason = readAnthropicFinishReason(stopReason);
                     }
                     return;
                 }
@@ -144,10 +205,10 @@ export async function streamCloudChatCompletion(
         if (!sawTerminalDelta || !sawMessageStop) {
             throw new Error('Hosted AI chat stream ended unexpectedly');
         }
-        if (incompleteReason !== null) {
-            return { status: 'incomplete', reason: incompleteReason };
+        if (incompleteReason !== null && finishReason !== 'stop') {
+            return incompleteOutcome(finishReason, incompleteReason, providerRequestId);
         }
-        return { status: 'complete' };
+        return { status: 'complete', finishReason: 'stop', providerRequestId };
     } catch (error) {
         if (isAiRuntimeConfigurationChangedError(controller.signal.reason)) {
             throw controller.signal.reason;

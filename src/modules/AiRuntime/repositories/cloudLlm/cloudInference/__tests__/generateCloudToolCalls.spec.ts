@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
-import { type ToolCallResult } from '../../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime, type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateCloudToolCalls } from '../generateCloudToolCalls';
+import { type HostedToolPlan } from '../hostedToolPlan';
 
 const tools: ToolSchema[] = [
     {
@@ -18,8 +18,8 @@ const tools: ToolSchema[] = [
 
 const mocks = vi.hoisted(() => ({
     getRuntime: vi.fn<() => AnthropicCloudRuntime | OpenAiCompatibleCloudRuntime | null>(),
-    generateAnthropic: vi.fn<() => Promise<ToolCallResult[]>>(),
-    generateOpenAi: vi.fn<() => Promise<ToolCallResult[]>>(),
+    generateAnthropic: vi.fn<() => Promise<HostedToolPlan>>(),
+    generateOpenAi: vi.fn<() => Promise<HostedToolPlan>>(),
     info: vi.fn(),
 }));
 
@@ -39,7 +39,10 @@ describe('generateCloudToolCalls', () => {
             model: 'claude-test',
             session_id: 'provider-session-00000000000000000000000000000000',
         });
-        mocks.generateAnthropic.mockResolvedValue([{ name: 'addTrack', arguments: { name: 'Vocals' } }]);
+        mocks.generateAnthropic.mockResolvedValue({
+            providerRequestId: 'msg_anthropic_1',
+            calls: [{ name: 'addTrack', arguments: { name: 'Vocals' } }],
+        });
     });
 
     it('rejects an unconfigured cloud runtime', async () => {
@@ -63,6 +66,7 @@ describe('generateCloudToolCalls', () => {
         );
         expect(result).toEqual([{ name: 'addTrack', arguments: { name: 'Vocals' } }]);
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('addTrack'));
+        expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('msg_anthropic_1'));
     });
 
     it('dispatches OpenAI-compatible planning through its adapter', async () => {
@@ -74,7 +78,10 @@ describe('generateCloudToolCalls', () => {
             session_id: 'provider-session-00000000000000000000000000000000',
         };
         mocks.getRuntime.mockReturnValue(runtime);
-        mocks.generateOpenAi.mockResolvedValue([{ name: 'addTrack', arguments: {} }]);
+        mocks.generateOpenAi.mockResolvedValue({
+            providerRequestId: 'chatcmpl-1',
+            calls: [{ name: 'addTrack', arguments: {} }],
+        });
 
         await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
             { name: 'addTrack', arguments: {} },

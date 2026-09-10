@@ -140,8 +140,20 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         if (outcome.status === 'complete') {
             return finishWithDisclosure(writer.finish({ reason: 'stop' }));
         }
-        if (outcome.reason === 'token limit' || outcome.reason === 'max_tokens' || outcome.reason === 'length') {
+        if (outcome.finishReason === 'length') {
             return finishWithDisclosure(writer.finish({ reason: 'length' }));
+        }
+        if (outcome.finishReason === 'refusal') {
+            return finishWithDisclosure(
+                writer.finish({
+                    reason: 'refusal',
+                    failure: {
+                        code: 'hosted-provider-refusal',
+                        retryable: false,
+                        safeMessage: outcome.safeMessage,
+                    },
+                })
+            );
         }
         return finishWithDisclosure(
             writer.finish({
@@ -149,7 +161,7 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
                 failure: {
                     code: 'hosted-provider-incomplete',
                     retryable: true,
-                    safeMessage: 'The hosted model provider returned an incomplete response.',
+                    safeMessage: outcome.safeMessage,
                 },
             })
         );

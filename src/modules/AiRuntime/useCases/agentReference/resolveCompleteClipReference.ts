@@ -54,9 +54,10 @@ function fullyAccountsForClipReference(referenceText: string, clipId: string, co
 export function resolveCompleteClipReference(input: ResolveCompleteClipReferenceInput): ResolveAgentReferenceResult {
     const result = resolveAgentReference(input);
     if (result.status === 'resolved') {
-        return fullyAccountsForClipReference(input.referenceText, result.id, input.context)
-            ? result
-            : { status: 'rejected', reason: 'ungrounded-target' };
+        if (fullyAccountsForClipReference(input.referenceText, result.id, input.context)) {
+            return result;
+        }
+        return { status: 'rejected', reason: 'ungrounded-target', candidates: result.candidates };
     }
     if (result.reason !== 'ambiguous-target') {
         return result;
@@ -65,19 +66,21 @@ export function resolveCompleteClipReference(input: ResolveCompleteClipReference
     const completeCandidateIds = (result.candidateIds ?? []).filter((candidateId) =>
         fullyAccountsForClipReference(input.referenceText, candidateId, input.context)
     );
+    const completeCandidates = result.candidates.filter((candidate) => completeCandidateIds.includes(candidate.id));
     if (completeCandidateIds.length === 0) {
-        return { status: 'rejected', reason: 'ungrounded-target' };
+        return { status: 'rejected', reason: 'ungrounded-target', candidates: completeCandidates };
     }
     if (completeCandidateIds.length > 1) {
-        return { status: 'rejected', reason: 'ambiguous-target', candidateIds: completeCandidateIds };
+        return {
+            status: 'rejected',
+            reason: 'ambiguous-target',
+            candidateIds: completeCandidateIds,
+            candidates: completeCandidates,
+        };
     }
     const candidateId = completeCandidateIds[0]!;
     return resolveAgentReference({
-        assertedId: input.assertedId,
-        capability: input.capability,
-        context: input.context,
-        dependencyId: input.dependencyId,
+        ...input,
         excludedIds: [...(input.excludedIds ?? []), ...(result.candidateIds ?? []).filter((id) => id !== candidateId)],
-        prompt: input.prompt,
     });
 }

@@ -137,7 +137,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             maxOutputTokens: 8192,
         });
 
-        expect(result).toEqual([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
+        expect(result.calls).toEqual([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
         expect(fetchMock).toHaveBeenCalledWith(
             'http://localhost:1234/v1/chat/completions',
             expect.objectContaining({
@@ -439,7 +439,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     ])('preserves protocol-valid $label assistant content as an empty batch', async ({ content }) => {
         respondWith({ choices: [{ finish_reason: 'stop', message: { content, tool_calls: [] } }] });
 
-        await expect(generateToolCalls()).resolves.toEqual([]);
+        await expect(generateToolCalls()).resolves.toMatchObject({ calls: [] });
     });
 
     it('rejects non-empty content without tool calls', async () => {
@@ -570,6 +570,6 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         for (const tool of body.tools) {
             expect(tool.function.name).not.toContain('.');
         }
-        expect(result).toEqual([{ name: 'project.query', arguments: {} }]);
+        expect(result.calls).toEqual([{ name: 'project.query', arguments: {} }]);
     });
 });

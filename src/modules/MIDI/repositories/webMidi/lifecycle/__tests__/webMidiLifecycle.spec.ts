@@ -25,7 +25,7 @@ const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
 const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess) => void>());
 const setStateMock = vi.hoisted(() =>
-    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => void>()
 );
 const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const setNativeModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
@@ -38,6 +38,7 @@ vi.stubGlobal('navigator', {
 import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { WEB_MIDI_IDENTITY_SCHEME } from '../../selectedInputIdStorageKeys';
 import { webMidiRuntime } from '../../state';
 import { attachInput } from '../helpers';
 import { initWebMidi } from '../initWebMidi';
@@ -72,7 +73,7 @@ vi.mock('../../setMidiAccess', () => ({
 vi.mock('../../setState', () => ({
     // Forward the options argument only when the caller supplied one, so the
     // single-argument assertions below stay readable.
-    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean }) => {
+    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => {
         if (options === undefined) {
             setStateMock(next);
             return;
@@ -384,8 +385,12 @@ describe('initWebMidi', () => {
 
         expect(attachInput).toHaveBeenCalledWith({ input: preferred, onMidiMessage });
         // No `persistSelection: false` — restoring the saved device is a
-        // legitimate write of the preference back to itself.
-        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ selectedInputId: 'preferred-input' }));
+        // legitimate write of the preference back to itself, into the Web MIDI
+        // scheme's namespaced key (#4138).
+        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ selectedInputId: 'preferred-input' }), {
+            persistSelection: true,
+            identityScheme: WEB_MIDI_IDENTITY_SCHEME,
+        });
     });
 
     it('should keep the selected input attached when it still exists on state change', async () => {
