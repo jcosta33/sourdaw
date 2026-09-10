@@ -2,34 +2,15 @@
  * The packaged renderer's security boundary, as one entry point (AC-057 of
  * #2372).
  *
- * #2372 names `src/utils/__tests__/agentWebviewSecurity.spec.ts`, which cannot
- * exist there: the CSP, IPC router and event path it would have to exercise
- * all live under `electron/`, off limits to `src/utils` imports
- * (`docs/architecture/03-typescript-module.md`). This file is AC-057's real
- * anchor, and pins only the cross-file invariants the existing specs do not
- * already hold on their own:
- *
- * - `webviewSecurity.spec.ts` and `security.spec.ts` already pin the CSP, the
- *   permission allow-list, the sender-origin check's shape, and navigation
- *   lockdown.
- * - `commands.spec.ts` already pins that `EXPOSED_COMMANDS` and
- *   `DENIED_COMMANDS` partition the registered surface with no overlap
- *   (`accounts for every registered command exactly once`), and that no
- *   denied command's channel collides with an exposed one.
- * - `router.spec.ts` already pins the trusted-sender refusal's shape and the
- *   positional-array refusal, both against `load_plugin` alone.
- * - `events.spec.ts` already pins `MAX_COALESCED_KEYS` as an upper bound on
- *   held coalesced payloads, and hardcodes `STREAM_QUEUE_CAPACITY` to `256`
- *   without reading the renderer's own constant.
- * - `nativeEventRouter.spec.ts` already pins that `dictation-result` bypasses
- *   the generic event channel, but not `dictation-error`.
- *
- * What is missing, and pinned here: that the plugin-runtime allow-list never
- * widens into a privileged command, that every privileged command (not just
- * one) is behind the trusted-sender gate, that plugin GUI windows carry no
- * renderer bridge, that a renderer-authored recent-project name cannot grow a
- * native menu label without bound, and that the stream cap actually tracks
- * the renderer figure it claims to match rather than a duplicated literal.
+ * Pins the cross-file invariants no single module spec already holds on its
+ * own: that the plugin-runtime command allow-list never widens into a
+ * privileged command, that every privileged command (not just one) is behind
+ * the trusted-sender gate, that a plugin editor window is built as a bare
+ * native window with no renderer bridge, that a renderer-authored project
+ * title and recent-project name cannot reach a native menu label, window
+ * title, or close-dialog message without bound, and that the stream cap
+ * actually tracks the renderer figure it claims to match rather than a
+ * duplicated literal.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -40,15 +21,40 @@ import * as shellChannels from '../channels.js';
 import { addonMethodName, commandChannel, EXPOSED_COMMANDS } from '../commands.js';
 import { STREAM_QUEUE_CAPACITY } from '../events.js';
 import { forwardNativeEvent } from '../nativeEventRouter.js';
-import { boundMenuLabel, createNativeMenuProjectStateController } from '../nativeMenuProjectState.js';
+import { boundShellLabel, createNativeMenuProjectStateController } from '../nativeMenuProjectState.js';
 import { PLUGIN_RUNTIME_COMMANDS } from '../pluginCommandAdmission.js';
+import { createEditorWindow } from '../pluginEditorWindow.js';
 import { registerCommandRouter } from '../router.js';
 
 import type { NativeHost } from '../native.js';
+import type { EditorWindowOptions } from '../pluginGui.js';
 import type { CommandStream, IpcMainLike, SenderFrameCarrier } from '../router.js';
 
+// `pluginEditorWindow.ts`'s only Electron import is the `BaseWindow`
+// constructor, so mocking `electron` here (unlike `main.ts`'s whole native
+// surface) needs no more than the two window constructors the case below
+// tells apart. `vi.mock` is hoisted above the imports above, so
+// `createEditorWindow` resolves against this mock, not the real module.
+const { baseWindowCalls, browserWindowCalls } = vi.hoisted(() => ({
+    baseWindowCalls: [] as Record<string, unknown>[],
+    browserWindowCalls: [] as Record<string, unknown>[],
+}));
+
+vi.mock('electron', () => ({
+    BaseWindow: class MockBaseWindow {
+        constructor(options: Record<string, unknown>) {
+            baseWindowCalls.push(options);
+        }
+    },
+    BrowserWindow: class MockBrowserWindow {
+        constructor(options: Record<string, unknown>) {
+            browserWindowCalls.push(options);
+        }
+    },
+}));
+
 describe('the command allow-lists do not overlap into privilege expansion', () => {
-    /** Named in the dispatch as the surface a plugin-runtime command must never reach. */
+    /** Reaches file bytes, a directory listing, or provider gateway credentials — never a surface a plugin-runtime command may share. */
     const PRIVILEGED_COMMAND_FAMILIES: readonly string[] = [
         'open_provider_gateway_session',
         'provider_gateway_request',
@@ -137,7 +143,7 @@ describe('privileged commands reach the addon only behind the trusted-sender che
         return handlers.get(commandChannel(command));
     };
 
-    /** Every command the dispatch names as privileged, in full. */
+    /** Every command that reaches file bytes, a directory listing, provider gateway credentials, a collaboration document, or the cached model store. */
     const PRIVILEGED_COMMANDS = [
         'open_provider_gateway_session',
         'provider_gateway_request',
@@ -156,6 +162,7 @@ describe('privileged commands reach the addon only behind the trusted-sender che
     ] as const;
 
     it.each(PRIVILEGED_COMMANDS)('refuses %s from a foreign frame before the addon runs', (command) => {
+        expect(EXPOSED_COMMANDS).toContain(command);
         const implementation = vi.fn();
         const handler = routerFor(command, implementation);
 
@@ -168,6 +175,7 @@ describe('privileged commands reach the addon only behind the trusted-sender che
     it.each(PRIVILEGED_COMMANDS)(
         'reaches the addon exactly once for %s from the application frame',
         async (command) => {
+            expect(EXPOSED_COMMANDS).toContain(command);
             const implementation = vi.fn(() => 'ok');
             const handler = routerFor(command, implementation);
 
@@ -187,39 +195,88 @@ describe('privileged commands reach the addon only behind the trusted-sender che
 });
 
 describe('plugin GUI windows expose no renderer bridge', () => {
-    it('creates plugin editors as bare native windows with no web contents', () => {
-        // pluginGui.ts builds every editor through an injected `createWindow`
-        // that main.ts satisfies with `new BaseWindow(...)` — Electron's
-        // windowless container, which carries no `webContents` and so no
-        // `webPreferences` to pin sandbox/contextIsolation/nodeIntegration on.
-        // What is provable here instead is that this module never reaches for
-        // the one Electron class that would give a plugin editor a renderer
-        // bridge in the first place.
-        const source = readFileSync(resolve('electron/pluginGui.ts'), 'utf8');
+    it('builds a plugin editor as a hidden BaseWindow and never a BrowserWindow', () => {
+        const options: EditorWindowOptions = { title: 'Editor', parent: undefined, alwaysOnTop: true };
 
-        expect(source).not.toMatch(/BrowserWindow/u);
-        expect(source).not.toMatch(/webContents/u);
-        expect(source).not.toMatch(/webPreferences/u);
-        // The only Electron import here is the type of the window an editor may parent to.
-        expect(source).toMatch(/import type \{ BaseWindow \} from 'electron';/u);
+        createEditorWindow(options);
+
+        expect(baseWindowCalls).toHaveLength(1);
+        expect(baseWindowCalls[0]).toMatchObject({ show: false });
+        expect(browserWindowCalls).toHaveLength(0);
     });
 });
 
 describe('untrusted project strings never reach a privileged context unbounded', () => {
-    it('passes an ordinary title through boundMenuLabel unchanged', () => {
-        expect(boundMenuLabel('Final mix')).toBe('Final mix');
-    });
+    const controlOne = String.fromCharCode(1);
+    const lineFeed = String.fromCharCode(10);
+    /**
+     * A control character at the first retained code point and another about
+     * a hundred in, both inside the 256-code-point prefix `boundShellLabel`
+     * keeps, followed by a long tail so truncation is exercised in the same
+     * fixture rather than only past the cut where the filter never runs.
+     */
+    const hostileLabel = `${controlOne}${'a'.repeat(99)}${lineFeed}${'b'.repeat(9800)}`;
 
-    it('bounds a hostile title to 256 code points with no control characters', () => {
-        const controlOne = String.fromCharCode(1);
-        const lineFeed = String.fromCharCode(10);
-        const hostile = 'a'.repeat(4000) + controlOne + 'b'.repeat(4000) + lineFeed + 'c'.repeat(2000);
-
-        const bounded = boundMenuLabel(hostile);
+    it('bounds a hostile label to 256 code points with no control characters', () => {
+        const bounded = boundShellLabel(hostileLabel);
 
         expect([...bounded].length).toBeLessThanOrEqual(256);
         expect(bounded).not.toContain(controlOne);
         expect(bounded).not.toContain(lineFeed);
+    });
+
+    it('bounds a hostile project title before it reaches the window title and the close dialog', () => {
+        const window = { isDestroyed: () => false, setTitle: vi.fn(), setDocumentEdited: vi.fn() };
+        const updateCloseState = vi.fn();
+        const controller = createNativeMenuProjectStateController({
+            updateCloseState,
+            getWindow: () => window,
+            rebuildApplicationMenu: vi.fn(),
+        });
+
+        controller.apply({
+            title: hostileLabel,
+            dirty: false,
+            durabilityPending: false,
+            projectKey: 'song',
+            revision: '1',
+            recentProjects: [],
+        });
+
+        const boundedLabel = boundShellLabel(hostileLabel);
+        const [setTitleArgument] = window.setTitle.mock.calls[0] as [string];
+        const [[capturedState]] = updateCloseState.mock.calls as [[{ readonly title: string }]];
+
+        expect(setTitleArgument).toBe(`${boundedLabel} — Sourdaw`);
+        expect(setTitleArgument).not.toContain(controlOne);
+        expect(setTitleArgument).not.toContain(lineFeed);
+        expect(capturedState.title).toBe(boundedLabel);
+        expect([...capturedState.title].length).toBeLessThanOrEqual(256);
+        expect(capturedState.title).not.toContain(controlOne);
+        expect(capturedState.title).not.toContain(lineFeed);
+    });
+
+    it('passes an ordinary project title through unchanged to the window title and the close dialog', () => {
+        const window = { isDestroyed: () => false, setTitle: vi.fn(), setDocumentEdited: vi.fn() };
+        const updateCloseState = vi.fn();
+        const controller = createNativeMenuProjectStateController({
+            updateCloseState,
+            getWindow: () => window,
+            rebuildApplicationMenu: vi.fn(),
+        });
+
+        controller.apply({
+            title: 'Final mix',
+            dirty: false,
+            durabilityPending: false,
+            projectKey: 'song',
+            revision: '1',
+            recentProjects: [],
+        });
+
+        expect(window.setTitle).toHaveBeenCalledWith('Final mix — Sourdaw');
+        const [[capturedState]] = updateCloseState.mock.calls as [[{ readonly title: string }]];
+        expect(capturedState.title).toBe('Final mix');
     });
 
     it('bounds a hostile recent-project name before it reaches the menu builder', () => {
@@ -229,9 +286,6 @@ describe('untrusted project strings never reach a privileged context unbounded',
             getWindow: () => undefined,
             rebuildApplicationMenu,
         });
-        const controlOne = String.fromCharCode(1);
-        const lineFeed = String.fromCharCode(10);
-        const hostile = 'x'.repeat(4000) + controlOne + lineFeed + 'y'.repeat(4000);
 
         controller.apply({
             title: 'Song',
@@ -239,7 +293,7 @@ describe('untrusted project strings never reach a privileged context unbounded',
             durabilityPending: false,
             projectKey: 'song',
             revision: '1',
-            recentProjects: [{ key: 'k', name: hostile }],
+            recentProjects: [{ key: 'k', name: hostileLabel }],
         });
 
         expect(rebuildApplicationMenu).toHaveBeenCalledTimes(1);
@@ -248,7 +302,7 @@ describe('untrusted project strings never reach a privileged context unbounded',
         ];
         const label = recentProjects[0]?.name ?? '';
 
-        expect(label).toBe(boundMenuLabel(hostile));
+        expect(label).toBe(boundShellLabel(hostileLabel));
         expect([...label].length).toBeLessThanOrEqual(256);
         expect(label).not.toContain(controlOne);
         expect(label).not.toContain(lineFeed);

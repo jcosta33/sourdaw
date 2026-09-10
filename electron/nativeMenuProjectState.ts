@@ -24,15 +24,18 @@ const isControlCodePoint = (codePoint: number): boolean =>
     (codePoint >= 0 && codePoint <= 31) || (codePoint >= 127 && codePoint <= 159);
 
 /**
- * Bounds an untrusted project string before it reaches a native `Menu` label.
+ * Bounds an untrusted project string before it reaches a native shell
+ * surface: a `Menu` label, a `BrowserWindow` title, or the close-confirmation
+ * dialog message.
  *
- * `NATIVE_MENU_PROJECT_STATE_CHANNEL` carries renderer-authored recent-project
- * names straight into `createApplicationMenuTemplate`'s "Open Recent" labels
- * (electron/applicationMenu.ts), with nothing between them and
- * `Menu.buildFromTemplate`. Without this, a control character or an unbounded
- * length reaches the OS menu widget unfiltered.
+ * `NATIVE_MENU_PROJECT_STATE_CHANNEL` carries renderer-authored project state
+ * straight into `createApplicationMenuTemplate`'s "Open Recent" labels
+ * (electron/applicationMenu.ts), `window.setTitle`, and — through
+ * `updateCloseState` — `askToSaveBeforeClose`'s dialog message
+ * (electron/windowCloseDialog.ts). Without this, a control character or an
+ * unbounded length reaches native OS chrome unfiltered.
  */
-export const boundMenuLabel = (value: string): string =>
+export const boundShellLabel = (value: string): string =>
     [...value]
         .filter((character) => !isControlCodePoint(character.codePointAt(0) ?? 0))
         .slice(0, MAX_MENU_LABEL_CODE_POINTS)
@@ -47,16 +50,21 @@ export const createNativeMenuProjectStateController = ({
     let recentProjects: NativeMenuProjectState['recentProjects'] | undefined;
     return {
         apply: (state: NativeMenuProjectState): void => {
-            updateCloseState(state);
-            const window = getWindow();
-            if (window !== undefined && !window.isDestroyed()) {
-                window.setTitle(`${state.title} — Sourdaw`);
-                window.setDocumentEdited(state.dirty || state.durabilityPending);
-            }
             const boundedRecentProjects = state.recentProjects.map((project) => ({
                 ...project,
-                name: boundMenuLabel(project.name),
+                name: boundShellLabel(project.name),
             }));
+            const boundedState: NativeMenuProjectState = {
+                ...state,
+                title: boundShellLabel(state.title),
+                recentProjects: boundedRecentProjects,
+            };
+            updateCloseState(boundedState);
+            const window = getWindow();
+            if (window !== undefined && !window.isDestroyed()) {
+                window.setTitle(`${boundedState.title} — Sourdaw`);
+                window.setDocumentEdited(boundedState.dirty || boundedState.durabilityPending);
+            }
             const changed =
                 recentProjects === undefined ||
                 recentProjects.length !== boundedRecentProjects.length ||
