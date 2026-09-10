@@ -547,6 +547,20 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expectBrightnessGrounded(prompt, 0.3);
     });
 
+    it('attributes a clause naming another device over the owner track it also names', () => {
+        const prompt = 'lower the guitar eq, and raise the brightness';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
+    });
+
+    it('attributes a clause naming this device by id', () => {
+        const prompt = 'turn guitar-filter-1 down';
+
+        expectBrightnessRejected(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
     it('reads a direction from a clause naming this parameter even after a clause naming another one', () => {
         const prompt = 'lower the gain, and raise the brightness';
 
