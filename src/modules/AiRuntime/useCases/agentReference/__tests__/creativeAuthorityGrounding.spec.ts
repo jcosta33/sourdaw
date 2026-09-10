@@ -590,7 +590,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
     });
 
     it('states no direction when the only "up"/"down" token sits past a "to" purpose clause', () => {
-        const prompt = 'turn on the reverb to warm up the mix';
+        const prompt = 'turn it on to warm up the mix';
 
         expectBrightnessGrounded(prompt, 0.8);
         expectBrightnessGrounded(prompt, 0.3);
