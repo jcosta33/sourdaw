@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postScopeAdmissionStrategy.ts
+  s_06adf2b091dc62::t_0f30abf3c637af 9-10
+  s_06adf2b091dc62::t_5963225b83aeae 234-261
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/promptClauseIntent.spec.ts
+  s_06adf2b091dc62::t_ea3f26b58d293d 94-112
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postScopeAdmissionStrategy.spec.ts
+  s_06adf2b091dc62::t_ce14f9a58df16b 11
+  s_06adf2b091dc62::t_8f060b1b396d99 162-163,175-176,190-191,203-204,220-221,233-234,248-249,261-262,273-286
+  s_06adf2b091dc62::t_f93cbf85fa6b93 287
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_8e799e678dcd2d 3321-3330
+  s_06adf2b091dc62::t_871da5770761c3 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "de23838748603515b6b1b05fd2350f7d84eea641",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
