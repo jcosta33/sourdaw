@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_06adf2b091dc62::t_ac2a604637aacf 74
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_06adf2b091dc62::t_d03d391998fd67 94
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_06adf2b091dc62::t_af81c61f1c4f9d 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f2b5c840b227f58caa5653e68f5b103c343ac06a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
