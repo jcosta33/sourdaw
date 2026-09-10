@@ -7,9 +7,10 @@ import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import { type HostedToolPlan } from './hostedToolPlan';
-import { isGpt56FamilyModel } from './openAiModelFamilies';
+import { parseToolCallArguments } from './parseToolCallArguments';
 import { readProviderRequestId } from './readProviderRequestId';
-import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
+import { rejectedBatchMessage } from './rejectedBatchMessage';
+import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
 
 type GenerateOpenAiCompatibleToolCallsInput = {
     runtime: OpenAiCompatibleCloudRuntime;
@@ -47,30 +48,6 @@ function inspectAssistantContent(value: unknown): AssistantContentState {
         }
     }
     return { valid: true, hasContent };
-}
-
-function parseArguments(value: unknown): Record<string, unknown> | null {
-    if (isRecord(value)) {
-        return value;
-    }
-    if (typeof value !== 'string') {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(value) as unknown;
-        return isRecord(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
-}
-
-// A rejected batch names the offending call so a provider-side record can be found
-// for it; the arguments themselves stay out of the message.
-function rejectedBatchMessage(id: unknown): string {
-    const callId = readProviderRequestId(id);
-    return callId === null
-        ? 'Hosted AI returned an invalid tool-call batch'
-        : `Hosted AI returned an invalid tool-call batch for call ${callId}`;
 }
 
 function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
@@ -122,7 +99,7 @@ function parseToolCalls(response: unknown, decodeWireName: (wireName: string) =>
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
         }
         const name = rawCall.function.name;
-        const arguments_ = parseArguments(rawCall.function.arguments);
+        const arguments_ = parseToolCallArguments(rawCall.function.arguments);
         const id = rawCall.id;
         if (
             typeof name !== 'string' ||
@@ -169,13 +146,10 @@ export async function generateOpenAiCompatibleToolCalls({
         tool_choice: 'auto',
         n: 1,
         stream: false,
-        ...(runtime.provider === 'openai'
-            ? { max_completion_tokens: maxOutputTokens }
-            : { max_tokens: maxOutputTokens }),
-        ...(runtime.provider === 'openai' && isGpt56FamilyModel(runtime.model) ? { reasoning_effort: 'none' } : {}),
+        max_tokens: maxOutputTokens,
     });
     const chunks: Uint8Array[] = [];
-    const response = await requestOpenAiCompatibleProvider({
+    const response = await requestHostedOpenAiProvider({
         runtime,
         body,
         signal: signal ?? new AbortController().signal,

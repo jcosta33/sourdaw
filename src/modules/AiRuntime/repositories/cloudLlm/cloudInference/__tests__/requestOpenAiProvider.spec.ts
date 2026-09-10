@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { compileProviderAdapterInstallation } from '../../../providerAdapterRegistry';
-import { requestOpenAiCompatibleProvider } from '../requestOpenAiCompatibleProvider';
+import {
+    compileProviderAdapterInstallation,
+    OPENAI_CHAT_COMPLETIONS_ADAPTER_ID,
+    OPENAI_RESPONSES_ADAPTER_ID,
+} from '../../../providerAdapterRegistry';
+import { requestHostedOpenAiProvider } from '../requestOpenAiProvider';
 
 const runGateway = vi.hoisted(() => vi.fn());
 
@@ -17,7 +21,7 @@ function createAdapterRuntime() {
         model: 'studio-model-v1',
         base_url: 'https://models.example.test:8443/v1',
         adapter: compileProviderAdapterInstallation({
-            adapterId: 'builtin.openai-compatible.chat-completions.v1',
+            adapterId: OPENAI_CHAT_COMPLETIONS_ADAPTER_ID,
             providerId: 'studio-provider',
             modelId: 'studio-model-v1',
             protocolFamily: 'openai-chat-completions',
@@ -26,7 +30,7 @@ function createAdapterRuntime() {
     };
 }
 
-describe('requestOpenAiCompatibleProvider', () => {
+describe('requestHostedOpenAiProvider', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.clearAllMocks();
@@ -43,7 +47,7 @@ describe('requestOpenAiCompatibleProvider', () => {
         vi.stubGlobal('fetch', fetchMock);
         const onBodyChunk = vi.fn();
 
-        const response = await requestOpenAiCompatibleProvider({
+        const response = await requestHostedOpenAiProvider({
             runtime: {
                 provider: 'openai-compatible',
                 authentication: 'none',
@@ -82,11 +86,11 @@ describe('requestOpenAiCompatibleProvider', () => {
             onBodyChunk,
         };
 
-        await expect(requestOpenAiCompatibleProvider(input)).resolves.toEqual({
+        await expect(requestHostedOpenAiProvider(input)).resolves.toEqual({
             status: 200,
             contentType: 'application/json',
         });
-        await expect(requestOpenAiCompatibleProvider(input)).resolves.toEqual({
+        await expect(requestHostedOpenAiProvider(input)).resolves.toEqual({
             status: 200,
             contentType: 'application/json',
         });
@@ -94,6 +98,46 @@ describe('requestOpenAiCompatibleProvider', () => {
         expect(runGateway.mock.calls.map(([request]) => request.operation)).toEqual(['probe', 'request', 'request']);
         expect(onBodyChunk).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3));
         expect(onBodyChunk).toHaveBeenCalledTimes(2);
+    });
+
+    it('routes a first-party OpenAI runtime through the gateway without renderer networking', async () => {
+        const fetchMock = vi
+            .fn<typeof fetch>()
+            .mockRejectedValue(new Error('first-party OpenAI must not use renderer networking'));
+        vi.stubGlobal('fetch', fetchMock);
+        runGateway.mockImplementation(async ({ operation, onResponseStart, onBodyChunk }) => {
+            if (operation === 'probe') {
+                onResponseStart({ status: 200, contentType: 'application/json' });
+                onBodyChunk(new TextEncoder().encode('{"data":[{"id":"gpt-test"}]}'));
+                return;
+            }
+            onResponseStart({ status: 200, contentType: 'text/event-stream' });
+        });
+
+        await expect(
+            requestHostedOpenAiProvider({
+                runtime: {
+                    provider: 'openai',
+                    authentication: 'api-key',
+                    session_id: SESSION_ID,
+                    model: 'gpt-test',
+                    base_url: 'https://api.openai.com/v1',
+                    adapter: compileProviderAdapterInstallation({
+                        adapterId: OPENAI_RESPONSES_ADAPTER_ID,
+                        providerId: 'openai',
+                        modelId: 'gpt-test',
+                        protocolFamily: 'openai-responses',
+                        origin: 'https://api.openai.com',
+                    }),
+                },
+                body: '{}',
+                signal: new AbortController().signal,
+                onBodyChunk: vi.fn(),
+            })
+        ).resolves.toEqual({ status: 200, contentType: 'text/event-stream' });
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(runGateway.mock.calls.map(([request]) => request.operation)).toEqual(['probe', 'request']);
     });
 
     it('does not send the privileged request when the capability probe returns 401', async () => {
@@ -107,7 +151,7 @@ describe('requestOpenAiCompatibleProvider', () => {
         });
 
         await expect(
-            requestOpenAiCompatibleProvider({
+            requestHostedOpenAiProvider({
                 runtime,
                 body: '{}',
                 signal: new AbortController().signal,

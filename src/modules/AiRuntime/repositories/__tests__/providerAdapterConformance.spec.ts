@@ -129,6 +129,43 @@ describe('provider adapter conformance', () => {
             },
         });
         expect(adapter.capabilities).toMatchObject({ text: true, tools: true, streaming: true });
+        expect(adapter).toMatchObject({ requestPath: '/v1/chat/completions', probePath: '/v1/models' });
+    });
+
+    it('compiles the first-party OpenAI responses adapter onto its own request path', () => {
+        const adapter = compileProviderAdapterInstallation({
+            adapterId: 'builtin.openai.responses.v1',
+            providerId: 'openai',
+            modelId: 'gpt-test',
+            protocolFamily: 'openai-responses',
+            origin: 'https://api.openai.com',
+        });
+
+        expect(adapter).toMatchObject({
+            adapterId: 'builtin.openai.responses.v1',
+            protocolFamily: 'openai-responses',
+            requestPath: '/v1/responses',
+            probePath: '/v1/models',
+            origin: 'https://api.openai.com',
+        });
+    });
+
+    it('refuses an adapter id that no compiled contract declares', () => {
+        expect(() =>
+            compileProviderAdapterInstallation({ ...BASE_INSTALLATION, adapterId: 'builtin.openai.assistants.v1' })
+        ).toThrow('Provider adapter is not compiled into this release or explicitly installed');
+    });
+
+    it('refuses a protocol family that contradicts the compiled adapter contract', () => {
+        expect(() =>
+            compileProviderAdapterInstallation({
+                adapterId: 'builtin.openai.responses.v1',
+                providerId: 'openai',
+                modelId: 'gpt-test',
+                protocolFamily: 'openai-chat-completions',
+                origin: 'https://api.openai.com',
+            })
+        ).toThrow('Provider adapter protocol family does not match its compiled contract');
     });
 
     it('opens and closes only opaque native credential sessions', async () => {

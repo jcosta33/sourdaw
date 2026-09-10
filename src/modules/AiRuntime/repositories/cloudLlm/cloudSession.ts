@@ -11,8 +11,21 @@ export type AnthropicCloudRuntime = Readonly<{
     session_id: string;
 }>;
 
+/**
+ * First-party OpenAI always reaches the provider through the privileged gateway, so
+ * its compiled adapter and credential session are part of the runtime's identity.
+ */
+export type OpenAiCloudRuntime = Readonly<{
+    provider: 'openai';
+    model: string;
+    base_url: string;
+    authentication: HostedLlmAuthentication;
+    adapter: CompiledProviderAdapter;
+    session_id: string;
+}>;
+
 export type OpenAiCompatibleCloudRuntime = Readonly<{
-    provider: 'openai' | 'openai-compatible';
+    provider: 'openai-compatible';
     model: string;
     base_url: string;
     authentication: HostedLlmAuthentication;
@@ -20,7 +33,7 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     session_id: string | null;
 }>;
 
-export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCompatibleCloudRuntime;
+export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCloudRuntime | OpenAiCompatibleCloudRuntime;
 
 /**
  * Owns opaque provider sessions and active request controllers as one volatile runtime.

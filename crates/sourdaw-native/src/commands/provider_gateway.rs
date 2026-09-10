@@ -11,6 +11,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 const OPENAI_ADAPTER_ID: &str = "builtin.openai-compatible.chat-completions.v1";
+const OPENAI_RESPONSES_ADAPTER_ID: &str = "builtin.openai.responses.v1";
 const ANTHROPIC_ADAPTER_ID: &str = "builtin.anthropic.messages.v1";
 const OPENAI_ORIGIN: &str = "https://api.openai.com";
 const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
@@ -94,6 +95,11 @@ fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
         OPENAI_ADAPTER_ID => {
             parse_canonical_origin(origin)?;
         }
+        OPENAI_RESPONSES_ADAPTER_ID => {
+            if origin != OPENAI_ORIGIN {
+                return Err("OpenAI requires its compiled origin".to_string());
+            }
+        }
         ANTHROPIC_ADAPTER_ID => {
             if origin != ANTHROPIC_ORIGIN {
                 return Err("Anthropic requires its compiled origin".to_string());
@@ -121,7 +127,7 @@ fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(
 fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> Result<(), String> {
     let valid = match source {
         "anthropic" => adapter_id == ANTHROPIC_ADAPTER_ID && origin == ANTHROPIC_ORIGIN,
-        "openai" => adapter_id == OPENAI_ADAPTER_ID && origin == OPENAI_ORIGIN,
+        "openai" => adapter_id == OPENAI_RESPONSES_ADAPTER_ID && origin == OPENAI_ORIGIN,
         "openai-compatible" => adapter_id == OPENAI_ADAPTER_ID && origin != OPENAI_ORIGIN,
         _ => false,
     };
@@ -430,6 +436,8 @@ fn resolve_provider_gateway_operation(
     match (adapter_id, operation) {
         (OPENAI_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (OPENAI_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/chat/completions")),
+        (OPENAI_RESPONSES_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
+        (OPENAI_RESPONSES_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/responses")),
         (ANTHROPIC_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (ANTHROPIC_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/messages")),
         _ => Err("Provider gateway operation is not supported by the compiled adapter".to_string()),
@@ -578,11 +586,12 @@ mod tests {
         build_provider_transport, close_provider_gateway_session, compile_request_url,
         open_provider_gateway_session, open_provider_gateway_session_with_credential,
         parse_canonical_origin, register_cancellation, request_cancellation,
-        resolve_provider_gateway_operation, validate_credential, validate_credential_binding,
-        validate_request_body, validate_resolved_addresses, ProviderCredentialSession,
-        ProviderGatewayEvent, ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN,
-        CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES,
-        MAX_CREDENTIAL_SESSIONS, MAX_REQUEST_BODY_BYTES, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
+        resolve_provider_gateway_operation, validate_adapter, validate_credential,
+        validate_credential_binding, validate_request_body, validate_resolved_addresses,
+        ProviderCredentialSession, ProviderGatewayEvent, ProviderGatewayState,
+        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
+        MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, MAX_REQUEST_BODY_BYTES,
+        OPENAI_ADAPTER_ID, OPENAI_ORIGIN, OPENAI_RESPONSES_ADAPTER_ID,
     };
     use std::io::{Read, Write};
     use std::net::SocketAddr;
@@ -875,8 +884,41 @@ mod tests {
     }
 
     #[test]
+    fn provider_gateway_resolves_openai_responses_paths() {
+        let (method, path) =
+            resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "probe")
+                .expect("openai responses probe must resolve");
+        assert_eq!(method, reqwest::Method::GET);
+        assert_eq!(path, "/v1/models");
+
+        let (method, path) =
+            resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "request")
+                .expect("openai responses request must resolve");
+        assert_eq!(method, reqwest::Method::POST);
+        assert_eq!(path, "/v1/responses");
+
+        assert!(resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "delete").is_err());
+    }
+
+    #[test]
     fn first_party_credentials_are_bound_to_first_party_origins() {
-        assert!(validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai").is_ok());
+        assert!(
+            validate_credential_binding(OPENAI_RESPONSES_ADAPTER_ID, OPENAI_ORIGIN, "openai")
+                .is_ok()
+        );
+        assert!(validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai").is_err());
+        assert!(validate_credential_binding(
+            OPENAI_RESPONSES_ADAPTER_ID,
+            "https://provider.example",
+            "openai-compatible"
+        )
+        .is_err());
+        assert_eq!(
+            validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, "https://provider.example")
+                .expect_err("the responses adapter must refuse a third-party origin"),
+            "OpenAI requires its compiled origin"
+        );
+        assert!(validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, OPENAI_ORIGIN).is_ok());
         assert!(
             validate_credential_binding(ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, "anthropic")
                 .is_ok()
@@ -919,7 +961,7 @@ mod tests {
         .await
         .is_err());
         assert!(open_provider_gateway_session(
-            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_RESPONSES_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
             "openai".to_string(),
             Zeroizing::new(String::new()),
@@ -946,7 +988,7 @@ mod tests {
         let state = ProviderGatewayState::default();
         let exact_limit = Zeroizing::new("é".repeat(MAX_API_KEY_BYTES / 2));
         assert!(open_provider_gateway_session(
-            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_RESPONSES_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
             "openai".to_string(),
             exact_limit,
@@ -958,7 +1000,7 @@ mod tests {
         let oversized = Zeroizing::new("é".repeat((MAX_API_KEY_BYTES / 2) + 1));
         assert_eq!(
             open_provider_gateway_session(
-                OPENAI_ADAPTER_ID.to_string(),
+                OPENAI_RESPONSES_ADAPTER_ID.to_string(),
                 OPENAI_ORIGIN.to_string(),
                 "openai".to_string(),
                 oversized,

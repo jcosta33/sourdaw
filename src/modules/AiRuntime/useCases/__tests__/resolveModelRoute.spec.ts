@@ -26,7 +26,7 @@ const REMOTE_ROUTE = {
     executor: 'cloud' as const,
     providerId: 'openai',
     modelId: 'gpt-5-mini',
-    protocolFamily: 'openai-chat-completions',
+    protocolFamily: 'openai-responses',
     capabilities: {
         operations: ['text', 'tools', 'structured-output'] as const,
         modalities: ['text'] as const,

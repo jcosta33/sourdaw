@@ -12,6 +12,8 @@ import { unregisterCloudStreamController } from '../unregisterCloudStreamControl
 
 import { generateAnthropicToolCalls } from './generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from './generateOpenAiCompatibleToolCalls';
+import { generateOpenAiResponsesToolCalls } from './generateOpenAiResponsesToolCalls';
+import { type HostedToolPlan } from './hostedToolPlan';
 
 const CLOUD_SYSTEM_PROMPT = `You are a professional music production AI integrated into a DAW (Digital Audio Workstation). Use the provided tools to execute all user requests. Never describe actions — execute them via tools. You understand music theory, mixing, mastering, and arrangement.
 
@@ -40,24 +42,43 @@ export const generateCloudToolCalls = inject({ logger })(
             const unlinkCallerAbort = linkCloudRequestAbort(signal, controller);
 
             try {
-                const plan =
-                    runtime.provider === 'anthropic'
-                        ? await generateAnthropicToolCalls({
-                              runtime,
-                              systemPrompt: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
-                              userMessage,
-                              toolSchemas,
-                              maxOutputTokens,
-                              signal: controller.signal,
-                          })
-                        : await generateOpenAiCompatibleToolCalls({
-                              runtime,
-                              systemPrompt,
-                              userMessage,
-                              toolSchemas,
-                              maxOutputTokens,
-                              signal: controller.signal,
-                          });
+                let plan: HostedToolPlan;
+                switch (runtime.provider) {
+                    case 'anthropic':
+                        plan = await generateAnthropicToolCalls({
+                            runtime,
+                            systemPrompt: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
+                            userMessage,
+                            toolSchemas,
+                            maxOutputTokens,
+                            signal: controller.signal,
+                        });
+                        break;
+                    case 'openai':
+                        plan = await generateOpenAiResponsesToolCalls({
+                            runtime,
+                            systemPrompt,
+                            userMessage,
+                            toolSchemas,
+                            maxOutputTokens,
+                            signal: controller.signal,
+                        });
+                        break;
+                    case 'openai-compatible':
+                        plan = await generateOpenAiCompatibleToolCalls({
+                            runtime,
+                            systemPrompt,
+                            userMessage,
+                            toolSchemas,
+                            maxOutputTokens,
+                            signal: controller.signal,
+                        });
+                        break;
+                    default: {
+                        const unsupported: never = runtime;
+                        throw new Error(`Hosted AI provider is not supported: ${JSON.stringify(unsupported)}`);
+                    }
+                }
                 controller.signal.throwIfAborted();
                 logger.info(
                     `[Cloud AI] ${runtime.provider} request ${plan.providerRequestId ?? 'unreported'} returned ${String(plan.calls.length)} tool call(s): ${plan.calls.map((call) => call.name).join(', ')}`

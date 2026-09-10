@@ -2,7 +2,31 @@ import { type ModelProviderCapabilities } from '../models/ModelProviderProtocol'
 
 export const PROVIDER_ADAPTER_SCHEMA_VERSION = 1 as const;
 
-export type ProviderProtocolFamily = 'openai-chat-completions';
+export const OPENAI_CHAT_COMPLETIONS_ADAPTER_ID = 'builtin.openai-compatible.chat-completions.v1';
+export const OPENAI_RESPONSES_ADAPTER_ID = 'builtin.openai.responses.v1';
+
+export type ProviderAdapterId = typeof OPENAI_CHAT_COMPLETIONS_ADAPTER_ID | typeof OPENAI_RESPONSES_ADAPTER_ID;
+
+export type ProviderProtocolFamily = 'openai-chat-completions' | 'openai-responses';
+
+export type ProviderRequestPath = '/v1/chat/completions' | '/v1/responses';
+
+/**
+ * The release-owned adapter contracts. A protocol family and its request path are
+ * compiled together here so no caller can pair one family with another's endpoint.
+ */
+const COMPILED_ADAPTERS: Readonly<
+    Record<ProviderAdapterId, Readonly<{ protocolFamily: ProviderProtocolFamily; requestPath: ProviderRequestPath }>>
+> = Object.freeze({
+    [OPENAI_CHAT_COMPLETIONS_ADAPTER_ID]: Object.freeze({
+        protocolFamily: 'openai-chat-completions' as const,
+        requestPath: '/v1/chat/completions' as const,
+    }),
+    [OPENAI_RESPONSES_ADAPTER_ID]: Object.freeze({
+        protocolFamily: 'openai-responses' as const,
+        requestPath: '/v1/responses' as const,
+    }),
+});
 
 export type ProviderAdapterInstallationInput = {
     adapterId: string;
@@ -14,12 +38,12 @@ export type ProviderAdapterInstallationInput = {
 
 export type CompiledProviderAdapter = Readonly<{
     schemaVersion: typeof PROVIDER_ADAPTER_SCHEMA_VERSION;
-    adapterId: 'builtin.openai-compatible.chat-completions.v1';
+    adapterId: ProviderAdapterId;
     providerId: string;
     modelId: string;
-    protocolFamily: 'openai-chat-completions';
+    protocolFamily: ProviderProtocolFamily;
     origin: string;
-    requestPath: '/v1/chat/completions';
+    requestPath: ProviderRequestPath;
     probePath: '/v1/models';
     transport: Readonly<{
         kind: 'privileged-origin';
@@ -149,12 +173,17 @@ function compileCanonicalPublicOrigin(value: string): string {
     return parsed.origin;
 }
 
+function isCompiledAdapterId(adapterId: string): adapterId is ProviderAdapterId {
+    return Object.hasOwn(COMPILED_ADAPTERS, adapterId);
+}
+
 export function compileProviderAdapterInstallation(input: ProviderAdapterInstallationInput): CompiledProviderAdapter {
     assertExactInstallationShape(input);
-    if (input.adapterId !== 'builtin.openai-compatible.chat-completions.v1') {
+    if (!isCompiledAdapterId(input.adapterId)) {
         throw new Error('Provider adapter is not compiled into this release or explicitly installed');
     }
-    if (input.protocolFamily !== 'openai-chat-completions') {
+    const contract = COMPILED_ADAPTERS[input.adapterId];
+    if (input.protocolFamily !== contract.protocolFamily) {
         throw new Error('Provider adapter protocol family does not match its compiled contract');
     }
 
@@ -163,9 +192,9 @@ export function compileProviderAdapterInstallation(input: ProviderAdapterInstall
         adapterId: input.adapterId,
         providerId: assertStableId('Provider ID', input.providerId, STABLE_PROVIDER_ID),
         modelId: assertStableId('Model ID', input.modelId, STABLE_MODEL_ID),
-        protocolFamily: input.protocolFamily,
+        protocolFamily: contract.protocolFamily,
         origin: compileCanonicalPublicOrigin(input.origin),
-        requestPath: '/v1/chat/completions',
+        requestPath: contract.requestPath,
         probePath: '/v1/models',
         transport: Object.freeze({
             kind: 'privileged-origin' as const,

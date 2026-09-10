@@ -48,6 +48,9 @@ function getProtocolFamily(provider: ModelProviderName): string {
     if (provider === 'anthropic') {
         return 'anthropic-messages';
     }
+    if (provider === 'openai') {
+        return 'openai-responses';
+    }
     return 'openai-chat-completions';
 }
 
