@@ -1,0 +1,41 @@
+.github/workflows/nightly.yml
+  s_06adf2b091dc62::t_653e6fc643a358 290,292-302,325-360,783-790,1048
+package.json
+  s_9b530f08172a54::t_46340b5be96ea5 23-25
+scripts/health-gates-server.sh
+  s_06adf2b091dc62::t_1ec78ba56657d2 8-9,17-20
+scripts/health-gates-rust.sh
+  s_0dc25e41d95029::t_bd9aa09ece76a7 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "59def61c6e87a76eb2e146c707b0f2dad09c0604",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_0dc25e41d95029": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-abd872d4d7b7bbb78",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
