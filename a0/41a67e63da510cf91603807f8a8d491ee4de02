@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_06adf2b091dc62::t_d4cc0cd3fd205c 140-156
+  s_06adf2b091dc62::t_cda9105de4d9b3 24
+  s_06adf2b091dc62::t_52937569a2f390 3511-3581
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_06adf2b091dc62::t_8273cfa78285f7 1120-1125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a041a67e63da510cf91603807f8a8d491ee4de02",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
