@@ -1,0 +1,100 @@
+src/modules/AudioEngine/useCases/livePlayback/engineHostedStripIds.ts
+  s_9b530f08172a54::t_5e93e2dec51d31 1-34
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getCompensationDelay.spec.ts
+  s_9b530f08172a54::t_89be65e39bf8e4 187-202
+  s_9b530f08172a54::t_5d8afb14d38a8d 107-186,203-210
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getMaxTrackLatency.ts
+  s_9b530f08172a54::t_d5d1ecfa74a4ab 5,13
+src/modules/AudioEngine/useCases/livePlayback/readLiveGraphProgramme.ts
+  s_9b530f08172a54::t_17daeea925302c 94
+  s_9b530f08172a54::t_5df39714e8ca2a 68-77
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveGraphProgramme.spec.ts
+  s_9b530f08172a54::t_57d560aa1830aa 81-82,95-97,101
+  s_9b530f08172a54::t_410c4e7e421554 21
+  s_9b530f08172a54::t_e5f38da219aef3 83-94
+  s_9b530f08172a54::t_0fdccb7a5a166b 120-152
+  s_9b530f08172a54::t_6378d30570be23 12,16-19
+crates/daw-engine/src/pdc.rs
+  s_9b530f08172a54::t_cdf0c784eaeddc 108-130
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay.ts
+  s_9b530f08172a54::t_685359ee17665b 4-16,20-21
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_9bbfa955f4f2fa 237
+  s_9b530f08172a54::t_39713267345197 18,23-26
+  s_9b530f08172a54::t_f5f8fd3f39ecf9 32
+  s_9b530f08172a54::t_1d23c071d963a2 262-275
+src/modules/AudioEngine/useCases/livePlayback/isLatencyCompensatedByEngine.ts
+  s_9b530f08172a54::t_9c387cfb75f590 1-17
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_70f4a6322cb6d9 417-424
+  s_9b530f08172a54::t_04209b80ae1c95 2320-2326
+  s_9b530f08172a54::t_590cbe9de19060 5063-5068
+  s_9b530f08172a54::t_802cf0c19d4961 1982-1987
+  s_9b530f08172a54::t_569d6f1c64b2e5 1834-1840
+  s_9b530f08172a54::t_f4ee4a63daa9a7 8964-9029,17924
+  s_9b530f08172a54::t_6e11af9bac9fbf 5115-5117
+  s_9b530f08172a54::t_ee9a70ebe52c64 5082
+  s_9b530f08172a54::t_3e3b6a2d1884aa 1148-1179
+  s_9b530f08172a54::t_ed95f26463ef12 4003
+  s_9b530f08172a54::t_33b78518f35f6e 4011-4016,4021
+  s_9b530f08172a54::t_e3c074cc6d0229 2484-2491
+  s_9b530f08172a54::t_379693cd0a036a 17624-17796,17934,18043-18044
+  s_9b530f08172a54::t_7e30b86f17fd0c 2167,2169,2176-2178,2180-2195,2197-2203,2205-2215
+  s_9b530f08172a54::t_727e5b7b000f49 5130-5132,5139
+  s_9b530f08172a54::t_47072e3935c547 3144-3184
+  s_9b530f08172a54::t_6663596aa96927 17922-17923,17925,17933,18041-18042
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency.ts
+  s_9b530f08172a54::t_ce21d598eedc92 5,25-26,40-41,53-60,67,72,85
+  s_9b530f08172a54::t_2387d5652e8c35 9-21
+src/modules/AudioEngine/useCases/livePlayback/__tests__/engineHostedStripIds.spec.ts
+  s_9b530f08172a54::t_5b2382f60dfe43 102-108
+  s_9b530f08172a54::t_c2c43393b07136 1-101,109-110
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_88a035044c0593 140-163
+  s_9b530f08172a54::t_1fdd7455889372 29
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_7e6fc0b1ddadfe 115
+  s_9b530f08172a54::t_daad579a9f7fb5 370-379,386-402,407
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_9b530f08172a54::t_9dc133065f5121 278-322
+  s_9b530f08172a54::t_9b0b564cc9f3f4 19
+  s_9b530f08172a54::t_157e297e513285 10-13
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_cdaad8d20c4382 72
+  s_9b530f08172a54::t_ae3efadd89af87 295-300
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_05e5536928daf2 65-76
+  s_9b530f08172a54::t_6d333dc8d68610 355-366,372
+  s_09d920861ecdd4::t_667f7ee40dccb1 233,243,260,277,294,317
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_ac19fb5237c910 257
+  s_9b530f08172a54::t_9cdb6391a9816e 204-207
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_e72810cd0017df 2175,2181-2198
+  s_9b530f08172a54::t_1ece9a6bfde645 153
+  s_9b530f08172a54::t_8ef07626cc16a4 11550-11681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eef964dc1a0dfed3d90eeb08e5af661903fecea1",
+  "prompts": {},
+  "sessions": {
+    "s_09d920861ecdd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae4149eaae0e716bb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
