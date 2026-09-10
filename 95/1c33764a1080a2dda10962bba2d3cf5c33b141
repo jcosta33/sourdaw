@@ -1,0 +1,65 @@
+src/modules/MIDI/repositories/webMidi/__tests__/persistedInputIdStorage.spec.ts
+  s_06adf2b091dc62::t_5914318106c709 1-86
+src/modules/MIDI/repositories/webMidi/__tests__/setState.spec.ts
+  s_06adf2b091dc62::t_cd4f6b6f3700ab 5,8-9,14,19,21,29,34,38,47,49,55,59
+src/modules/MIDI/repositories/webMidi/__tests__/stateAccessors.spec.ts
+  s_06adf2b091dc62::t_5d7b1beed53448 10,22-29,36,39,43,45
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/legacyPersistedIdCleanup.spec.ts
+  s_06adf2b091dc62::t_e7f38f5e1511c9 9,13,31,49,72-74
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/nativeMidiPortsChanged.spec.ts
+  s_06adf2b091dc62::t_6f2ec451f04f03 18,23,55
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_06adf2b091dc62::t_c1386d0c2bdbfa 28,41,76,388-393
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_06adf2b091dc62::t_6a3f9e3a2f4c2a 9,67,76-79,164,184,199-202,310-311,347
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInput.ts
+  s_9b530f08172a54::t_aab80f1c4c5d1e 6,37,60
+src/modules/MIDI/repositories/webMidi/setState.ts
+  s_06adf2b091dc62::t_b62b91e5c25934 4,7-14,18-19
+src/modules/MIDI/useCases/webMidiInput/__tests__/destroyWebMidiPreference.spec.ts
+  s_06adf2b091dc62::t_435d94210dc774 32,53,66
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_9b530f08172a54::t_d1d4f26a240087 5-7,24,43-48,107-110
+src/modules/MIDI/repositories/webMidi/persistInputId.ts
+  s_19561d12289310::t_698ce8321582b8 1-5,7-13,16,18,20
+src/modules/MIDI/repositories/webMidi/readPersistedInputId.ts
+  s_19561d12289310::t_d6bf27dc3b50fb 1-5,7-14,16-20
+src/modules/MIDI/repositories/webMidi/selectedInputIdStorageKeys.ts
+  s_19561d12289310::t_f784e860043972 1-32
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_19561d12289310::t_a95965ac42572e 49-53
+src/modules/MIDI/repositories/webMidi/store.ts
+  s_19561d12289310::t_22af93cf365938 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "951c33764a1080a2dda10962bba2d3cf5c33b141",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_19561d12289310": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adac27748d8483867",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
