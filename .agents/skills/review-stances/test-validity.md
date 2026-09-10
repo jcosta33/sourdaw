@@ -203,9 +203,11 @@ the result; then mutate the id minting to collide and confirm that case goes red
 
 ### 2026-09-10 — one trace-binding edge fixture never exercised the corresponding equality probe (escaped via commit 0a4efc74f)
 
-The helper fixture always ended the AudioWorkletNode handler after its outer callback. Its separate
-equal-endpoint case exercised only the author/outer relationship, so reverting the handler/outer
-equality rule still left every test green.
+The 2026-09-09 fixtures put the handler/outer and author/outer ties only at the END
+timestamp. No fixture ever started an enclosing handler, or an enclosed author
+execution, in the outer callback's own microsecond, so both strict START comparisons
+were never exercised at equality and a trace with 2256 of 24001 callbacks tied on
+handler start was refused.
 
 Blind spot: the 2026-09-09 probe was phrased for one boundary only, and fixtures followed it
 literally without covering both boundaries (start and end) of the nesting pairs.
