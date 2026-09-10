@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_5d56672da94145::t_b91c849d9d7188 166,1690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3f89aea842ef133f528b302fe783ec707f232e50",
+  "prompts": {},
+  "sessions": {
+    "s_5d56672da94145": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa254661d5e4d9610",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
