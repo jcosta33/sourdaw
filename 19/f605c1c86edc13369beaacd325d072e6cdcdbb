@@ -1,0 +1,16 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.deferredBaseline.spec.ts
+  h_1228e573df1f42 1-133
+src/infra/store/storage/createAutomergeStorage.ts
+  h_1228e573df1f42 185-188,1336-1363,1411-1424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "19f605c1c86edc13369beaacd325d072e6cdcdbb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
