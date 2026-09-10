@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_06adf2b091dc62::t_a7b97e7766a136 2,7-8
+src/modules/AiRuntime/useCases/getProviderRouteView.ts
+  s_06adf2b091dc62::t_44bf44ed353d99 81-82
+  s_06adf2b091dc62::t_e98790acfd424b 6
+  s_06adf2b091dc62::t_c1fbcabf874250 5
+  s_06adf2b091dc62::t_523518055708ae 199
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_06adf2b091dc62::t_266655ffb91f3f 5-6
+src/modules/AiRuntime/useCases/resolveModelRoute.ts
+  s_06adf2b091dc62::t_014a7c4d113f9f 42
+  s_06adf2b091dc62::t_ef0a08236b1c07 10
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/createRouteCandidate.ts
+  s_06adf2b091dc62::t_6a7b23f9e64109 1-98
+  s_06adf2b091dc62::t_bdf9b3ae772c13 99-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f4ed856b0bb104ea796751ee57ecb1a0cd111643",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
