@@ -62,12 +62,8 @@ import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
 import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
-import {
-    registerPluginWindowHost,
-    type EditorWindow,
-    type EditorWindowOptions,
-    type PluginWindowHost,
-} from './pluginGui.js';
+import { createEditorWindow } from './pluginEditorWindow.js';
+import { registerPluginWindowHost, type EditorWindow, type PluginWindowHost } from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
@@ -655,25 +651,6 @@ const editorWindowScaleFactor = (editor?: EditorWindow): number => {
         ? screen.getPrimaryDisplay().scaleFactor
         : screen.getDisplayMatching(bounds).scaleFactor;
 };
-
-/**
- * A bare native window for one plugin editor: no webcontents, hidden until the
- * addon has run the GUI lifecycle and knows the plugin's preferred size, and
- * `resizable: false` until the plugin has said whether its editor accepts a
- * size the host chose — an answer that does not exist until that lifecycle has
- * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
- * resizes.
- */
-const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
-    new BaseWindow({
-        width: 800,
-        height: 600,
-        title: options.title,
-        show: false,
-        resizable: false,
-        alwaysOnTop: options.alwaysOnTop,
-        ...(options.parent === undefined ? {} : { parent: options.parent }),
-    });
 
 /**
  * Build the native host and wire everything that depends on it.
