@@ -1,0 +1,31 @@
+crates/daw-dsp/src/proof/chain.rs
+  s_9b530f08172a54::t_bcc2428d2a21ac 830-833,835-838
+release/open-source-inventory.json
+  s_9b530f08172a54::t_3f4f975c77e9b1 1331
+  s_9b530f08172a54::t_4cf41f2dbf2473 1337
+  s_9b530f08172a54::t_701e3b73023185 1718
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_40c5188bc8f151 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_c5dc7d30be1a82 1
+public/wasm/manifest.json
+  s_9b530f08172a54::t_e34be1f79f2aa0 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_82113619371fe2 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7300924b2e93389425bd60aa043747e881654a80",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
