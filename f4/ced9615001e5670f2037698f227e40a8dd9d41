@@ -1,0 +1,49 @@
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  s_06adf2b091dc62::t_aab7502bf32199 26-35
+  s_06adf2b091dc62::t_a258e110584b4c 120-138
+  s_06adf2b091dc62::t_cc527f253e717b 5
+  s_06adf2b091dc62::t_be324d7d0a2498 169-171,173-174,176-203
+  s_06adf2b091dc62::t_40485b191a0920 215-217
+  s_06adf2b091dc62::t_503bffe22b96af 168,172,175
+  s_06adf2b091dc62::t_01ec71aab9e8fa 274-275,277-287,291,293-294,296,298,304,306,308,310-311,313-322,324-326,328-334,336-338,340-344
+  s_06adf2b091dc62::t_0a7ba747fff098 289-290,295,300
+  s_06adf2b091dc62::t_fcf10164a1158d 204-207,218-221,288,297,299,312,323,327,335,339,345-351
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_06adf2b091dc62::t_e083e11d94b84a 1001-1007
+  s_06adf2b091dc62::t_faeed045321038 1000,1027,1042,1210,1236
+src/modules/AiRuntime/useCases/admitCreativeInterpretation.ts
+  s_06adf2b091dc62::t_1abba250857baf 259-260
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_06adf2b091dc62::t_c592f4e0e20367 223
+  s_06adf2b091dc62::t_28c4aef398bc68 529-531
+  s_06adf2b091dc62::t_3bb90586f5ceb0 532,539,548,559,591,602,616,665,706,750,879
+  s_06adf2b091dc62::t_7294f3e4656570 883-891
+  s_9b530f08172a54::t_12fbd69848a5e4 629,642,656,677,687,697,768,784,803,813
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_06adf2b091dc62::t_e9f06aeb6a310c 863,866,872,875,890-909
+  s_06adf2b091dc62::t_0e50e6e06430d6 910-911
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f4ced9615001e5670f2037698f227e40a8dd9d41",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
