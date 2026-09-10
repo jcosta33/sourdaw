@@ -28,6 +28,7 @@ export const PROVIDER_CONFORMANCE_FIXTURE = {
         },
     ],
     malformedArgumentsCallId: 'call-broken',
+    oversizedProviderId: 'x'.repeat(5000),
 } as const;
 
 export const PROVIDER_CONFORMANCE_TOOL_SCHEMAS: readonly ToolSchema[] = [
@@ -55,9 +56,16 @@ export const PROVIDER_CONFORMANCE_TOOL_SCHEMAS: readonly ToolSchema[] = [
 ];
 
 export type ProviderStreamScenario =
-    'text-deltas' | 'final-usage' | 'unknown-event' | 'refusal' | 'truncation' | 'cut-stream' | 'malformed-event';
+    | 'text-deltas'
+    | 'final-usage'
+    | 'unknown-event'
+    | 'refusal'
+    | 'truncation'
+    | 'cut-stream'
+    | 'malformed-event'
+    | 'oversized-request-id';
 
-export type ProviderToolScenario = 'tool-batch' | 'empty-batch' | 'malformed-arguments';
+export type ProviderToolScenario = 'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id';
 
 /** What the adapter put on the wire, read back from the transport the harness stubbed. */
 export type ProviderRequestObservation = { model: unknown; stream: unknown };
@@ -97,6 +105,19 @@ function expectToolRequest(request: ProviderRequestObservation): void {
 function expectNoProviderBodyText(safeMessage: string | undefined): void {
     expect(safeMessage ?? '').not.toBe('');
     expect(safeMessage).not.toContain(PROVIDER_CONFORMANCE_FIXTURE.providerBodyText);
+}
+
+// Mirrors the reader's own opaque-token bound: a message leaking even one
+// window this wide of a rejected body-scale id is leaking response body.
+const PROVIDER_ID_WINDOW_LENGTH = 64;
+
+function containsWindowOf(haystack: string, source: string, windowLength: number): boolean {
+    for (let index = 0; index + windowLength <= source.length; index += 1) {
+        if (haystack.includes(source.slice(index, index + windowLength))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -207,6 +228,31 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(observed.failure?.safeMessage).toContain(PROVIDER_CONFORMANCE_FIXTURE.malformedArgumentsCallId);
             expectNoProviderBodyText(observed.failure?.safeMessage);
             expectToolRequest(observed.request);
+        });
+
+        it('rejects a malformed tool call carrying a body-scale id without leaking it', async () => {
+            const observed = await harness.planTools('oversized-call-id');
+
+            expect(observed.calls).toEqual([]);
+            expectNoProviderBodyText(observed.failure?.safeMessage);
+            const safeMessage = observed.failure?.safeMessage ?? '';
+            expect(safeMessage).not.toContain(PROVIDER_CONFORMANCE_FIXTURE.oversizedProviderId);
+            expect(
+                containsWindowOf(
+                    safeMessage,
+                    PROVIDER_CONFORMANCE_FIXTURE.oversizedProviderId,
+                    PROVIDER_ID_WINDOW_LENGTH
+                )
+            ).toBe(false);
+            expectToolRequest(observed.request);
+        });
+
+        it('discards an oversized body-scale request id instead of admitting it', async () => {
+            const observed = await harness.streamText('oversized-request-id');
+
+            expect(observed.providerRequestId).toBeNull();
+            expect(observed.finish).toBe('stop');
+            expectStreamRequest(observed.request);
         });
     });
 }

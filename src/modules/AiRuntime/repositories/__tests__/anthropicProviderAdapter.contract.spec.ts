@@ -50,9 +50,13 @@ function event(payload: Record<string, unknown>): string {
 }
 
 function messageStart(usage?: Record<string, number>): string {
+    return messageStartWithId(FIXTURE.providerRequestId, usage);
+}
+
+function messageStartWithId(id: string, usage?: Record<string, number>): string {
     return event({
         type: 'message_start',
-        message: { id: FIXTURE.providerRequestId, ...(usage === undefined ? {} : { usage }) },
+        message: { id, ...(usage === undefined ? {} : { usage }) },
     });
 }
 
@@ -113,6 +117,14 @@ function streamFixture(scenario: ProviderStreamScenario): string {
     if (scenario === 'malformed-event') {
         return `data: {invalid ${FIXTURE.providerBodyText}}\n\n`;
     }
+    if (scenario === 'oversized-request-id') {
+        return [
+            messageStartWithId(FIXTURE.oversizedProviderId),
+            textDelta(firstDelta ?? ''),
+            END_TURN,
+            MESSAGE_STOP,
+        ].join('');
+    }
     return [messageStart(), textDelta(firstDelta ?? ''), textDelta(secondDelta ?? ''), END_TURN, MESSAGE_STOP].join('');
 }
 
@@ -127,6 +139,20 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
                 {
                     type: 'tool_use',
                     id: FIXTURE.malformedArgumentsCallId,
+                    name: 'muteTrack',
+                    input: `{"trackId": ${FIXTURE.providerBodyText}`,
+                },
+            ],
+            stop_reason: 'tool_use',
+        };
+    }
+    if (scenario === 'oversized-call-id') {
+        return {
+            id: FIXTURE.providerRequestId,
+            content: [
+                {
+                    type: 'tool_use',
+                    id: FIXTURE.oversizedProviderId,
                     name: 'muteTrack',
                     input: `{"trackId": ${FIXTURE.providerBodyText}`,
                 },

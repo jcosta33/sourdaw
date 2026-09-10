@@ -43,6 +43,10 @@ function event(payload: Record<string, unknown>): string {
     return `data: ${JSON.stringify({ id: FIXTURE.providerRequestId, ...payload })}\n\n`;
 }
 
+function eventWithId(id: string, payload: Record<string, unknown>): string {
+    return `data: ${JSON.stringify({ id, ...payload })}\n\n`;
+}
+
 function delta(content: string): string {
     return event({ choices: [{ delta: { content } }] });
 }
@@ -89,6 +93,13 @@ function streamFixture(scenario: ProviderStreamScenario): string {
     if (scenario === 'malformed-event') {
         return `data: {"choices":[{"delta":{"content":"${FIXTURE.providerBodyText}"\n\n`;
     }
+    if (scenario === 'oversized-request-id') {
+        return [
+            eventWithId(FIXTURE.oversizedProviderId, { choices: [{ delta: { content: firstDelta ?? '' } }] }),
+            eventWithId(FIXTURE.oversizedProviderId, { choices: [{ delta: {}, finish_reason: 'stop' }] }),
+            DONE,
+        ].join('');
+    }
     return [delta(firstDelta ?? ''), delta(secondDelta ?? ''), finish('stop'), DONE].join('');
 }
 
@@ -106,6 +117,27 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
                         tool_calls: [
                             {
                                 id: FIXTURE.malformedArgumentsCallId,
+                                function: {
+                                    name: 'muteTrack',
+                                    arguments: `{"trackId": ${FIXTURE.providerBodyText}`,
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        };
+    }
+    if (scenario === 'oversized-call-id') {
+        return {
+            id: FIXTURE.providerRequestId,
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        tool_calls: [
+                            {
+                                id: FIXTURE.oversizedProviderId,
                                 function: {
                                     name: 'muteTrack',
                                     arguments: `{"trackId": ${FIXTURE.providerBodyText}`,
