@@ -433,6 +433,42 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
+    it('reads a decrease from the ordinary "turn it down" phrasing', () => {
+        const rejected = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too much, turn it down',
+        });
+
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+
+        const grounded = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too much, turn it down',
+        });
+
+        expect(grounded.rejections).toEqual([]);
+        expect(grounded.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 } },
+        ]);
+    });
+
     it('grounds a bypass intent the request never phrased', () => {
         const result = bridge({
             calls: [{ name: 'bypassDevice', arguments: { deviceId: 'guitar-eq-1', bypassed: true } }],

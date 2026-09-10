@@ -3072,9 +3072,15 @@ function validateTrackPanDirection(assertedValue: number, actionScope: ActionPro
     return true;
 }
 
-const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'turn up', 'boost'];
+const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'turn up', 'turn it up', 'boost'];
 
-const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'turn down', 'reduce'];
+const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = [
+    'decrease',
+    'lower',
+    'turn down',
+    'turn it down',
+    'reduce',
+];
 
 type DeviceParameterDirectionDevice = ProjectContext['tracks'][number]['devices'][number];
 type DeviceParameterDirectionParameter = NonNullable<DeviceParameterDirectionDevice['parameters']>[number];
