@@ -1,0 +1,62 @@
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_06adf2b091dc62::t_c04ac918e3d40e 65-101
+  s_06adf2b091dc62::t_5551814a5f9f63 216,222
+  s_06adf2b091dc62::t_da5b6316501a59 6
+  s_06adf2b091dc62::t_7895cbd3340720 246,250,255,259
+  s_06adf2b091dc62::t_e686436d6b5b61 231
+  s_06adf2b091dc62::t_107ec2a81d0ead 290,296-297,301-302
+  s_06adf2b091dc62::t_673f84bdddb0ae 189,191
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_06adf2b091dc62::t_5f13c94c873f91 250-360
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_06adf2b091dc62::t_cd892eea5f4e65 3
+  s_06adf2b091dc62::t_88068d2ac78868 507-565
+  s_06adf2b091dc62::t_55f2cd08364eff 700-706,720-765,767-768
+  s_06adf2b091dc62::t_6a7e1ae2da9a4e 592,699
+src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts
+  s_06adf2b091dc62::t_46a440179378e0 321-357
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_06adf2b091dc62::t_4c9fa452487f35 17,21-22
+  s_06adf2b091dc62::t_b6bcea8e4afae6 257-259
+  s_06adf2b091dc62::t_040a87e861b23f 519-520
+  s_06adf2b091dc62::t_63c1e3a47e92fc 705-706
+  s_06adf2b091dc62::t_662d24b49bf5e5 75,78,82
+  s_06adf2b091dc62::t_57f000ad395916 103-138
+  s_06adf2b091dc62::t_8a2090c10304ec 745-746,827-828
+  s_06adf2b091dc62::t_c7e9c9c2e1a7ee 996-1068
+src/modules/AudioRendering/models/AgentSectionRenderArtifact.ts
+  s_06adf2b091dc62::t_c2616220e95e18 1-4
+src/utils/canonicalDigest.ts
+  s_06adf2b091dc62::t_94dcb0ee283d58 22-23
+src/modules/AiRuntime/useCases/agentRequestOrchestration/recordOwnedRenderReceipt.ts
+  s_06adf2b091dc62::t_8a3c120786cb7c 1-58
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_06adf2b091dc62::t_c8b0c6d4d14587 669-673,680-691
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_06adf2b091dc62::t_a06e3036298f85 201-232,243-259
+  s_06adf2b091dc62::t_68c0f29c762a79 21,25,27
+  s_06adf2b091dc62::t_9772d946f1b86e 233-242
+  s_06adf2b091dc62::t_9eabdc4d8970f9 461-462
+  s_06adf2b091dc62::t_8aec86583c6c74 9,11
+  s_06adf2b091dc62::t_2c6c3cc2442555 473-474,483-484,491
+  s_06adf2b091dc62::t_5d7baa5eeb1b99 533-543,548-549,554,561,565,567
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_06adf2b091dc62::t_f5f136a96d946a 31
+  s_06adf2b091dc62::t_12e43f100e818a 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e62c085613786fa0b1ff335a0ce1acdb2f8b238",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
