@@ -1,0 +1,26 @@
+src/modules/Gluten/models/__tests__/glutenTopologyGating.spec.ts
+  s_9b530f08172a54::t_392252fbfe8eae 192
+  s_9b530f08172a54::t_f125692ac1341e 389-390
+  s_9b530f08172a54::t_09d962a9c9f774 180
+  s_9b530f08172a54::t_977074a5aae0fd 38-39
+  s_9b530f08172a54::t_a4cbcd4eec7487 71
+  s_9b530f08172a54::t_5d3fbbd94536ce 177,179,181
+src/modules/Arrangement/models/PluginDescriptors/__tests__/glutenDescriptor.spec.ts
+  s_9b530f08172a54::t_eab3f592e1732c 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a47daa0932c42ffdac764dbf72e04ede1d157bea",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
