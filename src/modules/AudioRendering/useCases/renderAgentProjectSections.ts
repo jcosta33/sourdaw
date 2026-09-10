@@ -3,6 +3,7 @@ import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/C
 import {
     cloneAgentWorkOwnerIdentity,
     getAudioBufferContentAddress,
+    type AgentRenderFailureKind,
     type AgentRenderProvenance,
     type AgentRenderReceipt,
     type AgentWorkOwnerIdentity,
@@ -58,6 +59,43 @@ function provenanceFor(job: RenderProjectSectionJobSnapshot, sourceRevision: str
         sampleRate: job.sampleRate,
         tailSeconds: job.tailSeconds,
         sourceRevision,
+    };
+}
+
+type JobReceiptEmitters = {
+    emitStarted: () => void;
+    emitRendered: (artifact: AgentSectionRenderArtifact) => void;
+    emitFailure: (failureKind: AgentRenderFailureKind) => void;
+    emitCancelled: () => void;
+    /** True once a receipt named this job's outcome, so a surrounding catch cannot relabel it. */
+    hasSettled: () => boolean;
+};
+
+function createJobReceiptEmitters(
+    input: RenderAgentProjectSectionsInput,
+    provenance: AgentRenderProvenance
+): JobReceiptEmitters {
+    let settled = false;
+    const emitSettlement = (receipt: AgentRenderReceipt): void => {
+        settled = true;
+        input.onReceipt?.(receipt);
+    };
+    return {
+        emitStarted: () => input.onReceipt?.({ phase: 'started', owner: ownerCopy(input), provenance }),
+        emitRendered: (artifact) =>
+            emitSettlement({
+                phase: 'rendered',
+                owner: ownerCopy(input),
+                provenance,
+                contentAddress: artifact.contentAddress,
+                frameCount: artifact.frameCount,
+                channelCount: artifact.channelCount,
+                renderedAt: artifact.renderedAt,
+            }),
+        emitFailure: (failureKind) =>
+            emitSettlement({ phase: 'failed', owner: ownerCopy(input), provenance, failureKind }),
+        emitCancelled: () => emitSettlement({ phase: 'cancelled', owner: ownerCopy(input), provenance }),
+        hasSettled: () => settled,
     };
 }
 
@@ -148,9 +186,9 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
     const failures: string[] = [];
     let retentionCapacityFailure = false;
     for (const job of input.jobs) {
-        const provenance = provenanceFor(job, input.sourceRevision);
+        const receipts = createJobReceiptEmitters(input, provenanceFor(job, input.sourceRevision));
         if (input.signal?.aborted) {
-            input.onReceipt?.({ phase: 'cancelled', owner: ownerCopy(input), provenance });
+            receipts.emitCancelled();
             throw createCancellationError();
         }
         const existing = existingByJobId.get(job.jobId);
@@ -175,39 +213,22 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
         } catch (error) {
-            input.onReceipt?.({
-                phase: 'failed',
-                owner: ownerCopy(input),
-                provenance,
-                failureKind: 'revision-mismatch',
-            });
+            receipts.emitFailure('revision-mismatch');
             failures.push(`${job.jobId}: ${failureReason(error)}`);
             continue;
         }
         const preRenderRefusal = artifactAttachmentRefusal(input);
         if (preRenderRefusal) {
-            input.onReceipt?.({
-                phase: 'failed',
-                owner: ownerCopy(input),
-                provenance,
-                failureKind: 'attachment-refused',
-            });
+            receipts.emitFailure('attachment-refused');
             throw new Error(preRenderRefusal);
         }
-        // Once this job has a terminal receipt, the surrounding catch must not relabel the same
-        // failure as a generic render error.
-        let jobSettled = false;
-        const emitJobSettlement = (receipt: AgentRenderReceipt): void => {
-            jobSettled = true;
-            input.onReceipt?.(receipt);
-        };
         try {
             const cancelActiveRender = () => cancelExport();
             input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
             let buffer: AudioBuffer;
             try {
                 input.onRenderAttempt?.(job);
-                input.onReceipt?.({ phase: 'started', owner: ownerCopy(input), provenance });
+                receipts.emitStarted();
                 buffer = await renderOffline({
                     durationBeats: job.endBeat - job.startBeat,
                     startBeat: job.startBeat,
@@ -222,35 +243,20 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
             // from the store write it protects.
             const contentAddress = await getAudioBufferContentAddress(buffer);
             if (input.signal?.aborted) {
-                emitJobSettlement({ phase: 'cancelled', owner: ownerCopy(input), provenance });
+                receipts.emitCancelled();
                 throw createCancellationError();
             }
             if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
-                emitJobSettlement({
-                    phase: 'failed',
-                    owner: ownerCopy(input),
-                    provenance,
-                    failureKind: 'revision-mismatch',
-                });
+                receipts.emitFailure('revision-mismatch');
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
             const attachmentRefusal = artifactAttachmentRefusal(input);
             if (attachmentRefusal) {
-                emitJobSettlement({
-                    phase: 'failed',
-                    owner: ownerCopy(input),
-                    provenance,
-                    failureKind: 'attachment-refused',
-                });
+                receipts.emitFailure('attachment-refused');
                 throw new Error(attachmentRefusal);
             }
             if (buffer.sampleRate !== job.sampleRate || buffer.length <= 0 || buffer.numberOfChannels <= 0) {
-                emitJobSettlement({
-                    phase: 'failed',
-                    owner: ownerCopy(input),
-                    provenance,
-                    failureKind: 'invalid-buffer',
-                });
+                receipts.emitFailure('invalid-buffer');
                 throw new Error('Offline renderer returned an invalid section artifact');
             }
             const artifact: AgentSectionRenderArtifact = {
@@ -281,32 +287,19 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
             agentSectionRenderArtifactStore.set({ artifacts: retainedArtifacts });
             scheduleAgentSectionRenderArtifactExpiry();
             existingByJobId.set(job.jobId, artifact);
-            emitJobSettlement({
-                phase: 'rendered',
-                owner: ownerCopy(input),
-                provenance,
-                contentAddress: artifact.contentAddress,
-                frameCount: artifact.frameCount,
-                channelCount: artifact.channelCount,
-                renderedAt: artifact.renderedAt,
-            });
+            receipts.emitRendered(artifact);
             if (warnings.length > 0) {
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);
             }
         } catch (error) {
             if (input.signal?.aborted) {
-                if (!jobSettled) {
-                    emitJobSettlement({ phase: 'cancelled', owner: ownerCopy(input), provenance });
+                if (!receipts.hasSettled()) {
+                    receipts.emitCancelled();
                 }
                 throw createCancellationError();
             }
-            if (!jobSettled) {
-                emitJobSettlement({
-                    phase: 'failed',
-                    owner: ownerCopy(input),
-                    provenance,
-                    failureKind: 'render-error',
-                });
+            if (!receipts.hasSettled()) {
+                receipts.emitFailure('render-error');
             }
             retentionCapacityFailure ||= error instanceof SectionRenderRetentionCapacityError;
             failures.push(`${job.jobId}: ${failureReason(error)}`);

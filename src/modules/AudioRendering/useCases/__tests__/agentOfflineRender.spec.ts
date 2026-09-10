@@ -247,6 +247,117 @@ describe('agent offline render receipts', () => {
         expect(receipts.at(-1)).toEqual(expect.objectContaining({ phase: 'batch-settled', outcome: 'failed' }));
     });
 
+    it('fails a job whose live revision moved while the render was still pending, attaching nothing', async () => {
+        let resolveRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        mocks.renderOffline.mockImplementation(
+            () =>
+                new Promise<ReturnType<typeof createAudioBuffer>>((resolve) => {
+                    resolveRender = resolve;
+                })
+        );
+        const { receipts, onReceipt } = collectReceipts();
+
+        const render = renderAgentProjectSections({
+            jobs: [createJob()],
+            sourceRevision: 'revision-a',
+            owner: createOwner(),
+            onReceipt,
+        });
+        await vi.waitFor(() => expect(mocks.renderOffline).toHaveBeenCalledOnce());
+        mocks.captureProjectRevision.mockReturnValue('revision-b');
+        resolveRender(createAudioBuffer());
+
+        await expect(render).rejects.toThrow('Section render follow-up requires review');
+        expect(phasesOf(receipts)).toEqual(['started', 'failed', 'batch-settled']);
+        expect(receipts[1]).toEqual({
+            phase: 'failed',
+            owner: createOwner(),
+            provenance: expect.objectContaining({ jobId: 'render-chorus-one' }),
+            failureKind: 'revision-mismatch',
+        });
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('fails a buffer whose sample rate contradicts its job as an invalid buffer, attaching nothing', async () => {
+        mocks.renderOffline.mockImplementation(() => Promise.resolve(createAudioBuffer({ sampleRate: 48_000 })));
+        const { receipts, onReceipt } = collectReceipts();
+
+        await expect(
+            renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a', onReceipt })
+        ).rejects.toThrow('Section render follow-up requires review');
+
+        expect(phasesOf(receipts)).toEqual(['started', 'failed', 'batch-settled']);
+        expect(receipts.filter((receipt) => receipt.phase === 'failed')).toEqual([
+            expect.objectContaining({ phase: 'failed', failureKind: 'invalid-buffer' }),
+        ]);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('fails a rejecting offline render as a render error, attaching nothing', async () => {
+        mocks.renderOffline.mockImplementation(() => Promise.reject(new Error('The offline renderer crashed.')));
+        const { receipts, onReceipt } = collectReceipts();
+
+        await expect(
+            renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a', onReceipt })
+        ).rejects.toThrow('Section render follow-up requires review');
+
+        expect(phasesOf(receipts)).toEqual(['started', 'failed', 'batch-settled']);
+        expect(receipts.filter((receipt) => receipt.phase === 'failed')).toEqual([
+            expect.objectContaining({ phase: 'failed', failureKind: 'render-error' }),
+        ]);
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('reports a job as started while its render is still pending', async () => {
+        let resolveRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
+        mocks.renderOffline.mockImplementation(
+            () =>
+                new Promise<ReturnType<typeof createAudioBuffer>>((resolve) => {
+                    resolveRender = resolve;
+                })
+        );
+        const { receipts, onReceipt } = collectReceipts();
+
+        const render = renderAgentProjectSections({
+            jobs: [createJob()],
+            sourceRevision: 'revision-a',
+            onReceipt,
+        });
+        await vi.waitFor(() => expect(phasesOf(receipts)).toEqual(['started']));
+        resolveRender(createAudioBuffer());
+
+        await render;
+        expect(phasesOf(receipts)).toEqual(['started', 'rendered', 'batch-settled']);
+    });
+
+    it('refuses an attachment that is withdrawn while the content address reads the rendered buffer', async () => {
+        const rendered = createAudioBuffer();
+        let attachmentRefusal: string | null = null;
+        mocks.renderOffline.mockImplementation(() =>
+            Promise.resolve({
+                ...rendered,
+                getChannelData: (channel: number) => {
+                    attachmentRefusal = 'The publication queue closed during the render.';
+                    return rendered.getChannelData(channel);
+                },
+            })
+        );
+        const { receipts, onReceipt } = collectReceipts();
+
+        await expect(
+            renderAgentProjectSections({
+                jobs: [createJob()],
+                sourceRevision: 'revision-a',
+                onReceipt,
+                validateArtifactAttachment: () => attachmentRefusal,
+            })
+        ).rejects.toThrow('Section render follow-up requires review');
+
+        expect(phasesOf(receipts)).toEqual(['started', 'failed', 'batch-settled']);
+        expect(receipts[1]).toEqual(expect.objectContaining({ phase: 'failed', failureKind: 'attachment-refused' }));
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
     it('records a null owner on every receipt when the caller supplies no work identity', async () => {
         const { receipts, onReceipt } = collectReceipts();
 

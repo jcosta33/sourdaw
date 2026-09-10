@@ -14,9 +14,12 @@ import { executeCommittedSectionRenderRetry } from '../executeCommittedSectionRe
 const mocks = vi.hoisted(() => ({
     canExecuteCommandBatchEffects: vi.fn(),
     captureRevision: vi.fn(),
+    claimWorkLease: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
     chatState: { value: { isGenerating: false } },
     completeContinuation: vi.fn(),
+    recordArtifact: vi.fn(),
+    settleWorkLease: vi.fn(),
     finalizeCommandReceipt: vi.fn(),
     getConfirmation: vi.fn(),
     getSectionRenderFollowUpFailure: vi.fn(),
@@ -69,11 +72,14 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
 
 vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
+        claimWorkLease: mocks.claimWorkLease,
         completePendingEffectContinuation: mocks.completeContinuation,
         get: mocks.getRun,
+        recordArtifact: mocks.recordArtifact,
         recordPendingEffectContinuation: mocks.recordContinuation,
         reconcileBudgetAttempt: mocks.reconcileBudget,
         reserveBudget: mocks.reserveBudget,
+        settleWorkLease: mocks.settleWorkLease,
     },
 }));
 
@@ -94,6 +100,42 @@ const JOB = {
     sampleRate: 44_100,
     tailSeconds: 0,
 };
+const RETRY_ATTEMPT_ID = 'render-retry:confirmation-retry:1';
+const RENDER_LEASE = {
+    leaseId: `run-retry:${RETRY_ATTEMPT_ID}:0`,
+    runId: 'run-retry',
+    workId: RETRY_ATTEMPT_ID,
+    attempt: 1,
+    ownerKind: 'render',
+    cancellationGeneration: 0,
+    idempotencyKey: RETRY_ATTEMPT_ID,
+    receiptIdentity: RETRY_ATTEMPT_ID,
+    cleanupOwner: 'section-render-retry',
+    idempotent: false,
+    retriable: false,
+    claimedAt: 0,
+    terminalState: null,
+    settledAt: null,
+};
+const RENDER_OWNER = {
+    runId: RENDER_LEASE.runId,
+    workId: RENDER_LEASE.workId,
+    leaseId: RENDER_LEASE.leaseId,
+    cancellationGeneration: RENDER_LEASE.cancellationGeneration,
+};
+
+function renderedReceipt(owner: typeof RENDER_OWNER | null) {
+    return {
+        phase: 'rendered' as const,
+        owner,
+        provenance: { ...JOB, sourceRevision: 'revision-source' },
+        contentAddress: 'content-address-1',
+        frameCount: 4,
+        channelCount: 2,
+        renderedAt: 11,
+    };
+}
+
 const SECOND_JOB = {
     ...JOB,
     jobId: 'render-chorus',
@@ -212,6 +254,9 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.captureRevision.mockReturnValue('revision-source');
         mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(true);
         mocks.canExecuteCommandBatchEffects.mockReturnValue(true);
+        mocks.claimWorkLease.mockReturnValue({ status: 'claimed', lease: RENDER_LEASE });
+        mocks.settleWorkLease.mockReturnValue({ status: 'settled' });
+        mocks.recordArtifact.mockImplementation(() => undefined);
         mocks.completeContinuation.mockImplementation(() => undefined);
         mocks.finalizeCommandReceipt.mockImplementation(({ pendingReceipt }) =>
             Promise.resolve({ status: 'finalized', receipt: pendingReceipt })
@@ -471,6 +516,8 @@ describe('executeCommittedSectionRenderRetry', () => {
             jobs: [JOB],
             sourceRevision: 'revision-source',
             onRenderAttempt: expect.any(Function),
+            owner: RENDER_OWNER,
+            onReceipt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
@@ -655,6 +702,8 @@ describe('executeCommittedSectionRenderRetry', () => {
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
             onRenderAttempt: expect.any(Function),
+            owner: RENDER_OWNER,
+            onReceipt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.reconcileBudget).toHaveBeenCalledWith({
@@ -693,6 +742,8 @@ describe('executeCommittedSectionRenderRetry', () => {
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
             onRenderAttempt: expect.any(Function),
+            owner: RENDER_OWNER,
+            onReceipt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
@@ -773,6 +824,8 @@ describe('executeCommittedSectionRenderRetry', () => {
             jobs: [SECOND_JOB],
             sourceRevision: 'revision-source',
             onRenderAttempt: expect.any(Function),
+            owner: RENDER_OWNER,
+            onReceipt: expect.any(Function),
             validateArtifactAttachment: expect.any(Function),
         });
         expect(mocks.completeContinuation).not.toHaveBeenCalled();
@@ -939,5 +992,78 @@ describe('executeCommittedSectionRenderRetry', () => {
             'assistant-retry',
             expect.objectContaining({ pendingActionFollowUpStatus: 'failed' })
         );
+    });
+
+    it('renders a live retry under a claimed render lease and records its rendered receipt once', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.retryRenders.mockImplementation(async (retryInput: { onReceipt?: (receipt: unknown) => void }) => {
+            retryInput.onReceipt?.(renderedReceipt(RENDER_OWNER));
+            retryInput.onReceipt?.(renderedReceipt({ ...RENDER_OWNER, leaseId: 'lease-superseded' }));
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
+
+        expect(mocks.claimWorkLease).toHaveBeenCalledExactlyOnceWith({
+            runId: 'run-retry',
+            workId: RETRY_ATTEMPT_ID,
+            ownerKind: 'render',
+            cleanupOwner: 'section-render-retry',
+            idempotencyKey: RETRY_ATTEMPT_ID,
+            receiptIdentity: RETRY_ATTEMPT_ID,
+            idempotent: false,
+            retriable: false,
+        });
+        expect(mocks.retryRenders).toHaveBeenCalledWith(expect.objectContaining({ owner: RENDER_OWNER }));
+        expect(mocks.recordArtifact).toHaveBeenCalledExactlyOnceWith({
+            runId: 'run-retry',
+            kind: 'render',
+            artifact: {
+                artifactId: 'render-verse',
+                workId: RETRY_ATTEMPT_ID,
+                status: 'completed',
+                summary: 'content-address-1',
+            },
+        });
+        expect(mocks.settleWorkLease).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                runId: 'run-retry',
+                workId: RETRY_ATTEMPT_ID,
+                leaseId: RENDER_LEASE.leaseId,
+                terminalState: 'completed',
+            })
+        );
+    });
+
+    it('settles the claimed render lease failed when the retry leaves work incomplete', async () => {
+        const input = createInput();
+        mocks.project.mockReturnValue(projection(true));
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: 'Section render jobs remain incomplete: render-verse',
+        });
+
+        expect(mocks.settleWorkLease).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ workId: RETRY_ATTEMPT_ID, terminalState: 'failed' })
+        );
+    });
+
+    it('renders a terminal run without an owner, attaching nothing and leaving the retry unchanged', async () => {
+        const input = createInput();
+        mocks.claimWorkLease.mockReturnValue({ status: 'terminal-run' });
+        mocks.project.mockReturnValueOnce(projection(true)).mockReturnValue(projection(false));
+        mocks.retryRenders.mockImplementation(async (retryInput: { onReceipt?: (receipt: unknown) => void }) => {
+            retryInput.onReceipt?.(renderedReceipt(RENDER_OWNER));
+            retryInput.onReceipt?.(renderedReceipt(null));
+        });
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({ status: 'executed' });
+
+        expect(mocks.retryRenders).toHaveBeenCalledWith(
+            expect.objectContaining({ owner: null, onReceipt: expect.any(Function) })
+        );
+        expect(mocks.recordArtifact).not.toHaveBeenCalled();
+        expect(mocks.settleWorkLease).not.toHaveBeenCalled();
     });
 });

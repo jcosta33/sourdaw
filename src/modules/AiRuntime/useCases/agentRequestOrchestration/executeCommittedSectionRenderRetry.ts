@@ -6,7 +6,9 @@ import {
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 
+import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../../models/AgentRun';
 import { chatStore, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import {
     getPendingActionConfirmation,
@@ -16,10 +18,13 @@ import {
     updatePendingActionFollowUp,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunWorkLease } from '../agentRunWorkLease';
 
 import { formatSectionRenderReviewSummary } from './formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './projectSectionRenderConfirmation';
+import { recordOwnedRenderReceipt } from './recordOwnedRenderReceipt';
 import { requireSectionRenderManualRepair } from './requireSectionRenderManualRepair';
+import { settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 type RetryResult = { status: 'busy' | 'executed' } | { status: 'failed'; reason: string };
@@ -191,6 +196,65 @@ function reserveRetryBudget(confirmation: PendingAppActionConfirmation, jobCount
         provenance: 'versioned-estimate',
     });
     return { attemptId, reservation };
+}
+
+/**
+ * The retry renders outside the original command flight, so its receipts need an identity of their
+ * own. The attempt already identifies this retry uniquely, so it names the work, the idempotency
+ * key and the receipt. A run that is terminal or already holds this work yields no lease: the
+ * renders still run, and their receipts simply attach to nothing.
+ */
+function claimRenderAttemptLease(
+    confirmation: PendingAppActionConfirmation,
+    attemptId: string
+): AgentRunWorkLease | null {
+    const claim = agentRunWorkLease.claim({
+        runId: confirmation.runId,
+        workId: attemptId,
+        ownerKind: 'render',
+        cleanupOwner: 'section-render-retry',
+        idempotencyKey: attemptId,
+        receiptIdentity: attemptId,
+        idempotent: false,
+        retriable: false,
+    });
+    return claim.status === 'claimed' ? claim.lease : null;
+}
+
+function renderOwnerOf(lease: AgentRunWorkLease | null): AgentWorkOwnerIdentity | null {
+    if (!lease) {
+        return null;
+    }
+    return {
+        runId: lease.runId,
+        workId: lease.workId,
+        leaseId: lease.leaseId,
+        cancellationGeneration: lease.cancellationGeneration,
+    };
+}
+
+function resolveRenderLeaseTerminalState(outcome: { cancelled: boolean; failed: boolean }): AgentRunWorkTerminalState {
+    if (outcome.cancelled) {
+        return 'cancelled';
+    }
+    return outcome.failed ? 'failed' : 'completed';
+}
+
+function settleRenderAttemptLease(
+    lease: AgentRunWorkLease | null,
+    terminalState: AgentRunWorkTerminalState
+): string | null {
+    if (!lease) {
+        return null;
+    }
+    return settleAgentRunWorkLeaseSafely({
+        lease,
+        terminalState,
+        evidence: 'visible-work-output',
+        settle: agentRunWorkLease.settle,
+        reportFailure: (error) =>
+            logger.error(new Error('Section render retry work lease settlement failed', { cause: error })),
+    }).warning;
 }
 
 function failHardBudgetLimit(confirmation: PendingAppActionConfirmation, budget: RetryBudget): RetryResult | null {
@@ -394,6 +458,8 @@ export async function executeCommittedSectionRenderRetry(input: {
             return hardLimitFailure;
         }
     }
+    const renderLease = budget ? claimRenderAttemptLease(confirmation, budget.attemptId) : null;
+    const renderOwner = renderOwnerOf(renderLease);
 
     updatePendingActionFollowUp({ confirmationId: confirmation.id, status: 'running' });
     updateChatMessage(confirmation.assistantMessageId, { pendingActionFollowUpStatus: 'running' });
@@ -404,6 +470,8 @@ export async function executeCommittedSectionRenderRetry(input: {
     let manualReviewProjection: SectionRenderProjection | null = null;
     let terminalFinalizationReason: string | null = null;
     let budgetPersistenceWarning: string | null = null;
+    let renderLeasePersistenceWarning: string | null = null;
+    let renderCancelled = false;
     const attemptedRenderJobIds = new Set<string>();
     try {
         try {
@@ -412,12 +480,15 @@ export async function executeCommittedSectionRenderRetry(input: {
                 jobs: followUp.jobs,
                 sourceRevision,
                 onRenderAttempt: (job) => attemptedRenderJobIds.add(job.jobId),
+                owner: renderOwner,
+                onReceipt: (receipt) => recordOwnedRenderReceipt(confirmation.runId, renderOwner, receipt),
                 validateArtifactAttachment: () =>
                     canExecuteCommandBatchEffects()
                         ? null
                         : 'Only the authoritative collaboration host can attach section render artifacts.',
             });
         } catch (error) {
+            renderCancelled = error instanceof Error && error.name === 'AbortError';
             const followUpFailure = getSectionRenderFollowUpFailure(error);
             if (followUpFailure?.failureKind === 'retention-capacity') {
                 retentionCapacityFailureReason = error instanceof Error ? error.message : String(error);
@@ -459,26 +530,39 @@ export async function executeCommittedSectionRenderRetry(input: {
                 );
             }
             budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, attemptedRenderJobIds);
+            renderLeasePersistenceWarning = settleRenderAttemptLease(
+                renderLease,
+                resolveRenderLeaseTerminalState({
+                    cancelled: renderCancelled,
+                    failed:
+                        renderFailureReason !== undefined ||
+                        retentionCapacityFailureReason !== null ||
+                        terminalFinalizationReason !== null ||
+                        manualReviewProjection !== null,
+                })
+            );
         } finally {
             setChatGenerating(false);
         }
     }
+    const persistenceWarning =
+        [budgetPersistenceWarning, renderLeasePersistenceWarning].filter(Boolean).join('\n\n') || null;
     if (retentionCapacityManualRepair) {
         return retentionCapacityManualRepair;
     }
     if (manualReviewProjection) {
-        return finishManualReview(confirmation, durableReceipt.batchId, budgetPersistenceWarning);
+        return finishManualReview(confirmation, durableReceipt.batchId, persistenceWarning);
     }
     if (terminalFinalizationReason) {
         return finishTerminalFinalizationManualRepair(
             confirmation,
             durableReceipt.batchId,
             terminalFinalizationReason,
-            budgetPersistenceWarning
+            persistenceWarning
         );
     }
     if (renderFailureReason !== undefined) {
-        return failIncompleteRetry(confirmation, renderFailureReason, budgetPersistenceWarning);
+        return failIncompleteRetry(confirmation, renderFailureReason, persistenceWarning);
     }
-    return finishSuccessfulRetry(confirmation, budgetPersistenceWarning);
+    return finishSuccessfulRetry(confirmation, persistenceWarning);
 }

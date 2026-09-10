@@ -5,10 +5,9 @@ import {
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { executeVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectMutationAuthorization, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 import { type HandlerDeferredEffectAttempt } from '#/utils/handlerContract';
 
-import { type AgentRunArtifact, type AgentRunWorkLease } from '../../models/AgentRun';
+import { type AgentRunWorkLease } from '../../models/AgentRun';
 import { setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import {
     preparePendingActionResourceLeaseForCommit,
@@ -16,7 +15,6 @@ import {
     type PendingAppActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
-import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { getExactAgentActionHash } from '../getExactAgentActionHash';
 import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
@@ -30,6 +28,7 @@ import {
     type CommittedEffectFailureResult,
 } from './confirmedBatchOutcomeSupport';
 import { pendingActionResourceSettlement } from './pendingActionResourceSettlement';
+import { recordOwnedRenderReceipt } from './recordOwnedRenderReceipt';
 
 type ExecuteConfirmedCommandBatchInput = {
     confirmation: PendingAppActionConfirmation;
@@ -232,50 +231,6 @@ function rebindFreshSectionRenderArtifactsToCommittedRevision(
     rebindAgentProjectSectionArtifactRevisions({
         artifacts: bindings,
         sourceRevision: committedRevision,
-    });
-}
-
-function ownsReceipt(owner: AgentWorkOwnerIdentity | null, receiptOwner: AgentWorkOwnerIdentity | null): boolean {
-    if (!owner || !receiptOwner) {
-        return false;
-    }
-    return (
-        receiptOwner.runId === owner.runId &&
-        receiptOwner.workId === owner.workId &&
-        receiptOwner.leaseId === owner.leaseId &&
-        receiptOwner.cancellationGeneration === owner.cancellationGeneration
-    );
-}
-
-const RENDER_RECEIPT_ARTIFACT_STATUS = {
-    started: 'pending',
-    rendered: 'completed',
-    failed: 'failed',
-    cancelled: 'failed',
-} as const satisfies Record<string, AgentRunArtifact['status']>;
-
-/**
- * Records a job-level receipt against the run only when it carries this flight's exact lease
- * identity. A receipt from a stale lease describes work this run no longer owns, so attaching it
- * would credit the run with evidence it cannot vouch for.
- */
-function recordOwnedRenderReceipt(
-    runId: string,
-    owner: AgentWorkOwnerIdentity | null,
-    receipt: AgentRenderReceipt
-): void {
-    if (receipt.phase === 'batch-settled' || !ownsReceipt(owner, receipt.owner) || !owner) {
-        return;
-    }
-    agentRunLifecycle.recordArtifact({
-        runId,
-        kind: 'render',
-        artifact: {
-            artifactId: receipt.provenance.jobId,
-            workId: owner.workId,
-            status: RENDER_RECEIPT_ARTIFACT_STATUS[receipt.phase],
-            summary: receipt.phase === 'rendered' ? receipt.contentAddress : null,
-        },
     });
 }
 

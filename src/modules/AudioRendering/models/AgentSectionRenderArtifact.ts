@@ -1,14 +1,9 @@
-export type AgentSectionRenderArtifact = {
+import { type AgentRenderProvenance } from '#/utils/agentRenderReceipt';
+
+/** A stored render carries the same provenance its receipts echo, so the two cannot describe different renders. */
+export type AgentSectionRenderArtifact = AgentRenderProvenance & {
     readonly owner: 'agent-section-render';
     readonly retention: 'session';
-    readonly jobId: string;
-    readonly sectionId: string;
-    readonly sectionName: string;
-    readonly startBeat: number;
-    readonly endBeat: number;
-    readonly sampleRate: number;
-    readonly tailSeconds: number;
-    readonly sourceRevision: string;
     readonly renderedAt: number;
     readonly durationSeconds: number;
     readonly frameCount: number;

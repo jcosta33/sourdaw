@@ -666,19 +666,29 @@ function reconcileAgentRunBudgetAttempt(input: {
     });
 }
 
+/**
+ * One artifact identity holds one entry. A render reports progress through several receipts, so a
+ * later report of the same `artifactId` supersedes the earlier one in place rather than adding a
+ * second entry that would count one artifact twice and leave its stale status readable.
+ */
 function recordAgentRunArtifact(input: {
     runId: string;
     kind: 'render' | 'analysis';
     artifact: AgentRunArtifact;
     recordedAt?: number;
 }): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        [input.kind === 'render' ? 'renders' : 'analyses']: [
-            ...(input.kind === 'render' ? run.renders : run.analyses),
-            structuredClone(input.artifact),
-        ],
-    }));
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        const key = input.kind === 'render' ? 'renders' : 'analyses';
+        const current = run[key];
+        const artifact = structuredClone(input.artifact);
+        const existingIndex = current.findIndex((candidate) => candidate.artifactId === artifact.artifactId);
+        if (existingIndex < 0) {
+            return { ...run, [key]: [...current, artifact] };
+        }
+        const artifacts = [...current];
+        artifacts[existingIndex] = artifact;
+        return { ...run, [key]: artifacts };
+    });
 }
 
 function recordAgentRunError(input: {
