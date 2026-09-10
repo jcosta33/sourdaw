@@ -1837,23 +1837,45 @@ fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamNam
     })
 }
 
+/// The keys of one wire record, in name order.
+///
+/// A record off the wire is a `HashMap`, and name order is the one order
+/// both patch routes share, so one record maps onto one write sequence
+/// whichever order the map draws its keys in. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) is what leads what it names, over
+/// whichever order this returns.
+fn name_ordered_keys(values: &HashMap<String, f64>) -> Vec<&str> {
+    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    keys
+}
+
 /// One device's whole `parameterValues` record, each key resolved through
 /// `resolve` and each value narrowed to the `f32` the engine applies.
 ///
 /// A body's patch is either written into the instance control-side or sent as
 /// addressed commands, so what a key resolves to differs; the record is read
 /// and the values are checked the same way either side, and one collector is
-/// what keeps that one fact.
+/// what keeps that one fact. Keys are read in name order
+/// ([`name_ordered_keys`]) rather than the `HashMap`'s own draw: gluten's
+/// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+/// (`vca.rs:159-169`), and neither is named by
+/// `BuiltinEffectType::patch_precedence`, so this route has no law to bring
+/// one ahead of the other. Name order is also the descriptor's order for
+/// that pair (`GlutenDescriptor.ts` lists `vcaCharacter` before `vcaType`),
+/// so reading keys this way makes `vca_type`'s preset win here exactly as it
+/// does on the web host, which applies a device's record in descriptor
+/// order.
 fn resolved_param_writes<T>(
     device: &DevicePayload,
     resolve: impl Fn(&str) -> Result<T, String>,
 ) -> Result<Vec<(T, f32)>, String> {
-    device
-        .parameter_values
-        .iter()
-        .map(|(key, value)| {
+    name_ordered_keys(&device.parameter_values)
+        .into_iter()
+        .map(|key| {
             let param = resolve(key)?;
-            Ok((param, finite(*value, "device parameter value")? as f32))
+            let value = device.parameter_values[key];
+            Ok((param, finite(value, "device parameter value")? as f32))
         })
         .collect()
 }
@@ -1913,10 +1935,7 @@ fn immediate_device_parameters(
     values: &HashMap<String, f64>,
     device_id: &str,
 ) -> Result<Vec<(DeviceParam, f32)>, String> {
-    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-
-    let resolved = keys
+    let resolved = name_ordered_keys(values)
         .into_iter()
         .map(|key| {
             let param = builtin_parameter(builtin, key, device_id)
@@ -10788,6 +10807,61 @@ mod tests {
             (with_explicit_override - macro_alone).abs() > TOLERANCE,
             "the macro alone settles at the same level as the explicit override, so this spec \
              cannot tell the two orders apart"
+        );
+    }
+
+    /// A gluten patch builds one compressor whatever order the record draws,
+    /// even for a pair `BuiltinEffectType::patch_precedence` names nothing
+    /// about.
+    ///
+    /// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+    /// (`vca.rs:159-169`), and neither is one of `GLUTEN_MACRO_KEYS`'s three
+    /// names, so the precedence law has no say in which of the two lands
+    /// last. `resolved_param_writes` reads the record in name order
+    /// regardless, which is why every draw below renders the same samples,
+    /// and why the render matches `vca_type`'s preset rather than
+    /// `vca_character`'s own value: `vca_character` sorts before
+    /// `vca_type`, so the type preset is the one applied last, exactly as
+    /// `GlutenDescriptor.ts` orders the pair and the web host applies it.
+    #[test]
+    fn a_gluten_patch_builds_one_compressor_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "vca_character": 0.02,
+            "vca_type": 0.0,
+            "threshold": -30.0,
+            "ratio": 8.0
+        });
+
+        let first = settled_peak(&render_gluten_clip(record.clone()));
+        for draw in 0..DRAWS {
+            let peak = settled_peak(&render_gluten_clip(record.clone()));
+            assert_eq!(
+                peak, first,
+                "draw {draw}: the same record rendered a different peak"
+            );
+        }
+
+        let type_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_type": 0.0, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+        let character_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_character": 0.02, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            (first - type_alone).abs() <= TOLERANCE,
+            "the type preset did not win over the character value: {first} vs {type_alone}"
+        );
+        assert!(
+            (first - character_alone).abs() > TOLERANCE,
+            "the character value alone settles at the same level as the type preset, so this \
+             spec cannot tell the two orders apart: {first} vs {character_alone}"
         );
     }
 

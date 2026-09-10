@@ -15195,8 +15195,15 @@ mod timeline_tests {
     /// the material with a high ratio and a fast attack means the output is
     /// nowhere near the input, so an equality against the reference is
     /// earned rather than an agreement between two pass-throughs.
+    ///
+    /// `topology` is 2 (the FET compressor) rather than 0: `style`'s Glue
+    /// preset that follows it sets `active_topology` back to the VCA, so a
+    /// body that applies `style` before `topology` leaves the FET engaged
+    /// and renders a different signal — making the order among the three
+    /// macros audible here, not only in the mapper's own batch spec
+    /// (`set_device_parameters_routes_a_gluten_batch_macros_first`).
     const GLUTEN_PATCH: [(&str, f32); 8] = [
-        ("topology", 0.0),
+        ("topology", 2.0),
         ("style", 0.0),
         ("amount", 50.0),
         ("threshold", -30.0),
@@ -15261,7 +15268,12 @@ mod timeline_tests {
     /// patch's own `threshold`/`ratio` entries, and `style` rewrites both on
     /// its own topology — the compressor would settle at Glue's -18 dB
     /// threshold and 4:1 ratio rather than the -30 dB / 8:1 the patch
-    /// actually names.
+    /// actually names. `topology` selects the FET compressor precisely so
+    /// this failure mode is visible: without the law, `style`'s Glue preset
+    /// — applied after `topology` in the reversed record's own order —
+    /// would also return `active_topology` to the VCA, so a body that gets
+    /// the macro order wrong renders a different compressor entirely, not
+    /// merely different ballistics on the same one.
     ///
     /// The worklet hands its instance 128 frames at a time — one
     /// `AudioWorkletProcessor` render quantum — because
