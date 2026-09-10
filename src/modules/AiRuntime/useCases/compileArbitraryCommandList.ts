@@ -6,6 +6,7 @@ import {
 } from '#/modules/Command/useCases';
 import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
@@ -89,6 +90,8 @@ export type ArbitraryCommandListEvidence = {
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
     commands: ToolCallResult[];
+    /** The admitted creative authority this batch was compiled under, or null when none was minted. */
+    creativeAuthorityId: string | null;
     /**
      * The transforms this batch expanded, in list order. Every command in the batch is an ordinary
      * catalog command, so without this record nothing downstream could tell a musician that the notes
@@ -1088,6 +1091,7 @@ export function compileArbitraryCommandList(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string;
+    creativeAuthority?: CreativeRequestAuthority;
 }): ArbitraryCommandListCompilation {
     const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
     if (proposalCalls.length === 0) {
@@ -1438,6 +1442,7 @@ export function compileArbitraryCommandList(input: {
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),
                       commands: structuredClone(commands),
+                      creativeAuthorityId: input.creativeAuthority?.authorityId ?? null,
                       expandedMidiTransforms: [...expandedMidiTransforms],
                   },
         calls: input.calls.map((call) =>

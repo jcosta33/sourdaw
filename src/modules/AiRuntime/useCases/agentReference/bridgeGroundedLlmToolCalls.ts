@@ -5,6 +5,7 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
+import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_CLIP_MAX_BEATS, SEMANTIC_CLIP_MAX_END_BEAT } from '../../models/SemanticCommandList';
@@ -97,6 +98,7 @@ type BridgeGroundedLlmToolCallsInput = {
     compilerEvidence?: ArbitraryCommandListEvidence;
     projectRevision?: string;
     workflowCapabilityId?: WorkflowCapabilityId;
+    creativeAuthority?: CreativeRequestAuthority;
 };
 
 type GroundToolCallInput = {
@@ -4331,6 +4333,7 @@ export function bridgeGroundedLlmToolCalls({
     compilerEvidence,
     projectRevision,
     workflowCapabilityId,
+    creativeAuthority,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     let compilerTargetOverridesByCallIndex: ReadonlyMap<number, readonly CompilerResolvedTargetOverride[]> | undefined;
     let compilerActionCommandGraph: ActionCommandGraph | undefined;
@@ -4340,6 +4343,7 @@ export function bridgeGroundedLlmToolCalls({
             calls,
             context,
             revision: projectRevision,
+            creativeAuthority,
         });
         if (compilerValidation.status === 'rejected') {
             return { actions: [], rejections: [rejection(0, '<batch>', compilerValidation.reason)] };

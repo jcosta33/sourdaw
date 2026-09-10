@@ -43,6 +43,8 @@ const DEFAULT_LIMITS = {
     maxReceiptBytesPerTurn: 32_768,
     maxTotalReceiptBytes: 65_536,
 } as const;
+/** One extra turn so query, search, discovery, interpretation and proposal all fit in one run. */
+const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
@@ -57,6 +59,8 @@ type ApplicationToolPlanningOutcome =
 
 export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 
+export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' | 'clarified';
+
 export type ApplicationOwnedToolLoopOutcome =
     | {
           status: 'complete';
@@ -68,6 +72,8 @@ export type ApplicationOwnedToolLoopOutcome =
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
+          /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
+          interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
       }
     | {
           status: 'rejected';
@@ -92,6 +98,11 @@ export class ApplicationOwnedToolLoopRequestError extends Error {
 
 type ToolLoopLimits = Partial<Record<keyof typeof DEFAULT_LIMITS, number>>;
 
+export type ApplicationOwnedToolLoopInterpretationAdmission =
+    | { status: 'admitted'; receipt: { data: unknown; summary: string } }
+    | { status: 'clarify'; reason: string }
+    | { status: 'rejected'; reason: string };
+
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
     requestTurn: (input: {
@@ -106,6 +117,14 @@ type RunApplicationOwnedToolLoopInput = {
     terminalToolNames: ReadonlySet<string>;
     signal?: AbortSignal;
     limits?: ToolLoopLimits;
+    /**
+     * The application-owned control phase. The loop learns only whether a call was admitted; the
+     * record it mints stays in the caller's closure, so no provider-visible turn can restate it.
+     */
+    interpretation?: {
+        toolName: string;
+        admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
+    };
 };
 
 type ParsedQuery = { status: 'valid'; input: QueryInput } | { status: 'invalid'; reason: string };
@@ -969,6 +988,7 @@ export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
 ): Promise<ApplicationOwnedToolLoopOutcome> {
     const limits = { ...DEFAULT_LIMITS, ...input.limits };
+    const maxTurns = input.interpretation === undefined ? limits.maxTurns : limits.maxTurns + CREATIVE_TURN_ALLOWANCE;
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
@@ -976,8 +996,28 @@ export async function runApplicationOwnedToolLoop(
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
+    let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
 
-    for (let turn = 1; turn <= limits.maxTurns; turn += 1) {
+    /**
+     * Admits one turn's receipts against the context budget. Every receipt the loop produces spends
+     * the same allowance, so the control phase cannot buy context a read tool would have been refused.
+     */
+    const admitTurnReceipts = (
+        turnReceipts: readonly ApplicationToolReceipt[],
+        turn: number
+    ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
+        const overBudget = 'Application tool receipts exceeded the bounded context budget.';
+        const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
+        if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
+            return { reason: overBudget, receipts: [...receipts, ...turnReceipts] };
+        }
+        receipts.push(...turnReceipts);
+        totalReceiptBytes += turnBytes;
+        receiptContext = serializeReceiptContext(receipts, turn);
+        return byteLength(receiptContext) > limits.maxTotalReceiptBytes ? { reason: overBudget, receipts } : null;
+    };
+
+    for (let turn = 1; turn <= maxTurns; turn += 1) {
         if (input.signal?.aborted) {
             return {
                 status: 'rejected',
@@ -992,7 +1032,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 receiptContext,
                 remaining: {
-                    turns: limits.maxTurns - turn + 1,
+                    turns: maxTurns - turn + 1,
                     calls: limits.maxTotalCalls - totalCalls,
                     receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
                 },
@@ -1037,6 +1077,77 @@ export async function runApplicationOwnedToolLoop(
             }
             seenCallIds.add(callId);
             identifiedCalls.push({ call, callId });
+        }
+
+        const interpretationCalls = identifiedCalls.filter(
+            ({ call }) => input.interpretation !== undefined && call.name === input.interpretation.toolName
+        );
+        if (interpretationCalls.length > 0) {
+            // The interpretation decides what the rest of the run is allowed to mean, so it cannot
+            // ride alongside calls whose meaning it would have settled.
+            if (identifiedCalls.length !== 1) {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider mixed the creative interpretation with other tool calls in one turn.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            if (interpretation === 'admitted') {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider repeated the creative interpretation.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const { call, callId } = interpretationCalls[0]!;
+            const admission = input.interpretation!.admit(call);
+            if (admission.status === 'rejected') {
+                return { status: 'rejected', reason: admission.reason, receipts, turns: turn };
+            }
+            if (admission.status === 'clarify') {
+                return {
+                    status: 'complete',
+                    toolCalls: [],
+                    decline: {
+                        kind: 'clarify',
+                        reason: admission.reason,
+                        questions: [admission.reason],
+                    },
+                    searchedIntents: [...searchedIntents],
+                    proposal: null,
+                    receipts,
+                    turns: turn,
+                    interpretation: 'clarified',
+                };
+            }
+            const overBudget = admitTurnReceipts(
+                [
+                    boundReceipt(
+                        {
+                            schema: 'sourdaw.application-tool-receipt',
+                            schemaVersion: 1,
+                            callId,
+                            toolName: call.name,
+                            turn,
+                            status: 'success',
+                            revision: null,
+                            data: admission.receipt.data,
+                            summary: admission.receipt.summary,
+                            warnings: [],
+                            error: null,
+                        },
+                        limits.maxReceiptBytesPerCall
+                    ),
+                ],
+                turn
+            );
+            if (overBudget !== null) {
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            interpretation = 'admitted';
+            continue;
         }
 
         const safeReadToolNames = new Set([
@@ -1086,9 +1197,10 @@ export async function runApplicationOwnedToolLoop(
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,
+                interpretation,
             };
         }
-        if (turn === limits.maxTurns) {
+        if (turn === maxTurns) {
             return {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
@@ -1104,26 +1216,9 @@ export async function runApplicationOwnedToolLoop(
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
-        const serializedTurn = serializeReceiptContext(turnReceipts, turn);
-        const turnBytes = byteLength(serializedTurn);
-        if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
-            return {
-                status: 'rejected',
-                reason: 'Application tool receipts exceeded the bounded context budget.',
-                receipts: [...receipts, ...turnReceipts],
-                turns: turn,
-            };
-        }
-        receipts.push(...turnReceipts);
-        totalReceiptBytes += turnBytes;
-        receiptContext = serializeReceiptContext(receipts, turn);
-        if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
-            return {
-                status: 'rejected',
-                reason: 'Application tool receipts exceeded the bounded context budget.',
-                receipts,
-                turns: turn,
-            };
+        const overBudget = admitTurnReceipts(turnReceipts, turn);
+        if (overBudget !== null) {
+            return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }
     }
 
@@ -1131,6 +1226,6 @@ export async function runApplicationOwnedToolLoop(
         status: 'rejected',
         reason: 'Provider exhausted the bounded application tool-loop turns.',
         receipts,
-        turns: limits.maxTurns,
+        turns: maxTurns,
     };
 }
