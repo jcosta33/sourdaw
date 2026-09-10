@@ -1,0 +1,75 @@
+.agents/skills/review-stances/correctness.md
+  s_06adf2b091dc62::t_9a9ffa2583b796 251
+  s_06adf2b091dc62::t_4c8b67f4516465 248-250
+  s_4a6229a3d5ba38::t_f13688a06b27c3 236-247
+.agents/skills/review-stances/test-validity.md
+  s_06adf2b091dc62::t_a57f7c08a2a321 203-217
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_06adf2b091dc62::t_f92613c46c1140 107-151,203-238
+scripts/offlineAudioWorkletTrace.ts
+  s_06adf2b091dc62::t_210aad68ec626f 127-129,202,233
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_06adf2b091dc62::t_50dc8ba22719ca 24,140-156,3511-3586
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_06adf2b091dc62::t_37b788818feeb9 74
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_6acbe3d4e02654 77,79-80,82,85,92,97,3321-3332
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postScopeAdmissionStrategy.spec.ts
+  s_06adf2b091dc62::t_daa6c67a186920 1-288
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/promptClauseIntent.spec.ts
+  s_06adf2b091dc62::t_62aee05eda6551 1-113
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createPostScopeAdmissionStrategyRegistry.ts
+  s_06adf2b091dc62::t_ebd955ea0a1839 1-50
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getCancellationCues.ts
+  s_06adf2b091dc62::t_05d48bdfbc8057 1-16
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getIntentPhraseIndex.ts
+  s_06adf2b091dc62::t_d9e9ddcf477518 1-6
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getNearestIntentAction.ts
+  s_06adf2b091dc62::t_b29fc7d30566b0 1-24
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getReferencedCancellationAction.ts
+  s_06adf2b091dc62::t_e0fc9091b07927 1-31
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasTrailingIntentCancellation.ts
+  s_06adf2b091dc62::t_eb3028427e556b 1-22
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isExplicitCommandClause.ts
+  s_06adf2b091dc62::t_b45a5f4b33188e 1-31
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isGenericDeviceIntent.ts
+  s_06adf2b091dc62::t_fcbc55619065a6 1-7
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postScopeAdmissionStrategy.ts
+  s_06adf2b091dc62::t_f6ff6f5c40527c 1-261
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveClauseActionIntent.ts
+  s_06adf2b091dc62::t_a95276d05c376d 1-71
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_06adf2b091dc62::t_4770754b9d482c 1120-1125
+src/modules/MIDI/useCases/stepRecording/__tests__/stepRecordNoteOn.spec.ts
+  s_06adf2b091dc62::t_081b3bf3ed53ee 1-167
+src/modules/MIDI/useCases/stepRecording/stepRecordNoteOn.ts
+  s_06adf2b091dc62::t_9026d43e077f41 1-3,6-20,28,32-42
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_06adf2b091dc62::t_f429ce51413433 94
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_06adf2b091dc62::t_2e058495adc818 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4e75ea60c1bb4c0de42dbeafaa84263be3096af0",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4a6229a3d5ba38": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac90ec56ff7d3ec08",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
