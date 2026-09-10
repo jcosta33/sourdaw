@@ -1,0 +1,118 @@
+src/utils/handlerContract.ts
+  s_06adf2b091dc62::t_cfdd40adddfc66 2666-2677
+  s_06adf2b091dc62::t_2086c533b475d3 2650,2652-2653
+  s_06adf2b091dc62::t_203e2eaa109f1a 11-12
+  s_06adf2b091dc62::t_28885e5ecaa2be 2754,2756-2757
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_06adf2b091dc62::t_6b072350754e72 19
+  s_06adf2b091dc62::t_c44464f732906f 331,336-337
+  s_06adf2b091dc62::t_e85a9cd443035f 333
+  s_06adf2b091dc62::t_6856e3fe6f596a 8,11
+  s_06adf2b091dc62::t_78f1b05c7bd454 238-281
+  s_06adf2b091dc62::t_bff5159bb5216b 315-322
+  s_9b530f08172a54::t_3509b103fd30a7 338
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_06adf2b091dc62::t_83cb6543dc626c 197,199-201
+  s_06adf2b091dc62::t_6f5cf2c87ff9bf 272
+  s_06adf2b091dc62::t_e0b313ba2df430 3-9
+  s_06adf2b091dc62::t_fd15c64e77d40e 88-89
+  s_06adf2b091dc62::t_345a89e2c057b8 31-32,42-61
+  s_06adf2b091dc62::t_0d78773ff5397a 284-292,298-300,303-309
+  s_06adf2b091dc62::t_bee88a4e205a6f 62,338-354
+  s_06adf2b091dc62::t_9b620a78be9813 126
+  s_06adf2b091dc62::t_906fda52cfba02 151,153
+  s_06adf2b091dc62::t_7f337c8e91dd0c 178-183,187-196,198,202-203
+  s_06adf2b091dc62::t_5d317a9f0bca82 221-223
+  s_06adf2b091dc62::t_ad7666db1f7ff1 225,229-234,237-246,248-253,310
+  s_06adf2b091dc62::t_00e836bc65a879 210
+  s_9b530f08172a54::t_c987743ecb4a2a 63
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_06adf2b091dc62::t_86873fdc1b995d 74
+  s_06adf2b091dc62::t_1d58dfbac800d4 111-113
+  s_06adf2b091dc62::t_985b1c3edf42dd 12
+  s_06adf2b091dc62::t_40e8240ed823f2 637-690
+  s_06adf2b091dc62::t_3fb3cfdaed1db0 49
+  s_06adf2b091dc62::t_7b01c3b02c6738 321
+src/modules/AudioRendering/useCases/__tests__/rebindAgentProjectSectionArtifactRevisions.spec.ts
+  s_06adf2b091dc62::t_b720d861b282fb 31,37
+src/utils/agentRenderReceipt.ts
+  s_06adf2b091dc62::t_464c614d828755 1-80,83,85-99,104
+  s_06adf2b091dc62::t_3733fc40816d2f 81-82,84
+  s_06adf2b091dc62::t_ca6abf25dcbb37 100-103
+src/modules/AudioRendering/useCases/retryAgentProjectSectionRenders.ts
+  s_06adf2b091dc62::t_ec7d10ff301f1d 27-28
+  s_06adf2b091dc62::t_2b5b623add65c3 1,12-13
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_06adf2b091dc62::t_73350f3a3b1ed4 109-119
+  s_ef9c06ad2844c4::t_62c87c060f1302 3560,3711,4110,4245
+src/modules/AudioRendering/handlers/handleRenderProjectSections.ts
+  s_06adf2b091dc62::t_7dd38e9ebe1ecd 68-69,82-88
+  s_9b530f08172a54::t_f34e6ef8365a40 89
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_06adf2b091dc62::t_a5f65e1ec3d468 38,44
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_06adf2b091dc62::t_c65e1c253b6021 61-64
+  s_06adf2b091dc62::t_e904d58ffa96a0 1-2,4-60,65-159,165-260
+  s_06adf2b091dc62::t_3c69174cc2f0bd 160-164
+  s_06adf2b091dc62::t_e7c3fa941e4061 3
+src/utils/__tests__/agentRenderReceipt.spec.ts
+  s_06adf2b091dc62::t_15626fdcf048d3 1-92
+  s_06adf2b091dc62::t_0f9415f12ff7e2 93-102
+src/utils/canonicalDigest.ts
+  s_06adf2b091dc62::t_789aa6c78bf2d7 82-85
+  s_06adf2b091dc62::t_ecb932e781256b 22
+src/modules/AudioRendering/models/AgentSectionRenderArtifact.ts
+  s_06adf2b091dc62::t_a182d642ef29a6 17-18
+src/modules/AudioRendering/handlers/__tests__/handleRenderProjectSections.spec.ts
+  s_06adf2b091dc62::t_41cca68db2b957 65,71
+  s_06adf2b091dc62::t_6aac4cc0c58004 94-95,107-163
+  s_06adf2b091dc62::t_31c0cd7a3521a2 164-165
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_06adf2b091dc62::t_106c7bfb2abb7e 221
+src/modules/AiRuntime/presentations/views/__tests__/RetainedSectionRenderManualReview.spec.tsx
+  s_06adf2b091dc62::t_47f77dc1159496 87
+src/modules/AudioRendering/useCases/__tests__/getAgentSectionRenderArtifacts.spec.ts
+  s_06adf2b091dc62::t_6c663c0d2d0f2c 32
+src/modules/AudioRendering/useCases/__tests__/retainedSectionRenderArtifactReview.spec.ts
+  s_06adf2b091dc62::t_3710a4b8f663cd 41
+src/modules/AudioRendering/useCases/__tests__/scheduleAgentSectionRenderArtifactExpiry.spec.ts
+  s_06adf2b091dc62::t_076bc8dead5057 33
+src/modules/Command/useCases/executeAppAction.ts
+  s_06adf2b091dc62::t_cf2a643da980d9 105,198
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_06adf2b091dc62::t_92cfb5e035e37e 292-293,310,371-372,396,855-856,905-906
+src/utils/__tests__/canonicalDigest.spec.ts
+  s_06adf2b091dc62::t_99750a1b232691 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d1d26adbb985aa4f5cc23fd15ab92b0748369e40",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef9c06ad2844c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6c9fc5f88b1b28eb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
