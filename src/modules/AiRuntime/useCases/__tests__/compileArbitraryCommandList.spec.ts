@@ -3540,6 +3540,11 @@ describe('compileArbitraryCommandList', () => {
         });
 
         expect(result.status).toBe('accepted');
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.snapshotRevision).toBe('rev-a');
+        expect(result.compilerEvidence.creativeAuthorityId).toBe('creative-authority-mute-kick');
     });
 
     it('refuses a creative authority captured against a different project snapshot than the compile revision', () => {
