@@ -1,0 +1,19 @@
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_06adf2b091dc62::t_55cbba03fcc6d1 477-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9d462da5010170f8ba874c7f28b9d20fc849cdcc",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
