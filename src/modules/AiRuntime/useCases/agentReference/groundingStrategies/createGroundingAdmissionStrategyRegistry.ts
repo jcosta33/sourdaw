@@ -1,11 +1,11 @@
 export type GroundingAdmissionResult = string | null;
 
-export type GroundingAdmissionStrategy<Input> = (input: Input) => GroundingAdmissionResult;
+export type GroundingAdmissionStrategy<Input, Result = GroundingAdmissionResult> = (input: Input) => Result;
 
-export type GroundingAdmissionStrategyDefinition<Name extends string, Input> = {
+export type GroundingAdmissionStrategyDefinition<Name extends string, Input, Result = GroundingAdmissionResult> = {
     [StrategyName in Name]: {
         name: StrategyName;
-        transform: GroundingAdmissionStrategy<Input>;
+        transform: GroundingAdmissionStrategy<Input, Result>;
     };
 }[Name];
 
@@ -13,13 +13,13 @@ function toSentenceCase(label: string): string {
     return `${label.slice(0, 1).toLocaleUpperCase()}${label.slice(1)}`;
 }
 
-export function createGroundingAdmissionStrategyRegistry<Name extends string, Input>(
+export function createGroundingAdmissionStrategyRegistry<Name extends string, Input, Result = GroundingAdmissionResult>(
     label: string,
-    definitions: readonly GroundingAdmissionStrategyDefinition<Name, Input>[],
+    definitions: readonly GroundingAdmissionStrategyDefinition<Name, Input, Result>[],
     catalog: readonly { actionType: string }[],
     expectedActionNames: readonly Name[]
-): ReadonlyMap<Name, GroundingAdmissionStrategy<Input>> {
-    const registry = new Map<Name, GroundingAdmissionStrategy<Input>>();
+): ReadonlyMap<Name, GroundingAdmissionStrategy<Input, Result>> {
+    const registry = new Map<Name, GroundingAdmissionStrategy<Input, Result>>();
     const catalogActionNames = new Set(catalog.map((entry) => entry.actionType));
     for (const definition of definitions) {
         if (registry.has(definition.name)) {
