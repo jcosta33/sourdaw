@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
+import {
+    CREATIVE_INTERPRETATION_TOOL_NAME,
+    createCreativeInterpretationToolSchema,
+    type CreativeInterpretationCatalog,
+} from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
@@ -106,6 +111,21 @@ const toolSchemas: ToolSchema[] = [
         },
     },
 ];
+
+/** A published catalog in the shape production hands the schema builder. */
+const creativeCatalog: CreativeInterpretationCatalog = {
+    schemaVersion: 1,
+    catalogId: 'creative-catalog-1',
+    revision: 'revision-1',
+    requestDigest: 'digest-1',
+    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
+    unresolvedExplicitReferences: [],
+    modes: ['edit'],
+    targets: [],
+    dimensions: [],
+    constraints: [],
+    creationSlots: [],
+};
 
 function toolSchema(name: string, description?: string): ToolSchema {
     return {
@@ -274,6 +294,35 @@ describe('generateToolPlanningOutcome', () => {
                 'agent.command-index.search',
                 'agent.catalog.discover',
             ])
+        );
+    });
+
+    it('keeps the creative interpretation tool available to WebLLM under 30-tool selection pressure', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+        // Production appends the creative interpretation schema last, behind far more action tools
+        // than the browser cap admits, so only application-tool standing keeps it advertised.
+        const competingTools = Array.from({ length: 120 }, (_, index) =>
+            toolSchema(`planAction${String(index)}`, 'plan a command')
+        );
+        const schemas = [
+            toolSchema('project.query'),
+            toolSchema('command.batch.propose'),
+            toolSchema('command.batch.decline'),
+            toolSchema('agent.command-index.search'),
+            toolSchema('agent.catalog.discover'),
+            ...competingTools,
+            createCreativeInterpretationToolSchema(creativeCatalog),
+        ];
+
+        await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
+            status: 'complete',
+        });
+
+        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+        expect(advertisedTools).toHaveLength(30);
+        expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toContain(
+            CREATIVE_INTERPRETATION_TOOL_NAME
         );
     });
 
