@@ -292,7 +292,7 @@ export function discoverSearchedCalls(names: readonly string[] = PROPOSED_COMMAN
         if (missing.length > 0) {
             throw new TypeError(`Command index search never returned: ${missing.join(', ')}`);
         }
-        return [{ name: 'agent.catalog.discover', arguments: { category: 'command', names: [...names] } }];
+        return [catalogDiscoveryCall(names)];
     };
 }
 
@@ -316,4 +316,125 @@ export function scriptHighLevelIntentProvider(
         discoverSearchedCalls(),
         proposeDiscoveredCalls(items),
     ]);
+}
+
+/**
+ * The published interpretation catalog, read back out of the provider request the run actually sent.
+ * A scripted turn cannot mint these ids: only the application publishes them, and `admitCreative
+ * Interpretation` accepts nothing else. Reading them here is what keeps a script from hard-coding a
+ * candidate id the catalog stopped publishing and passing anyway.
+ */
+export type ScriptedCreativeCatalog = {
+    catalogId: string;
+    modes: readonly string[];
+    targets: ReadonlyArray<{ candidateId: string; objectIds: readonly string[] }>;
+    dimensions: ReadonlyArray<{ candidateId: string; dimension: string }>;
+    creationSlots: ReadonlyArray<{ candidateId: string; objectType: string }>;
+};
+
+function requireCandidateRecords(value: unknown, family: string): Record<string, unknown>[] {
+    if (!Array.isArray(value) || !value.every((entry) => isRecord(entry))) {
+        throw new TypeError(`Expected a published ${family} candidate list in the creative interpretation catalog`);
+    }
+    return value;
+}
+
+function requireCandidateId(candidate: Record<string, unknown>, family: string): string {
+    if (typeof candidate.candidateId !== 'string') {
+        throw new TypeError(`Expected an application-minted ${family} candidate id`);
+    }
+    return candidate.candidateId;
+}
+
+export function readCreativeInterpretationCatalog(userMessage: string): ScriptedCreativeCatalog {
+    const available = getProviderSection(userMessage, 'capability_schemas').availableCapabilities;
+    if (typeof available !== 'string') {
+        throw new TypeError('Expected serialized available capabilities in provider request');
+    }
+    const parsed: unknown = JSON.parse(available);
+    const catalog = isRecord(parsed) ? parsed.creativeInterpretationCatalog : undefined;
+    if (!isRecord(catalog) || typeof catalog.catalogId !== 'string' || !Array.isArray(catalog.modes)) {
+        throw new TypeError('Expected a published creative interpretation catalog in provider request');
+    }
+    return {
+        catalogId: catalog.catalogId,
+        modes: catalog.modes.filter((mode) => typeof mode === 'string'),
+        targets: requireCandidateRecords(catalog.targets, 'target').map((target) => ({
+            candidateId: requireCandidateId(target, 'target'),
+            objectIds: Array.isArray(target.objectIds)
+                ? target.objectIds.filter((objectId) => typeof objectId === 'string')
+                : [],
+        })),
+        dimensions: requireCandidateRecords(catalog.dimensions, 'dimension').map((dimension) => ({
+            candidateId: requireCandidateId(dimension, 'dimension'),
+            dimension: String(dimension.dimension),
+        })),
+        creationSlots: requireCandidateRecords(catalog.creationSlots, 'creation slot').map((slot) => ({
+            candidateId: requireCandidateId(slot, 'creation slot'),
+            objectType: String(slot.objectType),
+        })),
+    };
+}
+
+function requireTargetCandidateId(catalog: ScriptedCreativeCatalog, objectId: string): string {
+    const target = catalog.targets.find((candidate) => candidate.objectIds.includes(objectId));
+    if (!target) {
+        throw new TypeError(`Creative interpretation catalog published no target covering ${objectId}`);
+    }
+    return target.candidateId;
+}
+
+function requireDimensionCandidateId(catalog: ScriptedCreativeCatalog, dimension: string): string {
+    const candidate = catalog.dimensions.find((entry) => entry.dimension === dimension);
+    if (!candidate) {
+        throw new TypeError(`Creative interpretation catalog published no ${dimension} edit dimension`);
+    }
+    return candidate.candidateId;
+}
+
+function requireCreationSlotId(catalog: ScriptedCreativeCatalog, objectType: string): string {
+    const slot = catalog.creationSlots.find((candidate) => candidate.objectType === objectType);
+    if (!slot) {
+        throw new TypeError(`Creative interpretation catalog published no ${objectType} creation slot`);
+    }
+    return slot.candidateId;
+}
+
+/** Discovers command schemas without first searching the index, for a run whose vocabulary is fixed. */
+export function catalogDiscoveryCall(names: readonly string[]): ProviderCall {
+    return { name: 'agent.catalog.discover', arguments: { category: 'command', names: [...names] } };
+}
+
+/**
+ * Selects one published interpretation. Every id is looked up in the catalog the run published, so a
+ * selection the catalog does not offer fails as a script defect instead of reaching the admission as
+ * a provider-invented id.
+ */
+export function selectCreativeInterpretationCall(input: {
+    catalog: ScriptedCreativeCatalog;
+    modeId: string;
+    targetObjectIds?: readonly string[];
+    dimensions?: readonly string[];
+    creationSlotObjectTypes?: readonly string[];
+    uncertainty?: 'none' | 'artistic' | 'authority';
+}): ProviderCall {
+    const { catalog } = input;
+    return {
+        name: 'selectCreativeInterpretation',
+        arguments: {
+            catalogId: catalog.catalogId,
+            modeId: input.modeId,
+            targetCandidateIds: (input.targetObjectIds ?? []).map((objectId) =>
+                requireTargetCandidateId(catalog, objectId)
+            ),
+            editDimensionCandidateIds: (input.dimensions ?? []).map((dimension) =>
+                requireDimensionCandidateId(catalog, dimension)
+            ),
+            constraintCandidateIds: [],
+            creationSlotIds: (input.creationSlotObjectTypes ?? []).map((objectType) =>
+                requireCreationSlotId(catalog, objectType)
+            ),
+            uncertainty: input.uncertainty ?? 'none',
+        },
+    };
 }
