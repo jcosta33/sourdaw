@@ -1,0 +1,49 @@
+src/modules/Proof/useCases/proofParamBridge/__tests__/loadProofPatchWithAudio.spec.ts
+  s_9b530f08172a54::t_4934693e04c9a8 116-184
+  s_9b530f08172a54::t_27c663654292fe 5
+  s_9b530f08172a54::t_9a4ad6f85e2972 238-261
+src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts
+  s_9b530f08172a54::t_7de1c6391fdfed 328-331,333
+  s_9b530f08172a54::t_d5a4352d436860 11
+src/modules/Proof/useCases/proofParamBridge/rehydrateRestoredPatch.ts
+  s_9b530f08172a54::t_ccf4c5dcc4650a 1-421
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_23cea277968436 433-436
+  s_9b530f08172a54::t_edebba515e563e 236-241,243-252
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofTarget.spec.ts
+  s_9b530f08172a54::t_38ee3fff228a25 107,113-128
+  s_9b530f08172a54::t_e2c89d72abee6d 4,26-79,85
+src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts
+  s_9b530f08172a54::t_6e8ac8d02357da 4,7
+src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts
+  s_9b530f08172a54::t_37359db507bb1e 10
+  s_9b530f08172a54::t_60dca7885f91cb 27-30,32
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_f1b7e3be6824ed 2704-2713,2726-2728
+  s_9b530f08172a54::t_b252193d0295df 19168-19169,19171-19172,19174,19188-19198,19201-19206,19210-19212,19214-19216
+  s_9b530f08172a54::t_b09bb5af633695 2442-2451,2453-2455,2464-2478
+  s_9b530f08172a54::t_15df0348e132cc 19170,19173,19175-19187,19199-19200,19207-19209,19213
+  s_9b530f08172a54::t_119c36a9c8cbd2 2479
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParamWithPatch.spec.ts
+  s_9b530f08172a54::t_bed6f3c1bba519 4
+  s_9b530f08172a54::t_b5d77aef3c3361 40-93
+  s_9b530f08172a54::t_c83a4bd665a8fb 635-643
+  s_9b530f08172a54::t_b946db9f94b053 410-424
+  s_9b530f08172a54::t_bbdb1fa95bb28a 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f03dcda5b02c850a5e36484fe648b03044c62860",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
