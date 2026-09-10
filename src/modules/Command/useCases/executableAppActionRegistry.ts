@@ -2485,6 +2485,152 @@ export const executableAppActionDescriptors = [
             required: ['laneId', 'gridSize'],
         },
     },
+    {
+        actionType: 'setYeastProcessorParam',
+        risk: 'bounded-reversible',
+        description: 'Set one parameter of one Yeast MIDI effect processor.',
+        intentPhrases: ['set yeast parameter', 'turn yeast knob', 'set midi effect parameter'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+                paramId: { type: 'string', description: 'Parameter name on that processor' },
+                value: { type: 'number', description: 'New parameter value' },
+            },
+            required: ['processorId', 'paramId', 'value'],
+        },
+    },
+    {
+        actionType: 'setYeastArpPattern',
+        risk: 'bounded-reversible',
+        description: "Replace one Yeast arpeggiator's custom step pattern.",
+        intentPhrases: ['set arp pattern', 'program arpeggiator steps', 'set arpeggiator pattern'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'Existing Yeast arpeggiator processor ID' },
+                steps: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            active: { type: 'boolean' },
+                            stepType: { type: 'string', enum: ['note', 'rest', 'tie', 'chord', 'random'] },
+                            noteSelector: {
+                                type: 'object',
+                                properties: {
+                                    type: {
+                                        type: 'string',
+                                        enum: ['next', 'previous', 'index', 'random', 'lowest', 'highest'],
+                                    },
+                                    index: { type: 'number' },
+                                },
+                                required: ['type'],
+                            },
+                            velocity: { type: 'number' },
+                            velocityOverride: { type: 'boolean' },
+                            gateMul: { type: 'number' },
+                            octaveOffset: { type: 'number' },
+                            semitoneOffset: { type: 'number' },
+                            probability: { type: 'number' },
+                            ratchet: { type: 'number' },
+                        },
+                        required: [
+                            'active',
+                            'stepType',
+                            'noteSelector',
+                            'velocity',
+                            'velocityOverride',
+                            'gateMul',
+                            'octaveOffset',
+                            'semitoneOffset',
+                            'probability',
+                            'ratchet',
+                        ],
+                    },
+                    minItems: 1,
+                    description: 'Full step list, one object per step',
+                },
+            },
+            required: ['processorId', 'steps'],
+        },
+    },
+    {
+        actionType: 'setYeastProcessorBypass',
+        risk: 'bounded-reversible',
+        description: 'Bypass or re-enable one Yeast MIDI effect processor.',
+        intentPhrases: ['bypass yeast processor', 'enable yeast processor', 'turn off midi effect'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+                bypassed: { type: 'boolean', description: 'true=bypass, false=enable' },
+            },
+            required: ['processorId', 'bypassed'],
+        },
+    },
+    {
+        actionType: 'addYeastProcessor',
+        risk: 'broad-reversible',
+        description: 'Add one Yeast MIDI effect processor to the rack.',
+        intentPhrases: ['add yeast processor', 'add arpeggiator', 'add midi effect'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'New processor ID' },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'arpeggiator',
+                        'chord',
+                        'chordMemory',
+                        'scale',
+                        'harmonizer',
+                        'repeater',
+                        'velocity',
+                        'humanizer',
+                        'filter',
+                        'transposer',
+                        'groove',
+                        'ccGenerator',
+                        'euclidean',
+                        'markov',
+                        'mutation',
+                    ],
+                    description: 'Processor kind from the Yeast catalog',
+                },
+                name: { type: 'string', description: 'Display name for the new processor' },
+            },
+            required: ['processorId', 'type', 'name'],
+        },
+    },
+    {
+        actionType: 'removeYeastProcessor',
+        risk: 'destructive-reversible',
+        description: 'Remove one Yeast MIDI effect processor from the rack.',
+        intentPhrases: ['remove yeast processor', 'delete midi effect'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+            },
+            required: ['processorId'],
+        },
+    },
+    {
+        actionType: 'reorderYeastProcessor',
+        risk: 'bounded-reversible',
+        description: 'Move one Yeast MIDI effect processor to a new chain position.',
+        intentPhrases: ['reorder yeast processor', 'move midi effect'],
+        targetRules: [],
+        parameters: {
+            properties: {
+                processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+                toIndex: { type: 'integer', description: 'Zero-based chain position to move it to' },
+            },
+            required: ['processorId', 'toIndex'],
+        },
+    },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];
 
 type Simplify<Value> = { [Key in keyof Value]: Value[Key] };
@@ -2787,6 +2933,14 @@ export const executableAppActionMutationIdentityRulesByType = {
     reverseAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
     thinAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
     quantizeAutomation: AUTOMATION_LANE_MUTATION_IDENTITY,
+    setYeastProcessorParam: [
+        { arguments: [{ argument: 'processorId' }, { argument: 'paramId' }], resourceFamily: 'yeast-processor' },
+    ],
+    setYeastArpPattern: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
+    setYeastProcessorBypass: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
+    addYeastProcessor: NO_MUTATION_IDENTITY,
+    removeYeastProcessor: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
+    reorderYeastProcessor: [{ arguments: [{ argument: 'processorId' }], resourceFamily: 'yeast-processor' }],
 } as const satisfies Record<ExecutableAppActionType, readonly ExecutableAppActionMutationIdentityRule[]>;
 
 export const executableAppActionMutationIdempotenceByType = {
@@ -2893,6 +3047,12 @@ export const executableAppActionMutationIdempotenceByType = {
     reverseAutomation: false,
     thinAutomation: false,
     quantizeAutomation: false,
+    setYeastProcessorParam: true,
+    setYeastArpPattern: true,
+    setYeastProcessorBypass: true,
+    addYeastProcessor: false,
+    removeYeastProcessor: false,
+    reorderYeastProcessor: false,
 } as const satisfies Record<ExecutableAppActionType, boolean>;
 
 export const executableAppActionDescriptorByType: ReadonlyMap<string, (typeof executableAppActionDescriptors)[number]> =

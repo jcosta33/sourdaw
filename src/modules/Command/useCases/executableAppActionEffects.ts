@@ -556,6 +556,35 @@ export const executableAppActionEffectsByType = {
         scope: 'dependents',
         removes: ['automation-point'],
     },
+    // The Yeast rack (#2111): every action writes only the named processor row
+    // (per-key guards), so the write never reaches past the target. The worker
+    // projection those writes feed is the MIDI processing surface.
+    addYeastProcessor: {
+        dimensions: ['processing'],
+        scope: 'target',
+        creates: ['device'],
+    },
+    removeYeastProcessor: {
+        dimensions: ['processing'],
+        scope: 'target',
+        removes: ['device'],
+    },
+    reorderYeastProcessor: {
+        dimensions: ['processing'],
+        scope: 'target',
+    },
+    setYeastArpPattern: {
+        dimensions: ['processing'],
+        scope: 'target',
+    },
+    setYeastProcessorBypass: {
+        dimensions: ['processing'],
+        scope: 'target',
+    },
+    setYeastProcessorParam: {
+        dimensions: ['processing'],
+        scope: 'target',
+    },
 } as const satisfies Record<ExecutableAppActionType, ExecutableAppActionEffect>;
 
 export function getExecutableAppActionEffect(actionType: string): ExecutableAppActionEffect | null {

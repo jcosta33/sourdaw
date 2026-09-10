@@ -6,6 +6,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
@@ -29,6 +30,7 @@ describe('command registry completeness', () => {
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
+            getYeastHandlers(),
         ]);
     });
 
