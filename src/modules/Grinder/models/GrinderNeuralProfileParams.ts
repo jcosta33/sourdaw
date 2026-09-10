@@ -13,7 +13,7 @@ export type GrinderNeuralProfileParam = readonly [name: string, value: number];
 
 function convWeightParams(convWeights: GrinderNeuralProfile['convWeights']): GrinderNeuralProfileParam[] {
     return convWeights.flatMap((weights, layer) =>
-        [0, 1, 2].map((index): GrinderNeuralProfileParam => [`neuralCustomConvWeight${layer}_${index}`, weights[index]])
+        weights.map((weight, index): GrinderNeuralProfileParam => [`neuralCustomConvWeight${layer}_${index}`, weight])
     );
 }
 
