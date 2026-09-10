@@ -25,6 +25,11 @@ dispatch.
 - When a spec pins a rule about repeated or overlapping events on one key, name the mutation that
   inverts the rule (last occurrence decides instead of first, a note-on covers instead of a note-off)
   and require the fixture to place the decisive event in the position that mutation would get wrong.
+- A regression suite for a detector that asserts an invariant over a registered population must
+  cover the invariant per adapter class, not replay the incident's fixture: enumerate the classes
+  the population actually has — an ordering normalizer, an encoding change, a dropped field — and
+  require a case in each that reverting the detector's invariant check fails. A suite green on the
+  incident fixture alone does not discharge the detector's global claim.
 
 ## Lessons from escapes
 

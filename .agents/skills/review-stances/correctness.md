@@ -16,6 +16,11 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 - Where the change models another component's state — a mirror, a shadow copy, a re-derivation —
   enumerate the owning component's contract clauses from its source and check the model against
   every clause, including the ones today's tests do not exercise.
+- When a change introduces or repairs a detector that asserts a global invariant over a registered
+  population — sanitizers, storage adapters, encoders, any registry of interchangeable components —
+  enumerate every registered adapter at head and verify the invariant against each, never only the
+  adapters the incident or the diff names. The population, not the incident report, bounds the
+  sweep; an unverified member of the same class is the finding.
 - Probe every boundary the change establishes or relies on one quantum to each side: the value the
   bug report named, and the adjacent value the report did not name.
 - A green gate is not evidence: name what would have to break for the existing checks to fail, and
