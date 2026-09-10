@@ -217,3 +217,18 @@ Probe that would have caught it: for any change to `StatusBar.tsx`, or to a `src
 primitive it renders, grep `scripts/desktopLatency*.ts` and `tests/e2e/**` for the labels and
 selectors the diff adds, moves, or removes; name every hit and run its spec (the harness reader spec
 where one exists) against the changed head before approving.
+
+### 2026-09-10 — a published catalog whose ids were minted from the length of the array being pushed (escaped via PR #4128; fixed in the 3b-B slice)
+
+`collectCreationSlots` in `prepareCreativeInterpretationCatalog.ts` derived each slot's `candidateId`
+from `slots.length` through a `nextId()` closure and then pushed three slots in a single
+`slots.push(a, b, c)` call. All three arguments were evaluated before the push, so every slot after
+the first carried the same id and the provider-facing enum offered `slot-2` three times. The device
+slot, which a processing request needs, was unselectable, and the first end-to-end case that tried to
+add a device under an admitted authority failed.
+
+Probe that would have caught it: for every published candidate list the provider selects from by id,
+assert the ids are pairwise distinct and that each object type or dimension the design says is
+selectable is reachable through the admission path, not merely present in the catalog. Read every
+id-minting closure against the statement that consumes it; a counter read inside a variadic call
+observes the pre-call length for every argument.
