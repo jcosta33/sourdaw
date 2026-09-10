@@ -1,0 +1,29 @@
+src/modules/Arrangement/useCases/clipEditing/splitClipSatellites.ts
+  s_06adf2b091dc62::t_831632c709804a 232-254
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipNonBezierSeam.spec.ts
+  s_e162b1c7899348::t_6beea72556a8e2 1-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7ea099c527eac3960dd94243b9998b3a7370e68a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e162b1c7899348": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad02abc7199fb562b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
