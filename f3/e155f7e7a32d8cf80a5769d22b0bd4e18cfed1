@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/workflowShortcutScopeStrategy.ts
+  s_06adf2b091dc62::t_56c91f0e2d30b9 48-61,106
+  s_06adf2b091dc62::t_06486adcbc36c0 69-88
+  s_06adf2b091dc62::t_54485b4ae09b67 1-47,62-68,89-105,107-146
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/commandScopeOverrideStrategy.spec.ts
+  s_06adf2b091dc62::t_519e0bee48ddc3 1-368
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_2fff4bbca098e8 1130-1139,1144-1154,1156
+  s_06adf2b091dc62::t_ee3fe3a26857f0 72,77,82-84,91
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/workflowShortcutScopeStrategy.spec.ts
+  s_06adf2b091dc62::t_464b8ababad009 1-236
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/commandScopeOverrideStrategy.ts
+  s_06adf2b091dc62::t_8a188969da8723 1-383
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createGroundingAdmissionStrategyRegistry.ts
+  s_06adf2b091dc62::t_9ec8d7b9561241 3,5,8,16,18,21-22
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getPromptClauses.ts
+  s_06adf2b091dc62::t_249643d6e1257b 1-94
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isNegatedIntent.ts
+  s_06adf2b091dc62::t_9425ed1e9ba4f2 1-12
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/maskProjectReferences.ts
+  s_06adf2b091dc62::t_b2212197b96593 1-109
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/maskQuotedLabels.ts
+  s_06adf2b091dc62::t_955cc25647bdc7 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f3e155f7e7a32d8cf80a5769d22b0bd4e18cfed1",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
