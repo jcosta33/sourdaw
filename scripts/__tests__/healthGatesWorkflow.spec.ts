@@ -334,6 +334,14 @@ const PATHS_FILTER_ACTION = 'dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec37
 const PATHS_FILTER_FIRST_ATTEMPT_STEP = 'Filter changed paths';
 const PATHS_FILTER_RETRY_STEP = 'Retry changed-paths filter after a transient API failure';
 const PATHS_FILTER_RETRY_CONDITION = "steps.filter.outcome == 'failure'";
+// The split's two gate scripts must stay claimed by the decide scopes. The
+// rust filter's claim of the server script dates from the combined gate; the
+// split added the rust script beside it. A gate script no scope claims is
+// invisible to the classifier — `unclassified` subtracts `scripts/**` — so a
+// pull request touching only that script resolves rust=false and the changed
+// crate gate first meets a real toolchain on the nightly, after merge.
+const SERVER_GATE_SCRIPT = 'scripts/health-gates-server.sh';
+const RUST_GATE_SCRIPT = 'scripts/health-gates-rust.sh';
 const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['RUST', 'rust'],
     ['SERVER', 'server'],
@@ -579,14 +587,35 @@ function assertScopeContract(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
-function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+function scopeFilterPatterns(candidate: UnknownRecord, scope: string): string[] {
     const filterStep = stepNamed(jobAt(candidate, 'decide'), 'Filter changed paths');
     const options = recordAt(filterStep, 'with');
     if (options['predicate-quantifier'] !== 'some-with-excludes') {
         throw new Error('path filters must subtract negated patterns instead of matching on any one of them');
     }
     const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'path filters');
-    return arrayAt(filters, 'unclassified').map(String);
+    return arrayAt(filters, scope).map(String);
+}
+
+function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+    return scopeFilterPatterns(candidate, 'unclassified');
+}
+
+// A gate script no decide scope claims is invisible to the classifier, so a
+// pull request whose diff touches only the Rust gate resolves rust=false, the
+// PR-side rust job skips, and the changed crate gate is first exercised by
+// the nightly after merge. Both claims are exact literal paths, so the match
+// needs no glob semantics to prove. The retry step duplicates the first
+// attempt's filters verbatim (pinned in assertDecideFilterRetryContract), so
+// one claim here covers both filter steps.
+function assertGateScriptScopeClaims(candidate: UnknownRecord): void {
+    const rustPatterns = scopeFilterPatterns(candidate, 'rust');
+    if (!rustPatterns.includes(RUST_GATE_SCRIPT) || !rustPatterns.includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the rust scope must claim the rust and collaboration server gate scripts');
+    }
+    if (!scopeFilterPatterns(candidate, 'server').includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the server scope must claim the collaboration server gate script');
+    }
 }
 
 function assertUnclassifiedFallback(candidate: UnknownRecord): void {
@@ -2087,6 +2116,7 @@ describe('health gates workflow contract', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         expect(() => assertUnclassifiedFallback(validationWorkflow)).not.toThrow();
         expect(() => assertProseSkippingJobs(validationWorkflow)).not.toThrow();
+        expect(() => assertGateScriptScopeClaims(validationWorkflow)).not.toThrow();
 
         expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
             heavy: 'false',
@@ -2130,6 +2160,20 @@ describe('health gates workflow contract', () => {
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
         delete jobAt(alwaysLinting, 'lint').if;
         expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
+
+        // Mutation-kill: the split's rust gate script dropping out of the rust
+        // scope re-opens the unclaimed-script hole — a pull request touching
+        // only that script resolves rust=false, because `unclassified`
+        // subtracts `scripts/**`, and skips every cargo leg.
+        const unclaimedRustGate = asRecord(structuredClone(validationWorkflow), 'unclaimed rust gate script');
+        const unclaimedFilterStep = stepNamed(jobAt(unclaimedRustGate, 'decide'), PATHS_FILTER_FIRST_ATTEMPT_STEP);
+        recordAt(unclaimedFilterStep, 'with').filters = stringAt(
+            recordAt(unclaimedFilterStep, 'with'),
+            'filters'
+        ).replace(`  - '${RUST_GATE_SCRIPT}'\n`, '');
+        expect(() => assertGateScriptScopeClaims(unclaimedRustGate)).toThrow(
+            'the rust scope must claim the rust and collaboration server gate scripts'
+        );
     });
 
     it('retries a transient changed-paths API failure and refuses to resolve an empty verdict', () => {

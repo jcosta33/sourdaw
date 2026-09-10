@@ -92,6 +92,7 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
+              - 'scripts/health-gates-rust.sh'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
@@ -167,6 +168,7 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
+              - 'scripts/health-gates-rust.sh'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
