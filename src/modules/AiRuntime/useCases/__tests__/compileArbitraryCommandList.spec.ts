@@ -4914,28 +4914,25 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    const filterDeviceType = {
+        id: 'builtin-filter',
+        name: 'Filter',
+        parameters: [
+            {
+                id: 'filter-type',
+                name: 'Type',
+                type: 'choice' as const,
+                value: 0,
+                minValue: 0,
+                maxValue: 3,
+                unit: '',
+                choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+            },
+        ],
+    };
+
     it('accepts a newly created bound device as a setDeviceParameter target', () => {
-        const deviceContext: ProjectContext = {
-            ...context,
-            availableDeviceTypes: [
-                {
-                    id: 'builtin-filter',
-                    name: 'Filter',
-                    parameters: [
-                        {
-                            id: 'filter-type',
-                            name: 'Type',
-                            type: 'choice',
-                            value: 0,
-                            minValue: 0,
-                            maxValue: 3,
-                            unit: '',
-                            choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
-                        },
-                    ],
-                },
-            ],
-        };
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
         const result = compileArbitraryCommandList({
             context: deviceContext,
             revision: 'revision-created-device-parameter',
@@ -5093,6 +5090,60 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(unknownParameter).toMatchObject({ status: 'rejected' });
         expect(JSON.stringify(unknownParameter)).not.toMatch(/(?:track|device)-ai-/u);
+    });
+
+    const selectorBoundDeviceItems = (exactly: number, where: Record<string, string>) => [
+        {
+            id: 'add-radio',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-filter', binding: 'radio' },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where,
+                quantity: { unit: 'targets', exactly },
+            },
+        },
+        {
+            id: 'set-radio-type',
+            name: 'setDeviceParameter',
+            arguments: { deviceId: '$radio', paramId: 'filter-type', value: 1 },
+            dependsOn: ['add-radio'],
+        },
+    ];
+
+    it('binds a device a selector places on one existing track and configures it from that binding', () => {
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
+
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-selector-bound-device',
+            calls: [creationProposal(selectorBoundDeviceItems(1, { name: 'Kick' }), ['track-kick'])],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'addDevice', arguments: { deviceType: 'builtin-filter', binding: 'radio', trackId: 'track-kick' } },
+            { name: 'setDeviceParameter', arguments: { deviceId: '$radio', paramId: 'filter-type', value: 1 } },
+        ]);
+    });
+
+    it('refuses a bound device whose selector covers more than one existing track', () => {
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
+
+        expect(
+            compileArbitraryCommandList({
+                context: deviceContext,
+                revision: 'revision-selector-bound-device',
+                calls: [creationProposal(selectorBoundDeviceItems(2, { kind: 'audio' }), ['track-kick', 'track-hat'])],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Batch-local binding producer is not one bounded creation item.',
+        });
     });
 
     it.each([

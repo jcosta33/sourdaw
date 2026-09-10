@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { type CreativeRequestAuthority } from '../../../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
+import { compileArbitraryCommandList } from '../../compileArbitraryCommandList';
 import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
 
 const RADIO_PROMPT = 'make it sound like a radio';
@@ -194,6 +195,79 @@ const addRadioFilter: ToolCallResult = {
     name: 'addDevice',
     arguments: { trackId: 'guitar', deviceType: 'radio-filter' },
 };
+
+/** A request whose creation evidence opens the plan-created object route for the whole batch. */
+const BAND_PROMPT = 'create a blues song with a full band';
+
+const PROJECT_REVISION = 'revision-1';
+
+/** The slot the interpretation catalog publishes for tracks a batch creates under its own authority. */
+const TRACK_CREATION_SLOT = { objectType: 'track', parentObjectId: null, budget: 4 } as const;
+
+/** What the authority answers to a command that rearranges a project it was admitted to process. */
+const ARRANGEMENT_REFUSAL_REASON = 'Creative authority does not cover the arrangement edit dimension';
+
+/** A plan carrying the objective and scope the compiler needs before it emits bridge evidence. */
+const bandPlan = {
+    semantic: { classification: 'complex', uncertainty: [] },
+    objective: 'Lay out the tracks a full band needs, all of them created by this batch.',
+    constraints: ['Leave every object the project already holds unchanged.'],
+    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    capabilityIds: [],
+    assetIds: [],
+    alternatives: [],
+    validationStrategy: ['Validate that every created track carries the name its item declared.'],
+    stoppingConditions: ['Stop if a track cannot be created.'],
+};
+
+const BAND_TRACK_NAMES = ['Blues Drums', 'Blues Bass', 'Blues Rhythm', 'Blues Lead', 'Blues Keys'];
+
+/** Bound `addTrack` items with distinct names, which is what the plan-created route admits. */
+function addTrackItems(count: number): Record<string, unknown>[] {
+    return BAND_TRACK_NAMES.slice(0, count).map((name, index) => ({
+        id: `make-${String(index)}`,
+        name: 'addTrack',
+        arguments: { name, kind: 'midi', binding: `band-${String(index)}` },
+    }));
+}
+
+/**
+ * Compiles a bound-creation proposal under a create-mode authority and grounds it, so the batch the
+ * bridge reads is the one the compiler actually produced for that authority rather than a hand-built
+ * command list the evidence would refuse.
+ */
+function bridgeBandProposal(input: { creationSlots: CreativeRequestAuthority['creationSlots']; itemCount: number }) {
+    const creativeAuthority = buildAuthority({
+        mode: 'create',
+        targets: [],
+        creationSlots: input.creationSlots,
+    });
+    const compiled = compileArbitraryCommandList({
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: { plan: bandPlan, list: { schemaVersion: 1, items: addTrackItems(input.itemCount) } },
+            },
+        ],
+        context,
+        creativeAuthority,
+        revision: PROJECT_REVISION,
+    });
+    if (compiled.status === 'rejected') {
+        throw new TypeError(compiled.reason);
+    }
+    if (compiled.compilerEvidence === undefined) {
+        throw new TypeError('Expected the compiled proposal to carry bridge evidence');
+    }
+    return bridgeGroundedLlmToolCalls({
+        calls: compiled.compilerEvidence.commands,
+        compilerEvidence: compiled.compilerEvidence,
+        context,
+        creativeAuthority,
+        projectRevision: PROJECT_REVISION,
+        prompt: BAND_PROMPT,
+    });
+}
 
 describe('creative authority grounding in the tool-call bridge', () => {
     it('refuses a device the request never named when the run carries no authority', () => {
@@ -684,6 +758,40 @@ describe('creative authority grounding in the tool-call bridge', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toMatch(/^Creative authority /u);
+    });
+
+    it('grounds every plan-created track inside the budget the authority published', () => {
+        const result = bridgeBandProposal({ creationSlots: [TRACK_CREATION_SLOT], itemCount: 4 });
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addTrack', 'addTrack', 'addTrack']);
+    });
+
+    /**
+     * The batch declares batch-local bindings, so one refusal takes the whole proposal down rather
+     * than committing the four tracks that fit and dropping the fifth on the musician's behalf.
+     */
+    it('refuses the plan-created track past the published budget and the batch that carried it', () => {
+        const result = bridgeBandProposal({ creationSlots: [TRACK_CREATION_SLOT], itemCount: 5 });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { index: 4, name: 'addTrack', reason: 'Creative authority has spent its track creation budget of 4' },
+        ]);
+    });
+
+    it('refuses every plan-created track when the authority published no track creation slot', () => {
+        const result = bridgeBandProposal({
+            creationSlots: [{ objectType: 'device', parentObjectId: 'guitar', budget: 4 }],
+            itemCount: 3,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { index: 0, name: 'addTrack', reason: ARRANGEMENT_REFUSAL_REASON },
+            { index: 1, name: 'addTrack', reason: ARRANGEMENT_REFUSAL_REASON },
+            { index: 2, name: 'addTrack', reason: ARRANGEMENT_REFUSAL_REASON },
+        ]);
     });
 
     it('leaves a creative call standing when a cue in the same prompt withdraws a different planned action', () => {

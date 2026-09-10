@@ -1,4 +1,5 @@
 import {
+    getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
@@ -45,6 +46,7 @@ import {
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
+import { getSpentCreationBudgetReason } from './creativeAuthorityReasons';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
     getBassProcessingCopyPromptScope,
@@ -124,6 +126,10 @@ type GroundToolCallInput = {
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
+    /** How the admitted creative authority read the request, when the run has one. */
+    creativeAuthorityMode?: CreativeRequestAuthority['mode'];
+    /** What the admitted creative authority published for tracks this batch creates, when it has one. */
+    creativeAuthorityTrackCreationBudget?: number;
     declaredBatchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
@@ -3233,6 +3239,61 @@ function resolvePlanCreatedObjectAdmission({
     return { status: 'admitted' };
 }
 
+/**
+ * The objects a plan-created call may leave behind while riding the ordinary creation route under an
+ * authority. Each hangs inside a track the same batch creates, so the published track slot the ride
+ * spends already answers for it; a `bus` and every other object stand outside that slot.
+ */
+const TRACK_SLOT_COVERED_CREATIONS: ReadonlySet<string> = new Set(['clip', 'notes', 'device']);
+
+function getCreatedObjectTypes(actionName: string): readonly string[] {
+    return getExecutableAppActionEffect(actionName)?.creates ?? [];
+}
+
+function countPlannedTrackCreations(plannedCreations: readonly ToolCallResult[]): number {
+    return plannedCreations.filter((planned) => getCreatedObjectTypes(planned.name).includes('track')).length;
+}
+
+/**
+ * What the authority published for tracks the batch creates itself: the summed budget of its
+ * null-parent track slots. `null` says the run carries no authority at all, and `0` says the
+ * admitted one published no such slot.
+ */
+function getAuthorityTrackCreationBudget(authority: CreativeRequestAuthority | undefined): number | null {
+    if (authority === undefined) {
+        return null;
+    }
+    return authority.creationSlots.reduce(
+        (total, slot) => (slot.objectType === 'track' && slot.parentObjectId === null ? total + slot.budget : total),
+        0
+    );
+}
+
+/**
+ * Whether a call the plan-created route admitted may still take that ordinary creation route after
+ * the creative authority refused it. The authority's published track slot is what bounds the ride:
+ * it is the record's own statement about tracks this batch creates, and a batch may not put more of
+ * them in front of the musician than the admitted interpretation published.
+ */
+function resolvePlanCreatedRideAlong(input: {
+    createdObjectTypes: readonly string[];
+    creativeReason: string;
+    plannedTrackCreationCount: number;
+    trackCreationBudget: number;
+}): { status: 'rides' } | { status: 'refused'; reason: string } {
+    if (input.trackCreationBudget === 0) {
+        return { status: 'refused', reason: input.creativeReason };
+    }
+    if (input.createdObjectTypes.includes('track')) {
+        return input.plannedTrackCreationCount < input.trackCreationBudget
+            ? { status: 'rides' }
+            : { status: 'refused', reason: getSpentCreationBudgetReason('track', input.trackCreationBudget) };
+    }
+    return input.createdObjectTypes.every((objectType) => TRACK_SLOT_COVERED_CREATIONS.has(objectType))
+        ? { status: 'rides' }
+        : { status: 'refused', reason: input.creativeReason };
+}
+
 function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
@@ -3241,6 +3302,8 @@ function groundToolCall({
     catalog,
     context,
     creativeAdmission,
+    creativeAuthorityMode,
+    creativeAuthorityTrackCreationBudget,
     declaredBatchLocalCreationBindings,
     declaredBindingsByCallIndex,
     index,
@@ -3276,9 +3339,25 @@ function groundToolCall({
     }
     // One route, one switch. Every prompt-evidence rule below asks the request for vocabulary
     // describing an object it never named, so on this route they are all unsatisfiable together.
+    // Precedence between the two routes: a call the plan-created route admitted rides that ordinary
+    // creation route, but only as far as the authority's published null-parent track slot reaches,
+    // because that slot is what the record says about the tracks this batch creates. The creative
+    // authority governs every other call outright, and a read-only one governs them all: it read the
+    // request as asking for nothing to change, so it refuses every writing command on either route.
     const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
     if (creativeAdmission?.status === 'rejected') {
-        return rejection(index, call.name, creativeAdmission.reason);
+        if (!admitsPlanCreatedObject || creativeAuthorityMode === 'read-only') {
+            return rejection(index, call.name, creativeAdmission.reason);
+        }
+        const rideAlong = resolvePlanCreatedRideAlong({
+            createdObjectTypes: getCreatedObjectTypes(call.name),
+            creativeReason: creativeAdmission.reason,
+            plannedTrackCreationCount: countPlannedTrackCreations(visiblePlannedTrackCreations),
+            trackCreationBudget: creativeAuthorityTrackCreationBudget ?? 0,
+        });
+        if (rideAlong.status === 'refused') {
+            return rejection(index, call.name, rideAlong.reason);
+        }
     }
     /**
      * The same trade on the creative route: the admitted authority already decided this command's
@@ -4428,6 +4507,7 @@ export function bridgeGroundedLlmToolCalls({
         creativeAuthority === undefined
             ? undefined
             : admitCreativeCommandBatch({ authority: creativeAuthority, calls: effectiveCalls, context });
+    const creativeAuthorityTrackCreationBudget = getAuthorityTrackCreationBudget(creativeAuthority);
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
     const acceptedGroundedCalls: ToolCallResult[] = [];
@@ -4458,6 +4538,8 @@ export function bridgeGroundedLlmToolCalls({
                 catalog,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
+                ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),
+                ...(creativeAuthorityTrackCreationBudget === null ? {} : { creativeAuthorityTrackCreationBudget }),
                 declaredBatchLocalCreationBindings: collectedBindings.bindingsByName,
                 declaredBindingsByCallIndex: collectedBindings.bindingsByCallIndex,
                 index,
