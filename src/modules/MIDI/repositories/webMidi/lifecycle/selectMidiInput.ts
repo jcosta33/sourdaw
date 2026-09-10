@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getNativeMode } from '../getNativeMode';
+import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../selectedInputIdStorageKeys';
 import { setState } from '../setState';
 
 import { attachInput } from './helpers';
@@ -33,7 +34,7 @@ async function openNativePort({ deviceId, onMidiMessage }: SelectMidiInputInput)
         }
 
         await selectMidiInputNative({ portIndex: port.portIndex, portName: port.name, onMidiMessage });
-        setState({ selectedInputId: deviceId });
+        setState({ selectedInputId: deviceId }, { persistSelection: true, identityScheme: NATIVE_IDENTITY_SCHEME });
     } catch (error: unknown) {
         logger.warn('[MIDI] Failed to open MIDI input:', error);
     }
@@ -56,5 +57,5 @@ export function selectMidiInput({ deviceId, onMidiMessage }: SelectMidiInputInpu
     }
 
     attachInput({ input, onMidiMessage });
-    setState({ selectedInputId: deviceId });
+    setState({ selectedInputId: deviceId }, { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME });
 }
