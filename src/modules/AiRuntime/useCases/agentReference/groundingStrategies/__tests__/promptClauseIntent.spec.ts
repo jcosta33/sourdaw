@@ -91,4 +91,23 @@ describe('hasTrailingIntentCancellation', () => {
     it('does not attribute the cancellation to an unrelated planned action', () => {
         expect(hasTrailingIntentCancellation(prompt, 'setTempo', catalog, plannedActionNames)).toBe(false);
     });
+
+    it('attributes a cancellation to the nearest preceding intent clause, not the farthest', () => {
+        const twoClausePrompt = 'set tempo to 130, then glue MIDI Intro and MIDI Verse clips, then cancel that command';
+
+        expect(hasTrailingIntentCancellation(twoClausePrompt, 'glueClips', catalog, ['glueClips', 'setTempo'])).toBe(
+            true
+        );
+        expect(hasTrailingIntentCancellation(twoClausePrompt, 'setTempo', catalog, ['glueClips', 'setTempo'])).toBe(
+            false
+        );
+    });
+
+    it('does not attribute a cancellation cue that precedes every intent clause', () => {
+        const cueBeforeIntentPrompt = 'cancel that command, then glue MIDI Intro and MIDI Verse clips';
+
+        expect(
+            hasTrailingIntentCancellation(cueBeforeIntentPrompt, 'glueClips', catalog, ['glueClips', 'setTempo'])
+        ).toBe(false);
+    });
 });

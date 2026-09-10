@@ -6,6 +6,8 @@ import {
     createPostScopeAdmissionStrategyRegistry,
     postScopeAdmissionActionNames,
     type PostScopeAdmissionActionName,
+    type PostScopeAdmissionInput,
+    type PostScopeAdmissionResult,
     type PostScopeAdmissionStrategy,
     type PostScopeAdmissionStrategyDefinition,
 } from './createPostScopeAdmissionStrategyRegistry';
@@ -229,9 +231,31 @@ export const postScopeAdmissionStrategyDefinitions = [
     { name: 'setPlayback', transform: setPlaybackStrategy },
 ] satisfies readonly PostScopeAdmissionStrategyDefinition<PostScopeAdmissionActionName>[];
 
-export const postScopeAdmissionStrategies: ReadonlyMap<string, PostScopeAdmissionStrategy> =
-    createPostScopeAdmissionStrategyRegistry<PostScopeAdmissionActionName>(
-        postScopeAdmissionStrategyDefinitions,
-        getExecutableAppActionGroundingCatalog(),
-        postScopeAdmissionActionNames
-    );
+const postScopeAdmissionStrategyRegistry = createPostScopeAdmissionStrategyRegistry<PostScopeAdmissionActionName>(
+    postScopeAdmissionStrategyDefinitions,
+    getExecutableAppActionGroundingCatalog(),
+    postScopeAdmissionActionNames
+);
+
+function isPostScopeActionName(actionName: string): actionName is PostScopeAdmissionActionName {
+    return postScopeAdmissionActionNames.some((expectedActionName) => expectedActionName === actionName);
+}
+
+export function groundPostScopeAdmission(input: PostScopeAdmissionInput): PostScopeAdmissionResult {
+    if (!isPostScopeActionName(input.actionName)) {
+        return null;
+    }
+    const strategy = postScopeAdmissionStrategyRegistry.get(input.actionName);
+    if (!strategy) {
+        throw new Error(`Missing post-scope admission strategy: ${input.actionName}`);
+    }
+    return strategy({
+        actionScope: input.actionScope,
+        admitsPlanCreatedObject: input.admitsPlanCreatedObject,
+        catalog: input.catalog,
+        context: input.context,
+        plannedActionNames: input.plannedActionNames,
+        prompt: input.prompt,
+        sameActionCallCount: input.sameActionCallCount,
+    });
+}

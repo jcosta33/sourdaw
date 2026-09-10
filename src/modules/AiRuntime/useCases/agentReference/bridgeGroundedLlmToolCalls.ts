@@ -89,7 +89,7 @@ import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
-import { postScopeAdmissionStrategies } from './groundingStrategies/postScopeAdmissionStrategy';
+import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
@@ -3318,16 +3318,16 @@ function groundToolCall({
     if (clipRenameCarrier?.kind === 'invalid') {
         return rejection(index, call.name, 'Provider clip rename source is not grounded or ambiguous');
     }
-    const postScopeRejection =
-        postScopeAdmissionStrategies.get(call.name)?.({
-            actionScope,
-            admitsPlanCreatedObject,
-            catalog,
-            context,
-            plannedActionNames,
-            prompt,
-            sameActionCallCount,
-        }) ?? null;
+    const postScopeRejection = groundPostScopeAdmission({
+        actionName: call.name,
+        actionScope,
+        admitsPlanCreatedObject,
+        catalog,
+        context,
+        plannedActionNames,
+        prompt,
+        sameActionCallCount,
+    });
     if (postScopeRejection !== null) {
         return rejection(index, call.name, postScopeRejection);
     }

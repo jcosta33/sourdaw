@@ -8,7 +8,7 @@ import {
     postScopeAdmissionActionNames,
     type PostScopeAdmissionActionName,
 } from '../createPostScopeAdmissionStrategyRegistry';
-import { postScopeAdmissionStrategies, postScopeAdmissionStrategyDefinitions } from '../postScopeAdmissionStrategy';
+import { groundPostScopeAdmission, postScopeAdmissionStrategyDefinitions } from '../postScopeAdmissionStrategy';
 import { type ActionPromptScope } from '../promptScope';
 
 const catalog = getExecutableAppActionGroundingCatalog();
@@ -158,10 +158,9 @@ describe('post-scope admission strategies', () => {
     });
 
     it('grounds moveClip only against exactly one explicit absolute beat per clause', () => {
-        const moveClipStrategy = postScopeAdmissionStrategies.get('moveClip')!;
-
         expect(
-            moveClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'moveClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -173,7 +172,8 @@ describe('post-scope admission strategies', () => {
         ).toBeNull();
 
         expect(
-            moveClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'moveClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -186,10 +186,9 @@ describe('post-scope admission strategies', () => {
     });
 
     it('grounds splitClip only against exactly one explicit absolute beat per clause', () => {
-        const splitClipStrategy = postScopeAdmissionStrategies.get('splitClip')!;
-
         expect(
-            splitClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'splitClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -201,7 +200,8 @@ describe('post-scope admission strategies', () => {
         ).toBeNull();
 
         expect(
-            splitClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'splitClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -214,11 +214,11 @@ describe('post-scope admission strategies', () => {
     });
 
     it('grounds addClip against prompt evidence unless the batch already admits the plan-created object', () => {
-        const addClipStrategy = postScopeAdmissionStrategies.get('addClip')!;
         const prompt = 'create a MIDI clip on Keys from beat 8 to beat 16';
 
         expect(
-            addClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'addClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -230,7 +230,8 @@ describe('post-scope admission strategies', () => {
         ).toBe('Provider clip creation requires one exact explicit beat range per clip');
 
         expect(
-            addClipStrategy({
+            groundPostScopeAdmission({
+                actionName: 'addClip',
                 actionScope: unusedActionScope(),
                 admitsPlanCreatedObject: true,
                 catalog,
@@ -243,10 +244,9 @@ describe('post-scope admission strategies', () => {
     });
 
     it('grounds setPlayback only against an explicit playback request', () => {
-        const setPlaybackStrategy = postScopeAdmissionStrategies.get('setPlayback')!;
-
         expect(
-            setPlaybackStrategy({
+            groundPostScopeAdmission({
+                actionName: 'setPlayback',
                 actionScope: buildActionScope('play'),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -258,7 +258,8 @@ describe('post-scope admission strategies', () => {
         ).toBeNull();
 
         expect(
-            setPlaybackStrategy({
+            groundPostScopeAdmission({
+                actionName: 'setPlayback',
                 actionScope: buildActionScope('toggle playback'),
                 admitsPlanCreatedObject: false,
                 catalog,
@@ -268,5 +269,20 @@ describe('post-scope admission strategies', () => {
                 sameActionCallCount: 1,
             })
         ).toBe('Provider action is not grounded in an explicit playback request');
+    });
+
+    it('returns null for an action outside the post-scope family', () => {
+        expect(
+            groundPostScopeAdmission({
+                actionName: 'setTempo',
+                actionScope: unusedActionScope(),
+                admitsPlanCreatedObject: false,
+                catalog,
+                context: clipContext,
+                plannedActionNames: ['setTempo'],
+                prompt: 'set tempo to 130',
+                sameActionCallCount: 1,
+            })
+        ).toBeNull();
     });
 });
