@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isExplicitCommandClause.ts
+  s_06adf2b091dc62::t_b5c2b607539dc6 1-31
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getCancellationCues.ts
+  s_06adf2b091dc62::t_7b26a9fe0f4262 1-16
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getIntentPhraseIndex.ts
+  s_06adf2b091dc62::t_f164d776cdf676 1-6
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasTrailingIntentCancellation.ts
+  s_06adf2b091dc62::t_8b8ecf4c420ddd 1-22
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isGenericDeviceIntent.ts
+  s_06adf2b091dc62::t_9357b1bb6eccbe 1-7
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/resolveClauseActionIntent.ts
+  s_06adf2b091dc62::t_4147f7a01d2821 1-71
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_0bbf5b2aeac8eb 3321-3324,3329-3332
+  s_06adf2b091dc62::t_c60ad0d4ea45e3 77,79-80,82,85,97
+  s_06adf2b091dc62::t_bdadb8473be343 92
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postScopeAdmissionStrategy.spec.ts
+  s_06adf2b091dc62::t_fbdf577dd407a6 1-272
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getReferencedCancellationAction.ts
+  s_06adf2b091dc62::t_7d12e5ef79f3e5 1-31
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createPostScopeAdmissionStrategyRegistry.ts
+  s_06adf2b091dc62::t_67054f4cc917cb 1
+  s_06adf2b091dc62::t_fcd761be775a5c 2-50
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getNearestIntentAction.ts
+  s_06adf2b091dc62::t_57869b5477dc9f 1-24
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postScopeAdmissionStrategy.ts
+  s_06adf2b091dc62::t_7bd00e0fc2086a 19
+  s_06adf2b091dc62::t_9a1672e21cd708 1-18,20-165,182-237
+  s_06adf2b091dc62::t_56b1fadfbf7c56 166-181
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/promptClauseIntent.spec.ts
+  s_06adf2b091dc62::t_161a9171b18bb8 1-5,7,9-89
+  s_06adf2b091dc62::t_da50844684d0a3 6,8
+  s_06adf2b091dc62::t_2c498711862ec5 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9fc18a509e95f2fb526a219de759b8a9a49af0e1",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
