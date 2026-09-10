@@ -1,0 +1,33 @@
+src/modules/AudioEngine/models/__tests__/glutenDspParamNames.spec.ts
+  s_9b530f08172a54::t_e9dcb1dedad42e 1-50
+src/modules/AudioEngine/models/GlutenDspParamNames.ts
+  s_9b530f08172a54::t_8ffaee6738c9b6 1-78
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_d676ad2ffa1daf 27,30,287,299,311,328,959,975,1005-1020,1029,1508-1597,1628-1631,4780-4782,5807-5810,5813-5833,7449-7541,15098-15324
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_be88f8b612c0a6 1866-1869,1879-1881,2044-2049,2071-2080,10547-10720
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_9b530f08172a54::t_e020d72d8963bf 212-217
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_9b530f08172a54::t_fde3824e39b945 10,183-186
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_dd8c218790739b 26,121,138,248-292
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_6a16b6aa7ebd4a 42,83-84,88-89,93-102,104-105,139,143-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "014e71b9f2faa7dd62e034f9efbd6d28a360b406",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
