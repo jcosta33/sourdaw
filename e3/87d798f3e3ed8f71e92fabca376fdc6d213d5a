@@ -1,0 +1,58 @@
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_4f258d6148d214 307
+  s_9b530f08172a54::t_537d74724611b0 318
+  s_9b530f08172a54::t_6831b76f05cf8b 70,79
+  s_9b530f08172a54::t_921009d69058a6 254-273
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_97d128161cd60b 2197-2209
+  s_9b530f08172a54::t_373815d8fe60d5 2226-2227
+  s_9b530f08172a54::t_d460719f6357ed 2228-2229
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_c039370a7702ef 263-265,276-298
+  s_9b530f08172a54::t_ec53c1fd7a9aec 299-301
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readSessionProgramme.spec.ts
+  s_9b530f08172a54::t_fc37d15f2e086c 1-138,140-162
+  s_9b530f08172a54::t_3e665bc9d3852b 139
+src/modules/AudioEngine/useCases/livePlayback/__tests__/engineHostedStripIds.spec.ts
+  s_9b530f08172a54::t_6ebce190f3b276 78-81,86-108
+  s_9b530f08172a54::t_bbade9aa1e5831 109
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getCompensationDelay.spec.ts
+  s_9b530f08172a54::t_714d35e3f6b3ed 117-118
+  s_9b530f08172a54::t_58c56042ac2978 144,147-149,154-235
+  s_9b530f08172a54::t_05dd04cbb86122 37,40
+  s_9b530f08172a54::t_5b33085370d4e2 236
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency.ts
+  s_9b530f08172a54::t_244ae687eff35d 13-22
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_58777b87fe863b 204-205
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_964ba25eacc395 959-961
+  s_9b530f08172a54::t_f6f30c4d5acea7 126
+  s_9b530f08172a54::t_5ec37feee5d830 833-838
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/deepestHostedLatencyMs.ts
+  s_9b530f08172a54::t_072fb263bbd937 1-38
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay.ts
+  s_9b530f08172a54::t_c3d900248206e8 1,9-21,28-32,34-38
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getMaxTrackLatency.ts
+  s_9b530f08172a54::t_5cf61d3b67677e 5,13
+src/modules/AudioEngine/useCases/livePlayback/engineHostedStripIds.ts
+  s_9b530f08172a54::t_13a3bb42a145c4 2-3,6-17,32-34,37-38
+src/modules/AudioEngine/useCases/livePlayback/readSessionProgramme.ts
+  s_9b530f08172a54::t_8607d73e00abc4 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e387d798f3e3ed8f71e92fabca376fdc6d213d5a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
