@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_f6d7e26ad3613b::t_0673417bf092ff 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a12cc571e316ddac3e5c8861d2cc1a7ea9233cb8",
+  "prompts": {},
+  "sessions": {
+    "s_f6d7e26ad3613b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aab2199af573aa631",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
