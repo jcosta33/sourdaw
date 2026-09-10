@@ -2546,7 +2546,7 @@ const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = [
 type DeviceParameterDirectionDevice = ProjectContext['tracks'][number]['devices'][number];
 type DeviceParameterDirectionParameter = NonNullable<DeviceParameterDirectionDevice['parameters']>[number];
 
-function clauseNamesToken(clause: PromptClauseSpan, tokens: readonly string[]): boolean {
+function clauseNamesToken(clause: PromptClause, tokens: readonly string[]): boolean {
     const normalizedClause = ` ${normalizePromptText(clause.text)} `;
     return tokens.some((token) => token.length > 0 && normalizedClause.includes(` ${token} `));
 }
@@ -2560,7 +2560,7 @@ function selectDeviceParameterDirectionClauses(
     actionScope: ActionPromptScope,
     parameter: DeviceParameterDirectionParameter,
     device: DeviceParameterDirectionDevice
-): readonly PromptClauseSpan[] {
+): readonly PromptClause[] {
     const clauses = getPromptClauses(actionScope.text, actionScope.masked);
     const parameterTokens = [normalizePromptText(parameter.id), normalizePromptText(parameter.name)];
     const parameterClauses = clauses.filter((clause) => clauseNamesToken(clause, parameterTokens));
