@@ -1,0 +1,14 @@
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  h_1228e573df1f42 78,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "776cc14d08209f6298ba0568bf99e67e4fd37126",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
