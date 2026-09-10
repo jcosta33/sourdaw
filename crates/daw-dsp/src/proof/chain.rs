@@ -9,13 +9,14 @@ use super::dynamic_eq::DynamicEq;
 use super::eq::MasteringEq;
 use super::exciter::HarmonicExciter;
 use super::imager::StereoImager;
-use super::limiter::LookaheadLimiter;
+use super::limiter::{lookahead_samples_for, LookaheadLimiter, MAX_LOOKAHEAD_MS};
 use super::linear_phase_eq::LinearPhaseEq;
 use super::match_eq::MatchEq;
 use super::metering::{
     IntegratedLufs, LoudnessRange, MeterTap, MomentaryLufs, ShortTermLufs, TruePeakDetector,
 };
 use super::multiband::MultibandDynamics;
+use std::collections::VecDeque;
 
 /// Module identifier for the reorderable chain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -36,6 +37,17 @@ const NUM_TAPS: usize = NUM_MODULES + 1;
 /// engine never trusts its caller to have checked.
 pub(super) const MIN_CHAIN_GAIN_DB: f32 = -24.0;
 pub(super) const MAX_CHAIN_GAIN_DB: f32 = 24.0;
+
+/// Largest delay [`LinearPhaseEq`] can report: half of its fixed 2048-tap
+/// FIR. Mirrored here because the tap count is private to `linear_phase_eq`,
+/// and pinned against the live figure by
+/// `latency_contract_tests::the_dry_line_covers_the_largest_reportable_latency`.
+///
+/// Only `rebuild` puts the FIR in the path and it has no production caller, so
+/// this term is unreachable in shipped audio today. The dry line is sized for
+/// it anyway: the reported latency is what the line has to match, and the day a
+/// caller designs the FIR is not the day to discover the line is too short.
+const MAX_LINEAR_PHASE_LATENCY_SAMPLES: usize = 1_024;
 
 /// Unity trim, in dB — the fallback for a value that is not finite.
 pub(super) const DEFAULT_CHAIN_GAIN_DB: f32 = 0.0;
@@ -91,6 +103,20 @@ pub struct ProofChain {
     ab_bypass: bool,
     ab_gain_offset: f32, // dB offset applied when in A (bypass) mode
 
+    /// The chain's own input, delayed by [`Self::latency_samples`].
+    ///
+    /// The A/B compare returns the dry signal while the host is still
+    /// compensating for the delay the processed path imposes, so an undelayed
+    /// dry block plays one look-ahead early against the rest of the mix. The
+    /// line is fed on every block in every mode, so engaging the compare
+    /// mid-roll has no gap to fill.
+    dry_l: VecDeque<f32>,
+    dry_r: VecDeque<f32>,
+    /// Delay both dry lines have room for, fixed at construction so
+    /// [`Self::align_dry_line`] never reaches the allocator on the render
+    /// thread.
+    max_dry_samples: usize,
+
     /// Latch: set while the input loudness meter has already been cleared for
     /// the current run of non-finite input. See [`Self::meter_input_sample`].
     input_meter_cleared: bool,
@@ -100,7 +126,12 @@ pub struct ProofChain {
 
 impl ProofChain {
     pub fn new(sr: f64) -> Self {
-        Self {
+        // Room for the longest look-ahead the limiter can select plus the
+        // linear-phase FIR's group delay, taken once here so `align_dry_line`
+        // only ever moves a logical length inside capacity already held.
+        let max_dry_samples =
+            lookahead_samples_for(MAX_LOOKAHEAD_MS, sr as f32) + MAX_LINEAR_PHASE_LATENCY_SAMPLES;
+        let mut chain = Self {
             eq: MasteringEq::new(sr),
             linear_eq: LinearPhaseEq::new(sr),
             eq_linear_phase: false,
@@ -130,9 +161,40 @@ impl ProofChain {
             bypassed: false,
             ab_bypass: false,
             ab_gain_offset: 0.0,
+            dry_l: VecDeque::with_capacity(max_dry_samples + 1),
+            dry_r: VecDeque::with_capacity(max_dry_samples + 1),
+            max_dry_samples,
             input_meter_cleared: false,
             output_meter_cleared: false,
+        };
+        chain.align_dry_line();
+        chain
+    }
+
+    /// Hold the dry line at the delay this chain reports.
+    ///
+    /// `lim_lookahead` moves that figure while the render thread is running, so
+    /// the length is checked once per block. Both lines were built in `new`
+    /// with room for the largest figure the chain can report, so `resize` only
+    /// moves a logical length inside capacity already held — the discipline
+    /// `LookaheadLimiter::set_param` keeps for its own delay lines.
+    fn align_dry_line(&mut self) {
+        let target = self.latency_samples().min(self.max_dry_samples);
+        if self.dry_l.len() != target {
+            self.dry_l.resize(target, 0.0);
+            self.dry_r.resize(target, 0.0);
         }
+    }
+
+    /// Take one stereo sample into the dry line and return the one leaving it.
+    #[inline]
+    fn push_dry(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.dry_l.push_back(l);
+        self.dry_r.push_back(r);
+        (
+            self.dry_l.pop_front().unwrap_or(l),
+            self.dry_r.pop_front().unwrap_or(r),
+        )
     }
 
     /// Feed one sample to the input loudness meter, clearing the meter instead
@@ -259,16 +321,27 @@ impl ProofChain {
             self.meter_input_sample(left[i], right[i]);
         }
 
-        // A/B comparison: auto gain-match the dry signal to the processed level
+        self.align_dry_line();
+
+        // A/B comparison: auto gain-match the dry signal to the processed
+        // level, and hand it back at the delay this chain reports rather than
+        // ahead of it.
         if self.ab_bypass {
             let ab_gain = 10.0_f32.powf(self.ab_gain_offset / 20.0);
             for i in 0..left.len() {
-                left[i] *= ab_gain;
-                right[i] *= ab_gain;
+                let (delayed_l, delayed_r) = self.push_dry(left[i], right[i]);
+                left[i] = delayed_l * ab_gain;
+                right[i] = delayed_r * ab_gain;
                 self.meter_output_sample(left[i], right[i]);
                 self.true_peak.process_sample(left[i], right[i]);
             }
             return;
+        }
+
+        // Keep the line fed in every other mode too, so engaging the compare
+        // mid-roll reads a full look-ahead of real audio instead of silence.
+        for i in 0..left.len() {
+            self.push_dry(left[i], right[i]);
         }
 
         if self.bypassed {
@@ -396,11 +469,21 @@ mod gain_range_tests {
         chain
     }
 
-    fn render_one_block(chain: &mut ProofChain) -> f32 {
-        let mut left = [INPUT_LEVEL; 8];
-        let mut right = [INPUT_LEVEL; 8];
-        chain.process(&mut left, &mut right);
-        left[0]
+    /// Render past the delay the chain reports, then read a settled sample.
+    ///
+    /// A bypassed limiter still runs its look-ahead delay line, so the blocks
+    /// right after construction carry the silence that line was built with; the
+    /// trim under test only shows once they are through.
+    fn render_settled_sample(chain: &mut ProofChain) -> f32 {
+        const BLOCK: usize = 8;
+        let mut settled = 0.0;
+        for _ in 0..chain.latency_samples() / BLOCK + 2 {
+            let mut left = [INPUT_LEVEL; BLOCK];
+            let mut right = [INPUT_LEVEL; BLOCK];
+            chain.process(&mut left, &mut right);
+            settled = left[0];
+        }
+        settled
     }
 
     #[test]
@@ -408,7 +491,7 @@ mod gain_range_tests {
         for name in ["input_gain", "output_gain"] {
             let mut chain = trim_only_chain();
             chain.set_param(name, f32::MAX);
-            let out = render_one_block(&mut chain);
+            let out = render_settled_sample(&mut chain);
 
             assert!(
                 out.is_finite(),
@@ -430,7 +513,7 @@ mod gain_range_tests {
         for name in ["input_gain", "output_gain"] {
             let mut chain = trim_only_chain();
             chain.set_param(name, -f32::MAX);
-            let out = render_one_block(&mut chain);
+            let out = render_settled_sample(&mut chain);
 
             let expected = INPUT_LEVEL * linear(MIN_CHAIN_GAIN_DB);
             assert!(
@@ -448,7 +531,7 @@ mod gain_range_tests {
         for name in ["input_gain", "output_gain"] {
             let mut chain = trim_only_chain();
             chain.set_param(name, f32::NAN);
-            let out = render_one_block(&mut chain);
+            let out = render_settled_sample(&mut chain);
 
             assert!(
                 (out - INPUT_LEVEL).abs() <= INPUT_LEVEL * 1e-6,
@@ -464,7 +547,7 @@ mod gain_range_tests {
         for db in [-18.0_f32, -6.0, 0.0, 6.0, 18.0] {
             let mut chain = trim_only_chain();
             chain.set_param("input_gain", db);
-            let out = render_one_block(&mut chain);
+            let out = render_settled_sample(&mut chain);
 
             let expected = INPUT_LEVEL * linear(db);
             assert!(
@@ -493,7 +576,7 @@ mod latency_contract_tests {
 
     use super::super::biquad::BiquadCoeffs;
     use super::super::linear_phase_eq::LinearPhaseEqBand;
-    use super::ProofChain;
+    use super::{ProofChain, MAX_LINEAR_PHASE_LATENCY_SAMPLES};
     use assert_no_alloc::assert_no_alloc;
 
     const SR: f64 = 48_000.0;
@@ -575,6 +658,139 @@ mod latency_contract_tests {
         assert!(
             long > short,
             "a 10 ms look-ahead ({long}) must delay more than a 1 ms one ({short})"
+        );
+    }
+
+    #[test]
+    fn a_bypassed_limiter_still_imposes_the_delay_it_reports() {
+        // `process` used to return the block untouched while `lim_bypass` was
+        // on, but `latency_samples()` kept answering the look-ahead. The host
+        // compensated 240 frames the path no longer imposed, so switching the
+        // limiter off pulled the strip about 5 ms ahead of the rest of the mix.
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("lim_bypass", 1.0);
+
+        let measured = measured_pure_delay(&mut chain);
+        assert_eq!(
+            chain.latency_samples(),
+            measured,
+            "Proof must not report latency the signal path does not impose \
+             (pre-fix this read 240 against a measured 0)"
+        );
+    }
+
+    #[test]
+    fn the_ab_compare_returns_the_dry_signal_at_the_reported_delay() {
+        // Same defect one layer up: the A/B compare returned the gain-matched
+        // dry signal undelayed while the chain went on reporting the limiter's
+        // look-ahead, so holding the compare pulled the strip early too.
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("ab_bypass", 1.0);
+
+        let measured = measured_pure_delay(&mut chain);
+        assert_eq!(
+            chain.latency_samples(),
+            measured,
+            "the A/B compare must delay the dry signal by the figure the chain \
+             reports (pre-fix this read 240 against a measured 0)"
+        );
+    }
+
+    #[test]
+    fn the_ab_dry_line_follows_a_look_ahead_change() {
+        // The reported figure is live: `lim_lookahead` moves it from under the
+        // render thread, and the dry line has to move with it or the compare
+        // is misaligned instead of merely late.
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("lim_lookahead", 10.0);
+        chain.set_param("ab_bypass", 1.0);
+
+        assert_eq!(chain.latency_samples(), 480, "10 ms at 48 kHz");
+        let measured = measured_pure_delay(&mut chain);
+        assert_eq!(
+            chain.latency_samples(),
+            measured,
+            "the dry line did not follow the look-ahead to its new figure"
+        );
+    }
+
+    #[test]
+    fn the_dry_line_covers_the_largest_reportable_latency() {
+        // The line is sized once in `new`, from the limiter's longest
+        // look-ahead plus a FIR delay mirrored out of `linear_phase_eq`, whose
+        // tap count is private there. A short mirror would clamp the line and
+        // misalign the compare, so measure the chain at both terms at maximum.
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("lim_lookahead", 10.0);
+        chain.linear_eq.rebuild(&flat_bands());
+        chain.set_param("ab_bypass", 1.0);
+
+        assert_eq!(
+            chain.latency_samples(),
+            480 + MAX_LINEAR_PHASE_LATENCY_SAMPLES,
+            "the mirrored FIR delay no longer matches the one the EQ reports"
+        );
+        let measured = measured_pure_delay(&mut chain);
+        assert_eq!(
+            chain.latency_samples(),
+            measured,
+            "the dry line clamped short of the largest figure the chain reports"
+        );
+    }
+
+    #[test]
+    fn un_bypassing_the_limiter_holds_the_ceiling() {
+        // A bypassed limiter keeps its peak window fed, so the first
+        // un-bypassed sample already knows the peaks of the delayed material
+        // about to leave the delay line. Left stale, the window sees only the
+        // samples arriving after the un-bypass and lets up to one look-ahead of
+        // hot material out above the ceiling.
+        const TONE_HZ: f64 = 50.0;
+        const AMPLITUDE: f32 = 0.95;
+        // 3840 samples is a whole number of both 128-sample blocks and 960-
+        // sample tone periods, so the un-bypass lands on a zero crossing while
+        // the sample leaving the 5 ms line sits on the tone's peak — the moment
+        // the two readings differ most.
+        const BYPASSED_BLOCKS: usize = 30;
+        const LIMITING_BLOCKS: usize = 20;
+
+        let ceiling = 10.0_f32.powf(-1.0 / 20.0);
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("eq_bypass", 1.0);
+        chain.set_param("lim_ceiling", -1.0);
+        chain.set_param("lim_bypass", 1.0);
+
+        let mut worst = 0.0f32;
+        for block in 0..BYPASSED_BLOCKS + LIMITING_BLOCKS {
+            if block == BYPASSED_BLOCKS {
+                chain.set_param("lim_bypass", 0.0);
+            }
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for i in 0..BLOCK {
+                let n = (block * BLOCK + i) as f64;
+                let s = AMPLITUDE * (2.0 * core::f64::consts::PI * TONE_HZ * n / SR).sin() as f32;
+                left[i] = s;
+                right[i] = s;
+            }
+            chain.process(&mut left, &mut right);
+            if block >= BYPASSED_BLOCKS {
+                for &s in left.iter().chain(right.iter()) {
+                    worst = worst.max(s.abs());
+                }
+            }
+        }
+
+        assert!(
+            worst <= ceiling + 1e-3,
+            "the un-bypassed blocks peaked at {worst:.6} against a {ceiling:.6} \
+             ceiling — the look-ahead window went stale while the limiter was \
+             bypassed"
         );
     }
 
