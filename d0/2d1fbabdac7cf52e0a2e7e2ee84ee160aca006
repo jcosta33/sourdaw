@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts
+  s_06adf2b091dc62::t_0611da8e3ef22a 122,130-131,148-159,161-172,175-178
+  s_06adf2b091dc62::t_e2b3b950fc01bf 13-14
+  s_06adf2b091dc62::t_126ec55527cb5b 103-107
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocolFixture.ts
+  s_06adf2b091dc62::t_b5343a948f53b3 1-88
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_06adf2b091dc62::t_0d3599f6290c3a 3,12
+  s_06adf2b091dc62::t_c38313b5bd8b25 244
+  s_06adf2b091dc62::t_1c2ca7b0a36f90 278-280
+src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts
+  s_06adf2b091dc62::t_c84c7a184b0689 61
+  s_06adf2b091dc62::t_1c9238cb89e6ea 204
+  s_06adf2b091dc62::t_b87c6be79c6cdf 162
+  s_06adf2b091dc62::t_157d5df51ba421 190
+  s_06adf2b091dc62::t_d55a2080967a82 3,8,10,64,69-78,88,97,106,115,129,153,159-161,167,174,184,193,196-198,208-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d02d1fbabdac7cf52e0a2e7e2ee84ee160aca006",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
