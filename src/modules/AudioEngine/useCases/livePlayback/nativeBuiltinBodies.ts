@@ -233,19 +233,23 @@ function isBacteriaControlThreadOnly(paramId: string): boolean {
  * still running a body it believes is switched out.
  *
  * `ab_bypass` is deliberately not here. It is runtime-only in the project —
- * `setProofParam` refuses to persist it, so it never reaches a saved device row
- * — but it is a chain control all the same: the panel's A/B compare returns the
- * gain-matched dry signal from the head of the chain, and a compare pressed
- * while the session rolls natively has to be audible on the carrier that is
- * sounding. Withholding it would leave the chip reading "A / dry" over the
- * processed mix.
+ * `setProofParam` has refused to persist it since 11563e86b (2026-08-16), so a
+ * row saved after that commit never carries it — but it is a chain control all
+ * the same: the panel's A/B compare returns the gain-matched dry signal from
+ * the head of the chain, and a compare pressed while the session rolls
+ * natively has to be audible on the carrier that is sounding. Withholding it
+ * would leave the chip reading "A / dry" over the processed mix.
  *
- * Unlike [BACTERIA_CONTROL_THREAD_ONLY], this is dropped on the control thread
- * too — `ProofBody::load_patch` routes a persisted record through the same
- * `set_param` the audio thread uses — so a record carrying it leaves the chain
- * exactly as it found it. It stays in [projectPatch] all the same: the record is
- * the mapper's, and the mapper reads a device's bypass from the record's own
- * `bypassed` field rather than from a parameter.
+ * Unlike [BACTERIA_CONTROL_THREAD_ONLY], this is not dropped on the control
+ * thread — a live `set_param` still forwards it, because the arm it engages
+ * there is a session gesture, not a saved value. A row saved before
+ * 11563e86b can still carry `ab_bypass: 1`; `ProofBody::load_patch`
+ * (`crates/daw-engine/src/scheduler.rs`) refuses that one name at the record
+ * door with its own constant (`PROOF_RECORD_REFUSED`) rather than through this
+ * one, so an old record cannot map the body dry against the panel's default.
+ * It stays in [projectPatch] all the same: the record is the mapper's, and the
+ * mapper reads a device's bypass from the record's own `bypassed` field rather
+ * than from a parameter.
  */
 const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
 
@@ -426,7 +430,10 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * `nativeBuiltinWriteTarget`), reaches the native door regardless,
              * and is dropped there by `ProofBody::set_param`. `ab_bypass` is not
              * that name: the panel's compare reaches the chain on whichever
-             * carrier is sounding, and the project never persists it.
+             * carrier is sounding, and the project has not persisted it since
+             * 11563e86b (2026-08-16) — an older row that still carries it is
+             * refused only where a saved record loads
+             * (`ProofBody::load_patch`'s `PROOF_RECORD_REFUSED`), not here.
              *
              * The limiter's look-ahead is a real group delay, and the native
              * engine compensates it itself: the mapper declares the figure at

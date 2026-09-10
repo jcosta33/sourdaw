@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { persistDevicePatch } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
@@ -37,11 +37,66 @@ function makeBridge(): MockedProofBridge {
     };
 }
 
+function makeTrackState(
+    deviceId: string,
+    parameterValues: Record<string, number>
+): NonNullable<ReturnType<typeof getTrackStoreState>> {
+    return {
+        tracks: [
+            {
+                id: 'track-1',
+                name: 'Master',
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#ffffff',
+                clips: [],
+                devices: [
+                    {
+                        id: deviceId,
+                        name: 'Proof',
+                        type: 'proof',
+                        bypassed: false,
+                        parameterValues,
+                    },
+                ],
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'auto',
+                hidden: false,
+                disabled: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: 'track-1-alt-default',
+                alternatives: [{ id: 'track-1-alt-default', name: 'Alternative 1', clips: [] }],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            },
+        ],
+        selectedTrackId: 'track-1',
+        ghostClips: [],
+    };
+}
+
 describe('setProofParamWithPatch', () => {
     beforeEach(() => {
         bridges.clear();
         proofStore.set({});
         vi.clearAllMocks();
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
         vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
             status: 'eligible',
             trackId: 'track-1',
@@ -352,6 +407,21 @@ describe('setProofParamWithPatch', () => {
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'no-bridge', 'output_gain', 5);
     });
 
+    // Before registration a natively carried body already holds the persisted
+    // record; the store must still hydrate from it, but the engine may hear
+    // only this edit, not the ~118-write full sync a restorable row used to
+    // trigger on every gesture ahead of the worklet's own registration.
+    it('hydrates the store from a restorable row without a full sync before bridge registration', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState('dev-1', { input_gain: 3.5 }));
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'outputGain', value: 5 });
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'output_gain', 5);
+        expect(getProofState('dev-1').patch.inputGain).toBe(3.5);
+        expect(getProofState('dev-1').patch.outputGain).toBe(5);
+    });
+
     it.each(['missing', 'ineligible'] as const)(
         'rejects a %s owner before patch, persistence, or engine effects',
         (status) => {
@@ -561,5 +631,14 @@ describe('setProofParamWithPatch', () => {
         expect(getProofState('dev-1').patch.dynBands[1]?.bypassed).toBe(true);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band0_auto_makeup', 0);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band1_bypass', 1);
+    });
+
+    it('sends nothing through the device door when a scalar edit repeats the current value', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: DEFAULT_PATCH.limCeiling });
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 });

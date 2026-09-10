@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofPatchParameterValues } from '../../../services/getProofPatchParameterValues';
@@ -113,6 +113,75 @@ const SPARSE_AGGREGATES: Array<[name: string, key: FixedAggregateKey, index: num
     ['exciter bands', 'excBands', 1],
 ];
 
+// The exact name set `syncFullPatch` must reach through the device door on
+// the default patch's own band counts (8 EQ bands, 4 dynamics bands, 4
+// exciter bands, a fixed 4-wide imager). Spelled as literal names rather than
+// derived from `DEFAULT_PATCH` or the sync helpers under test, so a helper
+// that silently drops a send (as `lim_lookahead` did) cannot also shrink the
+// set it is checked against.
+const FULL_SYNC_SCALAR_NAMES = [
+    'ab_bypass',
+    'input_gain',
+    'output_gain',
+    'eq_bypass',
+    'dyn_bypass',
+    'img_bypass',
+    'exc_bypass',
+    'lim_bypass',
+    'lim_ceiling',
+    'lim_release',
+    'lim_lookahead',
+    'dither_mode',
+    'dither_bits',
+];
+
+const FULL_SYNC_EQ_BAND_NAMES = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((i) => [
+    `eq_band${i}_freq`,
+    `eq_band${i}_gain`,
+    `eq_band${i}_q`,
+    `eq_band${i}_type`,
+    `eq_band${i}_channel`,
+    `eq_band${i}_enabled`,
+]);
+
+const FULL_SYNC_DYN_XOVER_NAMES = ['dyn_xover0', 'dyn_xover1', 'dyn_xover2'];
+
+const FULL_SYNC_DYN_BAND_NAMES = [0, 1, 2, 3].flatMap((i) => [
+    `dyn_band${i}_threshold`,
+    `dyn_band${i}_ratio`,
+    `dyn_band${i}_attack`,
+    `dyn_band${i}_release`,
+    `dyn_band${i}_knee`,
+    `dyn_band${i}_makeup`,
+    `dyn_band${i}_auto_makeup`,
+    `dyn_band${i}_bypass`,
+]);
+
+const FULL_SYNC_IMAGER_NAMES = [
+    'img_width0',
+    'img_width1',
+    'img_width2',
+    'img_width3',
+    'img_auto_mono_bass',
+    'img_mono_bass_freq',
+];
+
+const FULL_SYNC_EXC_BAND_NAMES = [0, 1, 2, 3].flatMap((i) => [
+    `exc_band${i}_type`,
+    `exc_band${i}_drive`,
+    `exc_band${i}_blend`,
+    `exc_band${i}_enabled`,
+]);
+
+const FULL_SYNC_PARAM_NAMES = new Set([
+    ...FULL_SYNC_SCALAR_NAMES,
+    ...FULL_SYNC_EQ_BAND_NAMES,
+    ...FULL_SYNC_DYN_XOVER_NAMES,
+    ...FULL_SYNC_DYN_BAND_NAMES,
+    ...FULL_SYNC_IMAGER_NAMES,
+    ...FULL_SYNC_EXC_BAND_NAMES,
+]);
+
 describe('loadProofPatchWithAudio', () => {
     beforeEach(() => {
         bridges.clear();
@@ -164,6 +233,30 @@ describe('loadProofPatchWithAudio', () => {
             })
         );
         expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
+    });
+
+    // The full sync's contract is the exact name set it reaches the device
+    // door with, not merely that a handful of representative names arrived.
+    // A dropped send (deleting the `lim_lookahead` line, say) shrinks the set
+    // this compares against without touching any of the individual-name
+    // assertions elsewhere in this file.
+    it('sends exactly the full-sync parameter name set and one chain-order patch', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+
+        syncFullPatch(DEVICE_ID);
+
+        const sentNames = new Set(vi.mocked(updateDeviceParam).mock.calls.map(([, , name]) => name));
+        expect(sentNames).toEqual(FULL_SYNC_PARAM_NAMES);
+
+        expect(updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(updateDevicePatch).toHaveBeenCalledWith('track-1', DEVICE_ID, {
+            chain_order_0: DEFAULT_PATCH.chainOrder[0],
+            chain_order_1: DEFAULT_PATCH.chainOrder[1],
+            chain_order_2: DEFAULT_PATCH.chainOrder[2],
+            chain_order_3: DEFAULT_PATCH.chainOrder[3],
+            chain_order_4: DEFAULT_PATCH.chainOrder[4],
+        });
     });
 
     it('rejects an invalid full patch before any write', () => {

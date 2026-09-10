@@ -2439,15 +2439,20 @@ const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 /// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
 /// compare, which `ProofChain::process` answers by returning the dry signal
 /// scaled by the loudness offset it has been tracking
-/// (`crates/daw-dsp/src/proof/chain.rs`). The project never persists it —
+/// (`crates/daw-dsp/src/proof/chain.rs`). It is a chain control all the same,
+/// and a compare pressed while the session rolls natively is a gesture on the
+/// carrier that is sounding. Dropping it here would leave the panel's chip
+/// reading "A / dry" over the processed mix. The gain offset the compare is
+/// matched with is the chain's own: it opens at 0 dB and the chain re-derives
+/// it from its meters on every pass it processes, so this body gain-matches
+/// out of the same state the web twin does, whatever reads the meters
+/// afterwards.
+///
+/// The project has not persisted it since 11563e86b (2026-08-16) —
 /// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
-/// of the saved device row — but it is a chain control all the same, and a
-/// compare pressed while the session rolls natively is a gesture on the carrier
-/// that is sounding. Dropping it here would leave the panel's chip reading
-/// "A / dry" over the processed mix. The gain offset the compare is matched
-/// with is the chain's own: it opens at 0 dB and the chain re-derives it from
-/// its meters on every pass it processes, so this body gain-matches out of the
-/// same state the web twin does, whatever reads the meters afterwards.
+/// of the saved device row — but a row saved before that commit can still
+/// carry it. [`PROOF_RECORD_REFUSED`] is what refuses that name at the record
+/// door; this constant governs only the live arm.
 ///
 /// The name is dropped on the control thread too, unlike
 /// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
@@ -2455,6 +2460,22 @@ const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 /// persisted record carrying it leaves the chain exactly where the graph's own
 /// bypass put it.
 const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
+
+/// The Proof parameter name a persisted patch record must not carry, refused
+/// only at the record door in [`ProofBody::load_patch`]. A live
+/// [`ProofBody::set_param`] still forwards it: the arm it engages there is a
+/// session gesture, not a saved value, and [`PROOF_GRAPH_OWNED`]'s doc is what
+/// explains why that arm is not dropped on the live path.
+///
+/// `ab_bypass` is the mastering panel's A/B compare. Before 11563e86b
+/// (2026-08-16) the panel persisted it into the device row like any other
+/// control; that commit stopped the persistence, but a project saved before it
+/// can still carry `ab_bypass: 1`. Feeding that value through `load_patch`
+/// would engage the compare and map the body dry for the whole session while
+/// the panel chip and the web twin read wet. Refusing the name at the door a
+/// saved record crosses leaves a natively carried body opening on the runtime
+/// default (inactive), exactly like a project that never had the field.
+const PROOF_RECORD_REFUSED: &[&str] = &["ab_bypass"];
 
 /// Modules [`ProofChain`] reorders: Eq, Dynamics, Imager, Exciter, Limiter.
 ///
@@ -2680,12 +2701,16 @@ impl ProofBody {
     /// Apply a whole patch, on the control thread, before this body crosses the
     /// command ring.
     ///
-    /// Every entry lands through [`Self::set_param`], the same door a live write
-    /// arrives at, so the five `chain_order_{n}` keys a record carries reach the
-    /// order the same way one written mid-session does — and a record's `bypass`
-    /// is dropped here exactly as a live write of it is. Unlike
-    /// [`BacteriaBody::load_patch`] there is no name this thread may run and the
-    /// audio thread may not, so there is no reason to reach past that door.
+    /// A name in [`PROOF_RECORD_REFUSED`] is refused before it reaches
+    /// [`Self::set_param`] at all: a record is allowed to carry a value the
+    /// live arm would still accept, because the record predates the commit
+    /// that stopped saving it. Every other entry lands through
+    /// [`Self::set_param`], the same door a live write arrives at, so the five
+    /// `chain_order_{n}` keys a record carries reach the order the same way
+    /// one written mid-session does — and a record's `bypass` is dropped there
+    /// exactly as a live write of it is. Unlike [`BacteriaBody::load_patch`]
+    /// there is no name this thread may run and the audio thread may not, so
+    /// there is no reason to reach past that door.
     ///
     /// Ordered through [`precedence_first`] and
     /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
@@ -2698,6 +2723,9 @@ impl ProofBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Proof.patch_precedence(),
         ) {
+            if PROOF_RECORD_REFUSED.contains(&name.as_str()) {
+                continue;
+            }
             self.set_param(name.as_str(), value);
         }
     }
@@ -19134,6 +19162,55 @@ mod timeline_tests {
         assert_ne!(
             wet_render, material,
             "releasing the A/B compare left the body still returning its input"
+        );
+    }
+
+    /// [`PROOF_RECORD_REFUSED`] refuses `ab_bypass` only at the record door
+    /// [`ProofBody::load_patch`] crosses; a live [`ProofBody::set_param`]
+    /// still takes the same name.
+    ///
+    /// The engaged fixture is what makes a refused load distinguishable from
+    /// a forwarded one: if `load_patch` had not refused the name, `loaded`'s
+    /// first render would return the dry input unchanged (the A/B compare
+    /// answers before any module runs, so a body that has never processed a
+    /// block returns its input untouched), and the first assertion below
+    /// would fail.
+    ///
+    /// The live write is proven on a second body built the same way — through
+    /// `proof_body`, which is `load_patch` again — rather than by reusing
+    /// `loaded` after its first render: `ProofChain::process` re-derives the
+    /// A/B gain offset from `input_lufs`/`output_lufs` on every processed
+    /// pass, and those momentary meters have no warm-up gate the way the
+    /// integrated reading does, so `loaded`'s offset is no longer the 0 dB it
+    /// opens at once it has rendered a real block. `live` never processes
+    /// before the compare engages, so its render is the exact dry input
+    /// rather than the input scaled by whatever offset a prior pass left.
+    #[test]
+    fn a_proof_body_refuses_a_persisted_ab_bypass_but_a_live_write_still_engages_it() {
+        const FRAMES: usize = 4096;
+
+        let material = proof_burst_material(FRAMES);
+        let record: Vec<(&str, f32)> = PROOF_SHELF_INTO_CEILING
+            .iter()
+            .copied()
+            .chain(std::iter::once(("ab_bypass", 1.0)))
+            .collect();
+
+        let mut loaded = proof_body(&record);
+        let loaded_render = proof_render(&mut loaded, &material);
+
+        assert_ne!(
+            loaded_render, material,
+            "a persisted ab_bypass reached the chain through load_patch, mapping the body dry"
+        );
+
+        let mut live = proof_body(PROOF_SHELF_INTO_CEILING);
+        live.set_param("ab_bypass", 1.0);
+        let live_render = proof_render(&mut live, &material);
+
+        assert_eq!(
+            live_render, material,
+            "a live set_param on a load_patch-built body did not engage the A/B compare"
         );
     }
 
