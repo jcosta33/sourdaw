@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_06adf2b091dc62::t_70b851888abb01 529-537
+  s_06adf2b091dc62::t_47f0fef2cb018d 745-750,758-762,764
+  s_06adf2b091dc62::t_177f1632d378f4 401
+  s_06adf2b091dc62::t_e3d5951d25a42c 56-59,62-63,65-66,68-69
+  s_06adf2b091dc62::t_3c54d05cfa0338 715-720,728-738
+  s_06adf2b091dc62::t_8d973db745c9bb 5-6,10-17,20
+  s_06adf2b091dc62::t_7197311ffb95be 441
+  s_06adf2b091dc62::t_6852e79a762ac9 394-400,402,406-411,422,424-440,442-498
+  s_06adf2b091dc62::t_706cb55eb7118e 679-686
+  s_06adf2b091dc62::t_4d90f0053f2157 558-564
+  s_06adf2b091dc62::t_42220c9f8575af 34
+  s_06adf2b091dc62::t_1e43e27404626c 412-421,423
+  s_06adf2b091dc62::t_e023c41bee35ba 569-570
+  s_06adf2b091dc62::t_b3f56990efbfb0 403-405
+  s_06adf2b091dc62::t_35fd116671f378 671-678,687-714,721-727,739-744,751-757,763,765-766
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_f25a456bc9c3e4 127-128
+  s_06adf2b091dc62::t_0c89cbc3ba4bf0 3288
+  s_06adf2b091dc62::t_a71be9b4536d47 3246
+  s_06adf2b091dc62::t_11c31116b5026e 3282-3286,3289
+  s_06adf2b091dc62::t_68762b147f879a 4470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9c14ab9468af0c4b68b19cb05129224e1d0e97a1",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
