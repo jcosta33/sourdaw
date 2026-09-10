@@ -74,21 +74,27 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
+import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
-import { getMoveBeatAssertions } from './groundingStrategies/getMoveBeatAssertions';
+import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex';
+import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
+import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
+import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
 import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
@@ -528,178 +534,6 @@ function stripBatchLocalBinding(call: ToolCallResult): ToolCallResult {
     const args = { ...call.arguments };
     delete args.binding;
     return { ...call, arguments: args };
-}
-
-type ClauseActionIntent = {
-    actionType: string;
-    index: number;
-    phrase: string;
-};
-
-function getIntentPhraseIndex(text: string, intentPhrase: string): number {
-    const normalizedText = ` ${normalizePromptText(text)} `;
-    return normalizedText.indexOf(` ${normalizePromptText(intentPhrase)} `);
-}
-
-type CancellationCue = {
-    index: number;
-    text: string;
-};
-
-function getCancellationCues(text: string): CancellationCue[] {
-    const patterns = [
-        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
-        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
-        /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
-        /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
-    ];
-    return patterns.flatMap((pattern) =>
-        [...text.matchAll(pattern)].map((match) => ({ index: match.index, text: match[0] }))
-    );
-}
-
-function getReferencedCancellationAction(cue: CancellationCue, catalog: GroundingCatalog): string | null {
-    const matches = catalog
-        .flatMap((entry) =>
-            entry.intentPhrases
-                .filter((phrase) => !isGenericDeviceIntent(phrase) && getIntentPhraseIndex(cue.text, phrase) >= 0)
-                .map((phrase) => ({ actionType: entry.actionType, phrase }))
-        )
-        .sort((left, right) => normalizePromptText(right.phrase).length - normalizePromptText(left.phrase).length);
-    const first = matches[0];
-    const second = matches[1];
-    if (!first) {
-        return null;
-    }
-    if (
-        second &&
-        normalizePromptText(second.phrase).length === normalizePromptText(first.phrase).length &&
-        second.actionType !== first.actionType
-    ) {
-        return null;
-    }
-    return first.actionType;
-}
-
-function getNearestIntentAction(
-    text: string,
-    catalog: GroundingCatalog,
-    beforeIndex: number,
-    plannedActionNames: readonly string[]
-): string | null {
-    const prefix = text.slice(0, beforeIndex);
-    const plannedCatalog = catalog.filter((entry) => plannedActionNames.includes(entry.actionType));
-    let actionType: string | null = null;
-    for (const clause of getPromptClauses(prefix, prefix)) {
-        const intent = resolveClauseActionIntent(clause.masked, plannedCatalog);
-        if (intent) {
-            actionType = intent.actionType;
-        }
-    }
-    return actionType;
-}
-
-function hasTrailingIntentCancellation(
-    text: string,
-    actionName: string,
-    catalog: GroundingCatalog,
-    plannedActionNames: readonly string[]
-): boolean {
-    const searchableText = text.toLocaleLowerCase();
-    return getCancellationCues(searchableText).some((cue) => {
-        const referencedAction = getReferencedCancellationAction(cue, catalog);
-        const cancelledAction =
-            referencedAction ?? getNearestIntentAction(searchableText, catalog, cue.index, plannedActionNames);
-        return cancelledAction === actionName;
-    });
-}
-
-const genericDeviceIntentPhrases: ReadonlySet<string> = new Set(['adjust', 'change', 'decrease', 'increase', 'set']);
-
-function isGenericDeviceIntent(phrase: string): boolean {
-    return genericDeviceIntentPhrases.has(normalizePromptText(phrase));
-}
-
-function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog): boolean {
-    let commandSource = maskedText.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
-    if (/^["'“”‘’]/u.test(commandSource)) {
-        return false;
-    }
-    const commandText = normalizePromptText(commandSource);
-    if (commandText.startsWith('make ')) {
-        return true;
-    }
-    return catalog.some((entry) =>
-        entry.intentPhrases.some((phrase) => {
-            const normalizedPhrase = normalizePromptText(phrase);
-            if (commandText === normalizedPhrase) {
-                return true;
-            }
-            if (!commandText.startsWith(`${normalizedPhrase} `)) {
-                return false;
-            }
-            const suffix = commandText.slice(normalizedPhrase.length).trim();
-            return !/^(?:is|means|seems|sounds|was|were)\b/u.test(suffix);
-        })
-    );
-}
-
-function resolveClauseActionIntent(
-    maskedText: string,
-    catalog: GroundingCatalog,
-    expectedActionType?: string
-): ClauseActionIntent | null {
-    if (!isExplicitCommandClause(maskedText, catalog)) {
-        return null;
-    }
-    const matches = catalog
-        .flatMap((entry) =>
-            entry.intentPhrases.map((phrase) => ({
-                actionType: entry.actionType,
-                index: getIntentPhraseIndex(maskedText, phrase),
-                phrase,
-            }))
-        )
-        .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase))
-        .sort((left, right) => {
-            const genericDifference =
-                Number(isGenericDeviceIntent(left.phrase)) - Number(isGenericDeviceIntent(right.phrase));
-            if (genericDifference !== 0) {
-                return genericDifference;
-            }
-            if (left.index !== right.index) {
-                return left.index - right.index;
-            }
-            return normalizePromptText(right.phrase).length - normalizePromptText(left.phrase).length;
-        });
-    const first = matches[0];
-    if (!first) {
-        return null;
-    }
-    const second = matches[1];
-    if (
-        second &&
-        second.index === first.index &&
-        normalizePromptText(second.phrase).length === normalizePromptText(first.phrase).length &&
-        second.actionType !== first.actionType
-    ) {
-        const normalizedPhrase = normalizePromptText(first.phrase);
-        if (expectedActionType && (normalizedPhrase === 'delete' || normalizedPhrase === 'remove')) {
-            const expectedMatch = matches.find(
-                (match) =>
-                    match.index === first.index &&
-                    normalizePromptText(match.phrase).length === normalizedPhrase.length &&
-                    match.actionType === expectedActionType
-            );
-            if (expectedMatch) {
-                return expectedMatch;
-            }
-        }
-        return null;
-    }
-    return first;
 }
 
 function restoreClipRenameIntentCarrier(prompt: string, maskedPrompt: string): string {
@@ -1883,141 +1717,6 @@ function hasExactGlueClipPair(assertedClipIds: unknown, expectedClipIds: [string
     return assertedIds.size === 2 && expectedClipIds.every((clipId) => assertedIds.has(clipId));
 }
 
-function hasExactlyOneMoveBeatAssertion(actionScope: string): boolean {
-    const assertions = getMoveBeatAssertions(actionScope);
-    if (assertions.length !== 1) {
-        return false;
-    }
-    return assertions.every((assertion) => {
-        const rawValue = assertion[1];
-        if (!rawValue || rawValue.endsWith('%')) {
-            return false;
-        }
-        const suffix = actionScope.slice(assertion.index + assertion[0].length);
-        return !/^\s*(?:bars?|beats?|seconds?|secs?|minutes?|mins?|%)/iu.test(suffix);
-    });
-}
-
-function hasGroundedMoveBeatAssertions({
-    catalog,
-    context,
-    expectedMoveCount,
-    plannedActionNames,
-    prompt,
-}: {
-    catalog: GroundingCatalog;
-    context: ProjectContext;
-    expectedMoveCount: number;
-    plannedActionNames: readonly string[];
-    prompt: string;
-}): boolean {
-    const maskedPrompt = maskProjectReferences(prompt, context);
-    let moveClauseCount = 0;
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
-        const assertions = getMoveBeatAssertions(clause.text);
-        if (assertions.length === 0) {
-            continue;
-        }
-        const intent = resolveClauseActionIntent(clause.masked, catalog);
-        if (intent?.actionType === 'moveClip') {
-            if (!hasExactlyOneMoveBeatAssertion(clause.text)) {
-                return false;
-            }
-            moveClauseCount += 1;
-            continue;
-        }
-        if (!intent || !plannedActionNames.includes(intent.actionType)) {
-            return false;
-        }
-    }
-    return moveClauseCount === expectedMoveCount;
-}
-
-function hasGroundedSplitBeatAssertions({
-    catalog,
-    context,
-    expectedSplitCount,
-    plannedActionNames,
-    prompt,
-}: {
-    catalog: GroundingCatalog;
-    context: ProjectContext;
-    expectedSplitCount: number;
-    plannedActionNames: readonly string[];
-    prompt: string;
-}): boolean {
-    const maskedPrompt = maskProjectReferences(prompt, context);
-    let splitClauseCount = 0;
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
-        const assertions = getMoveBeatAssertions(clause.text);
-        const unmaskedNumbers = clause.masked.match(
-            /(?<![\p{L}\p{N}_.])-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?(?![\p{L}\p{N}_.])/gu
-        );
-        const intent = resolveClauseActionIntent(clause.masked, catalog);
-        if (assertions.length === 0) {
-            if ((unmaskedNumbers?.length ?? 0) > 0 && (!intent || intent.actionType === 'splitClip')) {
-                return false;
-            }
-            continue;
-        }
-        if (intent?.actionType === 'splitClip') {
-            if (!hasExactlyOneMoveBeatAssertion(clause.text)) {
-                return false;
-            }
-            if (unmaskedNumbers?.length !== 1) {
-                return false;
-            }
-            splitClauseCount += 1;
-            continue;
-        }
-        if (!intent || !plannedActionNames.includes(intent.actionType)) {
-            return false;
-        }
-    }
-    return splitClauseCount === expectedSplitCount;
-}
-
-function hasGroundedAddClipAssertions({
-    catalog,
-    context,
-    expectedAddClipCount,
-    plannedActionNames,
-    prompt,
-}: {
-    catalog: GroundingCatalog;
-    context: ProjectContext;
-    expectedAddClipCount: number;
-    plannedActionNames: readonly string[];
-    prompt: string;
-}): boolean {
-    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
-    let addClipClauseCount = 0;
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
-        const intent = resolveClauseActionIntent(clause.masked, catalog);
-        if (intent?.actionType === 'addClip') {
-            const actionScope: ActionPromptScope = {
-                ...clause,
-                directional: false,
-                matchedIntentPhrase: intent.phrase,
-            };
-            if (!getAddClipPromptEvidence(actionScope)) {
-                return false;
-            }
-            addClipClauseCount += 1;
-            continue;
-        }
-        const unquotedClause = maskQuotedLabels(clause.masked);
-        const hasNumericOrBeatAssertion = /\d|\b(?:beats?|bars?)\b/iu.test(unquotedClause);
-        if (!hasNumericOrBeatAssertion) {
-            continue;
-        }
-        if (!intent || !plannedActionNames.includes(intent.actionType)) {
-            return false;
-        }
-    }
-    return addClipClauseCount === expectedAddClipCount;
-}
-
 type GroundingValueRule = GroundingRules['valueRules'][number];
 
 type PromptNumber = {
@@ -2481,14 +2180,6 @@ function validateBooleanIntentValue(
         return getValueMismatchReason(valueRule.argument);
     }
     return null;
-}
-
-function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
-    let commandText = actionScope.text.trim();
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandText = commandText.replace(/^please\s+/iu, '');
-    const normalized = normalizePromptText(commandText);
-    return ['play', 'start playback', 'resume playback', 'pause', 'pause playback'].includes(normalized);
 }
 
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
@@ -3627,45 +3318,18 @@ function groundToolCall({
     if (clipRenameCarrier?.kind === 'invalid') {
         return rejection(index, call.name, 'Provider clip rename source is not grounded or ambiguous');
     }
-    if (
-        call.name === 'moveClip' &&
-        !hasGroundedMoveBeatAssertions({
-            catalog,
-            context,
-            expectedMoveCount: sameActionCallCount,
-            plannedActionNames,
-            prompt,
-        })
-    ) {
-        return rejection(index, call.name, 'Provider clip move requires exactly one explicit absolute beat per move');
-    }
-    if (
-        call.name === 'splitClip' &&
-        !hasGroundedSplitBeatAssertions({
-            catalog,
-            context,
-            expectedSplitCount: sameActionCallCount,
-            plannedActionNames,
-            prompt,
-        })
-    ) {
-        return rejection(index, call.name, 'Provider clip split requires exactly one explicit absolute beat per split');
-    }
-    if (
-        call.name === 'addClip' &&
-        !admitsPlanCreatedObject &&
-        !hasGroundedAddClipAssertions({
-            catalog,
-            context,
-            expectedAddClipCount: sameActionCallCount,
-            plannedActionNames,
-            prompt,
-        })
-    ) {
-        return rejection(index, call.name, 'Provider clip creation requires one exact explicit beat range per clip');
-    }
-    if (call.name === 'setPlayback' && !isExplicitSetPlaybackScope(actionScope)) {
-        return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
+    const postScopeRejection = groundPostScopeAdmission({
+        actionName: call.name,
+        actionScope,
+        admitsPlanCreatedObject,
+        catalog,
+        context,
+        plannedActionNames,
+        prompt,
+        sameActionCallCount,
+    });
+    if (postScopeRejection !== null) {
+        return rejection(index, call.name, postScopeRejection);
     }
     const groundedArguments = { ...call.arguments };
     const bulkDeviceInsertionScope =

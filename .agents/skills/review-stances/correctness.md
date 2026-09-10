@@ -233,6 +233,22 @@ selectable is reachable through the admission path, not merely present in the ca
 id-minting closure against the statement that consumes it; a counter read inside a variadic call
 observes the pre-call length for every argument.
 
+### 2026-09-10 — strict start comparisons on a microsecond clock survived one fix and one review (introduced in 4266e649b, missed again at 0a4efc74f)
+
+4266e649b introduced the trace binder with both START comparisons strict and the author/outer
+END already admitting equality. 0a4efc74f admitted the handler/outer END equality and stated
+that strict starts were retained; its review accepted that statement unprobed. The first nightly
+trace then refused 2256 of 24001 callbacks whose enclosing handler started in the callback's own
+microsecond. Start and end live on the same quantized clock.
+
+Blind spot: the stance accepted "retains strict start" as reassurance rather than asking why one
+boundary of a quantized clock differs from the other.
+
+Probe that would have caught it: for any comparison against a quantized clock, list every strict
+inequality in the function on that clock (start and end of every nesting relation) and require
+the author to justify each remaining strict one from uniqueness, not caution; a fix that admits
+equality at one boundary and keeps another strict without such justification is the finding.
+
 ### 2026-09-10 — a new provider tool appended to the schema list that the in-browser backend truncates (escaped via PR #4128; fixed in the P4a slice of #3276)
 
 `parsePromptToActions.ts` appended the creative interpretation tool schema last in `providerToolSchemas`

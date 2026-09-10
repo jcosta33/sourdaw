@@ -200,3 +200,18 @@ three slots unselectable therefore left every case green.
 Mechanical probe: for each published id family (targets, dimensions, constraints, creation slots),
 one case must select the LAST published member by id through the real admission and assert it on
 the result; then mutate the id minting to collide and confirm that case goes red.
+
+### 2026-09-10 — no fixture ever tied an interval START to the outer callback (introduced in 4266e649b, repeated at 0a4efc74f)
+
+4266e649b's fixtures placed every handler and author start strictly inside or before the
+outer callback; 0a4efc74f added the handler/outer equal-END fixture and repeated the
+pattern, so both strict START comparisons were never exercised at equality. The first
+nightly trace refused 2256 of 24001 callbacks tied on handler start.
+
+Blind spot: the 2026-09-09 probe was phrased for one boundary only, and fixtures followed it
+literally without covering both boundaries (start and end) of the nesting pairs.
+
+Probe that would have caught it: for every nesting comparison independently validated, add one
+case with equal start timestamps and one with equal end timestamps; for each pair, add a third
+with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
+the narrower and existing overlap fixtures must refuse.
