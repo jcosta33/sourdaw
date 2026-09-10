@@ -1,0 +1,85 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getAddClipPromptEvidence.ts
+  s_06adf2b091dc62::t_036d3b656b6de5 29,34,42,49,54,56-58,63
+  s_06adf2b091dc62::t_25b6e14dd9337a 13-25,30,35,43,50,55,59,64,66
+  s_06adf2b091dc62::t_1dbdbccc81a1db 10-12
+  s_06adf2b091dc62::t_29ab66872332bc 26-28
+  s_06adf2b091dc62::t_9dadfa8ef55117 31-33
+  s_06adf2b091dc62::t_5769d860d319b8 36-41
+  s_06adf2b091dc62::t_e586a03d29a00f 44-48
+  s_06adf2b091dc62::t_a395e6126381c1 51-53
+  s_06adf2b091dc62::t_520f4f5f54095d 60-62
+  s_06adf2b091dc62::t_9a0fa5fc6bb758 65
+  s_207ff2a7ca419c::t_d5b0482264c6a6 1-9
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_06adf2b091dc62::t_6b4aaab088cf13 17,20
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_06adf2b091dc62::t_fe247d4c5b6f4d 5
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetEvidenceAdmissionStrategy.spec.ts
+  s_06adf2b091dc62::t_8ea8b6a487ba6c 1-198
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasReferenceOutsideMatchedIntent.ts
+  s_06adf2b091dc62::t_4de7841cf629fe 1-2
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/createGroundingAdmissionStrategyRegistry.spec.ts
+  s_06adf2b091dc62::t_f4261d0c40da5e 1-60
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_acee4d75c9a850 78
+  s_06adf2b091dc62::t_5bf4a4381be67e 4136
+  s_06adf2b091dc62::t_54cec3eda86871 4129-4135,4137
+  s_06adf2b091dc62::t_a66e58fee5712b 72-76,79-81,83-85
+  s_06adf2b091dc62::t_dd51cc487f8989 3748-3750
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/preScopeAdmissionStrategy.spec.ts
+  s_06adf2b091dc62::t_23c76fb58df0cc 1-118
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_06adf2b091dc62::t_82267e7c9d3c78 3-4
+src/modules/AiRuntime/useCases/agentReference/getMutedEmptyTrackDeletionScope.ts
+  s_06adf2b091dc62::t_209fc8154fa3a4 3,5
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createGroundingAdmissionStrategyRegistry.ts
+  s_06adf2b091dc62::t_affd716fe99490 1-41
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createPostTargetScopeAdmissionStrategyRegistry.ts
+  s_06adf2b091dc62::t_451d0a0f09abce 3-9,42-46,48-49,51,58-63
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/escapeRegExp.ts
+  s_06adf2b091dc62::t_633ef7a549c041 1-3
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getGlueClipPairTargetPattern.ts
+  s_06adf2b091dc62::t_5797cd1cd8b0c6 1-36
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getMoveBeatAssertions.ts
+  s_06adf2b091dc62::t_941c549a7cb26a 1-6
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getTargetPromptScope.ts
+  s_06adf2b091dc62::t_9c19ba1db558dc 1-40
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isDirectGlueClipPairScope.ts
+  s_06adf2b091dc62::t_f5f0872c3cf68d 1-30
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isExplicitClipLoopLengthPrompt.ts
+  s_06adf2b091dc62::t_37b5bb44aaedec 1-13
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/normalizePromptText.ts
+  s_06adf2b091dc62::t_62f30e4fd05605 1-6
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetEvidenceAdmissionStrategy.ts
+  s_06adf2b091dc62::t_65d492377d1742 1-205
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/preScopeAdmissionStrategy.ts
+  s_06adf2b091dc62::t_69faba5f2ee1f4 1-100
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/promptScope.ts
+  s_06adf2b091dc62::t_63870170424578 1-9
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/stripPoliteGlueCommandCarrier.ts
+  s_06adf2b091dc62::t_c52acc00077962 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3f2e71c59295f404f0a60b7c5775206787531115",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_207ff2a7ca419c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aafb4c0739a3f08e6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
