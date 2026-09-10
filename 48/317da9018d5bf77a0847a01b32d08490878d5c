@@ -1,0 +1,37 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/readProviderRequestId.ts
+  s_06adf2b091dc62::t_d8f017090bf849 1-3
+  s_06adf2b091dc62::t_27d66ff5b83455 10
+src/modules/AiRuntime/repositories/__tests__/drumBusProviderPlanConformance.spec.ts
+  s_06adf2b091dc62::t_d05e4aafc39173 71
+  s_06adf2b091dc62::t_4fbf27f9e214c6 72
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_06adf2b091dc62::t_15f01ba4091755 143-147
+  s_06adf2b091dc62::t_4f27fb4b941017 120-127,148
+  s_06adf2b091dc62::t_c1ac86d327ce89 53-56,59
+  s_06adf2b091dc62::t_0e3b596d51b657 149-156
+src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts
+  s_06adf2b091dc62::t_3ec0d7dd17ce3e 31
+  s_06adf2b091dc62::t_a69c9644656d14 110-122
+  s_06adf2b091dc62::t_de3a5c866a814c 232-256
+  s_06adf2b091dc62::t_fb2a16ee32549c 59-66,68
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_06adf2b091dc62::t_7ce7bd395cb4e0 46-49
+  s_06adf2b091dc62::t_4dbac3ff60bcf3 96-102
+  s_06adf2b091dc62::t_fb39ee86e15f04 131-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "48317da9018d5bf77a0847a01b32d08490878d5c",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
