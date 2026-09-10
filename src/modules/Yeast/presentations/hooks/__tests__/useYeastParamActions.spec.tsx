@@ -88,9 +88,9 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
         // keyboard tweak with no drag open — arriving within the coalescing
         // window. The tweak coalesces into the drag's undo group.
         act(() => {
-            actions!.setParam('arp-1', 'gate', 1.0, true);
-            actions!.setParam('arp-1', 'gate', 1.0);
-            actions!.setParam('arp-1', 'gate', 1.2);
+            actions!.applyParam('arp-1', 'gate', 1.0, true);
+            actions!.applyParam('arp-1', 'gate', 1.0);
+            actions!.applyParam('arp-1', 'gate', 1.2);
         });
         await flushDispatches(2);
 
@@ -109,7 +109,7 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
         render(<Harness onReady={(captured) => (actions = captured)} />);
 
         act(() => {
-            actions!.setParam('arp-1', 'gate', 1.0);
+            actions!.applyParam('arp-1', 'gate', 1.0);
         });
         await flushDispatches();
 
@@ -130,14 +130,14 @@ describe('useYeastParamActions knob settle coalescing (#2111)', () => {
 
         // Transient sample: the display overlay moves while truth does not.
         act(() => {
-            actions!.setParam('arp-1', 'gate', 1.3, true);
+            actions!.applyParam('arp-1', 'gate', 1.3, true);
         });
         expect(actions!.displayValue('arp-1', 'gate', 0.8)).toBe(1.3);
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(0.8);
 
         // Settle: the overlay holds until the dispatch lands, then yields.
         act(() => {
-            actions!.setParam('arp-1', 'gate', 1.2);
+            actions!.applyParam('arp-1', 'gate', 1.2);
         });
         await waitFor(() => {
             expect(yeastStore.value?.processors[0]?.params?.gate).toBe(1.2);

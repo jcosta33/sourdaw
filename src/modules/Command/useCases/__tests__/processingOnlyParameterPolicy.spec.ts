@@ -23,6 +23,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores';
@@ -204,6 +205,7 @@ function registerProductionHandlers(): void {
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
         getTransportHandlers(),
+        getYeastHandlers(),
     ]);
 }
 

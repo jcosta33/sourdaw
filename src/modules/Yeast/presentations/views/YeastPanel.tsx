@@ -253,7 +253,7 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
                 // The gesture overlay rides on params so every knob below
                 // draws the thumb value while a drag is open.
                 params={paramActions.displayParams(processor.id, processor.params)}
-                onSetParam={paramActions.setParam}
+                onSetParam={paramActions.applyParam}
                 onCommand={sendYeastProcessorCommand}
                 grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
                 selectedGrooveTemplateId={selectedGrooveTemplateId}
@@ -698,7 +698,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     aria-label="Mode"
                     onChange={(event) => {
                         if (arp) {
-                            paramActions.setParam(arp.id, 'mode', parseInt(event.target.value));
+                            paramActions.applyParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
                     value={arp?.params?.mode ?? 0}
@@ -725,7 +725,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     )}
                     onChange={(value, isTransient) => {
                         if (arp) {
-                            paramActions.setParam(arp.id, 'rate_denom', Math.round(value), isTransient);
+                            paramActions.applyParam(arp.id, 'rate_denom', Math.round(value), isTransient);
                         }
                     }}
                     min={1}
@@ -746,7 +746,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 onClick={() => {
                     const next = !latchOn;
                     if (arp) {
-                        paramActions.setParam(arp.id, 'latch', next ? 1 : 0);
+                        paramActions.applyParam(arp.id, 'latch', next ? 1 : 0);
                     }
                 }}
             >
@@ -773,7 +773,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 )}
                 onChange={(value, isTransient) => {
                     if (arp) {
-                        paramActions.setParam(arp.id, 'gate', value, isTransient);
+                        paramActions.applyParam(arp.id, 'gate', value, isTransient);
                     }
                 }}
                 min={0.01}
@@ -795,7 +795,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 )}
                 onChange={(value, isTransient) => {
                     if (arp) {
-                        paramActions.setParam(arp.id, 'swing', value, isTransient);
+                        paramActions.applyParam(arp.id, 'swing', value, isTransient);
                     }
                 }}
                 min={0}
@@ -813,7 +813,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 )}
                 onChange={(value, isTransient) => {
                     if (arp) {
-                        paramActions.setParam(arp.id, 'octave_range', value, isTransient);
+                        paramActions.applyParam(arp.id, 'octave_range', value, isTransient);
                     }
                 }}
                 min={1}
@@ -831,7 +831,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 )}
                 onChange={(value, isTransient) => {
                     if (arp) {
-                        paramActions.setParam(arp.id, 'fixed_velocity', value, isTransient);
+                        paramActions.applyParam(arp.id, 'fixed_velocity', value, isTransient);
                     }
                 }}
                 min={1}

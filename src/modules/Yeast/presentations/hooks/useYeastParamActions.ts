@@ -44,8 +44,16 @@ export type YeastParamActions = {
      * only — never a dispatch — and the settled value dispatches the guarded
      * `setYeastProcessorParam` action once, with `expectedValue` read at
      * commit time. One drag lands as one Automerge write and one undo entry.
+     *
+     * The verb is deliberately NOT `set…Param`: the Arrangement knob census
+     * (`declaredRangeVsKnobTravel.spec.ts`) reads a `set…Param('id', …)` call
+     * shape in a panel's source as a binding to that device descriptor's
+     * parameter, and Yeast knobs drive per-processor rack parameters the
+     * device descriptor does not declare — that shape would move every
+     * converted knob from the census's honest `unbound` count into phantom
+     * stray bindings.
      */
-    setParam: (processorId: string, paramId: string, value: number, isTransient?: boolean) => void;
+    applyParam: (processorId: string, paramId: string, value: number, isTransient?: boolean) => void;
     /**
      * The groove-amount knob's route. Transient samples preview exactly like
      * `setParam`; the settle dispatches `setYeastGrooveTemplate`, whose own
@@ -123,7 +131,7 @@ export function useYeastParamActions(): YeastParamActions {
         return gestureValues.get(paramKey(processorId, paramId)) ?? committedValue;
     };
 
-    const setParam = (processorId: string, paramId: string, value: number, isTransient = false): void => {
+    const applyParam = (processorId: string, paramId: string, value: number, isTransient = false): void => {
         const key = paramKey(processorId, paramId);
         if (isTransient) {
             openKeys.current.add(key);
@@ -179,5 +187,5 @@ export function useYeastParamActions(): YeastParamActions {
         });
     };
 
-    return { displayParams, displayValue, setParam, setGrooveAmount };
+    return { displayParams, displayValue, applyParam, setGrooveAmount };
 }
