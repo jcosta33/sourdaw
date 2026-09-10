@@ -34,10 +34,10 @@ const WITHHELD_TYPE = 'knead';
 
 type DeviceInput = { id: string; type?: string; bypassed?: boolean };
 
-function makeTrack(overrides: { id: string; devices?: DeviceInput[]; outputId?: string }) {
+function makeTrack(overrides: { id: string; kind?: string; devices?: DeviceInput[]; outputId?: string }) {
     return {
         id: overrides.id,
-        kind: 'audio',
+        kind: overrides.kind ?? 'audio',
         outputId: overrides.outputId ?? 'hw_out',
         devices: (overrides.devices ?? []).map((device) => ({
             id: device.id,
@@ -102,5 +102,266 @@ describe('getCompensationDelay with withheld device types (freeze print fidelity
         // carry it — otherwise freeze would over-delay against the live mix.
         expect(getCompensationDelay('guitar', [WITHHELD_TYPE])).toBe(0);
         expect(getCompensationDelay('drums')).toBeCloseTo(DEVICE_MS / 1000, 10);
+    });
+});
+
+/**
+ * Bacteria's spectral window at 48k, the figure its own `BacteriaNode` reports
+ * into the registry while the strip is web-carried, and the figure the native
+ * engine declares for it while the strip is engine-carried
+ * (`PluginCore::declared_latency_frames`, `crates/daw-engine/src/scheduler.rs`).
+ * The exclusion is only observable on a device that really delays this graph,
+ * so the reported figure is what the assertions below move.
+ */
+const BACTERIA_MS = (2048 / 48_000) * 1000;
+/** A second, deliberately different Bacteria figure: the lo-fi codec's frame. */
+const BUS_BACTERIA_MS = (256 / 48_000) * 1000;
+const ENGINE_COMPENSATED_TYPE = 'bacteria';
+
+/** A bacteria strip beside a bare one, with the bacteria's figure reported. */
+function setUpEngineCompensatedProject(): void {
+    mockTrackStore.value = {
+        tracks: [
+            makeTrack({ id: 'guitar', devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE }] }),
+            makeTrack({ id: 'drums' }),
+        ],
+    };
+    reportLatency('dev-bacteria', BACTERIA_MS);
+}
+
+describe('getCompensationDelay with engine-hosted strips', () => {
+    beforeEach(() => {
+        mockTrackStore.value = null;
+        clearAllReportedLatency();
+    });
+
+    it('counts an engine-compensated device on every strip when no strip is engine-hosted', () => {
+        setUpEngineCompensatedProject();
+
+        expect(getCompensationDelay('drums')).toBeCloseTo(BACTERIA_MS / 1000, 10);
+    });
+
+    it('asks nothing of a native mix the engine has already aligned by itself', () => {
+        setUpEngineCompensatedProject();
+
+        // Both strips are the engine's. Its own pass holds drums back by
+        // guitar's declared figure, so guitar arrives at that figure and drums
+        // arrives with it: the programme has no gap left to close on either.
+        expect(getCompensationDelay('guitar', undefined, new Set(['guitar']))).toBe(0);
+        expect(getCompensationDelay('drums', undefined, new Set(['guitar']))).toBe(0);
+    });
+
+    // #4153's whole point: the first programme of a session is built before any
+    // worklet has reported, so the registry is empty and this side can see no
+    // figure at all. The engine declares its own and aligns its own strips
+    // against it, which is right only if the programme asks for nothing.
+    it('aims every native strip at zero while the registry is still empty', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE }] }),
+                makeTrack({ id: 'drums' }),
+            ],
+        };
+
+        expect(getCompensationDelay('guitar', undefined, new Set(['guitar']))).toBe(0);
+        expect(getCompensationDelay('drums', undefined, new Set(['guitar']))).toBe(0);
+    });
+
+    // The discriminating case: a native strip beside a web strip that reports a
+    // real figure. Measuring the session against a max the hosted figure had
+    // been taken out of would delay the native strip by its own figure a second
+    // time, and it would flam the web strip by exactly that.
+    it('aims a native strip at the full session depth beside a web strip that reports one', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE }] }),
+                makeTrack({ id: 'keys', devices: [{ id: 'dev-bacteria-web', type: ENGINE_COMPENSATED_TYPE }] }),
+            ],
+        };
+        reportLatency('dev-bacteria', BACTERIA_MS);
+        reportLatency('dev-bacteria-web', BACTERIA_MS);
+
+        // The engine carries guitar and holds it at its own figure; keys stayed
+        // on Web Audio and is delayed by its gated worklet's report. Both
+        // therefore arrive at that one figure with no programme delay at all.
+        expect(getCompensationDelay('guitar', undefined, new Set(['guitar']))).toBe(0);
+        expect(getCompensationDelay('keys')).toBe(0);
+    });
+
+    it('leaves two native strips of different depth to the engine', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-shallow', type: ENGINE_COMPENSATED_TYPE }] }),
+                makeTrack({ id: 'keys', devices: [{ id: 'dev-deep', type: ENGINE_COMPENSATED_TYPE }] }),
+            ],
+        };
+        reportLatency('dev-shallow', BUS_BACTERIA_MS);
+        reportLatency('dev-deep', BACTERIA_MS);
+
+        // The engine's pass holds guitar back by the difference and lets keys
+        // through, so both reach the master at the deeper figure. A programme
+        // delay on either would move one of them off the other.
+        const hosted = new Set(['guitar', 'keys']);
+        expect(getCompensationDelay('guitar', undefined, hosted)).toBe(0);
+        expect(getCompensationDelay('keys', undefined, hosted)).toBe(0);
+    });
+
+    it('counts a bus body in the depth the engine has already reached', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({
+                    id: 'guitar',
+                    outputId: 'bus-fx',
+                    devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE }],
+                }),
+                makeTrack({ id: 'drums' }),
+                makeTrack({
+                    id: 'bus-fx',
+                    kind: 'bus',
+                    devices: [{ id: 'dev-bus-bacteria', type: ENGINE_COMPENSATED_TYPE }],
+                }),
+            ],
+        };
+        reportLatency('dev-bacteria', BACTERIA_MS);
+        reportLatency('dev-bus-bacteria', BUS_BACTERIA_MS);
+
+        // A bus twin is the engine's too, so the depth its pass reaches is
+        // guitar's own figure plus the bus's. Leaving the bus out of the set
+        // would understate that depth and leave drums delayed by the bus figure
+        // on top of the hold the engine already took for it.
+        const hosted = new Set(['guitar', 'bus-fx']);
+        expect(getCompensationDelay('guitar', undefined, hosted)).toBe(0);
+        expect(getCompensationDelay('drums', undefined, hosted)).toBe(0);
+    });
+
+    it('asks nothing for a bypassed engine-compensated device on either carrier', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({
+                    id: 'guitar',
+                    devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE, bypassed: true }],
+                }),
+                makeTrack({ id: 'keys' }),
+            ],
+        };
+        reportLatency('dev-bacteria', BACTERIA_MS);
+
+        // A bypassed device delays nothing on either carrier: this side drops
+        // it from every reading, and the engine declares 0 for it too
+        // (`ActiveEffect::refresh_declared_latency`,
+        // `crates/daw-engine/src/scheduler.rs`). Declaring the figure there
+        // while reading 0 here would flam the web strip by the whole window.
+        expect(getCompensationDelay('guitar', undefined, new Set(['guitar']))).toBe(0);
+        expect(getCompensationDelay('keys')).toBe(0);
+    });
+
+    it('measures the session against everything a hosted strip really holds, not only what it can see', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({
+                    id: 'guitar',
+                    devices: [
+                        { id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE },
+                        { id: 'dev-knead', type: WITHHELD_TYPE },
+                    ],
+                }),
+                makeTrack({ id: 'drums' }),
+            ],
+        };
+        reportLatency('dev-bacteria', BACTERIA_MS);
+        reportLatency('dev-knead', DEVICE_MS);
+
+        // The session's depth is BACTERIA_MS + DEVICE_MS, because guitar's
+        // chain really delays by both, and the engine's own pass has spent
+        // only D = BACTERIA_MS of it.
+        // So drums waits M − 0 − D = DEVICE_MS, the Knead's figure nothing has
+        // held it back by, and guitar waits M − DEVICE_MS − D = 0.
+        const hosted = new Set(['guitar']);
+        expect(getCompensationDelay('drums', undefined, hosted)).toBeCloseTo(DEVICE_MS / 1000, 10);
+        expect(getCompensationDelay('guitar', undefined, hosted)).toBe(0);
+    });
+
+    it('reaches a hosted bus body no hosted track route passes through', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-shallow', type: ENGINE_COMPENSATED_TYPE }] }),
+                makeTrack({ id: 'drums', outputId: 'bus-fx' }),
+                makeTrack({
+                    id: 'bus-fx',
+                    kind: 'bus',
+                    devices: [{ id: 'dev-bus-bacteria', type: ENGINE_COMPENSATED_TYPE }],
+                }),
+            ],
+        };
+        reportLatency('dev-shallow', BUS_BACTERIA_MS);
+        reportLatency('dev-bus-bacteria', BACTERIA_MS);
+
+        // The deepest figure the engine has spent sits on the bus, and no
+        // hosted track's own route reaches it: guitar goes straight out, and
+        // drums declares nothing of its own. Reading only the hosted tracks
+        // would put D at BUS_BACTERIA_MS and leave guitar waiting the
+        // difference for a hold the engine has already taken.
+        const hosted = new Set(['guitar', 'bus-fx']);
+        expect(getCompensationDelay('guitar', undefined, hosted)).toBe(0);
+        expect(getCompensationDelay('drums', undefined, hosted)).toBe(0);
+    });
+
+    it('keeps costing its reported figure on a strip the engine does not host', () => {
+        setUpEngineCompensatedProject();
+
+        // A native session carrying only drums leaves guitar on Web Audio,
+        // where its gated worklet's own figure is what aligns it.
+        expect(getCompensationDelay('drums', undefined, new Set(['drums']))).toBeCloseTo(BACTERIA_MS / 1000, 10);
+    });
+
+    it('excludes an engine-compensated device on a hosted strip downstream of the queried one', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', outputId: 'bus-fx' }),
+                makeTrack({ id: 'drums' }),
+                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-bacteria', type: ENGINE_COMPENSATED_TYPE }] }),
+            ],
+        };
+        reportLatency('dev-bacteria', BACTERIA_MS);
+
+        // Unlike an omitted type, engine hosting is a fact about the graph
+        // rather than about one queried strip: the bus really is undelayed on
+        // this side, so guitar's own total loses the bus's figure too.
+        expect(getCompensationDelay('guitar', undefined, new Set(['bus-fx']))).toBe(0);
+        expect(getCompensationDelay('drums', undefined, new Set(['bus-fx']))).toBe(0);
+        expect(getCompensationDelay('drums')).toBeCloseTo(BACTERIA_MS / 1000, 10);
+    });
+
+    it('leaves a device the engine does not compensate counted on a hosted strip', () => {
+        setUpProcessedTrackProject();
+
+        // Hosting excludes the engine-compensated bodies alone. A Knead on a
+        // carried strip is still delayed by its own worklet report, because
+        // the engine declares nothing for it.
+        expect(getCompensationDelay('drums', undefined, new Set(['guitar']))).toBeCloseTo(DEVICE_MS / 1000, 10);
+    });
+
+    it('reads a hosted plugin as undelayed whether or not its strip is engine-hosted', () => {
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-plugin', type: 'external-plugin' }] }),
+                makeTrack({ id: 'drums' }),
+            ],
+        };
+        reportLatency('dev-plugin', BACTERIA_MS);
+
+        // The exclusion this file's other cases add is the one
+        // `getDeviceLatencyMs` already makes for a hosted plugin, so a hosted
+        // plugin's figure stays out of the sum on either footing.
+        expect(getCompensationDelay('drums')).toBe(0);
+        expect(getCompensationDelay('drums', undefined, new Set(['guitar']))).toBe(0);
+    });
+
+    it('leaves the omit semantics untouched on a hosted strip', () => {
+        setUpProcessedTrackProject();
+
+        // Omit still shrinks only the queried strip's own loop, and the max it
+        // is measured against still counts the withheld type.
+        expect(getCompensationDelay('guitar', [WITHHELD_TYPE], new Set(['guitar']))).toBeCloseTo(DEVICE_MS / 1000, 10);
     });
 });

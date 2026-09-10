@@ -7,11 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
+vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
+    getCompensationDelay: vi.fn(() => 0),
+}));
+
 import {
     type MapGraphBatchInput,
     type NativeGraphTransport,
 } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { renderOfflineWithNativeEngine } from '../renderOfflineWithNativeEngine';
 
 class StubAudioBuffer {
@@ -269,5 +274,50 @@ describe('renderOfflineWithNativeEngine — device projection', () => {
                 command.kind === 'create-track-strip' && command.trackId === 'audio-1'
         );
         expect(trackStrip?.devices.find((device) => device.id === 'ferm')?.parameterValues).toEqual({ engine: 2 });
+    });
+
+    // This engine hosts every strip in the render, so an engine-compensated
+    // body's delay is the engine's to hold back on any of them and none of
+    // them may be counted here as well. Read at the compensation boundary,
+    // because the correction is invisible in a project holding no such body.
+    it('reads its compensation with every renderable strip named as engine-hosted', async () => {
+        const frames = 8;
+        const { transport } = capturingTransport(frames);
+        vi.mocked(getCompensationDelay).mockClear();
+        const bus = createTrack({ id: 'verb', kind: 'bus' });
+        const audio = createTrack({ id: 'audio-1', outputId: 'verb' });
+
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: frames,
+            durationSeconds: frames / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => {
+                const startSeconds = startPpq * 0.5;
+                const endSeconds = endPpq * 0.5;
+                return {
+                    startSamples: startSeconds * sampleRate,
+                    endSamples: endSeconds * sampleRate,
+                    durationSamples: (endSeconds - startSeconds) * sampleRate,
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks: [audio, bus],
+            scheduledTracks: [audio],
+            scheduledTrackIds: new Set(['audio-1']),
+            soloGatedByTrackId: new Map(),
+            vcaMultiplierByTrackId: new Map(),
+        });
+
+        expect(result.outcome).toBe('rendered');
+        expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([
+            ['audio-1', undefined, new Set(['audio-1', 'verb'])],
+        ]);
     });
 });

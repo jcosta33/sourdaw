@@ -62,6 +62,18 @@ export type NativeBuiltinBody = Readonly<{
     projectPatch: (parameterValues: Readonly<Record<string, unknown>>) => Readonly<Record<string, number>>;
     /** Whether this body resolves a project-side parameter id at all — the renderer's mirror of `builtin_parameter` in `crates/daw-engine/src/graph.rs`. */
     addressesParameter: (paramId: string) => boolean;
+    /**
+     * Whether the native engine compensates this body's own group delay for a
+     * strip it carries.
+     *
+     * True only for a body the mapper declares a latency for at registration
+     * (`PluginCore::declared_latency_frames`, `crates/daw-engine/src/scheduler.rs`).
+     * The engine then holds every route meeting that strip back by the figure
+     * itself, so the renderer's own sum must not count the device a second
+     * time — the same exclusion `getDeviceLatencyMs` makes for
+     * `external-plugin`, and for the same reason.
+     */
+    latencyCompensatedByEngine: boolean;
 }>;
 
 /**
@@ -218,6 +230,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: numericParametersOnly,
             addressesParameter: (paramId) => KNEAD_ENGINE_PARAM_NAMES.has(paramId),
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -227,6 +240,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapFermenterParamToDspParam({ paramId }),
             projectPatch: (parameterValues) => mapFermenterPatchToDspPatch({ patch: parameterValues }),
             addressesParameter: (paramId) => FERMENTER_PARAM_IDS.has(paramId),
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -243,6 +257,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapGrandBouleParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapGrandBouleParamToDspParam),
             addressesParameter: (paramId) => mapGrandBouleParamToDspParam({ paramId }) !== null,
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -259,6 +274,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapGlutenParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapGlutenParamToDspParam),
             addressesParameter: (paramId) => mapGlutenParamToDspParam({ paramId }) !== null,
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -275,6 +291,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapCrustParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapCrustParamToDspParam),
             addressesParameter: (paramId) => mapCrustParamToDspParam({ paramId }) !== null,
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -297,6 +314,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: grinderNeuralSourceOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
+            latencyCompensatedByEngine: false,
         },
     ],
     [
@@ -334,24 +352,24 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * control-side where those arms are legal, and the parameter
              * keeps the value that record gave it.
              *
-             * The body declares no latency to the native engine even though
-             * this engine reports a real one. A settled `externalLatencyRegistry`
-             * — filled by the carried strip's gated-shut `BacteriaNode` — does
-             * fold into what `getCompensationDelay` hands the native engine,
-             * but only at the moment a programme is built: the session's
-             * first programme can build before the worklet has reported
-             * anything, and a mid-roll parameter change that moves the
-             * engine's own latency figure does not rebuild the programme
-             * already handed to a running session. Both gaps, and why
-             * declaring a figure here today would still double-compensate
-             * rather than close them, are written out on `BacteriaBody` in
-             * `crates/daw-engine/src/scheduler.rs`; #4153 is the fix, moving
-             * the compensation into the engine through `SetEffectLatency`.
+             * This engine reports a real group delay, and it is the one body
+             * here whose delay the native engine compensates itself: the
+             * mapper declares the figure at registration and the audio thread
+             * re-reads it after every write, so a strip the engine carries is
+             * aligned from its first block and stays aligned across a mid-roll
+             * parameter change (`BacteriaBody`,
+             * `crates/daw-engine/src/scheduler.rs`). Hence
+             * `latencyCompensatedByEngine`: on an engine-carried strip this
+             * device is excluded from the renderer's own sum, or the delay
+             * would be counted twice. A web-carried strip is unaffected — its
+             * `BacteriaNode` reports the same figure into
+             * `externalLatencyRegistry`, and that is what aligns it.
              */
             parameterName: (paramId) => paramId,
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) =>
                 BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !isBacteriaControlThreadOnly(paramId),
+            latencyCompensatedByEngine: true,
         },
     ],
 ]);

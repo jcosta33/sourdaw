@@ -122,8 +122,8 @@ import {
 } from './projectLiveGraphTopology';
 import { projectRollPosition } from './projectRollPosition';
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
-import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
+import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
@@ -354,29 +354,6 @@ function notifySilentHostedPlugins(input: {
     }
     nativeLiveGraphSession.lastSilentPluginNotice = message;
     notifyUser(message, 'warning');
-}
-
-/**
- * What this session plays, read against the topology it is building.
- *
- * The attach state travels with it because the programme cannot be projected
- * without it: whether a MIDI strip stays Web Audio's turns on whether the
- * engine already holds the instrument its notes address. Taken as an argument
- * rather than off the topology, because a session states its programme more
- * than once — again when the first batch reports newly attached plugins — and
- * a programme projected against the earlier set would leave an instrument the
- * engine has just taken web-voiced in a batch that gates Web Audio out of it.
- */
-function sessionProgramme(input: {
-    topology: ReturnType<typeof readSessionTopology>;
-    attachedInstanceIds: ReadonlySet<string>;
-    sampleRate: number;
-}): LiveGraphProgramme {
-    return readLiveGraphProgramme({
-        stripTracks: input.topology.stripTracks,
-        attachedInstanceIds: input.attachedInstanceIds,
-        sampleRate: input.sampleRate,
-    });
 }
 
 /**
@@ -853,7 +830,12 @@ async function bindAttachedPlugins(input: {
     // held that instrument.
     const bound: InstalledProjection = {
         attachedInstanceIds,
-        programme: sessionProgramme({ topology, attachedInstanceIds, sampleRate: input.sampleRate }),
+        programme: readSessionProgramme({
+            stripTracks: topology.stripTracks,
+            inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
+            attachedInstanceIds,
+            sampleRate: input.sampleRate,
+        }),
     };
     const resent = await applyTopologyBatch({
         transport,
@@ -974,8 +956,9 @@ export function startNativeLiveGraphSession(
             // (`advance_playhead` returns on `!is_playing`), so nothing can be
             // rendered ahead of the region that governs it.
             const monitor = input.monitor ?? DEFAULT_MONITOR;
-            const programme = sessionProgramme({
-                topology,
+            const programme = readSessionProgramme({
+                stripTracks: topology.stripTracks,
+                inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
                 attachedInstanceIds: topology.attachedInstanceIds,
                 sampleRate: input.sampleRate,
             });

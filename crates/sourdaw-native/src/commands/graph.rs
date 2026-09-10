@@ -2171,11 +2171,38 @@ fn map_device(
     // A built-in that sounds notes is registered holding its note store, built
     // here because the audio thread may not build one — without it the device
     // exists but nothing could ever be scheduled at it.
+    let declared_latency = core.declared_latency_frames();
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
         core,
         builtin.sounds_notes().then(MidiNoteStore::new),
     ));
+    // A body that reports its own group delay declares it here, so the graph
+    // holds every route meeting this strip back by that figure from the
+    // device's first block rather than from whatever the browser's own
+    // measurement later reports. It follows the registration because the graph
+    // refuses a latency for an id its effect table does not yet hold, and the
+    // ring applies commands in the order they are pushed.
+    //
+    // No dry line goes with it. A dry line is read on the bypassed pass alone
+    // (`run_dry_delay`, `crates/daw-engine/src/scheduler.rs`), and that is the
+    // pass on which this body declares 0: the pass hands the block on
+    // untouched, which is exactly the identity a line aimed at 0 would be. So
+    // there is no pass on which a line here could hold anything, and shipping
+    // one would only feed a ring the mix never reads.
+    //
+    // The figure follows the record's bypass, and the declaration still
+    // precedes the `SetBypass` below: the graph refuses a latency for an id it
+    // does not hold, so registration, declaration, bypass is the only order
+    // that lands all three. The figure sent is already the bypassed one, so
+    // the bypass that follows finds the graph aimed where it wants it.
+    if let Some(reported_latency) = declared_latency {
+        ops.push(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames: if device.bypassed { 0 } else { reported_latency },
+            dry_delay: None,
+        });
+    }
     for (param, value) in param_writes {
         ops.push(GraphCommand::SetParam(effect_id, param, value));
     }
@@ -11524,6 +11551,196 @@ mod tests {
             "the filter corner in the patch never reached the instance the mapper built \
              (largest difference {})",
             max_abs_difference(&low_corner, &high_corner)
+        );
+    }
+
+    /// Every latency a batch declares, as `(position, effect id, figure, line
+    /// present)`.
+    fn latency_declarations(ops: &[GraphCommand]) -> Vec<(usize, usize, usize, bool)> {
+        ops.iter()
+            .enumerate()
+            .filter_map(|(position, op)| match op {
+                GraphCommand::SetEffectLatency {
+                    effect_id,
+                    latency_frames,
+                    dry_delay,
+                } => Some((position, *effect_id, *latency_frames, dry_delay.is_some())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Where a batch registers its bacteria body, and under which id.
+    fn bacteria_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::Bacteria(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a bacteria body")
+    }
+
+    /// A bacteria declares the figure its engine reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. The spectral stage is what makes
+    /// the figure worth reading — a whole 2048-sample overlap-add window
+    /// (`crates/daw-dsp/src/bacteria/stft.rs`) over the engine's own
+    /// unoversampled default.
+    ///
+    /// The declaration carries no dry line, and that is read here rather than
+    /// left to the engine: a line is read on the bypassed pass alone, where
+    /// this body declares 0 and the pass hands the block on untouched, so a
+    /// line shipped from the mapper would be fed on every block the body ran
+    /// and read on none of them.
+    #[test]
+    fn a_bacteria_record_declares_the_latency_its_engine_reports() {
+        const SPECTRAL_WINDOW: usize = 2_048;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_spectralEnabled": 1.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        let (registration, effect_id) = bacteria_registration(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a bacteria's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames, SPECTRAL_WINDOW,
+            "the declared figure is not the one the record's engine reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A default record is declared too, at the figure its own engine reports
+    /// for that record, and with no line.
+    ///
+    /// The declaration is unconditional rather than shipped only for a
+    /// non-zero figure: a later write engaging a latent stage moves the figure
+    /// on the audio thread, and the graph has to have been told which id to
+    /// re-read it from. The default engine reports nothing, so the figure read
+    /// here is zero — and no line goes with it, because a line is read on the
+    /// bypassed pass alone and this body declares 0 there.
+    #[test]
+    fn a_default_bacteria_record_declares_its_default_figure_with_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-bac", "bacteria", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        assert_eq!(
+            latency_declarations(&mapped.ops)
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a default bacteria is not declared at its default figure without a line"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// A bypassed body delays nothing on either carrier, so declaring its
+    /// reported window would hold every route meeting this strip back by a
+    /// figure the strip's signal is not waiting for. Nor does a line stand in
+    /// the figure's place: the bypassed pass is already the identity for this
+    /// body, so a line would be dead weight on the audio thread rather than a
+    /// hold. The spectral stage is what makes the zero worth reading — a whole
+    /// 2048-sample window the same record declares un-bypassed.
+    #[test]
+    fn a_bypassed_bacteria_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": true,
+                               "parameterValues": { "band0_spectralEnabled": 1.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed bacteria is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A crust declares nothing.
+    ///
+    /// Its engine reports no latency of its own, and only a body that reports
+    /// one has anything to declare: a figure published for a device that
+    /// delays nothing would hold every other route on the strip back by it.
+    #[test]
+    fn a_crust_record_declares_no_latency() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-crust", "crust", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a crust device has a native body");
+
+        assert!(
+            latency_declarations(&mapped.ops).is_empty(),
+            "the limiter declared a latency: {:?}",
+            latency_declarations(&mapped.ops)
         );
     }
 
