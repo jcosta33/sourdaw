@@ -194,3 +194,26 @@ the callback.
 Probe that would have caught it: exercise every independently validated nesting edge at an equal end
 timestamp and again with the enclosure ending one timestamp unit early. Admit the equality only when
 the pairing remains unique, and preserve refusal of the actual overrun and ambiguous overlap cases.
+
+### 2026-09-10 — a status footer relayout moved a readout the nightly harness reads by label (escaped via 06c5f6dc9)
+
+06c5f6dc9 gave `StatusBar.tsx` a compact layout below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) that
+moves the "Out" master-level cluster, and its neighbouring UI CPU / MEM / AI Model readouts, into a
+Radix Popover behind `button[aria-label="More application status"]`, whose content portals outside
+`footer[aria-label="Application status"]`. The nightly Desktop latency harness's `readStatusBar` in
+`scripts/desktopLatencyConnect.ts` walks that footer for a row of exactly two sibling spans labelled
+"Out", with no notion of the popover; the runner's screen clamped Electron's requested 1440×900
+window narrower than 1200 px, dropped the app into the compact layout, and the first nightly run
+after the merge failed at "wait for the engine to report a running meter" with `the status bar has
+no readout labelled "Out"`. The PR's own responsive e2e coverage exercised the product's compact
+layout directly and never ran, or was asked about, any standing consumer that reads the footer by
+label or selector outside the product's own tests.
+
+Blind spot: no stance grepped the harness and E2E trees for existing readers of the labels and
+selectors the diff touches, so a relayout that is entirely correct for the product it renders can
+still break a consumer the diff never looked at.
+
+Probe that would have caught it: for any change to `StatusBar.tsx`, or to a `src/components/daw/Daw*`
+primitive it renders, grep `scripts/desktopLatency*.ts` and `tests/e2e/**` for the labels and
+selectors the diff adds, moves, or removes; name every hit and run its spec (the harness reader spec
+where one exists) against the changed head before approving.

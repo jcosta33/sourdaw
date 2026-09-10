@@ -34,7 +34,9 @@ import {
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
+    readStatusBarInDocument,
     type AppPageTarget,
+    type StatusBarReading,
 } from './desktopLatencyReadings.ts';
 import {
     type AppStartedAt,
@@ -120,6 +122,22 @@ const STREAM_ERROR_MARKER = '[AudioEngine] native engine streamError';
 const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
 
 /**
+ * The status bar collapses its secondary readouts — "Out" among them — into a
+ * Radix Popover behind `button[aria-label="More application status"]` at or
+ * below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) in `StatusBar.tsx`. Electron
+ * asks for a 1440×900 window in `electron/main.ts`, but the runner's own
+ * screen can clamp that request narrower than 1200 px — the exact way the
+ * nightly job silently dropped the app into the compact layout on 2026-09-09
+ * and lost the "Out" readout this harness reads. Pinning the viewport to the
+ * app's own default window size, right after connecting, keeps the expanded
+ * layout regardless of the runner's screen. Viewport emulation over CDP
+ * changes only what the renderer lays out; it does not touch the native
+ * engine's audio rendering or the OS audio device stream this harness
+ * measures.
+ */
+const EXPANDED_STATUS_BAR_VIEWPORT = { width: 1440, height: 900 } as const;
+
+/**
  * The one outcome an aborted pre-connect `fetch` and an already-tripped
  * `signal` are both reported as, so `launchAndMeasure`'s caller sees one
  * consistent reason rather than a raw `AbortError` in one case and a named
@@ -136,14 +154,6 @@ type EngineDiagnosticsReading = {
     running: boolean;
     counters: Record<string, number>;
     events: EngineEventRecord[];
-};
-
-type StatusBarReading = {
-    sampleRateText: string;
-    latencyText: string;
-    latencyTitle: string;
-    engineTitle: string;
-    masterLevelText: string;
 };
 
 /**
@@ -281,45 +291,15 @@ async function findAppPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * Reads the status bar by structure rather than by class name: a readout is the
- * second of exactly two sibling spans whose first one is the label. Class names
- * on these elements are styling and change without notice; the label beside the
- * value is what the product means.
+ * Hands `readStatusBarInDocument` itself to `page.evaluate`, which serialises
+ * it by its own source text and runs that text inside the page — the one
+ * walk this harness reads the status bar with, run where the DOM actually is
+ * rather than copied by hand into a second in-page version. See
+ * `readStatusBarInDocument`'s own doc comment in `desktopLatencyReadings.ts`
+ * for why it has to stay self-contained for this to work.
  */
 async function readStatusBar(page: Page): Promise<StatusBarReading> {
-    return page.evaluate((selector: string) => {
-        const footer = document.querySelector(selector);
-        if (footer === null) {
-            throw new Error('the status bar is not in the document');
-        }
-        const valueSpan = (label: string): HTMLElement => {
-            for (const row of footer.querySelectorAll('div')) {
-                const spans = row.querySelectorAll(':scope > span');
-                const first = spans[0];
-                const second = spans[1];
-                if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
-                    return second;
-                }
-            }
-            throw new Error(`the status bar has no readout labelled "${label}"`);
-        };
-        const engineDot = footer.querySelector('[title^="Engine: "]');
-        if (engineDot === null) {
-            throw new Error('the status bar has no engine dot');
-        }
-        const latency = valueSpan('Latency');
-        const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
-        if (latencyTitle === undefined || latencyTitle === null) {
-            throw new Error('the Latency readout carries no title');
-        }
-        return {
-            sampleRateText: valueSpan('Rate').textContent ?? '',
-            latencyText: latency.textContent ?? '',
-            latencyTitle,
-            engineTitle: engineDot.getAttribute('title') ?? '',
-            masterLevelText: valueSpan('Out').textContent ?? '',
-        };
-    }, STATUS_BAR_SELECTOR);
+    return page.evaluate(readStatusBarInDocument, { selector: STATUS_BAR_SELECTOR });
 }
 
 /**
@@ -814,6 +794,7 @@ export async function connectAndMeasure(
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${String(port)}`);
     try {
         const page = await findAppPage(browser);
+        await page.setViewportSize(EXPANDED_STATUS_BAR_VIEWPORT);
         subscribeDiagnostics(page, diagnostics, () => activeStep);
         const consoleLog: string[] = [];
         page.on('console', (message) => {
