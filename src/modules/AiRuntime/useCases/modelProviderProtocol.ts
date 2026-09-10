@@ -84,7 +84,7 @@ const CAPABILITIES: Record<ModelProviderName, ModelProviderCapabilities> = {
         ...REMOTE_CAPABILITIES,
         contextWindowTokens: null,
         maxOutputTokens: null,
-        parallelToolCalls: true,
+        parallelToolCalls: false,
         structuredOutput: false,
         tools: true,
     },

@@ -150,7 +150,7 @@ describe('provider adapter conformance', () => {
         });
     });
 
-    it('reports parallel tool calls on both compiled adapters', () => {
+    it('reports parallel tool calls only for the Responses adapter', () => {
         const chatCompletions = compileProviderAdapterInstallation(BASE_INSTALLATION);
         const responses = compileProviderAdapterInstallation({
             adapterId: 'builtin.openai.responses.v1',
@@ -160,7 +160,7 @@ describe('provider adapter conformance', () => {
             origin: 'https://api.openai.com',
         });
 
-        expect(chatCompletions.capabilities.parallelToolCalls).toBe(true);
+        expect(chatCompletions.capabilities.parallelToolCalls).toBe(false);
         expect(responses.capabilities.parallelToolCalls).toBe(true);
     });
 
