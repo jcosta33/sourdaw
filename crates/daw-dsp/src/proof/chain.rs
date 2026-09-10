@@ -794,6 +794,141 @@ mod latency_contract_tests {
         );
     }
 
+    #[test]
+    fn a_bypassed_limiter_takes_the_gain_off() {
+        // The bypassed branch of `LookaheadLimiter::process` resets
+        // `current_gain` and `gain_avg` to 1.0 on every bypassed sample. Left
+        // holding whatever gain the limiter last computed, a block arriving
+        // after `lim_bypass` engages would keep carrying the reduction the
+        // limiter is no longer supposed to be applying.
+        const TONE_HZ: f64 = 50.0;
+        const AMPLITUDE: f32 = 0.95;
+        const ENGAGED_BLOCKS: usize = 30;
+
+        let tone = |n: usize| -> f32 {
+            AMPLITUDE * (2.0 * core::f64::consts::PI * TONE_HZ * n as f64 / SR).sin() as f32
+        };
+
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.set_param("eq_bypass", 1.0);
+        chain.set_param("lim_ceiling", -1.0);
+
+        let mut n = 0usize;
+        let mut last_engaged_block = [0.0f32; BLOCK];
+        for _ in 0..ENGAGED_BLOCKS {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for i in 0..BLOCK {
+                left[i] = tone(n + i);
+                right[i] = left[i];
+            }
+            chain.process(&mut left, &mut right);
+            last_engaged_block = left;
+            n += BLOCK;
+        }
+        assert!(
+            last_engaged_block
+                .iter()
+                .any(|&s| s.abs() < AMPLITUDE - 0.02),
+            "the last engaged block never dipped below the tone's own amplitude \
+             — the limiter was not reducing gain, so this spec would prove \
+             nothing about the bypass taking that reduction off"
+        );
+
+        chain.set_param("lim_bypass", 1.0);
+        let latency = chain.latency_samples();
+
+        let mut waited = 0usize;
+        while waited < latency + BLOCK {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for i in 0..BLOCK {
+                left[i] = tone(n + i);
+                right[i] = left[i];
+            }
+            chain.process(&mut left, &mut right);
+            n += BLOCK;
+            waited += BLOCK;
+        }
+
+        let mut left = [0.0f32; BLOCK];
+        let mut right = [0.0f32; BLOCK];
+        for i in 0..BLOCK {
+            left[i] = tone(n + i);
+            right[i] = left[i];
+        }
+        chain.process(&mut left, &mut right);
+        for i in 0..BLOCK {
+            let expected = tone(n + i - latency);
+            assert!(
+                (left[i] - expected).abs() < 1e-4,
+                "sample {i} of the post-bypass block read {} against an expected \
+                 unity delayed tone of {expected} — the bypass left a stale gain \
+                 applied to the line",
+                left[i]
+            );
+        }
+    }
+
+    #[test]
+    fn engaging_the_compare_mid_roll_reads_real_audio() {
+        // The dry line is fed on every block in every mode, so the first
+        // A/B-compare block draws the audio that already arrived instead of
+        // the zero-filled line `new` builds it with. See the "keep the line
+        // fed in every other mode too" loop in `ProofChain::process`.
+        const TONE_HZ: f64 = 50.0;
+        const AMPLITUDE: f32 = 0.5;
+        const PRE_BLOCKS: usize = 5;
+
+        let tone = |n: usize| -> f32 {
+            AMPLITUDE * (2.0 * core::f64::consts::PI * TONE_HZ * n as f64 / SR).sin() as f32
+        };
+
+        let mut chain = ProofChain::new(SR);
+        let latency = chain.latency_samples();
+        assert!(
+            latency > BLOCK,
+            "latency ({latency}) does not exceed one block ({BLOCK}) — a block \
+             popped off an unfed line would read silence either way, so this \
+             spec would prove nothing"
+        );
+
+        let mut n = 0usize;
+        for _ in 0..PRE_BLOCKS {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for i in 0..BLOCK {
+                left[i] = tone(n + i);
+                right[i] = left[i];
+            }
+            chain.process(&mut left, &mut right);
+            n += BLOCK;
+        }
+
+        chain.set_param("ab_bypass", 1.0);
+
+        let mut left = [0.0f32; BLOCK];
+        let mut right = [0.0f32; BLOCK];
+        for i in 0..BLOCK {
+            left[i] = tone(n + i);
+            right[i] = left[i];
+        }
+        chain.process(&mut left, &mut right);
+
+        let ab_gain = 10.0_f32.powf(chain.ab_gain_offset_db() / 20.0);
+        for i in 0..BLOCK {
+            let expected = tone(n + i - latency) * ab_gain;
+            assert!(
+                (left[i] - expected).abs() < 1e-4,
+                "sample {i} of the first compared block read {} against an \
+                 expected delayed tone of {expected} — the dry line was not kept \
+                 fed while the compare was off",
+                left[i]
+            );
+        }
+    }
+
     fn flat_bands() -> Vec<LinearPhaseEqBand> {
         vec![LinearPhaseEqBand {
             enabled: true,
