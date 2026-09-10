@@ -1,0 +1,37 @@
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_83630764aa78c5 1198
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_06adf2b091dc62::t_5f042eb9a32b02 5319-5322,5328,5339,5706-5708
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_06adf2b091dc62::t_841867e71e0a2b 14-15,50-55,198,243,252-299
+src/modules/Yeast/handlers/__tests__/yeastGrooveAssignmentUndo.spec.ts
+  s_06adf2b091dc62::t_577bbd86b3df65 1-148
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_06adf2b091dc62::t_6d52dd77adafbd 1,8,56-66
+src/modules/Yeast/handlers/removeYeastProcessor.ts
+  s_06adf2b091dc62::t_df91ef3cb3f054 3,31,42-45,57-61
+src/modules/Yeast/useCases/readYeastGrooveAssignments.ts
+  s_06adf2b091dc62::t_1b0f63917b0a19 1-26
+src/modules/Yeast/useCases/restoreYeastGrooveAssignments.ts
+  s_06adf2b091dc62::t_86d712774e0145 1-28
+src/utils/handlerContract.ts
+  s_06adf2b091dc62::t_ed87de69ce3410 746-761,2566-2569,2579-2581
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_06adf2b091dc62::t_694d2e1989c4f8 477-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "557e2e93973bca7bc038fa101fe766a55ec29a97",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
