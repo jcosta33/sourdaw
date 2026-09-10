@@ -152,7 +152,7 @@ use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANG
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
-    layer_routing_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
+    precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
     TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
@@ -1901,12 +1901,13 @@ fn addressed_parameter_name(param: &DeviceParam) -> &str {
 /// ordered as the body has to apply them.
 ///
 /// The record arrives unordered — a `HashMap` off the wire — and two things
-/// have to hold of what leaves here. A fermenter's layer-routing entry selects
-/// the layer every write behind it lands on, so it is emitted first; that law
-/// belongs to `FermenterBody::load_patch`, and this reuses the engine's own
-/// [`layer_routing_first`] rather than restating it. Everything else follows in
-/// name order, so one record maps onto one command sequence whichever order the
-/// map happens to draw.
+/// have to hold of what leaves here. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) — a fermenter's layer-routing
+/// entry, or a gluten's macro keys — is brought to the front, in the law's
+/// own order; that law belongs to the body's `load_patch`, and this reuses
+/// the engine's own [`precedence_first`] rather than restating it. Everything
+/// else follows in name order, so one record maps onto one command sequence
+/// whichever order the map happens to draw.
 fn immediate_device_parameters(
     builtin: BuiltinEffectType,
     values: &HashMap<String, f64>,
@@ -1925,7 +1926,12 @@ fn immediate_device_parameters(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    Ok(layer_routing_first(&resolved, addressed_parameter_name).collect())
+    Ok(precedence_first(
+        &resolved,
+        addressed_parameter_name,
+        builtin.patch_precedence(),
+    )
+    .collect())
 }
 
 /// One instance the engine already owns, as a device may bind to it: the
@@ -8046,6 +8052,19 @@ mod tests {
         )
     }
 
+    /// Mirrors [`fermenter_write`] for the gluten fixtures below — the wrapper
+    /// is the same for any built-in that answers to [`BuiltinParamName`], but
+    /// naming it after the fermenter in a gluten test would misname what it
+    /// asserts.
+    fn gluten_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
     fn map_immediate(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
@@ -8147,6 +8166,51 @@ mod tests {
                      fixed order"
                 );
             }
+        }
+    }
+
+    /// A gluten batch routes `topology`, `style` and `amount` first, in that
+    /// order, whatever order the wire record draws — the same law
+    /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
+    /// proves for the fermenter's own routing key, applied to gluten's three
+    /// macros instead of one.
+    #[test]
+    fn set_device_parameters_routes_a_gluten_batch_macros_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "threshold": -18.0,
+            "amount": 50.0,
+            "style": 0.0,
+            "topology": 0.0,
+            "ratio": 4.0
+        });
+        let expected = vec![
+            gluten_write("topology", 0.0),
+            gluten_write("style", 0.0),
+            gluten_write("amount", 50.0),
+            gluten_write("ratio", 4.0),
+            gluten_write("threshold", -18.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-glu", BuiltinEffectType::Gluten);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-glu", record.clone()),
+                &mut registry,
+            )
+            .expect("a gluten answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: the macros must lead in descriptor order, and the rest must \
+                 follow in name order"
+            );
         }
     }
 
@@ -10687,6 +10751,43 @@ mod tests {
             patched < unpatched,
             "the patch never reached the instance the mapper built: it settles at {patched} \
              where an unpatched compressor settles at {unpatched}"
+        );
+    }
+
+    /// A gluten's `amount` macro lands before the names it rewrites, even
+    /// though the record it travels in crosses as a `HashMap` with no order
+    /// of its own.
+    ///
+    /// `amount` writes `threshold` and `ratio` on every topology, so a
+    /// record naming all three settles wherever the explicit `threshold` and
+    /// `ratio` land it, not wherever `amount`'s own macro computation would —
+    /// which is what proves the record reached
+    /// [`BuiltinEffectType::patch_precedence`]'s route rather than being
+    /// applied in whatever order the map drew it in. The decisive probe for
+    /// the ordering law itself is the scheduler's own parity spec
+    /// (`a_hosted_gluten_renders_the_worklet_samples_for_the_same_material`);
+    /// this only proves the control-side route reaches it.
+    #[test]
+    fn a_gluten_macro_lands_before_the_names_it_rewrites() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let with_explicit_override = settled_peak(&render_gluten_clip(
+            json!({ "amount": 100.0, "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let explicit_alone = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let macro_alone = settled_peak(&render_gluten_clip(json!({ "amount": 100.0 })));
+
+        assert!(
+            (with_explicit_override - explicit_alone).abs() <= TOLERANCE,
+            "the explicit threshold/ratio did not win over the macro: {with_explicit_override} \
+             vs {explicit_alone}"
+        );
+        assert!(
+            (with_explicit_override - macro_alone).abs() > TOLERANCE,
+            "the macro alone settles at the same level as the explicit override, so this spec \
+             cannot tell the two orders apart"
         );
     }
 

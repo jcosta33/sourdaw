@@ -328,6 +328,24 @@ impl BuiltinEffectType {
             Self::Gluten => false,
         }
     }
+
+    /// The names that must land on this built-in before every other entry
+    /// in a patch, in the order they must land — because writing one of
+    /// them rewrites other names the same patch may also carry, and a
+    /// record off the wire has no order of its own to guarantee that
+    /// happens.
+    ///
+    /// The body is what states this: only it knows which of its own names
+    /// alias others, so [`precedence_first`] never carries that knowledge
+    /// itself and cannot drift from what [`FermenterBody::load_patch`] or
+    /// [`GlutenBody::load_patch`] actually does.
+    pub fn patch_precedence(self) -> &'static [&'static str] {
+        match self {
+            Self::Fermenter => &[LAYER_ROUTING_KEY],
+            Self::Gluten => GLUTEN_MACRO_KEYS,
+            Self::Knead | Self::GrandBoule => &[],
+        }
+    }
 }
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
@@ -1007,11 +1025,12 @@ impl PluginCore {
     /// Written into the instance before it crosses the ring for the same
     /// reason as [`Self::fermenter_with_patch`]: a bus compressor's patch is
     /// some forty-five of the compressor's own parameters per strip and the
-    /// command ring is finite. There is no ordering law over the writes — the
-    /// compressor has no selection routing later writes at a topology, and
-    /// every topology holds its own copy of the names they share — so every
-    /// entry addresses the one compressor whatever order the record is read
-    /// in.
+    /// command ring is finite. The ordering law here is
+    /// [`GLUTEN_MACRO_KEYS`]: `topology`, `style` and `amount` each rewrite
+    /// other names the same patch may carry, so [`GlutenBody::load_patch`]
+    /// brings them to the front, in that order, through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
     pub fn gluten_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
         let mut body = GlutenBody::new(sample_rate);
         body.load_patch(patch);
@@ -1241,7 +1260,11 @@ impl FermenterBody {
     /// another would put patch-time and live-time writes on different
     /// layers with the producer believing both landed together.
     fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
-        for (name, value) in layer_routing_first(patch, BuiltinParamName::as_str) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Fermenter.patch_precedence(),
+        ) {
             self.set_param(name.as_str(), value);
         }
     }
@@ -1256,32 +1279,39 @@ impl FermenterBody {
 /// count is a patch defect that the render leaves inaudible, not something
 /// this ordering can repair.
 ///
-/// Named here because [`layer_routing_first`] is what orders a patch around
-/// it; the instrument's own `set_param` is the only other place the word means
+/// Named here because [`BuiltinEffectType::patch_precedence`] returns it as
+/// the Fermenter's whole precedence law, and [`precedence_first`] is what
+/// orders a patch around whatever a body's `patch_precedence` names; the
+/// instrument's own `set_param` is the only other place the word means
 /// anything.
 const LAYER_ROUTING_KEY: &str = "active_layer";
 
-/// `patch` with its layer-routing entry (if any) brought to the front;
-/// everything else follows in patch order.
+/// `patch` reordered so every entry naming one of `first`'s keys comes
+/// first, in `first`'s own order, and everything else follows in patch
+/// order.
 ///
 /// Public and generic over how an entry spells its name, because the law is
-/// the ordering rather than the shape of one caller's patch. A second caller
-/// sends the same instrument the same writes from an unordered record — the
-/// graph-command mapper's immediate parameter batch — and a copy of this
-/// reordering there would be a second place for the law to drift from
-/// [`FermenterBody::load_patch`]. `name` is a function pointer so both filters
-/// below can hold it.
-pub fn layer_routing_first<T: Copy>(
-    patch: &[(T, f32)],
+/// the ordering rather than the shape of one caller's patch — and generic
+/// over which keys lead and why, because that differs by body:
+/// [`BuiltinEffectType::patch_precedence`] states them, so a Fermenter's
+/// `active_layer` and a Gluten's macro keys share one mechanism rather than
+/// two copies that could drift apart. A record off the wire has no order of
+/// its own, and every caller that builds a patch from one — a body's own
+/// `load_patch`, and the graph mapper's immediate parameter batch — reuses
+/// this rather than reordering it again. `name` is a function pointer so
+/// every filter below can hold it.
+pub fn precedence_first<'a, T: Copy>(
+    patch: &'a [(T, f32)],
     name: fn(&T) -> &str,
-) -> impl Iterator<Item = (T, f32)> + '_ {
-    let routing = patch
+    first: &'static [&'static str],
+) -> impl Iterator<Item = (T, f32)> + 'a {
+    let led = first
         .iter()
-        .filter(move |(entry, _)| name(entry) == LAYER_ROUTING_KEY);
+        .flat_map(move |key| patch.iter().filter(move |(entry, _)| name(entry) == *key));
     let rest = patch
         .iter()
-        .filter(move |(entry, _)| name(entry) != LAYER_ROUTING_KEY);
-    routing.chain(rest).copied()
+        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == *key));
+    led.chain(rest).copied()
 }
 
 /// The Fermenter member channel a note's `i16` channel names, or `None` for a
@@ -1518,6 +1548,21 @@ impl GrandBouleBody {
 /// external-sidechain buffers, which `process_block` indexes per frame.
 const GLUTEN_RUN_FRAMES: usize = 128;
 
+/// The Gluten patch keys that rewrite other names when written, in the
+/// order they must land ahead of a patch's remaining entries.
+///
+/// `style` loads a whole style onto its topology (threshold, ratio, attack,
+/// release, knee, range, auto_release, mix, and the active topology
+/// itself); `amount` writes threshold and ratio on every topology;
+/// `topology` selects the active topology and rewrites no other name, but
+/// still leads the other two because that is the order the descriptor
+/// (`GlutenDescriptor.ts`) lists them in, and the web host applies a
+/// device's record in descriptor order
+/// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`).
+/// Matching that order here is what lets the native body build the same
+/// compressor from the same record the worklet would.
+const GLUTEN_MACRO_KEYS: &[&str] = &["topology", "style", "amount"];
+
 /// The Gluten bus compressor, hosted as a built-in effect body.
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
@@ -1588,9 +1633,20 @@ impl GlutenBody {
 
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
+    ///
+    /// [`GLUTEN_MACRO_KEYS`] land first, in that order, through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and each of those three keys rewrites
+    /// other names the same record may also carry — applied anywhere else,
+    /// a macro could silently undo a more specific entry the record placed
+    /// ahead of it by nothing more than an accident of draw order.
     fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
-        for (name, value) in patch {
-            self.set_param(name.as_str(), *value);
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Gluten.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
         }
     }
 }
@@ -7446,6 +7502,53 @@ mod tests {
         /// voice and arms the attack, a note-off applies damping and triggers
         /// the damper-lift transient — and either could allocate without the
         /// other doing so.
+        #[test]
+        fn a_grand_boule_note_on_and_render_allocate_nothing() {
+            const FRAMES: usize = 512;
+
+            let mut body = GrandBouleBody::new(48_000.0);
+            let mut sounding_left = vec![0.0_f32; FRAMES];
+            let mut sounding_right = vec![0.0_f32; FRAMES];
+            let mut released_left = vec![0.0_f32; FRAMES];
+            let mut released_right = vec![0.0_f32; FRAMES];
+            let note = MidiNoteEvent {
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+            };
+            let release = MidiNoteEvent {
+                is_note_on: false,
+                ..note
+            };
+
+            assert_no_alloc(|| {
+                body.process(
+                    &mut sounding_left,
+                    &mut sounding_right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                );
+                body.process(
+                    &mut released_left,
+                    &mut released_right,
+                    FRAMES,
+                    std::slice::from_ref(&release),
+                );
+            });
+
+            assert!(
+                sounding_left.iter().any(|sample| *sample != 0.0),
+                "the instrument never sounded, so the guard covered a silent path"
+            );
+        }
+
         /// A hosted Gluten compresses a callback without allocating.
         ///
         /// The body is built outside the guard, where its sidechain buffers
@@ -7536,53 +7639,6 @@ mod tests {
                     .zip(0..FRAMES)
                     .any(|(sample, frame)| *sample != frame as f32 + 1.0),
                 "the guarded callback returned its input, so the compressor never ran"
-            );
-        }
-
-        #[test]
-        fn a_grand_boule_note_on_and_render_allocate_nothing() {
-            const FRAMES: usize = 512;
-
-            let mut body = GrandBouleBody::new(48_000.0);
-            let mut sounding_left = vec![0.0_f32; FRAMES];
-            let mut sounding_right = vec![0.0_f32; FRAMES];
-            let mut released_left = vec![0.0_f32; FRAMES];
-            let mut released_right = vec![0.0_f32; FRAMES];
-            let note = MidiNoteEvent {
-                note: 60,
-                velocity: 100,
-                channel: 0,
-                is_note_on: true,
-                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                project_probability_seed: 0,
-                clip_id_hash: 0,
-                event_id_hash: 0,
-                absolute_occurrence_index: 0,
-                frame_offset: 0,
-            };
-            let release = MidiNoteEvent {
-                is_note_on: false,
-                ..note
-            };
-
-            assert_no_alloc(|| {
-                body.process(
-                    &mut sounding_left,
-                    &mut sounding_right,
-                    FRAMES,
-                    std::slice::from_ref(&note),
-                );
-                body.process(
-                    &mut released_left,
-                    &mut released_right,
-                    FRAMES,
-                    std::slice::from_ref(&release),
-                );
-            });
-
-            assert!(
-                sounding_left.iter().any(|sample| *sample != 0.0),
-                "the instrument never sounded, so the guard covered a silent path"
             );
         }
     }
@@ -14657,6 +14713,29 @@ mod timeline_tests {
         );
     }
 
+    /// The name a `&str` patch entry carries, for [`precedence_first`]'s own
+    /// unit spec below — a plain function pointer rather than a closure,
+    /// because the signature it takes is `fn(&T) -> &str`.
+    fn plain_str_name<'a>(name: &'a &'a str) -> &'a str {
+        *name
+    }
+
+    /// [`precedence_first`] yields every entry naming a law key, in law
+    /// order, before every entry whose name is not in the law — and a key
+    /// repeated in the patch is not merged, each repeat kept in patch order.
+    #[test]
+    fn precedence_first_yields_the_law_keys_in_law_order_then_the_rest_in_patch_order() {
+        let patch: [(&str, f32); 5] = [("c", 1.0), ("a", 2.0), ("b", 3.0), ("a", 4.0), ("d", 5.0)];
+
+        let ordered: Vec<(&str, f32)> =
+            precedence_first(&patch, plain_str_name, &["b", "a"]).collect();
+
+        assert_eq!(
+            ordered,
+            vec![("b", 3.0), ("a", 2.0), ("a", 4.0), ("c", 1.0), ("d", 5.0)]
+        );
+    }
+
     // ── Grand Boule ────────────────────────────────────────────────────────
 
     /// The rate every Grand Boule spec here renders at, which is the rate
@@ -15102,14 +15181,24 @@ mod timeline_tests {
     /// would be comparing two different compressors.
     const GLUTEN_RATE: f32 = 48_000.0;
 
-    /// The patch the parity spec below carries, in the compressor's own
-    /// vocabulary.
+    /// The patch the parity spec below carries, in descriptor order — the
+    /// order [`GLUTEN_MACRO_KEYS`] names and the web host applies a
+    /// device's record in.
     ///
-    /// Chosen to work the compressor hard on the ramp it is handed: a
-    /// threshold far under the material with a high ratio and a fast attack
-    /// means the output is nowhere near the input, so an equality against the
-    /// reference is earned rather than an agreement between two pass-throughs.
-    const GLUTEN_PATCH: [(&str, f32); 5] = [
+    /// The three macros come first, and each names a value that would
+    /// otherwise land nowhere near the explicit entries behind it: `style`
+    /// (Glue) and `amount` (50%) both write `threshold` and `ratio` far
+    /// short of the direct entries' -30 dB / 8:1, so a body that fails to
+    /// bring the macros to the front settles at whichever of the three
+    /// wrote `threshold`/`ratio` last. The direct entries are chosen to work
+    /// the compressor hard on the ramp it is handed: a threshold far under
+    /// the material with a high ratio and a fast attack means the output is
+    /// nowhere near the input, so an equality against the reference is
+    /// earned rather than an agreement between two pass-throughs.
+    const GLUTEN_PATCH: [(&str, f32); 8] = [
+        ("topology", 0.0),
+        ("style", 0.0),
+        ("amount", 50.0),
         ("threshold", -30.0),
         ("ratio", 8.0),
         ("attack", 0.1),
@@ -15160,15 +15249,27 @@ mod timeline_tests {
     }
 
     /// A hosted Gluten renders the samples the worklet's own
-    /// `GlutenInstance` renders for the same material and the same patch.
+    /// `GlutenInstance` renders for the same material and the same patch —
+    /// sample parity against the reference, not merely that both moved.
+    ///
+    /// [`GLUTEN_PATCH`] crosses to the reference instance in descriptor
+    /// order and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`GlutenBody::load_patch`]
+    /// brings `topology`, `style` and `amount` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law, the
+    /// reversed record would apply `style` after `amount` and after the
+    /// patch's own `threshold`/`ratio` entries, and `style` rewrites both on
+    /// its own topology — the compressor would settle at Glue's -18 dB
+    /// threshold and 4:1 ratio rather than the -30 dB / 8:1 the patch
+    /// actually names.
     ///
     /// The worklet hands its instance 128 frames at a time — one
-    /// `AudioWorkletProcessor` render quantum — and scrubs the returned block
-    /// of non-finite samples. The scheduler hands the body a 256-frame
-    /// callback, so the body is what splits the callback into runs of the
-    /// worklet's size; a body that processed the callback whole, or summed
-    /// its output into the pair instead of replacing it, renders a different
-    /// signal from the reference here.
+    /// `AudioWorkletProcessor` render quantum — because
+    /// `GlutenEngine::process_block` keeps block-scoped meter state (the
+    /// gain-reduction history ring, the per-block crest and correlation
+    /// accumulators) that only advances correctly at that granularity. The
+    /// output samples this spec compares cannot show that state, so the run
+    /// split itself is not what this spec pins.
     #[test]
     fn a_hosted_gluten_renders_the_worklet_samples_for_the_same_material() {
         use daw_dsp::gluten::GlutenInstance;
@@ -15181,8 +15282,14 @@ mod timeline_tests {
         /// future reordering rather than an expected drift.
         const TOLERANCE: f32 = 1e-6;
 
+        // The hosted body takes the same entries reversed: parity only
+        // holds if `GlutenBody::load_patch` restores the macros to the
+        // front regardless of where the record put them.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            gluten_patch().into_iter().rev().collect();
+
         let mut harness = Harness::new(32);
-        track_with_gluten(&mut harness, RENDERED, &gluten_patch());
+        track_with_gluten(&mut harness, RENDERED, &reversed_patch);
         harness.playing();
         let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
 
