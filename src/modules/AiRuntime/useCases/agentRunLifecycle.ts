@@ -70,6 +70,14 @@ const DEFAULT_GRANTS: AgentRunGrants = {
 
 const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
 
+/**
+ * Agent media listening and generated media are deferred capabilities (AC-047), so no run records
+ * either grant as held whatever the caller proposed. Every grant a run stores passes through here.
+ */
+function refuseDeferredMediaGrants(grants: AgentRunGrants): AgentRunGrants {
+    return { ...grants, audioUpload: false, remoteGeneration: false };
+}
+
 function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): AgentRunBudgets {
     const limits = { ...current.limits };
     for (const [category, limit] of Object.entries(next.limits)) {
@@ -304,7 +312,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
             committed: null,
         },
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
-        grants: structuredClone(input.grants ?? DEFAULT_GRANTS),
+        grants: structuredClone(refuseDeferredMediaGrants(input.grants ?? DEFAULT_GRANTS)),
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
         budgetAttempts: [],
         plan: null,
@@ -399,7 +407,7 @@ function recordAgentRunPlan(input: {
             phase: reduceAgentRunTransition(run.phase, { type: 'plan-recorded' }),
             revisions: { ...run.revisions, planned: input.revision },
             scope: structuredClone(input.scope),
-            grants: structuredClone(input.grants),
+            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan: structuredClone(
                 input.plan ??
@@ -455,7 +463,7 @@ function recordAgentRunApplicationToolEvidence(input: {
             ...run,
             revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
             scope: structuredClone(input.scope),
-            grants: structuredClone(input.grants),
+            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan,
         };

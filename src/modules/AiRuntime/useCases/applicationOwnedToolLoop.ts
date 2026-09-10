@@ -33,6 +33,7 @@ import {
     PROJECT_RESOLVE_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
+import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
 const DEFAULT_LIMITS = {
@@ -435,6 +436,14 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
             retryable: true,
         });
     }
+    const operations = [
+        { name: 'command.batch.preview', callable: false, owner: 'Command', availability: 'available' },
+        { name: 'command.batch.commit', callable: false, owner: 'Command', availability: 'available' },
+        { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
+        { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
+        { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
+        ...DEFERRED_AGENT_CAPABILITIES,
+    ];
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -446,16 +455,13 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
         data: {
             schema: 'sourdaw.agent-capabilities',
             schemaVersion: 1,
-            operations: [
-                { name: 'command.batch.preview', callable: false, owner: 'Command', availability: 'available' },
-                { name: 'command.batch.commit', callable: false, owner: 'Command', availability: 'available' },
-                { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
-                { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-                { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-            ],
+            operations,
         },
-        summary: '5 application-owned capability contract(s)',
-        warnings: ['Command preview, approval, and commit remain application-managed lifecycle steps.'],
+        summary: `${String(operations.length)} application-owned capability contract(s)`,
+        warnings: [
+            'Command preview, approval, and commit remain application-managed lifecycle steps.',
+            'Deferred capabilities are reported for planning only; calling one is refused before any application work.',
+        ],
         error: null,
     };
 }
