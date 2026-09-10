@@ -1,0 +1,14 @@
+crates/sourdaw-native/src/commands/midi.rs
+  h_1228e573df1f42 14-19,426-444,447,452-461,722-748
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5e8255b666b3f109cab1c6c8f74cf9718f1b0e4c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
