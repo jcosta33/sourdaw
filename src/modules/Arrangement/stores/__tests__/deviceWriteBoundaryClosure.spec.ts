@@ -203,7 +203,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // a sink in this family at all — the reason a census that counts sinks
         // could not see the defect.
         // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
-        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
+        // Count provenance: measured 5, was 4. The fifth is the flush-side
+        // persist of the algorithm a `style` write derives, written after
+        // `style` so the record's insertion order matches `CRUST_PATCH_PRECEDENCE`,
+        // with no engine push for it.
+        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
         // import and its single call site. The panel's true-peak reset has to
