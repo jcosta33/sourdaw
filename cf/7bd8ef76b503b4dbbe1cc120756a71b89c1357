@@ -1,0 +1,22 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_9b530f08172a54::t_53f7bff1657991 279-283,285-289
+  s_9b530f08172a54::t_c3c7ba4acf78e8 406-421
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofTarget.spec.ts
+  s_9b530f08172a54::t_107165ec7d4225 107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cf7bd8ef76b503b4dbbe1cc120756a71b89c1357",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
