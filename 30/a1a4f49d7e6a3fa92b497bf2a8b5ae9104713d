@@ -1,0 +1,95 @@
+src/modules/Proof/useCases/proofParamBridge/__tests__/unregisterProofDevice.spec.ts
+  s_9b530f08172a54::t_fc6d83e4aeb236 13-17
+src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts
+  s_9b530f08172a54::t_057cf77712e156 10-11
+  s_9b530f08172a54::t_279374fb167f0a 394
+  s_9b530f08172a54::t_c295b930bdd5f5 354-355
+  s_9b530f08172a54::t_3a33ebc129a652 380
+src/modules/Proof/useCases/proofParamBridge/__tests__/resetIntegratedMeters.spec.ts
+  s_9b530f08172a54::t_de2af6bf4d3a0b 6-10
+src/modules/Proof/presentations/hooks/__tests__/useProofLoudnessHistory.spec.ts
+  s_9b530f08172a54::t_7eba25858f6f7d 39
+src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts
+  s_9b530f08172a54::t_69b0de00d0c1ae 1-30
+src/modules/Proof/useCases/proofParamBridge/__tests__/syncBandFunctions.spec.ts
+  s_9b530f08172a54::t_e948a8985c660e 1,3-6,12-26,29-34,37-41,44-48,51-54,57-62,65-66,68-70,73
+crates/daw-dsp/tests/device_process_rt.rs
+  s_9b530f08172a54::t_4e24e51bd63447 1639-1644
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_27fd94a2e8e90c 422-424,427-429
+  s_9b530f08172a54::t_3cbe31e569ed9c 226,229,233,235-248,250
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_9b530f08172a54::t_8f5fb78f43dcf6 5
+  s_9b530f08172a54::t_93788bc19ff6dc 90
+  s_9b530f08172a54::t_2c487f0487f60e 279-292
+  s_9b530f08172a54::t_a9dd70b7f7ad80 293-294,454,468,596,618-619,633-635,667-669,676,737-740,755,794-795,804,830,833-837,1186,1202,1222,1334,1479,1607
+src/modules/Proof/useCases/proofParamBridge/__tests__/helpers.spec.ts
+  s_9b530f08172a54::t_d822cbd19ac87a 1,5-9
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParam.spec.ts
+  s_9b530f08172a54::t_a6383c16fbc254 4,14-20,43,46,50-53,56,65,69-70,75
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParamWithPatch.spec.ts
+  s_9b530f08172a54::t_f4ac7c7e551af8 75,137-187,216,236,249,272,301,341,473,476-477,494,497-498,508,533
+  s_9b530f08172a54::t_abca11564f1891 345-348,352
+  s_9b530f08172a54::t_3d38faa6f856f4 5,21-26
+  s_9b530f08172a54::t_8b14cf55b95dce 27-28,63,86,94,105,200,237,240,273,291,366,377,388,399,410,421,432,443,454,468-469,471-472,474-475,495,499-507,532,562-563
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_167866776743b8 2426,2439-2450,2452,2455-2457
+  s_9b530f08172a54::t_c81d3f5d21975a 2686
+  s_9b530f08172a54::t_fea3be01d40222 19074-19075,19078-19093,19095,19118-19153,19159-19160,19162,19169,19172-19173,19176-19177,19183-19184
+  s_9b530f08172a54::t_dfcdc3bb21d81c 2654
+  s_9b530f08172a54::t_2bd910d2d50ee1 19154-19158,19161,19163-19168,19170-19171,19174-19175,19178-19182,19185-19191
+  s_9b530f08172a54::t_19e0ddcb58c1d5 2535-2539
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_9b530f08172a54::t_06dd8e50241023 21-27
+src/modules/Proof/useCases/proofParamBridge/__tests__/reorderChain.spec.ts
+  s_9b530f08172a54::t_908c9c467ff1ee 44,52-58,61,63,65-71
+  s_9b530f08172a54::t_cfcdd2ee1477a8 15-16
+  s_9b530f08172a54::t_f7cf55363794b0 4,17-18
+  s_9b530f08172a54::t_94e1be2b84373b 36
+  s_9b530f08172a54::t_4291acd2553216 19-20
+src/modules/Proof/useCases/proofParamBridge/setProofParam.ts
+  s_9b530f08172a54::t_9fede4c4c1de92 3
+  s_9b530f08172a54::t_b42fdc6752661a 29
+src/modules/Proof/useCases/proofParamBridge/helpers.ts
+  s_9b530f08172a54::t_1e9605c4110001 1,3-10,17-34
+  s_9b530f08172a54::t_cef0a0f4ca42ce 2
+src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts
+  s_9b530f08172a54::t_085350fbc11b70 440-452,459
+  s_9b530f08172a54::t_31980cc36e26a1 13-14
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_13cf3fc36f9182 639
+  s_9b530f08172a54::t_34615a70a9319e 624-625,627-628
+  s_9b530f08172a54::t_e349f830824208 649-652,656-668
+src/modules/Proof/useCases/proofParamBridge/__tests__/registerProofDevice.spec.ts
+  s_9b530f08172a54::t_5d6a618a894192 12-16
+release/open-source-inventory.json
+  s_9b530f08172a54::t_6b029b443e8c42 1197
+src/modules/Proof/useCases/proofParamBridge/__tests__/loadProofPatchWithAudio.spec.ts
+  s_9b530f08172a54::t_dc90fd849cfd7f 5,25-29,41-44,46,146,177,191,221,307,373,407,462,486,501,511,531,544
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofTarget.spec.ts
+  s_9b530f08172a54::t_76673366bfa3c5 5,21-25,79
+src/modules/Proof/useCases/proofParamBridge/syncDynBands.ts
+  s_9b530f08172a54::t_0bd8e3020348ff 3,9,13-20
+src/modules/Proof/useCases/proofParamBridge/syncEqBands.ts
+  s_9b530f08172a54::t_c968e90e7a2a1b 3,10-15
+src/modules/Proof/useCases/proofParamBridge/syncExciter.ts
+  s_9b530f08172a54::t_23b2605152dd0d 3,10-13
+src/modules/Proof/useCases/proofParamBridge/syncImager.ts
+  s_9b530f08172a54::t_de440f1d195629 3,9,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "30a1a4f49d7e6a3fa92b497bf2a8b5ae9104713d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
