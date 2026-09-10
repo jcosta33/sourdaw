@@ -2533,15 +2533,31 @@ function validateTrackPanDirection(assertedValue: number, actionScope: ActionPro
     return true;
 }
 
-const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'turn up', 'turn it up', 'boost'];
+const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'boost'];
 
-const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = [
-    'decrease',
-    'lower',
-    'turn down',
-    'turn it down',
-    'reduce',
-];
+const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'reduce'];
+
+/** How many tokens `turn ... up`/`turn ... down` may skip, so it still reads across the object it names (`turn the brightness down`) without crossing into an unrelated clause. */
+const TURN_DIRECTION_MAX_GAP_TOKENS = 4;
+
+function statesTurnDirection(maskedClause: string, direction: 'down' | 'up'): boolean {
+    const pattern = new RegExp(`\\bturn\\b(?:\\s+\\S+){0,${TURN_DIRECTION_MAX_GAP_TOKENS}}?\\s+${direction}\\b`, 'u');
+    return pattern.test(normalizePromptText(maskedClause));
+}
+
+function statesDeviceParameterIncrease(maskedClause: string): boolean {
+    return (
+        containsPhraseInMaskedText(maskedClause, DEVICE_PARAMETER_INCREASE_PHRASES) ||
+        statesTurnDirection(maskedClause, 'up')
+    );
+}
+
+function statesDeviceParameterDecrease(maskedClause: string): boolean {
+    return (
+        containsPhraseInMaskedText(maskedClause, DEVICE_PARAMETER_DECREASE_PHRASES) ||
+        statesTurnDirection(maskedClause, 'down')
+    );
+}
 
 type DeviceParameterDirectionDevice = ProjectContext['tracks'][number]['devices'][number];
 type DeviceParameterDirectionParameter = NonNullable<DeviceParameterDirectionDevice['parameters']>[number];
@@ -2671,12 +2687,8 @@ function validateDeviceParameterDirection(
     }
     const attributedClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device, context);
     const attributedText = attributedClauses.map((clause) => clause.masked);
-    const statesIncrease = attributedText.some((text) =>
-        containsPhraseInMaskedText(text, DEVICE_PARAMETER_INCREASE_PHRASES)
-    );
-    const statesDecrease = attributedText.some((text) =>
-        containsPhraseInMaskedText(text, DEVICE_PARAMETER_DECREASE_PHRASES)
-    );
+    const statesIncrease = attributedText.some((text) => statesDeviceParameterIncrease(text));
+    const statesDecrease = attributedText.some((text) => statesDeviceParameterDecrease(text));
     if (statesIncrease && statesDecrease) {
         return false;
     }

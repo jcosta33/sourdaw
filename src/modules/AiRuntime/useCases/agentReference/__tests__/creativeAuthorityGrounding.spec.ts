@@ -498,6 +498,20 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
+    it('reads a decrease from the "turn ... down" phrasing across the parameter it names', () => {
+        const prompt = 'turn the brightness down';
+
+        expectBrightnessRejected(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('reads an increase from the "turn ... up" phrasing across the device and parameter it names', () => {
+        const prompt = 'turn the filter brightness up a little';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
+    });
+
     it('ignores a direction stated in a clause naming another parameter', () => {
         const prompt = 'the filter needs work, and lower the gain';
 
@@ -512,11 +526,11 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expectBrightnessGrounded(prompt, 0.3);
     });
 
-    it('ignores a direction stated in a clause naming another track', () => {
+    it('reads an increase from a clause naming this device, ignoring a decrease stated for another track', () => {
         const prompt = 'lower the bass, and turn the filter up a touch';
 
         expectBrightnessGrounded(prompt, 0.8);
-        expectBrightnessGrounded(prompt, 0.3);
+        expectBrightnessRejected(prompt, 0.3);
     });
 
     it('attributes a later clause naming this device back to it after a clause naming another device', () => {
