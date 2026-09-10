@@ -11,10 +11,12 @@ use std::time::Duration;
 pub struct MidiDeviceInfo {
     pub index: usize,
     /// The identity a saved selection is keyed on. midir's own port id where
-    /// the backend supplies a usable one — the CoreMIDI unique id on macOS,
-    /// the device-interface path on Windows — and the name/ordinal fallback of
-    /// [`assign_port_ids`] where it does not. `index` is the handle
-    /// `open_midi_input` takes and is only valid for this enumeration.
+    /// the backend supplies a replug-stable one — the CoreMIDI unique id on
+    /// macOS, the device-interface path on Windows — and the name/ordinal
+    /// fallback of [`assign_port_ids`] where it does not (no id at all, the
+    /// CoreMIDI degenerate "0", or ALSA's session-scoped `client:port`).
+    /// `index` is the handle `open_midi_input` takes and is only valid for
+    /// this enumeration.
     pub id: String,
     pub name: String,
 }
@@ -421,20 +423,42 @@ pub async fn close_push_transport(push_state: &PushState) -> Result<(), String> 
 /// at all. Neither distinguishes ports, so both fall back to names.
 const DEGENERATE_PORT_ID: &str = "0";
 
+/// Whether a backend id names only this session's connection, not the device.
+///
+/// midir's ALSA backend formats a port id as `{client}:{port}`, and ALSA
+/// client numbers are handed out as clients connect: the same physical device
+/// reads differently after every replug or reboot, so such an id is exactly as
+/// unstable as the enumeration index this identity replaced. Persisting one
+/// would leave the saved selection dead on every session after the first —
+/// the never-settles behavior this surface exists to fix (#2016). CoreMIDI ids
+/// are pure digits and WinMM ids are device-interface paths, so neither can
+/// collide with the digits-colon-digits shape and the rule cannot demote a
+/// stable id.
+fn is_session_scoped_backend_id(raw_id: &str) -> bool {
+    let Some((client, port)) = raw_id.split_once(':') else {
+        return false;
+    };
+    let is_all_digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    is_all_digits(client) && is_all_digits(port)
+}
+
 /// Whether midir's own port id can serve as the persisted-selection identity.
 fn is_usable_port_id(raw_id: &str) -> bool {
-    !raw_id.is_empty() && raw_id != DEGENERATE_PORT_ID
+    !raw_id.is_empty() && raw_id != DEGENERATE_PORT_ID && !is_session_scoped_backend_id(raw_id)
 }
 
 /// The persisted-selection id for every port of one enumeration, in order.
 ///
-/// A port whose midir id is usable keeps it — on macOS and Windows that id is
-/// stable across replugs, so the user's saved selection follows the device.
-/// A port without one (or on a backend whose ids are not) falls back to the
-/// name scheme this identity used before ids crossed the wire (#2016): a
-/// unique name is the id, and only ports that share a name are qualified as
-/// `name #ordinal`, by their ordinal among the same-named fallback ports so an
-/// unrelated device joining or leaving cannot renumber them.
+/// A port whose midir id is usable keeps it. Per backend: macOS CoreMIDI
+/// assigns endpoints system-unique ids that survive replugs, and Windows WinMM
+/// ids are the device-interface path, equally stable — so the user's saved
+/// selection follows the device. A port without a usable id falls back to the
+/// name scheme this identity used before ids crossed the wire (#2016): no id
+/// at all, CoreMIDI's degenerate "0", or an ALSA `client:port`, whose client
+/// number is reassigned on every replug. The fallback keeps a unique name as
+/// the id, and qualifies only ports that share a name — `name #ordinal`, by
+/// their ordinal among the same-named fallback ports so an unrelated device
+/// joining or leaving cannot renumber them.
 ///
 /// Pure so the fallback rule is testable without any device attached.
 pub(super) fn assign_port_ids(ports: &[(String, String)]) -> Vec<String> {
@@ -693,6 +717,33 @@ mod tests {
         let ports = vec![port("", "Solo Controller")];
 
         assert_eq!(assign_port_ids(&ports), vec!["Solo Controller"]);
+    }
+
+    #[test]
+    fn an_alsa_session_id_falls_back_to_the_name_scheme() {
+        // ALSA's `client:port` is reassigned on every replug, so persisting it
+        // would leave the saved selection dead on the next session.
+        let ports = vec![port("128:0", "MPK Mini"), port("254", "Launchkey")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini", "254"]);
+    }
+
+    #[test]
+    fn same_named_alsa_ports_are_qualified_by_ordinal() {
+        let ports = vec![port("128:0", "MPK Mini"), port("130:0", "MPK Mini")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini #0", "MPK Mini #1"]);
+    }
+
+    #[test]
+    fn the_session_scoped_rule_cannot_demote_a_stable_backend_id() {
+        // CoreMIDI ids are pure digits and WinMM ids are device-interface
+        // paths; neither can match the digits-colon-digits ALSA shape, so a
+        // stable id always survives the usability gate.
+        let winmm_path = r"\\?\USB#VID_0763&PID_0159#MIDI";
+        let ports = vec![port("128:0", "MPK Mini"), port(winmm_path, "Launchkey")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini", winmm_path]);
     }
 
     /// A virtual port is the only device-free way to prove end-to-end that one
