@@ -2189,7 +2189,17 @@ fn map_device(
     // writes move the figure, and the audio thread can re-aim a line it holds
     // and cannot build one it does not (ADR 0020). At zero it is the identity
     // on the bypassed pass, so it costs the mix nothing while it waits.
-    if let Some(latency_frames) = declared_latency {
+    //
+    // A bypassed record declares zero and ships the line anyway. Such a body
+    // delays nothing on either carrier — the renderer drops a bypassed device
+    // from its own reading, and the web twin's bypass hands the block on
+    // untouched — so declaring the figure would hold every route meeting this
+    // strip back by a window nothing in it is waiting for. The line has to
+    // stand from the registration regardless, because the un-bypass that
+    // brings the figure back lands on the audio thread and it cannot build one
+    // there.
+    if let Some(reported_latency) = declared_latency {
+        let latency_frames = if device.bypassed { 0 } else { reported_latency };
         ops.push(GraphCommand::SetEffectLatency {
             effect_id,
             latency_frames,
@@ -11654,6 +11664,57 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, true)],
             "an unconfigured bacteria is not declared at zero with a line standing"
+        );
+    }
+
+    /// A bypassed record declares zero, and still ships the line standing.
+    ///
+    /// A bypassed body delays nothing on either carrier, so declaring its
+    /// reported window would hold every route meeting this strip back by a
+    /// figure the strip's signal is not waiting for. The line has to stand
+    /// anyway: the un-bypass that brings the figure back lands on the audio
+    /// thread, which can re-aim a line it holds and cannot build one (ADR
+    /// 0020). The spectral stage is what makes the zero worth reading — a
+    /// whole 2048-sample window the same record declares un-bypassed.
+    #[test]
+    fn a_bypassed_bacteria_record_declares_zero_with_a_standing_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": true,
+                               "parameterValues": { "band0_spectralEnabled": 1.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, true)],
+            "a bypassed bacteria is not declared at zero with a line standing"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
         );
     }
 

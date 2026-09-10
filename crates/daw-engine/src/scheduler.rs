@@ -2194,6 +2194,22 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 ///   this strip within one block of the write rather than at the next
 ///   Stop/Play.
 ///
+/// A bypassed Bacteria declares nothing, which is where this body parts from a
+/// hosted plugin: a plugin keeps its latency through bypass so an A/B never
+/// moves the mix, and this one does not. Both carriers have to agree about the
+/// same device, and both read a bypassed one as delaying nothing — the
+/// renderer's own reading drops a bypassed device on every carrier
+/// (`getTrackLatency.ts`), and the web body is a true bypass that hands the
+/// block on without the engine or a delay
+/// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`).
+/// Declaring the figure anyway would hold a natively carried strip back by a
+/// window nothing in it is waiting for, and flam every web strip beside it by
+/// exactly that. So [`ActiveEffect::refresh_declared_latency`] reads the bypass
+/// with the parameters and [`GraphCommand::SetBypass`] re-aims the pass. The
+/// cost is a one-block re-aim of the native mix on an A/B, which is the same
+/// re-aim the web schedule already takes when the same device is bypassed
+/// there.
+///
 /// The figure can outrun the compensation ceiling, and this is the first
 /// built-in for which that is reachable. `BacteriaEngine::latency_samples`
 /// sums its per-band figures under `Serial`, so six bands each running the
@@ -2497,6 +2513,9 @@ struct ActiveEffect {
     ///
     /// Bypass keeps latency (Cubase and Reaper both do this), so A/B-ing a
     /// bypass never shifts the strip's alignment against the rest of the mix.
+    /// The exception is a body the engine reads its own figure off: that figure
+    /// follows the bypass ([`Self::refresh_declared_latency`]), so the line is
+    /// re-aimed to zero with it and the bypassed pass runs the identity.
     /// `None` for a device that has never declared a latency — most built-ins,
     /// and a hosted plugin before its host publishes a figure. Built on the
     /// control thread and carried in by [`GraphCommand::SetEffectLatency`].
@@ -3166,10 +3185,10 @@ impl ActiveEffect {
     /// threshold, the spectral flag, the routing law — so a write that lands on
     /// the callback is the only place the change can be seen, and the graph
     /// stays aimed at the previous figure until something says so. Called after
-    /// every successful write to a built-in body, at both write sites; the
-    /// caller ORs the answer into `pdc_dirty`, so `update_graph` re-aims every
-    /// route meeting this strip on the next block rather than at the next
-    /// Stop/Play.
+    /// every successful write to a built-in body, at both write sites, and
+    /// after a bypass lands; the caller ORs the answer into `pdc_dirty`, so
+    /// `update_graph` re-aims every route meeting this strip on the next block
+    /// rather than at the next Stop/Play.
     ///
     /// The dry line is re-aimed here rather than replaced, exactly as
     /// [`Self::aim_dry_line`] re-aims it: the ring is built at the ceiling and
@@ -3179,6 +3198,15 @@ impl ActiveEffect {
     /// with [`crate::pdc::CompensationDelay::standing_line`] already holds the
     /// line, and one holding none simply has none to aim.
     ///
+    /// A bypassed body declares nothing. The declared figure is what the
+    /// strip's signal is really delayed by, and a bypassed body delays nothing
+    /// on either carrier: this one runs the bypassed pass, where the chain
+    /// hands the block on rather than through the engine, and its web twin
+    /// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`)
+    /// passes a bypassed block through untouched too. So bypass is read here
+    /// as well as the parameters, and [`Self::bypassed`] must already hold the
+    /// state being declared for whenever this is called.
+    ///
     /// Every other core answers `false` without touching anything. A hosted
     /// plugin's figure is republished by its host over
     /// [`GraphCommand::SetEffectLatency`], and a built-in that declares nothing
@@ -3187,7 +3215,11 @@ impl ActiveEffect {
         let PluginCore::Bacteria(body) = &self.instance else {
             return false;
         };
-        let declared = body.latency_samples() as usize;
+        let declared = if self.bypassed {
+            0
+        } else {
+            body.latency_samples() as usize
+        };
         if declared == self.latency_frames {
             return false;
         }
@@ -4037,15 +4069,22 @@ impl AudioScheduler {
                     self.pdc_dirty |= moved_latency;
                     None
                 }
-                // Bypass deliberately does not dirty the compensation: a
-                // bypassed device keeps its latency and runs its dry delay in
-                // place of itself, so nothing about the graph's alignment
-                // changes and re-aiming every delay here would glitch the mix
-                // on every A/B.
+                // Bypass itself does not dirty the compensation: a hosted
+                // plugin and every other built-in keep their latency and run
+                // their dry delay in place of themselves, so nothing about the
+                // graph's alignment changes and re-aiming every delay here
+                // would glitch the mix on every A/B.
                 GraphCommand::SetBypass(id, bypassed) => {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         let was_bypassed = self.effects[slot].bypassed;
                         self.effects[slot].bypassed = bypassed;
+                        // A body whose declared figure follows its own bypass
+                        // re-aims the pass here, because this is where that
+                        // figure moves: a bypassed Bacteria delays nothing on
+                        // either carrier, so the routes held back to meet it
+                        // are re-aimed with it.
+                        let moved_latency = self.effects[slot].refresh_declared_latency();
+                        self.pdc_dirty |= moved_latency;
                         // Un-bypassing is where the device starts reading its
                         // queued MIDI again, so it is where the releases it
                         // banked while nothing handed it a block are paid.
@@ -4506,8 +4545,11 @@ impl AudioScheduler {
     ///
     /// The topology walk belongs to the graph while the declared latencies and
     /// the generators' input holds belong to this table, so the graph is handed
-    /// a borrow of the table rather than a copy of it. Bypassed devices count:
-    /// bypass keeps latency, so an A/B never moves the mix.
+    /// a borrow of the table rather than a copy of it. Bypassed devices count
+    /// whatever their slot declares: bypass keeps latency, so an A/B never
+    /// moves the mix — except where the bypass moved the declaration itself
+    /// ([`ActiveEffect::refresh_declared_latency`]), which this pass reads as
+    /// any other moved figure.
     ///
     /// The declared figures are also what says whether the ceiling cut a dry
     /// line short, and the graph never sees them — it sees what a chain sums
@@ -17666,6 +17708,27 @@ mod timeline_tests {
         harness.send(insert_track_device(track_id, effect(effect_id), 0));
     }
 
+    /// A silent strip carrying a declared Bacteria, beside which another
+    /// strip's arrival is readable as exact numbers.
+    ///
+    /// The strip holds no clip, so the mix is whatever the *other* strips
+    /// deliver — which is what a compensation claim is about: the graph holds
+    /// every route meeting this strip back by the figure this device declares.
+    /// A strip rendering the multi-effect's own material could not be read that
+    /// way, and it cannot be bypassed into a plain dry line either, now that a
+    /// bypassed body declares nothing. Bacteria over silence is silence, so the
+    /// insert contributes nothing to the sum on either footing.
+    fn silent_track_declaring_bacteria(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        declare_bacteria_on_track(harness, track_id, effect_id, patch, latency_frames);
+    }
+
     /// One of the multi-effect's names in the carrier a `SetParam` travels in.
     fn bacteria_write(name: &str) -> DeviceParam {
         DeviceParam::BuiltinNamed(bacteria_name(name))
@@ -17677,12 +17740,12 @@ mod timeline_tests {
     /// unread, every route the graph held back to meet this strip stays aimed
     /// at the figure the record opened with for the rest of the session.
     ///
-    /// The insert is bypassed so the strip is its dry line and nothing else,
-    /// which is what makes the mix readable as exact numbers: the claim is
-    /// about where the two strips meet, not about the multi-effect's own
-    /// output. 2x oversampling against 8x because their delivered delays are
-    /// pinned in daw-dsp and both fit inside one 16-frame block, where the
-    /// spectral stage's window would not.
+    /// The insert sits on a silent strip so the mix reads as the bare strip's
+    /// hold and nothing else, which is what makes it exact numbers: the claim
+    /// is about the figure every route meeting this strip is held back by, not
+    /// about the multi-effect's own output. 2x oversampling against 8x because
+    /// their delivered delays are pinned in daw-dsp and both fit inside one
+    /// 16-frame block, where the spectral stage's window would not.
     #[test]
     fn a_bacteria_write_that_moves_its_latency_realigns_the_mix_within_one_block() {
         const FIRST: usize = 7;
@@ -17690,10 +17753,8 @@ mod timeline_tests {
 
         let mut harness = Harness::new(32);
         harness.playing();
-        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        silent_track_declaring_bacteria(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
         track_with_ramp_clip(&mut harness, 2, 102, 128);
-        declare_bacteria_on_track(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
-        harness.send(GraphCommand::SetBypass(7, true));
 
         harness.render(16);
 
@@ -17704,13 +17765,10 @@ mod timeline_tests {
         ));
 
         let (left, _) = harness.render(16);
-        let aligned: Vec<f32> = delayed_ramp(16, 16, SECOND)
-            .iter()
-            .map(|sample| sample * 2.0)
-            .collect();
         assert_eq!(
-            left, aligned,
-            "both strips arrive at the multi-effect's new figure from the first block after the write"
+            left,
+            delayed_ramp(16, 16, SECOND),
+            "the bare strip arrives at the multi-effect's new figure from the first block after the write"
         );
     }
 
@@ -17730,10 +17788,8 @@ mod timeline_tests {
 
         let mut harness = Harness::new(32);
         harness.playing();
-        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        silent_track_declaring_bacteria(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
         track_with_ramp_clip(&mut harness, 2, 102, 128);
-        declare_bacteria_on_track(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
-        harness.send(GraphCommand::SetBypass(7, true));
 
         harness.render(16);
         harness.send(GraphCommand::AutomateDeviceParam {
@@ -17747,21 +17803,18 @@ mod timeline_tests {
         harness.scheduler.update_graph();
 
         let (left, _) = harness.render(16);
-        let aligned: Vec<f32> = delayed_ramp(32, 16, SECOND)
-            .iter()
-            .map(|sample| sample * 2.0)
-            .collect();
         assert_eq!(
-            left, aligned,
+            left,
+            delayed_ramp(32, 16, SECOND),
             "the stamped write left the mix flammed by the difference between the two figures"
         );
     }
 
     /// The line a registration ships is the line the audio thread re-aims: it
     /// cannot build one and cannot free one, so a write that moves the figure
-    /// has to move the standing line with it. Left where it was, a bypassed
-    /// Bacteria would hold its strip at the opening figure while every other
-    /// route was re-aimed to the new one.
+    /// has to move the standing line with it. Left where it was, the line would
+    /// hold the strip at the opening figure on the next bypassed pass while
+    /// every other route was re-aimed to the new one.
     ///
     /// The spectral stage's whole window against the opening oversampling
     /// figure, because a jump of that size is the one a session really makes
@@ -17775,7 +17828,6 @@ mod timeline_tests {
         harness.playing();
         track_with_ramp_clip(&mut harness, 1, 101, 128);
         declare_bacteria_on_track(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], OPENING);
-        harness.send(GraphCommand::SetBypass(7, true));
 
         harness.render(16);
         assert_eq!(
@@ -17807,6 +17859,76 @@ mod timeline_tests {
                 .delay(),
             WITH_SPECTRAL,
             "the standing dry line stayed at the opening figure"
+        );
+    }
+
+    /// A bypassed Bacteria declares nothing, and the routes held back to meet
+    /// it are released with it.
+    ///
+    /// Both carriers read a bypassed device as delaying nothing — the
+    /// renderer's own reading drops one on every carrier and the web body's
+    /// bypass hands the block on untouched — so a native declaration that
+    /// stood through bypass would hold this strip's whole mix back by a window
+    /// no signal in it is waiting for, and flam every web strip beside it by
+    /// exactly that. The bare strip's arrival is what says the pass was
+    /// re-aimed, and the un-bypass is what says the figure came back rather
+    /// than being lost with the line.
+    #[test]
+    fn a_bypassed_bacteria_declares_no_latency_and_releases_the_mix() {
+        const DECLARED: usize = 7;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_bacteria(
+            &mut harness,
+            1,
+            7,
+            &[("band0_oversampling", 2.0)],
+            DECLARED,
+        );
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(0, 16, DECLARED),
+            "the bare strip was not held back to meet the declared figure"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, true));
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(16, 16, 0),
+            "the bare strip is still held back by a figure the bypassed insert no longer delays"
+        );
+        let effect = &harness.scheduler.effects[0];
+        assert_eq!(
+            effect.latency_frames, 0,
+            "the bypassed body goes on declaring its window to the graph"
+        );
+        assert_eq!(
+            effect
+                .dry_delay
+                .as_ref()
+                .expect("the registration's standing line")
+                .delay(),
+            0,
+            "the bypassed pass runs a dry line the strip's signal is not waiting for"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, false));
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(32, 16, DECLARED),
+            "the hold did not come back with the un-bypassed body's figure"
+        );
+        assert_eq!(
+            harness.scheduler.effects[0].latency_frames, DECLARED,
+            "the un-bypassed body did not declare the figure it reports again"
         );
     }
 

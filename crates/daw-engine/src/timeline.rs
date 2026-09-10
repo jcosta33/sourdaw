@@ -1462,8 +1462,12 @@ pub(crate) trait DeviceChain {
 /// latency and re-aims a generator's line: two closures over one table cannot
 /// hold the shared and the exclusive borrow at once.
 pub(crate) trait CompensationDevices {
-    /// What one device declares, bypassed or not: bypass keeps latency, so an
-    /// A/B never moves the mix.
+    /// What one device declares, bypassed or not: the pass reads the figure
+    /// the slot holds and never the bypass beside it. A hosted plugin's figure
+    /// stands through bypass, so an A/B never moves the mix. A body that
+    /// declares its own figure may have moved it on the bypass itself
+    /// (`ActiveEffect::refresh_declared_latency`), and the slot already holds
+    /// the moved figure by the time this pass reads it.
     fn device_latency(&self, effect_id: usize) -> usize;
 
     /// Aim one generator's input hold at `depth`, and answer whether the
