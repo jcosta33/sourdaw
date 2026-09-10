@@ -284,6 +284,13 @@ function getDeviceTypes(trackId: string): string[] {
     return track.devices.map((device) => device.type);
 }
 
+/** The setting the treatment asked for, read off the device the same batch put on the track. */
+function getRadioLowGain(trackId: string): number | undefined {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    const device = track?.devices.find((candidate) => candidate.type === RADIO_DEVICE_TYPE);
+    return device?.parameterValues[RADIO_LOW_GAIN_PARAM];
+}
+
 function getTrackNames(): string[] {
     return (trackStore.value?.tracks ?? []).map((track) => track.name);
 }
@@ -398,7 +405,7 @@ function radioProviderTurns(input: {
  */
 const COMBINED_PROMPT = `${BLUES_PROMPT}, and make it sound like a radio`;
 
-const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME];
+const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
 /** What a read-only authority answers to every writing command, whoever else would have grounded it. */
 const READ_ONLY_REFUSAL_REASON = 'Creative authority is read-only and admits no writing command';
@@ -407,20 +414,32 @@ const READ_ONLY_REFUSAL_REASON = 'Creative authority is read-only and admits no 
  * The device half of the combined proposal. A semantic list item reaches an existing track only
  * through a bounded selector (`compileArbitraryCommandList.ts` refuses a literal id with 'Targeted
  * command requires a bounded semantic bulk selector'), so the item names the guitar track by the
- * exact quantity of one it resolves to.
+ * exact quantity of one it resolves to, and binds the device it creates so the setting can reach it.
  */
-function radioDeviceItem(trackName: string): Record<string, unknown> {
-    return {
-        id: 'add-radio',
-        name: PROPOSED_COMMAND_NAME,
-        arguments: { deviceType: RADIO_DEVICE_TYPE },
-        selector: {
-            targetArgument: 'trackId',
-            entity: 'track',
-            where: { name: trackName },
-            quantity: { unit: 'targets', exactly: 1 },
+function radioDeviceItems(trackName: string): Record<string, unknown>[] {
+    return [
+        {
+            id: 'add-radio',
+            name: PROPOSED_COMMAND_NAME,
+            arguments: { deviceType: RADIO_DEVICE_TYPE, binding: RADIO_DEVICE_BINDING },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: trackName },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
         },
-    };
+        {
+            id: 'set-radio-low-gain',
+            name: PARAMETER_COMMAND_NAME,
+            arguments: {
+                deviceId: `$${RADIO_DEVICE_BINDING}`,
+                paramId: RADIO_LOW_GAIN_PARAM,
+                value: RADIO_LOW_GAIN_VALUE,
+            },
+            dependsOn: ['add-radio'],
+        },
+    ];
 }
 
 /** Discover the whole combined vocabulary, interpret the request, then propose both halves at once. */
@@ -438,7 +457,7 @@ function combinedProviderTurns(input: {
         ],
         (userMessage) => {
             assertDiscoveredCommandSchemas(userMessage, COMBINED_COMMAND_NAMES);
-            return [proposeCall([...bluesProposalItems(), radioDeviceItem(input.deviceTrackName)])];
+            return [proposeCall([...bluesProposalItems(), ...radioDeviceItems(input.deviceTrackName)])];
         },
     ];
 }
@@ -683,9 +702,11 @@ describe('creative interpretation execution', () => {
             'addClip',
             ...deriveBluesTransformCommands().map(() => 'addNotes'),
             PROPOSED_COMMAND_NAME,
+            PARAMETER_COMMAND_NAME,
         ]);
         expectCommittedBluesPhrase();
         expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
         expect(getDeviceTypes(BASS_TRACK_ID)).toEqual([]);
         expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
@@ -709,6 +730,7 @@ describe('creative interpretation execution', () => {
 
         expectCommittedBluesPhrase();
         expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getRadioLowGain(GUITAR_TRACK_ID)).toBe(RADIO_LOW_GAIN_VALUE);
         expect(getDeviceTypes(BASS_TRACK_ID)).toEqual([]);
     });
 
@@ -730,6 +752,7 @@ describe('creative interpretation execution', () => {
             'addClip',
             ...deriveBluesTransformCommands().map(() => 'addNotes'),
             PROPOSED_COMMAND_NAME,
+            PARAMETER_COMMAND_NAME,
         ];
         expect(getRefusal()).toBe(
             `Provider action rejected: ${refusedCommandNames
@@ -743,11 +766,11 @@ describe('creative interpretation execution', () => {
     });
 
     /**
-     * The authority still answers for the half it governs: the device is the only refused call, and
-     * the refused proposal takes the admitted phrase creations down with it rather than putting a
-     * half-honoured request in front of the musician.
+     * The authority still answers for the half it governs: the device chain is the only refused
+     * half, and the refused proposal takes the admitted phrase creations down with it rather than
+     * putting a half-honoured request in front of the musician.
      */
-    it('refuses the combined batch naming only the device when the treatment names a track the authority never covered', async () => {
+    it('refuses the combined batch naming only the device chain when the treatment names a track the authority never covered', async () => {
         cycleProviderAttempt(
             runtimeMocks.generateWebLlmCompletion,
             combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Bass' })
@@ -756,7 +779,8 @@ describe('creative interpretation execution', () => {
         await sendChatMessage(COMBINED_PROMPT);
 
         expect(getRefusal()).toBe(
-            `Provider action rejected: ${PROPOSED_COMMAND_NAME}: Creative authority does not cover the track ${BASS_TRACK_ID}`
+            `Provider action rejected: ${PROPOSED_COMMAND_NAME}: Creative authority does not cover the track ${BASS_TRACK_ID}; ` +
+                `${PARAMETER_COMMAND_NAME}: Creative authority does not cover the device $${RADIO_DEVICE_BINDING}`
         );
         expect(getPendingActionConfirmation(getConfirmationId())).toBeNull();
         expectNoBluesPhrase();
