@@ -8678,25 +8678,49 @@ mod tests {
         /// of latency (band 1's spectral window is the deepest, and `Parallel`
         /// pads every band and the dry tap out to the worst case), so a
         /// single callback would render nothing but the alignment rings
-        /// filling and the assertions below would pass against silence.
+        /// filling and the assertions below would pass against silence. The
+        /// precondition below checks the 2048 figure directly rather than
+        /// leaving it asserted only in this prose.
         ///
-        /// The oracle is a second render of the identical graph, differing
-        /// only in that every per-band stage the first patch turns on —
-        /// `distortionEnabled`, `lofiEnabled`, `convolutionEnabled`,
-        /// `spectralEnabled`, `granularEnabled` — is turned off in the
-        /// second, everything else held equal. Both renders cross the same
-        /// track, clip and device-splice machinery, so anything that
-        /// machinery does to the signal on its own lands identically in both
-        /// and cancels out of the comparison; what does not cancel is
-        /// whatever the engaged stages themselves change. Comparing the
-        /// engaged render against the raw input material instead — this
-        /// test's earlier form — does not have that property: something in
-        /// the graph changes samples from frame 513 on for reasons of its
-        /// own, so that comparison stayed green with
-        /// `self.engine.process_block(left, right)` deleted from
+        /// The oracle is a second render of the identical graph, built from a
+        /// patch that repeats every name `BacteriaEngine::latency_samples`
+        /// and `realign_bands` read to size a band's delay —
+        /// `bandCount`, `band0_oversampling`, `band0_distortionMode`,
+        /// `band0_codecArtifact`, `band1_spectralEnabled` and
+        /// `band0_convolutionIr` — so both patches drive every band to the
+        /// same reported delay; the precondition below proves that equality
+        /// rather than assuming it. `band1_spectralEnabled` in particular has
+        /// to stay on in both patches, not off: it is the one enable flag
+        /// `spectral_latency_samples` reads directly, so turning it off in a
+        /// second patch (this test's earlier form) drops that band's
+        /// reported delay from 2048 to 0 and reddens the alignment padding
+        /// each render gets from `realign_bands` — the renders then differ
+        /// because they are aligned differently, not because a stage did or
+        /// did not run. The two patches differ only in `band0_drive`,
+        /// `band0_convolutionMix`, `band1_spectralBlur` and `band1_grainMix`
+        /// — controls `DistortionProcessor::process_sample`,
+        /// `ConvolutionProcessor::set_param`, `StftProcessor::process_frame`
+        /// and `GranularProcessor::set_param` read for wet output and that no
+        /// latency method reads at all, confirmed by grepping each arm.
+        /// Every other name, including every other stage's enable flag, is
+        /// identical between the two patches, so this comparison says nothing
+        /// about whether `distortionEnabled`, `lofiEnabled`,
+        /// `convolutionEnabled` or `granularEnabled` themselves gate any
+        /// processing — only allocation coverage for those stages, from the
+        /// guard below, is claimed.
+        ///
+        /// Both renders cross the same track, clip, device-splice machinery
+        /// and now the same per-band delay, so anything that machinery or
+        /// that padding does to the signal lands identically in both and
+        /// cancels out of the comparison; what does not cancel is the four
+        /// wet controls above. Comparing the engaged render against the raw
+        /// input material instead — an even earlier form — does not have
+        /// that property: something in the graph changes samples from frame
+        /// 513 on for reasons of its own, so that comparison stayed green
+        /// with `self.engine.process_block(left, right)` deleted from
         /// `BacteriaBody::process` entirely. Deleting that call makes both
         /// patches here render the same pass-through output regardless of
-        /// which stages they name — the parameter writes still reach
+        /// which wet control they name — the parameter writes still reach
         /// `self.engine`, but nothing ever reads them back — which is exactly
         /// what turns this comparison red instead.
         #[test]
@@ -8723,26 +8747,54 @@ mod tests {
                 ("band1_grainDensity", 40.0),
                 ("band1_grainMix", 1.0),
             ]);
-            let patch_disengaged = bacteria_guard_writes(&[
+            // Repeats every latency-moving name from `patch_engaged` at the
+            // same value — `bandCount`, `band0_oversampling`,
+            // `band0_distortionMode`, `band0_codecArtifact`,
+            // `band1_spectralEnabled`, `band0_convolutionIr` — and every
+            // other stage's enable flag at the same value too, so the only
+            // differences left are the four wet-only controls the doc above
+            // names.
+            let patch_muted = bacteria_guard_writes(&[
                 ("bandCount", 2.0),
-                ("band0_distortionEnabled", 0.0),
-                ("band0_drive", 8.0),
+                ("band0_distortionEnabled", 1.0),
+                ("band0_drive", 0.0),
                 ("band0_oversampling", 4.0),
                 ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
-                ("band0_lofiEnabled", 0.0),
+                ("band0_lofiEnabled", 1.0),
                 ("band0_codecArtifact", 0.6),
-                ("band0_convolutionEnabled", 0.0),
+                ("band0_convolutionEnabled", 1.0),
                 ("band0_convolutionIr", 1.0),
-                ("band0_convolutionMix", 0.5),
-                ("band1_spectralEnabled", 0.0),
-                ("band1_spectralBlur", 0.5),
-                ("band1_granularEnabled", 0.0),
+                ("band0_convolutionMix", 0.0),
+                ("band1_spectralEnabled", 1.0),
+                ("band1_spectralBlur", 0.0),
+                ("band1_granularEnabled", 1.0),
                 ("band1_grainDensity", 40.0),
-                ("band1_grainMix", 1.0),
+                ("band1_grainMix", 0.0),
             ]);
 
+            // The comparison below is only sound if both patches present the
+            // same delay; prove it here instead of assuming the patches above
+            // stayed in sync with `BacteriaEngine::latency_samples` and
+            // `realign_bands`. Built outside the allocation guard along with
+            // the patches: these twins exist only to read back a reported
+            // figure, not to stand in for the guarded renders.
+            let mut engaged_twin = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            engaged_twin.load_patch(&patch_engaged);
+            let mut muted_twin = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            muted_twin.load_patch(&patch_muted);
+            assert_eq!(
+                engaged_twin.latency_samples(),
+                muted_twin.latency_samples(),
+                "the two patches report different delay, so the renders below would differ by alignment padding instead of by the toggled wet controls"
+            );
+            assert_eq!(
+                engaged_twin.latency_samples(),
+                2048,
+                "the eight-callback render length above assumes this patch reports 2048 samples of latency"
+            );
+
             let rendered_engaged = render_bacteria_patch(&patch_engaged, &material);
-            let rendered_disengaged = render_bacteria_patch(&patch_disengaged, &material);
+            let rendered_muted = render_bacteria_patch(&patch_muted, &material);
 
             assert!(
                 rendered_engaged.iter().any(|sample| *sample != 0.0),
@@ -8751,9 +8803,9 @@ mod tests {
             assert!(
                 rendered_engaged
                     .iter()
-                    .zip(&rendered_disengaged)
-                    .any(|(engaged, disengaged)| engaged != disengaged),
-                "the engaged and disengaged renders matched, so the multi-effect's stages never ran"
+                    .zip(&rendered_muted)
+                    .any(|(engaged, muted)| engaged != muted),
+                "the engaged and muted renders matched, so drive, convolutionMix, spectralBlur and grainMix never reached the signal"
             );
         }
 
