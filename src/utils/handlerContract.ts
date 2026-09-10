@@ -743,6 +743,22 @@ export type YeastProcessorSnapshot = {
     readonly params?: Record<string, number>;
 };
 
+/** Structural mirror of MIDI's groove-consumer union. Keep in sync with
+ *  `GrooveTemplateState.GrooveConsumerType`; a new consumer kind must be added
+ *  here too, or the generated argument schema rejects payloads carrying it. */
+export type GrooveConsumerTypeSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
+
+/** Structural mirror of MIDI's `GrooveTemplateAssignment` — one groove-template
+ *  binding. `removeYeastProcessor` captures its processor's live bindings so the
+ *  restore inverse can re-assign them without dispatching a nested undoable assign
+ *  action. Kept structural for the same reason every other snapshot here is. */
+export type YeastGrooveAssignmentSnapshot = {
+    readonly consumerType: GrooveConsumerTypeSnapshot;
+    readonly consumerId: string;
+    readonly templateId: string;
+    readonly amount: number;
+};
+
 type LegacyVcaGroupSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -2547,6 +2563,10 @@ export type AppAction =
               restore?: {
                   readonly processor: YeastProcessorSnapshot;
                   readonly atIndex: number;
+                  /** Groove assignments captured before the removal deleted them;
+                   *  the restore leg re-binds them directly, never as a nested
+                   *  undoable dispatch. */
+                  readonly grooveAssignments?: readonly YeastGrooveAssignmentSnapshot[];
               };
           };
       }
@@ -2556,9 +2576,9 @@ export type AppAction =
            * the whole expected processor and its index, so the undo inverse can
            * re-insert exactly what was deleted, and a peer edit inside that processor
            * between snapshot and undo conflicts instead of being silently dropped.
-           * KNOWN GAP (accepted for #2111): removal also deletes the processor's
-           * groove assignments in another store, and the inverse restores the
-           * processor without resurrecting them.
+           * Removal also deletes the processor's groove assignments in the groove
+           * store; the inverse payload carries the captured assignments so the
+           * restore re-binds them (#4124).
            */
           type: 'removeYeastProcessor';
           payload: { processorId: string; expectedProcessor: YeastProcessorSnapshot; expectedIndex: number };
