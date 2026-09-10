@@ -27,11 +27,14 @@ type TestGatewayChannel = {
 };
 
 /**
- * A literal no production path may ever echo. Every observable surface below is
- * stringified and searched for it, so a leak fails by content rather than by an
- * enumerated key name a future field could sidestep.
+ * A literal no production path may ever echo, including a base64 or hex copy a
+ * serializer might produce instead of the raw bytes. Every observable surface
+ * below is walked recursively and searched for it, so a leak fails by content
+ * rather than by an enumerated key name a future field could sidestep.
  */
 const CREDENTIAL = 'sk-fixture-SECRET-000000000000000000000000';
+const CREDENTIAL_BASE64 = btoa(CREDENTIAL);
+const CREDENTIAL_HEX = hex(CREDENTIAL);
 const SESSION_ID = 'provider-session-0123456789abcdef0123456789abcdef';
 const ANTHROPIC_ADAPTER = Object.freeze({
     adapterId: 'builtin.anthropic.messages.v1',
@@ -90,8 +93,64 @@ const aiRuntimeStores = {
     voiceStatusStore,
 };
 
-function containsCredential(value: unknown): boolean {
-    return JSON.stringify(value ?? null)?.includes(CREDENTIAL) === true;
+function hex(text: string): string {
+    return Array.from(new TextEncoder().encode(text), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function matchesCredential(text: string): boolean {
+    return text.includes(CREDENTIAL) || text.includes(CREDENTIAL_BASE64) || text.toLowerCase().includes(CREDENTIAL_HEX);
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
+
+function isArrayBuffer(value: object): value is ArrayBuffer {
+    // `instanceof ArrayBuffer` fails for a buffer minted in another realm (jsdom's
+    // `TextEncoder` returns one); the `[[Class]]` tag is realm-independent.
+    return Object.prototype.toString.call(value) === '[object ArrayBuffer]';
+}
+
+function toUint8Array(buffer: ArrayBuffer | ArrayBufferView): Uint8Array {
+    return isArrayBuffer(buffer)
+        ? new Uint8Array(buffer)
+        : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+}
+
+/**
+ * Recursively walks strings, byte buffers and views, arrays, Maps, Sets and
+ * plain objects for the credential in any of its matched forms. A flat
+ * `JSON.stringify(value).includes(CREDENTIAL)` sweep has two blind spots this
+ * walk closes: an encoded (base64 or hex) copy of the key passes a literal
+ * substring test, and `JSON.stringify` renders a `Uint8Array` as an
+ * index-keyed object and an `ArrayBuffer` as `{}`, hiding binary IndexedDB
+ * records that hold the key bytes. `Blob` is deliberately not decoded: every
+ * call site below is synchronous and only `Blob.text()` is async, and no
+ * production path in this module stores the credential as a `Blob`.
+ */
+function containsCredential(value: unknown, seen = new Set<object>()): boolean {
+    if (typeof value === 'string') {
+        return matchesCredential(value);
+    }
+    if (typeof value !== 'object' || value === null || seen.has(value)) {
+        return false;
+    }
+    seen.add(value);
+    if (isArrayBuffer(value) || ArrayBuffer.isView(value)) {
+        return matchesCredential(decodeUtf8(toUint8Array(value)));
+    }
+    if (Array.isArray(value)) {
+        return value.some((item) => containsCredential(item, seen));
+    }
+    if (value instanceof Map) {
+        return Array.from(value.entries()).some(
+            ([key, nested]) => containsCredential(key, seen) || containsCredential(nested, seen)
+        );
+    }
+    if (value instanceof Set) {
+        return Array.from(value.values()).some((item) => containsCredential(item, seen));
+    }
+    return Object.values(value).some((nested) => containsCredential(nested, seen));
 }
 
 function collectKeys(value: unknown, seen = new Set<object>()): string[] {
@@ -317,5 +376,22 @@ describe('provider credential boundary', () => {
             ).rejects.toThrow('Hosted providers are available in desktop builds only');
             expect(mocks.invoke).not.toHaveBeenCalled();
         });
+    });
+});
+
+describe('containsCredential', () => {
+    it('matches base64 and hex copies of the credential', () => {
+        expect(containsCredential(btoa(CREDENTIAL))).toBe(true);
+        expect(containsCredential(hex(CREDENTIAL))).toBe(true);
+    });
+
+    it('matches the credential decoded from a UTF-8 byte view, including one nested in a plain object', () => {
+        expect(containsCredential(new TextEncoder().encode(CREDENTIAL))).toBe(true);
+        expect(containsCredential({ nested: [new TextEncoder().encode(CREDENTIAL).buffer] })).toBe(true);
+    });
+
+    it('does not flag an unrelated string or unrelated binary data', () => {
+        expect(containsCredential('unrelated')).toBe(false);
+        expect(containsCredential(new Uint8Array([1, 2, 3]))).toBe(false);
     });
 });
