@@ -1119,6 +1119,12 @@ export function compileArbitraryCommandList(input: {
             reason: 'Structured command list requires a revision-bearing immutable project snapshot.',
         };
     }
+    if (input.creativeAuthority !== undefined && input.creativeAuthority.revision !== input.revision) {
+        return {
+            status: 'rejected',
+            reason: 'Structured command list creative authority was admitted against a different project snapshot.',
+        };
+    }
     if (!hasOnlyKeys(proposal.arguments, ['list', 'plan']) || !isRecord(proposal.arguments.list)) {
         return {
             status: 'rejected',
