@@ -1,0 +1,24 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  h_1228e573df1f42 20,90
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  h_1228e573df1f42 9,33
+src/modules/Command/useCases/__tests__/processingOnlyParameterPolicy.spec.ts
+  h_1228e573df1f42 26,208
+src/modules/Yeast/presentations/hooks/__tests__/useYeastParamActions.spec.tsx
+  h_1228e573df1f42 91-93,112,133,140
+src/modules/Yeast/presentations/hooks/useYeastParamActions.ts
+  h_1228e573df1f42 47-54,56,134,190
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 256,701,728,749,776,798,816,834
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cb22eb3a66eae1846717693fcadd1043deabd962",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
