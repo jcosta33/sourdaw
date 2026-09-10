@@ -1,0 +1,32 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_e12220393769c7 1718
+  s_9b530f08172a54::t_959c1c3dd66e67 1337
+  s_9b530f08172a54::t_4ff0340f70e0ff 1331
+crates/daw-dsp/src/proof/chain.rs
+  s_9b530f08172a54::t_0e08d38b138ffb 797-929
+  s_9b530f08172a54::t_74ec70119127a2 930-931
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_52861b0982e26a 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_36548e92208e8e 1
+public/wasm/manifest.json
+  s_9b530f08172a54::t_24ad47e80a9a4a 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_ef74ccb682367b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1e570bbec95ce0418394aabf811b98ec11db34f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
