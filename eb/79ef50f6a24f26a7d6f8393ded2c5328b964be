@@ -1,0 +1,37 @@
+src/modules/AiRuntime/repositories/providerAdapterRegistry.ts
+  s_06adf2b091dc62::t_ff0d448a895d7f 71
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_06adf2b091dc62::t_f8133f263d60a9 153-166
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_06adf2b091dc62::t_74c565c369cd4b 270-288
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_06adf2b091dc62::t_2d1ce42835958c 94
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_06adf2b091dc62::t_cbe57338d27557 79,87
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocolFixture.ts
+  s_06adf2b091dc62::t_111ba7c046d5d2 20
+  s_06adf2b091dc62::t_9563c967d5d2b9 43-45
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_06adf2b091dc62::t_1874f318a5aab2 370-388
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiResponses.ts
+  s_06adf2b091dc62::t_11b5475c96500b 78-88
+  s_06adf2b091dc62::t_9a44f38bc8be20 161,166-168
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiResponses.spec.ts
+  s_06adf2b091dc62::t_4c712e402e887b 270-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eb79ef50f6a24f26a7d6f8393ded2c5328b964be",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
