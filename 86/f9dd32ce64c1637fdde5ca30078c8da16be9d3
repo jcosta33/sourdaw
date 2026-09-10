@@ -1,0 +1,41 @@
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_9b530f08172a54::t_50942a8745db60 2065
+.github/workflows/quantum-measurements.yml
+  s_179552b454bd2e::t_1b05e1055278da 112-126
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_179552b454bd2e::t_3b0a3ea9f211a1 255-256,263,272,277-278
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_b17d7157f9bdf7::t_dcb0f58e52579a 76-82,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "86f9dd32ce64c1637fdde5ca30078c8da16be9d3",
+  "prompts": {},
+  "sessions": {
+    "s_179552b454bd2e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aad4624771efebe48",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b17d7157f9bdf7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae92a76a5cc14db5e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
