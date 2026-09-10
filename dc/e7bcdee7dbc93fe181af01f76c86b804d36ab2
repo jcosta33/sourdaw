@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts
+  s_06adf2b091dc62::t_5f568236a3484c 1-164
+  s_06adf2b091dc62::t_4b17ef7be6bae7 165-170
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_06adf2b091dc62::t_5bac7092682297 1-325,327,329-385
+  s_06adf2b091dc62::t_2e9621867603d3 326,328
+  s_06adf2b091dc62::t_ff47d2049c9543 386-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dce7bcdee7dbc93fe181af01f76c86b804d36ab2",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
