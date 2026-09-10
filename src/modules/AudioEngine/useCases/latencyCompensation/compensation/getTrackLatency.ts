@@ -10,14 +10,16 @@ import { getDeviceLatencyMs } from './getDeviceLatencyMs';
  * What one strip's signal has waited by the time it reaches the mix, in
  * milliseconds.
  *
- * `engineHostedStripIds` names the strips the native engine carries. It is not
- * a second `omitDeviceTypes`: omit is a statement about one queried track,
- * because freeze printed that chain without those types while the buses under
- * it were printed with theirs, so it deliberately stops at the first hop.
- * Engine hosting is a statement about the graph — a device the engine
- * compensates delays nothing this side can observe, on whichever strip it sits
- * — so the set travels down every recursive call and into
- * `getMaxTrackLatency`, the way `external-plugin` reads as zero everywhere.
+ * `engineHostedStripIds` names the strips whose engine-compensated devices the
+ * native engine hosts. It is not a second `omitDeviceTypes`: omit is a
+ * statement about one queried track, because freeze printed that chain without
+ * those types while the buses under it were printed with theirs, so it
+ * deliberately stops at the first hop. Engine hosting is a statement about the
+ * route — a device the engine compensates delays nothing this side can observe,
+ * on whichever hop of the route it sits — so the set travels down every
+ * recursive call, the way `external-plugin` reads as zero everywhere. What it
+ * does not reach is the session maximum: see [getCompensationDelay] for why the
+ * native block is aimed at the full session depth rather than a shrunken one.
  */
 export function getTrackLatency(
     trackId: string,

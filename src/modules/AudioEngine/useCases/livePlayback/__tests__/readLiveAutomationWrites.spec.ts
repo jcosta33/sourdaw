@@ -260,9 +260,9 @@ describe('readLiveAutomationWrites', () => {
     });
 
     // A write's own delay has to match the programme's, and that programme
-    // excluded an engine-compensated device on every strip the session
-    // carries. Reading the arguments rather than a figure, because the
-    // correction is invisible in a project holding no such device.
+    // named every strip whose engine-compensated devices the engine holds.
+    // Reading the arguments rather than a figure, because the correction is
+    // invisible in a project holding no such device.
     it('delays its writes against the strips the session carries', () => {
         fillSeam();
 
@@ -270,6 +270,32 @@ describe('readLiveAutomationWrites', () => {
 
         expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([
             [TRACK.id, undefined, nativeLiveGraphSession.carriedStripIds],
+        ]);
+    });
+
+    // A claim is read off `create-track-strip` commands and never names a bus,
+    // but the engine's own compensation counts a Bacteria on a bus like any
+    // other. Delaying a write against a shallower set than its programme's
+    // lands the stamp off the material it is meant to move.
+    it('extends the carried strips with a bus holding a body the engine compensates', () => {
+        fillSeam();
+        const bus: Track = {
+            ...TRACK,
+            id: 'bus-fx',
+            kind: 'bus',
+            devices: [{ id: 'dev-bacteria', name: 'Bacteria', type: 'bacteria', bypassed: false, parameterValues: {} }],
+        };
+
+        readLiveAutomationWrites({
+            stripTracks: [TRACK, bus],
+            sampleRate: SAMPLE_RATE,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(vi.mocked(getCompensationDelay).mock.calls.map((call) => call[2])).toEqual([
+            new Set([TRACK.id, bus.id]),
+            new Set([TRACK.id, bus.id]),
         ]);
     });
 

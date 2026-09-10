@@ -2194,6 +2194,19 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 ///   this strip within one block of the write rather than at the next
 ///   Stop/Play.
 ///
+/// The figure can outrun the compensation ceiling, and this is the first
+/// built-in for which that is reachable. `BacteriaEngine::latency_samples`
+/// sums its per-band figures under `Serial`, so six bands each running the
+/// spectral stage's 2048-sample window, Smudge's 2048-sample window at 1x and
+/// the codec's 256-sample frame report 26112 frames — past
+/// [`MAX_COMPENSATION_FRAMES`]'s 16384. The standing line and every sibling
+/// route then clamp at the ceiling, and the clamp is counted through the
+/// `pdc_clamped_routes` diagnostic rather than silently obeyed or silently
+/// dropped, which is the convention that constant's own documentation states.
+/// The `externalLatencyRegistry` path this replaces had no ceiling at all: it
+/// asked Web Audio for whatever delay was reported, so a patch this deep is
+/// newly a clamped alignment rather than an exact one.
+///
 /// Both hosts run the same `BacteriaEngine` over the same key stream, so the
 /// figure the audio thread reads is the figure the sound has:
 /// `updateDeviceParam` sends every write to both, and the only names one host
@@ -2210,7 +2223,10 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 /// (`useCases/latencyCompensation/compensation/`) therefore takes the set of
 /// engine-hosted strips and skips a device whose type is
 /// `latencyCompensatedByEngine` on one of them — the same exclusion
-/// `getDeviceLatencyMs` already makes for `external-plugin`. The web fallback
+/// `getDeviceLatencyMs` already makes for `external-plugin` — and then
+/// subtracts the deepest such figure once from every native strip's delay,
+/// because `Timeline::compensate` has already brought the whole native mix to
+/// that depth on its own. The web fallback
 /// keeps the worklet's figure: a strip Web Audio is still carrying is not in
 /// that set, and the delay it reports is a delay Web Audio really has.
 pub struct BacteriaBody {

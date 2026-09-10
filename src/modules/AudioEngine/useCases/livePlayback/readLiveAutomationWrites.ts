@@ -67,6 +67,7 @@ import {
     type StripAutomationDeviceEntry,
 } from '../offlineRender/projectStripAutomationWrites';
 
+import { engineHostedStripIds } from './engineHostedStripIds';
 import { isDeviceCarriedByNativeSession } from './isDeviceCarriedByNativeSession';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -75,6 +76,7 @@ import {
     type LiveAutomationWrites,
     type LiveAutomationWritesEntry,
 } from './projectLiveAutomationWrites';
+import { type StripCarrier } from './stripCarriers';
 
 /** What a session with no clock to place automation on holds. */
 const NO_AUTOMATION: LiveAutomationWrites = { entries: [], exclusions: [] };
@@ -249,6 +251,26 @@ function addressedNatively(
     return { ...entry, target: { ...entry.target, parameterId: body.parameterName(entry.target.parameterId) } };
 }
 
+/**
+ * The strips this write's delay must be measured against (#4153).
+ *
+ * The session has claimed its strips by the time a writer arms, so its carried
+ * set names every track the engine sounds — but a claim is read off
+ * `create-track-strip` commands and never names a bus, and the engine's own
+ * compensation counts a Bacteria on a bus like any other. So the carried tracks
+ * are extended with the bus strips `engineHostedStripIds` names against them,
+ * which is the same law the session's programme was read under rather than a
+ * second derivation of it: a write delayed against a different set than its
+ * programme lands off the material it is meant to move.
+ */
+function engineHostedStripIdsOfCarriedSession(stripTracks: readonly Track[]): ReadonlySet<string> {
+    const carried = nativeLiveGraphSession.carriedStripIds;
+    const carriers = new Map<string, StripCarrier>(
+        [...carried].map((stripId): [string, StripCarrier] => [stripId, { carrier: 'native' }])
+    );
+    return new Set([...carried, ...engineHostedStripIds(carriers, stripTracks)]);
+}
+
 export type ReadLiveAutomationWritesInput = Readonly<{
     /** The strips this session builds, in project order — tracks and buses alike. */
     stripTracks: readonly Track[];
@@ -282,6 +304,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
 
     const { law, hosted, builtin } = liveDeviceParameterLaw(stripTracks);
     const trackById = new Map(stripTracks.map((track): [string, Track] => [track.id, track]));
+    const hostedStripIds = engineHostedStripIdsOfCarriedSession(stripTracks);
 
     const projected = projectLiveAutomationWrites({
         stripTracks,
@@ -292,12 +315,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         changes,
         projectBeatToSeconds,
         sampleRate,
-        // The session has claimed its strips by the time a writer arms, so the
-        // carried set is the engine-hosted set: a write's own delay has to
-        // match the programme's, and that programme excluded an
-        // engine-compensated device on every strip the engine carries.
-        compensationDelaySeconds: (stripId) =>
-            getCompensationDelay(stripId, undefined, nativeLiveGraphSession.carriedStripIds),
+        compensationDelaySeconds: (stripId) => getCompensationDelay(stripId, undefined, hostedStripIds),
         vcaMultiplierByTrackId,
         slewTickSeconds: automationSlewTickSecondsForGrain(
             transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs

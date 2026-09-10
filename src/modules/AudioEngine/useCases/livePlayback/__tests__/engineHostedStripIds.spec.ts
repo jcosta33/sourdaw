@@ -75,12 +75,36 @@ describe('engineHostedStripIds', () => {
         expect([...engineHostedStripIds(new Map([['guitar', WEB]]), tracks)]).toEqual([]);
     });
 
-    // Buses get no carrier entry at all (`projectStripCarriers`), so a missing
-    // entry has to read as "not the engine's", never as native by default.
-    it('leaves a strip with no carrier entry out', () => {
-        const tracks = [createTrack({ id: 'bus-fx', kind: 'bus', devices: [device('d-bac', 'bacteria')] })];
+    // A track with no carrier entry was not decided native, so a missing entry
+    // has to read as "not the engine's", never as native by default.
+    it('leaves a track with no carrier entry out', () => {
+        const tracks = [createTrack({ id: 'guitar', devices: [device('d-bac', 'bacteria')] })];
 
         expect([...engineHostedStripIds(new Map(), tracks)]).toEqual([]);
+    });
+
+    // Buses get no carrier entry at all (`projectStripCarriers`), and a bus
+    // twin is built natively whenever the engine carries any track. Its body
+    // deepens every route through it, so leaving it out understates the hold
+    // the engine already took and double-delays every strip beside that route.
+    it('names a bus holding a compensated body once a track is native', () => {
+        const tracks = [
+            createTrack({ id: 'guitar', outputId: 'bus-fx' }),
+            createTrack({ id: 'bus-fx', kind: 'bus', devices: [device('d-bac', 'bacteria')] }),
+        ];
+
+        expect([...engineHostedStripIds(new Map([['guitar', NATIVE]]), tracks)]).toEqual(['bus-fx']);
+    });
+
+    // With no track the engine's, no native bus twin was built either: the
+    // Web Audio bus really is delaying by its own worklet's reported figure.
+    it('leaves a bus out when the engine carries no track', () => {
+        const tracks = [
+            createTrack({ id: 'guitar', outputId: 'bus-fx' }),
+            createTrack({ id: 'bus-fx', kind: 'bus', devices: [device('d-bac', 'bacteria')] }),
+        ];
+
+        expect([...engineHostedStripIds(new Map([['guitar', WEB]]), tracks)]).toEqual([]);
     });
 
     // An empty answer is what tells the caller its sum needs no correcting at

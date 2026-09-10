@@ -201,7 +201,8 @@ export async function renderOfflineWithNativeEngine(
 
     const busIds = new Set(renderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackIds = new Set(renderableTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
-    // This engine hosts every strip in the render, so every strip's own
+    // This engine hosts every strip in the render — buses among them, since a
+    // bus deepens every route through it — so every strip's own
     // engine-compensated devices are the engine's to hold back rather than
     // this projection's to count.
     const engineHostedStripIds: ReadonlySet<string> = new Set(renderableTracks.map((track) => track.id));
