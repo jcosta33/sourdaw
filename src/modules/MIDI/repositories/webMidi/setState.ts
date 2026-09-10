@@ -1,24 +1,22 @@
 import { type WebMidiState } from '../../models/WebMidiTypes';
 
 import { persistInputId } from './persistInputId';
+import { type MidiIdentityScheme } from './selectedInputIdStorageKeys';
 import { webMidiState, webMidiSubscribers } from './state';
 
-type SetStateOptions = {
-    /**
-     * Whether a `selectedInputId` in this update is the user's choice and
-     * should be remembered across sessions. A device that vanished on a
-     * hot-unplug forces a session-only fallback, which must not overwrite the
-     * saved preference — otherwise unplugging a controller for a second
-     * permanently rebinds it to whatever enumerates first.
-     */
-    persistSelection?: boolean;
-};
+/**
+ * Persisting a selection is opt-in and must name the identity scheme the id
+ * came from — the storage key is namespaced per scheme (#4138). Without it a
+ * selection is session-only, the safe default: an accidental persist would
+ * rebind the user's device across sessions, while a hot-unplug stand-in must
+ * never overwrite the saved preference anyway (#1837 F10).
+ */
+type SetStateOptions = { persistSelection?: false } | { persistSelection: true; identityScheme: MidiIdentityScheme };
 
 export function setState(next: Partial<WebMidiState>, options: SetStateOptions = {}): void {
-    const { persistSelection = true } = options;
     webMidiState.current = { ...webMidiState.current, ...next };
-    if (persistSelection && 'selectedInputId' in next) {
-        persistInputId(next.selectedInputId ?? null);
+    if (options.persistSelection === true && 'selectedInputId' in next) {
+        persistInputId(next.selectedInputId ?? null, options.identityScheme);
     }
     for (const fn of webMidiSubscribers) {
         fn();
