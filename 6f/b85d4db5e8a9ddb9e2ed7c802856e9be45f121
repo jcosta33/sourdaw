@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_06adf2b091dc62::t_63308346193a9c 514-631
+src/modules/AiRuntime/useCases/getProviderRouteView.ts
+  s_06adf2b091dc62::t_e34f427bce09b1 149
+  s_06adf2b091dc62::t_62a18f60033df3 145-146
+  s_06adf2b091dc62::t_7b5ab6b0b5c29b 147
+  s_06adf2b091dc62::t_2ea0bd2e4851db 205-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6fb85d4db5e8a9ddb9e2ed7c802856e9be45f121",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
