@@ -68,7 +68,7 @@ const OPENAI_COMPATIBLE_CAPABILITIES: ModelProviderCapabilities = Object.freeze(
     text: true,
     tools: true,
     structuredOutput: false,
-    parallelToolCalls: false,
+    parallelToolCalls: true,
     streaming: true,
     contextWindowTokens: null,
     maxOutputTokens: null,

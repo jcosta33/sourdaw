@@ -267,6 +267,46 @@ describe('streamOpenAiResponses', () => {
         expect(result.finishReason).toBe('length');
     });
 
+    it.each([
+        ['max_output_tokens', 'length'],
+        ['content_filter', 'refusal'],
+    ] as const)('reports the provider usage totals of an incomplete %s response', async (reason, finishReason) => {
+        const onUsage = vi.fn();
+        respondWith(
+            [
+                created(),
+                textDelta('Lower '),
+                sseEvent('response.incomplete', {
+                    response: {
+                        id: RESPONSE_ID,
+                        incomplete_details: { reason },
+                        usage: { input_tokens: 11, output_tokens: 4 },
+                    },
+                }),
+            ].join('')
+        );
+
+        const result = await streamOpenAiResponses({
+            runtime,
+            messages: [{ role: 'user', content: 'lower the vocals' }],
+            onToken: vi.fn(),
+            signal: new AbortController().signal,
+            onUsage,
+        });
+
+        expect(result.finishReason).toBe(finishReason);
+        expect(onUsage.mock.calls).toEqual([
+            [
+                {
+                    type: 'usage',
+                    mode: 'final',
+                    usage: { inputTokens: 11, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
+                    provenance: 'provider-reported',
+                },
+            ],
+        ]);
+    });
+
     it('rejects an incomplete response whose reason it cannot map', async () => {
         await expect(
             stream(

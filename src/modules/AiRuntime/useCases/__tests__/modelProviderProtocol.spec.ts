@@ -267,6 +267,25 @@ describe('model provider protocol', () => {
         });
     });
 
+    it.each(['openai', 'openai-compatible'] as const)('admits parallel tool calls for %s', (provider) => {
+        const { compiled } = createRequest({
+            provider,
+            allowParallelToolCalls: true,
+            dataPolicy: 'remote-allowed',
+            dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+            remoteDisclosure: remoteTransmissionDisclosure.issue({
+                categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
+                correlationId: 'correlation-1',
+                requestId: 'request-1',
+            }),
+        });
+
+        if (compiled.status !== 'ready') {
+            throw new Error(compiled.failure.code);
+        }
+        expect(compiled.request.allowParallelToolCalls).toBe(true);
+    });
+
     it('exposes only the documented result keys and schema version', () => {
         const { protocol, request } = readyRequest();
         const session = protocol.start(request);

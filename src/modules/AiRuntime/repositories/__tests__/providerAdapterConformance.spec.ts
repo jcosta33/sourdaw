@@ -150,6 +150,20 @@ describe('provider adapter conformance', () => {
         });
     });
 
+    it('reports parallel tool calls on both compiled adapters', () => {
+        const chatCompletions = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const responses = compileProviderAdapterInstallation({
+            adapterId: 'builtin.openai.responses.v1',
+            providerId: 'openai',
+            modelId: 'gpt-test',
+            protocolFamily: 'openai-responses',
+            origin: 'https://api.openai.com',
+        });
+
+        expect(chatCompletions.capabilities.parallelToolCalls).toBe(true);
+        expect(responses.capabilities.parallelToolCalls).toBe(true);
+    });
+
     it('refuses an adapter id that no compiled contract declares', () => {
         expect(() =>
             compileProviderAdapterInstallation({ ...BASE_INSTALLATION, adapterId: 'builtin.openai.assistants.v1' })

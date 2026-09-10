@@ -91,6 +91,7 @@ function streamFixture(scenario: ProviderStreamScenario): string {
         return [
             created(FIXTURE.providerRequestId),
             textDelta(firstDelta ?? ''),
+            sseEvent('response.output_text.done', { item_id: 'msg-1', output_index: 0, text: firstDelta ?? '' }),
             completed(FIXTURE.providerRequestId, {
                 input_tokens: FIXTURE.usage.inputTokens,
                 output_tokens: FIXTURE.usage.outputTokens,

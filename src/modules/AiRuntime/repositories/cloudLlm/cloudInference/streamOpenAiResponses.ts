@@ -75,6 +75,17 @@ function readUsage(value: unknown): ModelProviderUsageEvent['usage'] | null {
     };
 }
 
+/**
+ * Both terminal events carry the provider's own token totals, so a truncated or
+ * filtered response is billed exactly like a completed one.
+ */
+function emitFinalUsage(response: unknown, onUsage: ((event: ModelProviderUsageEvent) => void) | undefined): void {
+    const usage = readUsage(isRecord(response) ? response.usage : null);
+    if (usage) {
+        onUsage?.({ type: 'usage', mode: 'final', usage, provenance: 'provider-reported' });
+    }
+}
+
 function readDeltaText(value: unknown): string | null {
     return typeof value === 'string' ? value : null;
 }
@@ -147,15 +158,14 @@ function consumeEventData(
     }
     if (type === 'response.completed') {
         state.providerRequestId ??= readResponseId(payload.response);
-        const usage = readUsage(isRecord(payload.response) ? payload.response.usage : null);
-        if (usage) {
-            onUsage?.({ type: 'usage', mode: 'final', usage, provenance: 'provider-reported' });
-        }
+        emitFinalUsage(payload.response, onUsage);
         state.finishReason = 'stop';
         return;
     }
     if (type === 'response.incomplete') {
-        state.finishReason = readIncompleteFinishReason(payload.response);
+        const finishReason = readIncompleteFinishReason(payload.response);
+        emitFinalUsage(payload.response, onUsage);
+        state.finishReason = finishReason;
         return;
     }
     if (isConsumedEventType(type)) {

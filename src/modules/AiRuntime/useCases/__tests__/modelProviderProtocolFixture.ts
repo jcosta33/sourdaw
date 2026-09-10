@@ -17,6 +17,7 @@ export type CreateRequestOptions = {
     modality?: ModelProviderModality;
     operation?: ModelProviderOperation;
     tools?: ModelProviderTool[];
+    allowParallelToolCalls?: boolean;
     budget?: ModelProviderBudget;
     limits?: { maxOutputTokens: number };
     dataPolicy?: 'local-only' | 'remote-allowed';
@@ -39,6 +40,9 @@ export function createRequest(options: CreateRequestOptions = {}) {
         modality: options.modality ?? 'text',
         messages: [{ role: 'user', content: 'Set the tempo.' }],
         ...(options.tools === undefined ? {} : { tools: options.tools }),
+        ...(options.allowParallelToolCalls === undefined
+            ? {}
+            : { allowParallelToolCalls: options.allowParallelToolCalls }),
         stream: true,
         limits: options.limits ?? { maxOutputTokens: 256 },
         controls: { cache: 'provider-default', reasoning: 'provider-default' },
