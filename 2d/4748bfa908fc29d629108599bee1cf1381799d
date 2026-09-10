@@ -1,0 +1,28 @@
+src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts
+  s_9b530f08172a54::t_4c7d5fe0abf0c0 36,40-44,59
+  s_9b530f08172a54::t_edfcb0cc3df12f 49
+src/modules/Crust/useCases/crustParamBridge/helpers.ts
+  s_9b530f08172a54::t_14ae1a2e2483ec 19
+src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts
+  s_9b530f08172a54::t_9ce9f16e669b90 17-21
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_ec697f14b69ae3 1707-1714
+src/modules/Crust/useCases/__tests__/crustParamBridge.spec.ts
+  s_9b530f08172a54::t_947c2c6de771aa 109-110,120-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2d4748bfa908fc29d629108599bee1cf1381799d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
