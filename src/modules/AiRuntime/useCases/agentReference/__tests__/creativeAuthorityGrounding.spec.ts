@@ -596,6 +596,20 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expectBrightnessGrounded(prompt, 0.3);
     });
 
+    it("stops the turn direction gap at a particle, not a later phrasal verb's particle", () => {
+        const prompt = 'turn it down while building up the mix';
+
+        expectBrightnessRejected(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('states no direction when the gap cap stops the reach to a distant "up" token', () => {
+        const prompt = 'turn it on while the mix opens up';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
     it('reads an increase from the "boost" phrase', () => {
         const prompt = 'boost the brightness';
 
