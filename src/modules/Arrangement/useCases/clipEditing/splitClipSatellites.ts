@@ -236,9 +236,14 @@ function bezierSeamControlPoints(
  * span onto [0,1], which they do not commute with (#4078). `exponential`
  * warps by `fraction ** 2 ** (3 * tension)` — the continuation
  * (f + (1-f)·u)^p is not a power of u, and no `tension` reproduces it.
- * `stairs` cannot realign: the surviving edges sit at global fractions
- * k/steps, non-uniform in the re-based span, and a cut inside the final step
- * would need a step count of 1, below the evaluator's minimum of 2. `smooth`
+ * `stairs` continues exactly only when the cut lands ON an interior step
+ * edge (f = k/s with k ≤ s−2): there the surviving edges re-base uniformly
+ * and `stairSteps = s − k` would replay them exactly. The seam declines that
+ * realignment — it would carry a step count the musician never authored onto
+ * user-visible, editable fragment data — and keeps the authored count, which
+ * is exact nowhere: off-edge cuts space the surviving edges non-uniformly in
+ * the re-based span, and the final edge would need a count of 1, below the
+ * evaluator's minimum of 2. `smooth`
  * (Catmull-Rom) reads its end tangents from neighboring points' values; the
  * seam has no left neighbor, so it and the following segment evaluate changed
  * tangents, and the two phantom values a carried left point could supply
@@ -246,8 +251,8 @@ function bezierSeamControlPoints(
  * three keep the family and the exact seam value sampled below — the split
  * stays continuous at the cut, and only interior shape drifts, bounded by
  * the straddling segment's |value| span (0.42·span for exponential at
- * |tension| ≤ 1; span/4 for stairs at ≥ 4 steps, span/2 at 2) and by the
- * neighborhood value spread for smooth (0.15×).
+ * |tension| ≤ 1; span/2 for stairs at 2 steps, span/3 at 3, span/4 at ≥ 4)
+ * and by the neighborhood value spread for smooth (0.15×).
  * `splitClipNonBezierSeam.spec.ts` pins each envelope; exact continuation
  * remains bezier-only.
  *

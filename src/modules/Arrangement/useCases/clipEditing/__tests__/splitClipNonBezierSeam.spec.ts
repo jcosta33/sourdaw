@@ -176,23 +176,26 @@ describe('split seam non-bezier curve families (#4078)', () => {
         expectSweepWithin(sweepLane('auto-split-c2-0'), beforeSplit, 2.8, STAIRS_SEAM_RESIDUAL * Math.abs(0.8 - 0.2));
     });
 
-    it('keeps a stairs seam exact at a step-boundary cut too — realignment fails there as well', () => {
+    it('keeps a stairs seam exact at a step-boundary cut too, under the declined realignment', () => {
         const sourcePoints: SeamSpecPoint[] = [
             { beat: 1, value: 0.2, curve: 'stairs', stairSteps: 4 },
             { beat: 7, value: 0.8, curve: 'stairs', stairSteps: 4 },
         ];
         restoreAutomationSnapshot({ lanes: [clipLane({ id: 'lane-1', points: sourcePoints })] });
         const beforeSplit = sweepLane('lane-1');
-        // Fraction 0.5 of the segment is exactly 2.0 of 4 steps — the seam
-        // value is the boundary value 0.2 + 0.6·(2/4). Even from an aligned
-        // start the fragment's later edges misalign (0.5 + 0.5·k/4 is not
-        // k/4 of the whole), so the same envelope applies.
+        // Beat 4 is fraction 0.5 of the segment — exactly 2.0 of 4 steps, an
+        // interior step edge. Exactness there would demand stairSteps 2, the
+        // realignment `seamPointFor` documents and declines (it would rewrite
+        // the authored count), so the inherited count plays and the same
+        // envelope applies.
         const seamSample = getAutomationValueAtBeat('lane-1', 4);
         expect(seamSample).toBeCloseTo(0.5, 12);
 
         const plan = planFor(4);
 
         const seam = plan.rightAutomationLanes[0]!.points[0]!;
+        expect(seam.curve).toBe('stairs');
+        expect(seam.stairSteps).toBe(4);
         expect(seam.value).toBe(seamSample);
 
         restoreAutomationSnapshot({ lanes: [plan.rightAutomationLanes[0]!] });
