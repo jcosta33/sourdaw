@@ -12,7 +12,7 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
-import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
+import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
@@ -262,7 +262,7 @@ describe('generateToolPlanningOutcome', () => {
         );
     });
 
-    it('keeps the five application tools available to WebLLM under 30-tool selection pressure', async () => {
+    it('keeps the five application tools available to WebLLM under budget selection pressure', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
         // 120 competing tools whose names and descriptions match the "plan a command" prompt.
@@ -285,7 +285,7 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(30);
+        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
             expect.arrayContaining([
                 'project.query',
@@ -297,7 +297,7 @@ describe('generateToolPlanningOutcome', () => {
         );
     });
 
-    it('keeps the creative interpretation tool available to WebLLM under 30-tool selection pressure', async () => {
+    it('keeps the creative interpretation tool available to WebLLM under budget selection pressure', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
         // Production appends the creative interpretation schema last, behind far more action tools
@@ -320,13 +320,13 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(30);
+        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toContain(
             CREATIVE_INTERPRETATION_TOOL_NAME
         );
     });
 
-    it('advertises the production planning contract to WebLLM at the 30-tool cap', async () => {
+    it('advertises the production planning contract to WebLLM within the tool budget', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
@@ -339,17 +339,22 @@ describe('generateToolPlanningOutcome', () => {
             new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
         );
 
-        await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
-            status: 'complete',
-        });
+        // Production appends the creative interpretation schema to that list on every run.
+        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+
+        await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
+            {
+                status: 'complete',
+            }
+        );
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
         // The mandatory set (workflow selector, the application tools, every workflow action tool)
-        // leaves one free slot under the WebLLM cap, and it goes to the first non-mandatory
+        // leaves one free slot under the WebLLM budget, and it goes to the first non-mandatory
         // catalog tool.
-        expect(advertisedNames).toHaveLength(30);
+        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
                 'selectWorkflowCapability',
@@ -381,6 +386,7 @@ describe('generateToolPlanningOutcome', () => {
                 'automateTrackGainRange',
                 'automateSendRanges',
                 'renderProjectSections',
+                CREATIVE_INTERPRETATION_TOOL_NAME,
                 'project.resolve',
             ])
         );

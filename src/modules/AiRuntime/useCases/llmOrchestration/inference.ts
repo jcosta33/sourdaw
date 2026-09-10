@@ -48,6 +48,10 @@ import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
 
+// The mandatory planning contract (workflow selector, six application tools, the workflow action
+// tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
+export const WEBLLM_TOOL_BUDGET = 31;
+
 function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
     error.name = 'AbortError';
@@ -370,7 +374,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
                         ...mandatoryTools,
-                        ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
+                        ...promptActionTools.slice(0, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length)),
                     ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
