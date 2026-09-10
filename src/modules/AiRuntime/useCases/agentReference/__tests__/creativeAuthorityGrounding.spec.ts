@@ -161,6 +161,35 @@ function bridge(input: {
     });
 }
 
+const VALUE_MISMATCH_REASON = 'Provider value value does not match the user request';
+
+function bridgeBrightness(prompt: string, value: number) {
+    return bridge({
+        calls: [
+            { name: 'setDeviceParameter', arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value } },
+        ],
+        creativeAuthority: buildAuthority(),
+        projectContext: brightnessContext,
+        prompt,
+    });
+}
+
+function expectBrightnessGrounded(prompt: string, value: number): void {
+    const result = bridgeBrightness(prompt, value);
+
+    expect(result.rejections).toEqual([]);
+    expect(result.actions).toMatchObject([
+        { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value } },
+    ]);
+}
+
+function expectBrightnessRejected(prompt: string, value: number): void {
+    const result = bridgeBrightness(prompt, value);
+
+    expect(result.actions).toEqual([]);
+    expect(result.rejections).toMatchObject([{ name: 'setDeviceParameter', reason: VALUE_MISMATCH_REASON }]);
+}
+
 const addRadioFilter: ToolCallResult = {
     name: 'addDevice',
     arguments: { trackId: 'guitar', deviceType: 'radio-filter' },
@@ -284,7 +313,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
             ],
             creativeAuthority: buildAuthority(),
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness and boost the drive',
+            prompt: 'make it darker, lower the brightness and boost the gain',
         });
 
         expect(result.actions).toEqual([]);
@@ -302,7 +331,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
                 },
             ],
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness and boost the drive',
+            prompt: 'make it darker, lower the brightness and boost the gain',
         });
 
         expect(withoutAuthority.actions).toEqual([]);
@@ -316,7 +345,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
             ],
             creativeAuthority: buildAuthority(),
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness and boost the drive',
+            prompt: 'make it darker, lower the brightness and boost the gain',
         });
 
         expect(result.rejections).toEqual([]);
@@ -325,7 +354,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
-    it('reads a direction from the whole scope when the clause naming the device states none', () => {
+    it('reads a direction from a clause naming nothing that follows the clause naming the device', () => {
         const rejected = bridge({
             calls: [
                 {
@@ -467,6 +496,41 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(grounded.actions).toMatchObject([
             { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 } },
         ]);
+    });
+
+    it('ignores a direction stated in a clause naming another parameter', () => {
+        const prompt = 'the filter needs work, and lower the gain';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('keeps an anaphoric direction with the object its preceding clause named', () => {
+        const prompt = 'the eq is harsh, turn it down, and give the filter some sparkle';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('ignores a direction stated in a clause naming another track', () => {
+        const prompt = 'lower the bass, and turn the filter up a touch';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('attributes a later clause naming this device back to it after a clause naming another device', () => {
+        const prompt = 'the eq is harsh, turn it down, and the filter is dull, turn it up';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
+    });
+
+    it('reads an increase from a clause naming nothing that follows the clause naming the device', () => {
+        const prompt = 'the filter is dull, turn it up';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
     });
 
     it('grounds a bypass intent the request never phrased', () => {

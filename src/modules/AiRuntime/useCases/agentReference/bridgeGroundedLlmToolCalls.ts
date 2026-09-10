@@ -2551,24 +2551,85 @@ function clauseNamesToken(clause: PromptClause, tokens: readonly string[]): bool
     return tokens.some((token) => token.length > 0 && normalizedClause.includes(` ${token} `));
 }
 
+type DeviceParameterClauseAttribution = 'other' | 'this';
+
+type DeviceParameterDirectionTokens = {
+    device: readonly string[];
+    other: readonly string[];
+    parameter: readonly string[];
+};
+
+function getNormalizedTokens(values: readonly string[]): string[] {
+    return values.map((value) => normalizePromptText(value)).filter((token) => token.length > 0);
+}
+
+/** Every context object a clause could name instead of this one: other parameters, devices and tracks. */
+function getOtherObjectTokens(
+    context: ProjectContext,
+    parameter: DeviceParameterDirectionParameter,
+    device: DeviceParameterDirectionDevice
+): readonly string[] {
+    const parameterTokens = getNormalizedTokens([parameter.id, parameter.name]);
+    const deviceTokens = getNormalizedTokens([device.id, device.type]);
+    const devices = context.tracks.flatMap((track) => track.devices);
+    const ownerTrack = context.tracks.find((track) => track.devices.some((candidate) => candidate.id === device.id));
+    const otherTracks = context.tracks.filter((track) => track.id !== ownerTrack?.id);
+    const everyParameterToken = getNormalizedTokens(
+        devices
+            .flatMap((candidate) => candidate.parameters ?? [])
+            .flatMap((candidate) => [candidate.id, candidate.name])
+    );
+    const everyDeviceToken = getNormalizedTokens(devices.flatMap((candidate) => [candidate.id, candidate.type]));
+    return [
+        ...everyParameterToken.filter((token) => !parameterTokens.includes(token)),
+        ...everyDeviceToken.filter((token) => !deviceTokens.includes(token)),
+        ...getNormalizedTokens(otherTracks.flatMap((track) => [track.id, track.name])),
+    ];
+}
+
+function attributeDirectionClause(
+    clause: PromptClause,
+    tokens: DeviceParameterDirectionTokens,
+    inherited: DeviceParameterClauseAttribution
+): DeviceParameterClauseAttribution {
+    if (clauseNamesToken(clause, tokens.parameter)) {
+        return 'this';
+    }
+    if (clauseNamesToken(clause, tokens.other)) {
+        return 'other';
+    }
+    if (clauseNamesToken(clause, tokens.device)) {
+        return 'this';
+    }
+    return inherited;
+}
+
 /**
- * The clauses a direction word is read from: the ones naming the parameter itself, or — for a
- * parameter this batch is still creating and so has no name a clause could echo yet — the ones
- * naming the device. A direction stated for a different target must never decide this one.
+ * The clauses attributed to this parameter, read left to right: a clause naming the parameter, or
+ * naming this device without naming another object, is this parameter's, while a clause naming
+ * another parameter, device or track belongs to that object. A clause naming nothing inherits the
+ * nearest preceding attribution, and is this parameter's when no attributed clause precedes it.
  */
 function selectDeviceParameterDirectionClauses(
     actionScope: ActionPromptScope,
     parameter: DeviceParameterDirectionParameter,
-    device: DeviceParameterDirectionDevice
+    device: DeviceParameterDirectionDevice,
+    context: ProjectContext
 ): readonly PromptClause[] {
-    const clauses = getPromptClauses(actionScope.text, actionScope.masked);
-    const parameterTokens = [normalizePromptText(parameter.id), normalizePromptText(parameter.name)];
-    const parameterClauses = clauses.filter((clause) => clauseNamesToken(clause, parameterTokens));
-    if (parameterClauses.length > 0) {
-        return parameterClauses;
+    const tokens: DeviceParameterDirectionTokens = {
+        device: getNormalizedTokens([device.id, device.type]),
+        other: getOtherObjectTokens(context, parameter, device),
+        parameter: getNormalizedTokens([parameter.id, parameter.name]),
+    };
+    const attributed: PromptClause[] = [];
+    let attribution: DeviceParameterClauseAttribution = 'this';
+    for (const clause of getPromptClauses(actionScope.text, actionScope.masked)) {
+        attribution = attributeDirectionClause(clause, tokens, attribution);
+        if (attribution === 'this') {
+            attributed.push(clause);
+        }
     }
-    const deviceTokens = [normalizePromptText(device.id), normalizePromptText(device.type)];
-    return clauses.filter((clause) => clauseNamesToken(clause, deviceTokens));
+    return attributed;
 }
 
 function validateDeviceParameterDirection(
@@ -2584,24 +2645,14 @@ function validateDeviceParameterDirection(
     if (!parameter || !device) {
         return false;
     }
-    const namingClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device);
-    const namingText = namingClauses.map((clause) => clause.masked);
-    const namingStatesIncrease = namingText.some((text) =>
+    const attributedClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device, context);
+    const attributedText = attributedClauses.map((clause) => clause.masked);
+    const statesIncrease = attributedText.some((text) =>
         containsPhraseInMaskedText(text, DEVICE_PARAMETER_INCREASE_PHRASES)
     );
-    const namingStatesDecrease = namingText.some((text) =>
+    const statesDecrease = attributedText.some((text) =>
         containsPhraseInMaskedText(text, DEVICE_PARAMETER_DECREASE_PHRASES)
     );
-    const namingStatesDirection = namingStatesIncrease || namingStatesDecrease;
-    // The naming clauses decide only when they state a direction; a direction stated only
-    // elsewhere in the prompt must not be dropped, so an undirected naming reading falls
-    // through to the whole-scope reading instead of grounding unconditionally.
-    const statesIncrease = namingStatesDirection
-        ? namingStatesIncrease
-        : containsPromptPhrase(actionScope, DEVICE_PARAMETER_INCREASE_PHRASES);
-    const statesDecrease = namingStatesDirection
-        ? namingStatesDecrease
-        : containsPromptPhrase(actionScope, DEVICE_PARAMETER_DECREASE_PHRASES);
     if (statesIncrease && statesDecrease) {
         return false;
     }
