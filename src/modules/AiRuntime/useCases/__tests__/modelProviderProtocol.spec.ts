@@ -253,8 +253,8 @@ describe('model provider protocol', () => {
     });
 
     it('rejects an unavailable modality before admitting the request', () => {
-        // ModelProviderRequestInput.modality (models/ModelProviderProtocol.ts ~55) drives this check; no
-        // provider in CAPABILITIES currently advertises audio/image/video as 'available'.
+        // Exercises the modality-availability gate in compileRequest so a capabilities change that quietly
+        // admits an unsupported modality does not slip past this suite unnoticed.
         const { compiled } = createRequest({ modality: 'audio' });
 
         expect(compiled).toMatchObject({

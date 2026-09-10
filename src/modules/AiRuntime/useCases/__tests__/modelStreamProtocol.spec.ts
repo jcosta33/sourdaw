@@ -61,12 +61,10 @@ describe('model stream protocol', () => {
         session.push(eventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'one' }));
 
         expect(() =>
-            session.push(eventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'duplicate' }) as never)
+            session.push(eventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'duplicate' }))
         ).toThrow(/sequence/i);
         expect(() =>
-            protocol
-                .start(request)
-                .push(eventEnvelope(request, 1, { type: 'text', mode: 'delta', text: 'skipped' }) as never)
+            protocol.start(request).push(eventEnvelope(request, 1, { type: 'text', mode: 'delta', text: 'skipped' }))
         ).toThrow(/sequence/i);
         expect(() =>
             protocol.start(request).push(
@@ -74,7 +72,7 @@ describe('model stream protocol', () => {
                     type: 'text',
                     mode: 'delta',
                     text: 'foreign',
-                }) as never
+                })
             )
         ).toThrow(/run/i);
     });
@@ -88,7 +86,7 @@ describe('model stream protocol', () => {
                 eventEnvelope(request, 0, {
                     type: 'tool-call',
                     call: { id: 'call-1', name: 'setTempo', arguments: { tempo: 'fast' } },
-                }) as never
+                })
             )
         ).toThrow(/arguments/i);
         const unadvertisedSession = protocol.start(request);
@@ -97,7 +95,7 @@ describe('model stream protocol', () => {
                 eventEnvelope(request, 0, {
                     type: 'tool-call',
                     call: { id: 'call-2', name: 'unadvertisedTool', arguments: {} },
-                }) as never
+                })
             )
         ).toThrow(/tool/i);
         const validSession = protocol.start(request);
@@ -106,7 +104,7 @@ describe('model stream protocol', () => {
                 eventEnvelope(request, 0, {
                     type: 'tool-call',
                     call: { id: 'call-3', name: 'setTempo', arguments: { tempo: 120 } },
-                }) as never
+                })
             )
         ).not.toThrow();
         const invalidSchemaSession = protocol.start(request);
@@ -115,7 +113,7 @@ describe('model stream protocol', () => {
                 eventEnvelope(request, 0, {
                     type: 'tool-call',
                     call: { id: 'call-4', name: 'setTempo', arguments: { tempo: 130 } },
-                }) as never
+                })
             )
         ).toThrow(/arguments/i);
     });
@@ -133,7 +131,7 @@ describe('model stream protocol', () => {
                         name: 'glueClips',
                         arguments: { clipIds: ['clip-1', 'clip-1'] },
                     },
-                }) as never
+                })
             )
         ).toThrow(/arguments/i);
     });
@@ -150,7 +148,7 @@ describe('model stream protocol', () => {
         expect(() =>
             protocol
                 .start(request)
-                .push(eventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'x'.repeat(70 * 1_024) }) as never)
+                .push(eventEnvelope(request, 0, { type: 'text', mode: 'delta', text: 'x'.repeat(70 * 1_024) }))
         ).toThrow(/payload|size|limit/i);
 
         const unknownSession = protocol.start(request);
@@ -164,7 +162,7 @@ describe('model stream protocol', () => {
         }
         expect(() =>
             unknownSession.push(
-                eventEnvelope(request, MAX_UNKNOWN_EVENTS, { type: 'unknown', providerEventType: 'future:64' }) as never
+                eventEnvelope(request, MAX_UNKNOWN_EVENTS, { type: 'unknown', providerEventType: 'future:64' })
             )
         ).toThrow(/unknown|limit/i);
 
@@ -178,10 +176,10 @@ describe('model stream protocol', () => {
                         retryable: true,
                         safeMessage: 'x'.repeat(70 * 1_024),
                     },
-                }) as never
+                })
             )
         ).toThrow(/payload|size|limit/i);
-        expect(() => finishSession.finish(finishEnvelope(request, 0, { reason: 'stop' }) as never)).not.toThrow();
+        expect(() => finishSession.finish(finishEnvelope(request, 0, { reason: 'stop' }))).not.toThrow();
     });
 
     it('emits exactly one terminal result and rejects all late or post-cancellation input', () => {
@@ -190,12 +188,10 @@ describe('model stream protocol', () => {
         const result = session.finish(finishEnvelope(request, 0, { reason: 'cancelled' }));
 
         expect(result.status).toBe('cancelled');
-        expect(() => session.finish(finishEnvelope(request, 1, { reason: 'stop' }) as never)).toThrow(
+        expect(() => session.finish(finishEnvelope(request, 1, { reason: 'stop' }))).toThrow(/terminal|finished/i);
+        expect(() => session.push(eventEnvelope(request, 1, { type: 'text', mode: 'delta', text: 'late' }))).toThrow(
             /terminal|finished/i
         );
-        expect(() =>
-            session.push(eventEnvelope(request, 1, { type: 'text', mode: 'delta', text: 'late' }) as never)
-        ).toThrow(/terminal|finished/i);
     });
 
     it('rejects a stale cancellation generation without changing the accepted output', () => {
@@ -209,7 +205,7 @@ describe('model stream protocol', () => {
                     type: 'text',
                     mode: 'delta',
                     text: 'stale',
-                }) as never
+                })
             )
         ).toThrow(/generation/i);
     });
