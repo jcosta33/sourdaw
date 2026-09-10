@@ -43,6 +43,16 @@ import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
 
+/**
+ * The wire shape `BuiltinParamName::parse` admits
+ * (`crates/daw-engine/src/timeline.rs`): 1 to `BUILTIN_PARAM_NAME_CAPACITY`
+ * ASCII letters, digits and underscores. The carrier does not keep a
+ * vocabulary table for any one instrument, so this is the whole of what it
+ * refuses by — snake_case and camelCase both parse, because Fermenter spells
+ * one and Grinder spells the other.
+ */
+export const BUILTIN_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,32}$/;
+
 export type NativeBuiltinBody = Readonly<{
     /** Whether the engine registers a note store for this body (mirror of `BuiltinEffectType::sounds_notes`). */
     soundsNotes: boolean;
@@ -62,6 +72,24 @@ export type NativeBuiltinBody = Readonly<{
 function numericParametersOnly(parameterValues: Readonly<Record<string, unknown>>): Readonly<Record<string, number>> {
     return Object.fromEntries(
         Object.entries(parameterValues).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    );
+}
+
+/**
+ * Mirrors [numericParametersOnly] for a body with no translation table of its
+ * own: Grinder's project-side parameter ids already are the engine's own
+ * camelCase names, so there is nothing to look up, only the wire shape to
+ * hold every entry to before it reaches a batch a single ill-shaped key would
+ * refuse whole.
+ */
+function shapedNumericParametersOnly(
+    parameterValues: Readonly<Record<string, unknown>>
+): Readonly<Record<string, number>> {
+    return Object.fromEntries(
+        Object.entries(parameterValues).filter(
+            (entry): entry is [string, number] =>
+                typeof entry[1] === 'number' && BUILTIN_PARAM_NAME_SHAPE.test(entry[0])
+        )
     );
 }
 
@@ -88,8 +116,9 @@ const FERMENTER_PARAM_IDS: ReadonlySet<string> = new Set(FERMENTER_PARAMS.map((p
  * name, a morph state, anything a panel has ever persisted there — so an entry
  * the body does not address is dropped rather than forwarded. Forwarding one
  * would cost the whole batch: `builtin_named_parameter`
- * (`crates/sourdaw-native/src/commands/graph.rs`) refuses a key carrying an
- * uppercase letter, and one refused key fails the entire chain mapping.
+ * (`crates/sourdaw-native/src/commands/graph.rs`) refuses a key shaped unlike
+ * any built-in's vocabulary — a space, a hyphen, one past the wire's buffer —
+ * and one refused key fails the entire chain mapping.
  */
 function tablePatch(
     engineName: (input: { paramId: string }) => string | null
@@ -171,6 +200,21 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapCrustParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapCrustParamToDspParam),
             addressesParameter: (paramId) => mapCrustParamToDspParam({ paramId }) !== null,
+        },
+    ],
+    [
+        'grinder',
+        {
+            soundsNotes: false,
+            /**
+             * No table: Grinder's engine spells its own parameters in
+             * camelCase, and project truth authors the same camelCase ids
+             * for them, so the id a panel or a lane writes already is the
+             * name `GrinderEngine::set_param` takes.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: shapedNumericParametersOnly,
+            addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
         },
     ],
 ]);

@@ -409,10 +409,13 @@ pub enum GraphCommandPayload {
         track_id: String,
         device_id: String,
         /// Keyed by the built-in's own native parameter names — for a
-        /// fermenter, the instrument's snake_case vocabulary rather than the
-        /// camelCase descriptor ids a project panel authors. A key with no
-        /// native address refuses the whole batch, naming the device and the
-        /// key, exactly as a stamped write does.
+        /// fermenter, the instrument's snake_case vocabulary, spelled exactly
+        /// as its own `set_param` takes it, rather than the camelCase
+        /// descriptor ids a project panel authors and the renderer's own
+        /// tables translate. A key shaped unlike any built-in's vocabulary
+        /// refuses the whole batch, naming the device and the key, exactly as
+        /// a stamped write does; a well-shaped key the instrument does not
+        /// have is answered by the instrument doing nothing.
         values: HashMap<String, f64>,
     },
     /// Write timeline-addressed notes into the note store a device holds.
@@ -1831,8 +1834,8 @@ fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamNam
     BuiltinParamName::parse(key).ok_or_else(|| {
         format!(
             "device '{device_id}' carries parameter '{key}', which is not an instrument \
-             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of lowercase \
-             ASCII letters, digits and underscores"
+             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of ASCII \
+             letters, digits and underscores"
         )
     })
 }
@@ -1886,9 +1889,10 @@ fn resolved_param_writes<T>(
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
 /// the fermenter answers its own. Sounding notes is not what decides it —
-/// gluten and crust are inserts and still answer their own snake_case names,
+/// gluten and crust are inserts and still answer their own names, and so is
+/// grinder, spelled in its own camelCase rather than the others' snake_case —
 /// because the vocabulary belongs to the DSP the body hosts rather than to the
-/// kind of device it is.
+/// kind of device it is or the case it spells its names in.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1901,7 +1905,8 @@ fn builtin_parameter(
         BuiltinEffectType::Fermenter
         | BuiltinEffectType::GrandBoule
         | BuiltinEffectType::Gluten
-        | BuiltinEffectType::Crust => {
+        | BuiltinEffectType::Crust
+        | BuiltinEffectType::Grinder => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2070,9 +2075,10 @@ fn map_device(
     // Which side of the ring a patch is applied on is a property of the body,
     // not of whether it sounds notes. A built-in instrument's patch is dozens
     // of the instrument's own parameters per strip, a gluten's is some
-    // forty-five and a crust's some thirty, and the command ring is finite, so
-    // all of them are written into the instance on this thread; knead's handful
-    // travel as commands behind the registration.
+    // forty-five and a crust's some thirty — a grinder's own vocabulary is
+    // wider still, its neural convolution weights dynamically named — and the
+    // command ring is finite, so all of them are written into the instance on
+    // this thread; knead's handful travel as commands behind the registration.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2109,6 +2115,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::crust_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Grinder => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::grinder_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -7879,7 +7895,7 @@ mod tests {
         );
 
         let refusal = map_unbound_batch(
-            &write_batch("Cutoff"),
+            &write_batch("cut-off"),
             &mut registry.clone(),
             &samples,
             48_000.0,
@@ -7892,15 +7908,18 @@ mod tests {
     }
 
     /// A `write-device-parameter` aimed at a grand boule carries the piano's
-    /// own parameter name, and the camelCase spelling of that same parameter
-    /// refuses.
+    /// own parameter name, and a key shaped unlike one of those names refuses
+    /// under the same reason every unaddressable parameter refuses under.
     ///
-    /// The camelCase spelling is the one a panel and an automation lane author,
-    /// so it is the spelling that reaches this route when the renderer's
-    /// translation is missing or wrong. The instrument answers a name it does
-    /// not know by doing nothing at all, so admitting it would be a write the
-    /// producer believes landed and the mix never heard; the refusal names the
-    /// key it read.
+    /// Shape admits the ASCII identifier vocabulary a built-in might spell its
+    /// parameters in, camelCase included, so a camelCase spelling of a
+    /// snake_case name is no longer refused by shape: it parses, addresses a
+    /// name the piano does not have, and the piano answers by doing nothing at
+    /// all, exactly as it does under the web worklet — the renderer's own
+    /// descriptor tables are what keep a panel or an automation lane's
+    /// camelCase id translated to the name the piano actually has. Only a key
+    /// no built-in's vocabulary could ever spell, a hyphen here, is refused by
+    /// shape.
     #[test]
     fn write_device_parameter_at_a_grand_boule_carries_the_instruments_own_name() {
         let track_id = "t1".to_string();
@@ -7973,14 +7992,14 @@ mod tests {
         );
 
         let refusal = map_unbound_batch(
-            &write_batch("masterGain"),
+            &write_batch("master-gain"),
             &mut registry.clone(),
             &samples,
             48_000.0,
         )
-        .expect_err("the camelCase spelling is not one of the instrument's names");
+        .expect_err("a hyphen is not a character of any built-in's vocabulary");
         assert!(
-            refusal.contains("masterGain") && refusal.contains("has no native address"),
+            refusal.contains("master-gain") && refusal.contains("has no native address"),
             "the refusal must name the key it read, got: {refusal}"
         );
     }
@@ -8100,6 +8119,19 @@ mod tests {
     /// [`BuiltinParamName`], and a crust spec asserting through a wrapper
     /// named after another device would misname what it asserts.
     fn crust_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
+    /// Mirrors [`crust_write`] for the grinder fixtures below, for the reason
+    /// given there: the wrapper is the same for any built-in that answers to
+    /// [`BuiltinParamName`], and a grinder spec asserting through a wrapper
+    /// named after another device would misname what it asserts.
+    fn grinder_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
         let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
         (
             IMMEDIATE_PARAM_EFFECT_ID,
@@ -8303,6 +8335,50 @@ mod tests {
         }
     }
 
+    /// A grinder batch routes `neuralEnabled` first, whatever order the wire
+    /// record draws — the same law
+    /// [`set_device_parameters_routes_a_crust_batch_style_first`] proves for
+    /// crust's aliasing pair, applied to grinder's: `neuralEnabled` and
+    /// `engineMode` both write the amp's single engine-mode slot, so
+    /// `neuralEnabled` leading is what leaves `engineMode` — the exact pick —
+    /// to land last of the two.
+    #[test]
+    fn set_device_parameters_routes_a_grinder_batch_neural_enabled_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "engineMode": 1.0,
+            "neuralEnabled": 0.0,
+            "gain": 8.0,
+            "cabEnabled": 1.0
+        });
+        let expected = vec![
+            grinder_write("neuralEnabled", 0.0),
+            grinder_write("cabEnabled", 1.0),
+            grinder_write("engineMode", 1.0),
+            grinder_write("gain", 8.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-gri", BuiltinEffectType::Grinder);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-gri", record.clone()),
+                &mut registry,
+            )
+            .expect("a grinder answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: `neuralEnabled` must lead, and the rest must follow in name order"
+            );
+        }
+    }
+
     /// An externally hosted plugin's parameters are the plugin's own, resolved
     /// by the plugin over the plugin host's control path. Mapping one through a
     /// built-in vocabulary would address a parameter that vocabulary cannot
@@ -8324,13 +8400,22 @@ mod tests {
     }
 
     /// A key with no native address refuses the whole batch, naming the device
-    /// and the key: a project panel authors a fermenter's camelCase descriptor
-    /// ids, and a mapper that skipped what it could not resolve would report a
-    /// patch applied while the values the producer sent went nowhere.
+    /// and the key: a mapper that skipped what it could not resolve would
+    /// report a patch applied while the values the producer sent went
+    /// nowhere.
+    ///
+    /// The two devices refuse for different reasons. Knead answers a closed
+    /// set of names the engine owns, and a camelCase descriptor id is not one
+    /// of them — that refusal holds whichever case the key is spelled in.
+    /// A fermenter answers its own names by shape alone, camelCase included,
+    /// so a camelCase descriptor id like `filterCutoff` now parses and is the
+    /// instrument silently doing nothing rather than a refusal here; only a
+    /// key no built-in's vocabulary could ever spell, a hyphen, still refuses
+    /// a fermenter by shape.
     #[test]
     fn set_device_parameters_naming_no_parameter_of_the_device_refuses_naming_device_and_key() {
         let unmappable = [
-            (BuiltinEffectType::Fermenter, "filterCutoff"),
+            (BuiltinEffectType::Fermenter, "filter-cutoff"),
             (BuiltinEffectType::Knead, "shiftSemitones"),
         ];
 
@@ -10495,10 +10580,12 @@ mod tests {
     ///
     /// The two vocabularies refuse on different grounds — the fermenter's by
     /// shape, knead's against the closed set the engine names — and both are
-    /// reachable from what a project really ships: a fermenter carries its
-    /// camelCase descriptor ids from the moment it is created. A refusal here
-    /// would take down a whole live session over a strip that contributes no
-    /// audio at all.
+    /// reachable from what a project really ships: a corrupt or truncated key
+    /// carries a character no built-in's vocabulary spells, and a camelCase
+    /// descriptor id can still land verbatim on the one built-in that answers
+    /// a closed vocabulary of its own snake_case names. A refusal here would
+    /// take down a whole live session over a strip that contributes no audio
+    /// at all.
     #[test]
     fn an_unmappable_parameter_on_a_non_contributing_strip_omits_the_device_like_a_missing_body() {
         let silent_strip = |devices: Value| {
@@ -10524,7 +10611,7 @@ mod tests {
 
         for unmappable in [
             json!({ "id": "d-ferm", "type": "fermenter", "bypassed": false,
-                    "parameterValues": { "filterCutoff": 0.5 } }),
+                    "parameterValues": { "filter-cutoff": 0.5 } }),
             json!({ "id": "d-knead", "type": "knead", "bypassed": false,
                     "parameterValues": { "shiftSemitones": 3.0 } }),
         ] {
@@ -10555,14 +10642,14 @@ mod tests {
     /// so a key that was never one of its names would otherwise be a write the
     /// producer believes landed and the mix never heard. Shape is the whole of
     /// the refusal the engine can make without keeping a copy of a table
-    /// `daw-dsp` is free to extend: `Cutoff` is the display spelling of a
-    /// parameter the instrument spells in lowercase, and a key past the wire's
+    /// `daw-dsp` is free to extend: `cut-off` carries a hyphen, which is not a
+    /// character of any built-in's vocabulary, and a key past the wire's
     /// buffer would be truncated into a different word.
     #[test]
     fn a_fermenter_parameter_key_shaped_unlike_a_name_refuses_naming_the_device_and_key() {
         let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
 
-        for key in ["Cutoff", too_long.as_str()] {
+        for key in ["cut-off", too_long.as_str()] {
             let refusal = map_unbound_batch(
                 &batch(strip_with_device(
                     "d-ferm",
@@ -10948,22 +11035,21 @@ mod tests {
         );
     }
 
-    /// A camelCase key refuses a contributing strip — the fixture's
+    /// An ill-shaped key refuses a contributing strip — the fixture's
     /// `contributesAudio` is `true` — naming the device and the key.
     ///
-    /// The compressor answers a name it does not know by doing nothing at all,
-    /// so a descriptor id that was never one of its names would otherwise be a
-    /// write the producer believes landed and the mix never heard. `autoMakeup`
-    /// is the descriptor's spelling of a parameter the engine spells
-    /// `auto_makeup`, and it is what a device carries from the moment a panel
-    /// creates it.
+    /// Shape refuses only characters no built-in spells; a camelCase
+    /// descriptor id reaching a snake_case engine is now that engine's silent
+    /// no-op, as the carrier's doc always said and as the web worklet does,
+    /// and the renderer's per-body tables plus `descriptorEngineParamWeld.spec.ts`
+    /// are what keep the translation right.
     #[test]
-    fn a_camel_case_gluten_key_is_refused_by_shape() {
+    fn an_ill_shaped_gluten_key_is_refused_by_shape() {
         let refusal = map_unbound_batch(
             &batch(strip_with_device(
                 "d-glu",
                 "gluten",
-                json!({ "autoMakeup": 1 }),
+                json!({ "auto-makeup": 1 }),
             )),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -10972,7 +11058,7 @@ mod tests {
         .expect_err("a key shaped unlike one of the compressor's names must refuse");
 
         assert!(
-            refusal.contains("autoMakeup") && refusal.contains("d-glu"),
+            refusal.contains("auto-makeup") && refusal.contains("d-glu"),
             "the refusal must name the key and the device, got: {refusal}"
         );
     }
@@ -11141,6 +11227,175 @@ mod tests {
             max_abs_difference(&first, &style_alone) > TOLERANCE,
             "the style alone renders the same samples as the algorithm, so this spec cannot \
              tell the two orders apart"
+        );
+    }
+
+    /// A grinder device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the amp: `BuiltinEffectType::sounds_notes`
+    /// is the one registry either decision reads, and a guitar amp sounds
+    /// nothing of its own.
+    #[test]
+    fn a_grinder_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-gri", "grinder", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a grinder device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Grinder(_), None)
+            )),
+            "the grinder is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a grinder over a sustained input — an amp
+    /// waveshapes and filters whatever level it is handed, so a constant
+    /// input is enough to separate two patches by more than measurement
+    /// noise, the same fixture shape the gluten and crust clips above use.
+    fn render_grinder_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("grinder", "d-gri", parameter_values, vec![0.9; 48_000])
+    }
+
+    /// A grinder's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments and crust are held to above, and for the
+    /// same reason: the command ring is finite. The render is what says the
+    /// patch was applied rather than merely not sent — an amp on a step is
+    /// not a limiter, so the oracle is the largest sample-by-sample
+    /// difference between two whole renders rather than a settled peak: a
+    /// waveshaper's output tracks its input on every sample, it does not
+    /// converge to a level.
+    #[test]
+    fn a_grinder_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-gri",
+                "grinder",
+                json!({ "gain": 8.0, "cabEnabled": 0.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the amp's own names is a grinder parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the grinder's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let low_gain = render_grinder_clip(json!({ "gain": 0.0, "cabEnabled": 0.0 }));
+        let high_gain = render_grinder_clip(json!({ "gain": 24.0, "cabEnabled": 0.0 }));
+
+        assert!(
+            high_gain.iter().any(|&sample| sample.abs() > 0.0),
+            "the high-gain render is silence, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&low_gain, &high_gain) > TOLERANCE,
+            "the gain in the patch never reached the instance the mapper built (largest \
+             difference {})",
+            max_abs_difference(&low_gain, &high_gain)
+        );
+    }
+
+    /// A grinder patch builds one amp whatever order the record draws, for
+    /// the pair the precedence law exists to order.
+    ///
+    /// `neuralEnabled` and `engineMode` both write the amp's single
+    /// engine-mode slot — `neuralEnabled` through a boolean Circuit/Hybrid
+    /// choice and `engineMode` through `EngineMode::from_index`
+    /// (`crates/daw-dsp/src/grinder/neural.rs`) — so a record carrying both
+    /// settles on whichever landed last. `BuiltinEffectType::patch_precedence`
+    /// puts `neuralEnabled` first, so the render is `engineMode`'s: index 1
+    /// is Capture, which replaces the circuit preamp and tone stack outright,
+    /// and is audible against Circuit on any material — no neural model is
+    /// loaded, so Capture's own output is silence, the starkest difference
+    /// the two modes can render.
+    #[test]
+    fn a_grinder_patch_builds_one_amp_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        fn render(parameter_values: Value) -> Vec<f32> {
+            render_grinder_clip(parameter_values)
+        }
+
+        let record = json!({
+            "neuralEnabled": 0.0,
+            "engineMode": 1.0,
+            "cabEnabled": 0.0
+        });
+
+        let first = render(record.clone());
+        for draw in 0..DRAWS {
+            assert_eq!(
+                max_abs_difference(&render(record.clone()), &first),
+                0.0,
+                "draw {draw}: the same record rendered different samples"
+            );
+        }
+
+        let engine_mode_alone = render(json!({ "engineMode": 1.0, "cabEnabled": 0.0 }));
+        let neural_enabled_alone = render(json!({ "neuralEnabled": 0.0, "cabEnabled": 0.0 }));
+
+        assert!(
+            max_abs_difference(&first, &engine_mode_alone) <= TOLERANCE,
+            "the exact engine mode did not win over the simplification that aliases it \
+             (largest difference {})",
+            max_abs_difference(&first, &engine_mode_alone)
+        );
+        assert!(
+            max_abs_difference(&first, &neural_enabled_alone) > TOLERANCE,
+            "neuralEnabled alone renders the same samples as engineMode, so this spec cannot \
+             tell the two orders apart"
+        );
+    }
+
+    /// A camelCase key is a grinder's own spelling, not a foreign case a
+    /// shape check must translate — it is admitted exactly like any
+    /// well-shaped name, whether the engine has it as a fixed automatable
+    /// slot (`inputGain`) or as one of the dynamically named neural
+    /// convolution weights (`neuralCustomConvWeight3_2`,
+    /// `crates/daw-dsp/src/grinder/neural.rs`).
+    #[test]
+    fn a_camel_case_grinder_key_is_admitted_by_shape() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-gri",
+                "grinder",
+                json!({ "inputGain": 3.0, "neuralCustomConvWeight3_2": 0.1 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("grinder's own vocabulary is spelled in camelCase");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "a grinder patch is applied control-side, not over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
         );
     }
 }

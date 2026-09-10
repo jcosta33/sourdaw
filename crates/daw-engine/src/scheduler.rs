@@ -27,6 +27,7 @@ use daw_dsp::crust::engine::CrustEngine;
 use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
 use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
+use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::primitives::sanitize::sanitize_block;
 use rtrb::{Consumer, Producer, PushError};
@@ -287,6 +288,7 @@ pub enum BuiltinEffectType {
     GrandBoule,
     Gluten,
     Crust,
+    Grinder,
 }
 
 impl BuiltinEffectType {
@@ -300,6 +302,7 @@ impl BuiltinEffectType {
             Self::GrandBoule => "grand-boule",
             Self::Gluten => "gluten",
             Self::Crust => "crust",
+            Self::Grinder => "grinder",
         }
     }
 
@@ -313,6 +316,7 @@ impl BuiltinEffectType {
             "grand-boule" => Some(Self::GrandBoule),
             "gluten" => Some(Self::Gluten),
             "crust" => Some(Self::Crust),
+            "grinder" => Some(Self::Grinder),
             _ => None,
         }
     }
@@ -331,6 +335,7 @@ impl BuiltinEffectType {
             Self::GrandBoule => true,
             Self::Gluten => false,
             Self::Crust => false,
+            Self::Grinder => false,
         }
     }
 
@@ -343,12 +348,14 @@ impl BuiltinEffectType {
     /// The body is what states this: only it knows which of its own names
     /// alias others, so [`precedence_first`] never carries that knowledge
     /// itself and cannot drift from what [`FermenterBody::load_patch`] or
-    /// [`GlutenBody::load_patch`] or [`CrustBody::load_patch`] actually does.
+    /// [`GlutenBody::load_patch`] or [`CrustBody::load_patch`] or
+    /// [`GrinderBody::load_patch`] actually does.
     pub fn patch_precedence(self) -> &'static [&'static str] {
         match self {
             Self::Fermenter => &[LAYER_ROUTING_KEY],
             Self::Gluten => GLUTEN_MACRO_KEYS,
             Self::Crust => CRUST_PATCH_PRECEDENCE,
+            Self::Grinder => GRINDER_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -982,6 +989,7 @@ pub enum PluginCore {
     GrandBoule(Box<GrandBouleBody>),
     Gluten(Box<GlutenBody>),
     Crust(Box<CrustBody>),
+    Grinder(Box<GrinderBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -999,6 +1007,7 @@ impl PluginCore {
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
             BuiltinEffectType::Crust => Self::crust_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Grinder => Self::grinder_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1060,6 +1069,21 @@ impl PluginCore {
         Self::Crust(Box::new(body))
     }
 
+    /// Build a Grinder carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: an amp's patch is dozens of
+    /// the engine's own parameters per strip and the command ring is finite.
+    /// The ordering law here is [`GRINDER_PATCH_PRECEDENCE`], which
+    /// [`GrinderBody::load_patch`] applies through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
+    pub fn grinder_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GrinderBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Grinder(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1070,6 +1094,7 @@ impl PluginCore {
             Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
             Self::Gluten(_) => Some(BuiltinEffectType::Gluten),
             Self::Crust(_) => Some(BuiltinEffectType::Crust),
+            Self::Grinder(_) => Some(BuiltinEffectType::Grinder),
             Self::Native(_) => None,
         }
     }
@@ -1821,6 +1846,149 @@ impl CrustBody {
     }
 }
 
+/// Frames one run of the Grinder body renders, which is the render quantum
+/// the web runtime hands its own instance (`grinderProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`GrinderEngine::process_block`] is a per-sample loop with no internal
+/// block-scoped state — unlike Crust's look-ahead meters, nothing here
+/// advances differently for a callback split into runs versus one call over
+/// the whole buffer — so the split is inaudible in the samples this body
+/// produces. The run exists so the sanitize boundary lands exactly where
+/// `GrinderInstance::process` (`crates/daw-dsp/src/grinder/mod.rs`) puts its
+/// own, rather than for any state the engine itself carries in blocks.
+const GRINDER_RUN_FRAMES: usize = 128;
+
+/// The Grinder patch keys that must land before every other entry, in the
+/// order they must land.
+///
+/// `neuralEnabled` and `engineMode` are two names for one thing: both arms of
+/// [`NeuralCapture::set_param`](daw_dsp::grinder) write the neural stage's
+/// single `engine_mode` field (`neural.rs`), `neuralEnabled` through a
+/// boolean simplification — Hybrid above 0.5, Circuit at or below it — and
+/// `engineMode` through the exact three-way index (Circuit, Capture, Hybrid).
+/// Leading with `neuralEnabled` leaves the exact pick, `engineMode`, to land
+/// with the rest of the record, so a record carrying both builds the mode it
+/// names outright rather than the simplification of it.
+///
+/// The panel bridge writes and persists both together whenever either changes
+/// (`setGrinderParamWithAudio.ts`), so a record reaching this body routinely
+/// carries the pair; `engineMode` is therefore always the engine's own pick.
+/// This is the body's own law rather than a mirror of the web host's: the web
+/// host replays a device's record in first-insertion order and has no law
+/// ordering this pair (filed as the web-host defect #4135; not fixed here).
+/// This law exists so the exact pick lands last whatever order a `HashMap`
+/// record draws.
+const GRINDER_PATCH_PRECEDENCE: &[&str] = &["neuralEnabled"];
+
+/// Grinder, the guitar-amp modeller, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// preamp, tone stack, power amp, cabinet convolver and neural-capture stage
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`GrinderEngine`] rather than `daw_dsp::grinder::GrinderInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input, output and
+/// automation-SAB buffers so a worklet can write through them, and a host
+/// that is handed the callback's own pair has nothing to do with any of them.
+///
+/// ## Why this body declares no latency
+///
+/// Grinder's engine reports zero latency on both hosts today
+/// (`GrinderEngine::latency_samples` forwards `NeuralCapture::latency_samples`,
+/// which is 0), but even a future non-zero figure would follow Crust's own
+/// reasoning: a native-carried strip's Web Audio chain is built and gated
+/// shut rather than torn down (`startNativeLiveGraphSession.ts`), so its
+/// `GrinderNode` goes on receiving `latency-changed` from the worklet and
+/// reporting the figure into `externalLatencyRegistry`
+/// (`wasmDeviceRegistry.ts` calls `reportLatency` on ready and on every
+/// change). `getTrackLatency` and `getCompensationDelay` turn that into the
+/// strip's `compensationDelaySeconds`, which `projectLiveGraphProgramme.ts`
+/// and `projectLiveAutomationWrites.ts` fold into what the native engine is
+/// told to play.
+///
+/// [`GraphCommand::SetEffectLatency`] is therefore reserved for what sounds
+/// only natively — an externally hosted plugin — and `getDeviceLatencyMs`
+/// returns 0 for `external-plugin` for the mirror reason. Declaring a figure
+/// here as well would compensate one delay twice and push every other device
+/// on the strip late by exactly that figure. The `ActiveEffect::dry_delay`
+/// doc — `None` "for a device declaring no latency, which is every built-in
+/// the engine owns" — stays true.
+pub struct GrinderBody {
+    engine: GrinderEngine,
+}
+
+impl GrinderBody {
+    /// Build the amp on the control thread — it allocates its cabinet
+    /// convolution rings, its neural-capture buffers and its pedal state,
+    /// none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: GrinderEngine::new(sample_rate),
+        }
+    }
+
+    /// Amplify the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the dry programme underneath the amplified one.
+    ///
+    /// The block is split into runs of at most [`GRINDER_RUN_FRAMES`], each
+    /// one a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as `GrinderInstance::process` scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here: the web path reports it as device health over a port this body
+    /// does not have, and a counter no reader can reach would be state carried
+    /// for nobody.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the amp's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GRINDER_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the amp's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the amp resolves it by comparison,
+    /// allocating nothing. The engine's own `bypass` name is one of those
+    /// parameters and is forwarded like any other; the device's bypass is the
+    /// graph's own [`GraphCommand::SetBypass`], as it is for every other body.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`GRINDER_PATCH_PRECEDENCE`] lands first through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and `neuralEnabled` writes the same
+    /// `engine_mode` slot `engineMode` does — applied anywhere else, the
+    /// simplified boolean could silently undo the exact three-way pick the
+    /// record also carries by nothing more than an accident of draw order.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Grinder.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -1856,6 +2024,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Crust(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Grinder(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -5013,6 +5185,9 @@ fn process_device(
         PluginCore::Crust(body) => {
             body.process(left, right);
         }
+        PluginCore::Grinder(body) => {
+            body.process(left, right);
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -6049,6 +6224,7 @@ mod tests {
             BuiltinEffectType::GrandBoule,
             BuiltinEffectType::Gluten,
             BuiltinEffectType::Crust,
+            BuiltinEffectType::Grinder,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -6057,7 +6233,8 @@ mod tests {
                 | BuiltinEffectType::Fermenter
                 | BuiltinEffectType::GrandBoule
                 | BuiltinEffectType::Gluten
-                | BuiltinEffectType::Crust => {}
+                | BuiltinEffectType::Crust
+                | BuiltinEffectType::Grinder => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -7912,6 +8089,101 @@ mod tests {
                     .zip(0..FRAMES)
                     .any(|(sample, frame)| *sample != frame as f32 + 1.0),
                 "the guarded callback returned its input, so the limiter never ran"
+            );
+        }
+
+        /// A hosted Grinder amplifies a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its cabinet convolution
+        /// rings, its neural-capture buffers and its pedal state are
+        /// legitimately allocated (ADR 0020), and it is registered and
+        /// spliced the way the mapper registers an insert — detached with no
+        /// note store, then placed on the chain — so what runs inside the
+        /// guard is the whole callback path a strip carrying the device
+        /// takes, not the body alone.
+        ///
+        /// The patch drives the amp's gain well past unity so the ramp comes
+        /// out reshaped rather than merely scaled, because `process_block`
+        /// walks its whole per-sample path only while there is signal to
+        /// amplify: a guard around a silent render would abort on nothing and
+        /// prove nothing.
+        #[test]
+        fn a_grinder_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("gain").expect("a well-shaped name"),
+                    8.0,
+                ),
+                (
+                    BuiltinParamName::parse("cabEnabled").expect("a well-shaped name"),
+                    1.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::grinder_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no amplification"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the amp never ran"
             );
         }
     }
@@ -16039,5 +16311,303 @@ mod timeline_tests {
         let ramp = ramp_clip_material(RENDERED);
         assert_eq!(left, ramp, "a bypassed limiter moved the left channel");
         assert_eq!(right, ramp, "a bypassed limiter moved the right channel");
+    }
+
+    // ── Grinder ────────────────────────────────────────────────────────────
+
+    /// The rate every Grinder spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs different filter coefficients throughout the
+    /// chain, and the parity spec below would be comparing two different
+    /// amps.
+    const GRINDER_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, with `neuralEnabled` ahead of
+    /// `engineMode` as [`GRINDER_PATCH_PRECEDENCE`] requires.
+    ///
+    /// `neuralEnabled` is 0.0 (Circuit) and `engineMode` is 1.0 (Capture), and
+    /// the two name different signal paths: Capture mode skips the circuit
+    /// preamp and tone stack outright (`engine.rs`), audible on any material,
+    /// unlike the Hybrid/Circuit pair the mode selector can also produce,
+    /// where Hybrid with no model loaded is neural-bypassed and sounds
+    /// identical to Circuit (`neural.rs`) — not a discriminating pair. A body
+    /// that applies `engineMode` before `neuralEnabled` renders through the
+    /// circuit preamp and tone stack where the reference bypasses them
+    /// outright, so the two renders separate on every sample the preamp
+    /// touches.
+    ///
+    /// The rest works the amp: `gain`, `master`, `bass`, `treble` and
+    /// `presence` push the preamp and tone stack away from unity, `cabEnabled`
+    /// engages the cabinet convolver, and `outputGain` is left at 0 dB so the
+    /// comparison below is not just a level match.
+    const GRINDER_PATCH: [(&str, f32); 9] = [
+        ("neuralEnabled", 0.0),
+        ("engineMode", 1.0),
+        ("gain", 8.0),
+        ("master", 6.0),
+        ("bass", 5.0),
+        ("treble", 7.0),
+        ("presence", 6.0),
+        ("cabEnabled", 1.0),
+        ("outputGain", 0.0),
+    ];
+
+    /// A decaying two-partial guitar-like burst that drives the preamp.
+    ///
+    /// A fundamental and its octave partial, enveloped by a decaying
+    /// exponential so the material sweeps a range of levels rather than
+    /// sitting at one — what separates the preamp of two engine modes is how
+    /// each responds across that range, not a single held level. The two
+    /// partials sum to at most 1.5 at the envelope's peak; scaled down by a
+    /// third, the burst itself peaks at 0.5.
+    fn grinder_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / GRINDER_RATE;
+                let decay = (-3.0 * t).exp();
+                let fundamental = (2.0 * std::f32::consts::PI * 110.0 * t).sin();
+                let octave = 0.5 * (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                decay * (fundamental + octave) / 3.0
+            })
+            .collect()
+    }
+
+    /// One of the amp's own parameter names, as the mapper resolves it.
+    fn grinder_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`GRINDER_PATCH`] in the carrier [`PluginCore::grinder_with_patch`]
+    /// takes.
+    fn grinder_patch() -> Vec<(BuiltinParamName, f32)> {
+        GRINDER_PATCH
+            .iter()
+            .map(|(name, value)| (grinder_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a clip through a Grinder insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_grinder(
+        harness: &mut Harness,
+        material: Vec<f32>,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        track_with_material_clip(harness, 1, 101, material);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::grinder_with_patch(GRINDER_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// A hosted Grinder renders the samples the worklet's own
+    /// `GrinderInstance` renders for the same material and the same patch —
+    /// sample parity against the reference, not merely that both moved.
+    ///
+    /// [`GRINDER_PATCH`] crosses to the reference instance in the order it is
+    /// written and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`GrinderBody::load_patch`]
+    /// brings `neuralEnabled` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law the reversed
+    /// record would apply `neuralEnabled` last, and `neuralEnabled` and
+    /// `engineMode` write the engine's one `engine_mode` slot: the hosted
+    /// body would run in Circuit where the reference runs in Capture, with
+    /// the circuit preamp and tone stack engaged on one side and skipped on
+    /// the other.
+    ///
+    /// Both renders carry the same (zero) latency — the body declares none to
+    /// the graph, so no compensation moves either of them — which is what
+    /// lets this be a sample-for-sample equality rather than a correlation.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — which is what
+    /// [`GRINDER_RUN_FRAMES`] mirrors. `GrinderEngine::process_block` carries
+    /// no block-scoped state, so the output samples this spec compares cannot
+    /// show the split; the run size is pinned to match the sanitize boundary,
+    /// not for these samples.
+    #[test]
+    fn a_hosted_grinder_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::grinder::GrinderInstance;
+
+        const RENDERED: usize = 4096;
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = RENDERED / CALLBACK;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+
+        // The hosted body takes the same entries reversed: parity only holds
+        // if `GrinderBody::load_patch` restores `neuralEnabled` to the front
+        // regardless of where the record put it.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            grinder_patch().into_iter().rev().collect();
+
+        let mut harness = Harness::new(32);
+        let material = grinder_burst_material(RENDERED);
+        track_with_grinder(&mut harness, material.clone(), &reversed_patch);
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = GrinderInstance::new(GRINDER_RATE);
+        for (name, value) in GRINDER_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / GRINDER_RUN_FRAMES {
+            let start = block * GRINDER_RUN_FRAMES;
+            let run = &material[start..start + GRINDER_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `GrinderInstance::new` sizes every buffer at
+            // `MAX_GRINDER_BLOCK_SIZE` (2048) frames and no method resizes
+            // one, so a run of GRINDER_RUN_FRAMES lies inside the allocation
+            // the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, GRINDER_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, GRINDER_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(GRINDER_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are `MAX_GRINDER_BLOCK_SIZE`
+            // frames long and are never resized; nothing mutates the instance
+            // between the render and this copy.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRINDER_RUN_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRINDER_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            !worklet_left
+                .iter()
+                .zip(&material)
+                .all(|(rendered, input)| rendered == input),
+            "the reference render is its own input, so an equality against it would pass for a \
+             body that ran nothing"
+        );
+        assert!(
+            !hosted_left
+                .iter()
+                .zip(&material)
+                .all(|(rendered, input)| rendered == input),
+            "the hosted render is its own input: the amp never ran"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Grinder on the strip, optionally written to after registration, and
+    /// the master it renders beside the diagnostics that count the write.
+    fn render_grinder_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = 8;
+
+        let mut harness = Harness::new(32);
+        track_with_grinder(
+            &mut harness,
+            grinder_burst_material(CALLBACK * CALLBACKS),
+            &[],
+        );
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` reaches the amp whether the name resolves through the
+    /// automatable-parameter table or through a literal `set_param` arm, and
+    /// neither write is counted as aimed at the wrong body.
+    ///
+    /// `gain` is one of the eleven names `GrinderEngine::set_param` resolves
+    /// through `set_automatable_param` before the literal match ever runs;
+    /// `cabEnabled` is one of the sixty-seven literal arms reached only once
+    /// that lookup misses. A descriptor write means what the panel promises
+    /// only if both paths actually reach the engine.
+    #[test]
+    fn a_grinder_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_grinder_write(None);
+        let (with_gain, gain_diagnostics) =
+            render_grinder_write(Some((DeviceParam::BuiltinNamed(grinder_name("gain")), 9.5)));
+        let (with_cab_disabled, cab_diagnostics) = render_grinder_write(Some((
+            DeviceParam::BuiltinNamed(grinder_name("cabEnabled")),
+            0.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_gain, untouched,
+            "the automatable-path write never reached the amp"
+        );
+        assert_ne!(
+            with_cab_disabled, untouched,
+            "the literal-arm write never reached the amp"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                gain_diagnostics.unmapped_set_param_calls,
+                cab_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Grinder hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the amp still ran over, reads as different numbers rather than as
+    /// the same silence. The body declares no latency, so bypass leaves no
+    /// dry line to run in its place and the strip is a pass-through outright.
+    #[test]
+    fn a_bypassed_grinder_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_grinder(&mut harness, ramp_clip_material(RENDERED), &grinder_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed amp moved the left channel");
+        assert_eq!(right, ramp, "a bypassed amp moved the right channel");
     }
 }
