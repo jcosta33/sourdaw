@@ -860,19 +860,19 @@ describe('application-owned tool loop', () => {
             });
         };
 
-        it('grants exactly one extra turn to a run that carries an interpretation phase', async () => {
+        it('spends no extra turn on a run that never calls the interpretation tool', async () => {
             mockProjectSummary();
 
-            const withInterpretation = await runApplicationOwnedToolLoop({
+            const uncalledInterpretation = await runApplicationOwnedToolLoop({
                 loopId: 'loop-creative-turns',
                 terminalToolNames: new Set(['setTempo']),
                 interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
                 requestTurn: readTurn('creative-read'),
             });
-            expect(withInterpretation).toMatchObject({
+            expect(uncalledInterpretation).toMatchObject({
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
-                turns: 5,
+                turns: 4,
             });
 
             const withoutInterpretation = await runApplicationOwnedToolLoop({
@@ -884,6 +884,28 @@ describe('application-owned tool loop', () => {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
                 turns: 4,
+            });
+        });
+
+        it('grants exactly one extra turn to a run that admitted an interpretation', async () => {
+            mockProjectSummary();
+            const reads = readTurn('admitted-read');
+
+            const withInterpretation = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-admitted-turns',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
+                requestTurn: vi.fn(async (input: { turn: number }) =>
+                    input.turn === 1
+                        ? { status: 'complete' as const, toolCalls: [interpretationCall('interpretation-1')] }
+                        : reads()
+                ),
+            });
+
+            expect(withInterpretation).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                turns: 5,
             });
         });
 

@@ -220,6 +220,7 @@ function creativeAuthorityMeaning(authority: CreativeRequestAuthority): string {
         editDimensions: authority.editDimensions,
         prohibitions: authority.prohibitions,
         creationSlots: authority.creationSlots,
+        uncertainty: authority.uncertainty,
     });
 }
 
@@ -525,12 +526,17 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
 
+                // What the run was admitted to mean travels with every outcome below, so a refusal
+                // states the same authority the proposal it replaced would have carried.
+                let creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
+
                 if (planningOutcome.status === 'rejected') {
                     return {
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
@@ -539,6 +545,7 @@ const planPromptIntent = inject({ logger })(
                         correction.creativeAuthority,
                         creativeAuthority
                     );
+                    // The disputed record is the reason this run refused, so no outcome carries it.
                     if (reused.status === 'rejected') {
                         return {
                             actions: [],
@@ -549,8 +556,8 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
                     creativeAuthority = reused.creativeAuthority;
+                    creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
                 }
-                const creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
                 if (planningOutcome.decline) {
                     const outcome = classifyProviderDecline(
                         planningOutcome.decline,
@@ -581,6 +588,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${compiledList.reason}`,
                     };
                 }
@@ -591,6 +599,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${expandedProposal.reason}`,
                     };
                 }
@@ -604,6 +613,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: 'Provider selected more than one specialized workflow.',
                     };
                 }
@@ -616,6 +626,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason:
                                 'Provider must select a specialized workflow before proposing its actions.',
                         };
@@ -628,6 +639,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider selected an unavailable specialized workflow.',
                         };
                     }
@@ -641,6 +653,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Stem files must be selected before the provider can plan their import.',
                         };
                     }
@@ -649,6 +662,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         preparationRequest: 'stem-import',
                     };
                 }
@@ -660,6 +674,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action rejected: importStemSet: ${stemImport.reason}`,
                         };
                     }
@@ -669,6 +684,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action failed runtime validation: importStemSet',
                         };
                     }
@@ -678,6 +694,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -686,6 +703,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: true,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
@@ -729,6 +747,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${reason}`,
                     };
                 }
@@ -746,6 +765,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
                         };
                     }
@@ -761,6 +781,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
                         };
                     }
@@ -779,6 +800,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
                         };
                     }
@@ -788,6 +810,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -853,9 +876,19 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: reason,
                     };
                 }
+
+                // An empty provider plan is a no-op; there is no alternate mutation path.
+                return {
+                    actions: [],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    ...applicationToolReceiptFields,
+                    ...creativeAuthorityFields,
+                };
             } catch (error) {
                 if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
                     applicationToolReceiptFields = { applicationToolReceipts: [...error.receipts] };
@@ -881,10 +914,6 @@ const planPromptIntent = inject({ logger })(
                     rejectionReason: `Provider planning failed: ${reason}`,
                 };
             }
-
-            // An empty provider plan is a no-op; there is no alternate mutation path.
-
-            return { actions: [], rawText: prompt, requiresConfirmation: false, ...applicationToolReceiptFields };
         }
 );
 

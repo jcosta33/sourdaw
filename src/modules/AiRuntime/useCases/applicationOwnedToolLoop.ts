@@ -988,7 +988,6 @@ export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
 ): Promise<ApplicationOwnedToolLoopOutcome> {
     const limits = { ...DEFAULT_LIMITS, ...input.limits };
-    const maxTurns = input.interpretation === undefined ? limits.maxTurns : limits.maxTurns + CREATIVE_TURN_ALLOWANCE;
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
@@ -997,6 +996,14 @@ export async function runApplicationOwnedToolLoop(
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
+
+    /**
+     * The turn ceiling for the run as it currently stands. Offering the tool buys nothing: only a run
+     * that actually admitted an interpretation spends the extra turn, so a provider that leaves the
+     * tool uncalled gets exactly the turns every other run gets.
+     */
+    const maxTurns = (): number =>
+        interpretation === 'admitted' ? limits.maxTurns + CREATIVE_TURN_ALLOWANCE : limits.maxTurns;
 
     /**
      * Admits one turn's receipts against the context budget. Every receipt the loop produces spends
@@ -1017,7 +1024,7 @@ export async function runApplicationOwnedToolLoop(
         return byteLength(receiptContext) > limits.maxTotalReceiptBytes ? { reason: overBudget, receipts } : null;
     };
 
-    for (let turn = 1; turn <= maxTurns; turn += 1) {
+    for (let turn = 1; turn <= maxTurns(); turn += 1) {
         if (input.signal?.aborted) {
             return {
                 status: 'rejected',
@@ -1032,7 +1039,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 receiptContext,
                 remaining: {
-                    turns: maxTurns - turn + 1,
+                    turns: maxTurns() - turn + 1,
                     calls: limits.maxTotalCalls - totalCalls,
                     receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
                 },
@@ -1200,7 +1207,7 @@ export async function runApplicationOwnedToolLoop(
                 interpretation,
             };
         }
-        if (turn === maxTurns) {
+        if (turn === maxTurns()) {
             return {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
@@ -1226,6 +1233,6 @@ export async function runApplicationOwnedToolLoop(
         status: 'rejected',
         reason: 'Provider exhausted the bounded application tool-loop turns.',
         receipts,
-        turns: maxTurns,
+        turns: maxTurns(),
     };
 }

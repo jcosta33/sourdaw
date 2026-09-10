@@ -256,10 +256,10 @@ export function admitCreativeInterpretation(input: {
     if (selections === null) {
         return { status: 'rejected', reason: UNKNOWN_CANDIDATE };
     }
-    if (!catalog.modes.some((mode) => mode === args.modeId)) {
+    const mode = catalog.modes.find((published) => published === args.modeId);
+    if (mode === undefined) {
         return { status: 'rejected', reason: UNAVAILABLE_MODE };
     }
-    const mode = args.modeId as CreativeRequestMode;
     // An admitted authority is a statement about what the request delegated. A run that cannot say
     // that owes the user a question, not a record standing in for one.
     if (args.uncertainty === 'authority' || mode === 'unresolved') {
