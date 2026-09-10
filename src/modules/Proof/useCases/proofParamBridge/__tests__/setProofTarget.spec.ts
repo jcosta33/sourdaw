@@ -104,7 +104,7 @@ describe('setProofTarget', () => {
         expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
-    it('hydrates the store before applying a target when no bridge is registered yet', () => {
+    it('applies and persists a target without engine writes when no bridge is registered yet', () => {
         setProofTarget({ deviceId: 'dev-2', target: 'club' });
 
         expect(getProofState('dev-2').patch.target).toBe('club');
