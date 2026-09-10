@@ -460,11 +460,13 @@ describe('the grinder body', () => {
  * shape rule rather than beside it, so there is no closed list to hold the
  * translation to.
  *
- * What is its own is the refusal: two of the engine's arms allocate, the
+ * What is its own is the refusal: two of the engine's arms allocate, so the
  * native audio-thread door drops those names
- * (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`), and
- * a live write of one therefore has to stay on the Web Audio fallback instead
- * of being reported as carried.
+ * (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`). This
+ * is what `addressesParameter` answers, which is what gates an *automation*
+ * write off the native route entirely (`readLiveAutomationWrites.ts`); a
+ * panel write does not consult this answer and reaches the native door
+ * regardless, where the same refusal drops it on the Rust side instead.
  */
 describe('the bacteria body', () => {
     it('keeps the names the project already stores, because the engine answers to those names', () => {
@@ -507,11 +509,11 @@ describe('the bacteria body', () => {
         expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
     });
 
-    // A live single-key write of either allocating name is held on the web
-    // fallback, because the native door drops it: reporting it as carried
-    // would leave the write nowhere at all. Both spellings the engine reaches
-    // the stage by are refused — a bare name is broadcast to all six bands,
-    // and a `band{N}_` prefix aims it at one.
+    // A live single-key write of either allocating name is refused by this
+    // gate, because the native door drops it: reporting it as carried would
+    // leave the write nowhere at all. Both spellings the engine reaches the
+    // stage by are refused — a bare name is broadcast to all six bands, and a
+    // `band{N}_` prefix aims it at one.
     it('refuses the two names whose engine arms allocate, bare or band-prefixed', () => {
         expect(bodyOf('bacteria').addressesParameter('phaserStages')).toBe(false);
         expect(bodyOf('bacteria').addressesParameter('band0_phaserStages')).toBe(false);
@@ -521,14 +523,25 @@ describe('the bacteria body', () => {
         // prefix first and bounds-checks the band afterwards, and the Rust
         // door reads it the same way.
         expect(bodyOf('bacteria').addressesParameter('band9_phaserStages')).toBe(false);
+        // The sixth character is never read by the engine, only skipped, so a
+        // refusal that required the historical `_` there would miss these:
+        // `apply_param` reads both as band 0's `convolutionIr` and
+        // `phaserStages` all the same.
+        expect(bodyOf('bacteria').addressesParameter('band00convolutionIr')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band0XphaserStages')).toBe(false);
     });
 
     // A near-miss of the refusal, so the prefix strip is pinned as the engine's
     // own reading rather than as a substring match: `phaserStagesTrim` is not
     // the refused name, and `band9_` is not a band the engine addresses.
+    // `bandCount` and `band0_phaserStagesTrim` stay admitted too — neither is
+    // a `band{digit}` prefix followed by one of the two allocating names, so
+    // reading the prefix as loosely as the engine does must not sweep them in.
     it('refuses only the allocating names themselves', () => {
         expect(bodyOf('bacteria').addressesParameter('phaserStagesTrim')).toBe(true);
         expect(bodyOf('bacteria').addressesParameter('band0_phaserRate')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserStagesTrim')).toBe(true);
     });
 
     // A key no built-in's vocabulary could ever spell refuses by shape,

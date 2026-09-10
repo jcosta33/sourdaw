@@ -2068,20 +2068,39 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// the right shape, so the door a command actually arrives at is the only
 /// place that can hold the line. The control thread is where they are allowed
 /// to land, and [`BacteriaBody::load_patch`] applies them there like any other
-/// name. A live single-key write of one is held on the Web Audio fallback
-/// instead, which is what `isBacteriaControlThreadOnly`
+/// name.
+///
+/// A live single-key write of one takes two different routes, neither of
+/// which is "held on the Web Audio fallback" as a whole. An automation write
+/// is kept off the native door entirely: `addressesParameter`
 /// (`src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts`)
-/// keeps out of the native door.
+/// refuses the name, and `readLiveAutomationWrites.ts` gates on that answer
+/// before it ever builds a native `SetParam`. A panel write is not gated the
+/// same way — `updateDeviceParam.ts` sends every live write natively through
+/// `nativeBuiltinWriteTarget` without consulting `addressesParameter` at all
+/// — so it does reach this door, and [`BacteriaBody::set_param`] is what
+/// drops it there. Either route leaves the parameter holding whatever value
+/// the record's own patch gave it.
 const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
 
-/// `name` with an optional `band{digit}_` prefix stripped: the bare name the
+/// `name` with an optional `band{digit}` prefix stripped: the bare name the
 /// engine resolves once it has picked a band.
 ///
 /// The same reading `BacteriaEngine::apply_param`
-/// (`crates/daw-dsp/src/bacteria/engine.rs`) performs — four bytes of `band`,
-/// one decimal digit, one underscore — so `band3_phaserStages` and
-/// `phaserStages` compare equal here while `bandCount`, which is not a
-/// prefixed name at all, compares as itself.
+/// (`crates/daw-dsp/src/bacteria/engine.rs`) performs: four bytes of `band`,
+/// one decimal digit, then one byte the engine skips without reading —
+/// historically the underscore, but nothing in `apply_param` checks that it
+/// is. This helper exists only to decide whether
+/// [`BACTERIA_CONTROL_THREAD_ONLY`] would refuse the name the engine is
+/// about to route, so it has to agree with the engine's reading exactly
+/// rather than a stricter one of its own: a version that required the
+/// underscore would read `band00convolutionIr` and `band0XphaserStages` as
+/// unmatched bare names and let both through, while `apply_param` reads
+/// them as band 0's `convolutionIr` and `phaserStages` all the same — digit
+/// `0`, skipped byte `0` or `X`. Not checking the sixth byte is therefore
+/// not a gap this helper introduces; it is the engine's own gap, and the
+/// only way to close this door on it is to stop pretending the byte is
+/// checked.
 ///
 /// Borrowed rather than built: the comparison this feeds runs on the audio
 /// thread, where an owned name would be an allocation.
@@ -2089,9 +2108,8 @@ fn bare_bacteria_param_name(name: &str) -> &str {
     let Some(rest) = name.strip_prefix("band") else {
         return name;
     };
-    let mut bytes = rest.bytes();
-    match (bytes.next(), bytes.next()) {
-        (Some(digit), Some(b'_')) if digit.is_ascii_digit() => &rest[2..],
+    match rest.as_bytes().first() {
+        Some(digit) if digit.is_ascii_digit() && rest.len() > 1 => &rest[2..],
         _ => name,
     }
 }
@@ -2123,33 +2141,64 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 /// maxed under `Parallel`/`MidSide`. So the reasoning Crust and Grinder wrote
 /// against a zero has to be made against a figure that is really there.
 ///
-/// It still holds, because the figure is already compensated by the time the
-/// native engine is asked to play. A native-carried strip's Web Audio chain is
+/// It holds today only because a native-carried strip's Web Audio chain is
 /// built and gated shut rather than torn down
-/// (`startNativeLiveGraphSession.ts`), so its `BacteriaNode` goes on receiving
-/// the worklet's `latency-changed` messages and its SAB latency slot
-/// (`BacteriaNode.ts`, `reportLatencyChange`) and reporting them into
-/// `externalLatencyRegistry` — `wasmDeviceRegistry.ts` calls `reportLatency`
-/// for the bacteria descriptor on ready (line 1128) and on every change
-/// (line 1134). `getTrackLatency` and `getCompensationDelay`
-/// (`useCases/latencyCompensation/compensation/getCompensationDelay.ts`) turn
-/// that into the strip's `compensationDelaySeconds`, which is exactly what the
-/// live programme (`projectLiveGraphProgramme.ts`, line 211) and the offline
-/// render (`offlineRender/renderOfflineWithNativeEngine.ts`, line 253) hand
-/// the native engine.
+/// (`startNativeLiveGraphSession.ts`): its `BacteriaNode` goes on running in
+/// the worklet, so it goes on posting `latency-changed` messages, and
+/// `wasmDeviceRegistry.ts` turns those into `reportLatency` calls that fill
+/// `externalLatencyRegistry` for the same device id the native engine holds.
+/// `getTrackLatency` and `getCompensationDelay`
+/// (`useCases/latencyCompensation/compensation/getCompensationDelay.ts`) read
+/// that registry into the strip's `compensationDelaySeconds`, which
+/// `readLiveGraphProgramme.ts`, `readLiveAutomationWrites.ts` and
+/// `renderOfflineWithNativeEngine.ts` each read once, at the moment they build
+/// a programme, and hand to the native engine as a fixed number.
 ///
-/// The two hosts report the same figure because they run the same
-/// `BacteriaEngine` over the same key stream: `updateDeviceParam` sends every
-/// write to both, and the only names one host admits and the other does not —
-/// [`BACTERIA_CONTROL_THREAD_ONLY`] — move no latency at all (the impulse
-/// response's length is fixed by `load_builtin`, and the phaser is an all-pass
-/// network with no group delay term in the report).
+/// That "at the moment they build a programme" is the actual mechanism, and
+/// it is also where the claim above overstated things: nothing keeps a
+/// programme's figure current with a registry that fills and changes on its
+/// own asynchronous schedule.
 ///
-/// [`GraphCommand::SetEffectLatency`] is therefore still reserved for what
-/// sounds only natively — an externally hosted plugin — as the Crust and
-/// Grinder docs above say. Declaring a figure here as well would compensate
-/// one delay twice and push every other device on the strip late by exactly
-/// that figure. The `ActiveEffect::dry_delay` doc — `None` "for a device
+/// - **Session start races the worklet.** `startNativeLiveGraphSession`
+///   builds the session's first programme after one IPC probe, without
+///   waiting for any worklet's `ready` message. Pressing Play right after
+///   opening a project whose carried Bacteria has, say,
+///   `band1_spectralEnabled` at 1 therefore builds that first programme
+///   before the gated `BacteriaNode` has necessarily reported anything, so
+///   `externalLatencyRegistry` still answers 0 for that device and the
+///   programme compensates it as 0 — roughly 2048 samples short — until the
+///   next Stop/Play rebuilds the programme against a registry the worklet has
+///   since filled.
+/// - **A running session does not re-read.** A mid-roll write that moves
+///   `BacteriaEngine::latency_samples` — `oversampling`, `distortionMode`,
+///   `codecArtifact`, `spectralEnabled`, `globalRouting` — reaches both hosts
+///   through `updateDeviceParam` and eventually changes what the gated
+///   `BacteriaNode` reports, but that only updates the registry `reportLatency`
+///   writes into. Nothing rebuilds the programme already handed to the native
+///   engine for the roll in progress, so the running session's compensation
+///   stays at whatever it was built with until the next Stop/Play.
+///
+/// The one part of the original reasoning that does hold: because both hosts
+/// run the same `BacteriaEngine` over the same key stream (`updateDeviceParam`
+/// sends every write to both, and the only names one host admits and the
+/// other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — move no latency at all,
+/// since the impulse response's length is fixed by `load_builtin` and the
+/// phaser is an all-pass network with no group delay term in the report), the
+/// figure a settled registry holds is the right one. Declaring it again here
+/// through [`GraphCommand::SetEffectLatency`] today, on top of that registry
+/// path, would compensate the same delay twice once the registry has caught
+/// up, and push every other device on the strip late by exactly that figure —
+/// which is why this body still declares nothing rather than a number that
+/// would double-count for most of its lifetime and race the worklet for the
+/// rest. [`GraphCommand::SetEffectLatency`] stays reserved for what sounds
+/// only natively — an externally hosted plugin — as the Crust and Grinder
+/// docs above say.
+///
+/// The two gaps above are #4153's problem to close, by moving the
+/// compensation into the engine itself through `SetEffectLatency` the way an
+/// externally hosted plugin is compensated, rather than by racing or
+/// re-polling a registry a worklet fills on its own schedule. Nothing here
+/// implements that. The `ActiveEffect::dry_delay` doc — `None` "for a device
 /// declaring no latency, which is every built-in the engine owns" — stays
 /// true.
 pub struct BacteriaBody {
@@ -8524,9 +8573,9 @@ mod tests {
                 .collect()
         }
 
-        /// A hosted Bacteria processes a callback without allocating, with
-        /// every stage of its band chain that carries its own workspace
-        /// engaged.
+        /// Splice a hosted Bacteria carrying `patch` onto a fresh track and
+        /// render `material.len()` frames of it, `FRAMES` at a time, inside
+        /// an allocation guard.
         ///
         /// The body is built outside the guard, where its band chains, STFT
         /// and Smudge workspaces, granular rings, codec frames and the
@@ -8536,51 +8585,19 @@ mod tests {
         /// the chain — so what runs inside the guard is the whole callback
         /// path a strip carrying the device takes, not the body alone.
         ///
-        /// The patch is chosen for coverage rather than for a sound: the
-        /// oversampled Smudge waveshaper on band 0, its lo-fi codec past the
-        /// `codecArtifact` threshold that engages the framed transform, its
-        /// convolver over a loaded response, and the spectral and granular
-        /// stages on band 1 — the stages that keep buffers of their own, and
-        /// so the ones an allocation could hide in. `band0_convolutionIr` is
-        /// in the patch rather than left out because a convolver with no
-        /// response loaded passes its input through
-        /// (`ConvolutionProcessor::process_stereo` returns early on
-        /// `!ir_loaded`), so the stage would be named and never run; the patch
-        /// is the control-thread route those names are allowed to travel.
-        ///
         /// Every callback is inside the guard, the first one included: a
         /// warm-up run outside it would be exactly where a lazily sized
-        /// buffer grew. Eight of them, because this patch reports 2048
-        /// samples of latency (band 1's spectral window is the deepest, and
-        /// `Parallel` pads every band and the dry tap out to the worst case),
-        /// so a single 512-frame callback would render nothing but the
-        /// alignment rings filling and the assertions below would pass against
-        /// silence.
-        #[test]
-        fn a_bacteria_body_processes_a_callback_without_allocating() {
+        /// buffer grew.
+        fn render_bacteria_patch(patch: &[(BuiltinParamName, f32)], material: &[f32]) -> Vec<f32> {
             const FRAMES: usize = 512;
-            const CALLBACKS: usize = 8;
-            const RENDERED: usize = FRAMES * CALLBACKS;
+            let frame_total = material.len();
+            assert!(
+                frame_total % FRAMES == 0,
+                "the fixture material must be a whole number of callbacks"
+            );
+            let callbacks = frame_total / FRAMES;
 
             let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-            let material = bacteria_guard_material(RENDERED);
-            let patch = bacteria_guard_writes(&[
-                ("bandCount", 2.0),
-                ("band0_distortionEnabled", 1.0),
-                ("band0_drive", 8.0),
-                ("band0_oversampling", 4.0),
-                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
-                ("band0_lofiEnabled", 1.0),
-                ("band0_codecArtifact", 0.6),
-                ("band0_convolutionEnabled", 1.0),
-                ("band0_convolutionIr", 1.0),
-                ("band0_convolutionMix", 0.5),
-                ("band1_spectralEnabled", 1.0),
-                ("band1_spectralBlur", 0.5),
-                ("band1_granularEnabled", 1.0),
-                ("band1_grainDensity", 40.0),
-                ("band1_grainMix", 1.0),
-            ]);
             let entry = ChainEntry {
                 effect_id: 7,
                 kind: DeviceKind::Effect,
@@ -8593,12 +8610,12 @@ mod tests {
                     1,
                     TimelineClip::new(
                         101,
-                        material.clone().into(),
+                        material.to_vec().into(),
                         [].into(),
                         ClipPlacement {
                             start_frame: 0,
                             source_offset_frames: 0,
-                            length_frames: RENDERED as u64,
+                            length_frames: frame_total as u64,
                         },
                         ClipPlayback::at_gain(1.0),
                     ),
@@ -8607,7 +8624,7 @@ mod tests {
             command_tx
                 .push(GraphCommand::AddDetachedEffect(
                     7,
-                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch),
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, patch),
                     None,
                 ))
                 .unwrap();
@@ -8632,24 +8649,111 @@ mod tests {
             // Sized outside the guard: the whole render has to be kept to
             // assert against, and a `Vec` grown inside would be an allocation
             // the test performed rather than the callback.
-            let mut rendered = vec![0.0_f32; RENDERED];
+            let mut rendered = vec![0.0_f32; frame_total];
             assert_no_alloc(|| {
-                for callback in 0..CALLBACKS {
+                for callback in 0..callbacks {
                     scheduler.process_block(&mut left, &mut right, FRAMES);
                     rendered[callback * FRAMES..(callback + 1) * FRAMES].copy_from_slice(&left);
                 }
             });
+            rendered
+        }
+
+        /// A hosted Bacteria processes a callback without allocating, and the
+        /// change it makes to the signal is provably its own doing.
+        ///
+        /// The patch is chosen for coverage rather than for a sound: the
+        /// oversampled Smudge waveshaper on band 0, its lo-fi codec past the
+        /// `codecArtifact` threshold that engages the framed transform, its
+        /// convolver over a loaded response, and the spectral and granular
+        /// stages on band 1 — the stages that keep buffers of their own, and
+        /// so the ones an allocation could hide in. `band0_convolutionIr` is
+        /// in the patch rather than left out because a convolver with no
+        /// response loaded passes its input through
+        /// (`ConvolutionProcessor::process_stereo` returns early on
+        /// `!ir_loaded`), so the stage would be named and never run; the patch
+        /// is the control-thread route those names are allowed to travel.
+        ///
+        /// Eight 512-frame callbacks, because this patch reports 2048 samples
+        /// of latency (band 1's spectral window is the deepest, and `Parallel`
+        /// pads every band and the dry tap out to the worst case), so a
+        /// single callback would render nothing but the alignment rings
+        /// filling and the assertions below would pass against silence.
+        ///
+        /// The oracle is a second render of the identical graph, differing
+        /// only in that every per-band stage the first patch turns on —
+        /// `distortionEnabled`, `lofiEnabled`, `convolutionEnabled`,
+        /// `spectralEnabled`, `granularEnabled` — is turned off in the
+        /// second, everything else held equal. Both renders cross the same
+        /// track, clip and device-splice machinery, so anything that
+        /// machinery does to the signal on its own lands identically in both
+        /// and cancels out of the comparison; what does not cancel is
+        /// whatever the engaged stages themselves change. Comparing the
+        /// engaged render against the raw input material instead — this
+        /// test's earlier form — does not have that property: something in
+        /// the graph changes samples from frame 513 on for reasons of its
+        /// own, so that comparison stayed green with
+        /// `self.engine.process_block(left, right)` deleted from
+        /// `BacteriaBody::process` entirely. Deleting that call makes both
+        /// patches here render the same pass-through output regardless of
+        /// which stages they name — the parameter writes still reach
+        /// `self.engine`, but nothing ever reads them back — which is exactly
+        /// what turns this comparison red instead.
+        #[test]
+        fn a_bacteria_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+            const CALLBACKS: usize = 8;
+            const RENDERED: usize = FRAMES * CALLBACKS;
+
+            let material = bacteria_guard_material(RENDERED);
+            let patch_engaged = bacteria_guard_writes(&[
+                ("bandCount", 2.0),
+                ("band0_distortionEnabled", 1.0),
+                ("band0_drive", 8.0),
+                ("band0_oversampling", 4.0),
+                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
+                ("band0_lofiEnabled", 1.0),
+                ("band0_codecArtifact", 0.6),
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionIr", 1.0),
+                ("band0_convolutionMix", 0.5),
+                ("band1_spectralEnabled", 1.0),
+                ("band1_spectralBlur", 0.5),
+                ("band1_granularEnabled", 1.0),
+                ("band1_grainDensity", 40.0),
+                ("band1_grainMix", 1.0),
+            ]);
+            let patch_disengaged = bacteria_guard_writes(&[
+                ("bandCount", 2.0),
+                ("band0_distortionEnabled", 0.0),
+                ("band0_drive", 8.0),
+                ("band0_oversampling", 4.0),
+                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
+                ("band0_lofiEnabled", 0.0),
+                ("band0_codecArtifact", 0.6),
+                ("band0_convolutionEnabled", 0.0),
+                ("band0_convolutionIr", 1.0),
+                ("band0_convolutionMix", 0.5),
+                ("band1_spectralEnabled", 0.0),
+                ("band1_spectralBlur", 0.5),
+                ("band1_granularEnabled", 0.0),
+                ("band1_grainDensity", 40.0),
+                ("band1_grainMix", 1.0),
+            ]);
+
+            let rendered_engaged = render_bacteria_patch(&patch_engaged, &material);
+            let rendered_disengaged = render_bacteria_patch(&patch_disengaged, &material);
 
             assert!(
-                rendered.iter().any(|sample| *sample != 0.0),
+                rendered_engaged.iter().any(|sample| *sample != 0.0),
                 "the guarded callbacks rendered silence, so they covered no processing"
             );
             assert!(
-                rendered
+                rendered_engaged
                     .iter()
-                    .zip(&material)
-                    .any(|(sample, input)| sample != input),
-                "the guarded callbacks returned their input, so the multi-effect never ran"
+                    .zip(&rendered_disengaged)
+                    .any(|(engaged, disengaged)| engaged != disengaged),
+                "the engaged and disengaged renders matched, so the multi-effect's stages never ran"
             );
         }
 
@@ -8746,7 +8850,14 @@ mod tests {
         /// Both names are sent bare and `band{digit}_`-prefixed, because the
         /// engine reaches its stages both ways — an unmatched bare name is
         /// broadcast to all six bands — so a refusal reading only the written
-        /// form would let the other spelling through.
+        /// form would let the other spelling through. `band00convolutionIr`
+        /// and `band0XphaserStages` are in the refused set for the same
+        /// reason `bare_bacteria_param_name`'s doc gives: the engine reads
+        /// the byte after the digit without checking it, so both read as
+        /// band 0's `convolutionIr` and `phaserStages` to `apply_param` even
+        /// though neither spells the historical underscore, and the refusal
+        /// has to catch what the engine actually routes rather than only the
+        /// `_`-separated spelling.
         ///
         /// Run inside the guard as well: a refusal that returned early *after*
         /// touching the engine would abort here rather than only fail the
@@ -8767,6 +8878,8 @@ mod tests {
                 ("band0_phaserStages", 12.0),
                 ("phaserStages", 12.0),
                 ("band0_convolutionIr", 2.0),
+                ("band00convolutionIr", 2.0),
+                ("band0XphaserStages", 12.0),
             ]);
             let material = bacteria_guard_material(FRAMES);
 

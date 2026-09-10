@@ -168,25 +168,40 @@ function tablePatch(
  * all-pass chains past the six the constructor builds. A persisted record
  * still carries them — the mapper applies a device's whole record on the
  * control thread, where those arms are allowed to run — so they stay in
- * [projectPatch] and are refused only for a live single-key write, which is
- * what [addressesParameter] answers.
+ * [projectPatch].
+ *
+ * A live single-key write is not refused the same way for every producer.
+ * [addressesParameter] is what `readLiveAutomationWrites` gates an automation
+ * write on, so an automation write of one of these names never reaches the
+ * native door at all. A panel write does not consult [addressesParameter]:
+ * `updateDeviceParam.ts` sends it natively through `nativeBuiltinWriteTarget`
+ * regardless, so it does reach the door, and `BacteriaBody::set_param`
+ * (`crates/daw-engine/src/scheduler.rs`) is what drops it there. Either way
+ * the parameter keeps the value the persisted record's patch gave it.
  */
 const BACTERIA_CONTROL_THREAD_ONLY: ReadonlySet<string> = new Set(['convolutionIr', 'phaserStages']);
 
 /**
- * `paramId` with an optional `band{digit}_` prefix stripped: the bare name the
+ * `paramId` with an optional `band{digit}` prefix stripped: the bare name the
  * engine resolves once it has picked a band.
  *
  * The same reading `BacteriaEngine::apply_param`
  * (`crates/daw-dsp/src/bacteria/engine.rs`) and `bare_bacteria_param_name`
- * (`crates/daw-engine/src/scheduler.rs`) perform — four bytes of `band`, one
- * decimal digit, one underscore, on any digit rather than only the six bands
- * that exist, because the engine strips first and bounds-checks the band
- * afterwards. So `band3_phaserStages` and `phaserStages` reach the same answer
- * here, while `bandCount` is not a prefixed name at all and reads as itself.
+ * (`crates/daw-engine/src/scheduler.rs`) perform: four bytes of `band`, one
+ * decimal digit, then one character the engine skips without reading —
+ * historically `_`, but `apply_param` never checks that it is, on any digit
+ * rather than only the six bands that exist, because the engine strips first
+ * and bounds-checks the band afterwards. The sixth character is matched by
+ * `.` rather than pinned to `_` for exactly that reason: a stricter pattern
+ * here would read `band00convolutionIr` and `band0XphaserStages` as unmatched
+ * bare names while the engine reads both as band 0's `convolutionIr` and
+ * `phaserStages`, which is the gap this function exists to close rather than
+ * reopen. So `band3_phaserStages`, `band00convolutionIr` and `phaserStages`
+ * all reach the same answer here, while `bandCount` is not a prefixed name at
+ * all and reads as itself.
  */
 function bareBacteriaParamName(paramId: string): string {
-    const prefixed = /^band\d_(?<bare>.*)$/.exec(paramId);
+    const prefixed = /^band\d.(?<bare>.*)$/s.exec(paramId);
     return prefixed?.groups?.bare ?? paramId;
 }
 
@@ -308,19 +323,30 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * under the worklet.
              *
              * `addressesParameter` refuses the two names whose engine arms
-             * allocate: the native door drops them, so a live single-key write
-             * of one stays on the Web Audio fallback rather than being
-             * reported as carried and then silently discarded. The persisted
-             * record still carries them, because the mapper applies it
-             * control-side where those arms are legal.
+             * allocate, but that only keeps an automation write off the
+             * native door — `readLiveAutomationWrites` gates on this answer
+             * before it builds a write. A panel write skips this gate
+             * entirely (`updateDeviceParam.ts` sends every live write
+             * natively through `nativeBuiltinWriteTarget`), reaches the
+             * native door regardless, and is dropped there by
+             * `BacteriaBody::set_param`. Either way the persisted record
+             * still carries both names, because the mapper applies it
+             * control-side where those arms are legal, and the parameter
+             * keeps the value that record gave it.
              *
              * The body declares no latency to the native engine even though
-             * this engine reports a real one — the carried strip's gated-shut
-             * `BacteriaNode` still reports it into `externalLatencyRegistry`
-             * and `getCompensationDelay` folds it into what the engine is
-             * told to play, so declaring it natively as well would compensate
-             * it twice; the argument is written out on `BacteriaBody` in
-             * `crates/daw-engine/src/scheduler.rs`.
+             * this engine reports a real one. A settled `externalLatencyRegistry`
+             * — filled by the carried strip's gated-shut `BacteriaNode` — does
+             * fold into what `getCompensationDelay` hands the native engine,
+             * but only at the moment a programme is built: the session's
+             * first programme can build before the worklet has reported
+             * anything, and a mid-roll parameter change that moves the
+             * engine's own latency figure does not rebuild the programme
+             * already handed to a running session. Both gaps, and why
+             * declaring a figure here today would still double-compensate
+             * rather than close them, are written out on `BacteriaBody` in
+             * `crates/daw-engine/src/scheduler.rs`; #4153 is the fix, moving
+             * the compensation into the engine through `SetEffectLatency`.
              */
             parameterName: (paramId) => paramId,
             projectPatch: shapedNumericParametersOnly,
