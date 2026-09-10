@@ -1,0 +1,33 @@
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_9b530f08172a54::t_da402a53644537 4
+  s_9b530f08172a54::t_2aaea56d62c0fc 288-295
+src/modules/Grinder/models/GrinderNeuralProfileParams.ts
+  s_9b530f08172a54::t_31caa81921f106 14
+  s_9b530f08172a54::t_e6950048e63fa7 34
+  s_9b530f08172a54::t_c68646f431994c 1-13,15-33,35-36
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_f78c340c528da4 1874-1886
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  s_9b530f08172a54::t_c8378e011ff208 67-68,70-74
+  s_9b530f08172a54::t_a982fb715c3443 1-66,69,75-76
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_6aeadd994c83ac 214-218
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/syncGrinderPatchToAudio.spec.ts
+  s_9b530f08172a54::t_81027748e44ed4 159-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "309aaab1195e509b50796cae6f4f71a6bd7b8f96",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
