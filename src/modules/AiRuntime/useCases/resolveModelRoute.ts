@@ -7,7 +7,7 @@ type ModelRouteCost = 'local' | 'free' | 'paid';
 type ModelRouteHealth = 'healthy' | 'degraded' | 'unavailable';
 type ModelRouteCostPolicy = 'local-only' | 'allow-free-remote' | 'allow-paid-remote';
 
-type ModelRouteCandidate = {
+export type ModelRouteCandidate = {
     routeId: string;
     executor: RunnableAiBackend;
     providerId: string;
@@ -39,7 +39,7 @@ type ModelRouteRequirements = {
     requireInstalledModel: boolean;
 };
 
-type ModelRouteRejectionReason =
+export type ModelRouteRejectionReason =
     | 'unknown-route'
     | 'duplicate-route'
     | 'missing-capability'

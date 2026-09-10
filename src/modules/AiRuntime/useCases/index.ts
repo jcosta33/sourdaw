@@ -73,6 +73,7 @@ export { admitAgentRetry } from './admitAgentRetry';
 export { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 export { createAgentSagaStep } from './createAgentSagaStep';
 export { agentRunControls } from './getAgentRunControlProjection';
+export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
