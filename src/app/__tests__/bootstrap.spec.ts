@@ -530,6 +530,7 @@ vi.mock('#/modules/Yeast/stores', () => ({ setYeastEventBus: noop }));
 vi.mock('#/modules/Yeast/useCases', () => ({
     configureYeastRuntime: noop,
     createOfflineYeastMidiProcessor: noop,
+    getYeastHandlers: sentinelHandlers('Yeast'),
     processRealtimeMidiInput: noop,
     teardownYeastRuntime: noop,
 }));
@@ -622,6 +623,7 @@ describe('bootstrap', () => {
         'WebMidiInput',
         'Rave',
         'ControlRoom',
+        'Yeast',
     ];
 
     it('validates LLM strategy names against the command catalogue before handler registration', () => {
