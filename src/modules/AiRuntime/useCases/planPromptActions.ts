@@ -1,6 +1,8 @@
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -57,6 +59,9 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         });
         return { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 };
     })();
+    // Read once, here: the correction compares against the authority this run started with, not
+    // against whatever the run has become by the time the correction is admitted.
+    const runAtCapture = agentRunLifecycle.get(streamIdentity.runId);
     const autoCreatedRun = input.streamIdentity === undefined;
     let autoRunCancellation: Promise<unknown> | undefined;
     const cancelAutoCreatedRun = () => {
@@ -135,6 +140,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             streamIdentity,
             onProviderAttempt
         );
+        const initialCreativeAuthority = result.creativeAuthority ?? null;
         const correctableValidationFailure =
             result.rejectionReason !== undefined && /schema|target|resolv/i.test(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
@@ -167,9 +173,12 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                         cancellationRequested: input.signal?.aborted === true,
                         stale: currentRevision !== projectRevision,
                         sameRevision: currentRevision === projectRevision,
-                        // The correction reuses the same frozen context and exact provider schema/grant callback.
-                        sameScope: true,
-                        sameGrants: true,
+                        sameScope:
+                            canonicalJson(getCreativeSelectionSnapshot(context)) ===
+                            canonicalJson(getCreativeSelectionSnapshot(getProjectContext())),
+                        sameGrants:
+                            canonicalJson(runAtCapture?.grants ?? null) ===
+                            canonicalJson(agentRunLifecycle.get(streamIdentity.runId)?.grants ?? null),
                     });
                 if (correctionAllowed) {
                     return admission;
@@ -189,7 +198,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 undefined,
                 input.onProviderResult,
                 streamIdentity,
-                admitCorrectionAttempt
+                admitCorrectionAttempt,
+                { creativeAuthority: initialCreativeAuthority }
             );
         }
         if (result.preparationRequest === 'stem-import') {

@@ -162,6 +162,7 @@ describe('MIDI transform compilation', () => {
         expect(result.compilerEvidence.expandedMidiTransforms).toEqual(['chordProgression']);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -259,6 +260,7 @@ describe('MIDI transform compilation', () => {
         expect(result.compilerEvidence.commands[0]?.arguments.clipId).toBe('clip-verse');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: existingClipContext,

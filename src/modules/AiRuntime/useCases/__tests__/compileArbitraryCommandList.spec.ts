@@ -698,6 +698,7 @@ describe('compileArbitraryCommandList', () => {
         expect(compiled.compilerEvidence.providerKnownTargetIds).toEqual(['clip-empty-midi']);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: compiled.compilerEvidence,
                 calls: compiled.compilerEvidence.commands,
                 context: emptyMidiClipContext,
@@ -785,6 +786,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: compiled.compilerEvidence,
                 calls: compiled.compilerEvidence.commands,
                 context: frozenMidiClipContext,
@@ -882,6 +884,7 @@ describe('compileArbitraryCommandList', () => {
         expect(result.compilerEvidence.providerKnownTargetIds).toEqual(['track-mix-bus', 'track-kick']);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: routingContext,
@@ -911,6 +914,7 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     items: result.compilerEvidence.items.map((item) => ({ ...item, directTargets: undefined })),
@@ -1074,6 +1078,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: sendContext,
@@ -2120,6 +2125,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -2311,6 +2317,7 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -2331,6 +2338,7 @@ describe('compileArbitraryCommandList', () => {
         ];
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedEvidence,
                 calls: tamperedEvidence.commands,
                 context,
@@ -2468,6 +2476,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence!,
                 calls: result.compilerEvidence!.commands,
                 context: clipContext,
@@ -3422,6 +3431,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -3430,6 +3440,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('accepted');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -3438,6 +3449,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: {
@@ -3451,6 +3463,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     commands: [
@@ -3465,6 +3478,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     providerKnownTargetIds: ['track-hat'],
@@ -3595,6 +3609,7 @@ describe('compileArbitraryCommandList', () => {
             'enable-metronome',
         ]);
         const validation = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -3969,6 +3984,7 @@ describe('compileArbitraryCommandList', () => {
             providerKnownTargetIds: [],
             selectors: [],
             commands: [createBusCommand, addNotesCommand],
+            creativeAuthorityId: null,
             expandedMidiTransforms: [],
             items: [
                 {
@@ -4006,6 +4022,7 @@ describe('compileArbitraryCommandList', () => {
 
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence,
                 calls: evidence.commands,
                 context,
@@ -4480,6 +4497,7 @@ describe('compileArbitraryCommandList', () => {
             },
         ]);
         const validation = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -4597,6 +4615,7 @@ describe('compileArbitraryCommandList', () => {
         expect(result.compilerEvidence.selectors[0]?.protectedExclusions).toEqual([]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: {
@@ -4785,6 +4804,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
 
         const replayed = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -4849,6 +4869,7 @@ describe('compileArbitraryCommandList', () => {
             throw new Error('Expected compiler evidence for a created device parameter chain');
         }
         const replayed = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context: deviceContext,
@@ -4876,6 +4897,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedParameter,
                 calls: tamperedParameter.commands,
                 context: deviceContext,
@@ -4904,6 +4926,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: unsupportedParameter,
                 calls: unsupportedParameter.commands,
                 context: deviceContext,
@@ -4922,6 +4945,7 @@ describe('compileArbitraryCommandList', () => {
         tamperedDependency.items[2] = { ...parameterItem, dependsOn: [] };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedDependency,
                 calls: tamperedDependency.commands,
                 context: deviceContext,
@@ -4940,6 +4964,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedProducer,
                 calls: tamperedProducer.commands,
                 context: deviceContext,
