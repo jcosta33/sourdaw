@@ -1704,14 +1704,14 @@ const CRUST_RUN_FRAMES: usize = 128;
 /// name is a `CrustDescriptor.ts` parameter id, and the web host applies a
 /// device's record in first-insertion order
 /// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`)
-/// over an open record, so there is no order there to mirror. A SHAPE pill
-/// persists `algorithm`; a PLAY tile persists `style` and the algorithm it
-/// derives (`setCrustParamWithAudio.ts`), so a record's `algorithm` is always
-/// the engine's own pick and the two keys of a freshly written record agree.
-/// Leading with `style` keeps that true whatever order the record draws, and
-/// a record written before that contract — a stale `algorithm` beside a
-/// newer `style` — resolves to its exact pick rather than the simplification
-/// of it.
+/// over an open record, so there is no order there to mirror. A PLAY tile
+/// persists `style` and the algorithm it derives, in that order
+/// (`setCrustParamWithAudio.ts`, `createFlushHandlers.ts`); a SHAPE pill
+/// refines `algorithm` alone. `algorithm` is therefore always the engine's
+/// own pick, and this law exists so the exact pick lands last whatever order
+/// a `HashMap` record draws; a record written before this contract (stale
+/// `algorithm` beside a newer `style`) resolves to its exact pick rather than
+/// the simplification of it.
 const CRUST_PATCH_PRECEDENCE: &[&str] = &["style"];
 
 /// Crust, the true-peak mastering limiter, hosted as a built-in effect body.

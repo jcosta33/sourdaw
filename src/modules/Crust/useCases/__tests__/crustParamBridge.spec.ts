@@ -106,6 +106,8 @@ describe('crustParamBridge', () => {
         // write, so a second flush for 'algorithm' would race it: only 'style'
         // schedules an engine write. Project truth still follows for both keys so
         // a reload's `parameterValues.algorithm` matches the engine's own pick.
+        // The order is the contract, because the web host replays a record in
+        // first-insertion order and style must land before the algorithm it derives.
         setCrustParamWithAudio('d1', 'style', 'loud');
 
         expect(setCrustParam).toHaveBeenCalledWith('style', 'loud');
@@ -115,8 +117,10 @@ describe('crustParamBridge', () => {
         expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'style', 2);
         expect(mockUpdateDeviceParam).not.toHaveBeenCalledWith('t1', 'd1', 'algorithm', expect.anything());
 
-        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'style', 2);
-        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'algorithm', 7);
+        expect(mockPersistDeviceParam.mock.calls).toEqual([
+            ['d1', 'style', 2],
+            ['d1', 'algorithm', 7],
+        ]);
     });
 
     it('writes the store for a store-only key (streamingPreset) that has no engine encoding', () => {
