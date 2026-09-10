@@ -1622,8 +1622,8 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
 
     let mut instance = ProofInstance::new(SAMPLE_RATE);
     instance.set_param("eq_linear_phase", 1.0);
-    instance.set_param("limiter_ceiling", -1.0);
-    instance.set_param("limiter_threshold", -12.0);
+    instance.set_param("lim_ceiling", -1.0);
+    instance.set_param("lim_lookahead", 5.0);
 
     unsafe {
         fill_input(

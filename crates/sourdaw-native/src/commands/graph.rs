@@ -1892,7 +1892,9 @@ fn resolved_param_writes<T>(
 /// gluten and crust are inserts and still answer their own names, and so is
 /// grinder, spelled in its own camelCase rather than the others' snake_case,
 /// and so is bacteria, which spells camelCase too and prefixes most of it with
-/// the band a name aims at (`band0_filterCutoff`) — because the vocabulary
+/// the band a name aims at (`band0_filterCutoff`), and so is proof, whose
+/// snake_case names carry the stage they route to as a prefix (`lim_ceiling`)
+/// and spell the module order as five indexed keys — because the vocabulary
 /// belongs to the DSP the body hosts rather than to the kind of device it is,
 /// the case it spells its names in, or the addressing it folds into them.
 fn builtin_parameter(
@@ -1909,7 +1911,8 @@ fn builtin_parameter(
         | BuiltinEffectType::Gluten
         | BuiltinEffectType::Crust
         | BuiltinEffectType::Grinder
-        | BuiltinEffectType::Bacteria => {
+        | BuiltinEffectType::Bacteria
+        | BuiltinEffectType::Proof => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2090,6 +2093,12 @@ fn map_device(
     // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
     // here is the only door that applies them — its audio-thread `set_param`
     // drops them.
+    //
+    // For proof the record carries something no `SetParam` behind it could
+    // stand in for either: the five `chain_order_{n}` keys spelling the module
+    // order. `ProofChain` has no `set_param` arm for them at all —
+    // `ProofBody::set_param` is what turns them into the chain's own `reorder`
+    // — so a saved order reaches the device through this patch or not at all.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2146,6 +2155,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::bacteria_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Proof => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::proof_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -11713,6 +11732,227 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, false)],
             "a bypassed bacteria is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A proof device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the mastering suite:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a mastering chain sounds nothing of its own.
+    #[test]
+    fn a_proof_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Proof(_), None)
+            )),
+            "the proof is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The look-ahead the proof body the batch built reports, in frames.
+    fn mapped_proof_latency(ops: &[GraphCommand]) -> u32 {
+        ops.iter()
+            .find_map(|op| match op {
+                GraphCommand::AddDetachedEffect(_, PluginCore::Proof(body), _) => {
+                    Some(body.latency_samples())
+                }
+                _ => None,
+            })
+            .expect("the batch registers a proof body")
+    }
+
+    /// Where a batch registers its proof body, and under which id.
+    fn proof_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::Proof(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a proof body")
+    }
+
+    /// A proof's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust, grinder and bacteria are held to
+    /// above, and for the same reason: the command ring is finite, and a
+    /// mastering record is eight EQ bands, four dynamics bands, four exciter
+    /// bands, the imager, the limiter and the ditherer. It carries one more
+    /// reason of its own — the five `chain_order_{n}` keys, which
+    /// `ProofChain::set_param` has no arm for at all, so a saved module order
+    /// reaches the device through `ProofBody::load_patch` or not at all.
+    ///
+    /// The oracle is the figure the registered body itself reports.
+    /// `lim_lookahead` at 7.5 ms is 360 frames at this batch's rate, against
+    /// the limiter's own 5 ms default of 240, so a record that never reached
+    /// the instance reports the default and this fails. That the order keys
+    /// travelled in the same record is what the empty `SetParam` list says:
+    /// they were admitted by name — one key the mapper refused would have
+    /// failed the whole batch — and no command carried them.
+    #[test]
+    fn a_proof_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const LOOKAHEAD_FRAMES: u32 = 360;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({
+                    "lim_lookahead": 7.5,
+                    "lim_ceiling": -6.0,
+                    "eq_band0_enabled": 1.0,
+                    "chain_order_0": 4.0,
+                    "chain_order_1": 0.0,
+                    "chain_order_2": 1.0,
+                    "chain_order_3": 2.0,
+                    "chain_order_4": 3.0
+                }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mastering chain's own names are proof parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the proof's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+        assert_eq!(
+            mapped_proof_latency(&mapped.ops),
+            LOOKAHEAD_FRAMES,
+            "the record's look-ahead never reached the instance the mapper built"
+        );
+    }
+
+    /// A proof declares the figure its chain reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. The look-ahead is what makes the
+    /// figure worth reading — 10 ms is the widest the control admits
+    /// (`MAX_LOOKAHEAD_MS`, `crates/daw-dsp/src/proof/limiter.rs`) and 480
+    /// frames at this rate, against the 240 the limiter's own default reports.
+    ///
+    /// The declaration carries no dry line, and that is read here rather than
+    /// left to the engine: a line is read on the bypassed pass alone, where
+    /// this body declares 0 and the pass hands the block on untouched, so a
+    /// line shipped from the mapper would be fed on every block the body ran
+    /// and read on none of them.
+    #[test]
+    fn a_proof_record_declares_the_latency_its_engine_reports() {
+        const WIDEST_LOOKAHEAD: usize = 480;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({ "lim_lookahead": 10.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        let (registration, effect_id) = proof_registration(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a proof's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames, WIDEST_LOOKAHEAD,
+            "the declared figure is not the one the record's chain reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// A bypassed body delays nothing on either carrier, so declaring its
+    /// reported look-ahead would hold every route meeting this strip back by a
+    /// figure the strip's signal is not waiting for. Nor does a line stand in
+    /// the figure's place: the bypassed pass is already the identity for this
+    /// body, so a line would be dead weight on the audio thread rather than a
+    /// hold. The 10 ms look-ahead is what makes the zero worth reading — 480
+    /// frames the same record declares un-bypassed.
+    #[test]
+    fn a_bypassed_proof_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Master",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-proof", "type": "proof", "bypassed": true,
+                               "parameterValues": { "lim_lookahead": 10.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed proof is not declared at zero without a line"
         );
         assert!(
             declarations[0].0 < bypass_position,

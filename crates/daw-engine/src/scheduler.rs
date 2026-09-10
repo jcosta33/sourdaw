@@ -31,6 +31,7 @@ use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::primitives::sanitize::sanitize_block;
+use daw_dsp::proof::chain::ProofChain;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
 
@@ -291,6 +292,7 @@ pub enum BuiltinEffectType {
     Crust,
     Grinder,
     Bacteria,
+    Proof,
 }
 
 impl BuiltinEffectType {
@@ -306,6 +308,7 @@ impl BuiltinEffectType {
             Self::Crust => "crust",
             Self::Grinder => "grinder",
             Self::Bacteria => "bacteria",
+            Self::Proof => "proof",
         }
     }
 
@@ -321,6 +324,7 @@ impl BuiltinEffectType {
             "crust" => Some(Self::Crust),
             "grinder" => Some(Self::Grinder),
             "bacteria" => Some(Self::Bacteria),
+            "proof" => Some(Self::Proof),
             _ => None,
         }
     }
@@ -343,6 +347,9 @@ impl BuiltinEffectType {
             // A creative multi-effect processes what it is handed; it sounds
             // nothing of its own.
             Self::Bacteria => false,
+            // A mastering chain is the last insert over a finished mix; it
+            // sounds nothing of its own either.
+            Self::Proof => false,
         }
     }
 
@@ -356,7 +363,8 @@ impl BuiltinEffectType {
     /// alias others, so [`precedence_first`] never carries that knowledge
     /// itself and cannot drift from what [`FermenterBody::load_patch`] or
     /// [`GlutenBody::load_patch`] or [`CrustBody::load_patch`] or
-    /// [`GrinderBody::load_patch`] or [`BacteriaBody::load_patch`] actually does.
+    /// [`GrinderBody::load_patch`] or [`BacteriaBody::load_patch`] or
+    /// [`ProofBody::load_patch`] actually does.
     pub fn patch_precedence(self) -> &'static [&'static str] {
         match self {
             Self::Fermenter => &[LAYER_ROUTING_KEY],
@@ -364,6 +372,7 @@ impl BuiltinEffectType {
             Self::Crust => CRUST_PATCH_PRECEDENCE,
             Self::Grinder => GRINDER_PATCH_PRECEDENCE,
             Self::Bacteria => BACTERIA_PATCH_PRECEDENCE,
+            Self::Proof => PROOF_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -1007,6 +1016,7 @@ pub enum PluginCore {
     Crust(Box<CrustBody>),
     Grinder(Box<GrinderBody>),
     Bacteria(Box<BacteriaBody>),
+    Proof(Box<ProofBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1026,6 +1036,7 @@ impl PluginCore {
             BuiltinEffectType::Crust => Self::crust_with_patch(sample_rate, &[]),
             BuiltinEffectType::Grinder => Self::grinder_with_patch(sample_rate, &[]),
             BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1121,6 +1132,23 @@ impl PluginCore {
         Self::Bacteria(Box::new(body))
     }
 
+    /// Build a Proof carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a mastering chain's patch is
+    /// eight EQ bands, four dynamics bands, four exciter bands, the imager, the
+    /// limiter, the ditherer and the five keys spelling the module order, and
+    /// the command ring is finite.
+    ///
+    /// The ordering law here is [`PROOF_PATCH_PRECEDENCE`], which is empty —
+    /// applied through [`BuiltinEffectType::patch_precedence`] all the same, so
+    /// the record build is one code path with the other bodies'.
+    pub fn proof_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ProofBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Proof(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1133,6 +1161,7 @@ impl PluginCore {
             Self::Crust(_) => Some(BuiltinEffectType::Crust),
             Self::Grinder(_) => Some(BuiltinEffectType::Grinder),
             Self::Bacteria(_) => Some(BuiltinEffectType::Bacteria),
+            Self::Proof(_) => Some(BuiltinEffectType::Proof),
             Self::Native(_) => None,
         }
     }
@@ -1166,12 +1195,18 @@ impl PluginCore {
     /// and with no dry line, so that the graph already holds a figure the next
     /// write to it can move ([`ActiveEffect::refresh_declared_latency`]).
     ///
+    /// This is also the one arm [`ActiveEffect::refresh_declared_latency`]
+    /// reads, so a body that declares a figure here is a body the audio thread
+    /// keeps current without a second per-body match to keep in step with this
+    /// one.
+    ///
     /// A hosted plugin answers `None` too. Its figure is the host's to read and
     /// republish (`host/latency_watcher.rs`), on the same command, and asking
     /// the instance here would put a second producer on one declaration.
     pub fn declared_latency_frames(&self) -> Option<usize> {
         match self {
             Self::Bacteria(body) => Some(body.latency_samples() as usize),
+            Self::Proof(body) => Some(body.latency_samples() as usize),
             Self::Knead(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
@@ -2369,6 +2404,313 @@ impl BacteriaBody {
     }
 }
 
+/// The Proof patch keys that must land before every other entry — none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry, so a record drawn in the wrong order settles on the
+/// wrong device. Proof has no such pair. `ProofChain::set_param`
+/// (`crates/daw-dsp/src/proof/chain.rs`) routes on a leading prefix — `eq_`,
+/// `dyneq_`, `match_`, `dyn_`, `img_`, `exc_`, `lim_`, `dither_` — and each
+/// stage's own arm stores, clamps or redesigns exactly one field of one stage,
+/// so no two names in the vocabulary write one slot. The module order is
+/// spelled five keys at a time and every one of them writes its own slot of
+/// [`ProofBody::order`], never another's. So a record builds the same device
+/// whatever order it is drawn in, and [`precedence_first`] with this empty law
+/// is the identity over it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a Proof name that does come to
+/// alias another is answered here, where every other body answers it.
+const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// The Proof parameter names the graph owns rather than the chain, and which
+/// [`ProofBody::set_param`] therefore drops on both threads.
+///
+/// `bypass` is the device's bypass, and the device's bypass is
+/// [`GraphCommand::SetBypass`] for every body the engine hosts: the chain skips
+/// a bypassed device rather than handing it a block, and
+/// [`ActiveEffect::refresh_declared_latency`] reads that state to declare 0
+/// while it holds. Forwarding the name would put a second, invisible bypass
+/// inside a device the graph already believes it is running — the block would
+/// come back untouched while the graph went on declaring the chain's figure,
+/// so every route meeting the strip would wait for a delay the signal no longer
+/// takes.
+///
+/// `ab_bypass` is the mastering panel's A/B audition: `ProofChain::process`
+/// answers it by scaling the dry signal by the loudness offset it has been
+/// tracking and returning (`crates/daw-dsp/src/proof/chain.rs`). That offset is
+/// derived from the momentary loudness meters, which only the web twin reads,
+/// and the audition is a panel gesture on the twin's own sound rather than a
+/// setting of the mix — so the native carrier has nothing to audition and no
+/// meter to gain-match against.
+///
+/// Both names are dropped on the control thread too, unlike
+/// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
+/// run the arm: it is that the arm belongs to a carrier this body is not. A
+/// persisted record carrying either leaves the chain exactly where the graph's
+/// own bypass and the panel's own audition put it.
+const PROOF_GRAPH_OWNED: &[&str] = &["bypass", "ab_bypass"];
+
+/// Modules [`ProofChain`] reorders: Eq, Dynamics, Imager, Exciter, Limiter.
+///
+/// `ProofChain::reorder` takes exactly this many slots and refuses anything
+/// that is not a permutation of `0..5`, so the count is the chain's and is
+/// mirrored here only to size [`ProofBody::order`] and to bound the slot a
+/// `chain_order_{n}` key names.
+const PROOF_MODULES: usize = 5;
+
+/// The order `ProofChain::new` builds: EQ, dynamics, imager, exciter, limiter.
+const PROOF_DEFAULT_ORDER: [u8; PROOF_MODULES] = [0, 1, 2, 3, 4];
+
+/// The persisted spelling of one module-order slot.
+const PROOF_CHAIN_ORDER_PREFIX: &str = "chain_order_";
+
+/// The order slot a `chain_order_{n}` key names, or `None` for any other name.
+///
+/// Read from the name's own bytes rather than parsed into a number: this runs
+/// on the audio thread, where building an owned digit would be an allocation.
+/// One byte follows the prefix, and the subtraction wraps rather than panicking
+/// on a byte below `b'0'`, so every non-digit lands outside `0..PROOF_MODULES`
+/// and reads as "not an order key" — which is also the answer for
+/// `chain_order_5` and above, slots the chain has no module for.
+fn proof_chain_order_slot(name: &str) -> Option<usize> {
+    let rest = name.strip_prefix(PROOF_CHAIN_ORDER_PREFIX)?;
+    let [digit] = rest.as_bytes() else {
+        return None;
+    };
+    let slot = digit.wrapping_sub(b'0') as usize;
+    (slot < PROOF_MODULES).then_some(slot)
+}
+
+/// Proof, the mastering suite, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's eight
+/// EQ bands, linear-phase FIR workspaces, four-band dynamics and exciter
+/// crossovers, look-ahead delay lines and the loudness meters' multi-second ring
+/// buffers would set the size of every command the engine sends.
+///
+/// This hosts [`ProofChain`] rather than `daw_dsp::proof::ProofInstance`, which
+/// is the wasm binding: the instance owns raw-pointer input, output and meter
+/// buffers so a worklet can write through them, and a host handed the callback's
+/// own pair has nothing to do with any of them. It is the same choice
+/// [`GrinderBody`] and [`BacteriaBody`] make.
+///
+/// ## Why this body owns the module order
+///
+/// Proof is the one built-in whose modules can be reordered, and the two
+/// carriers spell that order differently. Project truth persists it as five
+/// keys, `chain_order_0` through `chain_order_4`, each holding the module id
+/// standing in that slot (`getProofPatchParameterValues`,
+/// `src/modules/Proof/services/`). The web twin does not read those keys at all:
+/// `ProofChain::set_param` has no `chain_order_` arm, and the worklet is
+/// reordered by a message of its own instead (`reorderChain.ts` →
+/// `bridge.reorderModules`). So a record's order reaches the chain here or
+/// nowhere, and this body is what translates the five keys into the one
+/// `ProofChain::reorder` call the chain answers.
+///
+/// The translation is per key, because that is the shape a key arrives in: a
+/// patch entry, or a single `SetParam` off the wire. Each write stores its own
+/// slot and re-offers the whole array, and `ProofChain::reorder` refuses
+/// anything that is not a permutation of `0..5` — so an order arriving one key
+/// at a time applies exactly when the five keys form one, and a half-written
+/// array is refused rather than partially installed. A live rewrite that passes
+/// through a transient valid permutation on its way to the intended one applies
+/// that permutation for the blocks until the last key lands: the bounded cost of
+/// a per-key write route, and the same cost the persisted record's own
+/// key-by-key application takes on the control thread before the body ever
+/// crosses the ring.
+///
+/// A value outside `0..5` is stored as written and refused by the chain's own
+/// permutation check, so this body keeps no second range rule that could
+/// disagree with the one the chain enforces.
+///
+/// ## Names the graph owns
+///
+/// [`PROOF_GRAPH_OWNED`] — `bypass` and `ab_bypass` — is dropped here rather
+/// than forwarded, for the reasons that constant carries: the device's bypass is
+/// [`GraphCommand::SetBypass`], and the A/B audition is a gesture on the web
+/// twin's own metered sound.
+///
+/// ## How this body is compensated
+///
+/// `ProofChain::latency_samples` (`crates/daw-dsp/src/proof/chain.rs`) reports
+/// the limiter's look-ahead delay line plus the linear-phase EQ's FIR group
+/// delay. The FIR term is 0 in production — `LinearPhaseEq` is built needing a
+/// rebuild, `eq_linear_phase` only marks it dirty, and nothing outside its own
+/// tests ever designs it, so `is_active` stays false and the stage reports the
+/// nothing it delays — which leaves `lim_lookahead` as the one control that
+/// moves the figure. So this body is compensated the way an externally hosted
+/// plugin is: inside the engine, by the graph, against the figure the instance
+/// itself reports.
+///
+/// - **The mapper publishes the opening figure.** `map_device`
+///   (`crates/sourdaw-native/src/commands/graph.rs`) reads
+///   [`PluginCore::declared_latency_frames`] off the body it just built from the
+///   persisted record, and sends a [`GraphCommand::SetEffectLatency`] behind the
+///   registration carrying that figure — 0 where the record is bypassed — and no
+///   dry line.
+/// - **This body ships and holds no dry line.** A dry line is read on the
+///   bypassed pass alone (`run_dry_delay`), and that is the pass on which this
+///   body declares 0: the pass hands the block on untouched, which is exactly
+///   the identity a line aimed at 0 would be. So there is no pass on which a
+///   line here could hold anything, and one shipped anyway would be fed on every
+///   block the body ran and read on none of them.
+/// - **The audio thread keeps it current.** Every write that lands on this body
+///   is followed by [`ActiveEffect::refresh_declared_latency`], which re-reads
+///   the instance and dirties the compensation pass. `update_graph` recomputes
+///   on the next block, so a mid-roll `lim_lookahead` change re-aims every route
+///   meeting this strip within one block of the write rather than at the next
+///   Stop/Play.
+/// - **A bypassed Proof declares nothing**, on the law
+///   [`ActiveEffect::refresh_declared_latency`] states for every body the engine
+///   reads a figure off: both carriers read a bypassed device as delaying
+///   nothing, so a native declaration standing through bypass would flam every
+///   web strip beside it by the whole figure.
+///
+/// The figure cannot reach the compensation ceiling. `lim_lookahead` is clamped
+/// to 10 ms (`MAX_LOOKAHEAD_MS`, `crates/daw-dsp/src/proof/limiter.rs`), which is
+/// 1920 frames at 192 kHz — the highest rate the product opens a stream at — well
+/// under [`MAX_COMPENSATION_FRAMES`], so unlike a Bacteria this body never puts a
+/// route on the clamp.
+///
+/// Meters stay on the web twin. `ProofChain` carries momentary, short-term and
+/// integrated loudness, true peak, loudness range and six inline taps, and the
+/// mastering panel reads every one of them off the worklet's own instance over a
+/// port this body does not have. So this body exposes none of them: a counter no
+/// reader can reach would be state carried for nobody, exactly as
+/// [`BacteriaBody::process`] drops its scrubbed-sample count.
+pub struct ProofBody {
+    chain: ProofChain,
+    /// The module order the five `chain_order_{n}` keys have written so far, as
+    /// `ProofChain::reorder` takes it. Held here rather than read back off the
+    /// chain because the chain only ever holds a permutation it accepted, and
+    /// the array a partial write is building is not one yet.
+    order: [u8; PROOF_MODULES],
+}
+
+impl ProofBody {
+    /// Build the mastering chain on the control thread.
+    ///
+    /// `ProofChain::new` builds every stage up front — the eight EQ bands'
+    /// smoothed coefficient state, the linear-phase FIR and its overlap-add
+    /// buffers, the dynamics and exciter crossovers, the limiter's look-ahead
+    /// rings sized for the longest look-ahead the control admits, the ditherer,
+    /// six meter taps and the loudness meters' multi-second history — and
+    /// nothing on the process path grows any of them afterwards. Those are
+    /// allocations the audio thread may not perform (ADR 0020), which is why the
+    /// constructor runs here and the chain is handed across the ring already
+    /// built.
+    ///
+    /// The chain is built against the `f64` rate its filter design works in;
+    /// the engine negotiates and carries the rate as `f32`, and one conversion
+    /// at the boundary is what keeps both readings of "the rate this device
+    /// runs at" the same number.
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            chain: ProofChain::new(f64::from(sample_rate)),
+            order: PROOF_DEFAULT_ORDER,
+        }
+    }
+
+    /// Process the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it was
+    /// handed: what it produces stands where its input stood, and summing would
+    /// leave the dry programme underneath the mastered one.
+    ///
+    /// Handed the whole callback in one call: every stage in `ProofChain::process`
+    /// walks the slice it is given sample by sample and carries no block-scoped
+    /// state across the call, so a callback rendered in one call and the same
+    /// callback rendered in runs produce identical samples.
+    ///
+    /// Both channels are then scrubbed of non-finite samples exactly as
+    /// `ProofInstance::process` (`crates/daw-dsp/src/proof/mod.rs`) scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here for the reason given on [`BacteriaBody::process`]: the web path
+    /// reports it as device health over a port this body does not have.
+    ///
+    /// Nothing here allocates: the slices are the callback's own pair, and the
+    /// chain's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.chain.process(left, right);
+        sanitize_block(left);
+        sanitize_block(right);
+    }
+
+    /// Write one of the mastering chain's own parameters by name, from the audio
+    /// thread.
+    ///
+    /// Real-time safe, and this is the door that makes it so. Three things
+    /// happen here and nothing else does.
+    ///
+    /// A name in [`PROOF_GRAPH_OWNED`] is dropped: the graph owns the device's
+    /// bypass and the web twin owns the A/B audition, so neither belongs to the
+    /// chain this body runs.
+    ///
+    /// A `chain_order_{n}` key writes slot `n` of [`Self::order`] and re-offers
+    /// the whole array to `ProofChain::reorder`, which installs it only if it is
+    /// a permutation — the per-key route the doc on this struct explains. The
+    /// cast to `u8` saturates rather than wrapping (a negative or non-finite
+    /// value lands at 0, one past 255 at 255), and any value outside `0..5` is
+    /// refused by that permutation check rather than by a range rule of this
+    /// body's own.
+    ///
+    /// Everything else is forwarded to `ProofChain::set_param`, whose arms store
+    /// a scalar, clamp one, redesign a biquad in place or resize a look-ahead
+    /// ring inside capacity the constructor already took. None of them allocates
+    /// or locks.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if PROOF_GRAPH_OWNED.contains(&name) {
+            return;
+        }
+        if let Some(slot) = proof_chain_order_slot(name) {
+            self.order[slot] = value as u8;
+            self.chain.reorder(self.order);
+            return;
+        }
+        self.chain.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at, so the five `chain_order_{n}` keys a record carries reach the
+    /// order the same way one written mid-session does — and a record's `bypass`
+    /// or `ab_bypass` is dropped here exactly as a live write of it is. Unlike
+    /// [`BacteriaBody::load_patch`] there is no name this thread may run and the
+    /// audio thread may not, so there is no reason to reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`PROOF_PATCH_PRECEDENCE`] is empty and the ordering is the
+    /// identity: one code path, so a future aliasing pair is answered where the
+    /// others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Proof.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay the chain reports for the patch this body carries.
+    ///
+    /// The whole of what this body declares, read twice on two threads: the
+    /// mapper reads it through [`PluginCore::declared_latency_frames`] to publish
+    /// the opening figure, and the audio thread re-reads it through
+    /// [`ActiveEffect::refresh_declared_latency`] after every write. Reading the
+    /// chain rather than tracking a figure of its own is what keeps the two
+    /// agreeing with the sound: the chain derives it from the very look-ahead
+    /// line the limiter delays through.
+    pub fn latency_samples(&self) -> u32 {
+        self.chain.latency_samples() as u32
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -2412,6 +2754,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Bacteria(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -3194,13 +3540,20 @@ impl ActiveEffect {
     /// The audio-thread half of the declaration [`Self::aim_dry_line`] opened
     /// control-side. A Bacteria's figure follows the parameters it is written
     /// with — the oversampling factor, the distortion mode, the codec's
-    /// threshold, the spectral flag, the routing law — so a write that lands on
-    /// the callback is the only place the change can be seen, and the graph
-    /// stays aimed at the previous figure until something says so. Called after
-    /// every successful write to a built-in body, at both write sites, and
-    /// after a bypass lands; the caller ORs the answer into `pdc_dirty`, so
-    /// `update_graph` re-aims every route meeting this strip on the next block
-    /// rather than at the next Stop/Play.
+    /// threshold, the spectral flag, the routing law — and a Proof's follows its
+    /// limiter's look-ahead, so a write that lands on the callback is the only
+    /// place the change can be seen, and the graph stays aimed at the previous
+    /// figure until something says so. Called after every successful write to a
+    /// built-in body, at both write sites, and after a bypass lands; the caller
+    /// ORs the answer into `pdc_dirty`, so `update_graph` re-aims every route
+    /// meeting this strip on the next block rather than at the next Stop/Play.
+    ///
+    /// Which bodies those are is read off
+    /// [`PluginCore::declared_latency_frames`] rather than matched again here.
+    /// That is the arm the mapper publishes the opening figure from, so one body
+    /// cannot be declared at registration and left unrefreshed afterwards —
+    /// which is exactly a strip aimed for the rest of the session at the figure
+    /// its record opened with.
     ///
     /// There is no dry line to re-aim. Such a body is registered holding none
     /// ([`Self::dry_delay`]), because the one pass a dry line is read on is the
@@ -3213,24 +3566,21 @@ impl ActiveEffect {
     /// strip's signal is really delayed by, and a bypassed body delays nothing
     /// on either carrier: this one runs the bypassed pass, where the chain
     /// hands the block on rather than through the engine, and its web twin
-    /// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`)
-    /// passes a bypassed block through untouched too. So bypass is read here
-    /// as well as the parameters, and [`Self::bypassed`] must already hold the
-    /// state being declared for whenever this is called.
+    /// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`;
+    /// `ProofChain::process`, `crates/daw-dsp/src/proof/chain.rs`) passes a
+    /// bypassed block through untouched too. So bypass is read here as well as
+    /// the parameters, and [`Self::bypassed`] must already hold the state being
+    /// declared for whenever this is called.
     ///
     /// Every other core answers `false` without touching anything. A hosted
     /// plugin's figure is republished by its host over
     /// [`GraphCommand::SetEffectLatency`], and a built-in that declares nothing
     /// has nothing to re-read.
     fn refresh_declared_latency(&mut self) -> bool {
-        let PluginCore::Bacteria(body) = &self.instance else {
+        let Some(reported) = self.instance.declared_latency_frames() else {
             return false;
         };
-        let declared = if self.bypassed {
-            0
-        } else {
-            body.latency_samples() as usize
-        };
+        let declared = if self.bypassed { 0 } else { reported };
         if declared == self.latency_frames {
             return false;
         }
@@ -5667,6 +6017,9 @@ fn process_device(
         PluginCore::Bacteria(body) => {
             body.process(left, right);
         }
+        PluginCore::Proof(body) => {
+            body.process(left, right);
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -6705,6 +7058,7 @@ mod tests {
             BuiltinEffectType::Crust,
             BuiltinEffectType::Grinder,
             BuiltinEffectType::Bacteria,
+            BuiltinEffectType::Proof,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -6715,7 +7069,8 @@ mod tests {
                 | BuiltinEffectType::Gluten
                 | BuiltinEffectType::Crust
                 | BuiltinEffectType::Grinder
-                | BuiltinEffectType::Bacteria => {}
+                | BuiltinEffectType::Bacteria
+                | BuiltinEffectType::Proof => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -9179,6 +9534,214 @@ mod tests {
                 written_right, untouched_right,
                 "an allocating name reached the engine from the audio thread and moved the \
                  right channel"
+            );
+        }
+
+        /// The rate every Proof guard below builds its body at, and the rate
+        /// the burst material is written against — the mastering chain's
+        /// filter designs, crossover corners, look-ahead line and loudness
+        /// windows are all derived from it, so a body and a signal built at
+        /// different rates would not be the pair the guard means to run.
+        const PROOF_GUARD_RATE: f32 = 48_000.0;
+
+        /// `MasteringEq`'s `LowShelf` band type
+        /// (`crates/daw-dsp/src/proof/eq.rs`), the shape whose whole boost
+        /// lands on the burst's fundamental rather than on one partial of it.
+        const PROOF_LOW_SHELF: f32 = 1.0;
+
+        /// Engine-spelled Proof names in the carrier a patch and a `SetParam`
+        /// both travel in.
+        ///
+        /// Built here, outside every guard, for the reason
+        /// [`bacteria_guard_writes`] gives: [`BuiltinParamName::parse`] is a
+        /// copy into a fixed buffer and the `Vec` that holds the results is
+        /// not, so a name parsed inside a guard would be the allocation the
+        /// guard exists to catch rather than anything the body did.
+        fn proof_guard_writes(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+            entries
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        BuiltinParamName::parse(name)
+                            .expect("the fixture spells a well-shaped parameter name"),
+                        *value,
+                    )
+                })
+                .collect()
+        }
+
+        /// A decaying two-partial burst inside unity, `frames` long — the same
+        /// material shape the Bacteria guards use, and bounded for the same
+        /// reason: the patches below drive a shelving EQ, a compressor, a
+        /// saturator and a brickwall limiter, and the bare index ramp the
+        /// earlier guards feed their amp would pin all four at their extremes
+        /// where a signal inside unity walks their whole curves.
+        fn proof_guard_material(frames: usize) -> Vec<f32> {
+            (0..frames)
+                .map(|frame| {
+                    let t = frame as f32 / PROOF_GUARD_RATE;
+                    let decay = (-2.0 * t).exp();
+                    let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                    let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                    decay * (fundamental + partial) / 3.0
+                })
+                .collect()
+        }
+
+        /// A hosted Proof processes a callback without allocating.
+        ///
+        /// The patch is chosen for coverage rather than for a sound: a shelving
+        /// band on the mastering EQ, the multiband compressor's own threshold
+        /// brought down onto the burst, the exciter's saturator engaged on
+        /// band 0, and the limiter given a ceiling the material really reaches
+        /// with a look-ahead line to reach it through — the four stages that
+        /// keep state of their own, and so the ones an allocation could hide
+        /// in. The five `chain_order_{n}` keys are in the patch too, at the
+        /// permutation that puts the limiter first, because installing an
+        /// order is `ProofChain::reorder`'s own copy over the array this body
+        /// holds and that copy runs on this thread as readily as on the
+        /// callback.
+        ///
+        /// Eight 512-frame callbacks: the limiter's 5 ms look-ahead is 240
+        /// frames at this rate, so the first block is mostly the delay line
+        /// filling and a single callback would leave the assertions below
+        /// reading it rather than the chain's output.
+        ///
+        /// The guard is the oracle. The two assertions only refuse a vacuous
+        /// pass: a render that came out silent covered no per-sample path, and
+        /// one carrying a non-finite sample would mean the chain left state the
+        /// sanitize pass had to scrub rather than state it kept coherent.
+        #[test]
+        fn a_proof_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+            const CALLBACKS: usize = 8;
+            const RENDERED: usize = FRAMES * CALLBACKS;
+
+            let patch = proof_guard_writes(&[
+                ("eq_band0_type", PROOF_LOW_SHELF),
+                ("eq_band0_freq", 500.0),
+                ("eq_band0_q", 0.7),
+                ("eq_band0_gain", 12.0),
+                ("eq_band0_enabled", 1.0),
+                ("dyn_band0_threshold", -30.0),
+                ("exc_band0_enabled", 1.0),
+                ("exc_band0_drive", 0.8),
+                ("lim_ceiling", -6.0),
+                ("lim_lookahead", 5.0),
+                ("chain_order_0", 4.0),
+                ("chain_order_1", 0.0),
+                ("chain_order_2", 1.0),
+                ("chain_order_3", 2.0),
+                ("chain_order_4", 3.0),
+            ]);
+            let material = proof_guard_material(RENDERED);
+            // Built and patched outside the guard, where the chain's stages,
+            // FIR workspaces, look-ahead rings and loudness histories are
+            // legitimately allocated (ADR 0020).
+            let mut body = ProofBody::new(PROOF_GUARD_RATE);
+            body.load_patch(&patch);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                for callback in 0..CALLBACKS {
+                    let span = callback * FRAMES..(callback + 1) * FRAMES;
+                    body.process(&mut left[span.clone()], &mut right[span]);
+                }
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callbacks rendered silence, so they covered no processing"
+            );
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "the guarded callbacks left the chain producing non-finite samples"
+            );
+        }
+
+        /// Named writes reach the mastering chain on the audio thread without
+        /// allocating, including the ones that rebuild state.
+        ///
+        /// These are the arms that do more than store a number: every EQ and
+        /// dynamic-EQ design arm re-derives a biquad and re-aims its ramp, the
+        /// two crossover writes rebuild a four-band splitter's coefficients in
+        /// place, `lim_release` recomputes both release coefficients, and
+        /// `lim_lookahead` resizes both delay lines and rebuilds the monotonic
+        /// peak window over them — inside the capacity `LookaheadLimiter::new`
+        /// took for the longest look-ahead the control admits, which is the
+        /// claim this guard is here to hold. Every prefix family
+        /// `ProofChain::set_param` routes by is named, so a family that grows
+        /// an allocating arm is caught here rather than in the field.
+        ///
+        /// `chain_order_2` is written twice on purpose, because the order key
+        /// has two answers and both run on the callback: the first value
+        /// leaves the array short of a permutation and `ProofChain::reorder`
+        /// returns without touching the chain, and the second restores one it
+        /// installs.
+        ///
+        /// The guard is the oracle. The two assertions only refuse a vacuous
+        /// pass, exactly as in the guard above.
+        ///
+        /// The callback is 4096 frames because the writes leave the limiter at
+        /// its 10 ms look-ahead, which is 480 frames at this rate: a shorter
+        /// render would be the delay line filling, and the non-silence
+        /// assertion would fail on a body that behaved perfectly.
+        #[test]
+        fn a_proof_body_takes_named_writes_on_the_audio_thread_without_allocating() {
+            const FRAMES: usize = 4096;
+
+            let writes = proof_guard_writes(&[
+                ("input_gain", 3.0),
+                ("output_gain", -2.0),
+                ("eq_linear_phase", 1.0),
+                ("eq_band0_type", PROOF_LOW_SHELF),
+                ("eq_band0_freq", 320.0),
+                ("eq_band0_gain", 6.0),
+                ("eq_band0_enabled", 1.0),
+                ("dyneq_band0_enabled", 1.0),
+                ("dyneq_band0_threshold", -24.0),
+                ("dyneq_band0_freq", 3_000.0),
+                ("match_enabled", 1.0),
+                ("match_amount", 0.5),
+                ("dyn_xover0", 180.0),
+                ("dyn_band0_threshold", -30.0),
+                ("img_width1", 1.4),
+                ("img_mono_bass_freq", 120.0),
+                ("exc_band0_enabled", 1.0),
+                ("exc_band0_drive", 0.7),
+                ("lim_ceiling", -3.0),
+                ("lim_release", 250.0),
+                ("dither_bits", 16.0),
+                ("dither_mode", 1.0),
+                ("chain_order_2", 4.0),
+                ("chain_order_2", 2.0),
+                ("lim_lookahead", 1.0),
+                ("lim_lookahead", 10.0),
+            ]);
+            let material = proof_guard_material(FRAMES);
+            let mut body = ProofBody::new(PROOF_GUARD_RATE);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                for (name, value) in &writes {
+                    body.set_param(name.as_str(), *value);
+                }
+                body.process(&mut left, &mut right);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded render is silent, so it covered no per-sample path"
+            );
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "a write left the chain producing non-finite samples"
             );
         }
     }
@@ -18156,6 +18719,393 @@ mod timeline_tests {
         assert_eq!(
             right, ramp,
             "a bypassed multi-effect moved the right channel"
+        );
+    }
+
+    // ── Proof ──────────────────────────────────────────────────────────────
+
+    /// The rate every Proof spec here builds its body at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. The limiter's look-ahead line
+    /// is sized in frames from a figure written in milliseconds, and every
+    /// filter design in the chain is derived from the rate too, so a body built
+    /// at another rate is a different device declaring a different figure.
+    const PROOF_RATE: f32 = 48_000.0;
+
+    /// `MasteringEq`'s `LowShelf` band type (`crates/daw-dsp/src/proof/eq.rs`).
+    const PROOF_LOW_SHELF: f32 = 1.0;
+
+    /// Frames the limiter's look-ahead line holds at a look-ahead of `ms`
+    /// milliseconds — `lookahead_samples_for`
+    /// (`crates/daw-dsp/src/proof/limiter.rs`), which truncates rather than
+    /// rounds. Written as the arithmetic rather than as literals so a spec's
+    /// pinned figure cannot drift from the line the limiter really delays
+    /// through.
+    fn proof_lookahead_frames(ms: f32) -> usize {
+        (ms * 0.001 * PROOF_RATE) as usize
+    }
+
+    /// One of the mastering chain's own parameter names, as the mapper resolves
+    /// it.
+    fn proof_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Proof names in the carrier
+    /// [`PluginCore::proof_with_patch`] takes.
+    fn proof_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (proof_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::proof_with_patch`] built, unwrapped so a spec can
+    /// render through it directly.
+    fn proof_body(patch: &[(&str, f32)]) -> Box<ProofBody> {
+        let PluginCore::Proof(body) = PluginCore::proof_with_patch(PROOF_RATE, &proof_patch(patch))
+        else {
+            unreachable!("proof_with_patch builds the proof variant");
+        };
+        body
+    }
+
+    /// A decaying two-partial burst inside unity, `frames` long — the same
+    /// material shape the Bacteria specs above use, kept inside unity because
+    /// a shelving boost of 12 dB over a signal already at full scale would pin
+    /// the limiter at its ceiling from the first sample and say nothing about
+    /// where in the chain the limiter stands.
+    fn proof_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / PROOF_RATE;
+                let decay = (-2.0 * t).exp();
+                let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                decay * (fundamental + partial) / 3.0
+            })
+            .collect()
+    }
+
+    /// `material` rendered through `body` in one call, both channels fed the
+    /// same signal.
+    fn proof_render(body: &mut ProofBody, material: &[f32]) -> Vec<f32> {
+        let mut left = material.to_vec();
+        let mut right = material.to_vec();
+        body.process(&mut left, &mut right);
+        left
+    }
+
+    /// The largest absolute sample in a render.
+    fn proof_peak(rendered: &[f32]) -> f32 {
+        rendered
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// One of the mastering chain's names in the carrier a `SetParam` travels
+    /// in.
+    fn proof_write(name: &str) -> DeviceParam {
+        DeviceParam::BuiltinNamed(proof_name(name))
+    }
+
+    /// A Proof placed the way `commands/graph.rs` places one: registered
+    /// detached, its opening figure declared with no dry line, then spliced at
+    /// the head of a track's chain.
+    ///
+    /// The declared figure is checked against the body's own reading, so a
+    /// spec's pinned literal cannot drift away from what the chain reports for
+    /// the same patch.
+    fn declare_proof_on_track(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        let core = PluginCore::proof_with_patch(PROOF_RATE, &proof_patch(patch));
+        assert_eq!(
+            core.declared_latency_frames(),
+            Some(latency_frames),
+            "the fixture declares the figure the body really reports"
+        );
+        harness.send(GraphCommand::AddDetachedEffect(effect_id, core, None));
+        harness.send(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: None,
+        });
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
+    }
+
+    /// A silent strip carrying a declared Proof, beside which another strip's
+    /// arrival is readable as exact numbers.
+    ///
+    /// The strip holds no clip, so the mix is whatever the *other* strips
+    /// deliver — which is what a compensation claim is about: the graph holds
+    /// every route meeting this strip back by the figure this device declares.
+    /// A strip rendering the chain's own output could not be read that way.
+    /// Every stage of the chain is multiplicative or a filter over the block it
+    /// is handed and the ditherer is off by default, so a Proof over silence is
+    /// silence and the insert contributes nothing to the sum.
+    fn silent_track_declaring_proof(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        declare_proof_on_track(harness, track_id, effect_id, patch, latency_frames);
+    }
+
+    /// The two stages the reorder swaps, engaged, with everything standing
+    /// between them held out of the path.
+    ///
+    /// A +12 dB low shelf at 500 Hz sits the whole boost on the burst's 220 Hz
+    /// fundamental, and a −6 dB ceiling is a brickwall the boosted signal
+    /// really reaches. The dynamics, imager and exciter are bypassed by name
+    /// so the only two things that touch the signal are the two whose relative
+    /// order is under test: with the default dynamics left in, its own
+    /// 2:1 compression and +5 dB auto-makeup would sit between them and the
+    /// peak difference below would be partly its doing.
+    const PROOF_SHELF_INTO_CEILING: &[(&str, f32)] = &[
+        ("dyn_bypass", 1.0),
+        ("img_bypass", 1.0),
+        ("exc_bypass", 1.0),
+        ("eq_band0_type", PROOF_LOW_SHELF),
+        ("eq_band0_freq", 500.0),
+        ("eq_band0_q", 0.7),
+        ("eq_band0_gain", 12.0),
+        ("eq_band0_enabled", 1.0),
+        ("lim_ceiling", -6.0),
+    ];
+
+    /// The order that puts the limiter first and the EQ behind it, spelled the
+    /// way project truth persists it: one key per slot, holding the module id
+    /// that stands there.
+    const PROOF_LIMITER_FIRST: &[(&str, f32)] = &[
+        ("chain_order_0", 4.0),
+        ("chain_order_1", 0.0),
+        ("chain_order_2", 1.0),
+        ("chain_order_3", 2.0),
+        ("chain_order_4", 3.0),
+    ];
+
+    /// The persisted module order really moves the limiter across the EQ,
+    /// which is the whole of what this body adds over a chain the web twin
+    /// already reorders through a message of its own.
+    ///
+    /// A differential: two bodies carrying the identical patch, one at the
+    /// default order and one at `[4, 0, 1, 2, 3]`. At the default the shelf
+    /// boosts and the limiter then holds the result at its ceiling; reordered,
+    /// the limiter holds the raw burst first and the shelf lifts what comes out
+    /// of it clear of the ceiling. So the reordered render peaks *above* the
+    /// one whose limiter runs last, and by about the shelf's own boost.
+    ///
+    /// The latency is held equal as a precondition rather than assumed. Both
+    /// bodies run the same limiter at the same look-ahead, so the peaks are
+    /// measured over renders delayed by the same number of frames and the
+    /// comparison is about level rather than about alignment — and a future
+    /// order key that did move the figure would fail here rather than quietly
+    /// turn this into a comparison of two differently delayed signals.
+    ///
+    /// 3 dB is the threshold rather than the ~12 dB the shelf is worth: the
+    /// claim is that the limiter moved across the EQ at all, and pinning the
+    /// exact figure would weld this spec to the shelf's design and the burst's
+    /// spectrum rather than to the reorder.
+    #[test]
+    fn a_proof_chain_order_write_moves_the_limiter_across_the_eq() {
+        const FRAMES: usize = 4096;
+        const MINIMUM_LIFT_DB: f32 = 3.0;
+
+        let reordered_patch: Vec<(&str, f32)> = PROOF_SHELF_INTO_CEILING
+            .iter()
+            .chain(PROOF_LIMITER_FIRST.iter())
+            .copied()
+            .collect();
+
+        let material = proof_burst_material(FRAMES);
+        let mut default_order = proof_body(PROOF_SHELF_INTO_CEILING);
+        let mut limiter_first = proof_body(&reordered_patch);
+
+        assert_eq!(
+            default_order.latency_samples(),
+            limiter_first.latency_samples(),
+            "the two orders report different delay, so the peaks below would be measured over \
+             renders aligned differently instead of over the same signal"
+        );
+
+        let held = proof_render(&mut default_order, &material);
+        let lifted = proof_render(&mut limiter_first, &material);
+        let held_peak = proof_peak(&held);
+        let lifted_peak = proof_peak(&lifted);
+
+        assert!(
+            held_peak > 0.0 && held_peak.is_finite(),
+            "the default-order render peaks at {held_peak}, so a ratio against it proves nothing"
+        );
+        assert!(
+            lifted_peak > 0.0 && lifted_peak.is_finite(),
+            "the reordered render peaks at {lifted_peak}, so a ratio against it proves nothing"
+        );
+
+        let lift_db = 20.0 * (lifted_peak / held_peak).log10();
+        assert!(
+            lift_db >= MINIMUM_LIFT_DB,
+            "the reordered render peaks {lift_db} dB above the default one, so the persisted \
+             order never moved the limiter across the EQ (held {held_peak}, lifted {lifted_peak})"
+        );
+    }
+
+    /// A Proof's group delay follows its look-ahead, so a write to it is a
+    /// latency declaration as much as a sound change — and the write lands on
+    /// the callback, where nothing else is going to tell the graph. Left
+    /// unread, every route the graph held back to meet this strip stays aimed
+    /// at the figure the record opened with for the rest of the session.
+    ///
+    /// The insert sits on a silent strip so the mix reads as the bare strip's
+    /// hold and nothing else, which is what makes it exact numbers: the claim
+    /// is about the figure every route meeting this strip is held back by, not
+    /// about the chain's own output. 1 ms against 10 ms because they are the
+    /// ends of the control's own declared range
+    /// (`crates/daw-dsp/src/proof/limiter.rs`), and 512-frame blocks because
+    /// the wider of the two figures is 480 frames and a block shorter than the
+    /// hold would read as silence either way.
+    #[test]
+    fn a_proof_lookahead_write_that_moves_its_latency_realigns_the_mix_within_one_block() {
+        const BLOCK: usize = 512;
+        let first = proof_lookahead_frames(1.0);
+        let second = proof_lookahead_frames(10.0);
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_proof(&mut harness, 1, 7, &[("lim_lookahead", 1.0)], first);
+        track_with_ramp_clip(&mut harness, 2, 102, 2_048);
+
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SetParam(
+            7,
+            proof_write("lim_lookahead"),
+            10.0,
+        ));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(BLOCK, BLOCK, second),
+            "the bare strip arrives at the mastering chain's new figure from the first block \
+             after the write"
+        );
+    }
+
+    /// A bypassed Proof declares nothing, and the routes held back to meet it
+    /// are released with it.
+    ///
+    /// The law [`ActiveEffect::refresh_declared_latency`] states for every body
+    /// the engine reads a figure off: both carriers read a bypassed device as
+    /// delaying nothing, so a native declaration standing through bypass would
+    /// hold this strip's whole mix back by a look-ahead no signal in it is
+    /// waiting for, and flam every web strip beside it by exactly that. The
+    /// bare strip's arrival is what says the pass was re-aimed, and the
+    /// un-bypass is what says the figure came back.
+    ///
+    /// The slot holds no dry line on either footing. A line is read on the
+    /// bypassed pass alone, and this body declares 0 there, so a line would be
+    /// fed on every block the body ran and read on none of them.
+    #[test]
+    fn a_bypassed_proof_declares_no_latency() {
+        const BLOCK: usize = 512;
+        let declared = proof_lookahead_frames(5.0);
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_proof(&mut harness, 1, 7, &[("lim_lookahead", 5.0)], declared);
+        track_with_ramp_clip(&mut harness, 2, 102, 2_048);
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(0, BLOCK, declared),
+            "the bare strip was not held back to meet the declared figure"
+        );
+        assert!(
+            harness.scheduler.effects[0].dry_delay.is_none(),
+            "the registration left a dry line on a slot no pass of this body reads one from"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, true));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(BLOCK, BLOCK, 0),
+            "the bare strip is still held back by a figure the bypassed insert no longer delays"
+        );
+        let effect = &harness.scheduler.effects[0];
+        assert_eq!(
+            effect.latency_frames, 0,
+            "the bypassed body goes on declaring its look-ahead to the graph"
+        );
+        assert!(
+            effect.dry_delay.is_none(),
+            "the bypass left a dry line on the very pass this body hands the block on untouched"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, false));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(2 * BLOCK, BLOCK, declared),
+            "the hold did not come back with the un-bypassed body's figure"
+        );
+        assert_eq!(
+            harness.scheduler.effects[0].latency_frames, declared,
+            "the un-bypassed body did not declare the figure it reports again"
+        );
+    }
+
+    /// The two names the graph owns never reach the chain, whichever door they
+    /// arrive at.
+    ///
+    /// Sample-exact against a twin rather than merely "close": the claim is
+    /// that the write never reached the chain at all, and any figure short of
+    /// equality would admit a write that landed and barely moved the sound.
+    /// Either name landing would be plainly audible — `bypass` returns the
+    /// block untouched and `ab_bypass` returns it scaled by the loudness offset
+    /// the chain has been tracking — so the equality is what says neither did.
+    ///
+    /// The third assertion is what stops the first two passing vacuously: the
+    /// patch has to make the chain change the signal, or a body that was
+    /// already a pass-through would satisfy an equality against a bypassed twin
+    /// without the refusal doing anything.
+    #[test]
+    fn a_proof_body_drops_the_names_the_graph_owns() {
+        const FRAMES: usize = 4096;
+
+        let material = proof_burst_material(FRAMES);
+        let mut written = proof_body(PROOF_SHELF_INTO_CEILING);
+        let mut untouched = proof_body(PROOF_SHELF_INTO_CEILING);
+
+        written.set_param("bypass", 1.0);
+        written.set_param("ab_bypass", 1.0);
+
+        let written_render = proof_render(&mut written, &material);
+        let untouched_render = proof_render(&mut untouched, &material);
+
+        assert!(
+            untouched_render.iter().any(|sample| *sample != 0.0),
+            "the twin rendered silence, so an equality against it proves nothing"
+        );
+        assert_ne!(
+            untouched_render, material,
+            "the patch leaves the chain a pass-through, so an equality against a bypassed twin \
+             would hold whether or not the refusal did anything"
+        );
+        assert_eq!(
+            written_render, untouched_render,
+            "a name the graph owns reached the chain and moved the render"
         );
     }
 }

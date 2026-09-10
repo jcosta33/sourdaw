@@ -115,6 +115,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('crust')).not.toBeNull();
         expect(nativeBuiltinBody('grinder')).not.toBeNull();
         expect(nativeBuiltinBody('bacteria')).not.toBeNull();
+        expect(nativeBuiltinBody('proof')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -136,6 +137,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('crust').soundsNotes).toBe(false);
         expect(bodyOf('grinder').soundsNotes).toBe(false);
         expect(bodyOf('bacteria').soundsNotes).toBe(false);
+        expect(bodyOf('proof').soundsNotes).toBe(false);
     });
 
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
@@ -144,6 +146,7 @@ describe('nativeBuiltinBody', () => {
     // counted on this side too is compensated twice.
     it('states which bodies the engine compensates for itself', () => {
         expect(bodyOf('bacteria').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('proof').latencyCompensatedByEngine).toBe(true);
         expect(bodyOf('knead').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('fermenter').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('grand-boule').latencyCompensatedByEngine).toBe(false);
@@ -575,6 +578,99 @@ describe('the bacteria body', () => {
         expect(bodyOf('bacteria').addressesParameter('crossover-slope')).toBe(false);
         expect(bodyOf('bacteria').addressesParameter('not a name')).toBe(false);
         expect(bodyOf('bacteria').addressesParameter('')).toBe(false);
+    });
+});
+
+describe('the proof body', () => {
+    // The chain spells its own parameters in snake_case and project truth
+    // authors the same ids, so there is no table to consult — the id a panel
+    // writes already is the name `ProofChain::set_param` takes.
+    it('keeps the names the project already stores, because the chain answers to those names', () => {
+        expect(bodyOf('proof').parameterName('lim_ceiling')).toBe('lim_ceiling');
+        expect(bodyOf('proof').projectPatch({ lim_ceiling: -0.3 })).toEqual({ lim_ceiling: -0.3 });
+    });
+
+    // The five order keys are what no `SetParam` behind the record could stand
+    // in for: `ProofChain` has no arm for them at all, and `ProofBody` is what
+    // turns them into the chain's own `reorder`. A record that dropped them
+    // would open every saved project at the factory module order.
+    it('carries the module order the record spells', () => {
+        expect(
+            bodyOf('proof').projectPatch({
+                chain_order_0: 4,
+                chain_order_1: 0,
+                chain_order_2: 1,
+                chain_order_3: 2,
+                chain_order_4: 3,
+            })
+        ).toEqual({ chain_order_0: 4, chain_order_1: 0, chain_order_2: 1, chain_order_3: 2, chain_order_4: 3 });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('proof').projectPatch({
+                lim_ceiling: -0.3,
+                presetName: 'Loud',
+                'not-a-name': 1,
+            })
+        ).toEqual({ lim_ceiling: -0.3 });
+    });
+
+    // The record is the mapper's, and the mapper reads a device's bypass from
+    // the record's own `bypassed` field. The two graph-owned names travel with
+    // it all the same rather than being filtered here: `ProofBody::load_patch`
+    // routes the record through the same door the audio thread uses, which is
+    // where they are dropped, so no second rule is needed on this side.
+    it('leaves the graph-owned names in the record for the body to drop', () => {
+        expect(bodyOf('proof').projectPatch({ bypass: 1, ab_bypass: 1, lim_ceiling: -0.3 })).toEqual({
+            bypass: 1,
+            ab_bypass: 1,
+            lim_ceiling: -0.3,
+        });
+    });
+
+    // The chain's vocabulary is eight EQ bands, four dynamics bands, four
+    // exciter bands, the imager, the limiter and the ditherer, each addressed
+    // by a stage prefix the chain decodes itself, so admission is the shape
+    // check — with the two names the graph owns taken back out.
+    it('admits a well-shaped id, whichever stage it is prefixed for', () => {
+        expect(bodyOf('proof').addressesParameter('eq_band0_gain')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dyn_band2_ratio')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('img_width1')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('lim_lookahead')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dither_bits')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('chain_order_3')).toBe(true);
+    });
+
+    // A live single-key write of either graph-owned name is refused by this
+    // gate, because the native door drops it: reporting it as carried would
+    // leave the write nowhere at all. The device's bypass is the graph's own
+    // command, and `ab_bypass` auditions a metered comparison the engine side
+    // does not run.
+    it('refuses the two names the graph owns', () => {
+        expect(bodyOf('proof').addressesParameter('bypass')).toBe(false);
+        expect(bodyOf('proof').addressesParameter('ab_bypass')).toBe(false);
+    });
+
+    // A near-miss of the refusal, so the two names are pinned as themselves
+    // rather than as a substring match: neither is a prefix or a suffix of a
+    // chain name the body must keep addressing.
+    it('refuses only the graph-owned names themselves', () => {
+        expect(bodyOf('proof').addressesParameter('bypassed')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dyn_bypass')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('ab_bypass_mix')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('proof').addressesParameter('chain-order-0')).toBe(false);
+        expect(bodyOf('proof').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('proof').addressesParameter('')).toBe(false);
     });
 });
 
