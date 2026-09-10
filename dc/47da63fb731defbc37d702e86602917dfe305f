@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_06adf2b091dc62::t_7124eaa7d7e184 879-883,896,904-929,931
+  s_06adf2b091dc62::t_2420f9ee9b20b2 1462-1473
+  s_06adf2b091dc62::t_c3bdaf6efbce03 1310,1312,1314,1317-1318
+  s_06adf2b091dc62::t_ba45981d0c2865 930
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_06adf2b091dc62::t_7f31a0c56683f5 705
+  s_06adf2b091dc62::t_679145f76c3435 287-293
+  s_06adf2b091dc62::t_155b773c51780e 408
+  s_06adf2b091dc62::t_afe454bfdf2ab0 755
+  s_06adf2b091dc62::t_1412d390dac095 769-771,773
+  s_06adf2b091dc62::t_5083dce195df64 417,419-430,432-442
+  s_06adf2b091dc62::t_d08ce49e1b8e08 709
+  s_06adf2b091dc62::t_337235aab3c9af 460
+  s_06adf2b091dc62::t_3f1cdf7004fd34 733
+  s_06adf2b091dc62::t_0f56b8fd517fd7 782-783
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_06adf2b091dc62::t_8f3389965847e4 4917-4933,4935
+  s_06adf2b091dc62::t_cea4dee6dadc76 5095-5148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dc47da63fb731defbc37d702e86602917dfe305f",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
