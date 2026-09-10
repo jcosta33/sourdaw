@@ -1,0 +1,29 @@
+.agents/skills/review-stances/correctness.md
+  s_9b530f08172a54::t_ca89f4d30d5441 235-248
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_9b530f08172a54::t_e8df3b57141d67 107-151
+  s_9b530f08172a54::t_b433f74ea05a31 203-238
+scripts/offlineAudioWorkletTrace.ts
+  s_9b530f08172a54::t_1d8ee4c0a5582d 127,129
+  s_9b530f08172a54::t_4be63c3d841f83 128
+  s_9b530f08172a54::t_c72bc6804bb3ae 202
+  s_9b530f08172a54::t_9e29c9161d49a6 233
+.agents/skills/review-stances/test-validity.md
+  s_9b530f08172a54::t_3d47ec7b4ad244 203-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a06d2d3abadf6521adddf8ebbabaf9a76ee42c4f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
