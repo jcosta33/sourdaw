@@ -2,15 +2,16 @@
  * The packaged renderer's security boundary, as one entry point (AC-057 of
  * #2372).
  *
- * Pins the cross-file invariants no single module spec already holds on its
- * own: that the plugin-runtime command allow-list never widens into a
- * privileged command, that every privileged command (not just one) is behind
- * the trusted-sender gate, that a plugin editor window is built as a bare
- * native window with no renderer bridge, that a renderer-authored project
- * title and recent-project name cannot reach a native menu label, window
- * title, or close-dialog message without bound, and that the stream cap
- * actually tracks the renderer figure it claims to match rather than a
- * duplicated literal.
+ * Pins the cross-file properties these cases observe: that the exposed
+ * command surface and the shell's named channels never collide on a wire
+ * name, that the plugin-runtime quit-time refusal set stays inside the
+ * exposed command surface and names no command the trusted-sender gate
+ * protects, that every privileged command (not just one) is behind that
+ * gate, that a plugin editor window is built as a bare native window with no
+ * renderer bridge, that a renderer-authored project title and recent-project
+ * name cannot reach a native menu label, window title, or close-dialog
+ * message without bound, and that the stream cap actually tracks the
+ * renderer figure it claims to match rather than a duplicated literal.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -53,19 +54,25 @@ vi.mock('electron', () => ({
     },
 }));
 
-describe('the command allow-lists do not overlap into privilege expansion', () => {
-    /** Reaches file bytes, a directory listing, or provider gateway credentials — never a surface a plugin-runtime command may share. */
-    const PRIVILEGED_COMMAND_FAMILIES: readonly string[] = [
-        'open_provider_gateway_session',
-        'provider_gateway_request',
-        'cancel_provider_gateway_request',
-        'close_provider_gateway_session',
-        'read_file_bytes',
-        'write_file_bytes',
-        'list_directory',
-        'load_cached_whisper_model',
-    ];
+/** Every command that reaches file bytes, a directory listing, provider gateway credentials, a collaboration document, or the cached model store. */
+const PRIVILEGED_COMMANDS = [
+    'open_provider_gateway_session',
+    'provider_gateway_request',
+    'cancel_provider_gateway_request',
+    'close_provider_gateway_session',
+    'read_file_bytes',
+    'write_file_bytes',
+    'list_directory',
+    'load_cached_whisper_model',
+    'collab_apply_change',
+    'collab_create_project',
+    'collab_get_document_state',
+    'collab_load_bundle',
+    'collab_merge_bundle',
+    'collab_save_bundle',
+] as const;
 
+describe('the exposed command surface and the shell channels stay disjoint', () => {
     it('keeps PLUGIN_RUNTIME_COMMANDS inside the exposed command surface', () => {
         const exposed = new Set(EXPOSED_COMMANDS);
         for (const command of PLUGIN_RUNTIME_COMMANDS) {
@@ -73,10 +80,9 @@ describe('the command allow-lists do not overlap into privilege expansion', () =
         }
     });
 
-    it('keeps PLUGIN_RUNTIME_COMMANDS out of the privileged command families', () => {
+    it('names no command from PLUGIN_RUNTIME_COMMANDS in PRIVILEGED_COMMANDS', () => {
         for (const command of PLUGIN_RUNTIME_COMMANDS) {
-            expect(PRIVILEGED_COMMAND_FAMILIES.includes(command)).toBe(false);
-            expect(command.startsWith('collab_')).toBe(false);
+            expect(PRIVILEGED_COMMANDS).not.toContain(command);
         }
     });
 
@@ -142,24 +148,6 @@ describe('privileged commands reach the addon only behind the trusted-sender che
 
         return handlers.get(commandChannel(command));
     };
-
-    /** Every command that reaches file bytes, a directory listing, provider gateway credentials, a collaboration document, or the cached model store. */
-    const PRIVILEGED_COMMANDS = [
-        'open_provider_gateway_session',
-        'provider_gateway_request',
-        'cancel_provider_gateway_request',
-        'close_provider_gateway_session',
-        'read_file_bytes',
-        'write_file_bytes',
-        'list_directory',
-        'load_cached_whisper_model',
-        'collab_apply_change',
-        'collab_create_project',
-        'collab_get_document_state',
-        'collab_load_bundle',
-        'collab_merge_bundle',
-        'collab_save_bundle',
-    ] as const;
 
     it.each(PRIVILEGED_COMMANDS)('refuses %s from a foreign frame before the addon runs', (command) => {
         expect(EXPOSED_COMMANDS).toContain(command);
