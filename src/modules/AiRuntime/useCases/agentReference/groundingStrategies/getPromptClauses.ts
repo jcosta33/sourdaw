@@ -1,7 +1,7 @@
 import { normalizePromptText } from './normalizePromptText';
 import { type PromptClause } from './promptScope';
 
-export type PromptClauseSpan = PromptClause & {
+type PromptClauseSpan = PromptClause & {
     end: number;
     start: number;
 };

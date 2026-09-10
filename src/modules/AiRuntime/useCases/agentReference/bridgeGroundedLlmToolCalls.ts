@@ -1153,7 +1153,7 @@ function resolveActionPromptScope({
     if (override.status === 'resolved') {
         return override.scope;
     }
-    if (override.status === 'unresolved') {
+    if (override.status === 'denied') {
         return null;
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);

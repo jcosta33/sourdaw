@@ -38,12 +38,9 @@ export type CommandScopeOverrideInput = {
     sameActionCallCount: number;
 };
 
-/**
- * `resolved` is the caller's whole scope, `unresolved` denies the call outright, and `continue`
- * leaves the caller's remaining scope resolution untouched.
- */
+/** `denied` ends scope resolution for the call with null. */
 export type CommandScopeOverride =
-    { status: 'resolved'; scope: ActionPromptScope } | { status: 'unresolved' } | { status: 'continue' };
+    { status: 'resolved'; scope: ActionPromptScope } | { status: 'denied' } | { status: 'none' };
 
 export type CommandScopeOverrideStrategyDefinition<Name extends CommandScopeOverrideActionName> =
     GroundingAdmissionStrategyDefinition<Name, Omit<CommandScopeOverrideInput, 'actionName'>, CommandScopeOverride>;
@@ -283,7 +280,7 @@ function resolveDeviceParameterPromptScope({
     return { text, masked: text, directional: false, matchedIntentPhrase: 'set' };
 }
 function toOverride(scope: ActionPromptScope | null): CommandScopeOverride {
-    return scope ? { status: 'resolved', scope } : { status: 'continue' };
+    return scope ? { status: 'resolved', scope } : { status: 'none' };
 }
 
 export const commandScopeOverrideStrategyDefinitions = [
@@ -302,8 +299,7 @@ export const commandScopeOverrideStrategyDefinitions = [
     },
     {
         name: 'setClipFade',
-        transform: ({ prompt }) =>
-            hasInvalidNamedClipFadeField(prompt) ? { status: 'unresolved' } : { status: 'continue' },
+        transform: ({ prompt }) => (hasInvalidNamedClipFadeField(prompt) ? { status: 'denied' } : { status: 'none' }),
     },
     {
         name: 'createBus',
@@ -366,7 +362,7 @@ function isCommandScopeOverrideActionName(actionName: string): actionName is Com
 
 export function resolveCommandScopeOverride(input: CommandScopeOverrideInput): CommandScopeOverride {
     if (!isCommandScopeOverrideActionName(input.actionName)) {
-        return { status: 'continue' };
+        return { status: 'none' };
     }
     const strategy = commandScopeOverrideStrategyRegistry.get(input.actionName);
     if (!strategy) {

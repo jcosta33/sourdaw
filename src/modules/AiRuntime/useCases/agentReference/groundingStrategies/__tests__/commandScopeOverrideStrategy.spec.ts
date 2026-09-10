@@ -156,18 +156,18 @@ describe('command scope override strategies', () => {
     });
 
     it('leaves an action without a command scope override strategy unchanged', () => {
-        expect(resolve({ actionName: 'muteTrack', prompt: 'mute all audio tracks' })).toEqual({ status: 'continue' });
+        expect(resolve({ actionName: 'muteTrack', prompt: 'mute all audio tracks' })).toEqual({ status: 'none' });
     });
 
     it('denies a clip fade whose named field carries no value', () => {
         expect(resolve({ actionName: 'setClipFade', prompt: 'set the clip fade in' })).toEqual({
-            status: 'unresolved',
+            status: 'denied',
         });
     });
 
     it('leaves a clip fade with a valued named field to ordinary grounding', () => {
         expect(resolve({ actionName: 'setClipFade', prompt: 'set the clip fade in to 0.5 beats' })).toEqual({
-            status: 'continue',
+            status: 'none',
         });
     });
 
@@ -200,7 +200,7 @@ describe('command scope override strategies', () => {
                 sameActionAssertedArguments: [{ deviceId: 'device-compressor', paramId: 'threshold', value: -18 }],
                 sameActionCallCount: 1,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 
     it('scopes a directly named bus creation to its request clause', () => {
@@ -232,7 +232,7 @@ describe('command scope override strategies', () => {
                 prompt: 'create a drum bus',
                 sameActionCallCount: 2,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 
     it('scopes a bulk output route to the route request', () => {
@@ -264,7 +264,7 @@ describe('command scope override strategies', () => {
                 sameActionAssertedArguments: bulkOutputArguments.slice(0, 1),
                 sameActionCallCount: 1,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 
     it('scopes a bulk device insertion to the whole request', () => {
@@ -296,7 +296,7 @@ describe('command scope override strategies', () => {
                 sameActionAssertedArguments: [{ trackId: 'track-drum-a' }],
                 sameActionCallCount: 1,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 
     it('scopes a bulk muted empty track deletion to the whole request', () => {
@@ -328,7 +328,7 @@ describe('command scope override strategies', () => {
                 sameActionAssertedArguments: mutedEmptyArguments.slice(0, 1),
                 sameActionCallCount: 1,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 
     it('scopes a repeated pan change to its own clause', () => {
@@ -363,6 +363,6 @@ describe('command scope override strategies', () => {
                 sameActionAssertedArguments: panArguments.slice(0, 1),
                 sameActionCallCount: 1,
             })
-        ).toEqual({ status: 'continue' });
+        ).toEqual({ status: 'none' });
     });
 });

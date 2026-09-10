@@ -160,6 +160,19 @@ describe('workflow shortcut scope strategies', () => {
         });
     });
 
+    it('falls through a drum-routing request whose call count misses the target count', () => {
+        expect(
+            resolve({
+                actionName: 'setTrackOutput',
+                context: drumRoutingContext,
+                prompt: 'route the drums into the drum bus',
+                sameActionAssertedArguments: drumRoutingArguments.slice(0, 1),
+                sameActionCallCount: 1,
+                workflowCapabilityId: 'drum-routing',
+            })
+        ).toBe(null);
+    });
+
     it('falls through an output change outside the drum-routing capability', () => {
         expect(
             resolve({
