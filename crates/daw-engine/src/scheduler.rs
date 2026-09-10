@@ -1871,14 +1871,19 @@ const GRINDER_RUN_FRAMES: usize = 128;
 /// with the rest of the record, so a record carrying both builds the mode it
 /// names outright rather than the simplification of it.
 ///
-/// The panel bridge writes and persists both together whenever either changes
-/// (`setGrinderParamWithAudio.ts`), so a record reaching this body routinely
-/// carries the pair; `engineMode` is therefore always the engine's own pick.
-/// This is the body's own law rather than a mirror of the web host's: the web
-/// host replays a device's record in first-insertion order and has no law
-/// ordering this pair (filed as the web-host defect #4135; not fixed here).
-/// This law exists so the exact pick lands last whatever order a `HashMap`
-/// record draws.
+/// This law governs the build from a persisted record: the mapper
+/// (`name_ordered_keys`, `crates/sourdaw-native/src/commands/graph.rs`) sorts
+/// a record's keys by name before applying it, which would put `engineMode`
+/// before `neuralEnabled` and let the simplification win, so `neuralEnabled`
+/// leads and the exact pick lands last.
+///
+/// Live single-key writes reach the body one command at a time in the
+/// bridge's own order and are outside this law — every live door
+/// (`updateDeviceParam`, `sendNativeDeviceParameters`) delivers one key per
+/// command in bridge order, engineMode first, so live writes never meet this
+/// precedence (filed as the live-write defect #4141; not fixed here). The web
+/// host's replay of a record has no ordering law of its own either (filed as
+/// #4135; not fixed here).
 const GRINDER_PATCH_PRECEDENCE: &[&str] = &["neuralEnabled"];
 
 /// Grinder, the guitar-amp modeller, hosted as a built-in effect body.

@@ -211,6 +211,11 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * camelCase, and project truth authors the same camelCase ids
              * for them, so the id a panel or a lane writes already is the
              * name `GrinderEngine::set_param` takes.
+             *
+             * A structured patch — the worklet's neural-profile message —
+             * projects to nothing here; the Grinder bridge sends that
+             * profile as numeric writes in the same names, so the native
+             * door and the record carry it.
              */
             parameterName: (paramId) => paramId,
             projectPatch: shapedNumericParametersOnly,
