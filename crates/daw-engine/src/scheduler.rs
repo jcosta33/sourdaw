@@ -1161,10 +1161,10 @@ impl PluginCore {
     ///
     /// `None` and `Some(0)` are different answers, which is why this is not a
     /// bare `usize`. A core that declares nothing gets no
-    /// [`GraphCommand::SetEffectLatency`] and no dry line at all; a Bacteria
-    /// whose record happens to engage no latent stage gets both, at zero,
-    /// because the next write to it can move the figure and the audio thread
-    /// cannot build a line to hold the new one.
+    /// [`GraphCommand::SetEffectLatency`] at all; a Bacteria whose record
+    /// happens to engage no latent stage still gets the declaration, at zero
+    /// and with no dry line, so that the graph already holds a figure the next
+    /// write to it can move ([`ActiveEffect::refresh_declared_latency`]).
     ///
     /// A hosted plugin answers `None` too. Its figure is the host's to read and
     /// republish (`host/latency_watcher.rs`), on the same command, and asking
