@@ -1,0 +1,33 @@
+src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts
+  s_06adf2b091dc62::t_33bc212f27cf06 590-591,594
+  s_06adf2b091dc62::t_ce8eb84937393e 172,181
+  s_06adf2b091dc62::t_171b31a166f483 503
+  s_06adf2b091dc62::t_fddbd31e5ec774 117-129
+  s_06adf2b091dc62::t_3c7fad97beec98 1-16,18-27,29,31-39,44-116,130-171,173-180,182-277,285-286,288-294,297-298,300-322,326-401,406-408,410-431,433-502,504-589,592-593,595-638
+  s_06adf2b091dc62::t_31d44b05706523 402-404,409
+  s_06adf2b091dc62::t_b98d00bc6db45a 405
+  s_06adf2b091dc62::t_8ab613352e62e4 278-284,287,295-296,299
+  s_06adf2b091dc62::t_ffca4b870742c2 17
+  s_06adf2b091dc62::t_f8a9bc2e5b8be2 40-43
+  s_06adf2b091dc62::t_915246db1e7710 323-325
+  s_06adf2b091dc62::t_8fbee0deab57fb 432
+  s_06adf2b091dc62::t_f1e61c0ec1435e 30
+  s_06adf2b091dc62::t_b90108785223a9 28
+  s_06adf2b091dc62::t_1c8281724045c0 639-640
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b6ba9770024075e0d5ee58c479fc3ab256b3d6ee",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
