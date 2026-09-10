@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getPromptClauses.ts
+  s_06adf2b091dc62::t_56348c2ebdf2ee 4
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_6ecc460f49f579 1156
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/commandScopeOverrideStrategy.spec.ts
+  s_06adf2b091dc62::t_0a623a7e937cf0 159
+  s_06adf2b091dc62::t_957f3be29a7a85 203,235,267,299,331,366
+  s_06adf2b091dc62::t_d799711bc3e143 164,170
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/commandScopeOverrideStrategy.ts
+  s_06adf2b091dc62::t_7b59618002f228 41,43
+  s_06adf2b091dc62::t_5af26377e856bc 365
+  s_06adf2b091dc62::t_28ac10c5e39a40 283
+  s_06adf2b091dc62::t_cb67b4e0d9ee04 302
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/workflowShortcutScopeStrategy.spec.ts
+  s_06adf2b091dc62::t_64b6d52fb2b558 163-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4efea4994cb880ffacc5106d4650d2de33c293f6",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
