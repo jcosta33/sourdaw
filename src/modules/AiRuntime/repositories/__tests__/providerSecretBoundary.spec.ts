@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
+
 import { agentRunStore } from '../../stores/agentRunStore';
 import { aiActionHistoryStore } from '../../stores/aiActionHistoryStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
@@ -97,6 +102,39 @@ function collectKeys(value: unknown, seen = new Set<object>()): string[] {
     return Object.entries(value).flatMap(([key, nested]) => [key, ...collectKeys(nested, seen)]);
 }
 
+function requestToPromise<Result>(request: IDBRequest<Result>): Promise<Result> {
+    return new Promise((resolve, reject) => {
+        request.addEventListener('success', () => resolve(request.result));
+        request.addEventListener('error', () => reject(request.error ?? new Error('IndexedDB request failed')));
+    });
+}
+
+/**
+ * Enumerates every IndexedDB database the transactional fixture knows about and
+ * reads every object store record in each, so the credential is proven absent
+ * from persisted IndexedDB state rather than merely absent from an untouched
+ * factory. `indexedDB.databases()` is the enumeration API; the fixture installs
+ * a real `fake-indexeddb` factory that implements it.
+ */
+async function assertNoIndexedDbDatabaseRetainsCredential(): Promise<void> {
+    const databases = await indexedDB.databases();
+    for (const { name } of databases) {
+        if (!name) {
+            continue;
+        }
+        const database = await requestToPromise(indexedDB.open(name));
+        try {
+            for (const storeName of Array.from(database.objectStoreNames)) {
+                const transaction = database.transaction(storeName, 'readonly');
+                const records = await requestToPromise(transaction.objectStore(storeName).getAll());
+                expect(containsCredential(records), `${name}/${storeName} retained the credential`).toBe(false);
+            }
+        } finally {
+            database.close();
+        }
+    }
+}
+
 function emitProbeResponse(channel: TestGatewayChannel, requestId: unknown, status: number, body: string): void {
     const encoder = new TextEncoder();
     let sequence = 0;
@@ -182,13 +220,25 @@ describe('provider credential boundary', () => {
     });
 
     describe('setCloudProviderConfig', () => {
+        let indexedDbInstallation: TransactionalIndexedDbInstallation | null = null;
+
+        beforeEach(() => {
+            indexedDbInstallation = installTransactionalIndexedDb();
+        });
+
+        afterEach(async () => {
+            await indexedDbInstallation?.dispose();
+            indexedDbInstallation = null;
+        });
+
         it('leaves the credential in no observable surface once Anthropic is configured', async () => {
-            const indexedDbOpen =
-                typeof indexedDB === 'undefined'
-                    ? null
-                    : vi.spyOn(indexedDB, 'open').mockImplementation(() => {
-                          throw new Error('indexedDB.open must not be reached by provider configuration');
-                      });
+            // Precondition: the fixture installed a real IndexedDB global. Without
+            // this, a jsdom-only run would make every assertion below vacuous, the
+            // way it silently was before this fixture existed.
+            expect(typeof indexedDB).toBe('object');
+            const indexedDbOpen = vi.spyOn(indexedDB, 'open').mockImplementation(() => {
+                throw new Error('indexedDB.open must not be reached by provider configuration');
+            });
             try {
                 await setCloudProviderConfig({
                     provider: 'anthropic',
@@ -206,7 +256,7 @@ describe('provider credential boundary', () => {
                     expect(containsCredential(key)).toBe(false);
                     expect(containsCredential(localStorage.getItem(key)), `${key} retained the credential`).toBe(false);
                 }
-                expect(indexedDbOpen?.mock.calls.length ?? 0).toBe(0);
+                expect(indexedDbOpen.mock.calls.length).toBe(0);
 
                 for (const logCall of [
                     ...mocks.debug.mock.calls,
@@ -231,8 +281,10 @@ describe('provider credential boundary', () => {
                 expect(runtimeKeys).not.toContain('credential');
                 expect(runtimeKeys).not.toContain('authorization');
             } finally {
-                indexedDbOpen?.mockRestore();
+                indexedDbOpen.mockRestore();
             }
+
+            await assertNoIndexedDbDatabaseRetainsCredential();
         });
     });
 
