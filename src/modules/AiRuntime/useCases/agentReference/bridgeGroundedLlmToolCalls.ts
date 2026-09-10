@@ -69,9 +69,20 @@ import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import { escapeRegExp } from './groundingStrategies/escapeRegExp';
+import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
+import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
+import { getMoveBeatAssertions } from './groundingStrategies/getMoveBeatAssertions';
+import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
-import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
+import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
+import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
+import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
+import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference } from './resolveAgentReference';
@@ -107,11 +118,6 @@ type GroundToolCallInput = {
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
     workflowCapabilityId?: WorkflowCapabilityId;
-};
-
-type PromptClause = {
-    masked: string;
-    text: string;
 };
 
 type PromptClauseSpan = PromptClause & {
@@ -193,11 +199,6 @@ function hasExactCanonicalToolCallOrder(
         expected.every((expectedCall, index) => canonicalJson(expectedCall) === canonicalJson(actual[index]))
     );
 }
-
-type ActionPromptScope = PromptClause & {
-    directional: boolean;
-    matchedIntentPhrase: string;
-};
 
 type ResolveActionPromptScopeInput = {
     actionName: string;
@@ -530,13 +531,6 @@ function stripBatchLocalBinding(call: ToolCallResult): ToolCallResult {
     return { ...call, arguments: args };
 }
 
-function normalizePromptText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-
 type ClauseActionIntent = {
     actionType: string;
     index: number;
@@ -718,10 +712,6 @@ function resolveClauseActionIntent(
         return null;
     }
     return first;
-}
-
-function escapeRegExp(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
@@ -2041,44 +2031,6 @@ function getTrackControlTargetPrompt(
     return stripTrackControlProtectionSpans(prompt.slice(start, end), tracks);
 }
 
-function getTargetPromptScope(
-    actionScope: ActionPromptScope,
-    promptRole?: 'source' | 'destination' | 'container' | 'members'
-): string {
-    if (!promptRole) {
-        return actionScope.text;
-    }
-    if (promptRole === 'members') {
-        const memberConnector = /\bfor\b/iu.exec(actionScope.masked);
-        if (!memberConnector) {
-            return '';
-        }
-        const memberStart = memberConnector.index + memberConnector[0].length;
-        const nameConnector = /\b(?:named|called)\b/iu.exec(actionScope.masked.slice(memberStart));
-        const memberEnd = nameConnector ? memberStart + nameConnector.index : actionScope.text.length;
-        const memberScope = actionScope.text.slice(memberStart, memberEnd).trim();
-        if (
-            /\b(?:not|except|excluding|without|but|then|mute|solo|remove|delete|rename|route|send|set|assign|unassign|create|add)\b/iu.test(
-                memberScope
-            )
-        ) {
-            return '';
-        }
-        return memberScope;
-    }
-    if (promptRole === 'container') {
-        return getAddClipPromptEvidence(actionScope)?.targetText ?? '';
-    }
-    const separator = /\b(?:to|into|through)\b/iu.exec(actionScope.masked);
-    if (!separator) {
-        return '';
-    }
-    if (promptRole === 'source') {
-        return actionScope.text.slice(0, separator.index).trim();
-    }
-    return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
-}
-
 type ValidClipRenameCarrier =
     { kind: 'bare-selected-source'; value: string } | { kind: 'explicit-source'; sourcePrompt: string; value: string };
 
@@ -2220,16 +2172,6 @@ function hasClearSolosRestriction(prompt: string): boolean {
     return collectClearSolosRestrictionClauses(prompt).length > 0;
 }
 
-type AddClipPromptEvidence = {
-    endBeat: number;
-    name: string;
-    startBeat: number;
-    targetText: string;
-};
-
-const addClipRangePattern =
-    /\bfrom\s+beat\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+to\s+beat\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?![\p{L}\p{N}_.%])/giu;
-
 function maskQuotedLabels(text: string): string {
     return text.replaceAll(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu, (label) => {
         const innerLabel = label.slice(1, -1).trim();
@@ -2263,13 +2205,6 @@ function maskGlueClipPairConjunction(text: string): string {
     return text.replaceAll(pattern, (pairPrefix) => pairPrefix.replace(/\band\b/iu, '   '));
 }
 
-function stripPoliteGlueCommandCarrier(text: string): string {
-    let commandSource = text.trim();
-    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would|will)\s+you(?:\s+please)?\s+/iu, '');
-    commandSource = commandSource.replace(/^please\s+/iu, '');
-    return commandSource.replace(/\s+(?:please|thanks|thank you)[.!?]*\s*$/iu, '');
-}
-
 function restoreGlueCommandIntents(prompt: string, maskedPrompt: string): string {
     const searchablePrompt = maskGlueQuotedLabels(prompt);
     const intentPattern =
@@ -2285,62 +2220,6 @@ function restoreGlueCommandIntents(prompt: string, maskedPrompt: string): string
         restoredPrompt = `${restoredPrompt.slice(0, intentStart)}${prompt.slice(intentStart, intentStart + intent.length)}${restoredPrompt.slice(intentStart + intent.length)}`;
     }
     return restoredPrompt;
-}
-
-function getGlueClipPairTargetPattern(assertedClipIds: unknown, context: ProjectContext): string | null {
-    if (
-        !Array.isArray(assertedClipIds) ||
-        assertedClipIds.length !== 2 ||
-        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
-    ) {
-        return null;
-    }
-    const clips = assertedClipIds.map((clipId) =>
-        context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId)
-    );
-    if (clips.some((clip) => !clip)) {
-        return null;
-    }
-    function getReferencePattern(clip: NonNullable<(typeof clips)[number]>): string {
-        const references = [clip.id, clip.name]
-            .map(normalizePromptText)
-            .filter((reference) => reference.length > 0)
-            .toSorted((left, right) => right.length - left.length)
-            .map(escapeRegExp);
-        return `(?:${references.join('|')})`;
-    }
-    function orderedPair(left: string, right: string): string {
-        const leftTarget = `(?:the )?(?:clip )?${left}(?: clips?)?`;
-        const rightTarget = `(?:the )?(?:clip )?${right}(?: clips?)?`;
-        return `${leftTarget} (?:and|with) ${rightTarget}`;
-    }
-    const first = getReferencePattern(clips[0]!);
-    const second = getReferencePattern(clips[1]!);
-    return `(?:${orderedPair(first, second)}|${orderedPair(second, first)})`;
-}
-
-function isDirectGlueClipPairScope(
-    actionScope: ActionPromptScope,
-    assertedClipIds: unknown,
-    context: ProjectContext
-): boolean {
-    if (
-        !Array.isArray(assertedClipIds) ||
-        assertedClipIds.length !== 2 ||
-        !assertedClipIds.every((clipId): clipId is string => typeof clipId === 'string')
-    ) {
-        return false;
-    }
-    const normalizedScope = normalizePromptText(stripPoliteGlueCommandCarrier(actionScope.text));
-    if (/^(?:glue|join)(?: the)? selected clips$/u.test(normalizedScope)) {
-        const selectedIds = new Set(context.selectedClipIds);
-        return selectedIds.size === 2 && assertedClipIds.every((clipId) => selectedIds.has(clipId));
-    }
-    const targetPattern = getGlueClipPairTargetPattern(assertedClipIds, context);
-    if (!targetPattern) {
-        return false;
-    }
-    return new RegExp(`^(?:glue|join) ${targetPattern}$`, 'u').test(normalizedScope);
 }
 
 type GluePromptAnalysis =
@@ -2483,87 +2362,6 @@ function hasExactGlueClipPair(assertedClipIds: unknown, expectedClipIds: [string
     return assertedIds.size === 2 && expectedClipIds.every((clipId) => assertedIds.has(clipId));
 }
 
-function getAddClipPromptEvidence(actionScope: ActionPromptScope): AddClipPromptEvidence | null {
-    const keywords = [...actionScope.masked.matchAll(/\b(?:named|called)\b/giu)];
-    if (keywords.length !== 1) {
-        return null;
-    }
-    const keyword = keywords[0]!;
-    const ranges = [...actionScope.masked.matchAll(addClipRangePattern)];
-    if (ranges.length !== 1 || [...actionScope.masked.matchAll(/\bbeat\b/giu)].length !== 2) {
-        return null;
-    }
-    const range = ranges[0]!;
-    const rangeIndex = range.index;
-    const rawStartBeat = range[1]!;
-    const rawEndBeat = range[2]!;
-    const suffix = actionScope.text.slice(rangeIndex + range[0].length);
-    if (!/^[\s,.;!?]*$/u.test(suffix)) {
-        return null;
-    }
-    const beforeRange = actionScope.text.slice(keyword.index + keyword[0].length, rangeIndex);
-    const maskedBeforeRange = actionScope.masked.slice(keyword.index + keyword[0].length, rangeIndex);
-    const connectors = [...maskedBeforeRange.matchAll(/\b(?:on|to|into)\b/giu)];
-    const connector = connectors.at(-1);
-    if (!connector) {
-        return null;
-    }
-    const nameText = beforeRange.slice(0, connector.index).trim();
-    const targetText = beforeRange.slice(connector.index + connector[0].length).trim();
-    if (!nameText || !targetText) {
-        return null;
-    }
-    const quotedName = /^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)$/u.exec(nameText);
-    let name = quotedName?.[1] ?? quotedName?.[2] ?? quotedName?.[3] ?? quotedName?.[4] ?? null;
-    if (name === null) {
-        if (/\b(?:on|to|into|from)\b/iu.test(nameText) || /["'“”‘’]/u.test(nameText)) {
-            return null;
-        }
-        name = nameText;
-    }
-    const startBeat = Number(rawStartBeat);
-    const endBeat = Number(rawEndBeat);
-    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat)) {
-        return null;
-    }
-    return { endBeat, name: name.trim(), startBeat, targetText };
-}
-
-function isDirectAddClipTarget(targetText: string, trackId: unknown, context: ProjectContext): boolean {
-    if (typeof trackId !== 'string') {
-        return false;
-    }
-    const track = context.tracks.find((candidate) => candidate.id === trackId);
-    if (!track) {
-        return false;
-    }
-    const normalizedTarget = normalizePromptText(targetText);
-    const normalizedName = normalizePromptText(track.name);
-    const normalizedId = normalizePromptText(track.id);
-    const allowed = new Set([
-        normalizedName,
-        normalizedId,
-        `track ${normalizedName}`,
-        `${normalizedName} track`,
-        `the ${normalizedName} track`,
-    ]);
-    if (context.selectedTrackId === track.id) {
-        allowed.add('selected track');
-        allowed.add('the selected track');
-        allowed.add('current track');
-        allowed.add('the current track');
-        allowed.add('this track');
-    }
-    return allowed.has(normalizedTarget);
-}
-
-const moveBeatAssertionPattern =
-    /\bbeat\b[\s:=]*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?)(?![\p{L}\p{N}_.])/giu;
-
-function getMoveBeatAssertions(text: string): RegExpExecArray[] {
-    return [...text.matchAll(moveBeatAssertionPattern)];
-}
-
 function hasExactlyOneMoveBeatAssertion(actionScope: string): boolean {
     const assertions = getMoveBeatAssertions(actionScope);
     if (assertions.length !== 1) {
@@ -2699,70 +2497,6 @@ function hasGroundedAddClipAssertions({
     return addClipClauseCount === expectedAddClipCount;
 }
 
-function isDirectMoveClipDestination(
-    actionScope: ActionPromptScope,
-    trackId: unknown,
-    context: ProjectContext
-): boolean {
-    if (typeof trackId !== 'string') {
-        return false;
-    }
-    const track = context.tracks.find((candidate) => candidate.id === trackId);
-    if (!track) {
-        return false;
-    }
-    if (/\b(?:through|(?:according|next)\s+to)\b/iu.test(actionScope.masked)) {
-        return false;
-    }
-    const targetScope = normalizePromptText(getTargetPromptScope(actionScope, 'destination')).replace(/^to\s+/u, '');
-    const references = [track.id, track.name]
-        .map((reference) => normalizePromptText(reference))
-        .filter((reference) => reference.length > 0)
-        .sort((left, right) => right.length - left.length);
-    return references.some((reference) =>
-        [
-            reference,
-            `the ${reference}`,
-            `track ${reference}`,
-            `the track ${reference}`,
-            `${reference} track`,
-            `the ${reference} track`,
-        ].some((prefix) => targetScope === prefix || targetScope.startsWith(`${prefix} `))
-    );
-}
-
-function isDirectSplitClipScope(actionScope: ActionPromptScope, clipId: unknown, context: ProjectContext): boolean {
-    if (typeof clipId !== 'string') {
-        return false;
-    }
-    const clip = context.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
-    if (!clip) {
-        return false;
-    }
-    const normalizedScope = normalizePromptText(actionScope.text);
-    const namedSubjects = [clip.id, clip.name]
-        .map(normalizePromptText)
-        .filter((reference) => reference.length > 0)
-        .map((reference) => `(?:the\\s+)?${escapeRegExp(reference)}\\s+clip`);
-    const directSubjects = ['(?:the\\s+)?(?:(?:selected|current)\\s+)?clip', 'this\\s+clip', ...namedSubjects].join(
-        '|'
-    );
-    const hasDirectWholeClipSubject = new RegExp(
-        `\\b(?:split|cut)\\s+(?:${directSubjects})\\s+(?:at\\s+)?beat\\b`,
-        'u'
-    ).test(normalizedScope);
-    if (!hasDirectWholeClipSubject) {
-        return false;
-    }
-    const assertions = getMoveBeatAssertions(actionScope.text);
-    if (assertions.length !== 1) {
-        return false;
-    }
-    const assertion = assertions[0]!;
-    const suffix = actionScope.text.slice(assertion.index + assertion[0].length);
-    return /^[\s.,!?]*$/u.test(suffix);
-}
-
 type GroundingValueRule = GroundingRules['valueRules'][number];
 
 type PromptNumber = {
@@ -2863,20 +2597,6 @@ function isBoundBeatDurationNumber(maskedScope: string, number: PromptNumber): b
         /\b(?:set|change)(?: the)? .+ clip loop length to$/u.test(prefix) ||
         /\b(?:set|change)(?: the)? clip loop length (?:of|for) .+ to$/u.test(prefix)
     );
-}
-
-function isExplicitClipLoopLengthPrompt(prompt: string): boolean {
-    const beatValue = String.raw`(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?`;
-    const directSubjectRequest = new RegExp(
-        String.raw`^(?:please\s+)?(?:set|change)\s+(?:the\s+)?(?:selected|.+?)\s+clip\s+loop\s+length\s+to\s+${beatValue}\s+beats?\s*[.!]?$`,
-        'iu'
-    );
-    const trailingSubjectRequest = new RegExp(
-        String.raw`^(?:please\s+)?(?:set|change)\s+(?:the\s+)?clip\s+loop\s+length\s+(?:of|for)\s+(?:the\s+)?(?:selected\s+clip|.+?)\s+to\s+${beatValue}\s+beats?\s*[.!]?$`,
-        'iu'
-    );
-    const trimmedPrompt = prompt.trim();
-    return directSubjectRequest.test(trimmedPrompt) || trailingSubjectRequest.test(trimmedPrompt);
 }
 
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
@@ -3248,23 +2968,6 @@ function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
     commandText = commandText.replace(/^please\s+/iu, '');
     const normalized = normalizePromptText(commandText);
     return ['play', 'start playback', 'resume playback', 'pause', 'pause playback'].includes(normalized);
-}
-
-function isExplicitStopPlaybackPrompt(prompt: string): boolean {
-    let commandText = prompt.trim();
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
-    commandText = commandText.replace(/^please\s+/iu, '');
-    const normalized = normalizePromptText(commandText);
-    return [
-        'stop playback',
-        'stop the playback',
-        'stop transport',
-        'stop the transport',
-        'halt playback',
-        'halt the playback',
-        'halt transport',
-        'halt the transport',
-    ].includes(normalized);
 }
 
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
@@ -4042,21 +3745,9 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
-    if (call.name === 'muteTrack' && hasRestrictedTrackControlScope(prompt, context)) {
-        return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
-    }
-    if (call.name === 'soloTrack' && hasRestrictedTrackControlScope(prompt, context)) {
-        return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
-    }
-    if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
-        return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
-    }
-    if (call.name === 'setClipLoopLength' && !isExplicitClipLoopLengthPrompt(prompt)) {
-        return rejection(
-            index,
-            call.name,
-            'Provider clip loop-length action requires one direct named or selected clip request in beats'
-        );
+    const preScopeReason = groundPreScopeAdmission({ actionName: call.name, context, prompt });
+    if (preScopeReason !== null) {
+        return rejection(index, call.name, preScopeReason);
     }
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {
@@ -4435,37 +4126,15 @@ function groundToolCall({
 
         groundedArguments[targetRule.argument] = result.id;
     }
-    if (call.name === 'moveClip' && !isDirectMoveClipDestination(actionScope, groundedArguments.trackId, context)) {
-        return rejection(index, call.name, 'Provider clip destination is not the direct object of the move request');
-    }
-    if (call.name === 'glueClips' && !isDirectGlueClipPairScope(actionScope, groundedArguments.clipIds, context)) {
-        return rejection(index, call.name, 'Provider clips are not the direct objects of one glue request');
-    }
-    if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
-        return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
-    }
-    if (call.name === 'addClip' && !admitsPlanCreatedObject) {
-        const evidence = getAddClipPromptEvidence(actionScope);
-        if (
-            !evidence ||
-            groundedArguments.startBeat !== evidence.startBeat ||
-            groundedArguments.endBeat !== evidence.endBeat ||
-            typeof groundedArguments.name !== 'string' ||
-            normalizePromptText(groundedArguments.name) !== normalizePromptText(evidence.name)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Provider clip creation does not match one explicit name and beat range'
-            );
-        }
-        if (!isDirectAddClipTarget(evidence.targetText, groundedArguments.trackId, context)) {
-            return rejection(
-                index,
-                call.name,
-                'Provider clip container is not the direct object of the creation request'
-            );
-        }
+    const evidenceAdmissionReason = groundPostTargetEvidenceAdmission({
+        actionName: call.name,
+        actionScope,
+        admitsPlanCreatedObject,
+        context,
+        groundedArguments,
+    });
+    if (evidenceAdmissionReason !== null) {
+        return rejection(index, call.name, evidenceAdmissionReason);
     }
     const scopeAdmissionRejection = groundPostTargetScopeAdmission({
         actionName: call.name,

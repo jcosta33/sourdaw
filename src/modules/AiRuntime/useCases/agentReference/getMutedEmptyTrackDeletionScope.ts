@@ -1,13 +1,8 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 
-const trackKinds = new Set(['audio', 'midi', 'bus', 'master', 'folder']);
+import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 
-function normalizePromptText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
+const trackKinds = new Set(['audio', 'midi', 'bus', 'master', 'folder']);
 
 export function getMutedEmptyTrackDeletionScope(prompt: string, context: ProjectContext) {
     const normalized = normalizePromptText(prompt);
