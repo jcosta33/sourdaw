@@ -1,4 +1,5 @@
 import {
+    getAppActionExecutionPolicy,
     getExecutableAppActionEffect,
     getExecutableAppActionGroundingCatalog,
     getExecutableAppActionGroundingRules,
@@ -450,7 +451,8 @@ function containsBatchLocalCreationEvidence(
         if (explicitReference.status === 'resolved') {
             return true;
         }
-        if (explicitReference.reason !== 'ungrounded-target') {
+        // An approximate reading names no existing object either, so the anaphora route still applies.
+        if (explicitReference.reason !== 'ungrounded-target' && explicitReference.reason !== 'low-confidence-target') {
             return false;
         }
     }
@@ -2919,12 +2921,14 @@ function resolveAgentReferenceArray({
     context,
     dependencyId,
     prompt,
+    risk,
 }: {
     assertedIds: unknown;
     capability: GroundingRules['targetRules'][number]['capability'];
     context: ProjectContext;
     dependencyId?: unknown;
     prompt: string;
+    risk: ReturnType<typeof getAppActionExecutionPolicy>['risk'];
 }): ResolveAgentReferenceArrayResult {
     if (
         !Array.isArray(assertedIds) ||
@@ -2982,6 +2986,7 @@ function resolveAgentReferenceArray({
             capability,
             context,
             excludedIds: candidates.filter((other) => other.id !== candidate.id).map((other) => other.id),
+            risk,
         });
         if (result.status !== 'resolved') {
             return [];
@@ -3557,6 +3562,7 @@ function groundToolCall({
                 context,
                 dependencyId: dependencyValue,
                 prompt: targetPrompt,
+                risk: getAppActionExecutionPolicy(call.name).risk,
             });
             if (result.status === 'rejected') {
                 if (result.reason === 'ambiguous-target') {
@@ -3697,6 +3703,7 @@ function groundToolCall({
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
             excludedIds: [...(typeof distinctValue === 'string' ? [distinctValue] : []), ...bulkSiblingTargetIds],
+            risk: getAppActionExecutionPolicy(call.name).risk,
         });
         if (result.status === 'rejected') {
             if (result.reason === 'ambiguous-target') {
