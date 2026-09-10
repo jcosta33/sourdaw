@@ -1,0 +1,101 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_06adf2b091dc62::t_50bce3ea13fb30 6
+  s_06adf2b091dc62::t_febd2881d79535 21-22
+  s_06adf2b091dc62::t_675bb74cae016b 81-84
+  s_06adf2b091dc62::t_50571b1a25b059 42-45
+  s_06adf2b091dc62::t_a2775905417398 69
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_06adf2b091dc62::t_5f96b747fd52d2 8-9
+  s_06adf2b091dc62::t_e627dfc0ed22ad 98-105
+  s_06adf2b091dc62::t_9ca91e3115b1fc 30
+  s_06adf2b091dc62::t_be4f0c99145d8d 125
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_06adf2b091dc62::t_37db4f48c6acc4 154-156
+  s_06adf2b091dc62::t_e9b847ec615aac 187
+  s_06adf2b091dc62::t_4ede43daea303c 102,112,114,116-120,124-125
+  s_06adf2b091dc62::t_20ae006c885d6f 208-209,211
+  s_06adf2b091dc62::t_547d333d53cb50 11
+  s_06adf2b091dc62::t_c77ba0fb51397b 19-69
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_06adf2b091dc62::t_42243cd8bc6593 143,146-157,164
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_06adf2b091dc62::t_9c7e3a1a831936 1
+  s_06adf2b091dc62::t_4509e32ccbda3e 2-141,153-155,159-160,162-236
+  s_06adf2b091dc62::t_834746d1b02607 142-152,156-158,161
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_06adf2b091dc62::t_ed7a2053a1c173 186
+  s_06adf2b091dc62::t_1fb4d81f643b50 59
+  s_06adf2b091dc62::t_6b2f57c4fb899c 269
+src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts
+  s_06adf2b091dc62::t_b5c02c20a5f9bd 83-96
+  s_06adf2b091dc62::t_e2c8a5b675c351 97-98,415
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_06adf2b091dc62::t_d8e2ef9cc82eb7 1-154,156-157,159-238
+  s_06adf2b091dc62::t_ab65a1df4197cd 155,158
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_06adf2b091dc62::t_2d80ec36780248 573
+  s_06adf2b091dc62::t_a56894c374b930 140
+  s_06adf2b091dc62::t_070c674b99bee9 442
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_06adf2b091dc62::t_cb69b91f3c8679 974-975
+  s_06adf2b091dc62::t_32b0889e3a9148 762
+src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts
+  s_06adf2b091dc62::t_d0bea3cd5ad5e9 1-212
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_06adf2b091dc62::t_d90a915749cb2a 1-11
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_06adf2b091dc62::t_f5ab3c51b56e56 497-499
+  s_06adf2b091dc62::t_c5492ac153dabd 527
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiCompatibleChatCompletion.spec.ts
+  s_06adf2b091dc62::t_f0d7dd2f03378f 238
+  s_06adf2b091dc62::t_c5ff05bfea88fd 304,311
+  s_06adf2b091dc62::t_65aa202b4a2510 32,44
+  s_06adf2b091dc62::t_394812699f8a05 333,340,342-350
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion.ts
+  s_06adf2b091dc62::t_adc7bab7bb4904 4
+  s_06adf2b091dc62::t_6a59d93e60701e 110
+  s_06adf2b091dc62::t_7834aabbf37728 192-199
+  s_06adf2b091dc62::t_acb938194c75ee 242-245
+  s_06adf2b091dc62::t_a389a7e4a6f5ba 28-29,32-39,42,45-46
+  s_06adf2b091dc62::t_994de4f774ed92 178
+  s_06adf2b091dc62::t_6a51fb16020eec 56,59-66,73
+  s_06adf2b091dc62::t_19e2c67e652cc4 97-100
+  s_06adf2b091dc62::t_f102cddb0aae18 128-129
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_06adf2b091dc62::t_aad758907c05f9 332-338
+  s_06adf2b091dc62::t_13a8466424f3d2 113-116
+  s_06adf2b091dc62::t_aed52b5634147c 352
+  s_06adf2b091dc62::t_35f8232b9ecad4 172,179
+  s_06adf2b091dc62::t_5ea94a58c9d4f2 57-58
+  s_06adf2b091dc62::t_47b0f42e6bc446 281
+  s_06adf2b091dc62::t_c4bd7d4aceba4c 324-327
+  s_06adf2b091dc62::t_6a9e9d0848b2ca 384-390
+  s_06adf2b091dc62::t_97c8ab7a117e11 6
+  s_06adf2b091dc62::t_39e229a4bbc6aa 5
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_06adf2b091dc62::t_b4ec7b2085ebd6 43-60,63,66
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/readProviderRequestId.ts
+  s_06adf2b091dc62::t_c942018d771b3f 1-8
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_06adf2b091dc62::t_183caa8d6c720b 133
+  s_06adf2b091dc62::t_d978be0131b35f 67-75
+  s_06adf2b091dc62::t_b6751c5afeee43 9,11
+  s_06adf2b091dc62::t_05ded0554e56e9 154
+  s_06adf2b091dc62::t_2c0a9cc4279c65 206-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb0525329114817aa193abe7df36f8d6c0ed14a0",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
