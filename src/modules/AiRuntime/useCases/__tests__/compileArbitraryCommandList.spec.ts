@@ -21,6 +21,7 @@ import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { planAgentRun } from '../planAgentRun';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
+import type { CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import type { ProjectContext } from '../../models/ProjectContext';
 
 const context = {
@@ -134,6 +135,23 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     alternatives: [],
     validationStrategy: [],
     stoppingConditions: [],
+});
+
+const buildCreativeAuthority = (revision: string): CreativeRequestAuthority => ({
+    schemaVersion: 1,
+    authorityId: 'creative-authority-mute-kick',
+    catalogId: 'creative-catalog-mute-kick',
+    requestDigest: 'digest-mute-kick',
+    revision,
+    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
+    mode: 'edit',
+    targets: [
+        { provenance: 'explicit-reference', objectType: 'track', objectIds: ['track-kick'], parentTrackId: null },
+    ],
+    editDimensions: ['processing'],
+    prohibitions: [],
+    creationSlots: [],
+    uncertainty: 'none',
 });
 
 const supportedSidechainDevice = {
@@ -3488,6 +3506,77 @@ describe('compileArbitraryCommandList', () => {
                 revision: 'revision-1',
             }).status
         ).toBe('rejected');
+    });
+
+    it('compiles a proposal admitted under a creative authority captured against the compile revision', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'rev-a',
+            creativeAuthority: buildCreativeAuthority('rev-a'),
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result.status).toBe('accepted');
+    });
+
+    it('refuses a creative authority captured against a different project snapshot than the compile revision', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'rev-b',
+            creativeAuthority: buildCreativeAuthority('rev-a'),
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list creative authority was admitted against a different project snapshot.',
+        });
     });
 
     it('rejects an unbounded selector before it can enter the command bridge', () => {
