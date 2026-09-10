@@ -1,11 +1,9 @@
-import { batchStoreUpdates } from '#/infra/store/createStore';
 import { createHandler } from '#/utils/createHandler';
 import { type YeastProcessorSnapshot } from '#/utils/handlerContract';
 
 import { type ProcessorType } from '../models/ProcessorCatalog';
 import { addYeastProcessor } from '../useCases/addYeastProcessor';
 import { commitYeastProjection } from '../useCases/commitYeastProjection';
-import { restoreYeastGrooveAssignments } from '../useCases/restoreYeastGrooveAssignments';
 
 import { findProcessor, isSameSnapshot, readYeastRackState } from './rackState';
 
@@ -53,17 +51,13 @@ export const handleAddYeastProcessor = createHandler<'addYeastProcessor'>({
             // The guarded re-insert half of removeYeastProcessor's inverse. No
             // use case restores a processor, so this goes through the single
             // rack write path directly, preserving the runtime projection push.
-            // The forward removal also deleted the processor's groove
-            // assignments; the captured ones ride the restore payload and are
-            // re-bound in the same batch (#4124) — straight store writes, never
-            // a nested undoable dispatch, which would double-record the undo.
-            batchStoreUpdates(() => {
-                const processors = [...state.processors];
-                const atIndex = Math.max(0, Math.min(restore.atIndex, processors.length));
-                processors.splice(atIndex, 0, restore.processor);
-                commitYeastProjection(processors);
-                restoreYeastGrooveAssignments(restore.grooveAssignments ?? []);
-            });
+            // KNOWN GAP (#2111): the forward removal also deleted the
+            // processor's groove assignments; re-insertion does not restore
+            // them.
+            const processors = [...state.processors];
+            const atIndex = Math.max(0, Math.min(restore.atIndex, processors.length));
+            processors.splice(atIndex, 0, restore.processor);
+            commitYeastProjection(processors);
             return { status: 'written' };
         }
         addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);

@@ -11,8 +11,6 @@ const mocks = vi.hoisted(() => ({
     removeUseCase: vi.fn(),
     reorderUseCase: vi.fn(),
     commitProjection: vi.fn(),
-    readGrooveAssignments: vi.fn(),
-    restoreGrooveAssignments: vi.fn(),
 }));
 vi.mock('../../stores/yeastStore', () => ({
     yeastStore: {
@@ -46,12 +44,6 @@ vi.mock('../../useCases/reorderYeastProcessor', () => ({
 }));
 vi.mock('../../useCases/commitYeastProjection', () => ({
     commitYeastProjection: mocks.commitProjection,
-}));
-vi.mock('../../useCases/readYeastGrooveAssignments', () => ({
-    readYeastGrooveAssignments: mocks.readGrooveAssignments,
-}));
-vi.mock('../../useCases/restoreYeastGrooveAssignments', () => ({
-    restoreYeastGrooveAssignments: mocks.restoreGrooveAssignments,
 }));
 
 function seedRack(processors: YeastProcessorInfo[]): void {
@@ -195,7 +187,6 @@ describe('handleAddYeastProcessor', () => {
 describe('handleRemoveYeastProcessor', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.readGrooveAssignments.mockReturnValue([]);
     });
 
     it('removes through the use case when the snapshot still matches', () => {
@@ -240,61 +231,13 @@ describe('handleRemoveYeastProcessor', () => {
                 processorId: 'filter-1',
                 type: 'filter',
                 name: 'Filter',
-                restore: { processor: rack()[1]!, atIndex: 1, grooveAssignments: [] },
+                restore: { processor: rack()[1]!, atIndex: 1 },
             },
         });
         expect(described.redoAction).toEqual({
             type: 'removeYeastProcessor',
             payload: { processorId: 'filter-1', expectedProcessor: rack()[1]!, expectedIndex: 1 },
         });
-    });
-
-    it('carries the processor groove assignments in the restore inverse (#4124)', () => {
-        seedRack(rack());
-        const assignment = {
-            consumerType: 'yeast-processor' as const,
-            consumerId: 'yeast-rack:filter-1',
-            templateId: 'swing',
-            amount: 0.5,
-        };
-        mocks.readGrooveAssignments.mockReturnValue([assignment]);
-
-        const described = handleRemoveYeastProcessor.describe({
-            type: 'removeYeastProcessor',
-            payload: { processorId: 'filter-1', expectedProcessor: rack()[1]!, expectedIndex: 1 },
-        });
-
-        expect(mocks.readGrooveAssignments).toHaveBeenCalledWith('filter-1');
-        const inverse = described.inverseAction;
-        if (inverse?.type !== 'addYeastProcessor') {
-            throw new Error('Expected an addYeastProcessor restore inverse');
-        }
-        expect(inverse.payload.restore?.grooveAssignments).toEqual([assignment]);
-    });
-
-    it('re-binds the captured groove assignments on the restore leg (#4124)', () => {
-        seedRack([{ ...rack()[0]! }]);
-        const restored = rack()[1]!;
-        const assignment = {
-            consumerType: 'yeast-processor' as const,
-            consumerId: 'yeast-rack:filter-1',
-            templateId: 'swing',
-            amount: 0.5,
-        };
-
-        const result = handleAddYeastProcessor.execute({
-            type: 'addYeastProcessor',
-            payload: {
-                processorId: restored.id,
-                type: restored.type,
-                name: restored.name,
-                restore: { processor: restored, atIndex: 1, grooveAssignments: [assignment] },
-            },
-        });
-
-        expect(result).toEqual({ status: 'written' });
-        expect(mocks.commitProjection).toHaveBeenCalledWith([rack()[0]!, restored]);
-        expect(mocks.restoreGrooveAssignments).toHaveBeenCalledWith([assignment]);
     });
 
     it('is a noop when the processor is already gone', () => {

@@ -5317,15 +5317,10 @@ const schemaDefinitions = [
         additionalProperties: false,
     },
     {
-        type: 'array',
-        items: 416,
-    },
-    {
         type: 'object',
         properties: {
             processor: 659,
             atIndex: 1,
-            grooveAssignments: 660,
         },
         required: ['processor', 'atIndex'],
         additionalProperties: false,
@@ -5336,7 +5331,7 @@ const schemaDefinitions = [
             processorId: 0,
             type: 658,
             name: 0,
-            restore: 661,
+            restore: 660,
         },
         required: ['processorId', 'type', 'name'],
         additionalProperties: false,
@@ -5703,9 +5698,9 @@ const schemaIdByActionType = {
     setYeastProcessorParam: 624,
     setYeastArpPattern: 644,
     setYeastProcessorBypass: 645,
-    addYeastProcessor: 662,
-    removeYeastProcessor: 663,
-    reorderYeastProcessor: 664,
+    addYeastProcessor: 661,
+    removeYeastProcessor: 662,
+    reorderYeastProcessor: 663,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

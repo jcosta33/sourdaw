@@ -474,10 +474,7 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
     expect(numericMember(receipt, 'middleSlowTicks')).toBeGreaterThanOrEqual(8);
     expect(numericMember(receipt, 'lastSlowTicks')).toBeGreaterThanOrEqual(8);
     expect(numericMember(receipt, 'terminalTicks')).toBeGreaterThanOrEqual(12);
-    expect(
-        admission.status,
-        admission.status === 'refused' ? `offline native trace admission refused: ${admission.reason}` : undefined
-    ).toBe('admitted');
+    expect(admission.status).toBe('admitted');
     if (admission.status !== 'admitted') {
         throw new Error(admission.reason);
     }
