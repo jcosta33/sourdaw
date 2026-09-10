@@ -6,7 +6,9 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
+import { type HostedToolPlan } from './hostedToolPlan';
 import { isGpt56FamilyModel } from './openAiModelFamilies';
+import { readProviderRequestId } from './readProviderRequestId';
 import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
 
 type GenerateOpenAiCompatibleToolCallsInput = {
@@ -60,6 +62,15 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
     } catch {
         return null;
     }
+}
+
+// A rejected batch names the offending call so a provider-side record can be found
+// for it; the arguments themselves stay out of the message.
+function rejectedBatchMessage(id: unknown): string {
+    const callId = readProviderRequestId(id);
+    return callId === null
+        ? 'Hosted AI returned an invalid tool-call batch'
+        : `Hosted AI returned an invalid tool-call batch for call ${callId}`;
 }
 
 function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
@@ -119,7 +130,7 @@ function parseToolCalls(response: unknown, decodeWireName: (wireName: string) =>
             !arguments_ ||
             (id !== undefined && (typeof id !== 'string' || id.length === 0))
         ) {
-            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
+            throw new ToolPlanningRejectedError(rejectedBatchMessage(id));
         }
         results.push({
             ...(typeof id === 'string' ? { id } : {}),
@@ -140,7 +151,7 @@ export async function generateOpenAiCompatibleToolCalls({
     toolSchemas,
     maxOutputTokens,
     signal,
-}: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
+}: GenerateOpenAiCompatibleToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
     const body = JSON.stringify({
         model: runtime.model,
@@ -192,7 +203,10 @@ export async function generateOpenAiCompatibleToolCalls({
         }
         throw error;
     }
-    return parseToolCalls(payload, codec.decode);
+    return {
+        providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
+        calls: parseToolCalls(payload, codec.decode),
+    };
 }
 
 function hasErrorName(value: unknown, name: string): boolean {

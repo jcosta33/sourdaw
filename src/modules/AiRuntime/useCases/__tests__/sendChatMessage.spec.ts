@@ -759,7 +759,7 @@ describe('sendChatMessage retained-provider selection', () => {
                     },
                     provenance: 'provider-reported',
                 });
-                return { status: 'complete' };
+                return { status: 'complete', finishReason: 'stop', providerRequestId: null };
             }
         );
 
@@ -971,7 +971,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 onToken(content);
                 markCompletionReady();
                 return new Promise<CloudChatCompletionOutcome>((resolve) => {
-                    releaseCompletion = () => resolve({ status: 'complete' });
+                    releaseCompletion = () =>
+                        resolve({ status: 'complete', finishReason: 'stop', providerRequestId: null });
                 });
             }
         );
