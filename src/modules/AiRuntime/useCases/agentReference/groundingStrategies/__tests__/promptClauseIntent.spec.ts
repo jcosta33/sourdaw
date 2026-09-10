@@ -66,6 +66,10 @@ describe('resolveClauseActionIntent', () => {
         expect(resolveClauseActionIntent('do not stop playback', catalog)).toBeNull();
     });
 
+    it('resolves a negated intent inside an explicit clause to no action', () => {
+        expect(resolveClauseActionIntent('make it brighter but do not stop playback', catalog)).toBeNull();
+    });
+
     it('resolves a directionally phrased gain clause to its owning action', () => {
         expect(resolveClauseActionIntent('turn down the master', catalog)).toEqual({
             actionType: 'setTrackGain',
