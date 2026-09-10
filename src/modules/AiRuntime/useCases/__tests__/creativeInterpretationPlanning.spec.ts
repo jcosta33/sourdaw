@@ -198,6 +198,239 @@ const listProposeTurn = (input: {
     ],
 });
 
+const guitarTrack: ProjectContextTrack = {
+    id: 'track-guitar',
+    name: 'Guitar',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    soloSafe: false,
+    armed: false,
+    frozen: false,
+    gain: 0.8,
+    pan: 0,
+    automationMode: 'read',
+    clipCount: 0,
+    deviceCount: 0,
+    clips: [],
+    devices: [],
+};
+
+/** A request that describes a sound and names nothing, against a project with a selected track. */
+const RADIO_PROMPT = 'make it sound like a radio';
+
+const radioContext: ProjectContext = {
+    ...context,
+    availableDeviceTypes: [
+        { id: 'radio-filter', name: 'Radio Filter' },
+        { id: 'compressor', name: 'Compressor' },
+    ],
+    tracks: [guitarTrack, bassTrack],
+    selectedTrackId: 'track-guitar',
+};
+
+const radioCatalog = prepareCreativeInterpretationCatalog({
+    prompt: RADIO_PROMPT,
+    context: radioContext,
+    projectRevision: REVISION,
+});
+
+const radioDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-radio-1',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addDevice'] },
+        },
+    ],
+};
+
+const radioInterpretationTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'interpretation-radio-1',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: radioCatalog.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: ['target-1'],
+                editDimensionCandidateIds: ['dimension-processing'],
+                constraintCandidateIds: [],
+                creationSlotIds: [
+                    radioCatalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
+                ],
+                uncertainty: 'none',
+            },
+        },
+    ],
+};
+
+const radioProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-radio-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: { ...batchPlan, capabilityIds: ['addDevice'], objective: 'Shape the selected track.' },
+                list: {
+                    schemaVersion: 1,
+                    items: [
+                        {
+                            id: 'device-1',
+                            name: 'addDevice',
+                            arguments: { deviceType: 'radio-filter' },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Guitar' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    ],
+};
+
+/**
+ * A request that describes a sound and carries no anaphora, so nothing in it can point at the device
+ * the batch creates: only the admitted authority can reach that device.
+ */
+const WARMTH_PROMPT = 'make the sound warmer and more distant';
+
+const shaperContext: ProjectContext = {
+    ...radioContext,
+    availableDeviceTypes: [
+        ...(radioContext.availableDeviceTypes ?? []),
+        {
+            id: 'tone-shaper',
+            name: 'Tone Shaper',
+            parameters: [
+                {
+                    id: 'cutoff',
+                    name: 'Cutoff',
+                    type: 'float',
+                    value: 8000,
+                    minValue: 20,
+                    maxValue: 20_000,
+                    unit: 'Hz',
+                },
+            ],
+        },
+    ],
+};
+
+const shaperCatalog = prepareCreativeInterpretationCatalog({
+    prompt: WARMTH_PROMPT,
+    context: shaperContext,
+    projectRevision: REVISION,
+});
+
+const shaperDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-shaper-1',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addDevice', 'setDeviceParameter'] },
+        },
+    ],
+};
+
+const shaperInterpretationTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'interpretation-shaper-1',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: shaperCatalog.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: ['target-1'],
+                editDimensionCandidateIds: ['dimension-processing'],
+                constraintCandidateIds: [],
+                creationSlotIds: [
+                    shaperCatalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
+                ],
+                uncertainty: 'none',
+            },
+        },
+    ],
+};
+
+/**
+ * The direct command form, because a bound creation takes no bulk selector while the semantic list
+ * form reaches an existing track only through one, so no list item can both bind the created device
+ * and place it on the selected track.
+ */
+const shaperProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-shaper-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    ...batchPlan,
+                    capabilityIds: ['addDevice', 'setDeviceParameter'],
+                    objective: 'Shape the selected track.',
+                },
+                commands: [
+                    {
+                        name: 'addDevice',
+                        arguments: { trackId: 'track-guitar', deviceType: 'tone-shaper', binding: 'shaper' },
+                    },
+                    { name: 'setDeviceParameter', arguments: { deviceId: '$shaper', paramId: 'cutoff', value: 2200 } },
+                ],
+            },
+        },
+    ],
+};
+
+/**
+ * Same shape as `shaperProposeTurn`, but the parameter targets the created device by its batch-local
+ * `$` reference and names an id `tone-shaper` never published, so membership must still be checked.
+ */
+const shaperUnpublishedParameterProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-shaper-unpublished-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    ...batchPlan,
+                    capabilityIds: ['addDevice', 'setDeviceParameter'],
+                    objective: 'Shape the selected track.',
+                },
+                commands: [
+                    {
+                        name: 'addDevice',
+                        arguments: { trackId: 'track-guitar', deviceType: 'tone-shaper', binding: 'shaper' },
+                    },
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: '$shaper', paramId: 'resonance', value: 5000 },
+                    },
+                ],
+            },
+        },
+    ],
+};
+
+/** Two proposals in one turn is a loop-level refusal, reached after the interpretation was admitted. */
+const doubleProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        { id: 'propose-a', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
+        { id: 'propose-b', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
+    ],
+};
+
 function readCompilation() {
     const compilations = vi.mocked(compileArbitraryCommandList).mock.results;
     expect(compilations).toHaveLength(1);
@@ -348,6 +581,64 @@ describe('creative interpretation in provider planning', () => {
         const corrected = await correctionRun(original ?? null);
 
         expect(corrected.rejectionReason).toBeUndefined();
+        expect(corrected.creativeAuthority?.authorityId).toBe(original?.authorityId);
+    });
+
+    it('grounds a command the request never named through the admitted authority', async () => {
+        scriptTurns([radioDiscoverTurn, radioInterpretationTurn, radioProposeTurn]);
+
+        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.creativeAuthority?.mode).toBe('edit');
+        expect(result.actions.length).toBeGreaterThanOrEqual(1);
+        expect(result.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'radio-filter' } },
+        ]);
+    });
+
+    it('grounds a parameter on the device the same admitted batch creates', async () => {
+        scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperProposeTurn]);
+
+        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'tone-shaper' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'cutoff', value: 2200 } },
+        ]);
+    });
+
+    it('refuses a parameter on the device the same admitted batch creates when the device never published it', async () => {
+        scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperUnpublishedParameterProposeTurn]);
+
+        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe(
+            'Provider action rejected: setDeviceParameter: Target paramId is not grounded in the user request'
+        );
+    });
+
+    it('refuses the same batch when the run never admitted an interpretation', async () => {
+        scriptTurns([radioDiscoverTurn, radioProposeTurn]);
+
+        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBeDefined();
+        expect(result.creativeAuthority).toBeUndefined();
+    });
+
+    it('reports the reused authority on a correction run the loop itself refuses', async () => {
+        scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
+        const original = (await parsePromptToActions(PROMPT, context, undefined, REVISION)).creativeAuthority;
+        expect(original?.authorityId).toBeDefined();
+
+        scriptTurns([discoverTurn, interpretationTurn, doubleProposeTurn]);
+        const corrected = await correctionRun(original ?? null);
+
+        expect(corrected.rejectionReason).toMatch(/^Provider planning rejected: /u);
         expect(corrected.creativeAuthority?.authorityId).toBe(original?.authorityId);
     });
 

@@ -189,3 +189,14 @@ modules the diff never named. Nothing in the changed lines points at them.
 Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
 reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
 dispatch carries the same command whenever the change adds a barrel export or a barrel import.
+
+### 2026-09-10 — catalog cases asserted presence, never selectability (escaped via PR #4128)
+
+The catalog spec checked that the creation slots for a track target existed by object type and the
+admission spec selected targets and dimensions, but no case selected a clip, notes, or device slot by
+its published id and observed the minted authority carrying it. A duplicate-id defect that made
+three slots unselectable therefore left every case green.
+
+Mechanical probe: for each published id family (targets, dimensions, constraints, creation slots),
+one case must select the LAST published member by id through the real admission and assert it on
+the result; then mutate the id minting to collide and confirm that case goes red.

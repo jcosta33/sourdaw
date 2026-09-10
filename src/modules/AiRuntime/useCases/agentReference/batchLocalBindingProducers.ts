@@ -49,6 +49,18 @@ export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
     'splitClip',
 ]);
 
+/**
+ * The identity prefix each bound creation stamps on the object it mints. It is what tells a later
+ * reader that an id belongs to this batch rather than to the project snapshot, so the grounding
+ * bridge and the creative admission read the same table instead of two that could drift apart.
+ */
+export const GENERATED_BATCH_LOCAL_ID_PREFIXES: Readonly<Record<BatchLocalBindingProducerName, string>> = {
+    addClip: 'clip-ai-',
+    addDevice: 'device-ai-',
+    addTrack: 'track-ai-',
+    createBus: 'bus-ai-',
+};
+
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
 export type BatchLocalBindingProducer = {

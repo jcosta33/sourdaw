@@ -28,6 +28,7 @@ import {
     validateArbitraryCommandListEvidence,
 } from '../validateArbitraryCommandListEvidence';
 
+import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
@@ -36,6 +37,7 @@ import {
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
     BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
+    GENERATED_BATCH_LOCAL_ID_PREFIXES,
     type BatchLocalBindingProducer,
     type BatchLocalBindingProducerName,
     resolveBatchLocalBindingProducer,
@@ -114,6 +116,8 @@ type GroundToolCallInput = {
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
+    /** What the admitted creative authority says about this call, when the run has one. */
+    creativeAdmission?: CreativeCallAdmission;
     declaredBatchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
@@ -224,13 +228,6 @@ type DirectionalTargetReferences = {
 function rejection(index: number, name: string, reason: string): LlmActionRejection {
     return { index, name, reason };
 }
-
-const GENERATED_ID_PREFIXES: Readonly<Record<BatchLocalBindingProducerName, string>> = {
-    addClip: 'clip-ai-',
-    addDevice: 'device-ai-',
-    addTrack: 'track-ai-',
-    createBus: 'bus-ai-',
-};
 
 function isBatchLocalCreationActionType(name: string): name is BatchLocalBindingProducerName {
     return BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(name);
@@ -363,7 +360,7 @@ function collectBatchLocalCreationBindings(
             actionType: call.name,
             binding: call.arguments.binding,
             callIndex,
-            createdId: `${GENERATED_ID_PREFIXES[call.name]}${crypto.randomUUID()}`,
+            createdId: `${GENERATED_BATCH_LOCAL_ID_PREFIXES[call.name]}${crypto.randomUUID()}`,
             ...(call.name === 'addTrack' && producer.trackKind === 'midi'
                 ? { initialDeviceId: `device-command-${crypto.randomUUID()}` }
                 : {}),
@@ -1076,20 +1073,26 @@ function getAssertedControlTargetReferences(
     return { direct: [...direct], owners: [...owners] };
 }
 
-function resolveActionPromptScope({
+type ActionCancellationInput = {
+    actionName: string;
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+    plannedActionNames: readonly string[];
+};
+
+/**
+ * Whether the request withdrew this action after asking for it. Every route that would otherwise
+ * ground the call has to ask this question, so it is answered once from the prompt alone rather
+ * than left inside the scope resolver that first needed it.
+ */
+function isActionCancelledByPrompt({
     actionName,
-    actionOrdinal,
-    assertedArguments,
     catalog,
-    compilerExpandedTargets = false,
     context,
     prompt,
     plannedActionNames,
-    sameActionAssertedArguments,
-    sameActionCallCount,
-    workflowCapabilityId,
-}: ResolveActionPromptScopeInput): ActionPromptScope | null {
-    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+}: ActionCancellationInput): boolean {
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
     let hasActionCancellation = hasTrailingIntentCancellation(
         cancellationPrompt,
@@ -1124,6 +1127,61 @@ function resolveActionPromptScope({
             );
         }
     }
+    return hasActionCancellation;
+}
+
+/**
+ * Whether the request refuses to let its whole text stand in as this action's scope.
+ *
+ * A whole-prompt scope claims the request as a whole delegated this command, so a withdrawal the
+ * request did not hand to some other planned action lands on it, and so does a clause phrasing this
+ * command's own intent negatively. Both are vocabulary about this work, which is what the creative
+ * route may not paper over; a withdrawal aimed at a different planned action leaves it standing.
+ */
+function refusesCreativeWholePromptScope(input: {
+    actionName: string;
+    catalog: GroundingCatalog;
+    groundingRules: GroundingRules;
+    prompt: string;
+    plannedActionNames: readonly string[];
+}): boolean {
+    const searchableText = input.prompt.toLocaleLowerCase();
+    const withdrawsThisAction = getCancellationCues(searchableText).some((cue) => {
+        const referencedAction = getReferencedCancellationAction(cue, input.catalog);
+        const cancelledAction =
+            referencedAction ??
+            getNearestIntentAction(searchableText, input.catalog, cue.index, input.plannedActionNames);
+        return cancelledAction === null || cancelledAction === input.actionName;
+    });
+    if (withdrawsThisAction) {
+        return true;
+    }
+    return getPromptClauses(input.prompt, input.prompt).some((clause) =>
+        input.groundingRules.intentPhrases.some((phrase) => isNegatedIntent(clause.masked, phrase))
+    );
+}
+
+function resolveActionPromptScope({
+    actionName,
+    actionOrdinal,
+    assertedArguments,
+    catalog,
+    compilerExpandedTargets = false,
+    context,
+    prompt,
+    plannedActionNames,
+    sameActionAssertedArguments,
+    sameActionCallCount,
+    workflowCapabilityId,
+}: ResolveActionPromptScopeInput): ActionPromptScope | null {
+    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    const hasActionCancellation = isActionCancelledByPrompt({
+        actionName,
+        catalog,
+        context,
+        prompt,
+        plannedActionNames,
+    });
     if (!groundingRules) {
         return null;
     }
@@ -2435,8 +2493,12 @@ function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
 
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
 
+function containsPhraseInMaskedText(maskedText: string, phrases: readonly string[]): boolean {
+    return phrases.some((phrase) => getIntentPhraseIndex(maskedText, phrase) >= 0);
+}
+
 function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly string[]): boolean {
-    return phrases.some((phrase) => getIntentPhraseIndex(actionScope.masked, phrase) >= 0);
+    return containsPhraseInMaskedText(actionScope.masked, phrases);
 }
 
 function validateTrackGainDirection(
@@ -2471,6 +2533,148 @@ function validateTrackPanDirection(assertedValue: number, actionScope: ActionPro
     return true;
 }
 
+const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'boost'];
+
+const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'reduce'];
+
+/** How many tokens `turn ... up`/`turn ... down` may skip, so it still reads across the object it names (`turn the brightness down`) without crossing into another particle or `to`, which stops the gap. */
+const TURN_DIRECTION_MAX_GAP_TOKENS = 4;
+
+function statesTurnDirection(maskedClause: string, direction: 'down' | 'up'): boolean {
+    const pattern = new RegExp(
+        `\\bturn\\b(?:\\s+(?!(?:up|down|to)\\b)\\S+){0,${TURN_DIRECTION_MAX_GAP_TOKENS}}?\\s+${direction}\\b`,
+        'u'
+    );
+    return pattern.test(normalizePromptText(maskedClause));
+}
+
+function statesDeviceParameterIncrease(maskedClause: string): boolean {
+    return (
+        containsPhraseInMaskedText(maskedClause, DEVICE_PARAMETER_INCREASE_PHRASES) ||
+        statesTurnDirection(maskedClause, 'up')
+    );
+}
+
+function statesDeviceParameterDecrease(maskedClause: string): boolean {
+    return (
+        containsPhraseInMaskedText(maskedClause, DEVICE_PARAMETER_DECREASE_PHRASES) ||
+        statesTurnDirection(maskedClause, 'down')
+    );
+}
+
+type DeviceParameterDirectionDevice = ProjectContext['tracks'][number]['devices'][number];
+type DeviceParameterDirectionParameter = NonNullable<DeviceParameterDirectionDevice['parameters']>[number];
+
+function clauseNamesToken(clause: PromptClause, tokens: readonly string[]): boolean {
+    const normalizedClause = ` ${normalizePromptText(clause.text)} `;
+    return tokens.some((token) => token.length > 0 && normalizedClause.includes(` ${token} `));
+}
+
+type DeviceParameterClauseAttribution = 'other' | 'this';
+
+type DeviceParameterDirectionTokens = {
+    other: readonly string[];
+    otherTracks: readonly string[];
+    ownerTrack: readonly string[];
+    parameter: readonly string[];
+    thisDevice: readonly string[];
+};
+
+function getNormalizedTokens(values: readonly string[]): string[] {
+    return values.map((value) => normalizePromptText(value)).filter((token) => token.length > 0);
+}
+
+function findOwnerTrack(
+    context: ProjectContext,
+    device: DeviceParameterDirectionDevice
+): ProjectContext['tracks'][number] | undefined {
+    return context.tracks.find((track) => track.devices.some((candidate) => candidate.id === device.id));
+}
+
+/** Every other parameter or device in the project, on any track, excluding this parameter and device. */
+function getOtherObjectTokens(
+    context: ProjectContext,
+    parameter: DeviceParameterDirectionParameter,
+    device: DeviceParameterDirectionDevice
+): readonly string[] {
+    const parameterTokens = getNormalizedTokens([parameter.id, parameter.name]);
+    const deviceTokens = getNormalizedTokens([device.id, device.type]);
+    const devices = context.tracks.flatMap((track) => track.devices);
+    const everyParameterToken = getNormalizedTokens(
+        devices
+            .flatMap((candidate) => candidate.parameters ?? [])
+            .flatMap((candidate) => [candidate.id, candidate.name])
+    );
+    const everyDeviceToken = getNormalizedTokens(devices.flatMap((candidate) => [candidate.id, candidate.type]));
+    return [
+        ...everyParameterToken.filter((token) => !parameterTokens.includes(token)),
+        ...everyDeviceToken.filter((token) => !deviceTokens.includes(token)),
+    ];
+}
+
+/** Every other track's id and name, excluding this device's owner track. */
+function getOtherTrackTokens(
+    context: ProjectContext,
+    ownerTrack: ProjectContext['tracks'][number] | undefined
+): readonly string[] {
+    const otherTracks = context.tracks.filter((track) => track.id !== ownerTrack?.id);
+    return getNormalizedTokens(otherTracks.flatMap((track) => [track.id, track.name]));
+}
+
+function attributeDirectionClause(
+    clause: PromptClause,
+    tokens: DeviceParameterDirectionTokens,
+    inherited: DeviceParameterClauseAttribution
+): DeviceParameterClauseAttribution {
+    if (clauseNamesToken(clause, tokens.parameter)) {
+        return 'this';
+    }
+    if (clauseNamesToken(clause, tokens.thisDevice)) {
+        return 'this';
+    }
+    if (clauseNamesToken(clause, tokens.other)) {
+        return 'other';
+    }
+    if (clauseNamesToken(clause, tokens.ownerTrack)) {
+        return 'this';
+    }
+    if (clauseNamesToken(clause, tokens.otherTracks)) {
+        return 'other';
+    }
+    return inherited;
+}
+
+/**
+ * The clauses attributed to this parameter, ranked by specificity with the first match winning: this
+ * parameter, then this device, beat naming another parameter or device on any track, which in turn
+ * beats this device's owner track, which beats another track. A clause naming nothing inherits the
+ * nearest preceding attribution, and is this parameter's when no attributed clause precedes it.
+ */
+function selectDeviceParameterDirectionClauses(
+    actionScope: ActionPromptScope,
+    parameter: DeviceParameterDirectionParameter,
+    device: DeviceParameterDirectionDevice,
+    context: ProjectContext
+): readonly PromptClause[] {
+    const ownerTrack = findOwnerTrack(context, device);
+    const tokens: DeviceParameterDirectionTokens = {
+        other: getOtherObjectTokens(context, parameter, device),
+        otherTracks: getOtherTrackTokens(context, ownerTrack),
+        ownerTrack: getNormalizedTokens([ownerTrack?.id ?? '', ownerTrack?.name ?? '']),
+        parameter: getNormalizedTokens([parameter.id, parameter.name]),
+        thisDevice: getNormalizedTokens([device.id, device.type]),
+    };
+    const attributed: PromptClause[] = [];
+    let attribution: DeviceParameterClauseAttribution = 'this';
+    for (const clause of getPromptClauses(actionScope.text, actionScope.masked)) {
+        attribution = attributeDirectionClause(clause, tokens, attribution);
+        if (attribution === 'this') {
+            attributed.push(clause);
+        }
+    }
+    return attributed;
+}
+
 function validateDeviceParameterDirection(
     assertedValue: number,
     actionScope: ActionPromptScope,
@@ -2479,17 +2683,22 @@ function validateDeviceParameterDirection(
 ): boolean {
     const deviceId = groundedArguments.deviceId;
     const parameterId = groundedArguments.paramId;
-    const parameter = context.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)
-        ?.parameters?.find((candidate) => candidate.id === parameterId);
-    if (!parameter) {
+    const device = context.tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === parameterId);
+    if (!parameter || !device) {
         return false;
     }
-    if (containsPromptPhrase(actionScope, ['increase'])) {
+    const attributedClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device, context);
+    const attributedText = attributedClauses.map((clause) => clause.masked);
+    const statesIncrease = attributedText.some((text) => statesDeviceParameterIncrease(text));
+    const statesDecrease = attributedText.some((text) => statesDeviceParameterDecrease(text));
+    if (statesIncrease && statesDecrease) {
+        return false;
+    }
+    if (statesIncrease) {
         return assertedValue > parameter.value;
     }
-    if (containsPromptPhrase(actionScope, ['decrease'])) {
+    if (statesDecrease) {
         return assertedValue < parameter.value;
     }
     return true;
@@ -2780,13 +2989,102 @@ function validateTextAfterConnectorValue(
     return null;
 }
 
-function validateGroundedValue(
+function acceptsCreativeStringLiteral(
+    valueRule: Extract<GroundingValueRule, { kind: 'string-literal' }>,
+    assertedValue: unknown,
+    context: ProjectContext
+): boolean {
+    if (typeof assertedValue !== 'string') {
+        return false;
+    }
+    if (valueRule.argument !== 'deviceType') {
+        return false;
+    }
+    const normalizedAssertedValue = normalizePromptText(assertedValue);
+    const matchingDeviceTypes = (context.availableDeviceTypes ?? []).filter(
+        (deviceType) =>
+            normalizePromptText(deviceType.id) === normalizedAssertedValue ||
+            normalizePromptText(deviceType.name) === normalizedAssertedValue
+    );
+    return matchingDeviceTypes.length === 1;
+}
+
+function acceptsCreativeNumber(
+    valueRule: NumberValueRule,
+    assertedValue: unknown,
+    actionScope: ActionPromptScope,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): boolean {
+    if (typeof assertedValue !== 'number' || valueRule.mayOmitWhenUnmentioned === true) {
+        return false;
+    }
+    const automationLane = getAutomationLaneValueRange(valueRule, groundedArguments, context);
+    if (automationLane === null) {
+        return false;
+    }
+    const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane);
+    if (expectedNumbers === null || expectedNumbers.length > 0) {
+        return false;
+    }
+    // Naming no number is not the same as stating no preference: "quieter" leaves the figure open and
+    // still fixes which way it moves, so the direction the request stated stays binding here.
+    return validateQualitativeNumberDirection(valueRule, assertedValue, actionScope, groundedArguments, context);
+}
+
+/**
+ * What an admitted creative authority accepts in place of prompt vocabulary for one value.
+ *
+ * `defer` hands the argument back to the ordinary validator, which is what keeps an explicit value
+ * winning: a request that named a number, a direction or an enum member still has to be obeyed.
+ * Only an argument the request left entirely open is decided by the provider here.
+ */
+function validateCreativeValue(
     valueRule: GroundingValueRule,
     assertedValue: unknown,
     actionScope: ActionPromptScope,
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
+): 'accepted' | 'defer' {
+    if (valueRule.kind === 'string-literal') {
+        return acceptsCreativeStringLiteral(valueRule, assertedValue, context) ? 'accepted' : 'defer';
+    }
+    if (valueRule.kind === 'number-if-present') {
+        return acceptsCreativeNumber(valueRule, assertedValue, actionScope, groundedArguments, context)
+            ? 'accepted'
+            : 'defer';
+    }
+    if (valueRule.kind === 'boolean-intent') {
+        const namesIntent =
+            valueRule.truePhrases.includes(actionScope.matchedIntentPhrase) ||
+            valueRule.falsePhrases.includes(actionScope.matchedIntentPhrase);
+        return !namesIntent && typeof assertedValue === 'boolean' ? 'accepted' : 'defer';
+    }
+    if (valueRule.kind === 'enum-if-present') {
+        const namesMember = valueRule.values.some((value) =>
+            [value, ...(valueRule.aliases?.[value] ?? [])].some(
+                (phrase) => getIntentPhraseIndex(actionScope.masked, phrase) >= 0
+            )
+        );
+        return !namesMember && valueRule.values.some((value) => value === assertedValue) ? 'accepted' : 'defer';
+    }
+    return 'defer';
+}
+
+function validateGroundedValue(
+    valueRule: GroundingValueRule,
+    assertedValue: unknown,
+    actionScope: ActionPromptScope,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext,
+    admitsCreativeCall: boolean
 ): string | null {
+    if (
+        admitsCreativeCall &&
+        validateCreativeValue(valueRule, assertedValue, actionScope, groundedArguments, context) === 'accepted'
+    ) {
+        return null;
+    }
     switch (valueRule.kind) {
         case 'boolean-intent':
             return validateBooleanIntentValue(valueRule, assertedValue, actionScope);
@@ -2885,14 +3183,22 @@ function validateGroundedValues(
     groundedArguments: Record<string, unknown>,
     actionScope: ActionPromptScope,
     context: ProjectContext,
-    clipRenameCarrier: ValidClipRenameCarrier | null
+    clipRenameCarrier: ValidClipRenameCarrier | null,
+    admitsCreativeCall: boolean
 ): string | null {
     for (const valueRule of groundingRules.valueRules) {
         const assertedValue = groundedArguments[valueRule.argument];
         let valueRejection: string | null;
         const renameCarrier = actionName === 'renameClip' && valueRule.argument === 'name' ? clipRenameCarrier : null;
         if (renameCarrier === null) {
-            valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+            valueRejection = validateGroundedValue(
+                valueRule,
+                assertedValue,
+                actionScope,
+                groundedArguments,
+                context,
+                admitsCreativeCall
+            );
         } else {
             const matchesRenameValue =
                 typeof assertedValue === 'string' &&
@@ -3040,6 +3346,53 @@ function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: stri
         return getUniversalTrackControlIntentPhrases(prompt).length > 0;
     }
     return true;
+}
+
+/**
+ * Whether the authority itself already covers exactly this target assertion.
+ *
+ * The comparison is by argument, capability and id rather than by position, so a call whose targets
+ * were admitted cannot swap one of them for another object afterwards. A batch-local reference is
+ * deliberately excluded: the admission says the authority reaches the device the batch is creating,
+ * and the binding branch below is what proves the reference names it.
+ */
+function matchesCreativeAdmittedTarget(
+    creativeAdmission: Extract<CreativeCallAdmission, { status: 'admitted' }>,
+    targetRule: GroundingRules['targetRules'][number],
+    assertedValue: unknown
+): boolean {
+    const admittedIds = creativeAdmission.targets
+        .filter((target) => target.argument === targetRule.argument && target.capability === targetRule.capability)
+        .map((target) => target.objectId);
+    if (admittedIds.length === 0 || admittedIds.some((id) => id.startsWith('$'))) {
+        return false;
+    }
+    if (targetRule.cardinality === 'many') {
+        return (
+            Array.isArray(assertedValue) &&
+            assertedValue.length === admittedIds.length &&
+            assertedValue.every((id, position) => id === admittedIds[position])
+        );
+    }
+    return admittedIds.length === 1 && assertedValue === admittedIds[0];
+}
+
+/**
+ * Whether this target is a `setDeviceParameter` paramId asserted against a device the same batch is
+ * still creating. The admission pushes the paramId target itself — not the `$` reference — so
+ * `matchesCreativeAdmittedTarget` would otherwise ground any paramId without checking it against the
+ * device the batch is actually creating. The batch-local binding branch below is what proves
+ * membership, so the creative match must defer to it here.
+ */
+function isCreativeCreatedDeviceParameterTarget(
+    targetRule: GroundingRules['targetRules'][number],
+    assertedDeviceId: unknown
+): boolean {
+    return (
+        targetRule.capability === 'device-parameter' &&
+        typeof assertedDeviceId === 'string' &&
+        assertedDeviceId.startsWith('$')
+    );
 }
 
 /**
@@ -3196,6 +3549,7 @@ function groundToolCall({
     call,
     catalog,
     context,
+    creativeAdmission,
     declaredBatchLocalCreationBindings,
     declaredBindingsByCallIndex,
     index,
@@ -3232,6 +3586,15 @@ function groundToolCall({
     // One route, one switch. Every prompt-evidence rule below asks the request for vocabulary
     // describing an object it never named, so on this route they are all unsatisfiable together.
     const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
+    if (creativeAdmission?.status === 'rejected') {
+        return rejection(index, call.name, creativeAdmission.reason);
+    }
+    /**
+     * The same trade on the creative route: the admitted authority already decided this command's
+     * effect, targets and creations are inside what the request delegated, so the vocabulary checks
+     * below have nothing left to protect for the parts it covers.
+     */
+    const admitsCreativeCall = creativeAdmission?.status === 'admitted';
     const resolvedActionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
@@ -3245,8 +3608,18 @@ function groundToolCall({
         sameActionCallCount,
         workflowCapabilityId,
     });
+    const admitsCreativeWholePrompt =
+        admitsCreativeCall &&
+        !refusesCreativeWholePromptScope({
+            actionName: call.name,
+            catalog,
+            groundingRules,
+            prompt,
+            plannedActionNames,
+        });
     const actionScope =
-        resolvedActionScope ?? (admitsPlanCreatedObject ? buildWholePromptActionScope(prompt, context) : null);
+        resolvedActionScope ??
+        (admitsPlanCreatedObject || admitsCreativeWholePrompt ? buildWholePromptActionScope(prompt, context) : null);
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
@@ -3403,6 +3776,14 @@ function groundToolCall({
         ) {
             continue;
         }
+        if (
+            creativeAdmission?.status === 'admitted' &&
+            !isCreativeCreatedDeviceParameterTarget(targetRule, call.arguments.deviceId) &&
+            matchesCreativeAdmittedTarget(creativeAdmission, targetRule, assertedValue)
+        ) {
+            groundedArguments[targetRule.argument] = assertedValue;
+            continue;
+        }
         const compilerTargetOverride = resolvedTargetOverrides?.find(
             (override) => override.argument === targetRule.argument
         );
@@ -3503,6 +3884,7 @@ function groundToolCall({
             }
             if (
                 !admitsPlanCreatedObject &&
+                !admitsCreativeCall &&
                 !containsBatchLocalCreationEvidence(
                     targetPrompt,
                     batchLocalReference.binding,
@@ -3526,7 +3908,7 @@ function groundToolCall({
             (binding) => binding.createdId === dependencyValue && binding.createdDeviceType !== undefined
         );
         if (
-            admitsPlanCreatedObject &&
+            (admitsPlanCreatedObject || admitsCreativeCall) &&
             call.name === 'setDeviceParameter' &&
             targetRule.capability === 'device-parameter' &&
             createdDeviceParameterBinding !== undefined &&
@@ -3613,7 +3995,15 @@ function groundToolCall({
     }
     const valueRejection = admitsPlanCreatedObject
         ? null
-        : validateGroundedValues(call.name, groundingRules, groundedArguments, actionScope, context, clipRenameCarrier);
+        : validateGroundedValues(
+              call.name,
+              groundingRules,
+              groundedArguments,
+              actionScope,
+              context,
+              clipRenameCarrier,
+              admitsCreativeCall
+          );
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
     }
@@ -4368,6 +4758,12 @@ export function bridgeGroundedLlmToolCalls({
      * contract already requires to be non-empty, so it is the plan signal rather than a second one.
      */
     const admitsPlanCreatedObjects = compilerEvidence !== undefined && hasHighLevelCreationEvidence(prompt);
+    // Decided once for the whole batch, because a creation budget is spent across calls rather than
+    // inside one, and a later call may lean on a device an earlier admitted call created.
+    const creativeAdmissionsByCallIndex =
+        creativeAuthority === undefined
+            ? undefined
+            : admitCreativeCommandBatch({ authority: creativeAuthority, calls: effectiveCalls, context });
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
     const acceptedGroundedCalls: ToolCallResult[] = [];
@@ -4379,6 +4775,7 @@ export function bridgeGroundedLlmToolCalls({
         const actionOrdinal = effectiveCalls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
         const sameActionCalls = effectiveCalls.filter((candidate) => candidate.name === call.name);
         const sameActionCallCount = sameActionCalls.length;
+        const creativeAdmission = creativeAdmissionsByCallIndex?.get(index);
         let grounded: ToolCallResult | LlmActionRejection;
         if (
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
@@ -4396,6 +4793,7 @@ export function bridgeGroundedLlmToolCalls({
                 call,
                 catalog,
                 context: prospectiveContext,
+                ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 declaredBatchLocalCreationBindings: collectedBindings.bindingsByName,
                 declaredBindingsByCallIndex: collectedBindings.bindingsByCallIndex,
                 index,

@@ -189,27 +189,27 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
     ];
     const nextId = () => `slot-${String(slots.length + 1)}`;
     const trackCandidate = targets.find((target) => target.objectType === 'track');
+    // Pushed one at a time: `nextId` counts what the list already holds, so minting several ids in
+    // one push call would hand every slot in it the same id and make all but the first unselectable.
     if (trackCandidate !== undefined) {
-        slots.push(
-            {
-                candidateId: nextId(),
-                objectType: 'clip',
-                parentCandidateId: trackCandidate.candidateId,
-                budget: CLIP_CREATION_BUDGET,
-            },
-            {
-                candidateId: nextId(),
-                objectType: 'notes',
-                parentCandidateId: trackCandidate.candidateId,
-                budget: NOTE_CREATION_BUDGET,
-            },
-            {
-                candidateId: nextId(),
-                objectType: 'device',
-                parentCandidateId: trackCandidate.candidateId,
-                budget: DEVICE_CREATION_BUDGET,
-            }
-        );
+        slots.push({
+            candidateId: nextId(),
+            objectType: 'clip',
+            parentCandidateId: trackCandidate.candidateId,
+            budget: CLIP_CREATION_BUDGET,
+        });
+        slots.push({
+            candidateId: nextId(),
+            objectType: 'notes',
+            parentCandidateId: trackCandidate.candidateId,
+            budget: NOTE_CREATION_BUDGET,
+        });
+        slots.push({
+            candidateId: nextId(),
+            objectType: 'device',
+            parentCandidateId: trackCandidate.candidateId,
+            budget: DEVICE_CREATION_BUDGET,
+        });
     }
     const clipCandidate = targets.find((target) => target.objectType === 'clip');
     if (clipCandidate !== undefined) {

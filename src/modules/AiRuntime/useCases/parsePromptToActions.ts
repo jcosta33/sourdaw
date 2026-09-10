@@ -530,16 +530,6 @@ const planPromptIntent = inject({ logger })(
                 // states the same authority the proposal it replaced would have carried.
                 let creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
 
-                if (planningOutcome.status === 'rejected') {
-                    return {
-                        actions: [],
-                        rawText: prompt,
-                        requiresConfirmation: false,
-                        ...applicationToolReceiptFields,
-                        ...creativeAuthorityFields,
-                        rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
-                    };
-                }
                 if (correction !== undefined) {
                     const reused = reconcileCorrectionCreativeAuthority(
                         correction.creativeAuthority,
@@ -557,6 +547,18 @@ const planPromptIntent = inject({ logger })(
                     }
                     creativeAuthority = reused.creativeAuthority;
                     creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
+                }
+                // Reconciliation decides which record this run is operating under, so a loop refusal
+                // reported before it would name a freshly minted authority the run never adopted.
+                if (planningOutcome.status === 'rejected') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
+                    };
                 }
                 if (planningOutcome.decline) {
                     const outcome = classifyProviderDecline(
