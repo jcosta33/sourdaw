@@ -113,6 +113,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('gluten')).not.toBeNull();
         expect(nativeBuiltinBody('crust')).not.toBeNull();
         expect(nativeBuiltinBody('grinder')).not.toBeNull();
+        expect(nativeBuiltinBody('bacteria')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -121,6 +122,7 @@ describe('nativeBuiltinBody', () => {
     // body is spelled as a display name as often as a key on the web side.
     it('resolves a type spelled as a display name, the way the mapper folds it', () => {
         expect(nativeBuiltinBody('Fermenter')).toBe(nativeBuiltinBody('fermenter'));
+        expect(nativeBuiltinBody('Bacteria')).toBe(nativeBuiltinBody('bacteria'));
     });
 
     // Mirrors `BuiltinEffectType::sounds_notes`, which is what decides whether
@@ -132,6 +134,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('gluten').soundsNotes).toBe(false);
         expect(bodyOf('crust').soundsNotes).toBe(false);
         expect(bodyOf('grinder').soundsNotes).toBe(false);
+        expect(bodyOf('bacteria').soundsNotes).toBe(false);
     });
 });
 
@@ -446,6 +449,107 @@ describe('the grinder body', () => {
                 profile: { inputDrive: 1 },
             })
         ).toEqual({});
+    });
+});
+
+/**
+ * Bacteria's vocabulary is welded by shape rather than by a table, like
+ * Grinder's above: project truth authors the engine's own camelCase ids, and
+ * the engine's two addressing families — a `band{N}_` prefix aiming a name at
+ * one band, and `stepSeqVal_{n}` indexing a sequencer step — live inside the
+ * shape rule rather than beside it, so there is no closed list to hold the
+ * translation to.
+ *
+ * What is its own is the refusal: two of the engine's arms allocate, so the
+ * native audio-thread door drops those names
+ * (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`). This
+ * is what `addressesParameter` answers, which is what gates an *automation*
+ * write off the native route entirely (`readLiveAutomationWrites.ts`); a
+ * panel write does not consult this answer and reaches the native door
+ * regardless, where the same refusal drops it on the Rust side instead.
+ */
+describe('the bacteria body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('bacteria').parameterName('band3_filterCutoff')).toBe('band3_filterCutoff');
+        expect(
+            bodyOf('bacteria').projectPatch({
+                band3_filterCutoff: 1200,
+                crossoverFreq2: 800,
+                stepSeqVal_31: 0.25,
+                macro8: 0.5,
+            })
+        ).toEqual({
+            band3_filterCutoff: 1200,
+            crossoverFreq2: 800,
+            stepSeqVal_31: 0.25,
+            macro8: 0.5,
+        });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('bacteria').projectPatch({
+                band0_drive: 8,
+                presetName: 'Rot',
+                'not-a-name': 1,
+            })
+        ).toEqual({ band0_drive: 8 });
+    });
+
+    // The engine's vocabulary reaches past the fixed automatable slots into
+    // two dynamically named families the renderer cannot enumerate, so
+    // admission is the shape check — with the allocating pair taken back out.
+    it('admits a well-shaped id, band-prefixed or not', () => {
+        expect(bodyOf('bacteria').addressesParameter('band0_convolutionSeparation')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('stepSeqVal_31')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
+    });
+
+    // A live single-key write of either allocating name is refused by this
+    // gate, because the native door drops it: reporting it as carried would
+    // leave the write nowhere at all. Both spellings the engine reaches the
+    // stage by are refused — a bare name is broadcast to all six bands, and a
+    // `band{N}_` prefix aims it at one.
+    it('refuses the two names whose engine arms allocate, bare or band-prefixed', () => {
+        expect(bodyOf('bacteria').addressesParameter('phaserStages')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserStages')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('convolutionIr')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band5_convolutionIr')).toBe(false);
+        // Any digit, not only the six bands that exist: the engine strips the
+        // prefix first and bounds-checks the band afterwards, and the Rust
+        // door reads it the same way.
+        expect(bodyOf('bacteria').addressesParameter('band9_phaserStages')).toBe(false);
+        // The sixth character is never read by the engine, only skipped, so a
+        // refusal that required the historical `_` there would miss these:
+        // `apply_param` reads both as band 0's `convolutionIr` and
+        // `phaserStages` all the same.
+        expect(bodyOf('bacteria').addressesParameter('band00convolutionIr')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band0XphaserStages')).toBe(false);
+    });
+
+    // A near-miss of the refusal, so the prefix strip is pinned as the engine's
+    // own reading rather than as a substring match: `phaserStagesTrim` is not
+    // the refused name, and `band9_` is not a band the engine addresses.
+    // `bandCount` and `band0_phaserStagesTrim` stay admitted too — neither is
+    // a `band{digit}` prefix followed by one of the two allocating names, so
+    // reading the prefix as loosely as the engine does must not sweep them in.
+    it('refuses only the allocating names themselves', () => {
+        expect(bodyOf('bacteria').addressesParameter('phaserStagesTrim')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserRate')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserStagesTrim')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('bacteria').addressesParameter('crossover-slope')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('')).toBe(false);
     });
 });
 
