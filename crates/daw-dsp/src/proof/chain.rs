@@ -827,12 +827,15 @@ mod latency_contract_tests {
             last_engaged_block = left;
             n += BLOCK;
         }
+        let ceiling = 10.0_f32.powf(-1.0 / 20.0);
+        let last_engaged_peak = last_engaged_block
+            .iter()
+            .fold(0.0f32, |peak, &s| peak.max(s.abs()));
         assert!(
-            last_engaged_block
-                .iter()
-                .any(|&s| s.abs() < AMPLITUDE - 0.02),
-            "the last engaged block never dipped below the tone's own amplitude \
-             — the limiter was not reducing gain, so this spec would prove \
+            last_engaged_peak <= ceiling + 1e-3 && last_engaged_peak < AMPLITUDE - 0.02,
+            "the last engaged block peaked at {last_engaged_peak:.6} against a \
+             {ceiling:.6} ceiling and the tone's own {AMPLITUDE} amplitude — the \
+             limiter was not holding the ceiling down, so this spec would prove \
              nothing about the bypass taking that reduction off"
         );
 
