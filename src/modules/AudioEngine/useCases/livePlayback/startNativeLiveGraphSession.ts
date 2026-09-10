@@ -112,6 +112,7 @@ import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
+import { engineHostedStripIds } from './engineHostedStripIds';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
@@ -366,16 +367,44 @@ function notifySilentHostedPlugins(input: {
  * than once — again when the first batch reports newly attached plugins — and
  * a programme projected against the earlier set would leave an instrument the
  * engine has just taken web-voiced in a batch that gates Web Audio out of it.
+ *
+ * Read twice where a strip the engine carries holds a body the engine
+ * compensates itself, because the two readings answer different questions of
+ * each other. Which strips the engine carries is decided from the programme's
+ * *shape* — what plays, what is baked, what stays web-voiced — never from its
+ * figures, so the first reading is a sound input to the carrier law whatever
+ * compensation it carried. The second reading is what corrects the figures,
+ * with the engine-carried strips excluded from the renderer's own sum so the
+ * hold the engine takes for them is not applied twice. A session holding no
+ * such body is one reading, because the exclusion would be empty.
  */
 function sessionProgramme(input: {
     topology: ReturnType<typeof readSessionTopology>;
     attachedInstanceIds: ReadonlySet<string>;
     sampleRate: number;
 }): LiveGraphProgramme {
+    const programme = readLiveGraphProgramme({
+        stripTracks: input.topology.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds,
+        sampleRate: input.sampleRate,
+    });
+    const hostedStripIds = engineHostedStripIds(
+        projectStripCarriers({
+            stripTracks: input.topology.stripTracks,
+            attachedInstanceIds: input.attachedInstanceIds,
+            programme,
+            inputMonitoredTrackIds: input.topology.inputMonitoredTrackIds,
+        }),
+        input.topology.stripTracks
+    );
+    if (hostedStripIds.size === 0) {
+        return programme;
+    }
     return readLiveGraphProgramme({
         stripTracks: input.topology.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
         sampleRate: input.sampleRate,
+        engineHostedStripIds: hostedStripIds,
     });
 }
 

@@ -15,16 +15,21 @@
  * is pinned there; what this file owns is which law reaches it.
  */
 
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+
+vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
+    getCompensationDelay: vi.fn(() => 0),
+}));
 
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { readLiveAutomationWrites } from '../readLiveAutomationWrites';
 
@@ -229,6 +234,7 @@ beforeEach(() => {
     // parameter needs are met, so the seam is the only thing left to decide it.
     nativeLiveGraphSession.carriedStripIds = new Set([TRACK.id]);
     nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK.id, [HOSTED_DEVICE.id]]]);
+    vi.mocked(getCompensationDelay).mockClear();
 });
 
 afterEach(() => {
@@ -251,6 +257,20 @@ describe('readLiveAutomationWrites', () => {
             deviceId: HOSTED_DEVICE.id,
             parameterId: '7',
         });
+    });
+
+    // A write's own delay has to match the programme's, and that programme
+    // excluded an engine-compensated device on every strip the session
+    // carries. Reading the arguments rather than a figure, because the
+    // correction is invisible in a project holding no such device.
+    it('delays its writes against the strips the session carries', () => {
+        fillSeam();
+
+        readOneRegion();
+
+        expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([
+            [TRACK.id, undefined, nativeLiveGraphSession.carriedStripIds],
+        ]);
     });
 
     it('admits no lane for a parameter id the seam’s law refuses', () => {

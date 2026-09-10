@@ -65,6 +65,16 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
      * reason `transportMaps` is passed in rather than read here.
      */
     sampleRate: number;
+    /**
+     * The strips the native engine carries whose chains hold a device it
+     * compensates itself.
+     *
+     * Empty by default, which is what a web-carried session wants: every
+     * device counts, and a gated-shut worklet's reported figure is what aligns
+     * the strip. A native session names its own carriers here so the engine's
+     * hold is not counted a second time on this side.
+     */
+    engineHostedStripIds?: ReadonlySet<string>;
 }>;
 
 export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): LiveGraphProgramme {
@@ -81,6 +91,6 @@ export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): Live
         projectPpqEndpoints: project,
         resolveTempoAtBeat,
         readBuffer: (bufferId) => audioBufferCache.get(bufferId),
-        compensationDelaySeconds: getCompensationDelay,
+        compensationDelaySeconds: (stripId) => getCompensationDelay(stripId, undefined, input.engineHostedStripIds),
     });
 }

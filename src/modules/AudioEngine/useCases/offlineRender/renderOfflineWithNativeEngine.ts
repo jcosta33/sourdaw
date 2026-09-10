@@ -201,6 +201,10 @@ export async function renderOfflineWithNativeEngine(
 
     const busIds = new Set(renderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackIds = new Set(renderableTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
+    // This engine hosts every strip in the render, so every strip's own
+    // engine-compensated devices are the engine's to hold back rather than
+    // this projection's to count.
+    const engineHostedStripIds: ReadonlySet<string> = new Set(renderableTracks.map((track) => track.id));
 
     // ── Strips, exactly as the web path seeds them ─────────────────────────
     const stripCommands = renderableTracks.map((track): AudioGraphCommand => {
@@ -250,7 +254,7 @@ export async function renderOfflineWithNativeEngine(
     // ── Programme: automation writes and clip playbacks per scheduled track ─
     function buildTrackProgramme(track: Track): ProgrammeConversion {
         const commands: AudioGraphCommand[] = [];
-        const compensationDelay = getCompensationDelay(track.id);
+        const compensationDelay = getCompensationDelay(track.id, undefined, engineHostedStripIds);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
 
         // The same lane set, gate and grain the web scheduler reads

@@ -2,7 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { getTrackLatency } from './getTrackLatency';
 
-export function getMaxTrackLatency(): number {
+export function getMaxTrackLatency(engineHostedStripIds?: ReadonlySet<string>): number {
     const state = trackStore.value;
     if (!state) {
         return 0;
@@ -10,7 +10,7 @@ export function getMaxTrackLatency(): number {
 
     let maxMs = 0;
     for (const track of state.tracks) {
-        const latency = getTrackLatency(track.id);
+        const latency = getTrackLatency(track.id, new Set(), undefined, engineHostedStripIds);
         if (latency.totalLatencyMs > maxMs) {
             maxMs = latency.totalLatencyMs;
         }

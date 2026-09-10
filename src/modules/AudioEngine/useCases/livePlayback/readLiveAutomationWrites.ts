@@ -69,6 +69,7 @@ import {
 
 import { isDeviceCarriedByNativeSession } from './isDeviceCarriedByNativeSession';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
+import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
     projectLiveAutomationWrites,
     type LiveAutomationWrites,
@@ -291,7 +292,12 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         changes,
         projectBeatToSeconds,
         sampleRate,
-        compensationDelaySeconds: getCompensationDelay,
+        // The session has claimed its strips by the time a writer arms, so the
+        // carried set is the engine-hosted set: a write's own delay has to
+        // match the programme's, and that programme excluded an
+        // engine-compensated device on every strip the engine carries.
+        compensationDelaySeconds: (stripId) =>
+            getCompensationDelay(stripId, undefined, nativeLiveGraphSession.carriedStripIds),
         vcaMultiplierByTrackId,
         slewTickSeconds: automationSlewTickSecondsForGrain(
             transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs

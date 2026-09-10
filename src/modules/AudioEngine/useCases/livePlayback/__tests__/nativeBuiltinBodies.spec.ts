@@ -26,6 +26,7 @@ import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBacke
 import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
+import { isLatencyCompensatedByEngine } from '../isLatencyCompensatedByEngine';
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
@@ -135,6 +136,30 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('crust').soundsNotes).toBe(false);
         expect(bodyOf('grinder').soundsNotes).toBe(false);
         expect(bodyOf('bacteria').soundsNotes).toBe(false);
+    });
+
+    // Mirrors `PluginCore::declared_latency_frames`, which is what decides
+    // whether the mapper publishes a latency for the body at registration.
+    // Every entry answers, because a body that declares a figure and is left
+    // counted on this side too is compensated twice.
+    it('states which bodies the engine compensates for itself', () => {
+        expect(bodyOf('bacteria').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('knead').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('fermenter').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('grand-boule').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('gluten').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('crust').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('grinder').latencyCompensatedByEngine).toBe(false);
+    });
+
+    // A device type with no native body is nothing the engine could be
+    // compensating, and the predicate is read on project device types — which
+    // include `external-plugin` and every Web Audio-only built-in.
+    it('answers the compensation question for a type with no native body', () => {
+        expect(isLatencyCompensatedByEngine('bacteria')).toBe(true);
+        expect(isLatencyCompensatedByEngine('Bacteria')).toBe(true);
+        expect(isLatencyCompensatedByEngine('external-plugin')).toBe(false);
+        expect(isLatencyCompensatedByEngine('builtin-eq')).toBe(false);
     });
 });
 
