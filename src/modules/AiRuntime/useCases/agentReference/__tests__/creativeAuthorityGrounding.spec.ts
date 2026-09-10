@@ -237,15 +237,15 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
-    it('refuses a clip gain the ordinary route requires the request to name', () => {
+    it('refuses a clip gain the ordinary route requires the request to state a number for', () => {
         const result = bridge({
             calls: [{ name: 'setClipGain', arguments: { clipId: 'guitar-clip-1', gain: 0.5 } }],
-            prompt: QUIETER_RADIO_PROMPT,
+            prompt: 'set Guitar Take clip volume to taste',
         });
 
         expect(result.actions).toEqual([]);
         expect(result.rejections).toMatchObject([
-            { name: 'setClipGain', reason: 'Provider action is not grounded in the user request' },
+            { name: 'setClipGain', reason: 'Provider value gain does not match the user request' },
         ]);
     });
 
@@ -253,7 +253,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
         const result = bridge({
             calls: [{ name: 'setClipGain', arguments: { clipId: 'guitar-clip-1', gain: 0.5 } }],
             creativeAuthority: buildAuthority(),
-            prompt: QUIETER_RADIO_PROMPT,
+            prompt: 'set Guitar Take clip volume to taste',
         });
 
         expect(result.rejections).toEqual([]);
@@ -274,7 +274,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
-    it('refuses a parameter value that moves against the direction the request stated', () => {
+    it('refuses a parameter value that moves against the direction the request stated for that parameter', () => {
         const result = bridge({
             calls: [
                 {
@@ -284,7 +284,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
             ],
             creativeAuthority: buildAuthority(),
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness',
+            prompt: 'make it darker, lower the brightness and boost the drive',
         });
 
         expect(result.actions).toEqual([]);
@@ -293,7 +293,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
-    it('grounds a parameter value that obeys the direction the request stated', () => {
+    it('grounds a parameter value that obeys the direction stated for that parameter, ignoring a direction stated for another', () => {
         const withoutAuthority = bridge({
             calls: [
                 {
@@ -302,7 +302,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
                 },
             ],
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness',
+            prompt: 'make it darker, lower the brightness and boost the drive',
         });
 
         expect(withoutAuthority.actions).toEqual([]);
@@ -316,7 +316,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
             ],
             creativeAuthority: buildAuthority(),
             projectContext: brightnessContext,
-            prompt: 'make it darker, lower the brightness',
+            prompt: 'make it darker, lower the brightness and boost the drive',
         });
 
         expect(result.rejections).toEqual([]);
@@ -392,5 +392,20 @@ describe('creative authority grounding in the tool-call bridge', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toMatch(/^Creative authority /u);
+    });
+
+    it('leaves a creative call standing when a cue in the same prompt withdraws a different planned action', () => {
+        const result = bridge({
+            calls: [addRadioFilter, { name: 'muteTrack', arguments: { trackId: 'bass' } }],
+            creativeAuthority: buildAuthority(),
+            prompt: 'make it sound like a radio, mute the bass, actually never mind the mute',
+        });
+
+        expect(result.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'guitar', deviceType: 'radio-filter' } },
+        ]);
+        expect(result.rejections).toMatchObject([
+            { name: 'muteTrack', reason: 'Creative authority does not extend to monitoring effects' },
+        ]);
     });
 });

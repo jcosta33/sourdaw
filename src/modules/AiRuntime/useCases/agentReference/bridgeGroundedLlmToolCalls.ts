@@ -3032,8 +3032,12 @@ function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
 
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
 
+function containsPhraseInMaskedText(maskedText: string, phrases: readonly string[]): boolean {
+    return phrases.some((phrase) => getIntentPhraseIndex(maskedText, phrase) >= 0);
+}
+
 function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly string[]): boolean {
-    return phrases.some((phrase) => getIntentPhraseIndex(actionScope.masked, phrase) >= 0);
+    return containsPhraseInMaskedText(actionScope.masked, phrases);
 }
 
 function validateTrackGainDirection(
@@ -3072,6 +3076,34 @@ const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise
 
 const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'turn down', 'reduce'];
 
+type DeviceParameterDirectionDevice = ProjectContext['tracks'][number]['devices'][number];
+type DeviceParameterDirectionParameter = NonNullable<DeviceParameterDirectionDevice['parameters']>[number];
+
+function clauseNamesToken(clause: PromptClauseSpan, tokens: readonly string[]): boolean {
+    const normalizedClause = ` ${normalizePromptText(clause.text)} `;
+    return tokens.some((token) => token.length > 0 && normalizedClause.includes(` ${token} `));
+}
+
+/**
+ * The clauses a direction word is read from: the ones naming the parameter itself, or — for a
+ * parameter this batch is still creating and so has no name a clause could echo yet — the ones
+ * naming the device. A direction stated for a different target must never decide this one.
+ */
+function selectDeviceParameterDirectionClauses(
+    actionScope: ActionPromptScope,
+    parameter: DeviceParameterDirectionParameter,
+    device: DeviceParameterDirectionDevice
+): readonly PromptClauseSpan[] {
+    const clauses = getPromptClauses(actionScope.text, actionScope.masked);
+    const parameterTokens = [normalizePromptText(parameter.id), normalizePromptText(parameter.name)];
+    const parameterClauses = clauses.filter((clause) => clauseNamesToken(clause, parameterTokens));
+    if (parameterClauses.length > 0) {
+        return parameterClauses;
+    }
+    const deviceTokens = [normalizePromptText(device.id), normalizePromptText(device.type)];
+    return clauses.filter((clause) => clauseNamesToken(clause, deviceTokens));
+}
+
 function validateDeviceParameterDirection(
     assertedValue: number,
     actionScope: ActionPromptScope,
@@ -3080,16 +3112,32 @@ function validateDeviceParameterDirection(
 ): boolean {
     const deviceId = groundedArguments.deviceId;
     const parameterId = groundedArguments.paramId;
-    const parameter = context.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)
-        ?.parameters?.find((candidate) => candidate.id === parameterId);
+    const device = context.tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === parameterId);
+    if (!parameter || !device) {
+        return false;
+    }
+    const namingClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device);
+    if (namingClauses.length > 0) {
+        const namingText = namingClauses.map((clause) => clause.masked);
+        const statesIncrease = namingText.some((text) =>
+            containsPhraseInMaskedText(text, DEVICE_PARAMETER_INCREASE_PHRASES)
+        );
+        const statesDecrease = namingText.some((text) =>
+            containsPhraseInMaskedText(text, DEVICE_PARAMETER_DECREASE_PHRASES)
+        );
+        if (statesIncrease) {
+            return assertedValue > parameter.value;
+        }
+        if (statesDecrease) {
+            return assertedValue < parameter.value;
+        }
+        return true;
+    }
     const statesIncrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_INCREASE_PHRASES);
     const statesDecrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_DECREASE_PHRASES);
-    // A device this batch is still creating carries no baseline, so a direction the request stated
-    // can never be shown to have been obeyed and only a request that stated none is answerable.
-    if (!parameter) {
-        return !statesIncrease && !statesDecrease;
+    if (statesIncrease && statesDecrease) {
+        return false;
     }
     if (statesIncrease) {
         return assertedValue > parameter.value;
@@ -3774,6 +3822,24 @@ function matchesCreativeAdmittedTarget(
 }
 
 /**
+ * Whether this target is a `setDeviceParameter` paramId asserted against a device the same batch is
+ * still creating. The admission pushes the paramId target itself — not the `$` reference — so
+ * `matchesCreativeAdmittedTarget` would otherwise ground any paramId without checking it against the
+ * device the batch is actually creating. The batch-local binding branch below is what proves
+ * membership, so the creative match must defer to it here.
+ */
+function isCreativeCreatedDeviceParameterTarget(
+    targetRule: GroundingRules['targetRules'][number],
+    assertedDeviceId: unknown
+): boolean {
+    return (
+        targetRule.capability === 'device-parameter' &&
+        typeof assertedDeviceId === 'string' &&
+        assertedDeviceId.startsWith('$')
+    );
+}
+
+/**
  * The scope a plan-created call is read against. No clause named this action, so the whole request
  * stands in: it carries the creation evidence that admitted the call, and nothing narrower exists.
  */
@@ -4156,6 +4222,7 @@ function groundToolCall({
         }
         if (
             creativeAdmission?.status === 'admitted' &&
+            !isCreativeCreatedDeviceParameterTarget(targetRule, call.arguments.deviceId) &&
             matchesCreativeAdmittedTarget(creativeAdmission, targetRule, assertedValue)
         ) {
             groundedArguments[targetRule.argument] = assertedValue;

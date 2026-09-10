@@ -391,6 +391,37 @@ const shaperProposeTurn = {
     ],
 };
 
+/**
+ * Same shape as `shaperProposeTurn`, but the parameter targets the created device by its batch-local
+ * `$` reference and names an id `tone-shaper` never published, so membership must still be checked.
+ */
+const shaperUnpublishedParameterProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-shaper-unpublished-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    ...batchPlan,
+                    capabilityIds: ['addDevice', 'setDeviceParameter'],
+                    objective: 'Shape the selected track.',
+                },
+                commands: [
+                    {
+                        name: 'addDevice',
+                        arguments: { trackId: 'track-guitar', deviceType: 'tone-shaper', binding: 'shaper' },
+                    },
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: '$shaper', paramId: 'resonance', value: 5000 },
+                    },
+                ],
+            },
+        },
+    ],
+};
+
 /** Two proposals in one turn is a loop-level refusal, reached after the interpretation was admitted. */
 const doubleProposeTurn = {
     status: 'complete' as const,
@@ -576,6 +607,17 @@ describe('creative interpretation in provider planning', () => {
             { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'tone-shaper' } },
             { type: 'setDeviceParameter', payload: { paramId: 'cutoff', value: 2200 } },
         ]);
+    });
+
+    it('refuses a parameter on the device the same admitted batch creates when the device never published it', async () => {
+        scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperUnpublishedParameterProposeTurn]);
+
+        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe(
+            'Provider action rejected: setDeviceParameter: Target paramId is not grounded in the user request'
+        );
     });
 
     it('refuses the same batch when the run never admitted an interpretation', async () => {
