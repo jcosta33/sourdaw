@@ -582,6 +582,27 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expectBrightnessRejected(prompt, 0.3);
     });
 
+    it('does not bind the "turn" direction to a particle from a trailing purpose clause', () => {
+        const prompt = 'the filter is too much, turn it down to clean up the mix';
+
+        expectBrightnessRejected(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('states no direction when the only "up"/"down" token sits past a "to" purpose clause', () => {
+        const prompt = 'turn on the reverb to warm up the mix';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('reads an increase from the "boost" phrase', () => {
+        const prompt = 'boost the brightness';
+
+        expectBrightnessGrounded(prompt, 0.8);
+        expectBrightnessRejected(prompt, 0.3);
+    });
+
     it('grounds a bypass intent the request never phrased', () => {
         const result = bridge({
             calls: [{ name: 'bypassDevice', arguments: { deviceId: 'guitar-eq-1', bypassed: true } }],

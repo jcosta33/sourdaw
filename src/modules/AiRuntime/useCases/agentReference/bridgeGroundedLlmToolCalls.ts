@@ -2537,11 +2537,14 @@ const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise
 
 const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'reduce'];
 
-/** How many tokens `turn ... up`/`turn ... down` may skip, so it still reads across the object it names (`turn the brightness down`) without crossing into an unrelated clause. */
+/** How many tokens `turn ... up`/`turn ... down` may skip, so it still reads across the object it names (`turn the brightness down`) without crossing into another particle or `to`, which stops the gap. */
 const TURN_DIRECTION_MAX_GAP_TOKENS = 4;
 
 function statesTurnDirection(maskedClause: string, direction: 'down' | 'up'): boolean {
-    const pattern = new RegExp(`\\bturn\\b(?:\\s+\\S+){0,${TURN_DIRECTION_MAX_GAP_TOKENS}}?\\s+${direction}\\b`, 'u');
+    const pattern = new RegExp(
+        `\\bturn\\b(?:\\s+(?!(?:up|down|to)\\b)\\S+){0,${TURN_DIRECTION_MAX_GAP_TOKENS}}?\\s+${direction}\\b`,
+        'u'
+    );
     return pattern.test(normalizePromptText(maskedClause));
 }
 
