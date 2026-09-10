@@ -361,6 +361,22 @@ describe('admitCreativeCommandBatch', () => {
         );
     });
 
+    it('refuses a parameter edit on a device the authority names and protects at once', () => {
+        expectRejection(
+            admitOne(
+                buildAuthority({
+                    targets: [guitarTrackTarget],
+                    prohibitions: [{ kind: 'protect-object', objectId: 'guitar' }],
+                }),
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-eq-1', paramId: 'gain', value: 3 },
+                }
+            ),
+            'protects object guitar'
+        );
+    });
+
     it('refuses the same parameter edit when no admitted call in the batch creates that device', () => {
         expectRejection(
             admitOne(buildAuthority({}), {

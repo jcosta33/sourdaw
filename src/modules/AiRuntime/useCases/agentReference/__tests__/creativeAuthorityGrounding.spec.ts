@@ -91,6 +91,37 @@ const ambiguousDeviceTypeContext: ProjectContext = {
     ],
 };
 
+/** A brightness parameter with a baseline, so a stated direction has something to move away from. */
+const brightnessContext: ProjectContext = {
+    ...context,
+    tracks: [
+        {
+            ...guitarTrack,
+            deviceCount: 2,
+            devices: [
+                ...guitarTrack.devices,
+                {
+                    id: 'guitar-filter-1',
+                    type: 'filter',
+                    bypassed: false,
+                    parameters: [
+                        {
+                            id: 'brightness',
+                            name: 'Brightness',
+                            type: 'float',
+                            value: 0.6,
+                            minValue: 0,
+                            maxValue: 1,
+                            unit: '',
+                        },
+                    ],
+                },
+            ],
+        },
+        bassTrack,
+    ],
+};
+
 function buildAuthority(overrides: Partial<CreativeRequestAuthority> = {}): CreativeRequestAuthority {
     return {
         schemaVersion: 1,
@@ -167,6 +198,32 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
+    it('refuses the same device when the request withdrew the change without naming this command', () => {
+        const result = bridge({
+            calls: [addRadioFilter],
+            creativeAuthority: buildAuthority(),
+            prompt: 'make it sound like a radio, but never mind, leave it unchanged',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'addDevice', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
+    it('refuses the same device when the request phrased this command negatively', () => {
+        const result = bridge({
+            calls: [addRadioFilter],
+            creativeAuthority: buildAuthority(),
+            prompt: "make it sound like a radio, but don't add any devices",
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'addDevice', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
     it('refuses a gain that contradicts the direction the request stated without a number', () => {
         const result = bridge({
             calls: [{ name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 1 } }],
@@ -180,15 +237,29 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
-    it('grounds a gain the request left open in the direction it stated', () => {
+    it('refuses a clip gain the ordinary route requires the request to name', () => {
         const result = bridge({
-            calls: [{ name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 0.5 } }],
+            calls: [{ name: 'setClipGain', arguments: { clipId: 'guitar-clip-1', gain: 0.5 } }],
+            prompt: QUIETER_RADIO_PROMPT,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'setClipGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
+    it('grounds that same clip gain once the admitted authority covers the clip', () => {
+        const result = bridge({
+            calls: [{ name: 'setClipGain', arguments: { clipId: 'guitar-clip-1', gain: 0.5 } }],
             creativeAuthority: buildAuthority(),
             prompt: QUIETER_RADIO_PROMPT,
         });
 
         expect(result.rejections).toEqual([]);
-        expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'guitar', gain: 0.5 } }]);
+        expect(result.actions).toMatchObject([
+            { type: 'setClipGain', payload: { clipId: 'guitar-clip-1', gain: 0.5 } },
+        ]);
     });
 
     it('grounds a parameter value the request never stated', () => {
@@ -200,6 +271,57 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(result.rejections).toEqual([]);
         expect(result.actions).toMatchObject([
             { type: 'setDeviceParameter', payload: { deviceId: 'guitar-eq-1', paramId: 'gain', value: 4 } },
+        ]);
+    });
+
+    it('refuses a parameter value that moves against the direction the request stated', () => {
+        const result = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'make it darker, lower the brightness',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+    });
+
+    it('grounds a parameter value that obeys the direction the request stated', () => {
+        const withoutAuthority = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            projectContext: brightnessContext,
+            prompt: 'make it darker, lower the brightness',
+        });
+
+        expect(withoutAuthority.actions).toEqual([]);
+
+        const result = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'make it darker, lower the brightness',
+        });
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 } },
         ]);
     });
 

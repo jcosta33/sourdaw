@@ -1566,6 +1566,37 @@ function isActionCancelledByPrompt({
     return hasActionCancellation;
 }
 
+/**
+ * Whether the request refuses to let its whole text stand in as this action's scope.
+ *
+ * A whole-prompt scope claims the request as a whole delegated this command, so a withdrawal the
+ * request did not hand to some other planned action lands on it, and so does a clause phrasing this
+ * command's own intent negatively. Both are vocabulary about this work, which is what the creative
+ * route may not paper over; a withdrawal aimed at a different planned action leaves it standing.
+ */
+function refusesCreativeWholePromptScope(input: {
+    actionName: string;
+    catalog: GroundingCatalog;
+    groundingRules: GroundingRules;
+    prompt: string;
+    plannedActionNames: readonly string[];
+}): boolean {
+    const searchableText = input.prompt.toLocaleLowerCase();
+    const withdrawsThisAction = getCancellationCues(searchableText).some((cue) => {
+        const referencedAction = getReferencedCancellationAction(cue, input.catalog);
+        const cancelledAction =
+            referencedAction ??
+            getNearestIntentAction(searchableText, input.catalog, cue.index, input.plannedActionNames);
+        return cancelledAction === null || cancelledAction === input.actionName;
+    });
+    if (withdrawsThisAction) {
+        return true;
+    }
+    return getPromptClauses(input.prompt, input.prompt).some((clause) =>
+        input.groundingRules.intentPhrases.some((phrase) => isNegatedIntent(clause.masked, phrase))
+    );
+}
+
 function resolveActionPromptScope({
     actionName,
     actionOrdinal,
@@ -3037,6 +3068,10 @@ function validateTrackPanDirection(assertedValue: number, actionScope: ActionPro
     return true;
 }
 
+const DEVICE_PARAMETER_INCREASE_PHRASES: readonly string[] = ['increase', 'raise', 'turn up', 'boost'];
+
+const DEVICE_PARAMETER_DECREASE_PHRASES: readonly string[] = ['decrease', 'lower', 'turn down', 'reduce'];
+
 function validateDeviceParameterDirection(
     assertedValue: number,
     actionScope: ActionPromptScope,
@@ -3049,13 +3084,17 @@ function validateDeviceParameterDirection(
         .flatMap((track) => track.devices)
         .find((device) => device.id === deviceId)
         ?.parameters?.find((candidate) => candidate.id === parameterId);
+    const statesIncrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_INCREASE_PHRASES);
+    const statesDecrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_DECREASE_PHRASES);
+    // A device this batch is still creating carries no baseline, so a direction the request stated
+    // can never be shown to have been obeyed and only a request that stated none is answerable.
     if (!parameter) {
-        return false;
+        return !statesIncrease && !statesDecrease;
     }
-    if (containsPromptPhrase(actionScope, ['increase'])) {
+    if (statesIncrease) {
         return assertedValue > parameter.value;
     }
-    if (containsPromptPhrase(actionScope, ['decrease'])) {
+    if (statesDecrease) {
         return assertedValue < parameter.value;
     }
     return true;
@@ -3947,11 +3986,15 @@ function groundToolCall({
         sameActionCallCount,
         workflowCapabilityId,
     });
-    // A cancelled action is the one null scope the creative authority must not paper over: the
-    // request named this work and then withdrew it, which is vocabulary, not silence.
     const admitsCreativeWholePrompt =
         admitsCreativeCall &&
-        !isActionCancelledByPrompt({ actionName: call.name, catalog, context, prompt, plannedActionNames });
+        !refusesCreativeWholePromptScope({
+            actionName: call.name,
+            catalog,
+            groundingRules,
+            prompt,
+            plannedActionNames,
+        });
     const actionScope =
         resolvedActionScope ??
         (admitsPlanCreatedObject || admitsCreativeWholePrompt ? buildWholePromptActionScope(prompt, context) : null);
@@ -4218,6 +4261,7 @@ function groundToolCall({
             }
             if (
                 !admitsPlanCreatedObject &&
+                !admitsCreativeCall &&
                 !containsBatchLocalCreationEvidence(
                     targetPrompt,
                     batchLocalReference.binding,
@@ -4241,7 +4285,7 @@ function groundToolCall({
             (binding) => binding.createdId === dependencyValue && binding.createdDeviceType !== undefined
         );
         if (
-            admitsPlanCreatedObject &&
+            (admitsPlanCreatedObject || admitsCreativeCall) &&
             call.name === 'setDeviceParameter' &&
             targetRule.capability === 'device-parameter' &&
             createdDeviceParameterBinding !== undefined &&

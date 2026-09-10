@@ -296,6 +296,101 @@ const radioProposeTurn = {
     ],
 };
 
+/**
+ * A request that describes a sound and carries no anaphora, so nothing in it can point at the device
+ * the batch creates: only the admitted authority can reach that device.
+ */
+const WARMTH_PROMPT = 'make the sound warmer and more distant';
+
+const shaperContext: ProjectContext = {
+    ...radioContext,
+    availableDeviceTypes: [
+        ...(radioContext.availableDeviceTypes ?? []),
+        {
+            id: 'tone-shaper',
+            name: 'Tone Shaper',
+            parameters: [
+                {
+                    id: 'cutoff',
+                    name: 'Cutoff',
+                    type: 'float',
+                    value: 8000,
+                    minValue: 20,
+                    maxValue: 20_000,
+                    unit: 'Hz',
+                },
+            ],
+        },
+    ],
+};
+
+const shaperCatalog = prepareCreativeInterpretationCatalog({
+    prompt: WARMTH_PROMPT,
+    context: shaperContext,
+    projectRevision: REVISION,
+});
+
+const shaperDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-shaper-1',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addDevice', 'setDeviceParameter'] },
+        },
+    ],
+};
+
+const shaperInterpretationTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'interpretation-shaper-1',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: shaperCatalog.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: ['target-1'],
+                editDimensionCandidateIds: ['dimension-processing'],
+                constraintCandidateIds: [],
+                creationSlotIds: [
+                    shaperCatalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
+                ],
+                uncertainty: 'none',
+            },
+        },
+    ],
+};
+
+/**
+ * The direct command form, because a bound creation takes no bulk selector while the semantic list
+ * form reaches an existing track only through one, so no list item can both bind the created device
+ * and place it on the selected track.
+ */
+const shaperProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-shaper-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    ...batchPlan,
+                    capabilityIds: ['addDevice', 'setDeviceParameter'],
+                    objective: 'Shape the selected track.',
+                },
+                commands: [
+                    {
+                        name: 'addDevice',
+                        arguments: { trackId: 'track-guitar', deviceType: 'tone-shaper', binding: 'shaper' },
+                    },
+                    { name: 'setDeviceParameter', arguments: { deviceId: '$shaper', paramId: 'cutoff', value: 2200 } },
+                ],
+            },
+        },
+    ],
+};
+
 /** Two proposals in one turn is a loop-level refusal, reached after the interpretation was admitted. */
 const doubleProposeTurn = {
     status: 'complete' as const,
@@ -468,6 +563,18 @@ describe('creative interpretation in provider planning', () => {
         expect(result.actions.length).toBeGreaterThanOrEqual(1);
         expect(result.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'radio-filter' } },
+        ]);
+    });
+
+    it('grounds a parameter on the device the same admitted batch creates', async () => {
+        scriptTurns([shaperDiscoverTurn, shaperInterpretationTurn, shaperProposeTurn]);
+
+        const result = await parsePromptToActions(WARMTH_PROMPT, shaperContext, undefined, REVISION);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'tone-shaper' } },
+            { type: 'setDeviceParameter', payload: { paramId: 'cutoff', value: 2200 } },
         ]);
     });
 
