@@ -415,13 +415,13 @@ pub enum GraphCommand {
     /// compensation ceiling is applied where a delay is aimed rather than here.
     /// `dry_delay` is the line that runs in the device's place while it is
     /// bypassed, built on the control thread because the audio thread may
-    /// neither build one nor free one (ADR 0020). A device whose figure only
-    /// this command moves is shipped one exactly when the figure is non-zero
-    /// ([`crate::pdc::CompensationDelay::for_latency`]); a body whose own
-    /// writes move its figure is shipped one whatever the figure is
-    /// ([`crate::pdc::CompensationDelay::standing_line`]), because the audio
-    /// thread can re-aim a line it holds and cannot build one it does not. The
-    /// line this command replaces leaves over the retirement channel.
+    /// neither build one nor free one (ADR 0020). A device whose latency
+    /// stands through its own bypass is shipped one exactly when the figure is
+    /// non-zero ([`crate::pdc::CompensationDelay::for_latency`]); a body whose
+    /// figure follows its own bypass is shipped none at all, because it
+    /// declares 0 on the one pass a dry line is read on and the bypassed pass
+    /// is then already the identity. The line this command replaces leaves
+    /// over the retirement channel.
     SetEffectLatency {
         effect_id: usize,
         latency_frames: usize,
@@ -917,10 +917,14 @@ impl GraphCommand {
     /// at the previous topology, and the mix is early or late until some
     /// unrelated command happens to dirty it.
     ///
-    /// Bypass is deliberately absent. A bypassed device keeps its latency and
-    /// runs its dry line in its place, so the alignment is unchanged — and
-    /// re-aiming every delay on an A/B would put a discontinuity in the mix
-    /// exactly where an engineer is listening for one.
+    /// Bypass is deliberately absent. A hosted plugin and a line-carrying
+    /// built-in keep their latency through bypass and run the dry line in the
+    /// device's place, so the alignment is unchanged — and re-aiming every
+    /// delay on an A/B would put a discontinuity in the mix exactly where an
+    /// engineer is listening for one. A body the engine reads its own figure
+    /// off declares 0 instead ([`ActiveEffect::refresh_declared_latency`]), and
+    /// it is that moved declaration that dirties the pass; the bypass itself
+    /// still does not.
     pub(crate) const fn dirties_compensation(&self) -> bool {
         match self {
             // The declared figure itself, and the chain memberships and routes
@@ -2181,18 +2185,22 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 ///   (`crates/sourdaw-native/src/commands/graph.rs`) reads
 ///   [`PluginCore::declared_latency_frames`] off the body it just built from
 ///   the persisted record, and sends a [`GraphCommand::SetEffectLatency`]
-///   behind the registration carrying that figure and a
-///   [`CompensationDelay::standing_line`] aimed at it. The line stands even at
-///   zero, because the audio thread may not build one later.
+///   behind the registration carrying that figure — 0 where the record is
+///   bypassed — and no dry line.
+/// - **This body ships and holds no dry line.** A dry line is read on the
+///   bypassed pass alone (`run_dry_delay`), and that is the pass on which this
+///   body declares 0: the pass hands the block on untouched, which is exactly
+///   the identity a line aimed at 0 would be. So there is no pass on which a
+///   line here could hold anything, and one shipped anyway would be fed on
+///   every block the body ran and read on none of them.
 /// - **The audio thread keeps it current.** Every write that lands on this
 ///   body — the `SetParam` drain arm and the automation queue's `Builtin`
 ///   apply — is followed by [`ActiveEffect::refresh_declared_latency`], which
-///   re-reads the engine, re-aims the standing dry line and dirties the
-///   compensation pass. `update_graph` recomputes on the next block, so a
-///   mid-roll `oversampling`, `distortionMode`, `codecArtifact`,
-///   `spectralEnabled` or `globalRouting` change re-aims every route meeting
-///   this strip within one block of the write rather than at the next
-///   Stop/Play.
+///   re-reads the engine and dirties the compensation pass. `update_graph`
+///   recomputes on the next block, so a mid-roll `oversampling`,
+///   `distortionMode`, `codecArtifact`, `spectralEnabled` or `globalRouting`
+///   change re-aims every route meeting this strip within one block of the
+///   write rather than at the next Stop/Play.
 ///
 /// A bypassed Bacteria declares nothing, which is where this body parts from a
 /// hosted plugin: a plugin keeps its latency through bypass so an A/B never
@@ -2215,10 +2223,10 @@ fn bare_bacteria_param_name(name: &str) -> &str {
 /// sums its per-band figures under `Serial`, so six bands each running the
 /// spectral stage's 2048-sample window, Smudge's 2048-sample window at 1x and
 /// the codec's 256-sample frame report 26112 frames — past
-/// [`MAX_COMPENSATION_FRAMES`]'s 16384. The standing line and every sibling
-/// route then clamp at the ceiling, and the clamp is counted through the
-/// `pdc_clamped_routes` diagnostic rather than silently obeyed or silently
-/// dropped, which is the convention that constant's own documentation states.
+/// [`MAX_COMPENSATION_FRAMES`]'s 16384. Every sibling route then clamps at the
+/// ceiling, and the clamp is counted through the `pdc_clamped_routes`
+/// diagnostic rather than silently obeyed or silently dropped, which is the
+/// convention that constant's own documentation states.
 /// The `externalLatencyRegistry` path this replaces had no ceiling at all: it
 /// asked Web Audio for whatever delay was reported, so a patch this deep is
 /// newly a clamped alignment rather than an exact one.
@@ -2512,18 +2520,19 @@ struct ActiveEffect {
     /// This device's own dry delay, run in its place while it is bypassed.
     ///
     /// Bypass keeps latency (Cubase and Reaper both do this), so A/B-ing a
-    /// bypass never shifts the strip's alignment against the rest of the mix.
-    /// The exception is a body the engine reads its own figure off: that figure
-    /// follows the bypass ([`Self::refresh_declared_latency`]), so the line is
-    /// re-aimed to zero with it and the bypassed pass runs the identity.
-    /// `None` for a device that has never declared a latency — most built-ins,
-    /// and a hosted plugin before its host publishes a figure. Built on the
-    /// control thread and carried in by [`GraphCommand::SetEffectLatency`].
+    /// bypass never shifts the strip's alignment against the rest of the mix,
+    /// and this line is what holds the route at the declared depth while the
+    /// device itself is out of the signal. `None` for a device that has never
+    /// declared a latency — most built-ins, and a hosted plugin before its host
+    /// publishes a figure. Built on the control thread and carried in by
+    /// [`GraphCommand::SetEffectLatency`].
     ///
-    /// `Some` at a zero delay is a real state, not a contradiction: a body
-    /// whose own writes move its figure is registered with a standing line
-    /// ([`CompensationDelay::standing_line`]) so the audio thread has one to
-    /// re-aim, and a line at zero is the identity on the bypassed pass.
+    /// `None` for a body the engine reads its own figure off as well, a
+    /// Bacteria included: that figure follows the bypass
+    /// ([`Self::refresh_declared_latency`]), so on the one pass a line is read
+    /// the body declares 0 and the pass hands the block on untouched. There is
+    /// nothing for a line to hold there, and nothing here to re-aim when the
+    /// figure moves.
     dry_delay: Option<Box<CompensationDelay>>,
     /// This device's hold on the depth of its strip's input, run over its
     /// output before that output joins the chain signal.
@@ -3154,9 +3163,12 @@ impl ActiveEffect {
     /// then deepened before its new chain has fed it that far owes the same
     /// silence a still-detached one does.
     ///
-    /// The control thread cannot see which of the two cases it is in, so it
-    /// ships a line whenever the figure is non-zero and the spare leaves over
-    /// the retirement route. Nothing here allocates or frees (ADR 0020), and a
+    /// The control thread cannot see which of the two cases it is in, so for a
+    /// device whose latency stands through its own bypass it ships a line
+    /// whenever the figure is non-zero, and the spare leaves over the
+    /// retirement route. A body whose figure follows its own bypass is shipped
+    /// none at any figure, having no pass on which one could be read
+    /// ([`Self::dry_delay`]). Nothing here allocates or frees (ADR 0020), and a
     /// restart costs the newly declared latency rather than the ring.
     fn aim_dry_line(
         &mut self,
@@ -3190,13 +3202,12 @@ impl ActiveEffect {
     /// `update_graph` re-aims every route meeting this strip on the next block
     /// rather than at the next Stop/Play.
     ///
-    /// The dry line is re-aimed here rather than replaced, exactly as
-    /// [`Self::aim_dry_line`] re-aims it: the ring is built at the ceiling and
-    /// the chain has been feeding it, so this is a read-offset jump into audio
-    /// that is already current. Nothing allocates or frees (ADR 0020), which is
-    /// what makes this callable from the callback at all: a device registered
-    /// with [`crate::pdc::CompensationDelay::standing_line`] already holds the
-    /// line, and one holding none simply has none to aim.
+    /// There is no dry line to re-aim. Such a body is registered holding none
+    /// ([`Self::dry_delay`]), because the one pass a dry line is read on is the
+    /// bypassed pass and that is the pass this body declares 0 on. So this
+    /// writes the declared figure and nothing else, and nothing here allocates
+    /// or frees (ADR 0020), which is what makes it callable from the callback
+    /// at all.
     ///
     /// A bypassed body declares nothing. The declared figure is what the
     /// strip's signal is really delayed by, and a bypassed body delays nothing
@@ -3224,9 +3235,6 @@ impl ActiveEffect {
             return false;
         }
         self.latency_frames = declared;
-        if let Some(line) = self.dry_delay.as_mut() {
-            line.set_delay(declared);
-        }
         true
     }
 
@@ -9024,14 +9032,16 @@ mod tests {
         /// callback, so neither may allocate.
         ///
         /// The pair is guarded rather than the write alone because the refresh
-        /// is what re-aims the standing dry line, and a line re-aimed in place
-        /// owns no allocation while a line rebuilt for the new figure would be
-        /// the very free-and-allocate ADR 0020 forbids.
+        /// is what publishes the moved figure to the graph, and a refresh that
+        /// reached for a dry line — building one, freeing one, or swapping a
+        /// fresh ring in for the new figure — would be the very
+        /// allocate-and-free ADR 0020 forbids. This body holds no dry line at
+        /// all, and the assertion below is what says so.
         ///
-        /// The moved figure and the moved line are the oracle: a guard around
-        /// a refresh that answered nothing at all would pass on any body, so
-        /// the write is one the engine's reported latency really follows —
-        /// 2x oversampling to 8x, whose delivered delays daw-dsp pins.
+        /// The moved figure is the oracle: a guard around a refresh that
+        /// answered nothing at all would pass on any body, so the write is one
+        /// the engine's reported latency really follows — 2x oversampling to
+        /// 8x, whose delivered delays daw-dsp pins.
         #[test]
         fn a_bacteria_latency_refresh_runs_under_the_allocation_guard() {
             const OPENING: usize = 7;
@@ -9049,10 +9059,8 @@ mod tests {
                 "the fixture opens at the figure the body really reports"
             );
             assert!(
-                effect
-                    .aim_dry_line(OPENING, Some(CompensationDelay::standing_line(OPENING)))
-                    .is_none(),
-                "a registration ships the only line the effect holds"
+                effect.aim_dry_line(OPENING, None).is_none(),
+                "a registration ships this body no line, so none can leave the slot"
             );
 
             let mut applied = true;
@@ -9074,14 +9082,9 @@ mod tests {
                 effect.latency_frames, MOVED,
                 "the effect still declares the figure it was registered with"
             );
-            assert_eq!(
-                effect
-                    .dry_delay
-                    .as_ref()
-                    .expect("the registration's standing line")
-                    .delay(),
-                MOVED,
-                "the standing dry line stayed at the opening figure"
+            assert!(
+                effect.dry_delay.is_none(),
+                "the refresh put a dry line on a body that ships and holds none"
             );
         }
 
@@ -17680,8 +17683,8 @@ mod timeline_tests {
     }
 
     /// A Bacteria placed the way `commands/graph.rs` places one: registered
-    /// detached, its opening figure declared with the standing dry line the
-    /// registration ships, then spliced at the head of a track's chain.
+    /// detached, its opening figure declared with no dry line, then spliced at
+    /// the head of a track's chain.
     ///
     /// The declared figure is checked against the body's own reading, so a
     /// spec's pinned literal cannot drift away from what the engine reports
@@ -17703,7 +17706,7 @@ mod timeline_tests {
         harness.send(GraphCommand::SetEffectLatency {
             effect_id,
             latency_frames,
-            dry_delay: Some(CompensationDelay::standing_line(latency_frames)),
+            dry_delay: None,
         });
         harness.send(insert_track_device(track_id, effect(effect_id), 0));
     }
@@ -17810,58 +17813,6 @@ mod timeline_tests {
         );
     }
 
-    /// The line a registration ships is the line the audio thread re-aims: it
-    /// cannot build one and cannot free one, so a write that moves the figure
-    /// has to move the standing line with it. Left where it was, the line would
-    /// hold the strip at the opening figure on the next bypassed pass while
-    /// every other route was re-aimed to the new one.
-    ///
-    /// The spectral stage's whole window against the opening oversampling
-    /// figure, because a jump of that size is the one a session really makes
-    /// and the one a fresh ring would answer with a hold's worth of silence.
-    #[test]
-    fn a_bacteria_write_re_aims_its_standing_dry_line() {
-        const OPENING: usize = 7;
-        const WITH_SPECTRAL: usize = 2_055;
-
-        let mut harness = Harness::new(32);
-        harness.playing();
-        track_with_ramp_clip(&mut harness, 1, 101, 128);
-        declare_bacteria_on_track(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], OPENING);
-
-        harness.render(16);
-        assert_eq!(
-            harness.scheduler.effects[0]
-                .dry_delay
-                .as_ref()
-                .expect("the registration's standing line")
-                .delay(),
-            OPENING,
-            "the registration did not aim its standing line at the opening figure"
-        );
-
-        harness.send(GraphCommand::SetParam(
-            7,
-            bacteria_write("band0_spectralEnabled"),
-            1.0,
-        ));
-
-        let effect = &harness.scheduler.effects[0];
-        assert_eq!(
-            effect.latency_frames, WITH_SPECTRAL,
-            "the effect declares the figure it was registered with rather than the one the body now reports"
-        );
-        assert_eq!(
-            effect
-                .dry_delay
-                .as_ref()
-                .expect("the registration's standing line")
-                .delay(),
-            WITH_SPECTRAL,
-            "the standing dry line stayed at the opening figure"
-        );
-    }
-
     /// A bypassed Bacteria declares nothing, and the routes held back to meet
     /// it are released with it.
     ///
@@ -17871,8 +17822,13 @@ mod timeline_tests {
     /// stood through bypass would hold this strip's whole mix back by a window
     /// no signal in it is waiting for, and flam every web strip beside it by
     /// exactly that. The bare strip's arrival is what says the pass was
-    /// re-aimed, and the un-bypass is what says the figure came back rather
-    /// than being lost with the line.
+    /// re-aimed, and the un-bypass is what says the figure came back.
+    ///
+    /// The slot holds no dry line on either footing. A line is read on the
+    /// bypassed pass alone, and this body declares 0 there, so a line would be
+    /// fed on every block the body ran and read on none of them — dead
+    /// audio-thread work, and a hold the strip's signal is not waiting for if
+    /// the figure ever reached it.
     #[test]
     fn a_bypassed_bacteria_declares_no_latency_and_releases_the_mix() {
         const DECLARED: usize = 7;
@@ -17894,6 +17850,10 @@ mod timeline_tests {
             delayed_ramp(0, 16, DECLARED),
             "the bare strip was not held back to meet the declared figure"
         );
+        assert!(
+            harness.scheduler.effects[0].dry_delay.is_none(),
+            "the registration left a dry line on a slot no pass of this body reads one from"
+        );
 
         harness.send(GraphCommand::SetBypass(7, true));
 
@@ -17908,14 +17868,9 @@ mod timeline_tests {
             effect.latency_frames, 0,
             "the bypassed body goes on declaring its window to the graph"
         );
-        assert_eq!(
-            effect
-                .dry_delay
-                .as_ref()
-                .expect("the registration's standing line")
-                .delay(),
-            0,
-            "the bypassed pass runs a dry line the strip's signal is not waiting for"
+        assert!(
+            effect.dry_delay.is_none(),
+            "the bypass left a dry line on the very pass this body hands the block on untouched"
         );
 
         harness.send(GraphCommand::SetBypass(7, false));

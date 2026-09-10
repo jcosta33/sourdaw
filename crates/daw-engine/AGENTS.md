@@ -106,7 +106,9 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   the same device runs in Web Audio, where a bypass is a true bypass and the renderer's own reading
   drops a bypassed device, so a native declaration under bypass would flam every web strip beside it
   by the whole figure. The cost is one bounded re-aim of the native mix per A/B, which is the re-aim
-  the web schedule already takes for the same bypass.
+  the web schedule already takes for the same bypass. Such a body carries no dry line at all,
+  because the bypassed pass is already the identity for it: the pass a line is read on is the pass
+  the body declares 0 on, so the bullet below stays true rather than gaining an exception.
 - **Every line is written on every block it renders**: a route line and a dry line alike take
   exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
   holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits

@@ -105,29 +105,6 @@ impl CompensationDelay {
         Some(delay)
     }
 
-    /// The dry line a device needs from its registration onwards, aimed at
-    /// `latency_frames` — zero included, where [`Self::for_latency`] answers
-    /// `None`.
-    ///
-    /// A body whose figure the audio thread itself moves needs a line standing
-    /// from the start, because that thread may build none later: it can only
-    /// re-aim what it already holds (ADR 0020). A built-in that reports zero
-    /// today and a window's worth of overlap-add after the next write is
-    /// exactly that body, so its line is shipped whatever the opening figure
-    /// is, and the first write that moves the figure is a read-offset jump like
-    /// any other.
-    ///
-    /// Built at the ceiling for the reason [`Self::for_latency`] gives, and
-    /// aimed the same way. What differs is only the zero: a line at zero delay
-    /// is the identity on the bypassed pass ([`Self::process`] returns without
-    /// touching the ring, and its caller feeds it instead), so a device that
-    /// declares nothing yet costs the mix nothing while it holds one.
-    pub fn standing_line(latency_frames: usize) -> Box<Self> {
-        let mut delay = Box::new(Self::new(MAX_COMPENSATION_FRAMES));
-        delay.set_delay(latency_frames);
-        delay
-    }
-
     pub(crate) fn capacity(&self) -> usize {
         self.left.len() - 1
     }

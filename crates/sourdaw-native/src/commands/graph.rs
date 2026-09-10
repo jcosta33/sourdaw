@@ -150,7 +150,6 @@ use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::pdc::CompensationDelay;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
     precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
@@ -2185,25 +2184,23 @@ fn map_device(
     // refuses a latency for an id its effect table does not yet hold, and the
     // ring applies commands in the order they are pushed.
     //
-    // The line ships whatever the figure is, zero included: this body's own
-    // writes move the figure, and the audio thread can re-aim a line it holds
-    // and cannot build one it does not (ADR 0020). At zero it is the identity
-    // on the bypassed pass, so it costs the mix nothing while it waits.
+    // No dry line goes with it. A dry line is read on the bypassed pass alone
+    // (`run_dry_delay`, `crates/daw-engine/src/scheduler.rs`), and that is the
+    // pass on which this body declares 0: the pass hands the block on
+    // untouched, which is exactly the identity a line aimed at 0 would be. So
+    // there is no pass on which a line here could hold anything, and shipping
+    // one would only feed a ring the mix never reads.
     //
-    // A bypassed record declares zero and ships the line anyway. Such a body
-    // delays nothing on either carrier — the renderer drops a bypassed device
-    // from its own reading, and the web twin's bypass hands the block on
-    // untouched — so declaring the figure would hold every route meeting this
-    // strip back by a window nothing in it is waiting for. The line has to
-    // stand from the registration regardless, because the un-bypass that
-    // brings the figure back lands on the audio thread and it cannot build one
-    // there.
+    // The figure follows the record's bypass, and the declaration still
+    // precedes the `SetBypass` below: the graph refuses a latency for an id it
+    // does not hold, so registration, declaration, bypass is the only order
+    // that lands all three. The figure sent is already the bypassed one, so
+    // the bypass that follows finds the graph aimed where it wants it.
     if let Some(reported_latency) = declared_latency {
-        let latency_frames = if device.bypassed { 0 } else { reported_latency };
         ops.push(GraphCommand::SetEffectLatency {
             effect_id,
-            latency_frames,
-            dry_delay: Some(CompensationDelay::standing_line(latency_frames)),
+            latency_frames: if device.bypassed { 0 } else { reported_latency },
+            dry_delay: None,
         });
     }
     for (param, value) in param_writes {
@@ -11595,6 +11592,12 @@ mod tests {
     /// the figure worth reading — a whole 2048-sample overlap-add window
     /// (`crates/daw-dsp/src/bacteria/stft.rs`) over the engine's own
     /// unoversampled default.
+    ///
+    /// The declaration carries no dry line, and that is read here rather than
+    /// left to the engine: a line is read on the bypassed pass alone, where
+    /// this body declares 0 and the pass hands the block on untouched, so a
+    /// line shipped from the mapper would be fed on every block the body ran
+    /// and read on none of them.
     #[test]
     fn a_bacteria_record_declares_the_latency_its_engine_reports() {
         const SPECTRAL_WINDOW: usize = 2_048;
@@ -11634,21 +11637,22 @@ mod tests {
             "the declared figure is not the one the record's engine reports"
         );
         assert!(
-            line_present,
-            "the declaration ships no dry line, so a bypassed pass would drop the hold"
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
         );
     }
 
-    /// A record whose engine reports nothing is declared too, and it is
-    /// declared holding a line.
+    /// A default record is declared too, at the figure its own engine reports
+    /// for that record, and with no line.
     ///
-    /// This body's own writes move its figure, and the audio thread can only
-    /// re-aim a line it already holds (ADR 0020). A registration that shipped
-    /// no line at zero would leave the first write that engages a latent stage
-    /// with nothing to aim, so the strip would keep passing a bypassed
-    /// Bacteria straight through while every other route waited for it.
+    /// The declaration is unconditional rather than shipped only for a
+    /// non-zero figure: a later write engaging a latent stage moves the figure
+    /// on the audio thread, and the graph has to have been told which id to
+    /// re-read it from. The default engine reports nothing, so the figure read
+    /// here is zero — and no line goes with it, because a line is read on the
+    /// bypassed pass alone and this body declares 0 there.
     #[test]
-    fn a_bacteria_record_reporting_nothing_still_ships_a_standing_line() {
+    fn a_default_bacteria_record_declares_its_default_figure_with_no_line() {
         let mapped = map_unbound_batch(
             &batch(strip_with_device("d-bac", "bacteria", json!({}))),
             &mut GraphRegistry::default(),
@@ -11662,22 +11666,22 @@ mod tests {
                 .iter()
                 .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
                 .collect::<Vec<_>>(),
-            vec![(0, true)],
-            "an unconfigured bacteria is not declared at zero with a line standing"
+            vec![(0, false)],
+            "a default bacteria is not declared at its default figure without a line"
         );
     }
 
-    /// A bypassed record declares zero, and still ships the line standing.
+    /// A bypassed record declares zero, and ships no line.
     ///
     /// A bypassed body delays nothing on either carrier, so declaring its
     /// reported window would hold every route meeting this strip back by a
-    /// figure the strip's signal is not waiting for. The line has to stand
-    /// anyway: the un-bypass that brings the figure back lands on the audio
-    /// thread, which can re-aim a line it holds and cannot build one (ADR
-    /// 0020). The spectral stage is what makes the zero worth reading — a
-    /// whole 2048-sample window the same record declares un-bypassed.
+    /// figure the strip's signal is not waiting for. Nor does a line stand in
+    /// the figure's place: the bypassed pass is already the identity for this
+    /// body, so a line would be dead weight on the audio thread rather than a
+    /// hold. The spectral stage is what makes the zero worth reading — a whole
+    /// 2048-sample window the same record declares un-bypassed.
     #[test]
-    fn a_bypassed_bacteria_record_declares_zero_with_a_standing_line() {
+    fn a_bypassed_bacteria_record_declares_zero_and_ships_no_line() {
         let mapped = map_unbound_batch(
             &batch(json!([{
                 "kind": "create-track-strip",
@@ -11707,8 +11711,8 @@ mod tests {
                 .iter()
                 .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
                 .collect::<Vec<_>>(),
-            vec![(0, true)],
-            "a bypassed bacteria is not declared at zero with a line standing"
+            vec![(0, false)],
+            "a bypassed bacteria is not declared at zero without a line"
         );
         assert!(
             declarations[0].0 < bypass_position,
