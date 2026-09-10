@@ -241,9 +241,12 @@ function bezierSeamControlPoints(
  * and `stairSteps = s − k` would replay them exactly. The seam declines that
  * realignment — it would carry a step count the musician never authored onto
  * user-visible, editable fragment data — and keeps the authored count, which
- * is exact nowhere: off-edge cuts space the surviving edges non-uniformly in
- * the re-based span, and the final edge would need a count of 1, below the
- * evaluator's minimum of 2. `smooth`
+ * is exact nowhere else: off-edge the surviving edges stay uniformly spaced
+ * (constant gap 1/(s·(1−f)) in the re-based span), but placing them on the
+ * fragment's own uniform lattice needs `stairSteps = s·(1−f)`, an integer
+ * only on an edge — equivalently, the leading partial step is narrower than
+ * the step gap, which no uniform count reproduces. The final edge would need
+ * a count of 1, below the evaluator's minimum of 2. `smooth`
  * (Catmull-Rom) reads its end tangents from neighboring points' values; the
  * seam has no left neighbor, so it and the following segment evaluate changed
  * tangents, and the two phantom values a carried left point could supply
