@@ -198,6 +198,113 @@ const listProposeTurn = (input: {
     ],
 });
 
+const guitarTrack: ProjectContextTrack = {
+    id: 'track-guitar',
+    name: 'Guitar',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    soloSafe: false,
+    armed: false,
+    frozen: false,
+    gain: 0.8,
+    pan: 0,
+    automationMode: 'read',
+    clipCount: 0,
+    deviceCount: 0,
+    clips: [],
+    devices: [],
+};
+
+/** A request that describes a sound and names nothing, against a project with a selected track. */
+const RADIO_PROMPT = 'make it sound like a radio';
+
+const radioContext: ProjectContext = {
+    ...context,
+    availableDeviceTypes: [
+        { id: 'radio-filter', name: 'Radio Filter' },
+        { id: 'compressor', name: 'Compressor' },
+    ],
+    tracks: [guitarTrack, bassTrack],
+    selectedTrackId: 'track-guitar',
+};
+
+const radioCatalog = prepareCreativeInterpretationCatalog({
+    prompt: RADIO_PROMPT,
+    context: radioContext,
+    projectRevision: REVISION,
+});
+
+const radioDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-radio-1',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addDevice'] },
+        },
+    ],
+};
+
+const radioInterpretationTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'interpretation-radio-1',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: radioCatalog.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: ['target-1'],
+                editDimensionCandidateIds: ['dimension-processing'],
+                constraintCandidateIds: [],
+                creationSlotIds: [
+                    radioCatalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
+                ],
+                uncertainty: 'none',
+            },
+        },
+    ],
+};
+
+const radioProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-radio-1',
+            name: 'command.batch.propose',
+            arguments: {
+                plan: { ...batchPlan, capabilityIds: ['addDevice'], objective: 'Shape the selected track.' },
+                list: {
+                    schemaVersion: 1,
+                    items: [
+                        {
+                            id: 'device-1',
+                            name: 'addDevice',
+                            arguments: { deviceType: 'radio-filter' },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Guitar' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    ],
+};
+
+/** Two proposals in one turn is a loop-level refusal, reached after the interpretation was admitted. */
+const doubleProposeTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        { id: 'propose-a', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
+        { id: 'propose-b', name: 'command.batch.propose', arguments: { commands: gainCommands, plan: batchPlan } },
+    ],
+};
+
 function readCompilation() {
     const compilations = vi.mocked(compileArbitraryCommandList).mock.results;
     expect(compilations).toHaveLength(1);
@@ -348,6 +455,41 @@ describe('creative interpretation in provider planning', () => {
         const corrected = await correctionRun(original ?? null);
 
         expect(corrected.rejectionReason).toBeUndefined();
+        expect(corrected.creativeAuthority?.authorityId).toBe(original?.authorityId);
+    });
+
+    it('grounds a command the request never named through the admitted authority', async () => {
+        scriptTurns([radioDiscoverTurn, radioInterpretationTurn, radioProposeTurn]);
+
+        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.creativeAuthority?.mode).toBe('edit');
+        expect(result.actions.length).toBeGreaterThanOrEqual(1);
+        expect(result.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'track-guitar', deviceType: 'radio-filter' } },
+        ]);
+    });
+
+    it('refuses the same batch when the run never admitted an interpretation', async () => {
+        scriptTurns([radioDiscoverTurn, radioProposeTurn]);
+
+        const result = await parsePromptToActions(RADIO_PROMPT, radioContext, undefined, REVISION);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBeDefined();
+        expect(result.creativeAuthority).toBeUndefined();
+    });
+
+    it('reports the reused authority on a correction run the loop itself refuses', async () => {
+        scriptTurns([discoverTurn, interpretationTurn, proposeTurn()]);
+        const original = (await parsePromptToActions(PROMPT, context, undefined, REVISION)).creativeAuthority;
+        expect(original?.authorityId).toBeDefined();
+
+        scriptTurns([discoverTurn, interpretationTurn, doubleProposeTurn]);
+        const corrected = await correctionRun(original ?? null);
+
+        expect(corrected.rejectionReason).toMatch(/^Provider planning rejected: /u);
         expect(corrected.creativeAuthority?.authorityId).toBe(original?.authorityId);
     });
 

@@ -2,6 +2,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
+import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import {
     isAgentReferenceCapabilityCandidate,
@@ -159,16 +160,6 @@ function containsQualifiedClipReference(prompt: string, reference: string): bool
     );
 }
 
-function isClipCapability(capability: AgentReferenceCapability): boolean {
-    return (
-        capability === 'clip' ||
-        capability === 'editable-clip' ||
-        capability === 'editable-audio-clip' ||
-        capability === 'editable-midi-clip' ||
-        capability === 'writable-midi-clip'
-    );
-}
-
 type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
 
 function containsQualifiedTrackOwnerReference(prompt: string, reference: string): boolean {
@@ -220,19 +211,7 @@ function getTrackCandidates(
     capability: AgentReferenceCapability,
     context: ProjectContext
 ): ReferenceCandidate[] | null {
-    if (
-        [
-            'track',
-            'armable-track',
-            'duplicable-track',
-            'removable-track',
-            'routable-source',
-            'bus',
-            'output',
-            'device-host-track',
-            'vca-member-track',
-        ].includes(capability)
-    ) {
+    if (getAgentReferenceCapabilityKind(capability) === 'track') {
         return context.tracks.filter((track) =>
             isAgentReferenceCapabilityCandidate({ capability, context, id: track.id })
         );
@@ -246,7 +225,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
         return trackCandidates;
     }
 
-    if (isClipCapability(input.capability)) {
+    if (getAgentReferenceCapabilityKind(input.capability) === 'clip') {
         let tracks = input.context.tracks;
         if (!hasExplicitClipSelection(input.prompt)) {
             const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
@@ -411,7 +390,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     const excludedIds = new Set(input.excludedIds ?? []);
     const trackCandidates = getTrackCandidates(input.capability, input.context);
     const hasTrackSelection = trackCandidates !== null && hasExplicitTrackSelection(input.prompt);
-    const hasClipSelection = isClipCapability(input.capability) && hasExplicitClipSelection(input.prompt);
+    const hasClipSelection =
+        getAgentReferenceCapabilityKind(input.capability) === 'clip' && hasExplicitClipSelection(input.prompt);
     let selectedReferenceId: string | null | undefined;
     if (hasTrackSelection) {
         selectedReferenceId = input.context.selectedTrackId;
@@ -494,7 +474,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
             return { status: 'rejected', reason: 'ungrounded-target' };
         }
     }
-    if (isClipCapability(input.capability)) {
+    if (getAgentReferenceCapabilityKind(input.capability) === 'clip') {
         const owningTrack = input.context.tracks.find((track) =>
             track.clips.some((clip) => clip.id === input.assertedId)
         );

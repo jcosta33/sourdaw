@@ -200,6 +200,20 @@ describe('prepareCreativeInterpretationCatalog', () => {
         expect(catalog.modes).toEqual(['create', 'read-only']);
     });
 
+    it('gives every published creation slot its own selectable candidate id', () => {
+        const catalog = prepareCreativeInterpretationCatalog({
+            prompt: 'make it sound like a radio',
+            context: createContext({ tracks: [track('track-lead', 'Lead Vocals')], selectedTrackId: 'track-lead' }),
+            projectRevision: REVISION,
+        });
+
+        const candidateIds = catalog.creationSlots.map((slot) => slot.candidateId);
+        expect(new Set(candidateIds).size).toBe(candidateIds.length);
+        // A duplicate id resolves to whichever slot came first, so the later ones could never be
+        // selected at all: the device slot below is exactly the one a processing request needs.
+        expect(catalog.creationSlots.map((slot) => slot.objectType)).toEqual(['track', 'clip', 'notes', 'device']);
+    });
+
     it('keeps the catalog id stable for equal inputs and moves it when the request changes', () => {
         const context = createContext({ tracks: [track('track-lead', 'Lead Vocals')] });
         const input = { context, projectRevision: REVISION };
