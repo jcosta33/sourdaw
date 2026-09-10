@@ -1,97 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-    type AgentDataCategory,
-    type RemoteTransmissionDisclosure,
-} from '../../models/AgentDataPolicy';
+import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
-    type ModelProviderBudget,
-    type ModelProviderEvent,
     type ModelProviderFinish,
-    type ModelProviderModality,
-    type ModelProviderName,
-    type ModelProviderOperation,
     type ModelProviderPartialOutputDisposition,
-    type ModelProviderRequest,
     type ModelProviderResult,
 } from '../../models/ModelProviderProtocol';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
-import { createModelProviderProtocol } from '../modelProviderProtocol';
 
-// Minimal copies of the fixture helpers from modelStreamProtocol.spec.ts (createRequest, eventEnvelope,
-// finishEnvelope), reshaped to accept overrides for provider, modality, and remote data-policy admission
-// without modifying that spec.
-
-type CreateRequestOptions = {
-    provider?: ModelProviderName;
-    modality?: ModelProviderModality;
-    operation?: ModelProviderOperation;
-    budget?: ModelProviderBudget;
-    limits?: { maxOutputTokens: number };
-    dataPolicy?: 'local-only' | 'remote-allowed';
-    dataCategories?: AgentDataCategory[];
-    remoteDisclosure?: RemoteTransmissionDisclosure;
-    correlationId?: string;
-    requestId?: string;
-};
-
-function createRequest(options: CreateRequestOptions = {}) {
-    const provider = options.provider ?? 'webllm';
-    const protocol = createModelProviderProtocol({ provider, model: 'fixture-model' });
-    const compiled = protocol.compileRequest({
-        correlationId: options.correlationId ?? 'correlation-1',
-        runId: 'run-1',
-        requestId: options.requestId ?? 'request-1',
-        cancellationGeneration: 0,
-        operation: options.operation ?? 'text',
-        modality: options.modality ?? 'text',
-        messages: [{ role: 'user', content: 'Set the tempo.' }],
-        stream: true,
-        limits: options.limits ?? { maxOutputTokens: 256 },
-        controls: { cache: 'provider-default', reasoning: 'provider-default' },
-        budget: options.budget ?? { maxInputTokens: 1_024, maxOutputTokens: 256, maxTotalTokens: 1_280 },
-        dataPolicy: options.dataPolicy ?? 'local-only',
-        ...(options.dataCategories === undefined ? {} : { dataCategories: options.dataCategories }),
-        ...(options.remoteDisclosure === undefined ? {} : { remoteDisclosure: options.remoteDisclosure }),
-    });
-    return { protocol, compiled };
-}
-
-function readyRequest(options: CreateRequestOptions = {}) {
-    const { protocol, compiled } = createRequest(options);
-    if (compiled.status !== 'ready') {
-        throw new Error(compiled.failure.safeMessage);
-    }
-    return { protocol, request: compiled.request };
-}
-
-type RequestIdentity = Pick<ModelProviderRequest, 'runId' | 'requestId' | 'correlationId' | 'cancellationGeneration'>;
-
-function eventEnvelope(request: RequestIdentity, sequence: number, event: ModelProviderEvent) {
-    return {
-        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
-        runId: request.runId,
-        requestId: request.requestId,
-        correlationId: request.correlationId,
-        cancellationGeneration: request.cancellationGeneration,
-        sequence,
-        event,
-    };
-}
-
-function finishEnvelope(request: RequestIdentity, sequence: number, finish: ModelProviderFinish) {
-    return {
-        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
-        runId: request.runId,
-        requestId: request.requestId,
-        correlationId: request.correlationId,
-        cancellationGeneration: request.cancellationGeneration,
-        sequence,
-        finish,
-    };
-}
+import { createRequest, eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
 
 type FinishTableRow = {
     name: string;
@@ -323,7 +241,7 @@ describe('model provider protocol', () => {
     it('retains unknown future provider events by name until the terminal outcome, without throwing', () => {
         const { protocol, request } = readyRequest();
         const session = protocol.start(request);
-        const names = ['response.future_thing', 'response.future_thing', 'response.future_thing'];
+        const names = ['response.future_thing', 'message_stop', 'response.future_thing'];
 
         for (const [index, name] of names.entries()) {
             session.push(eventEnvelope(request, index, { type: 'unknown', providerEventType: name }));
@@ -357,12 +275,9 @@ describe('model provider protocol', () => {
         expect(Object.keys(result).sort()).toEqual(RESULT_KEYS);
         expect(result.schemaVersion).toBe(MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION);
 
-        // Live-code pin (contradicts the dispatch's expectation of a remoteDisclosure key on a
-        // remote-admitted result): createSession's resultForFinish (useCases/modelProviderProtocol.ts
-        // ~662-740) never assigns `remoteDisclosure` on its own result, and createModelProviderStreamWriter
-        // returns that result unchanged. Only a caller such as streamHostedModelText.ts merges the
-        // {requestId, categories, retention} shape in afterward. The raw protocol result therefore carries
-        // the same 11 keys whether or not the request was remote-admitted.
+        // createSession's resultForFinish never assigns `remoteDisclosure` on its own result, and
+        // createModelProviderStreamWriter returns that result unchanged; only a caller such as
+        // streamHostedModelText.ts merges the {requestId, categories, retention} shape in afterward.
         const remoteDisclosure = remoteTransmissionDisclosure.issue({
             categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
             correlationId: 'correlation-1',

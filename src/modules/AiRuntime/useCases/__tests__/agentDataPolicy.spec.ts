@@ -10,7 +10,8 @@ import {
     type AgentDataRetention,
 } from '../../models/AgentDataPolicy';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
-import { createModelProviderProtocol } from '../modelProviderProtocol';
+
+import { createRequest, finishEnvelope } from './modelProviderProtocolFixture';
 
 // Mirrors the private REMOTE_BLOCKED_CATEGORIES set in models/AgentDataPolicy.ts, which is not exported.
 const REMOTE_BLOCKED_AGENT_DATA_CATEGORIES: readonly AgentDataCategory[] = [
@@ -99,7 +100,11 @@ describe('agent data policy', () => {
         // @ts-expect-error AgentDataRetention admits only the literal 'unknown' per dimension, never a
         // count or 'none' — this must fail to typecheck if the type is ever loosened.
         const invalidRetention: AgentDataRetention = { ...decision.retention, promptCache: 0 };
-        expect(invalidRetention.promptCache).toBe(0);
+        // @ts-expect-error Widening AgentDataRetention's value type to admit 'none' must fail here too,
+        // not only for a numeric count.
+        const loosenedRetention: AgentDataRetention = { ...decision.retention, promptCache: 'none' };
+        void invalidRetention;
+        void loosenedRetention;
 
         const disclosure = formatRemoteTransmissionDisclosure(['prompt-text']);
         expect(disclosure).toContain('prompt-text');
@@ -114,7 +119,7 @@ describe('agent data policy', () => {
         }
     });
 
-    it('requires a consumed remote disclosure before a remote-allowed session starts, and never derives it from strings', () => {
+    it('requires a consumed remote disclosure before a remote-allowed session starts', () => {
         // capabilities.dataPolicies is exactly ['remote-allowed'] for 'anthropic' (also true for 'openai');
         // 'anthropic' is picked here.
         const categories = [...REMOTE_TEXT_AGENT_DATA_CATEGORIES];
@@ -122,17 +127,10 @@ describe('agent data policy', () => {
         const requestId = 'disclosure-request-1';
         const disclosure = remoteTransmissionDisclosure.issue({ categories, correlationId, requestId });
 
-        const protocol = createModelProviderProtocol({ provider: 'anthropic', model: 'fixture-model' });
-        const compiled = protocol.compileRequest({
+        const { protocol, compiled } = createRequest({
+            provider: 'anthropic',
             correlationId,
             requestId,
-            operation: 'text',
-            modality: 'text',
-            messages: [{ role: 'user', content: 'Summarize the mix notes.' }],
-            stream: true,
-            limits: { maxOutputTokens: 256 },
-            controls: { cache: 'provider-default', reasoning: 'provider-default' },
-            budget: { maxInputTokens: 1_024, maxOutputTokens: 256, maxTotalTokens: 1_280 },
             dataPolicy: 'remote-allowed',
             dataCategories: categories,
             remoteDisclosure: disclosure,
@@ -147,24 +145,37 @@ describe('agent data policy', () => {
             'The hosted provider request lacks admitted data disclosure.'
         );
 
-        const session = protocol.start(compiled.request);
-        const result = session.finish({
-            schemaVersion: compiled.request.schemaVersion,
-            runId: compiled.request.runId,
-            requestId: compiled.request.requestId,
-            correlationId: compiled.request.correlationId,
-            cancellationGeneration: compiled.request.cancellationGeneration,
-            sequence: 0,
-            finish: { reason: 'stop' },
+        const unpublishedDisclosure = remoteTransmissionDisclosure.prepare({
+            categories,
+            correlationId: 'disclosure-correlation-2',
+            requestId: 'disclosure-request-2',
         });
+        const { protocol: unpublishedProtocol, compiled: unpublishedCompiled } = createRequest({
+            provider: 'anthropic',
+            correlationId: 'disclosure-correlation-2',
+            requestId: 'disclosure-request-2',
+            dataPolicy: 'remote-allowed',
+            dataCategories: categories,
+            remoteDisclosure: unpublishedDisclosure,
+        });
+        if (unpublishedCompiled.status !== 'ready') {
+            throw new Error(unpublishedCompiled.failure.safeMessage);
+        }
+        expect(() => unpublishedProtocol.start(unpublishedCompiled.request)).toThrow(
+            'The hosted provider request lacks admitted data disclosure.'
+        );
+
+        const session = protocol.start(compiled.request);
+        expect(() => protocol.start(compiled.request)).toThrow(
+            'The hosted provider request lacks admitted data disclosure.'
+        );
+        const result = session.finish(finishEnvelope(compiled.request, 0, { reason: 'stop' }));
 
         expect(result.status).toBe('complete');
-        // Live-code pin (contradicts the dispatch's expected observable): createSession's resultForFinish
-        // never assigns `remoteDisclosure` on the finish() result — only a caller such as
-        // streamHostedModelText.ts merges the {requestId, categories, retention} shape in afterward
-        // (see modelProviderProtocol.spec.ts "exposes only the documented result keys" for the same pin).
-        // The five-'unknown' retention record and category list this spec pins live only in
-        // AgentDataPolicy.ts / discloseRemoteTransmission.ts, never on this raw protocol result.
+        // createSession's resultForFinish never assigns `remoteDisclosure` on the finish() result — only a
+        // caller such as streamHostedModelText.ts merges the {requestId, categories, retention} shape in
+        // afterward (see modelProviderProtocol.spec.ts "exposes only the documented result keys" for the
+        // same pin).
         expect(result).not.toHaveProperty('remoteDisclosure');
     });
 });
