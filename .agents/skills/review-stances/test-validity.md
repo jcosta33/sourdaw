@@ -200,3 +200,17 @@ three slots unselectable therefore left every case green.
 Mechanical probe: for each published id family (targets, dimensions, constraints, creation slots),
 one case must select the LAST published member by id through the real admission and assert it on
 the result; then mutate the id minting to collide and confirm that case goes red.
+
+### 2026-09-10 — one trace-binding edge fixture never exercised the corresponding equality probe (escaped via commit 0a4efc74f)
+
+The helper fixture always ended the AudioWorkletNode handler after its outer callback. Its separate
+equal-endpoint case exercised only the author/outer relationship, so reverting the handler/outer
+equality rule still left every test green.
+
+Blind spot: the 2026-09-09 probe was phrased for one boundary only, and fixtures followed it
+literally without covering both boundaries (start and end) of the nesting pairs.
+
+Probe that would have caught it: for every nesting comparison independently validated, add one
+case with equal start timestamps and one with equal end timestamps; for each pair, add a third
+with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
+the narrower and existing overlap fixtures must refuse.

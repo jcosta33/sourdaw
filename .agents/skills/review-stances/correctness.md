@@ -232,3 +232,17 @@ assert the ids are pairwise distinct and that each object type or dimension the 
 selectable is reachable through the admission path, not merely present in the catalog. Read every
 id-minting closure against the statement that consumes it; a counter read inside a variadic call
 observes the pre-call length for every argument.
+
+### 2026-09-10 — one trace-binding edge kept equality at end but refused it at start (escaped via commit 0a4efc74f)
+
+0a4efc74f admitted equal END timestamps for both handler/outer and author/outer nesting while
+keeping both START boundaries strict. A Chrome trace with 2256 of 24001 callbacks tied on handler
+start was therefore refused. The start and end boundaries live on the same quantized clock.
+
+Blind spot: the stance accepted "retains strict start" as reassurance rather than asking why one
+boundary of a quantized clock differs from the other.
+
+Probe that would have caught it: for any comparison against a quantized clock, list every strict
+inequality in the function on that clock (start and end of every nesting relation) and require
+the author to justify each remaining strict one from uniqueness, not caution; a fix that admits
+equality at one boundary and keeps another strict without such justification is the finding.
