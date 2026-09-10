@@ -124,6 +124,8 @@ type GroundToolCallInput = {
     context: ProjectContext;
     /** What the admitted creative authority says about this call, when the run has one. */
     creativeAdmission?: CreativeCallAdmission;
+    /** How the admitted creative authority read the request, when the run has one. */
+    creativeAuthorityMode?: CreativeRequestAuthority['mode'];
     declaredBatchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
@@ -3241,6 +3243,7 @@ function groundToolCall({
     catalog,
     context,
     creativeAdmission,
+    creativeAuthorityMode,
     declaredBatchLocalCreationBindings,
     declaredBindingsByCallIndex,
     index,
@@ -3276,8 +3279,14 @@ function groundToolCall({
     }
     // One route, one switch. Every prompt-evidence rule below asks the request for vocabulary
     // describing an object it never named, so on this route they are all unsatisfiable together.
+    // Precedence between the two routes: a call the plan-created route admitted rides that ordinary
+    // creation route, and the creative authority — which publishes no slot under a track the same
+    // batch creates — governs only what that route leaves ordinary. A read-only authority is the one
+    // exception, because it read the request as asking for nothing to change, so it refuses every
+    // writing command on either route.
     const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
-    if (creativeAdmission?.status === 'rejected') {
+    const governedByCreativeAuthority = !admitsPlanCreatedObject || creativeAuthorityMode === 'read-only';
+    if (creativeAdmission?.status === 'rejected' && governedByCreativeAuthority) {
         return rejection(index, call.name, creativeAdmission.reason);
     }
     /**
@@ -4458,6 +4467,7 @@ export function bridgeGroundedLlmToolCalls({
                 catalog,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
+                ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),
                 declaredBatchLocalCreationBindings: collectedBindings.bindingsByName,
                 declaredBindingsByCallIndex: collectedBindings.bindingsByCallIndex,
                 index,

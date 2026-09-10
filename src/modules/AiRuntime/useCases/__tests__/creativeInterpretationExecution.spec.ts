@@ -2,13 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
+import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import {
+    clearHandlerRegistry,
+    clearMidiTransformRegistry,
+    macroStore,
+    registerHandlerMap,
+    registerMidiTransforms,
+    undoStore,
+} from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandTrackDefaultsPort,
     executeAppAction,
     redo,
     resetActionReplayAuthority,
@@ -22,6 +31,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -43,10 +53,20 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 import {
     assertDiscoveredCommandSchemas,
+    BLUES_CLIP_END_BEAT,
+    BLUES_CLIP_START_BEAT,
+    BLUES_PROMPT,
+    bluesProposalItems,
     catalogDiscoveryCall,
     cycleProviderAttempt,
+    deriveBluesNotes,
+    deriveBluesTransformCommands,
     emptyMidiState,
+    GENERATED_CLIP_ID,
+    GENERATED_TRACK_ID,
     type ProviderCall,
+    PROPOSED_COMMAND_NAMES,
+    proposeCall,
     readCreativeInterpretationCatalog,
     type ScriptedTurn,
     scriptProviderTurns,
@@ -371,6 +391,111 @@ function radioProviderTurns(input: {
     ];
 }
 
+/**
+ * One request asking for a phrase the plan invents and a treatment on the track already selected.
+ * The first clause carries the creation evidence the plan-created object route reads; the second
+ * delegates a sound on an existing track, which only the admitted creative authority reaches.
+ */
+const COMBINED_PROMPT = `${BLUES_PROMPT}, and make it sound like a radio`;
+
+const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME];
+
+/** What a read-only authority answers to every writing command, whoever else would have grounded it. */
+const READ_ONLY_REFUSAL_REASON = 'Creative authority is read-only and admits no writing command';
+
+/**
+ * The device half of the combined proposal. A semantic list item reaches an existing track only
+ * through a bounded selector (`compileArbitraryCommandList.ts` refuses a literal id with 'Targeted
+ * command requires a bounded semantic bulk selector'), so the item names the guitar track by the
+ * exact quantity of one it resolves to.
+ */
+function radioDeviceItem(trackName: string): Record<string, unknown> {
+    return {
+        id: 'add-radio',
+        name: PROPOSED_COMMAND_NAME,
+        arguments: { deviceType: RADIO_DEVICE_TYPE },
+        selector: {
+            targetArgument: 'trackId',
+            entity: 'track',
+            where: { name: trackName },
+            quantity: { unit: 'targets', exactly: 1 },
+        },
+    };
+}
+
+/** Discover the whole combined vocabulary, interpret the request, then propose both halves at once. */
+function combinedProviderTurns(input: {
+    interpretation: InterpretationSelection;
+    deviceTrackName: string;
+}): ScriptedTurn[] {
+    return [
+        () => [catalogDiscoveryCall(COMBINED_COMMAND_NAMES)],
+        (userMessage) => [
+            selectCreativeInterpretationCall({
+                catalog: readCreativeInterpretationCatalog(userMessage),
+                ...input.interpretation,
+            }),
+        ],
+        (userMessage) => {
+            assertDiscoveredCommandSchemas(userMessage, COMBINED_COMMAND_NAMES);
+            return [proposeCall([...bluesProposalItems(), radioDeviceItem(input.deviceTrackName)])];
+        },
+    ];
+}
+
+function requireCreatedBluesTrack(): Track {
+    const track = (trackStore.value?.tracks ?? []).find((candidate) => candidate.name === 'Blues Comp');
+    if (!track) {
+        throw new TypeError('Expected the batch to have created the Blues Comp track');
+    }
+    return track;
+}
+
+function requireCreatedBluesClip(): Clip {
+    const clip = requireCreatedBluesTrack().clips[0];
+    if (!clip) {
+        throw new TypeError('Expected the created Blues Comp track to hold one clip');
+    }
+    return clip;
+}
+
+/** The store keeps an id on every note; the transform contract only fixes the musical fields. */
+function getMusicalNotes(clipId: string) {
+    return (midiStore.value?.notesByClipId[clipId] ?? []).map((note) => ({
+        pitch: note.pitch,
+        startBeat: note.startBeat,
+        duration: note.duration,
+        velocity: note.velocity,
+    }));
+}
+
+function expectCommittedBluesPhrase(): void {
+    const track = requireCreatedBluesTrack();
+    expect(track).toMatchObject({ id: expect.stringMatching(GENERATED_TRACK_ID), kind: 'midi' });
+    const clip = requireCreatedBluesClip();
+    expect(clip).toMatchObject({
+        id: expect.stringMatching(GENERATED_CLIP_ID),
+        name: 'Verse',
+        startBeat: BLUES_CLIP_START_BEAT,
+        endBeat: BLUES_CLIP_END_BEAT,
+    });
+    expect(getMusicalNotes(clip.id)).toEqual(deriveBluesNotes());
+}
+
+function expectNoBluesPhrase(): void {
+    expect(getTrackNames()).toEqual(['Guitar', 'Bass']);
+    expect(Object.keys(midiStore.value?.notesByClipId ?? {})).toEqual([]);
+}
+
+async function commitCombinedRequest(): Promise<PendingAppActionConfirmation> {
+    await sendChatMessage(COMBINED_PROMPT);
+    const confirmation = requireConfirmation();
+    await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+        status: 'executed',
+    });
+    return confirmation;
+}
+
 async function commitRadioDevice(): Promise<PendingAppActionConfirmation> {
     await sendChatMessage(RADIO_PROMPT);
     const confirmation = requireConfirmation();
@@ -401,6 +526,15 @@ describe('creative interpretation execution', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        // The combined request writes a phrase as well as a device: without the note handlers and
+        // the transform registry the batch would commit with nothing registered to write or reverse
+        // the notes, and the oracle the cases read is derived from the same registry.
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        clearMidiTransformRegistry();
+        registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
+        // A created track carries an application-assigned colour; without the provider the command
+        // never materializes one and the serialized envelope is refused as non-deterministic.
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -421,12 +555,19 @@ describe('creative interpretation execution', () => {
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         // The engine keeps live strips for the process, so a device this case committed would make
         // the next case's device-chain delta disagree with the runtime graph it starts from.
-        removeTrackStrip(GUITAR_TRACK_ID);
-        removeTrackStrip(BASS_TRACK_ID);
+        for (const trackId of new Set([
+            ...(trackStore.value?.tracks ?? []).map((track) => track.id),
+            GUITAR_TRACK_ID,
+            BASS_TRACK_ID,
+        ])) {
+            removeTrackStrip(trackId);
+        }
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();
         clearHandlerRegistry();
+        clearMidiTransformRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
         clearAiHistory();
         clearPendingActionConfirmations();
         agentRunLifecycle.clear();
@@ -525,6 +666,102 @@ describe('creative interpretation execution', () => {
         expect(getDeviceTypes(BASS_TRACK_ID)).toEqual([]);
         expect(getMutedTrackIds()).toEqual([]);
         expect(getTrackNames()).toEqual(['Guitar', INJECTED_TRACK_NAME]);
+    });
+
+    it('compiles, confirms and applies the invented phrase beside the delegated treatment as one batch', async () => {
+        scriptProviderTurns(
+            runtimeMocks.generateWebLlmCompletion,
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Guitar' })
+        );
+
+        const confirmation = await commitCombinedRequest();
+
+        // Both halves ride one batch: the plan-created phrase on the ordinary creation route, the
+        // device on the creative authority that covers the selected track.
+        expect(confirmation.actions.map((action) => action.type)).toEqual([
+            'addTrack',
+            'addClip',
+            ...deriveBluesTransformCommands().map(() => 'addNotes'),
+            PROPOSED_COMMAND_NAME,
+        ]);
+        expectCommittedBluesPhrase();
+        expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getDeviceTypes(BASS_TRACK_ID)).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
+        expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
+    });
+
+    it('undoes the invented phrase and the delegated device together, then redoes both', async () => {
+        scriptProviderTurns(
+            runtimeMocks.generateWebLlmCompletion,
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Guitar' })
+        );
+
+        await commitCombinedRequest();
+
+        await undo();
+
+        expectNoBluesPhrase();
+        expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([]);
+        expect(undoStore.value?.past ?? []).toEqual([]);
+
+        await redo();
+
+        expectCommittedBluesPhrase();
+        expect(getDeviceTypes(GUITAR_TRACK_ID)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getDeviceTypes(BASS_TRACK_ID)).toEqual([]);
+    });
+
+    /**
+     * Read-only is the one reading on which the plan-created route yields: the request asked for
+     * nothing to change, so the phrase the plan invented is refused by name alongside the device
+     * rather than riding through on its own creation evidence.
+     */
+    it('refuses every writing command in the combined batch under a read-only interpretation', async () => {
+        cycleProviderAttempt(
+            runtimeMocks.generateWebLlmCompletion,
+            combinedProviderTurns({ interpretation: { modeId: 'read-only' }, deviceTrackName: 'Guitar' })
+        );
+
+        await sendChatMessage(COMBINED_PROMPT);
+
+        const refusedCommandNames = [
+            'addTrack',
+            'addClip',
+            ...deriveBluesTransformCommands().map(() => 'addNotes'),
+            PROPOSED_COMMAND_NAME,
+        ];
+        expect(getRefusal()).toBe(
+            `Provider action rejected: ${refusedCommandNames
+                .map((name) => `${name}: ${READ_ONLY_REFUSAL_REASON}`)
+                .join('; ')}`
+        );
+        expect(getPendingActionConfirmation(getConfirmationId())).toBeNull();
+        expectNoBluesPhrase();
+        expectNoDevicesAnywhere();
+        expect(undoStore.value?.past ?? []).toEqual([]);
+    });
+
+    /**
+     * The authority still answers for the half it governs: the device is the only refused call, and
+     * the refused proposal takes the admitted phrase creations down with it rather than putting a
+     * half-honoured request in front of the musician.
+     */
+    it('refuses the combined batch naming only the device when the treatment names a track the authority never covered', async () => {
+        cycleProviderAttempt(
+            runtimeMocks.generateWebLlmCompletion,
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Bass' })
+        );
+
+        await sendChatMessage(COMBINED_PROMPT);
+
+        expect(getRefusal()).toBe(
+            `Provider action rejected: ${PROPOSED_COMMAND_NAME}: Creative authority does not cover the track ${BASS_TRACK_ID}`
+        );
+        expect(getPendingActionConfirmation(getConfirmationId())).toBeNull();
+        expectNoBluesPhrase();
+        expectNoDevicesAnywhere();
+        expect(undoStore.value?.past ?? []).toEqual([]);
     });
 
     it('refuses a read-only interpretation that selects the edits a write would need', async () => {
