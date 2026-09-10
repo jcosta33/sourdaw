@@ -1,0 +1,23 @@
+src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts
+  s_06adf2b091dc62::t_14e5a2b48c61cd 3-4,6-7
+  s_06adf2b091dc62::t_504d5d3165a295 105-137
+  s_06adf2b091dc62::t_9760ec3f1e61a0 223-225,227-233,235-241,259,284,286-287
+  s_06adf2b091dc62::t_5dfd84be4d84f0 226
+  s_06adf2b091dc62::t_fb2609340baea8 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "27c64d826f1ee021ac5784cead4130d3d3617b4b",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
