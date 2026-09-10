@@ -124,6 +124,9 @@ function intervalEnd(event: TraceEvent): number {
     return event.ts + event.dur;
 }
 
+// Trace timestamps are whole microseconds; an enclosing interval and the
+// interval it encloses can begin or end in the same tick.
+
 function hasTimestampTie(events: readonly TraceEvent[]): boolean {
     return events.some((event, index) => index > 0 && event.ts === events[index - 1]?.ts);
 }
@@ -196,7 +199,7 @@ function bindHandlers(outer: readonly TraceEvent[], allHandlers: readonly TraceE
             handlerIndex++;
         }
         const handler = handlers[handlerIndex];
-        if (!handler || handler.ts >= callback.ts || intervalEnd(handler) < intervalEnd(callback)) {
+        if (!handler || handler.ts > callback.ts || intervalEnd(handler) < intervalEnd(callback)) {
             return 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler';
         }
         const pointer = handler.args.this;
@@ -227,7 +230,7 @@ function bindAuthors(outer: readonly TraceEvent[], allAuthors: readonly TraceEve
             !author ||
             author.pid !== callback.pid ||
             author.tid !== callback.tid ||
-            author.ts <= callback.ts ||
+            author.ts < callback.ts ||
             intervalEnd(author) > intervalEnd(callback)
         ) {
             return 'outer callback lacks one unambiguous contained author execution';

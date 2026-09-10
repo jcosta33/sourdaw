@@ -104,6 +104,51 @@ function observedEqualHandlerEndpointTrace(handlerDuration = 12): FixtureEvent[]
     ];
 }
 
+function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEvent[] {
+    const pid = 3941;
+    const tid = 3949;
+    const handlerThis = '0x31fc0070a880';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: handlerStart,
+            dur: 9,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 416_895_108, dur: 8, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 416_895_110, dur: 6, pid, tid, args: {} },
+        ...callback(416_895_140, 3, pid, tid, handlerThis),
+        ...callback(416_895_160, 8, pid, tid, handlerThis),
+        ...callback(416_895_190, 12, pid, tid, handlerThis),
+    ];
+}
+
+// Principle-derived, not observed: equal author start with unique enclosure.
+function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 100,
+            dur: 20,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 101, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: authorStart, dur: 10, pid, tid, args: {} },
+        ...callback(130, 3, pid, tid, handlerThis),
+        ...callback(150, 8, pid, tid, handlerThis),
+        ...callback(180, 12, pid, tid, handlerThis),
+    ];
+}
+
 describe('offline AudioWorklet trace admission', () => {
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
@@ -152,6 +197,42 @@ describe('offline AudioWorklet trace admission', () => {
         expect(admission(observedEqualHandlerEndpointTrace(11))).toEqual({
             status: 'refused',
             reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits the observed equal handler/outer start and refuses a handler starting one microsecond late', () => {
+        expect(admission(observedEqualHandlerStartTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 3941,
+            tid: 3949,
+            handlerThis: '0x31fc0070a880',
+            warmupDurationsUs: [8],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualHandlerStartTrace(416_895_109))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits an author execution starting in the callback microsecond and refuses one starting a microsecond early', () => {
+        expect(admission(equalAuthorStartTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 1,
+            tid: 2,
+            handlerThis: '0x1',
+            warmupDurationsUs: [15],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(equalAuthorStartTrace(100))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
         });
     });
 
