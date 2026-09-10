@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/admitCreativeCommandBatch.spec.ts
+  s_06adf2b091dc62::t_5cd6995e90671f 344-363
+src/modules/AiRuntime/useCases/agentReference/admitCreativeCommandBatch.ts
+  s_06adf2b091dc62::t_8410760f246253 160-173,178
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_06adf2b091dc62::t_45991813d14911 157-193
+  s_06adf2b091dc62::t_3729600f6e600c 10-12
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_f3c63f7cac9775 3389
+  s_06adf2b091dc62::t_dcf71929aae03d 1512-1525,1531,1566-1589
+  s_06adf2b091dc62::t_fc97d44011c3da 3384-3388
+  s_06adf2b091dc62::t_8c7928e10e3fd5 3950-3954,3957
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cf73e34749a5a3d3be997bee08614d6d3dfe9833",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
