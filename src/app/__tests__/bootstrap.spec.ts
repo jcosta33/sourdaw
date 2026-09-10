@@ -441,6 +441,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
+    destroyWebMidi: noop,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
