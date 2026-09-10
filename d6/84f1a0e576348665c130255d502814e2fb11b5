@@ -1,0 +1,63 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/admitCreativeCommandBatch.spec.ts
+  s_06adf2b091dc62::t_31889e138ae3ee 1-360
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationCatalog.spec.ts
+  s_06adf2b091dc62::t_8960dc42770c24 203-216
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_06adf2b091dc62::t_01287f988238ec 1-234
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_06adf2b091dc62::t_6c90ee88d6a329 52-63
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_06adf2b091dc62::t_895b2e35bbd5c2 214
+  s_06adf2b091dc62::t_90f5d1af0fbb56 5
+  s_06adf2b091dc62::t_311aef3252b32b 228,393-394,477
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_06adf2b091dc62::t_727883bd6009be 551-562
+src/modules/AiRuntime/useCases/prepareCreativeInterpretationCatalog.ts
+  s_06adf2b091dc62::t_2b7c95ec30d7cf 192-193,195-212
+src/modules/AiRuntime/useCases/agentReference/admitCreativeCommandBatch.ts
+  s_06adf2b091dc62::t_1ee71f26c9c6c3 1-46,57-178,180-445,447-457
+  s_06adf2b091dc62::t_d91499e55304f1 47-56
+  s_06adf2b091dc62::t_fa12ad85d1d74a 179
+  s_06adf2b091dc62::t_2978eca320da2f 446
+src/modules/AiRuntime/useCases/agentReference/agentReferenceCapabilityKinds.ts
+  s_06adf2b091dc62::t_31342ffbe51444 1-8,11-30,39
+  s_06adf2b091dc62::t_9240a28771100b 9-10,31-38
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  s_06adf2b091dc62::t_5398a2aa7dd240 209
+  s_06adf2b091dc62::t_aa0b464dd1b38e 201-208,210-307
+  s_06adf2b091dc62::t_f6bb1b9e54e1e9 461-495
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_f2851de54d6d16 363
+  s_06adf2b091dc62::t_caf2ff894e4672 3921
+  s_06adf2b091dc62::t_4f43b7806dda13 4296-4304
+  s_06adf2b091dc62::t_4f0bf394bbeaa7 5076
+  s_06adf2b091dc62::t_3f7e1fa06144b0 3332-3334
+  s_06adf2b091dc62::t_873547652e85f3 114-115
+  s_06adf2b091dc62::t_9a3ac8c0cbce2f 5059-5064
+  s_06adf2b091dc62::t_1fdf17222ccf26 3898-3906
+  s_06adf2b091dc62::t_6d07ae2d5a5800 3319-3331,3335-3369,3375-3407,3409-3414,3678
+  s_06adf2b091dc62::t_12684ca8570ef2 3513-3514,3521-3528
+  s_06adf2b091dc62::t_59999e42128135 31
+  s_06adf2b091dc62::t_c29c265f23e917 40
+  s_06adf2b091dc62::t_a0ed38abeac389 3679-3706
+  s_06adf2b091dc62::t_a5f28f3587c44b 4079-4085
+  s_06adf2b091dc62::t_f55dd068247625 3861
+  s_06adf2b091dc62::t_50403c0625ffa5 3922
+  s_06adf2b091dc62::t_7847ea5e606e15 5094
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d684f1a0e576348665c130255d502814e2fb11b5",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
