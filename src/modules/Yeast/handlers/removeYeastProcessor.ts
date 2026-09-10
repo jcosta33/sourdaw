@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { readYeastGrooveAssignments } from '../useCases/readYeastGrooveAssignments';
 import { removeYeastProcessor } from '../useCases/removeYeastProcessor';
 
 import { findProcessor, isSameSnapshot, readYeastRackState } from './rackState';
@@ -27,8 +28,7 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
             return { status: 'conflict' };
         }
         // Also deletes the processor's groove assignments in the MIDI store;
-        // the addYeastProcessor restore leg does not resurrect them — the
-        // accepted gap recorded on the contract's removeYeastProcessor note.
+        // the addYeastProcessor restore leg re-binds the ones captured below.
         removeYeastProcessor(action.payload.processorId);
         return { status: 'written' };
     },
@@ -39,10 +39,12 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
     describe: (action) => {
         const state = readYeastRackState();
         const processor = state ? findProcessor(state, action.payload.processorId) : undefined;
+        // describe() runs before the write, so these snapshots are the
+        // processor and its groove assignments exactly as the restore leg
+        // will re-insert / re-bind them.
+        const grooveAssignments = processor ? readYeastGrooveAssignments(action.payload.processorId) : [];
         return {
             label: 'Remove Yeast processor',
-            // describe() runs before the write, so this snapshot is the
-            // processor exactly as the restore leg will re-insert it.
             inverseAction:
                 processor === undefined
                     ? null
@@ -52,7 +54,11 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
                               processorId: action.payload.processorId,
                               type: processor.type,
                               name: processor.name,
-                              restore: { processor, atIndex: action.payload.expectedIndex },
+                              restore: {
+                                  processor,
+                                  atIndex: action.payload.expectedIndex,
+                                  grooveAssignments,
+                              },
                           },
                       },
             redoAction: {
