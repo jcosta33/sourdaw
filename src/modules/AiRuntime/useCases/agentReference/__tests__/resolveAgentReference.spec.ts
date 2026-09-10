@@ -1292,27 +1292,75 @@ describe('ranked candidates and effect gating', () => {
     });
 
     it('ranks several approximate readings by confidence and refuses to choose between them', () => {
-        const bounded = resolveRanked('mute the drum bys', 'track-drum-bus', 'track', 'bounded-reversible');
         const rankedCandidates = [
             fuzzyCandidate('track-drum-bus', 'Drum Bus', 0.875),
             fuzzyCandidate('track-drums', 'Drums', 0.8),
         ];
-
-        expect(bounded).toEqual({
+        const expected = {
             status: 'rejected',
-            reason: 'ambiguous-target',
-            candidateIds: ['track-drum-bus', 'track-drums'],
+            reason: 'low-confidence-target',
+            requirement: 'clarification',
             candidates: rankedCandidates,
-        });
+        };
+
+        expect(resolveRanked('mute the drum bys', 'track-drum-bus', 'track', 'bounded-reversible')).toEqual(expected);
         expect(rankedCandidates[0]!.confidence).toBeGreaterThan(rankedCandidates[1]!.confidence);
         expect(
             resolveRanked('delete the drum bys', 'track-drum-bus', 'removable-track', 'destructive-reversible')
-        ).toEqual({
+        ).toEqual(expected);
+    });
+
+    it('refuses a gated approximate reading that clears the fuzzy floor but not the binding floor', () => {
+        const project = createRankingProjectState();
+        const withoutTheCloserName = {
+            ...project,
+            tracks: project.tracks.filter((track) => track.id !== 'track-drums'),
+        };
+
+        const refused = resolveAgentReference({
+            prompt: 'delete the drum bys',
+            assertedId: 'track-drum-bus',
+            capability: 'removable-track',
+            context: withoutTheCloserName,
+            risk: 'destructive-reversible',
+        });
+
+        expect(refused).toEqual({
             status: 'rejected',
-            reason: 'ambiguous-target',
-            requirement: 'clarification',
-            candidateIds: ['track-drum-bus', 'track-drums'],
-            candidates: rankedCandidates,
+            reason: 'low-confidence-target',
+            requirement: 'explicit-preview',
+            candidates: [fuzzyCandidate('track-drum-bus', 'Drum Bus', 0.875)],
+        });
+        // The single reading is strong enough to rank and still too weak to act on unasked.
+        expect(refused.candidates[0]!.confidence).toBeGreaterThan(0.6);
+        expect(refused.candidates[0]!.confidence).toBeLessThan(0.75);
+    });
+
+    it('keeps an owner-qualified candidate on its approximate reading', () => {
+        const clipProject = createClipProjectState();
+        const template = clipProject.tracks[0]!;
+        const chorus = { ...template.clips[0]!, id: 'clip-chorus-one', name: 'Chorus 1' };
+        const project: ProjectContext = {
+            ...clipProject,
+            tracks: [{ ...template, id: 'track-drums', name: 'Drums', clipCount: 1, clips: [chorus] }],
+            selectedClipId: null,
+            selectedClipIds: [],
+        };
+
+        expect(
+            resolveAgentReference({
+                prompt: 'mute the clip Chorus 2 on Drums',
+                assertedId: 'clip-chorus-one',
+                capability: 'clip',
+                context: project,
+                risk: 'bounded-reversible',
+            })
+        ).toEqual({
+            status: 'resolved',
+            id: 'clip-chorus-one',
+            evidence: 'fuzzy-name',
+            confidence: 0.875 * FUZZY_CONFIDENCE_FACTOR,
+            candidates: [fuzzyCandidate('clip-chorus-one', 'Chorus 1', 0.875)],
         });
     });
 

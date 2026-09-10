@@ -2585,6 +2585,47 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('grounds a created track the request names beyond its existing near-name siblings', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar-1', name: 'Guitar 1' }),
+                createTrack({ id: 'track-guitar-2', name: 'Guitar 2' }),
+                master,
+            ],
+        };
+
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Guitar 3', kind: 'midi', binding: 'guitar3' } },
+                { name: 'addClip', arguments: { trackId: '$guitar3', startBeat: 0, endBeat: 4, name: 'Verse' } },
+            ],
+            'add a midi track named Guitar 3 and add a midi clip named Verse on the Guitar 3 track from beat 0 to beat 4',
+            context
+        );
+
+        const trackIdentity = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addTrack'
+        );
+        if (trackIdentity?.actionType !== 'addTrack') {
+            throw new Error('Expected one minted track identity');
+        }
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'addTrack', payload: { name: 'Guitar 3', kind: 'midi', select: false } },
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: trackIdentity.trackId,
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Verse',
+                    type: 'midi',
+                },
+            },
+        ]);
+    });
+
     it('grounds and projects a descriptor-backed parameter on a device the plan creates', () => {
         const prompt = 'make a new MIDI track with a filter';
         const context: ProjectContext = {

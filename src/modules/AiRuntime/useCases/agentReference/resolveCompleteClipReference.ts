@@ -80,11 +80,7 @@ export function resolveCompleteClipReference(input: ResolveCompleteClipReference
     }
     const candidateId = completeCandidateIds[0]!;
     return resolveAgentReference({
-        assertedId: input.assertedId,
-        capability: input.capability,
-        context: input.context,
-        dependencyId: input.dependencyId,
+        ...input,
         excludedIds: [...(input.excludedIds ?? []), ...(result.candidateIds ?? []).filter((id) => id !== candidateId)],
-        prompt: input.prompt,
     });
 }

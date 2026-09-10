@@ -514,6 +514,10 @@ function getFuzzyNameSimilarities(
     return similarities;
 }
 
+function isTieredEvidence(evidence: AgentReferenceEvidence | undefined): evidence is TieredEvidence {
+    return evidence !== undefined && evidence !== 'fuzzy-name';
+}
+
 function rankReferenceCandidate(
     candidate: CapabilityCandidate,
     tieredEvidence: AgentReferenceEvidence | undefined,
@@ -521,14 +525,15 @@ function rankReferenceCandidate(
     fuzzySimilarity: number | undefined
 ): ReferenceCandidate | null {
     const scored: { confidence: number; evidence: AgentReferenceEvidence }[] = [];
-    if (tieredEvidence !== undefined && tieredEvidence !== 'fuzzy-name') {
+    if (isTieredEvidence(tieredEvidence)) {
         scored.push({ confidence: EVIDENCE_CONFIDENCE[tieredEvidence], evidence: tieredEvidence });
     }
     if (isSelected && tieredEvidence !== 'selection') {
         scored.push({ confidence: EVIDENCE_CONFIDENCE.selection, evidence: 'selection' });
     }
-    // A qualified owner phrase narrows the candidate pool; it never admits a candidate on its own.
-    if (candidate.ownerQualified && tieredEvidence !== undefined) {
+    // A qualified owner phrase narrows the candidate pool; it never admits a candidate on its own, and
+    // it cannot lift an approximate reading, whose whole claim is that the name was read only roughly.
+    if (candidate.ownerQualified && isTieredEvidence(tieredEvidence)) {
         scored.push({ confidence: EVIDENCE_CONFIDENCE['owner-qualified'], evidence: 'owner-qualified' });
     }
     if (fuzzySimilarity !== undefined) {
@@ -662,13 +667,15 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         if (fuzzyCandidates.length === 0) {
             return { status: 'rejected', reason: 'ungrounded-target', candidates: [] };
         }
+        // Two approximate readings cannot be told apart by asking which of them the request meant, so
+        // they are all weak rather than ambiguous: `ambiguous-target` stays for tiered evidence, where
+        // the prompt did name something exactly and only the object it names is in doubt.
         if (fuzzyCandidates.length > 1) {
             return {
                 status: 'rejected',
-                reason: 'ambiguous-target',
-                candidateIds: fuzzyCandidates.map((candidate) => candidate.id),
+                reason: 'low-confidence-target',
                 candidates: fuzzyCandidates,
-                requirement: gated ? 'clarification' : undefined,
+                requirement: 'clarification',
             };
         }
         const bestFuzzyCandidate = fuzzyCandidates[0]!;
