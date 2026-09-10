@@ -1,0 +1,39 @@
+src/modules/AudioEngine/models/CrustDspParamNames.ts
+  s_9b530f08172a54::t_1dc76d70718f25 1-68
+src/modules/AudioEngine/models/__tests__/crustDspParamNames.spec.ts
+  s_9b530f08172a54::t_6196be33d1da97 1-50
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_cdff1878a63726 26,289,302,315,333,346,351,984,1001,1048-1062,1072,1678-1819,1854-1857,5009-5011,6047,6055-6056,7819-7912,15513-15515,15578,15710,15714-16038
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_b33d94571d7823 1889-1891,1903-1904,2072-2075,2107-2116,8098-8110,8260-8305,10733-10734,10737-10746,10754-10755,10767,10790-10797,10978-11157
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_9b530f08172a54::t_c7d439b8a4b715 218-223
+src/modules/AudioEngine/services/crustProcessor.ts
+  s_9b530f08172a54::t_42a4b05f6b784f 9,192-195
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  s_9b530f08172a54::t_d9467fe1390b7a 95-97,99
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_9e4eaf38dd30ef 26,123,141,296-340
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_7f42f6c612499f 634-639,652,662,679
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_ae0b4755e94b37 42,160-175
+src/modules/AudioEngine/wasm/__tests__/dawDspCrustGates.spec.ts
+  s_9b530f08172a54::t_0efef89d75ef31 28,53-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a99d29f52ba3147bc067a647df3a0c07e904af0f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
