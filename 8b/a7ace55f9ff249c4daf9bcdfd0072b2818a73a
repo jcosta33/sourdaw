@@ -1,0 +1,36 @@
+electron/main.ts
+  s_06adf2b091dc62::t_d52a7ccdb24f55 65-66
+electron/nativeMenuProjectState.ts
+  s_06adf2b091dc62::t_488051c5d65ff7 27-29,31-36,55,57-67
+  s_06adf2b091dc62::t_4cb790bf6bd207 38
+electron/pluginEditorWindow.ts
+  s_06adf2b091dc62::t_915a98fa90b786 1
+  s_06adf2b091dc62::t_926b4159cf6223 14
+  s_06adf2b091dc62::t_91f583e3e9ae48 2-13,15-22
+electron/__tests__/agentWebviewBoundary.spec.ts
+  s_06adf2b091dc62::t_b95b5f28306d54 146
+  s_06adf2b091dc62::t_d49a5332f4b16b 26,36-37
+  s_06adf2b091dc62::t_7b3ae5c96abe0e 24
+  s_06adf2b091dc62::t_58682cadb75b7c 57
+  s_06adf2b091dc62::t_407beab54e19f9 165,178
+  s_06adf2b091dc62::t_33146f61027a24 5-13,30,33-35,38-54
+  s_06adf2b091dc62::t_6fcae706bf4a20 198-205
+  s_06adf2b091dc62::t_c7707ecb5812b3 210-221,228-281,296,305
+  s_06adf2b091dc62::t_85e07942046f4c 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8ba7ace55f9ff249c4daf9bcdfd0072b2818a73a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
