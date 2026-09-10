@@ -325,6 +325,114 @@ describe('creative authority grounding in the tool-call bridge', () => {
         ]);
     });
 
+    it('reads a direction from the whole scope when the clause naming the device states none', () => {
+        const rejected = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too much, turn down',
+        });
+
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+
+        const grounded = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too much, turn down',
+        });
+
+        expect(grounded.rejections).toEqual([]);
+        expect(grounded.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 } },
+        ]);
+    });
+
+    it('refuses both directions when the whole scope states an increase and a decrease and names neither target', () => {
+        const higher = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'turn up a little, no wait, turn down',
+        });
+
+        expect(higher.actions).toEqual([]);
+        expect(higher.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+
+        const lower = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'turn up a little, no wait, turn down',
+        });
+
+        expect(lower.actions).toEqual([]);
+        expect(lower.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+    });
+
+    it('reads a decrease from a clause naming only the device when no clause names the parameter', () => {
+        const rejected = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too bright, lower it',
+        });
+
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider value value does not match the user request' },
+        ]);
+
+        const grounded = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'the filter is too bright, lower it',
+        });
+
+        expect(grounded.rejections).toEqual([]);
+        expect(grounded.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.3 } },
+        ]);
+    });
+
     it('grounds a bypass intent the request never phrased', () => {
         const result = bridge({
             calls: [{ name: 'bypassDevice', arguments: { deviceId: 'guitar-eq-1', bypassed: true } }],

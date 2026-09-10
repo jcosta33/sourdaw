@@ -3118,24 +3118,23 @@ function validateDeviceParameterDirection(
         return false;
     }
     const namingClauses = selectDeviceParameterDirectionClauses(actionScope, parameter, device);
-    if (namingClauses.length > 0) {
-        const namingText = namingClauses.map((clause) => clause.masked);
-        const statesIncrease = namingText.some((text) =>
-            containsPhraseInMaskedText(text, DEVICE_PARAMETER_INCREASE_PHRASES)
-        );
-        const statesDecrease = namingText.some((text) =>
-            containsPhraseInMaskedText(text, DEVICE_PARAMETER_DECREASE_PHRASES)
-        );
-        if (statesIncrease) {
-            return assertedValue > parameter.value;
-        }
-        if (statesDecrease) {
-            return assertedValue < parameter.value;
-        }
-        return true;
-    }
-    const statesIncrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_INCREASE_PHRASES);
-    const statesDecrease = containsPromptPhrase(actionScope, DEVICE_PARAMETER_DECREASE_PHRASES);
+    const namingText = namingClauses.map((clause) => clause.masked);
+    const namingStatesIncrease = namingText.some((text) =>
+        containsPhraseInMaskedText(text, DEVICE_PARAMETER_INCREASE_PHRASES)
+    );
+    const namingStatesDecrease = namingText.some((text) =>
+        containsPhraseInMaskedText(text, DEVICE_PARAMETER_DECREASE_PHRASES)
+    );
+    const namingStatesDirection = namingStatesIncrease || namingStatesDecrease;
+    // The naming clauses decide only when they state a direction; a direction stated only
+    // elsewhere in the prompt must not be dropped, so an undirected naming reading falls
+    // through to the whole-scope reading instead of grounding unconditionally.
+    const statesIncrease = namingStatesDirection
+        ? namingStatesIncrease
+        : containsPromptPhrase(actionScope, DEVICE_PARAMETER_INCREASE_PHRASES);
+    const statesDecrease = namingStatesDirection
+        ? namingStatesDecrease
+        : containsPromptPhrase(actionScope, DEVICE_PARAMETER_DECREASE_PHRASES);
     if (statesIncrease && statesDecrease) {
         return false;
     }
