@@ -1,0 +1,52 @@
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  s_06adf2b091dc62::t_55b803287a458e 102,106-111
+  s_06adf2b091dc62::t_c1ed3f946a4841 19
+  s_06adf2b091dc62::t_9d8f445fa1d567 67-70
+  s_06adf2b091dc62::t_25171bbd993efa 233
+src/modules/AiRuntime/useCases/deferredAgentCapabilities.ts
+  s_06adf2b091dc62::t_9937f74e0461c7 1-31
+src/modules/AiRuntime/useCases/__tests__/agentMediaAutonomyBoundary.spec.ts
+  s_06adf2b091dc62::t_4f9b5ba8de3ac6 1-8,10-175,182-226
+  s_06adf2b091dc62::t_d474c32a0cca03 176-181
+  s_06adf2b091dc62::t_f698bfafd91712 9
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_06adf2b091dc62::t_a7e3aeed49378d 439-446,458,460-464
+  s_06adf2b091dc62::t_1bd4f97be7001e 36
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_06adf2b091dc62::t_425f09c4ae299e 410,466
+  s_06adf2b091dc62::t_279e54bafe6926 315
+  s_06adf2b091dc62::t_14347735c06bc8 73-80
+src/modules/AiRuntime/useCases/__tests__/agentGeneratedMediaBoundary.spec.ts
+  s_06adf2b091dc62::t_ed02f2950ced71 7
+  s_06adf2b091dc62::t_fb0e25a3d1f522 1-6,8-205
+src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts
+  s_06adf2b091dc62::t_b1f93ddb9d3a67 212-218
+  s_06adf2b091dc62::t_5452de83173998 269
+  s_06adf2b091dc62::t_018d1cd263e75f 38-46
+  s_06adf2b091dc62::t_8d7f7586d3e88e 1-22,24-34,36-37,47-129,131-136,138-145,147-148,151,158,160-161,163-164,166-211,219-268,270-274
+  s_06adf2b091dc62::t_46d8e2ecc16240 23
+  s_06adf2b091dc62::t_4c1de70f3fcb9f 130,137,146,149-150,152-157,159,162,165
+  s_06adf2b091dc62::t_5db6fca16e85f9 35
+src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts
+  s_06adf2b091dc62::t_bb3dd2ecdde4ae 1-128,131-132,135-136,158-194
+  s_06adf2b091dc62::t_b1e3022e5feaf9 129-130,133-134,137-157
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_06adf2b091dc62::t_7e5c612a33a9b7 15-31
+  s_06adf2b091dc62::t_8c4b72eead2c0a 181-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "136880c7767907a5cac950ff34bb125fff04f3ed",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
