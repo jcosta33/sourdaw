@@ -1,0 +1,18 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 444
+src/modules/MIDI/useCases/webMidiInput/__tests__/destroyWebMidi.spec.ts
+  h_1228e573df1f42 12
+src/modules/MIDI/useCases/webMidiInput/__tests__/destroyWebMidiPreference.spec.ts
+  h_1228e573df1f42 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d448732d0d0b9836ad0ad78eb81c08def7b68e74",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
