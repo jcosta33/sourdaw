@@ -206,7 +206,7 @@ function emitProbeResponse(channel: TestGatewayChannel, requestId: unknown, stat
     channel.onmessage(event('done'));
 }
 
-function mockProviderGateway(sessionId: string = SESSION_ID): void {
+function mockProviderGateway(sessionId: string = SESSION_ID, probeBody: string = '{"data":[]}'): void {
     mocks.invoke.mockImplementation(async (command, args) => {
         if (command === 'open_provider_gateway_session') {
             return sessionId;
@@ -216,7 +216,7 @@ function mockProviderGateway(sessionId: string = SESSION_ID): void {
             if (typeof channel !== 'object' || channel === null || !('onmessage' in channel)) {
                 throw new Error('Expected a provider gateway event channel');
             }
-            emitProbeResponse(channel as TestGatewayChannel, args?.requestId, 200, '{"data":[]}');
+            emitProbeResponse(channel as TestGatewayChannel, args?.requestId, 200, probeBody);
             return undefined;
         }
         return undefined;
@@ -344,6 +344,43 @@ describe('provider credential boundary', () => {
             }
 
             await assertNoIndexedDbDatabaseRetainsCredential();
+        });
+
+        it('refuses a base URL that embeds credentials before any gateway session or store write', async () => {
+            // Issue #4161: a pasted `https://user:secret@host/v1` used to park the
+            // secret in the `cloudSession` runtime and the
+            // `hostedLlmProviderStatusStore` badge data even though the gateway only
+            // ever receives the origin. The repository must refuse the configuration
+            // outright, so no write path can retain the credential in any form.
+            // The probe advertises the model so that, were the refusal removed, the
+            // full write path would run.
+            mockProviderGateway(SESSION_ID, '{"data":[{"id":"custom-model"}]}');
+            const refusal = await setCloudProviderConfig({
+                provider: 'openai-compatible',
+                model: 'custom-model',
+                baseUrl: `https://user:${CREDENTIAL}@models.example.test/v1`,
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+            }).then(
+                () => null,
+                (error: unknown) => error
+            );
+
+            // The credential sweep leads so a regression that drops the refusal reds
+            // on the leak itself rather than only on the missing rejection.
+            for (const [name, store] of Object.entries(aiRuntimeStores)) {
+                expect(containsCredential(store.value), `${name} retained the credential`).toBe(false);
+            }
+            expect(containsCredential(cloudSession.get_runtime())).toBe(false);
+
+            expect(refusal).toBeInstanceOf(Error);
+            expect(refusal).toHaveProperty(
+                'message',
+                'OpenAI-compatible provider base URL cannot include embedded credentials'
+            );
+            expect(cloudSession.get_runtime()).toBeNull();
+            expect(hostedLlmProviderStatusStore.value).toBeNull();
+            expect(mocks.invoke).not.toHaveBeenCalledWith('open_provider_gateway_session', expect.anything());
         });
     });
 
