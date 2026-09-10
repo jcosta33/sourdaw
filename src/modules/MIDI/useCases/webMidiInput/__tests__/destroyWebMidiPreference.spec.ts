@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * boundary rule forbids every use-case-layer reference to it, mock or import.
  */
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    sendNativeLiveMidiNote: vi.fn(async () => true),
     audioEngine: {
         context: { currentTime: 0 },
         getTrackStrip: () => undefined,
