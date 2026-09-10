@@ -182,7 +182,10 @@ type AutomergeStorageWriteContext = {
  *   back to the last committed value, exactly like an abort.
  * - `defer` — there is no document authority yet (the CRDT port is not wired).
  *   Nothing has ever committed, so the optimistic value is the only state the
- *   app has; drop the write but keep the value visible.
+ *   app has; drop the write but keep the value visible by retaining it as the
+ *   effective committed baseline (issue #4109), where it survives later
+ *   recomputes until a genuine commit, hydrate, or projection reset supersedes
+ *   it. It stays a cache-level fallback and is never written through the port.
  */
 type PendingWritePreparation =
     | { readonly status: 'ready'; readonly mutation: AutomergeStorageMutationInput }
@@ -1330,6 +1333,34 @@ export const createAutomergeStorage = <TData>(
         }
     };
 
+    /**
+     * Issue #4109 — a deferred write keeps its value visible beyond the next
+     * recompute by becoming the effective committed baseline. The retained
+     * baseline's invariants:
+     *
+     * - Cache-level fallback only. The write was dropped, so the value must
+     *   never be written through the port; it lives solely where
+     *   `recomputeCachedValue` can fall back to it. Only a later genuine store
+     *   write may persist it.
+     * - Superseded wholesale. A genuine committed write
+     *   (`recordCommittedWrite`), a hydrate, and a projection reset each
+     *   replace `committedCacheValue` entirely, so once real authority lands
+     *   nothing resurrects the deferred value.
+     * - Normal three-way semantics resume on the next touch. Any pending write
+     *   or committed write to the slot again outranks or replaces the baseline
+     *   by revision, exactly as before.
+     */
+    const retainDeferredBaseline = (pending: AdapterPendingWrite): void => {
+        // A pending older than the current baseline is inert (its value
+        // already lost to a newer write); releasing it must not demote the
+        // baseline back to that older value.
+        if (pending.revision <= committedCacheRevision) {
+            return;
+        }
+        committedCacheValue = pending.value;
+        committedCacheRevision = pending.revision;
+    };
+
     const recomputeCachedValue = (): void => {
         let visibleValue = committedCacheValue;
         let visibleRevision = committedCacheRevision;
@@ -1377,11 +1408,20 @@ export const createAutomergeStorage = <TData>(
             commitOwner: context.commitOwner,
             didCommit: () => recordCommittedWrite(getPending()),
             // Audit CC-5 — the deferred terminal. The write is dropped but
-            // its value stays visible, because no committed value exists to
-            // fall back to. A write whose value is *not* truth takes `abort`
-            // instead, so the cache can never keep serving a write that will
-            // never land.
-            didDefer: () => releasePendingWrite(getPending()),
+            // its value stays visible: the value is retained as the effective
+            // committed baseline (issue #4109), so later recomputes fall back
+            // to it until a genuine commit, hydrate, or projection reset
+            // supersedes it. The retention is cache-level only and is never
+            // written through the port. A write whose value is *not* truth
+            // takes `abort` instead, so the cache can never keep serving a
+            // write that will never land.
+            didDefer: () => {
+                const deferred = getPending();
+                if (!releasePendingWrite(deferred)) {
+                    return;
+                }
+                retainDeferredBaseline(deferred);
+            },
             docId,
             prepare: () => preparePendingWrite(getPending()),
             scoped: context.scoped,
