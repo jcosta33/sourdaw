@@ -26,7 +26,7 @@ import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBacke
 import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
-import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
+import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
 
@@ -102,15 +102,6 @@ function bodyOf(deviceType: string): NativeBuiltinBody {
     return body;
 }
 
-/**
- * `BuiltinParamName::parse` in `crates/daw-engine/src/timeline.rs`: one to
- * `BUILTIN_PARAM_NAME_CAPACITY` bytes of lowercase ASCII letters, digits and
- * underscores. A name outside it is refused by shape, taking its batch with it.
- * The carrier is body-neutral, so it is the shape every named built-in's
- * vocabulary has to satisfy — the Fermenter's and Grand Boule's alike.
- */
-const BUILTIN_PARAM_NAME = /^[a-z0-9_]{1,32}$/;
-
 /** `FermenterPatch['macros']` (`#/modules/Fermenter/models`) is an 8-slot tuple. */
 const FERMENTER_MACRO_COUNT = 8;
 
@@ -121,6 +112,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('grand-boule')).not.toBeNull();
         expect(nativeBuiltinBody('gluten')).not.toBeNull();
         expect(nativeBuiltinBody('crust')).not.toBeNull();
+        expect(nativeBuiltinBody('grinder')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -139,6 +131,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('knead').soundsNotes).toBe(false);
         expect(bodyOf('gluten').soundsNotes).toBe(false);
         expect(bodyOf('crust').soundsNotes).toBe(false);
+        expect(bodyOf('grinder').soundsNotes).toBe(false);
     });
 });
 
@@ -167,7 +160,7 @@ describe('the fermenter body', () => {
     it('spells every id the projection can emit as a name the engine can parse', () => {
         const macroIds = Array.from({ length: FERMENTER_MACRO_COUNT }, (_, index) => `macro${index}`);
         for (const paramId of [...FERMENTER_PARAMS.map((param) => param.id), ...macroIds]) {
-            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
     });
 
@@ -229,7 +222,7 @@ describe('the grand boule body', () => {
         expect(paramIds.length).toBeGreaterThan(0);
         for (const paramId of paramIds) {
             expect(bodyOf('grand-boule').parameterName(paramId)).toBe(GRAND_BOULE_DSP_PARAM_NAMES[paramId]);
-            expect(bodyOf('grand-boule').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('grand-boule').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
         expect(new Set(paramIds).size).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
     });
@@ -286,7 +279,7 @@ describe('the gluten body', () => {
         for (const paramId of paramIds) {
             expect(bodyOf('gluten').addressesParameter(paramId)).toBe(true);
             expect(bodyOf('gluten').parameterName(paramId)).toBe(GLUTEN_DSP_PARAM_NAMES[paramId]);
-            expect(bodyOf('gluten').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('gluten').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
         expect(bodyOf('gluten').addressesParameter('auto_makeup')).toBe(false);
         expect(bodyOf('gluten').addressesParameter('bogus')).toBe(false);
@@ -331,10 +324,128 @@ describe('the crust body', () => {
         for (const paramId of paramIds) {
             expect(bodyOf('crust').addressesParameter(paramId)).toBe(true);
             expect(bodyOf('crust').parameterName(paramId)).toBe(CRUST_DSP_PARAM_NAMES[paramId]);
-            expect(bodyOf('crust').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('crust').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
         expect(bodyOf('crust').addressesParameter('attack_auto')).toBe(false);
         expect(bodyOf('crust').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Grinder carries no translation table: its engine spells its own parameters
+ * in camelCase (`crates/daw-dsp/src/grinder/engine.rs`), and project truth
+ * authors the same camelCase ids for them, so a project id already is the
+ * engine's own name. What this body resolves is therefore a question of wire
+ * shape alone, the same `BUILTIN_PARAM_NAME_SHAPE` every other body's
+ * translated output is held to above — never a closed list, because the
+ * engine's own vocabulary already reaches past a fixed set into the
+ * dynamically named `neuralCustomConvWeight{layer}_{idx}` family
+ * (`crates/daw-dsp/src/grinder/neural.rs`).
+ */
+describe('the grinder body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('grinder').parameterName('inputGain')).toBe('inputGain');
+        expect(bodyOf('grinder').projectPatch({ inputGain: 3, gain: 8 })).toEqual({
+            inputGain: 3,
+            gain: 8,
+        });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                inputGain: 3,
+                presetName: 'Bright Lead',
+                'not-a-name': 1,
+            })
+        ).toEqual({ inputGain: 3 });
+    });
+
+    // The engine's own vocabulary reaches past the fixed automatable slots
+    // into a dynamically named family the renderer cannot enumerate, so
+    // admission is the shape check alone — never a closed list the way the
+    // other bodies' translation tables are.
+    it('admits a well-shaped id whether it is a fixed slot or a dynamically named one', () => {
+        expect(bodyOf('grinder').addressesParameter('inputGain')).toBe(true);
+        expect(bodyOf('grinder').addressesParameter('neuralCustomConvWeight3_2')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('grinder').addressesParameter('auto-makeup')).toBe(false);
+        expect(bodyOf('grinder').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('grinder').addressesParameter('')).toBe(false);
+    });
+
+    // Persistence only adds keys and never removes one, so a record that once
+    // selected a factory voice can still carry an imported profile's
+    // `neuralCustom*` keys beside `neuralModelSlot`. `neuralModelMode` says
+    // which source is live, and the projection has to drop the other source's
+    // keys rather than forward both — the native engine rewrites every layer
+    // and scalar from `neuralModelSlot` whatever order it lands in, so a
+    // stale slot next to an imported profile would render the factory voice.
+    it("keeps only the imported profile's keys when neuralModelMode selects the imported source", () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 1,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralCustomTier: 1,
+            neuralCustomConvWeight0_0: 0.1,
+            neuralModelMode: 1,
+        });
+    });
+
+    // The mirror case: a built-in voice record with stale `neuralCustom*`
+    // keys from a profile that was once imported. Harmless only because the
+    // engine happens to apply the slot last — a fixed apply order cannot
+    // serve both records, so the projection drops the custom keys instead.
+    it('keeps only the built-in slot when neuralModelMode selects the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 0,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralModelSlot: 1,
+            neuralModelMode: 0,
+        });
+    });
+
+    // A record from before `neuralModelMode` existed has no mode key at all;
+    // missing means built-in, the same as an explicit 0.
+    it('treats a missing neuralModelMode as the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelSlot: 2,
+                neuralCustomInputDrive: 1.2,
+            })
+        ).toEqual({ neuralModelSlot: 2 });
+    });
+
+    // The live `updateDevicePatch` door sends the worklet's structured patch,
+    // which has no numeric keys at all, so it still projects to nothing.
+    it('still projects a structured patch to nothing', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelMode: 'imported',
+                profile: { inputDrive: 1 },
+            })
+        ).toEqual({});
     });
 });
 

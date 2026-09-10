@@ -144,23 +144,33 @@ pub enum AutomationTarget {
 /// Bytes a [`BuiltinParamName`] holds. The longest name any built-in body
 /// spells today is well inside it, and the buffer is sized for those
 /// vocabularies to grow without the wire changing shape.
+///
+/// Grinder's own vocabulary is the one that presses closest to it: its
+/// dynamic `neuralCustomConvWeight{layer}_{idx}` family (`neural.rs`'s
+/// `parse_custom_conv_weight_param`, fed by `grinderProcessor.ts`'s
+/// `MAX_NEURAL_CONV_LAYERS` of 10 layers and a 3-wide weight index) tops out
+/// at `neuralCustomConvWeight9_2`, 25 bytes — seven bytes of headroom under
+/// this ceiling.
 pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
 
 /// One built-in body's own parameter name, carried inline.
 ///
 /// Named rather than numbered because a modelled instrument's patch is a flat
-/// record of the instrument's own snake_case names, and its discrete selectors
-/// — the engine, the waveform, the modes, layer management, the temperament —
-/// are not in the automation table an ordinal addresses at all. Fixed-size and
-/// inline for the reason given on [`AutomationTarget`]: a command carrying a
-/// `String` would have its allocation freed on the audio thread. Matching a
-/// name on that thread is comparisons alone, so the write itself is real-time
-/// safe.
+/// record of the instrument's own names, spelled as its `set_param` takes
+/// them, and its discrete selectors — the engine, the waveform, the modes,
+/// layer management, the temperament — are not in the automation table an
+/// ordinal addresses at all. Fixed-size and inline for the reason given on
+/// [`AutomationTarget`]: a command carrying a `String` would have its
+/// allocation freed on the audio thread. Matching a name on that thread is
+/// comparisons alone, so the write itself is real-time safe.
 ///
 /// The type is body-neutral by construction and not by coincidence: the shape
 /// rule below is the only thing the engine knows about any of these names, so
 /// one carrier serves every built-in that answers to its own vocabulary rather
-/// than to the engine's.
+/// than to the engine's. Most built-ins spell that vocabulary in snake_case;
+/// Grinder spells its own in camelCase, and the shape admits both, because the
+/// carrier does not know which vocabulary a given name belongs to and has no
+/// business preferring one spelling over the other.
 ///
 /// Shape is the only refusal available here. The instrument owns its
 /// vocabulary and answers a name it does not know by doing nothing at all —
@@ -216,10 +226,11 @@ impl BuiltinParamName {
     }
 }
 
-/// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
-/// spells its parameters in.
+/// Whether `byte` belongs to the ASCII identifier vocabulary a built-in
+/// spells its parameters in — snake_case for most, camelCase for Grinder —
+/// the carrier does not know which.
 const fn is_builtin_name_byte(byte: u8) -> bool {
-    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// A parameter of a built-in device, addressed without an owned name for the
@@ -3511,13 +3522,16 @@ mod tests {
         assert_eq!(parsed.as_str(), longest);
     }
 
-    /// A key that was never one of the instrument's names is refused by shape.
+    /// A key that was never shaped like any built-in's name is refused by
+    /// shape.
     ///
     /// The instrument answers a name it does not know by doing nothing, so a
     /// misspelled key would otherwise be a parameter write the producer
     /// believes landed and the mix never heard. Shape is the whole of the
     /// refusal the engine can make without keeping a copy of the instrument's
-    /// table, and each row here is a different way to miss the vocabulary.
+    /// table, and each row here is a different way to miss every built-in's
+    /// vocabulary — snake_case and camelCase alike, since the shape admits
+    /// both.
     #[test]
     fn a_key_shaped_unlike_a_builtin_param_name_is_refused() {
         let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
@@ -3528,25 +3542,38 @@ mod tests {
             "the empty key names no parameter"
         );
         assert_eq!(
-            BuiltinParamName::parse("Cutoff"),
-            None,
-            "the instrument spells its names in lowercase"
-        );
-        assert_eq!(
             BuiltinParamName::parse("cut off"),
             None,
-            "a space is not a character of the instrument's vocabulary"
+            "a space is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse("cut-off"),
             None,
-            "the instrument separates words with underscores, not hyphens"
+            "a hyphen is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse(&too_long),
             None,
             "a name past the buffer would be truncated into a different word"
         );
+    }
+
+    /// A camelCase name — Grinder's own spelling — parses exactly like a
+    /// snake_case one, and the dynamic `neuralCustomConvWeight{layer}_{idx}`
+    /// family the capacity doc cites round-trips at its longest.
+    ///
+    /// Shape admits both spellings because the carrier does not know which
+    /// vocabulary a name belongs to; it is the instrument's own `set_param`,
+    /// not this parser, that decides whether a camelCase key means anything.
+    #[test]
+    fn a_camel_case_builtin_param_name_parses() {
+        let longest_dynamic = BuiltinParamName::parse("neuralCustomConvWeight3_2")
+            .expect("a well-shaped camelCase name parses");
+        assert_eq!(longest_dynamic.as_str(), "neuralCustomConvWeight3_2");
+
+        let round_tripped =
+            BuiltinParamName::parse("inputGain").expect("a well-shaped camelCase name parses");
+        assert_eq!(round_tripped.as_str(), "inputGain");
     }
 
     #[test]
