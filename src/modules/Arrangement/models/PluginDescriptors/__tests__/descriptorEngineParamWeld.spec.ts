@@ -209,7 +209,12 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
     'builtin-crumbs': { kind: 'identity' },
     // Grand Boule's two processors share one core, and the map lives there.
     'grand-boule': { kind: 'table', source: `${WORKLETS}/grandBouleEngineCore.ts`, constName: 'PARAM_MAP' },
-    gluten: { kind: 'table', source: `${SERVICES}/glutenProcessor.ts`, constName: 'PARAM_MAP' },
+    // Gluten's two hosts share one table, and the model file is where it lives.
+    gluten: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/GlutenDspParamNames.ts',
+        constName: 'GLUTEN_DSP_PARAM_NAMES',
+    },
     crust: { kind: 'table', source: `${SERVICES}/crustProcessor.ts`, constName: 'PARAM_MAP' },
     bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
     grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
