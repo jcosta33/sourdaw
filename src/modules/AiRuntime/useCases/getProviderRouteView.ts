@@ -74,10 +74,6 @@ function hasUnavailableStatus(usage: AgentRunProviderUsage): boolean {
     return usage.status === 'unavailable';
 }
 
-function hasAnyDisclosure(providerUsage: readonly AgentRunProviderUsage[]): boolean {
-    return providerUsage.some((usage) => usage.disclosure !== undefined);
-}
-
 function getDefaultCandidates(): ModelRouteCandidate[] {
     return (['webllm', 'cloud'] as const).map(createRouteCandidate);
 }
@@ -139,11 +135,19 @@ function getRoutePlatformProjection(input: {
     };
 }
 
-function getFallbackProjection(providerUsage: readonly AgentRunProviderUsage[]): ProviderRouteView['fallback'] {
+function getFallbackProjection(
+    requestedRoute: string,
+    providerUsage: readonly AgentRunProviderUsage[]
+): ProviderRouteView['fallback'] {
     const reasons = providerUsage
         .map((usage) => usage.fallbackReason)
         .filter((reason): reason is string => reason !== null && reason !== undefined);
-    return { attempted: reasons.length > 0, reasons };
+    const counted = providerUsage.filter((usage) => !hasUnavailableStatus(usage));
+    const executors = new Set(counted.map((usage) => usage.executor ?? null));
+    const attempted =
+        counted.some((usage) => usage.executor !== undefined && usage.executor !== requestedRoute) ||
+        executors.size > 1;
+    return { attempted, reasons };
 }
 
 function getDataDisclosureProjection(
@@ -197,9 +201,15 @@ export function getProviderRouteView(input: GetProviderRouteViewInput): Provider
         return null;
     }
     const candidates = input.candidates ?? getDefaultCandidates();
-    const dataPolicy: 'local-only' | 'remote-allowed' = hasAnyDisclosure(run.providerUsage)
-        ? 'remote-allowed'
-        : 'local-only';
+    /**
+     * A run's requested route already carries its data policy: 'cloud' means the run may transmit to a
+     * configured remote provider before any attempt runs, matching the dataPolicy every real inference
+     * call site derives from the backend it is about to call (see getBackendChain, streamExplainChatResponse,
+     * inference). Provider-usage disclosures are attempt evidence, not admission input, and arrive only
+     * after the first attempt resolves, which rejected a pre-attempt cloud run for data-policy.
+     */
+    const dataPolicy: 'local-only' | 'remote-allowed' =
+        run.modelRoute.requestedRoute === 'cloud' ? 'remote-allowed' : 'local-only';
     const { platform, capability, fidelity } = getRoutePlatformProjection({
         requestedRoute: run.modelRoute.requestedRoute,
         candidates,
@@ -215,7 +225,7 @@ export function getProviderRouteView(input: GetProviderRouteViewInput): Provider
         platform,
         capability,
         fidelity,
-        fallback: getFallbackProjection(run.providerUsage),
+        fallback: getFallbackProjection(run.modelRoute.requestedRoute, run.providerUsage),
         dataDisclosure: getDataDisclosureProjection(run.providerUsage),
         usage: getUsageProjection(run.providerUsage),
         cost: getCostProjection(run),

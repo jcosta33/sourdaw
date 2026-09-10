@@ -1,9 +1,42 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AgentDataRetention } from '../../models/AgentDataPolicy';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getProviderRouteView } from '../getProviderRouteView';
+import { createRouteCandidate } from '../llmOrchestration/backendResolution/createRouteCandidate';
 import { type ModelRouteCandidate } from '../resolveModelRoute';
+
+const defaultCandidateMocks = vi.hoisted(() => ({
+    admission: { webLlm: true },
+    isWebGpuAvailable: vi.fn(),
+    isCloudAvailable: vi.fn(),
+    llmStatus: { value: { state: 'idle' as const } } as {
+        value: { state: 'idle' } | { state: 'ready'; backend: 'webllm' | 'cloud'; modelId: string };
+    },
+    hostedLlmProviderStatus: {
+        value: null as null | { provider: 'anthropic'; model: string; baseUrl: null; authentication: 'api-key' },
+    },
+}));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: defaultCandidateMocks.admission,
+}));
+
+vi.mock('#/modules/BrowserAi/stores', () => ({
+    isWebGpuAvailable: defaultCandidateMocks.isWebGpuAvailable,
+}));
+
+vi.mock('#/modules/AiRuntime/repositories/cloudLlm/isCloudAvailable', () => ({
+    isCloudAvailable: defaultCandidateMocks.isCloudAvailable,
+}));
+
+vi.mock('#/modules/AiRuntime/stores/llmStatusStore', () => ({
+    llmStatusStore: defaultCandidateMocks.llmStatus,
+}));
+
+vi.mock('#/modules/AiRuntime/stores/hostedLlmProviderStatusStore', () => ({
+    hostedLlmProviderStatusStore: defaultCandidateMocks.hostedLlmProviderStatus,
+}));
 
 const UNKNOWN_RETENTION: AgentDataRetention = {
     applicationState: 'unknown',
@@ -382,5 +415,161 @@ describe('provider route view', () => {
             { category: 'remoteTokens', reserved: 12, actual: 12, provenance: 'provider-reported', final: true },
             { category: 'renderJobs', reserved: 1, actual: 0, provenance: 'versioned-estimate', final: false },
         ]);
+    });
+
+    it('admits a cloud run inspected before any provider attempt, with no disclosure recorded yet', () => {
+        agentRunLifecycle.create({
+            runId: 'route-cloud-pre-attempt',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-cloud-pre-attempt',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.platform).toEqual({ available: true, evidence: 'configured-provider', unavailableReason: null });
+        expect(view?.fidelity).toBe('configured-remote');
+    });
+
+    it('does not report a fallback attempt for a cancelled single-route run', () => {
+        agentRunLifecycle.create({
+            runId: 'route-cancelled-single',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'webllm',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-cancelled-single',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 0,
+                outputTokens: 0,
+                provenance: 'provider-reported',
+                correlationId: 'corr-1',
+                status: 'cancelled',
+                executor: 'webllm',
+                fallbackReason: 'cancelled',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-cancelled-single',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.fallback).toEqual({ attempted: false, reasons: ['cancelled'] });
+    });
+
+    it('reports a fallback attempt when counted usage records span more than one executor', () => {
+        agentRunLifecycle.create({
+            runId: 'route-cross-executor',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-cross-executor',
+            usage: {
+                provider: 'webllm',
+                model: 'webllm',
+                inputTokens: 0,
+                outputTokens: 0,
+                provenance: 'provider-reported',
+                correlationId: 'corr-1',
+                status: 'failed',
+                executor: 'webllm',
+                fallbackReason: 'unhealthy',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-cross-executor',
+            usage: {
+                provider: 'anthropic',
+                model: 'fixture-model',
+                inputTokens: 100,
+                outputTokens: 50,
+                provenance: 'provider-reported',
+                correlationId: 'corr-2',
+                status: 'complete',
+                executor: 'cloud',
+                routeId: 'cloud',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-cross-executor',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.fallback.attempted).toBe(true);
+    });
+
+    describe('default candidates', () => {
+        beforeEach(() => {
+            vi.clearAllMocks();
+            defaultCandidateMocks.admission.webLlm = true;
+            defaultCandidateMocks.llmStatus.value = { state: 'idle' };
+            defaultCandidateMocks.hostedLlmProviderStatus.value = null;
+            defaultCandidateMocks.isWebGpuAvailable.mockReturnValue(false);
+            defaultCandidateMocks.isCloudAvailable.mockReturnValue(false);
+        });
+
+        it('projects the real webllm candidate when no candidates are supplied and WebGPU is ready', () => {
+            defaultCandidateMocks.isWebGpuAvailable.mockReturnValue(true);
+            defaultCandidateMocks.llmStatus.value = { state: 'ready', backend: 'webllm', modelId: 'webllm-fixture' };
+            const expectedCandidate = createRouteCandidate('webllm');
+            agentRunLifecycle.create({
+                runId: 'route-default-webllm',
+                request: 'Analyze the master locally.',
+                mode: 'explain',
+                createdRevision: 'revision-a',
+                requestedRoute: 'webllm',
+            });
+
+            const view = getProviderRouteView({ runId: 'route-default-webllm' });
+
+            expect(view?.platform).toEqual({
+                available: true,
+                evidence: expectedCandidate.platform.evidence,
+                unavailableReason: null,
+            });
+            expect(view?.fidelity).toBe(expectedCandidate.trust);
+            expect(view?.capability).toEqual(expectedCandidate.capabilities);
+        });
+
+        it('projects the real cloud candidate when no candidates are supplied and the cloud session is available', () => {
+            defaultCandidateMocks.isCloudAvailable.mockReturnValue(true);
+            defaultCandidateMocks.hostedLlmProviderStatus.value = {
+                provider: 'anthropic',
+                model: 'fixture-model',
+                baseUrl: null,
+                authentication: 'api-key',
+            };
+            const expectedCandidate = createRouteCandidate('cloud');
+            agentRunLifecycle.create({
+                runId: 'route-default-cloud',
+                request: 'Render the chorus using the configured provider.',
+                mode: 'plan',
+                createdRevision: 'revision-a',
+                requestedRoute: 'cloud',
+            });
+
+            const view = getProviderRouteView({ runId: 'route-default-cloud' });
+
+            expect(view?.platform).toEqual({
+                available: true,
+                evidence: expectedCandidate.platform.evidence,
+                unavailableReason: null,
+            });
+            expect(view?.fidelity).toBe(expectedCandidate.trust);
+            expect(view?.capability).toEqual(expectedCandidate.capabilities);
+        });
     });
 });
