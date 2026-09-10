@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_06adf2b091dc62::t_74c6e383a8465c 2588-2628
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_06adf2b091dc62::t_2c6702c5d1d1e1 517-520,528,534-536
+  s_06adf2b091dc62::t_3b1a8b409cb5f0 670-672,676,678
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_06adf2b091dc62::t_950bbf99864c0c 3007
+  s_06adf2b091dc62::t_a36efbb3cb10f8 105
+  s_06adf2b091dc62::t_6f60f864eb9a46 3033
+  s_06adf2b091dc62::t_c01e485b4a3ff8 2918-2927
+  s_06adf2b091dc62::t_9ce18b224d0091 3017,3024
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_06adf2b091dc62::t_e4ea7c459fd366 1299,1301-1302,1304-1306,1310-1328,1330-1363
+src/modules/AiRuntime/useCases/agentReference/resolveCompleteClipReference.ts
+  s_06adf2b091dc62::t_55eff22a4ad925 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d844c259944ad35bc235aa74198171fd6e2befe6",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
