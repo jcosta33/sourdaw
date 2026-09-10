@@ -1,0 +1,22 @@
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamStyleAlgorithm.spec.ts
+  s_9b530f08172a54::t_de669b4c9e7f92 87-89
+  s_9b530f08172a54::t_9b053fff88a8c0 93-98
+  s_9b530f08172a54::t_4335623d20900b 74-77
+  s_9b530f08172a54::t_b52cc44888d19f 78-86,90-92,99-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c97285bd6323dd0395d80aed8a68b99d03e9222",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
