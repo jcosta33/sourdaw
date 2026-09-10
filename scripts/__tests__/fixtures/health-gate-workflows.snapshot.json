@@ -2062,7 +2062,7 @@
           },
           {
             "name": "Verify measurement admission",
-            "run": "node --input-type=module <<'NODE'\nimport {\n    assertGrandBouleMeasurementAdmission,\n    assertWholeEngineQuantumCapability,\n} from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nassertWholeEngineQuantumCapability(root);\nNODE\n"
+            "run": "node --input-type=module <<'NODE'\n// assertWholeEngineQuantumCapability is deliberately absent here. This\n// step reads the table that run.mjs has just rewritten with fresh\n// measurements from a shared 2-vCPU hosted runner, so the whole-engine\n// comparison would bound that runner, not the engine — and it can\n// never pass there: every run since the workflow's first (2026-09-09,\n// runs 34320520521 through 34451256510, unrelated heads) measured the\n// Grand Boule worker median at ~6.7-6.8 ms against the physical\n// 128-frame/48 kHz budget of 2.667 ms under load 2.0, while the\n// recorded reference-machine (Apple M4 Pro) table fits at 84-88% of\n// budget (issue #4076). ADR 0038 keeps that gate on the recorded\n// table, enforced by `pnpm test:release-inventory` inside required\n// Gate. This step keeps the machine-independent admission: identity,\n// occupancy proofs, provenance digests, and generated-table agreement\n// of the fresh measurement.\nimport { assertGrandBouleMeasurementAdmission } from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nNODE\n"
           },
           {
             "name": "Assemble qualified artifact",
