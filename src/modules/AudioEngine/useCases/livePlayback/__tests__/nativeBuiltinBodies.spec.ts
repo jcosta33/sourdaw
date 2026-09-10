@@ -621,11 +621,11 @@ describe('the proof body', () => {
     });
 
     // The record is the mapper's, and the mapper reads a device's bypass from
-    // the record's own `bypassed` field. The two graph-owned names travel with
-    // it all the same rather than being filtered here: `ProofBody::load_patch`
+    // the record's own `bypassed` field. The graph-owned name travels with it
+    // all the same rather than being filtered here: `ProofBody::load_patch`
     // routes the record through the same door the audio thread uses, which is
-    // where they are dropped, so no second rule is needed on this side.
-    it('leaves the graph-owned names in the record for the body to drop', () => {
+    // where it is dropped, so no second rule is needed on this side.
+    it('leaves the graph-owned name in the record for the body to drop', () => {
         expect(bodyOf('proof').projectPatch({ bypass: 1, ab_bypass: 1, lim_ceiling: -0.3 })).toEqual({
             bypass: 1,
             ab_bypass: 1,
@@ -636,7 +636,7 @@ describe('the proof body', () => {
     // The chain's vocabulary is eight EQ bands, four dynamics bands, four
     // exciter bands, the imager, the limiter and the ditherer, each addressed
     // by a stage prefix the chain decodes itself, so admission is the shape
-    // check — with the two names the graph owns taken back out.
+    // check — with the one name the graph owns taken back out.
     it('admits a well-shaped id, whichever stage it is prefixed for', () => {
         expect(bodyOf('proof').addressesParameter('eq_band0_gain')).toBe(true);
         expect(bodyOf('proof').addressesParameter('dyn_band2_ratio')).toBe(true);
@@ -646,23 +646,28 @@ describe('the proof body', () => {
         expect(bodyOf('proof').addressesParameter('chain_order_3')).toBe(true);
     });
 
-    // A live single-key write of either graph-owned name is refused by this
-    // gate, because the native door drops it: reporting it as carried would
-    // leave the write nowhere at all. The device's bypass is the graph's own
-    // command, and `ab_bypass` auditions a metered comparison the engine side
-    // does not run.
-    it('refuses the two names the graph owns', () => {
+    // A live single-key write of the graph-owned name is refused by this gate,
+    // because the native door drops it: reporting it as carried would leave the
+    // write nowhere at all. The device's bypass is the graph's own command.
+    it('refuses the one name the graph owns', () => {
         expect(bodyOf('proof').addressesParameter('bypass')).toBe(false);
-        expect(bodyOf('proof').addressesParameter('ab_bypass')).toBe(false);
     });
 
-    // A near-miss of the refusal, so the two names are pinned as themselves
-    // rather than as a substring match: neither is a prefix or a suffix of a
-    // chain name the body must keep addressing.
-    it('refuses only the graph-owned names themselves', () => {
+    // The panel's A/B compare returns the gain-matched dry signal from the head
+    // of the chain, and the native body runs that arm, so a compare pressed
+    // while the session rolls natively has to reach the carrier that is
+    // sounding. Runtime-only in the project is about persistence, not about
+    // which carrier hears it.
+    it('addresses the A/B compare so a natively carried chain hears it', () => {
+        expect(bodyOf('proof').addressesParameter('ab_bypass')).toBe(true);
+    });
+
+    // A near-miss of the refusal, so the name is pinned as itself rather than
+    // as a substring match: it is neither a prefix nor a suffix of a chain name
+    // the body must keep addressing.
+    it('refuses only the graph-owned name itself', () => {
         expect(bodyOf('proof').addressesParameter('bypassed')).toBe(true);
         expect(bodyOf('proof').addressesParameter('dyn_bypass')).toBe(true);
-        expect(bodyOf('proof').addressesParameter('ab_bypass_mix')).toBe(true);
     });
 
     // A key no built-in's vocabulary could ever spell refuses by shape,

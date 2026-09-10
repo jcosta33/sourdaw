@@ -7,7 +7,8 @@ import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreq
 import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
-import { bridges } from './helpers';
+import { bridges, sendProofParam } from './helpers';
+import { sendProofChainOrder } from './sendProofChainOrder';
 import { syncDynBands } from './syncDynBands';
 import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
@@ -350,11 +351,8 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
             );
         }
 
-        const bridge = bridges.get(deviceId);
-        if (bridge) {
-            for (const param of normalizedAggregate.changedParams) {
-                bridge.setParam(param.name, param.value);
-            }
+        for (const param of normalizedAggregate.changedParams) {
+            sendProofParam(deviceId, param.name, param.value);
         }
         return;
     }
@@ -377,14 +375,9 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         persistDevicePatch(deviceId, Object.fromEntries(persisted_params.map((param) => [param.name, param.value])));
     }
 
-    const bridge = bridges.get(deviceId);
-    if (!bridge) {
-        return;
-    }
-
     if (mapped_param) {
         if (valueChanged) {
-            bridge.setParam(mapped_param.name, mapped_param.value);
+            sendProofParam(deviceId, mapped_param.name, mapped_param.value);
         }
         return;
     }
@@ -398,6 +391,6 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
     } else if (input.key === 'excBands') {
         syncExciter(deviceId);
     } else if (input.key === 'chainOrder') {
-        bridge.reorderModules(input.value);
+        sendProofChainOrder(deviceId, input.value);
     }
 }

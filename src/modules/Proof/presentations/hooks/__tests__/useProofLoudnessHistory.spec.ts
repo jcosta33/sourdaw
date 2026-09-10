@@ -36,7 +36,7 @@ const meterFrame = (outputLufs: number): ProofMeterData => ({
 const registerSamplingDevice = (deviceId: string): void => {
     registerProofDevice({
         deviceId,
-        bridge: { setParam: vi.fn(), reorderModules: vi.fn(), resetIntegrated: vi.fn() },
+        bridge: { reorderModules: vi.fn(), resetIntegrated: vi.fn() },
     });
 };
 

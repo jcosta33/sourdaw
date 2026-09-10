@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH, type ProofTarget } from '../../../models/ProofPatch';
 import { getProofState, loadProofPatch, proofStore } from '../../../stores/proofStore';
@@ -17,6 +18,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 describe('setProofTarget', () => {
     beforeEach(() => {
         bridges.clear();
@@ -28,7 +34,6 @@ describe('setProofTarget', () => {
             deviceId,
         }));
         bridges.set('dev-1', {
-            setParam: vi.fn(),
             reorderModules: vi.fn(),
             resetIntegrated: vi.fn(),
         });
@@ -66,13 +71,12 @@ describe('setProofTarget', () => {
         'rejects a %s owner before sync, store, or persistence effects',
         (status) => {
             vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
-            const bridge = bridges.get('dev-1');
 
             setProofTarget({ deviceId: 'dev-1', target: 'club' });
 
             expect(getProofState('dev-1').patch.target).toBe(DEFAULT_PATCH.target);
             expect(persistDevicePatch).not.toHaveBeenCalled();
-            expect(bridge?.setParam).not.toHaveBeenCalled();
+            expect(updateDeviceParam).not.toHaveBeenCalled();
         }
     );
 });

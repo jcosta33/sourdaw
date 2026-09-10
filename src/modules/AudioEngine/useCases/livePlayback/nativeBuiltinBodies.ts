@@ -223,24 +223,31 @@ function isBacteriaControlThreadOnly(paramId: string): boolean {
 }
 
 /**
- * The Proof parameter names the graph owns, and which the body therefore never
+ * The Proof parameter name the graph owns, and which the body therefore never
  * applies to its chain.
  *
- * `PROOF_GRAPH_OWNED` in `crates/daw-engine/src/scheduler.rs` is the same pair,
+ * `PROOF_GRAPH_OWNED` in `crates/daw-engine/src/scheduler.rs` is the same name,
  * and that constant carries the reason: a device's bypass is the graph's own
  * `GraphCommand::SetBypass`, which skips the body's pass and re-declares its
  * latency, so a value written into the chain instead would leave the graph
- * still running a body it believes is switched out; and `ab_bypass` is the web
- * twin's metered A/B audition, which has no engine-side pass to audition.
+ * still running a body it believes is switched out.
  *
- * Unlike [BACTERIA_CONTROL_THREAD_ONLY], these are dropped on the control
- * thread too — `ProofBody::load_patch` routes a persisted record through the
- * same `set_param` the audio thread uses — so a record carrying either name
- * leaves the chain exactly as it found it. They stay in [projectPatch] all the
- * same: the record is the mapper's, and the mapper reads a device's bypass from
- * the record's own `bypassed` field rather than from a parameter.
+ * `ab_bypass` is deliberately not here. It is runtime-only in the project —
+ * `setProofParam` refuses to persist it, so it never reaches a saved device row
+ * — but it is a chain control all the same: the panel's A/B compare returns the
+ * gain-matched dry signal from the head of the chain, and a compare pressed
+ * while the session rolls natively has to be audible on the carrier that is
+ * sounding. Withholding it would leave the chip reading "A / dry" over the
+ * processed mix.
+ *
+ * Unlike [BACTERIA_CONTROL_THREAD_ONLY], this is dropped on the control thread
+ * too — `ProofBody::load_patch` routes a persisted record through the same
+ * `set_param` the audio thread uses — so a record carrying it leaves the chain
+ * exactly as it found it. It stays in [projectPatch] all the same: the record is
+ * the mapper's, and the mapper reads a device's bypass from the record's own
+ * `bypassed` field rather than from a parameter.
  */
-const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass', 'ab_bypass']);
+const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
 
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
@@ -412,12 +419,14 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * They are ordinary shaped names here, so they travel in the
              * record and answer a live write like any other.
              *
-             * `addressesParameter` refuses the two names the graph owns — see
-             * [PROOF_GRAPH_OWNED] — so an automation lane spelling either is
-             * never built into a write. A panel write skips this gate entirely
+             * `addressesParameter` refuses the one name the graph owns — see
+             * [PROOF_GRAPH_OWNED] — so an automation lane spelling it is never
+             * built into a write. A panel write skips this gate entirely
              * (`updateDeviceParam.ts` sends every live write natively through
              * `nativeBuiltinWriteTarget`), reaches the native door regardless,
-             * and is dropped there by `ProofBody::set_param`.
+             * and is dropped there by `ProofBody::set_param`. `ab_bypass` is not
+             * that name: the panel's compare reaches the chain on whichever
+             * carrier is sounding, and the project never persists it.
              *
              * The limiter's look-ahead is a real group delay, and the native
              * engine compensates it itself: the mapper declares the figure at

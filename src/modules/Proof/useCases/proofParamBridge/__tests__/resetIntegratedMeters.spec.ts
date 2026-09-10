@@ -3,6 +3,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { resetIntegratedMeters } from '../resetIntegratedMeters';
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 describe('resetIntegratedMeters', () => {
     beforeEach(() => {
         bridges.clear();
@@ -10,7 +15,6 @@ describe('resetIntegratedMeters', () => {
 
     it('forwards the reset to the registered bridge for that device', () => {
         const bridge: ProofAudioBridge = {
-            setParam: vi.fn(),
             reorderModules: vi.fn(),
             resetIntegrated: vi.fn(),
         };

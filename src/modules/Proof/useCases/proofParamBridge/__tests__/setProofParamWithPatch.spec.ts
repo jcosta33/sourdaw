@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
 import { getProofState, loadProofPatch, proofStore } from '../../../stores/proofStore';
@@ -17,13 +18,20 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
+// The door every live Proof write reaches the DSP through, and the only one a
+// natively carried body is behind. Asserting on it rather than on the worklet
+// bridge is what says a panel gesture is heard by whichever carrier is sounding.
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 type MockedProofBridge = {
     [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
 };
 
 function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn<ProofAudioBridge['setParam']>(),
         reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
         resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
@@ -52,7 +60,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: -2 });
 
         expect(getProofState('dev-1').patch.limCeiling).toBe(-2);
-        expect(bridge.setParam).toHaveBeenCalledWith('lim_ceiling', -2);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'lim_ceiling', -2);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_ceiling: -2 });
         expect(persisted_patch_values).toEqual([-2]);
     });
@@ -64,7 +72,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: 1 });
 
         expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
@@ -75,7 +83,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'eqBypassed', value: true });
 
         expect(getProofState('dev-1').patch.eqBypassed).toBe(true);
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_bypass', 1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_bypass', 1);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { eq_bypass: 1 });
 
         vi.clearAllMocks();
@@ -83,7 +91,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'eqBypassed', value: false });
 
         expect(getProofState('dev-1').patch.eqBypassed).toBe(false);
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_bypass', 0);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_bypass', 0);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { eq_bypass: 0 });
     });
 
@@ -94,7 +102,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'ditherMode', value: 'noise_shaped' });
 
         expect(getProofState('dev-1').patch.ditherMode).toBe('noise_shaped');
-        expect(bridge.setParam).toHaveBeenCalledWith('dither_mode', 2);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dither_mode', 2);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { dither_mode: 2 });
     });
 
@@ -126,6 +134,57 @@ describe('setProofParamWithPatch', () => {
         expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
+    // A scalar reaches the device door and nothing else. The worklet bridge is
+    // registered here precisely so its silence is readable: a write that went
+    // to it instead would be heard by the web twin alone, and a natively
+    // carried Proof would stay on the value it was mapped with.
+    it('sends a scalar through the device door and not through the worklet bridge', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limLookahead', value: 7 });
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'lim_lookahead', 7);
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
+        expect(bridge.resetIntegrated).not.toHaveBeenCalled();
+    });
+
+    // The order is the one gesture both carriers take differently: the native
+    // body reads the five keys off a patch send, and the web twin's controller
+    // has no `setPatch` at all, so it takes the same order through its own
+    // bridge message. Both halves are asserted because dropping either leaves
+    // one carrier running the previous chain order.
+    it('sends a chain order as one patch of five keys and as one bridge message', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'chainOrder', value: [4, 0, 1, 2, 3] });
+
+        expect(updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(updateDevicePatch).toHaveBeenCalledWith('track-1', 'dev-1', {
+            chain_order_0: 4,
+            chain_order_1: 0,
+            chain_order_2: 1,
+            chain_order_3: 2,
+            chain_order_4: 3,
+        });
+        expect(bridge.reorderModules).toHaveBeenCalledTimes(1);
+        expect(bridge.reorderModules).toHaveBeenCalledWith([4, 0, 1, 2, 3]);
+    });
+
+    it.each(['missing', 'ineligible'] as const)('sends nothing to either door for a %s target', (status) => {
+        bridges.set('dev-1', makeBridge());
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limLookahead', value: 7 });
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'chainOrder', value: [4, 0, 1, 2, 3] });
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+    });
+
     it('persists aggregate section edits with the same parameter names used by the bridge', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
@@ -138,7 +197,7 @@ describe('setProofParamWithPatch', () => {
             img_width2: 0.3,
             img_width3: 0.4,
         });
-        expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 0.3);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_width2', 0.3);
     });
 
     it('rejects an out-of-range changed band member before any write', () => {
@@ -154,7 +213,7 @@ describe('setProofParamWithPatch', () => {
         });
 
         expect(getProofState('dev-1').patch.eqBands).toEqual(DEFAULT_PATCH.eqBands);
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
@@ -174,11 +233,11 @@ describe('setProofParamWithPatch', () => {
         });
 
         expect(getProofState('dev-1').patch.eqBands[1]?.freq).toBe(1_200);
-        expect(bridge.setParam).toHaveBeenCalledTimes(1);
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_band1_freq', 1_200);
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band1_freq', 1_200);
         expect(persistDevicePatch).not.toHaveBeenCalled();
 
-        bridge.setParam.mockClear();
+        vi.mocked(updateDeviceParam).mockClear();
         setProofParamWithPatch({
             deviceId: 'dev-1',
             key: 'eqBands',
@@ -187,7 +246,7 @@ describe('setProofParamWithPatch', () => {
             isTransient: false,
         });
 
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).toHaveBeenCalledTimes(1);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ eq_band1_freq: 1_200 }));
     });
@@ -210,8 +269,8 @@ describe('setProofParamWithPatch', () => {
 
         expect(getProofState('dev-1').patch.dynBands[1]?.ratio).toBe(4);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ dyn_band1_ratio: 4 }));
-        expect(bridge.setParam).toHaveBeenCalledTimes(1);
-        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band0_threshold', -30);
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band0_threshold', -30);
     });
 
     it('persists an aggregate gesture commit without repeating its final engine preview', () => {
@@ -229,7 +288,7 @@ describe('setProofParamWithPatch', () => {
             changedParams,
             isTransient: true,
         });
-        bridge.setParam.mockClear();
+        vi.mocked(updateDeviceParam).mockClear();
 
         setProofParamWithPatch({
             deviceId: 'dev-1',
@@ -239,7 +298,7 @@ describe('setProofParamWithPatch', () => {
             isTransient: false,
         });
 
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).toHaveBeenCalledTimes(1);
     });
 
@@ -279,14 +338,18 @@ describe('setProofParamWithPatch', () => {
         });
 
         expect(getProofState('dev-1').patch.dynCrossoverFreqs).toEqual([120, 1_000, 8_000]);
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
-    it('still updates the store and persists mapped params when no bridge is registered', () => {
+    // A device the native session carries has no worklet bridge of its own to
+    // register, so gating the engine write on one would be exactly the case
+    // that must not be gated.
+    it('still writes the device, the store and the project when no bridge is registered', () => {
         setProofParamWithPatch({ deviceId: 'no-bridge', key: 'outputGain', value: 5 });
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);
         expect(persistDevicePatch).toHaveBeenCalledWith('no-bridge', { output_gain: 5 });
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'no-bridge', 'output_gain', 5);
     });
 
     it.each(['missing', 'ineligible'] as const)(
@@ -300,7 +363,7 @@ describe('setProofParamWithPatch', () => {
 
             expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
             expect(persistDevicePatch).not.toHaveBeenCalled();
-            expect(bridge.setParam).not.toHaveBeenCalled();
+            expect(updateDeviceParam).not.toHaveBeenCalled();
         }
     );
 
@@ -311,7 +374,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'dynBypassed', value: true });
 
         expect(getProofState('dev-1').patch.dynBypassed).toBe(true);
-        expect(bridge.setParam).toHaveBeenCalledWith('dyn_bypass', 1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_bypass', 1);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { dyn_bypass: 1 });
     });
 
@@ -322,7 +385,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgBypassed', value: true });
 
         expect(getProofState('dev-1').patch.imgBypassed).toBe(true);
-        expect(bridge.setParam).toHaveBeenCalledWith('img_bypass', 1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_bypass', 1);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_bypass: 1 });
     });
 
@@ -333,7 +396,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'excBypassed', value: false });
 
         expect(getProofState('dev-1').patch.excBypassed).toBe(false);
-        expect(bridge.setParam).toHaveBeenCalledWith('exc_bypass', 0);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'exc_bypass', 0);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { exc_bypass: 0 });
     });
 
@@ -344,7 +407,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgAutoMonoBass', value: false });
 
         expect(getProofState('dev-1').patch.imgAutoMonoBass).toBe(false);
-        expect(bridge.setParam).toHaveBeenCalledWith('img_auto_mono_bass', 0);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_auto_mono_bass', 0);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_auto_mono_bass: 0 });
     });
 
@@ -355,7 +418,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'limRelease', value: 250 });
 
         expect(getProofState('dev-1').patch.limRelease).toBe(250);
-        expect(bridge.setParam).toHaveBeenCalledWith('lim_release', 250);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'lim_release', 250);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_release: 250 });
     });
 
@@ -366,7 +429,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'limLookahead', value: 3 });
 
         expect(getProofState('dev-1').patch.limLookahead).toBe(3);
-        expect(bridge.setParam).toHaveBeenCalledWith('lim_lookahead', 3);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'lim_lookahead', 3);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_lookahead: 3 });
     });
 
@@ -377,7 +440,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgMonoBassFreq', value: 150 });
 
         expect(getProofState('dev-1').patch.imgMonoBassFreq).toBe(150);
-        expect(bridge.setParam).toHaveBeenCalledWith('img_mono_bass_freq', 150);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_mono_bass_freq', 150);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_mono_bass_freq: 150 });
     });
 
@@ -388,7 +451,7 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'ditherBits', value: 24 });
 
         expect(getProofState('dev-1').patch.ditherBits).toBe(24);
-        expect(bridge.setParam).toHaveBeenCalledWith('dither_bits', 24);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dither_bits', 24);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { dither_bits: 24 });
     });
 
@@ -402,11 +465,16 @@ describe('setProofParamWithPatch', () => {
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'eqBands', value: bands });
 
         expect(getProofState('dev-1').patch.eqBands[3]).toEqual({ ...DEFAULT_PATCH.eqBands[3], freq: 900, gain: 2 });
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_band3_freq', 900);
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_band3_gain', 2);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band3_freq', 900);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band3_gain', 2);
         // The full sync walks every band, not only the one that changed.
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_band0_freq', DEFAULT_PATCH.eqBands[0]!.freq);
-        expect(bridge.setParam).toHaveBeenCalledWith('eq_band7_q', DEFAULT_PATCH.eqBands[7]!.q);
+        expect(updateDeviceParam).toHaveBeenCalledWith(
+            'track-1',
+            'dev-1',
+            'eq_band0_freq',
+            DEFAULT_PATCH.eqBands[0]!.freq
+        );
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band7_q', DEFAULT_PATCH.eqBands[7]!.q);
     });
 
     it('resyncs every exciter band to the engine on a full-array replacement with no changedParams', () => {
@@ -423,11 +491,21 @@ describe('setProofParamWithPatch', () => {
             drive: 0.9,
             enabled: true,
         });
-        expect(bridge.setParam).toHaveBeenCalledWith('exc_band1_drive', 0.9);
-        expect(bridge.setParam).toHaveBeenCalledWith('exc_band1_enabled', 1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'exc_band1_drive', 0.9);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'exc_band1_enabled', 1);
         // The full sync walks every band, not only the one that changed.
-        expect(bridge.setParam).toHaveBeenCalledWith('exc_band0_type', DEFAULT_PATCH.excBands[0]!.type);
-        expect(bridge.setParam).toHaveBeenCalledWith('exc_band3_blend', DEFAULT_PATCH.excBands[3]!.blend);
+        expect(updateDeviceParam).toHaveBeenCalledWith(
+            'track-1',
+            'dev-1',
+            'exc_band0_type',
+            DEFAULT_PATCH.excBands[0]!.type
+        );
+        expect(updateDeviceParam).toHaveBeenCalledWith(
+            'track-1',
+            'dev-1',
+            'exc_band3_blend',
+            DEFAULT_PATCH.excBands[3]!.blend
+        );
     });
 
     it('merges a changed imager band width and drops an unchanged sibling from the delta', () => {
@@ -451,8 +529,8 @@ describe('setProofParamWithPatch', () => {
             DEFAULT_PATCH.imgBandWidth[3],
         ]);
         // bandIndex 0 requested the same value it already had — filtered out of the delta.
-        expect(bridge.setParam).toHaveBeenCalledTimes(1);
-        expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 1.9);
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_width2', 1.9);
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ img_width2: 1.9 }));
     });
 
@@ -481,7 +559,7 @@ describe('setProofParamWithPatch', () => {
 
         expect(getProofState('dev-1').patch.dynBands[0]?.autoMakeup).toBe(false);
         expect(getProofState('dev-1').patch.dynBands[1]?.bypassed).toBe(true);
-        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band0_auto_makeup', 0);
-        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band1_bypass', 1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band0_auto_makeup', 0);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band1_bypass', 1);
     });
 });

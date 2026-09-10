@@ -2423,7 +2423,7 @@ impl BacteriaBody {
 /// alias another is answered here, where every other body answers it.
 const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 
-/// The Proof parameter names the graph owns rather than the chain, and which
+/// The Proof parameter name the graph owns rather than the chain, and which
 /// [`ProofBody::set_param`] therefore drops on both threads.
 ///
 /// `bypass` is the device's bypass, and the device's bypass is
@@ -2436,20 +2436,25 @@ const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
 /// so every route meeting the strip would wait for a delay the signal no longer
 /// takes.
 ///
-/// `ab_bypass` is the mastering panel's A/B audition: `ProofChain::process`
-/// answers it by scaling the dry signal by the loudness offset it has been
-/// tracking and returning (`crates/daw-dsp/src/proof/chain.rs`). That offset is
-/// derived from the momentary loudness meters, which only the web twin reads,
-/// and the audition is a panel gesture on the twin's own sound rather than a
-/// setting of the mix — so the native carrier has nothing to audition and no
-/// meter to gain-match against.
+/// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
+/// compare, which `ProofChain::process` answers by returning the dry signal
+/// scaled by the loudness offset it has been tracking
+/// (`crates/daw-dsp/src/proof/chain.rs`). The project never persists it —
+/// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
+/// of the saved device row — but it is a chain control all the same, and a
+/// compare pressed while the session rolls natively is a gesture on the carrier
+/// that is sounding. Dropping it here would leave the panel's chip reading
+/// "A / dry" over the processed mix. The gain offset the compare is matched
+/// with is the chain's own: it opens at 0 dB and the chain re-derives it from
+/// its meters on every pass it processes, so this body gain-matches out of the
+/// same state the web twin does, whatever reads the meters afterwards.
 ///
-/// Both names are dropped on the control thread too, unlike
+/// The name is dropped on the control thread too, unlike
 /// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
 /// run the arm: it is that the arm belongs to a carrier this body is not. A
-/// persisted record carrying either leaves the chain exactly where the graph's
-/// own bypass and the panel's own audition put it.
-const PROOF_GRAPH_OWNED: &[&str] = &["bypass", "ab_bypass"];
+/// persisted record carrying it leaves the chain exactly where the graph's own
+/// bypass put it.
+const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
 
 /// Modules [`ProofChain`] reorders: Eq, Dynamics, Imager, Exciter, Limiter.
 ///
@@ -2527,10 +2532,11 @@ fn proof_chain_order_slot(name: &str) -> Option<usize> {
 ///
 /// ## Names the graph owns
 ///
-/// [`PROOF_GRAPH_OWNED`] — `bypass` and `ab_bypass` — is dropped here rather
-/// than forwarded, for the reasons that constant carries: the device's bypass is
-/// [`GraphCommand::SetBypass`], and the A/B audition is a gesture on the web
-/// twin's own metered sound.
+/// [`PROOF_GRAPH_OWNED`] — `bypass` — is dropped here rather than forwarded, for
+/// the reason that constant carries: the device's bypass is
+/// [`GraphCommand::SetBypass`]. `ab_bypass` is not in it, and reaches the chain
+/// like any other control, so the panel's A/B compare is audible on a natively
+/// carried strip.
 ///
 /// ## How this body is compensated
 ///
@@ -2645,8 +2651,7 @@ impl ProofBody {
     /// happen here and nothing else does.
     ///
     /// A name in [`PROOF_GRAPH_OWNED`] is dropped: the graph owns the device's
-    /// bypass and the web twin owns the A/B audition, so neither belongs to the
-    /// chain this body runs.
+    /// bypass, so it does not belong to the chain this body runs.
     ///
     /// A `chain_order_{n}` key writes slot `n` of [`Self::order`] and re-offers
     /// the whole array to `ProofChain::reorder`, which installs it only if it is
@@ -2678,7 +2683,7 @@ impl ProofBody {
     /// Every entry lands through [`Self::set_param`], the same door a live write
     /// arrives at, so the five `chain_order_{n}` keys a record carries reach the
     /// order the same way one written mid-session does — and a record's `bypass`
-    /// or `ab_bypass` is dropped here exactly as a live write of it is. Unlike
+    /// is dropped here exactly as a live write of it is. Unlike
     /// [`BacteriaBody::load_patch`] there is no name this thread may run and the
     /// audio thread may not, so there is no reason to reach past that door.
     ///
@@ -19066,22 +19071,28 @@ mod timeline_tests {
         );
     }
 
-    /// The two names the graph owns never reach the chain, whichever door they
-    /// arrive at.
+    /// The name the graph owns never reaches the chain, whichever door it
+    /// arrives at, and the A/B compare beside it does.
     ///
     /// Sample-exact against a twin rather than merely "close": the claim is
-    /// that the write never reached the chain at all, and any figure short of
-    /// equality would admit a write that landed and barely moved the sound.
-    /// Either name landing would be plainly audible — `bypass` returns the
-    /// block untouched and `ab_bypass` returns it scaled by the loudness offset
-    /// the chain has been tracking — so the equality is what says neither did.
+    /// that the `bypass` write never reached the chain at all, and any figure
+    /// short of equality would admit a write that landed and barely moved the
+    /// sound. It landing would be plainly audible — the chain returns the block
+    /// untouched — so the equality is what says it did not.
     ///
-    /// The third assertion is what stops the first two passing vacuously: the
-    /// patch has to make the chain change the signal, or a body that was
-    /// already a pass-through would satisfy an equality against a bypassed twin
-    /// without the refusal doing anything.
+    /// `ab_bypass` is the opposite claim on the same door. Engaged, the chain
+    /// returns the dry input scaled by the A/B gain offset, which opens at 0 dB
+    /// and is re-derived only on a pass the chain processes — so a body that
+    /// has never processed a block returns the input unchanged, sample for
+    /// sample. Released, it processes again. Both directions are asserted
+    /// because a body that dropped the name would satisfy neither.
+    ///
+    /// The pass-through assertion is what stops the equalities passing
+    /// vacuously: the patch has to make the chain change the signal, or a body
+    /// that was already a pass-through would satisfy an equality against a
+    /// bypassed twin without the refusal doing anything.
     #[test]
-    fn a_proof_body_drops_the_names_the_graph_owns() {
+    fn a_proof_body_drops_the_name_the_graph_owns_and_takes_the_ab_compare() {
         const FRAMES: usize = 4096;
 
         let material = proof_burst_material(FRAMES);
@@ -19089,7 +19100,6 @@ mod timeline_tests {
         let mut untouched = proof_body(PROOF_SHELF_INTO_CEILING);
 
         written.set_param("bypass", 1.0);
-        written.set_param("ab_bypass", 1.0);
 
         let written_render = proof_render(&mut written, &material);
         let untouched_render = proof_render(&mut untouched, &material);
@@ -19105,7 +19115,80 @@ mod timeline_tests {
         );
         assert_eq!(
             written_render, untouched_render,
-            "a name the graph owns reached the chain and moved the render"
+            "the name the graph owns reached the chain and moved the render"
+        );
+
+        let mut compared = proof_body(PROOF_SHELF_INTO_CEILING);
+        compared.set_param("ab_bypass", 1.0);
+        let dry_render = proof_render(&mut compared, &material);
+
+        assert_eq!(
+            dry_render, material,
+            "the A/B compare never reached the chain, so the body went on processing while the \
+             panel's chip read dry"
+        );
+
+        compared.set_param("ab_bypass", 0.0);
+        let wet_render = proof_render(&mut compared, &material);
+
+        assert_ne!(
+            wet_render, material,
+            "releasing the A/B compare left the body still returning its input"
+        );
+    }
+
+    /// A callback whose input carries non-finite samples comes back finite.
+    ///
+    /// `ProofChain` has no scrub of its own — `ProofInstance::process`
+    /// (`crates/daw-dsp/src/proof/mod.rs`) is where the web path scrubs, and
+    /// this body is not on that path — so the sanitize pass in
+    /// [`ProofBody::process`] is the whole of what stands between a poisoned
+    /// input block and every route downstream of this strip. A NaN reaching the
+    /// device summing bus is not one bad sample: it silences the mix from there
+    /// on, and the limiter's own look-ahead ring would carry it for the length
+    /// of the line.
+    ///
+    /// Both channels are poisoned and both are read, because the pass runs
+    /// twice and one call going missing would leave one channel unscrubbed.
+    ///
+    /// The finiteness assertion is the oracle. The two beside it are what stop
+    /// it passing vacuously, because an all-zero block is finite: the clean twin
+    /// says the fixture sounds at all, and the difference between the two says
+    /// the poison really reached this block's output rather than sitting in the
+    /// limiter's look-ahead line where no scrub would have been needed.
+    #[test]
+    fn a_proof_body_returns_finite_samples_from_a_poisoned_block() {
+        const FRAMES: usize = 1024;
+
+        let material = proof_burst_material(FRAMES);
+        let mut clean = proof_body(PROOF_SHELF_INTO_CEILING);
+        let clean_render = proof_render(&mut clean, &material);
+
+        let mut left = material.clone();
+        left[8] = f32::NAN;
+        left[FRAMES / 2] = f32::INFINITY;
+        let mut right = material.clone();
+        right[9] = f32::NEG_INFINITY;
+        right[FRAMES - 1] = f32::NAN;
+
+        let mut poisoned = proof_body(PROOF_SHELF_INTO_CEILING);
+        poisoned.process(&mut left, &mut right);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            clean_render.iter().any(|sample| *sample != 0.0),
+            "the clean twin rendered silence, so the finiteness above says nothing"
+        );
+        assert_ne!(
+            left, clean_render,
+            "the poisoned block rendered exactly as the clean one did, so the non-finite input \
+             never reached the output and the scrub had nothing to catch"
         );
     }
 }

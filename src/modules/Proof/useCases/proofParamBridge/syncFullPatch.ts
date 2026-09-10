@@ -10,7 +10,8 @@ import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 import { PROOF_PRESETS } from '../proofPresets';
 
-import { bridges } from './helpers';
+import { sendProofParam } from './helpers';
+import { sendProofChainOrder } from './sendProofChainOrder';
 import { syncDynBands } from './syncDynBands';
 import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
@@ -432,32 +433,28 @@ export function syncFullPatch(deviceId: string): void {
 
     const state = getProofState(deviceId);
     const patch = state.patch;
-    const bridge = bridges.get(deviceId);
-    if (!bridge) {
-        return;
-    }
 
     // A/B compare (dry/wet at the chain head) is runtime state, not a saved
     // patch field, but the engine head must be re-established on a full sync
     // (e.g. preset load) or the chip and the audio fall out of agreement.
-    bridge.setParam('ab_bypass', state.abBypass ? 1 : 0);
-    bridge.setParam('input_gain', patch.inputGain);
-    bridge.setParam('output_gain', patch.outputGain);
-    bridge.setParam('eq_bypass', patch.eqBypassed ? 1 : 0);
-    bridge.setParam('dyn_bypass', patch.dynBypassed ? 1 : 0);
-    bridge.setParam('img_bypass', patch.imgBypassed ? 1 : 0);
-    bridge.setParam('exc_bypass', patch.excBypassed ? 1 : 0);
-    bridge.setParam('lim_bypass', patch.limBypassed ? 1 : 0);
-    bridge.setParam('lim_ceiling', patch.limCeiling);
-    bridge.setParam('lim_release', patch.limRelease);
-    bridge.setParam('lim_lookahead', patch.limLookahead);
-    bridge.setParam('dither_mode', ditherModeToInt(patch.ditherMode));
-    bridge.setParam('dither_bits', patch.ditherBits);
+    sendProofParam(deviceId, 'ab_bypass', state.abBypass ? 1 : 0);
+    sendProofParam(deviceId, 'input_gain', patch.inputGain);
+    sendProofParam(deviceId, 'output_gain', patch.outputGain);
+    sendProofParam(deviceId, 'eq_bypass', patch.eqBypassed ? 1 : 0);
+    sendProofParam(deviceId, 'dyn_bypass', patch.dynBypassed ? 1 : 0);
+    sendProofParam(deviceId, 'img_bypass', patch.imgBypassed ? 1 : 0);
+    sendProofParam(deviceId, 'exc_bypass', patch.excBypassed ? 1 : 0);
+    sendProofParam(deviceId, 'lim_bypass', patch.limBypassed ? 1 : 0);
+    sendProofParam(deviceId, 'lim_ceiling', patch.limCeiling);
+    sendProofParam(deviceId, 'lim_release', patch.limRelease);
+    sendProofParam(deviceId, 'lim_lookahead', patch.limLookahead);
+    sendProofParam(deviceId, 'dither_mode', ditherModeToInt(patch.ditherMode));
+    sendProofParam(deviceId, 'dither_bits', patch.ditherBits);
 
     syncEqBands(deviceId);
     syncDynBands(deviceId);
     syncImager(deviceId);
     syncExciter(deviceId);
 
-    bridge.reorderModules(patch.chainOrder);
+    sendProofChainOrder(deviceId, patch.chainOrder);
 }
