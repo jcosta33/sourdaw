@@ -215,7 +215,12 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
         source: 'src/modules/AudioEngine/models/GlutenDspParamNames.ts',
         constName: 'GLUTEN_DSP_PARAM_NAMES',
     },
-    crust: { kind: 'table', source: `${SERVICES}/crustProcessor.ts`, constName: 'PARAM_MAP' },
+    // Crust's two hosts share one table, and the model file is where it lives.
+    crust: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/CrustDspParamNames.ts',
+        constName: 'CRUST_DSP_PARAM_NAMES',
+    },
     bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
     grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
     proof: { kind: 'identity' },

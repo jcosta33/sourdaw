@@ -39,6 +39,7 @@ import {
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
 
+import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
 
@@ -154,6 +155,22 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapGlutenParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapGlutenParamToDspParam),
             addressesParameter: (paramId) => mapGlutenParamToDspParam({ paramId }) !== null,
+        },
+    ],
+    [
+        'crust',
+        {
+            soundsNotes: false,
+            /**
+             * The fallback is unreachable for anything a lane or a panel can
+             * spell: `descriptorEngineParamWeld.spec.ts` pins every
+             * `CRUST_DESCRIPTOR` parameter id to an entry in this table, and
+             * `readLiveAutomationWrites` gates on `addressesParameter` before
+             * it asks for a name.
+             */
+            parameterName: (paramId) => mapCrustParamToDspParam({ paramId }) ?? paramId,
+            projectPatch: tablePatch(mapCrustParamToDspParam),
+            addressesParameter: (paramId) => mapCrustParamToDspParam({ paramId }) !== null,
         },
     ],
 ]);

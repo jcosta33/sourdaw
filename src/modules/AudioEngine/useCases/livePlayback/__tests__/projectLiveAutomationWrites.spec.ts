@@ -631,10 +631,12 @@ describe('projectLiveAutomationWrites — native built-in device lanes', () => {
         parameterValues: { filterCutoff: 0.4 },
     };
 
-    const crust: Device = {
-        id: 'crust-1',
-        name: 'Crust',
-        type: 'crust',
+    // Grinder stays bodiless because `GrinderEngine::set_param` matches
+    // camelCase names, which `builtin_named_parameter`'s shape rule refuses.
+    const grinder: Device = {
+        id: 'grinder-1',
+        name: 'Grinder',
+        type: 'grinder',
         bypassed: false,
         parameterValues: { drive: 0.4 },
     };
@@ -647,7 +649,7 @@ describe('projectLiveAutomationWrites — native built-in device lanes', () => {
     };
 
     function projectBothLanes(): ReturnType<typeof projectLiveAutomationWrites> {
-        const track = createTrack({ devices: [fermenter, crust] });
+        const track = createTrack({ devices: [fermenter, grinder] });
         return projectLiveAutomationWrites({
             ...baseInput,
             // The engine is carrying nothing on this strip: what separates the
@@ -657,7 +659,7 @@ describe('projectLiveAutomationWrites — native built-in device lanes', () => {
             stripTracks: [track],
             lanes: [
                 lane({ trackId: track.id, parameterId: 'fermenter-1:filterCutoff', points: [point(0, 0.3, 'step')] }),
-                lane({ trackId: track.id, parameterId: 'crust-1:drive', points: [point(0, 0.3, 'step')] }),
+                lane({ trackId: track.id, parameterId: 'grinder-1:drive', points: [point(0, 0.3, 'step')] }),
             ],
             regionStartSeconds: 0,
             regionEndSeconds: 4,
@@ -674,7 +676,7 @@ describe('projectLiveAutomationWrites — native built-in device lanes', () => {
         expect(projectBothLanes().exclusions).toEqual([
             {
                 stripId: 'track-1',
-                subjectId: 'lane-track-1-crust-1:drive',
+                subjectId: 'lane-track-1-grinder-1:drive',
                 reason: 'device parameter automation has no native body yet (#3124)',
             },
         ]);
