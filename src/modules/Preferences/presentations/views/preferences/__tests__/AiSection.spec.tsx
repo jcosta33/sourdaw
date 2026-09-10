@@ -112,7 +112,7 @@ describe('AiSection', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
         await waitFor(() => {
-            expect(mocks.configureCloudProvider).toHaveBeenCalledWith({
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
                 provider: 'anthropic',
                 model: mocks.catalogModelA.value,
                 baseUrl: undefined,
