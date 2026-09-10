@@ -157,14 +157,25 @@ type TargetIdAdmissionInput = {
     objectId: string;
 };
 
+/** The track a target hangs under, so protection of that track reaches everything it holds. */
+function findTargetOwnerTrackId(input: TargetIdAdmissionInput): string | null {
+    if (getAgentReferenceCapabilityKind(input.capability) === 'clip') {
+        return findClipOwnerTrackId(input.context, input.objectId);
+    }
+    if (input.capability === 'device') {
+        return findDeviceOwnerTrackId(input.context, input.objectId);
+    }
+    if (input.capability === 'device-parameter') {
+        return findDeviceOwnerTrackId(input.context, input.dependencyValue);
+    }
+    return null;
+}
+
 function findProtectedObjectRejection(input: TargetIdAdmissionInput): string | null {
     if (input.index.protectedIds.has(input.objectId)) {
         return `${REASON_PREFIX} protects object ${input.objectId}`;
     }
-    const ownerTrackId =
-        getAgentReferenceCapabilityKind(input.capability) === 'clip'
-            ? findClipOwnerTrackId(input.context, input.objectId)
-            : null;
+    const ownerTrackId = findTargetOwnerTrackId(input);
     if (ownerTrackId !== null && input.index.protectedIds.has(ownerTrackId)) {
         return `${REASON_PREFIX} protects object ${ownerTrackId}`;
     }

@@ -7,6 +7,9 @@ import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
 
 const RADIO_PROMPT = 'make it sound like a radio';
 
+/** Names a direction for the gain and no figure for it, which is what the creative route decides. */
+const QUIETER_RADIO_PROMPT = 'make the Guitar quieter and more distant, like an old radio';
+
 const guitarTrack: ProjectContextTrack = {
     id: 'guitar',
     name: 'Guitar',
@@ -149,6 +152,43 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(result.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'guitar', deviceType: 'radio-filter' } },
         ]);
+    });
+
+    it('refuses the same device when the request withdrew the change it described', () => {
+        const result = bridge({
+            calls: [addRadioFilter],
+            creativeAuthority: buildAuthority(),
+            prompt: "add something that makes the Guitar sound like a radio, but don't apply the change",
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'addDevice', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
+    it('refuses a gain that contradicts the direction the request stated without a number', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 1 } }],
+            creativeAuthority: buildAuthority(),
+            prompt: QUIETER_RADIO_PROMPT,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'setTrackGain', reason: 'Provider value gain does not match the user request' },
+        ]);
+    });
+
+    it('grounds a gain the request left open in the direction it stated', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 0.5 } }],
+            creativeAuthority: buildAuthority(),
+            prompt: QUIETER_RADIO_PROMPT,
+        });
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'guitar', gain: 0.5 } }]);
     });
 
     it('grounds a parameter value the request never stated', () => {

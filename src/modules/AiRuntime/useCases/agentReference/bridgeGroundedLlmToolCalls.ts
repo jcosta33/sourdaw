@@ -1509,20 +1509,26 @@ function getAssertedControlTargetReferences(
     return { direct: [...direct], owners: [...owners] };
 }
 
-function resolveActionPromptScope({
+type ActionCancellationInput = {
+    actionName: string;
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+    plannedActionNames: readonly string[];
+};
+
+/**
+ * Whether the request withdrew this action after asking for it. Every route that would otherwise
+ * ground the call has to ask this question, so it is answered once from the prompt alone rather
+ * than left inside the scope resolver that first needed it.
+ */
+function isActionCancelledByPrompt({
     actionName,
-    actionOrdinal,
-    assertedArguments,
     catalog,
-    compilerExpandedTargets = false,
     context,
     prompt,
     plannedActionNames,
-    sameActionAssertedArguments,
-    sameActionCallCount,
-    workflowCapabilityId,
-}: ResolveActionPromptScopeInput): ActionPromptScope | null {
-    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+}: ActionCancellationInput): boolean {
     const cancellationPrompt = actionName === 'glueClips' ? maskGlueQuotedLabels(prompt) : prompt;
     let hasActionCancellation = hasTrailingIntentCancellation(
         cancellationPrompt,
@@ -1557,6 +1563,30 @@ function resolveActionPromptScope({
             );
         }
     }
+    return hasActionCancellation;
+}
+
+function resolveActionPromptScope({
+    actionName,
+    actionOrdinal,
+    assertedArguments,
+    catalog,
+    compilerExpandedTargets = false,
+    context,
+    prompt,
+    plannedActionNames,
+    sameActionAssertedArguments,
+    sameActionCallCount,
+    workflowCapabilityId,
+}: ResolveActionPromptScopeInput): ActionPromptScope | null {
+    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    const hasActionCancellation = isActionCancelledByPrompt({
+        actionName,
+        catalog,
+        context,
+        prompt,
+        plannedActionNames,
+    });
     if (!groundingRules) {
         return null;
     }
@@ -3324,11 +3354,6 @@ function acceptsCreativeStringLiteral(
     if (typeof assertedValue !== 'string') {
         return false;
     }
-    // The device-parameter target rule already binds `parameterId` to a parameter that exists on the
-    // resolved device, so there is nothing left for prompt vocabulary to decide about it.
-    if (valueRule.argument === 'parameterId') {
-        return true;
-    }
     if (valueRule.argument !== 'deviceType') {
         return false;
     }
@@ -3356,7 +3381,12 @@ function acceptsCreativeNumber(
         return false;
     }
     const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane);
-    return expectedNumbers !== null && expectedNumbers.length === 0;
+    if (expectedNumbers === null || expectedNumbers.length > 0) {
+        return false;
+    }
+    // Naming no number is not the same as stating no preference: "quieter" leaves the figure open and
+    // still fixes which way it moves, so the direction the request stated stays binding here.
+    return validateQualitativeNumberDirection(valueRule, assertedValue, actionScope, groundedArguments, context);
 }
 
 /**
@@ -3917,9 +3947,14 @@ function groundToolCall({
         sameActionCallCount,
         workflowCapabilityId,
     });
+    // A cancelled action is the one null scope the creative authority must not paper over: the
+    // request named this work and then withdrew it, which is vocabulary, not silence.
+    const admitsCreativeWholePrompt =
+        admitsCreativeCall &&
+        !isActionCancelledByPrompt({ actionName: call.name, catalog, context, prompt, plannedActionNames });
     const actionScope =
         resolvedActionScope ??
-        (admitsPlanCreatedObject || admitsCreativeCall ? buildWholePromptActionScope(prompt, context) : null);
+        (admitsPlanCreatedObject || admitsCreativeWholePrompt ? buildWholePromptActionScope(prompt, context) : null);
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }

@@ -341,6 +341,26 @@ describe('admitCreativeCommandBatch', () => {
         expect(admissions[1]?.status).toBe('admitted');
     });
 
+    it('refuses a parameter edit that runs before the batch call creating that device', () => {
+        const admissions = admitBatch(buildAuthority({}), [
+            { name: 'setDeviceParameter', arguments: { deviceId: 'device-ai-1', paramId: 'gain', value: 3 } },
+            { name: 'addDevice', arguments: { trackId: 'guitar', deviceType: 'eq' } },
+        ]);
+
+        expectRejection(admissions[0] as CreativeCallAdmission, 'does not cover the device device-ai-1');
+        expect(admissions[1]?.status).toBe('admitted');
+    });
+
+    it('refuses a parameter edit on a device a protected track owns', () => {
+        expectRejection(
+            admitOne(buildAuthority({ prohibitions: [{ kind: 'protect-object', objectId: 'bass' }] }), {
+                name: 'setDeviceParameter',
+                arguments: { deviceId: 'bass-comp-1', paramId: 'ratio', value: 4 },
+            }),
+            'protects object bass'
+        );
+    });
+
     it('refuses the same parameter edit when no admitted call in the batch creates that device', () => {
         expectRejection(
             admitOne(buildAuthority({}), {
