@@ -291,13 +291,16 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         build: ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
-            'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Rust workspace health gates',
+        ],
+        'collab-server': [
+            'Checkout',
+            'Set up Node',
             'Install server dependencies',
-            'Server and Rust workspace health gates',
+            'Collaboration server health gates',
         ],
         'native-macos': [
             'Checkout',
