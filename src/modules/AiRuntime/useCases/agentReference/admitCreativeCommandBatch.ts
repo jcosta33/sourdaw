@@ -6,6 +6,7 @@ import { type ToolCallResult } from '../../transformers/toolCallParser';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from './batchLocalBindingProducers';
+import { CREATIVE_AUTHORITY_REASON_PREFIX, getSpentCreationBudgetReason } from './creativeAuthorityReasons';
 
 type ExecutableAppActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
 type EffectDimension = ExecutableAppActionEffect['dimensions'][number];
@@ -18,12 +19,6 @@ export type CreativeAdmittedTarget = { argument: string; capability: string; obj
 
 export type CreativeCallAdmission =
     { status: 'admitted'; targets: readonly CreativeAdmittedTarget[] } | { status: 'rejected'; reason: string };
-
-/**
- * Every refusal names the authority, because on this route the authority is the whole reason the
- * call was considered at all: the request carries no vocabulary that could have justified it.
- */
-const REASON_PREFIX = 'Creative authority';
 
 /**
  * How a handler's declared effect dimension reads as delegated creative work. `clip-audio` folds
@@ -111,10 +106,10 @@ function findCreativeDimensionRejection(dimension: EffectDimension, index: Autho
         return null;
     }
     if (!index.editDimensions.has(creativeDimension)) {
-        return `${REASON_PREFIX} does not cover the ${creativeDimension} edit dimension`;
+        return `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the ${creativeDimension} edit dimension`;
     }
     if (index.excludedDimensions.has(creativeDimension)) {
-        return `${REASON_PREFIX} excludes the ${creativeDimension} edit dimension`;
+        return `${CREATIVE_AUTHORITY_REASON_PREFIX} excludes the ${creativeDimension} edit dimension`;
     }
     return null;
 }
@@ -132,7 +127,7 @@ function findDimensionRejection(effect: ExecutableAppActionEffect, index: Author
             continue;
         }
         if (CREATIVE_DIMENSION_BY_EFFECT_DIMENSION[dimension] === undefined) {
-            return `${REASON_PREFIX} does not extend to ${dimension} effects`;
+            return `${CREATIVE_AUTHORITY_REASON_PREFIX} does not extend to ${dimension} effects`;
         }
         const rejection = findCreativeDimensionRejection(dimension, index);
         if (rejection !== null) {
@@ -173,11 +168,11 @@ function findTargetOwnerTrackId(input: TargetIdAdmissionInput): string | null {
 
 function findProtectedObjectRejection(input: TargetIdAdmissionInput): string | null {
     if (input.index.protectedIds.has(input.objectId)) {
-        return `${REASON_PREFIX} protects object ${input.objectId}`;
+        return `${CREATIVE_AUTHORITY_REASON_PREFIX} protects object ${input.objectId}`;
     }
     const ownerTrackId = findTargetOwnerTrackId(input);
     if (ownerTrackId !== null && input.index.protectedIds.has(ownerTrackId)) {
-        return `${REASON_PREFIX} protects object ${ownerTrackId}`;
+        return `${CREATIVE_AUTHORITY_REASON_PREFIX} protects object ${ownerTrackId}`;
     }
     return null;
 }
@@ -190,7 +185,7 @@ function findDeviceOwnershipRejection(input: TargetIdAdmissionInput, deviceId: u
     if (ownerTrackId === null && isBatchLocalDeviceReference(deviceId) && input.hasAdmittedDeviceCreation) {
         return null;
     }
-    return `${REASON_PREFIX} does not cover the device ${String(deviceId)}`;
+    return `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the device ${String(deviceId)}`;
 }
 
 /** Null means the id is inside the authority; a string is the reason it is not. */
@@ -202,7 +197,7 @@ function findTargetIdRejection(input: TargetIdAdmissionInput): string | null {
     if (getAgentReferenceCapabilityKind(input.capability) === 'track') {
         return input.index.trackIds.has(input.objectId)
             ? null
-            : `${REASON_PREFIX} does not cover the track ${input.objectId}`;
+            : `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the track ${input.objectId}`;
     }
     // A track target authorises the content of its clips; a clip target never widens back out to the
     // track that holds it, which is what keeps "work on this clip" from reaching the whole strip.
@@ -213,7 +208,7 @@ function findTargetIdRejection(input: TargetIdAdmissionInput): string | null {
         const ownerTrackId = findClipOwnerTrackId(input.context, input.objectId);
         return ownerTrackId !== null && input.index.trackIds.has(ownerTrackId)
             ? null
-            : `${REASON_PREFIX} does not cover the clip ${input.objectId}`;
+            : `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the clip ${input.objectId}`;
     }
     if (input.capability === 'device') {
         return findDeviceOwnershipRejection(input, input.objectId);
@@ -221,7 +216,7 @@ function findTargetIdRejection(input: TargetIdAdmissionInput): string | null {
     if (input.capability === 'device-parameter') {
         return findDeviceOwnershipRejection(input, input.dependencyValue);
     }
-    return `${REASON_PREFIX} does not admit target capability ${input.capability}`;
+    return `${CREATIVE_AUTHORITY_REASON_PREFIX} does not admit target capability ${input.capability}`;
 }
 
 type TargetRuleAdmission =
@@ -238,12 +233,18 @@ function admitTargetRule(input: {
     const { assertedValue, targetRule } = input;
     const assertedIds = targetRule.cardinality === 'many' ? assertedValue : [assertedValue];
     if (!Array.isArray(assertedIds) || assertedIds.length === 0) {
-        return { status: 'rejected', reason: `${REASON_PREFIX} cannot read target ${targetRule.argument}` };
+        return {
+            status: 'rejected',
+            reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} cannot read target ${targetRule.argument}`,
+        };
     }
     const targets: CreativeAdmittedTarget[] = [];
     for (const objectId of assertedIds) {
         if (typeof objectId !== 'string' || objectId.length === 0) {
-            return { status: 'rejected', reason: `${REASON_PREFIX} cannot read target ${targetRule.argument}` };
+            return {
+                status: 'rejected',
+                reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} cannot read target ${targetRule.argument}`,
+            };
         }
         const rejection = findTargetIdRejection({
             capability: targetRule.capability,
@@ -330,20 +331,26 @@ function admitCreations(input: {
     const pendingUsageBySlotIndex = new Map<number, number>();
     for (const objectType of input.creates) {
         if (!isCreationSlotObjectType(objectType)) {
-            return { status: 'rejected', reason: `${REASON_PREFIX} admits no ${objectType} creation` };
+            return {
+                status: 'rejected',
+                reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} admits no ${objectType} creation`,
+            };
         }
         const parentObjectIds = getCreationParentObjectIds(objectType, input.targets, input.context);
         if (parentObjectIds === null) {
             return {
                 status: 'rejected',
-                reason: `${REASON_PREFIX} publishes no creation slots under a track this batch creates`,
+                reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} publishes no creation slots under a track this batch creates`,
             };
         }
         const matchingSlots = input.authority.creationSlots.flatMap((slot, slotIndex) =>
             slot.objectType === objectType && parentObjectIds.includes(slot.parentObjectId) ? [{ slot, slotIndex }] : []
         );
         if (matchingSlots.length === 0) {
-            return { status: 'rejected', reason: `${REASON_PREFIX} publishes no ${objectType} creation slot here` };
+            return {
+                status: 'rejected',
+                reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} publishes no ${objectType} creation slot here`,
+            };
         }
         const usable = matchingSlots.find(
             ({ slot, slotIndex }) =>
@@ -352,7 +359,7 @@ function admitCreations(input: {
         if (usable === undefined) {
             return {
                 status: 'rejected',
-                reason: `${REASON_PREFIX} has spent its ${objectType} creation budget of ${String(matchingSlots[0]!.slot.budget)}`,
+                reason: getSpentCreationBudgetReason(objectType, matchingSlots[0]!.slot.budget),
             };
         }
         pendingUsageBySlotIndex.set(usable.slotIndex, (pendingUsageBySlotIndex.get(usable.slotIndex) ?? 0) + 1);
@@ -372,7 +379,7 @@ function admitCall(input: {
     const reject = (reason: string) => ({ admission: { status: 'rejected' as const, reason }, usedSlotIndexes: [] });
     const effect = getExecutableAppActionEffect(input.call.name);
     if (effect === null) {
-        return reject(`${REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
+        return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
     }
     // Read-only is the interpretation that the request asked for nothing to change, so it admits no
     // command that declares a write of any kind rather than a narrower set of them.
@@ -380,7 +387,7 @@ function admitCall(input: {
         input.authority.mode === 'read-only' &&
         (effect.dimensions.length > 0 || (effect.creates ?? []).length > 0 || (effect.removes ?? []).length > 0)
     ) {
-        return reject(`${REASON_PREFIX} is read-only and admits no writing command`);
+        return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} is read-only and admits no writing command`);
     }
     const dimensionRejection = findDimensionRejection(effect, input.index);
     if (dimensionRejection !== null) {
@@ -388,17 +395,17 @@ function admitCall(input: {
     }
     if (effect.scope !== 'target' && effect.scope !== 'descendants') {
         return reject(
-            `${REASON_PREFIX} does not reach past the named target, and this command's scope is ${effect.scope}`
+            `${CREATIVE_AUTHORITY_REASON_PREFIX} does not reach past the named target, and this command's scope is ${effect.scope}`
         );
     }
     // A deletion is never something a request delegated by describing a sound; an explicit request to
     // remove an object carries its own vocabulary and grounds on the ordinary route.
     if ((effect.removes ?? []).length > 0) {
-        return reject(`${REASON_PREFIX} never removes existing objects`);
+        return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} never removes existing objects`);
     }
     const groundingRules = getExecutableAppActionGroundingRules(input.call.name);
     if (groundingRules === null) {
-        return reject(`${REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
+        return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
     }
     const targetAdmission = admitTargets({
         call: input.call,

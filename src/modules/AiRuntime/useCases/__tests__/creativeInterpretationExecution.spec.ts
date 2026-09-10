@@ -366,6 +366,15 @@ const EDIT_THE_SELECTED_TRACK: InterpretationSelection = {
 };
 
 /**
+ * The combined request also asks for a track the batch invents, so the interpretation selects the
+ * published track slot beside the device one. That slot is what the phrase's own creations ride.
+ */
+const EDIT_THE_SELECTED_TRACK_AND_INVENT: InterpretationSelection = {
+    ...EDIT_THE_SELECTED_TRACK,
+    creationSlotObjectTypes: ['track', 'device'],
+};
+
+/**
  * Discover the one command, interpret the request, then propose. The interpretation turn reads the
  * catalog out of the request the application actually sent, so every candidate id it selects is one
  * the application published for this revision and selection.
@@ -409,6 +418,10 @@ const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME
 
 /** What a read-only authority answers to every writing command, whoever else would have grounded it. */
 const READ_ONLY_REFUSAL_REASON = 'Creative authority is read-only and admits no writing command';
+
+/** What an authority admitted over processing alone answers to the two halves of an invented phrase. */
+const ARRANGEMENT_REFUSAL_REASON = 'Creative authority does not cover the arrangement edit dimension';
+const MIDI_CONTENT_REFUSAL_REASON = 'Creative authority does not cover the midi-content edit dimension';
 
 /**
  * The device half of the combined proposal. A semantic list item reaches an existing track only
@@ -690,7 +703,7 @@ describe('creative interpretation execution', () => {
     it('compiles, confirms and applies the invented phrase beside the delegated treatment as one batch', async () => {
         scriptProviderTurns(
             runtimeMocks.generateWebLlmCompletion,
-            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Guitar' })
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT, deviceTrackName: 'Guitar' })
         );
 
         const confirmation = await commitCombinedRequest();
@@ -715,7 +728,7 @@ describe('creative interpretation execution', () => {
     it('undoes the invented phrase and the delegated device together, then redoes both', async () => {
         scriptProviderTurns(
             runtimeMocks.generateWebLlmCompletion,
-            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Guitar' })
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT, deviceTrackName: 'Guitar' })
         );
 
         await commitCombinedRequest();
@@ -773,7 +786,7 @@ describe('creative interpretation execution', () => {
     it('refuses the combined batch naming only the device chain when the treatment names a track the authority never covered', async () => {
         cycleProviderAttempt(
             runtimeMocks.generateWebLlmCompletion,
-            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Bass' })
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT, deviceTrackName: 'Bass' })
         );
 
         await sendChatMessage(COMBINED_PROMPT);
@@ -782,6 +795,31 @@ describe('creative interpretation execution', () => {
             `Provider action rejected: ${PROPOSED_COMMAND_NAME}: Creative authority does not cover the track ${BASS_TRACK_ID}; ` +
                 `${PARAMETER_COMMAND_NAME}: Creative authority does not cover the device $${RADIO_DEVICE_BINDING}`
         );
+        expect(getPendingActionConfirmation(getConfirmationId())).toBeNull();
+        expectNoBluesPhrase();
+        expectNoDevicesAnywhere();
+        expect(undoStore.value?.past ?? []).toEqual([]);
+    });
+
+    /**
+     * The same combined request under an interpretation that published no track slot. The device
+     * half is still inside the admitted authority, but nothing in the record answers for a track
+     * this batch would create, so the authority's own reason stands over the invented phrase.
+     */
+    it('refuses the invented phrase when the admitted interpretation publishes no track creation slot', async () => {
+        cycleProviderAttempt(
+            runtimeMocks.generateWebLlmCompletion,
+            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, deviceTrackName: 'Guitar' })
+        );
+
+        await sendChatMessage(COMBINED_PROMPT);
+
+        const refusals = [
+            `addTrack: ${ARRANGEMENT_REFUSAL_REASON}`,
+            `addClip: ${ARRANGEMENT_REFUSAL_REASON}`,
+            ...deriveBluesTransformCommands().map(() => `addNotes: ${MIDI_CONTENT_REFUSAL_REASON}`),
+        ];
+        expect(getRefusal()).toBe(`Provider action rejected: ${refusals.join('; ')}`);
         expect(getPendingActionConfirmation(getConfirmationId())).toBeNull();
         expectNoBluesPhrase();
         expectNoDevicesAnywhere();
