@@ -1,0 +1,33 @@
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_06adf2b091dc62::t_1e1cf44ee181bb 5319-5322,5328,5339,5706-5708
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_06adf2b091dc62::t_8962a96735cb98 14-15,50-55,198,243,252-299
+src/modules/Yeast/handlers/__tests__/yeastGrooveAssignmentUndo.spec.ts
+  s_06adf2b091dc62::t_7fe7fa679ee406 1-148
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_06adf2b091dc62::t_5ca038d724655f 1,8,56-66
+src/modules/Yeast/handlers/removeYeastProcessor.ts
+  s_06adf2b091dc62::t_cebcb2af81af2e 3,31,42-45,57-61
+src/modules/Yeast/useCases/readYeastGrooveAssignments.ts
+  s_06adf2b091dc62::t_49f5df069bd771 1-26
+src/modules/Yeast/useCases/restoreYeastGrooveAssignments.ts
+  s_06adf2b091dc62::t_ff1d3edf748314 1-28
+src/utils/handlerContract.ts
+  s_06adf2b091dc62::t_aaff32d14bba5e 746-761,2566-2569,2579-2581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6fb6226160beeae5158de1d66d210fa17b266dc8",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
