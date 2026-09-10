@@ -1,0 +1,30 @@
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  s_06adf2b091dc62::t_db298e18f9ec21 452,456
+  s_06adf2b091dc62::t_44a9c2f508dca0 212-240
+  s_06adf2b091dc62::t_c8147a24950a4b 578-585,587,589-590,594-597
+  s_06adf2b091dc62::t_e970a32e8ce736 972-1065
+  s_06adf2b091dc62::t_35178c15924dfd 469
+  s_06adf2b091dc62::t_d1c54869801143 598,1066-1068
+src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts
+  s_06adf2b091dc62::t_baf8575a3d0f2c 1-206,208-267
+  s_06adf2b091dc62::t_f153475c03ac89 207
+  s_06adf2b091dc62::t_e18e749bdd232d 268-269
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_06adf2b091dc62::t_0faa70feeb0145 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6926a1fe89a73a9fa19235c6a13da01d2cce3bed",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
