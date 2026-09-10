@@ -35,8 +35,8 @@ import {
  * - the four topology structs' `set_param` arms, read out of the crate;
  * - `GlutenEngine::set_param`'s own arms, which say which names never reach a
  *   topology in the first place;
- * - the worklet's `PARAM_MAP`, which is the camelCase→snake_case translation
- *   every write actually goes through.
+ * - the camelCase→snake_case translation both the worklet and the native
+ *   body's renderer-side patch go through, read out of the models file that declares it.
  *
  * `crates/daw-dsp/tests/gluten_topology_param_reach.rs` is the layer below
  * this: it *renders* the crate at two values per parameter and compares the
@@ -68,7 +68,7 @@ const TOPOLOGY_SOURCES: Record<GlutenTopology, string> = {
     fet: 'crates/daw-dsp/src/gluten/fet.rs',
     diode: 'crates/daw-dsp/src/gluten/diode.rs',
 };
-const WORKLET_SOURCE = 'src/modules/AudioEngine/services/glutenProcessor.ts';
+const TABLE_SOURCE = 'src/modules/AudioEngine/models/GlutenDspParamNames.ts';
 
 function readSource(relativePath: string): string {
     return readFileSync(join(REPO_ROOT, relativePath), 'utf8');
@@ -174,11 +174,11 @@ function readSetParamArms(relativePath: string): Set<string> {
     return captured;
 }
 
-/** The worklet's camelCase → snake_case map, read out of the file that performs it. */
+/** The camelCase → snake_case map, read out of the file that declares it. */
 function readWireNames(): Map<string, string> {
-    const source = readSource(WORKLET_SOURCE);
-    const block = /const PARAM_MAP: Record<string, string> = \{([\s\S]*?)\n\};/.exec(source);
-    expect(block, `${WORKLET_SOURCE} must declare PARAM_MAP`).not.toBeNull();
+    const source = readSource(TABLE_SOURCE);
+    const block = /const GLUTEN_DSP_PARAM_NAMES: Readonly<Record<string, string>> = \{([\s\S]*?)\n\};/.exec(source);
+    expect(block, `${TABLE_SOURCE} must declare GLUTEN_DSP_PARAM_NAMES`).not.toBeNull();
 
     const entries = [...block![1]!.matchAll(/^\s*([A-Za-z0-9_]+):\s*'([a-z0-9_]+)',/gm)];
     return new Map(entries.map((entry) => [entry[1]!, entry[2]!]));
@@ -189,7 +189,7 @@ const ENGINE_ARMS = readSetParamArms(ENGINE_SOURCE);
 
 function wireName(paramKey: string): string {
     const wire = WIRE_NAMES.get(paramKey);
-    expect(wire, `${paramKey} must be in the worklet's PARAM_MAP`).toBeDefined();
+    expect(wire, `${paramKey} must be in GLUTEN_DSP_PARAM_NAMES`).toBeDefined();
     return wire!;
 }
 
@@ -386,8 +386,8 @@ describe('Gluten topology gap census', () => {
     it('accounts for every name the worklet can send', () => {
         // Vacuity guard first: the assertion below is `unaccounted == []`,
         // which an empty `WIRE_NAMES` satisfies for free. Breaking the
-        // `PARAM_MAP` read reds nine of this file's assertions and used to
-        // leave this one green, so it pins the map is non-empty and covers the
+        // `GLUTEN_DSP_PARAM_NAMES` read reds nine of this file's assertions and used to
+        // leave this one green, so it pins the table is non-empty and covers the
         // whole patch surface the panel writes.
         expect(WIRE_NAMES.size).toBeGreaterThanOrEqual(GLUTEN_SHARED_CONTROLS.length);
 

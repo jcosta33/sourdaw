@@ -23,6 +23,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -98,6 +99,7 @@ function registerAllProductionHandlers(): void {
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
         getTransportHandlers(),
+        getYeastHandlers(),
     ]);
 }
 

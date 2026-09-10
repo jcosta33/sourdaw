@@ -51,7 +51,6 @@ import {
     type BassProcessingCopyRequestScope,
 } from './getBassProcessingCopyPromptScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
-import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import {
     getDrumPreviewBranchesPromptScope,
     type DrumPreviewBranchesRequestScope,
@@ -72,20 +71,26 @@ import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
 import { getMoveBeatAssertions } from './groundingStrategies/getMoveBeatAssertions';
+import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { isDirectGlueClipPairScope } from './groundingStrategies/isDirectGlueClipPairScope';
 import { isExplicitClipLoopLengthPrompt } from './groundingStrategies/isExplicitClipLoopLengthPrompt';
+import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
+import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
+import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
+import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference } from './resolveAgentReference';
@@ -124,11 +129,6 @@ type GroundToolCallInput = {
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
     workflowCapabilityId?: WorkflowCapabilityId;
-};
-
-type PromptClauseSpan = PromptClause & {
-    end: number;
-    start: number;
 };
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -541,17 +541,6 @@ function getIntentPhraseIndex(text: string, intentPhrase: string): number {
     return normalizedText.indexOf(` ${normalizePromptText(intentPhrase)} `);
 }
 
-function isNegatedIntent(text: string, intentPhrase: string): boolean {
-    const normalizedText = normalizePromptText(text);
-    const normalizedPhrase = normalizePromptText(intentPhrase);
-    const phraseIndex = normalizedText.indexOf(normalizedPhrase);
-    if (phraseIndex < 0) {
-        return false;
-    }
-    const prefix = normalizedText.slice(0, phraseIndex);
-    return /\b(?:do not|don t|dont|never|not)\b/u.test(prefix);
-}
-
 type CancellationCue = {
     index: number;
     text: string;
@@ -713,111 +702,6 @@ function resolveClauseActionIntent(
     return first;
 }
 
-const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
-
-function getProjectReferenceTexts(context: ProjectContext): string[] {
-    const vcaReferences = (context.vcaGroups ?? [])
-        .flatMap((group) => [group.id, group.name])
-        .filter((reference) => !reservedVcaGroupReferenceWords.has(normalizePromptText(reference)));
-    const references = [
-        ...vcaReferences,
-        ...context.tracks.flatMap((track) => [
-            track.id,
-            track.name,
-            ...track.devices.flatMap((device) => [
-                device.id,
-                device.type,
-                ...(device.parameters ?? []).flatMap((parameter) => [parameter.id, parameter.name]),
-            ]),
-            ...track.clips.flatMap((clip) => [clip.id, clip.name]),
-        ]),
-    ];
-    return [...new Set(references)]
-        .filter((reference) => reference.length > 0)
-        .sort((left, right) => right.length - left.length);
-}
-
-const reservedClipReferenceWords: ReadonlySet<string> = new Set([
-    'track',
-    'clip',
-    'device',
-    'bus',
-    'master',
-    'output',
-    'send',
-    'parameter',
-    'remove',
-    'delete',
-    'rename',
-    'duplicate',
-    'copy',
-    'trim',
-    'start',
-    'end',
-    'nudge',
-    'gain',
-    'volume',
-]);
-
-function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
-    const clipReferences = context.tracks.flatMap((track) => track.clips.flatMap((clip) => [clip.id, clip.name]));
-    return [...new Set(clipReferences)]
-        .filter((reference) => reference.length >= 'clip'.length)
-        .filter((reference) => !reservedClipReferenceWords.has(normalizePromptText(reference)))
-        .sort((left, right) => right.length - left.length);
-}
-
-type ProjectReferenceMaskSpan = {
-    end: number;
-    replacement: string;
-    start: number;
-};
-
-function collectProjectReferenceMaskSpans(
-    prompt: string,
-    references: readonly string[],
-    spans: ProjectReferenceMaskSpan[],
-    getReplacement: (match: string, end: number) => string
-): void {
-    for (const reference of references) {
-        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        for (const match of prompt.matchAll(pattern)) {
-            const start = match.index;
-            const value = match[0];
-            if (start === undefined || !value) {
-                continue;
-            }
-            const end = start + value.length;
-            if (spans.some((span) => start < span.end && end > span.start)) {
-                continue;
-            }
-            spans.push({ start, end, replacement: getReplacement(value, end) });
-        }
-    }
-}
-
-function maskProjectReferences(prompt: string, context: ProjectContext): string {
-    const spans: ProjectReferenceMaskSpan[] = [];
-    collectProjectReferenceMaskSpans(prompt, getSemanticClipReferenceTexts(context), spans, (match, end) => {
-        const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
-            prompt.slice(end)
-        );
-        return explicitEntitySuffix ? '□'.repeat(match.length) : `clip${'□'.repeat(match.length - 'clip'.length)}`;
-    });
-    collectProjectReferenceMaskSpans(prompt, getProjectReferenceTexts(context), spans, (match) =>
-        '□'.repeat(match.length)
-    );
-
-    let maskedPrompt = '';
-    let cursor = 0;
-    for (const span of spans.toSorted((left, right) => left.start - right.start)) {
-        maskedPrompt += prompt.slice(cursor, span.start);
-        maskedPrompt += span.replacement;
-        cursor = span.end;
-    }
-    return maskedPrompt + prompt.slice(cursor);
-}
-
 function restoreClipRenameIntentCarrier(prompt: string, maskedPrompt: string): string {
     const quoteScan = scanPromptQuotedText(prompt);
     if (!quoteScan.complete) {
@@ -836,106 +720,6 @@ function restoreClipRenameIntentCarrier(prompt: string, maskedPrompt: string): s
         restoredPrompt = `${restoredPrompt.slice(0, start)}${prompt.slice(start, end)}${restoredPrompt.slice(end)}`;
     }
     return restoredPrompt;
-}
-
-function isClipFadeValueSeparator({
-    maskedPrompt,
-    separatorEnd,
-    separatorStart,
-    start,
-}: {
-    maskedPrompt: string;
-    separatorEnd: number;
-    separatorStart: number;
-    start: number;
-}): boolean {
-    const prefix = normalizePromptText(maskedPrompt.slice(start, separatorStart));
-    if (!/\bset clip fades?\b/u.test(prefix)) {
-        return false;
-    }
-    const suffix = normalizePromptText(maskedPrompt.slice(separatorEnd));
-    return /^(?:fade in|fade out)(?: to| at)? -?\d/u.test(suffix);
-}
-
-function isBeatDurationValueSeparator({
-    maskedPrompt,
-    separatorEnd,
-    separatorStart,
-    start,
-}: {
-    maskedPrompt: string;
-    separatorEnd: number;
-    separatorStart: number;
-    start: number;
-}): boolean {
-    const prefix = normalizePromptText(maskedPrompt.slice(start, separatorStart));
-    const suffix = maskedPrompt.slice(separatorEnd).trim();
-    return (
-        /\bfit\b.*\bclip\b.*\bbeats?\b/u.test(prefix) &&
-        /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?\s+beats?\b/u.test(suffix)
-    );
-}
-
-function hasInvalidNamedClipFadeField(prompt: string): boolean {
-    for (const clause of getPromptClauses(prompt, prompt)) {
-        const normalizedClause = normalizePromptText(clause.text);
-        for (const field of normalizedClause.matchAll(/\bfade (?:in|out)\b/gu)) {
-            const suffix = normalizedClause.slice(field.index + field[0].length);
-            if (!/^(?: to| at)? -?\d/u.test(suffix) || isNegatedIntent(clause.text, field[0])) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-function getPromptClauses(prompt: string, maskedPrompt: string): PromptClauseSpan[] {
-    const clauses: PromptClauseSpan[] = [];
-    const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
-    let start = 0;
-    for (const match of maskedPrompt.matchAll(separatorPattern)) {
-        const separatorEnd = match.index + match[0].length;
-        const normalizedPrefix = normalizePromptText(maskedPrompt.slice(start, match.index));
-        const normalizedSuffix = normalizePromptText(maskedPrompt.slice(separatorEnd));
-        const normalizedSeparator = normalizePromptText(match[0]);
-        const isValidatedListSeparator = normalizedSeparator === 'and' || match[0].trim() === ',';
-        const isVcaMemberListSeparator =
-            isValidatedListSeparator &&
-            /^(?:create|add) vca group\b/u.test(normalizedPrefix) &&
-            /\bfor\b/u.test(normalizedPrefix) &&
-            !/\b(?:named|called)\b/u.test(normalizedPrefix) &&
-            /\b(?:named|called)\b/u.test(normalizedSuffix);
-        if (
-            isVcaMemberListSeparator ||
-            isClipFadeValueSeparator({
-                maskedPrompt,
-                separatorEnd,
-                separatorStart: match.index,
-                start,
-            }) ||
-            isBeatDurationValueSeparator({
-                maskedPrompt,
-                separatorEnd,
-                separatorStart: match.index,
-                start,
-            })
-        ) {
-            continue;
-        }
-        if (prompt.slice(start, match.index).trim().length > 0) {
-            clauses.push({
-                end: match.index,
-                masked: maskedPrompt.slice(start, match.index),
-                start,
-                text: prompt.slice(start, match.index),
-            });
-        }
-        start = separatorEnd;
-    }
-    if (prompt.slice(start).trim().length > 0) {
-        clauses.push({ end: prompt.length, masked: maskedPrompt.slice(start), start, text: prompt.slice(start) });
-    }
-    return clauses;
 }
 
 function getPromptActionSpans(
@@ -957,226 +741,6 @@ function getPromptActionSpans(
         spans.push({ actionType: intent.actionType, start: clause.start, end: prompt.length });
     }
     return spans;
-}
-
-function resolveDirectNamedBusCreationScope(
-    prompt: string,
-    assertedArguments: Readonly<Record<string, unknown>>,
-    sameActionCallCount: number
-): ActionPromptScope | null {
-    if (sameActionCallCount !== 1 || typeof assertedArguments.name !== 'string') {
-        return null;
-    }
-    const normalizedName = normalizePromptText(assertedArguments.name);
-    if (!normalizedName.endsWith(' bus')) {
-        return null;
-    }
-    const expectedPhrases = [
-        `create ${normalizedName}`,
-        `create a ${normalizedName}`,
-        `create an ${normalizedName}`,
-        `add ${normalizedName}`,
-        `add a ${normalizedName}`,
-        `add an ${normalizedName}`,
-    ];
-    const clause = getPromptClauses(prompt, prompt).find((candidate) => {
-        const normalizedClause = ` ${normalizePromptText(candidate.text)} `;
-        return expectedPhrases.some((phrase) => normalizedClause.includes(` ${phrase} `));
-    });
-    if (!clause) {
-        return null;
-    }
-    return { ...clause, directional: false, matchedIntentPhrase: 'create bus' };
-}
-
-function resolveBulkTrackOutputScope(
-    prompt: string,
-    context: ProjectContext,
-    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
-    sameActionCallCount: number
-): ActionPromptScope | null {
-    if (sameActionCallCount < 2 || sameActionAssertedArguments.length !== sameActionCallCount) {
-        return null;
-    }
-    const routeMatch = /\broute\b[\s\S]*?\b(?:into|to)\b[\s\S]*/iu.exec(prompt);
-    if (!routeMatch) {
-        return null;
-    }
-    const normalizedRoute = normalizePromptText(routeMatch[0]);
-    const sourceMatch = /^route\s+(.+?)\s+(?:into|to)\b/u.exec(normalizedRoute);
-    if (!sourceMatch) {
-        return null;
-    }
-    const sourceList = sourceMatch[1];
-    if (!sourceList) {
-        return null;
-    }
-    const sourceScope = ` ${sourceList} `;
-    const requestedSourceIds = context.tracks
-        .filter((track) => sourceScope.includes(` ${normalizePromptText(track.name)} `))
-        .map((track) => track.id);
-    const assertedSourceIds = sameActionAssertedArguments.flatMap((arguments_) =>
-        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
-    );
-    const assertedOutputIds = sameActionAssertedArguments.flatMap((arguments_) =>
-        typeof arguments_.outputId === 'string' ? [arguments_.outputId] : []
-    );
-    if (
-        requestedSourceIds.length !== sameActionCallCount ||
-        assertedSourceIds.length !== sameActionCallCount ||
-        new Set(assertedSourceIds).size !== sameActionCallCount ||
-        new Set(assertedOutputIds).size !== 1 ||
-        !requestedSourceIds.every((trackId) => assertedSourceIds.includes(trackId))
-    ) {
-        return null;
-    }
-    return {
-        text: routeMatch[0],
-        masked: routeMatch[0],
-        directional: false,
-        matchedIntentPhrase: 'route',
-    };
-}
-
-function resolveBulkDeviceInsertionScope(
-    prompt: string,
-    context: ProjectContext,
-    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
-    sameActionCallCount: number
-): ActionPromptScope | null {
-    const expectedTrackIds = getBulkDeviceInsertionTrackScope(prompt, context)?.targetIds;
-    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
-        return null;
-    }
-    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
-        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
-    );
-    if (
-        expectedTrackIds.length !== sameActionCallCount ||
-        assertedTrackIds.length !== sameActionCallCount ||
-        new Set(assertedTrackIds).size !== sameActionCallCount ||
-        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
-    ) {
-        return null;
-    }
-    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'insert device' };
-}
-
-function resolveBulkMutedEmptyTrackDeletionScope(
-    prompt: string,
-    context: ProjectContext,
-    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[],
-    sameActionCallCount: number
-): ActionPromptScope | null {
-    const expectedTrackIds = getMutedEmptyTrackDeletionScope(prompt, context)?.targetIds;
-    if (!expectedTrackIds || sameActionAssertedArguments.length !== sameActionCallCount) {
-        return null;
-    }
-    const assertedTrackIds = sameActionAssertedArguments.flatMap((arguments_) =>
-        typeof arguments_.trackId === 'string' ? [arguments_.trackId] : []
-    );
-    if (
-        expectedTrackIds.length !== sameActionCallCount ||
-        assertedTrackIds.length !== sameActionCallCount ||
-        new Set(assertedTrackIds).size !== sameActionCallCount ||
-        !expectedTrackIds.every((trackId) => assertedTrackIds.includes(trackId))
-    ) {
-        return null;
-    }
-    return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'delete track' };
-}
-
-function resolveRepeatedTrackPanScope({
-    actionOrdinal,
-    prompt,
-    context,
-    sameActionAssertedArguments,
-    sameActionCallCount,
-}: Pick<
-    ResolveActionPromptScopeInput,
-    'actionOrdinal' | 'prompt' | 'context' | 'sameActionAssertedArguments' | 'sameActionCallCount'
->): ActionPromptScope | null {
-    if (sameActionCallCount < 2 || sameActionAssertedArguments.length !== sameActionCallCount) {
-        return null;
-    }
-
-    const clauses = getPromptClauses(prompt, maskQuotedLabels(maskProjectReferences(prompt, context)));
-    const scopedClauses: Array<{ clause: PromptClause; index: number }> = [];
-    for (const assertedArguments of sameActionAssertedArguments) {
-        if (typeof assertedArguments.trackId !== 'string' || typeof assertedArguments.pan !== 'number') {
-            return null;
-        }
-        const track = context.tracks.find((candidate) => candidate.id === assertedArguments.trackId);
-        if (!track) {
-            return null;
-        }
-        const normalizedTrackName = normalizePromptText(track.name);
-        const matches = clauses.flatMap((clause, index) => {
-            const normalizedClause = ` ${normalizePromptText(clause.text)} `;
-            return normalizedClause.includes(` ${normalizedTrackName} `) ? [{ clause, index }] : [];
-        });
-        if (matches.length !== 1 || !/-?(?:\d+(?:\.\d+)?|\.\d+)%?\s*(?:left|right)\b/iu.test(matches[0]!.clause.text)) {
-            return null;
-        }
-        scopedClauses.push(matches[0]!);
-    }
-
-    const firstClause = scopedClauses[0];
-    if (!firstClause || !/\b(?:pan|panning)\b/iu.test(firstClause.clause.text)) {
-        return null;
-    }
-    if (scopedClauses.some((scope, index) => index > 0 && scope.index !== scopedClauses[index - 1]!.index + 1)) {
-        return null;
-    }
-
-    const selectedScope = scopedClauses[actionOrdinal];
-    if (!selectedScope) {
-        return null;
-    }
-    return { ...selectedScope.clause, directional: false, matchedIntentPhrase: 'pan' };
-}
-
-function resolveDeviceParameterPromptScope({
-    actionOrdinal,
-    prompt,
-    context,
-    sameActionAssertedArguments,
-    sameActionCallCount,
-}: Pick<
-    ResolveActionPromptScopeInput,
-    'actionOrdinal' | 'prompt' | 'context' | 'sameActionAssertedArguments' | 'sameActionCallCount'
->): ActionPromptScope | null {
-    const scope = getDeviceParameterPromptScope(prompt, context);
-    if (!scope || scope.assignments.length !== sameActionCallCount) {
-        return null;
-    }
-    const unmatchedAssignments = [...scope.assignments];
-    const matchedAssignments = sameActionAssertedArguments.map((arguments_) => {
-        const matchIndex = unmatchedAssignments.findIndex(
-            ({ parameter, value }) =>
-                arguments_.deviceId === scope.device.id &&
-                arguments_.paramId === parameter.id &&
-                arguments_.value === value
-        );
-        if (matchIndex < 0) {
-            return null;
-        }
-        return unmatchedAssignments.splice(matchIndex, 1)[0] ?? null;
-    });
-    if (unmatchedAssignments.length > 0 || matchedAssignments.some((assignment) => assignment === null)) {
-        return null;
-    }
-    const assignment = matchedAssignments[actionOrdinal];
-    if (!assignment) {
-        return null;
-    }
-    let displayedValue = `${String(assignment.value)} ${assignment.parameter.unit}`;
-    if (assignment.parameter.unit === ':1') {
-        displayedValue = `${String(assignment.value)}:1`;
-    }
-    const deviceName = scope.device.name ?? scope.device.type;
-    const text = `Set ${deviceName} ${assignment.parameter.name} on ${scope.track.name} to ${displayedValue}`;
-    return { text, masked: text, directional: false, matchedIntentPhrase: 'set' };
 }
 
 function resolveDirectionalIntentPhrase(
@@ -1621,125 +1185,34 @@ function resolveActionPromptScope({
     if (!groundingRules) {
         return null;
     }
-    if (actionName === 'setTrackOutput' && workflowCapabilityId === 'drum-routing') {
-        const drumRoutingScope = getDrumRoutingPromptScope(context);
-        if (
-            drumRoutingScope.status === 'request' &&
-            sameActionCallCount === drumRoutingScope.targetIds.length &&
-            sameActionAssertedArguments.every(
-                (arguments_) =>
-                    typeof arguments_.trackId === 'string' &&
-                    drumRoutingScope.targetIds.includes(arguments_.trackId) &&
-                    arguments_.outputId === drumRoutingScope.busId
-            )
-        ) {
-            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'route' };
-        }
-    }
-    if (actionName === 'copyMidiArticulations' && workflowCapabilityId === 'articulation-transfer') {
-        const articulationScope = getArticulationTransferPromptScope(context);
-        if (
-            articulationScope.status === 'request' &&
-            sameActionCallCount === articulationScope.clipPairs.length &&
-            sameActionAssertedArguments.every((arguments_) =>
-                articulationScope.clipPairs.some(
-                    (pair) =>
-                        pair.sourceClipId === arguments_.sourceClipId && pair.targetClipId === arguments_.targetClipId
-                )
-            )
-        ) {
-            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'copy articulation' };
-        }
-    }
-    if (actionName === 'addSidechainRoute') {
-        const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context);
-        if (
-            sidechainRoutingScope.status === 'request' &&
-            sameActionCallCount === sidechainRoutingScope.routes.length &&
-            sameActionAssertedArguments.every((arguments_) =>
-                sidechainRoutingScope.routes.some(
-                    (route) =>
-                        route.sourceTrackId === arguments_.sourceTrackId &&
-                        route.targetTrackId === arguments_.targetTrackId &&
-                        route.targetDeviceId === arguments_.targetDeviceId
-                )
-            )
-        ) {
-            return { text: prompt, masked: prompt, directional: false, matchedIntentPhrase: 'create sidechain' };
-        }
+    const workflowShortcutScope = resolveWorkflowShortcutScope({
+        actionName,
+        context,
+        prompt,
+        sameActionAssertedArguments,
+        sameActionCallCount,
+        workflowCapabilityId,
+    });
+    if (workflowShortcutScope !== null) {
+        return workflowShortcutScope;
     }
     if (hasActionCancellation) {
         return null;
     }
-    if (actionName === 'setDeviceParameter') {
-        const deviceParameterScope = resolveDeviceParameterPromptScope({
-            actionOrdinal,
-            prompt,
-            context,
-            sameActionAssertedArguments,
-            sameActionCallCount,
-        });
-        if (deviceParameterScope) {
-            return deviceParameterScope;
-        }
+    const override = resolveCommandScopeOverride({
+        actionName,
+        actionOrdinal,
+        assertedArguments,
+        context,
+        prompt,
+        sameActionAssertedArguments,
+        sameActionCallCount,
+    });
+    if (override.status === 'resolved') {
+        return override.scope;
     }
-    if (actionName === 'setClipFade' && hasInvalidNamedClipFadeField(prompt)) {
+    if (override.status === 'denied') {
         return null;
-    }
-    if (actionName === 'createBus') {
-        const directBusCreationScope = resolveDirectNamedBusCreationScope(
-            prompt,
-            assertedArguments,
-            sameActionCallCount
-        );
-        if (directBusCreationScope) {
-            return directBusCreationScope;
-        }
-    }
-    if (actionName === 'setTrackOutput') {
-        const bulkTrackOutputScope = resolveBulkTrackOutputScope(
-            prompt,
-            context,
-            sameActionAssertedArguments,
-            sameActionCallCount
-        );
-        if (bulkTrackOutputScope) {
-            return bulkTrackOutputScope;
-        }
-    }
-    if (actionName === 'addDevice') {
-        const bulkDeviceInsertionScope = resolveBulkDeviceInsertionScope(
-            prompt,
-            context,
-            sameActionAssertedArguments,
-            sameActionCallCount
-        );
-        if (bulkDeviceInsertionScope) {
-            return bulkDeviceInsertionScope;
-        }
-    }
-    if (actionName === 'removeTrack') {
-        const bulkMutedEmptyTrackDeletionScope = resolveBulkMutedEmptyTrackDeletionScope(
-            prompt,
-            context,
-            sameActionAssertedArguments,
-            sameActionCallCount
-        );
-        if (bulkMutedEmptyTrackDeletionScope) {
-            return bulkMutedEmptyTrackDeletionScope;
-        }
-    }
-    if (actionName === 'setTrackPan') {
-        const repeatedTrackPanScope = resolveRepeatedTrackPanScope({
-            actionOrdinal,
-            prompt,
-            context,
-            sameActionAssertedArguments,
-            sameActionCallCount,
-        });
-        if (repeatedTrackPanScope) {
-            return repeatedTrackPanScope;
-        }
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     if (actionName === 'renameClip') {
@@ -2230,18 +1703,6 @@ function getPostTargetScope(
 
 function hasClearSolosRestriction(prompt: string): boolean {
     return collectClearSolosRestrictionClauses(prompt).length > 0;
-}
-
-function maskQuotedLabels(text: string): string {
-    return text.replaceAll(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu, (label) => {
-        const innerLabel = label.slice(1, -1).trim();
-        const containsOnlyMaskedProjectReferences = /^(?:□+|clip□*)(?:\s+(?:□+|clip□*))*$/u.test(innerLabel);
-        if (innerLabel.length === 0 || containsOnlyMaskedProjectReferences) {
-            return label;
-        }
-        const closingQuote = label.at(-1)!;
-        return `${label[0]!}${' '.repeat(label.length - 2)}${closingQuote}`;
-    });
 }
 
 function maskGlueQuotedLabels(text: string): string {

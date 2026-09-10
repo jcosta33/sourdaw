@@ -6,6 +6,7 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
@@ -1318,6 +1319,134 @@ const EXPECTED_COMMANDS = [
         'destructive-reversible',
         true
     ),
+    expectedCommand(
+        'setYeastProcessorParam',
+        'Set one parameter of one Yeast MIDI effect processor.',
+        {
+            processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+            paramId: { type: 'string', description: 'Parameter name on that processor' },
+            value: { type: 'number', description: 'New parameter value' },
+        },
+        ['processorId', 'paramId', 'value'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setYeastArpPattern',
+        "Replace one Yeast arpeggiator's custom step pattern.",
+        {
+            processorId: { type: 'string', description: 'Existing Yeast arpeggiator processor ID' },
+            steps: {
+                type: 'array',
+                minItems: 1,
+                description: 'Full step list, one object per step',
+                items: {
+                    type: 'object',
+                    properties: {
+                        active: { type: 'boolean' },
+                        stepType: { type: 'string', enum: ['note', 'rest', 'tie', 'chord', 'random'] },
+                        noteSelector: {
+                            type: 'object',
+                            properties: {
+                                type: {
+                                    type: 'string',
+                                    enum: ['next', 'previous', 'index', 'random', 'lowest', 'highest'],
+                                },
+                                index: { type: 'number' },
+                            },
+                            required: ['type'],
+                        },
+                        velocity: { type: 'number' },
+                        velocityOverride: { type: 'boolean' },
+                        gateMul: { type: 'number' },
+                        octaveOffset: { type: 'number' },
+                        semitoneOffset: { type: 'number' },
+                        probability: { type: 'number' },
+                        ratchet: { type: 'number' },
+                    },
+                    required: [
+                        'active',
+                        'stepType',
+                        'noteSelector',
+                        'velocity',
+                        'velocityOverride',
+                        'gateMul',
+                        'octaveOffset',
+                        'semitoneOffset',
+                        'probability',
+                        'ratchet',
+                    ],
+                },
+            },
+        },
+        ['processorId', 'steps'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setYeastProcessorBypass',
+        'Bypass or re-enable one Yeast MIDI effect processor.',
+        {
+            processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+            bypassed: { type: 'boolean', description: 'true=bypass, false=enable' },
+        },
+        ['processorId', 'bypassed'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'addYeastProcessor',
+        'Add one Yeast MIDI effect processor to the rack.',
+        {
+            processorId: { type: 'string', description: 'New processor ID' },
+            type: {
+                type: 'string',
+                enum: [
+                    'arpeggiator',
+                    'chord',
+                    'chordMemory',
+                    'scale',
+                    'harmonizer',
+                    'repeater',
+                    'velocity',
+                    'humanizer',
+                    'filter',
+                    'transposer',
+                    'groove',
+                    'ccGenerator',
+                    'euclidean',
+                    'markov',
+                    'mutation',
+                ],
+                description: 'Processor kind from the Yeast catalog',
+            },
+            name: { type: 'string', description: 'Display name for the new processor' },
+        },
+        ['processorId', 'type', 'name'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'removeYeastProcessor',
+        'Remove one Yeast MIDI effect processor from the rack.',
+        {
+            processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+        },
+        ['processorId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'reorderYeastProcessor',
+        'Move one Yeast MIDI effect processor to a new chain position.',
+        {
+            processorId: { type: 'string', description: 'Existing Yeast processor ID' },
+            toIndex: { type: 'integer', description: 'Zero-based chain position to move it to' },
+        },
+        ['processorId', 'toIndex'],
+        'bounded-reversible',
+        false
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -2489,6 +2618,42 @@ const EXPECTED_GROUNDING = [
         targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
         valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
     },
+    {
+        actionType: 'setYeastProcessorParam',
+        intentPhrases: ['set yeast parameter', 'turn yeast knob', 'set midi effect parameter'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'setYeastArpPattern',
+        intentPhrases: ['set arp pattern', 'program arpeggiator steps', 'set arpeggiator pattern'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'setYeastProcessorBypass',
+        intentPhrases: ['bypass yeast processor', 'enable yeast processor', 'turn off midi effect'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'addYeastProcessor',
+        intentPhrases: ['add yeast processor', 'add arpeggiator', 'add midi effect'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'removeYeastProcessor',
+        intentPhrases: ['remove yeast processor', 'delete midi effect'],
+        targetRules: [],
+        valueRules: [],
+    },
+    {
+        actionType: 'reorderYeastProcessor',
+        intentPhrases: ['reorder yeast processor', 'move midi effect'],
+        targetRules: [],
+        valueRules: [],
+    },
 ] as const;
 
 describe('executable command registry', () => {
@@ -2566,6 +2731,7 @@ describe('executable command registry', () => {
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
+            getYeastHandlers(),
         ];
 
         expect(

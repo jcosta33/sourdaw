@@ -13,18 +13,31 @@
  * Every field the pattern codec carries is reachable here. A field the codec
  * persists but no gesture can set is dead weight in the document.
  */
-import { type ReactElement } from 'react';
+import { useRef, type ReactElement } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 import { type ArpStep, type NoteSelector, type StepType } from '../../models/ArpPattern';
 
+type StepSource = {
+    /** Set when the change came from a velocity paint stroke, so the
+     *  dispatcher can coalesce it into the stroke's undo group (#2111).
+     *  Discrete edits (toggle, cycles) pass no source. */
+    stroke: boolean;
+};
+
 type Props = {
     steps: ArpStep[];
     currentStep: number;
-    onStepChange: (index: number, step: ArpStep) => void;
+    onStepChange: (index: number, step: ArpStep, source?: StepSource) => void;
     onLengthChange: (length: number) => void;
+    /** Bracket a velocity paint stroke, so the dispatcher can coalesce every
+     *  cell the stroke crosses into one undo group (#2111). `onStrokeStart`
+     *  fires before the first cell's `onStepChange`; `onStrokeEnd` after the
+     *  last. */
+    onStrokeStart?: () => void;
+    onStrokeEnd?: () => void;
 };
 
 const STEP_WIDTH = 28;
@@ -48,13 +61,39 @@ const NOTE_SELECTOR_CYCLE: readonly { selector: NoteSelector; glyph: string; lab
     { selector: { type: 'random' }, glyph: '✳', label: 'Random' },
 ];
 
-export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthChange }: Props): ReactElement => {
+export const StepPatternEditor = ({
+    steps,
+    currentStep,
+    onStepChange,
+    onLengthChange,
+    onStrokeStart,
+    onStrokeEnd,
+}: Props): ReactElement => {
+    // The stroke-active token the velocity paint gesture lacked: pressed on
+    // pointer-down, lifted on release or on leaving the grid, so every cell a
+    // stroke crosses dispatches once but coalesces into one undo group, while
+    // a bare click stays its own single-cell edit.
+    const strokeActiveRef = useRef(false);
+
+    const beginStroke = () => {
+        strokeActiveRef.current = true;
+        onStrokeStart?.();
+    };
+
+    const endStroke = () => {
+        if (!strokeActiveRef.current) {
+            return;
+        }
+        strokeActiveRef.current = false;
+        onStrokeEnd?.();
+    };
+
     const toggleStep = (index: number) => {
         const step = steps[index]!;
         onStepChange(index, { ...step, active: !step.active });
     };
 
-    const setVelocity = (index: number, event: React.MouseEvent<HTMLDivElement>) => {
+    const paintVelocity = (index: number, event: React.PointerEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         // A collapsed cell (hidden deck, zero-height layout pass) would divide
         // by zero and carry NaN into the stored pattern.
@@ -63,7 +102,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
         }
         const y = 1 - (event.clientY - rect.top) / rect.height;
         const vel = Math.max(1, Math.min(127, Math.round(y * 127)));
-        onStepChange(index, { ...steps[index]!, velocity: vel, velocityOverride: true });
+        onStepChange(index, { ...steps[index]!, velocity: vel, velocityOverride: true }, { stroke: true });
     };
 
     const cycleOctave = (index: number) => {
@@ -87,7 +126,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
     };
 
     return (
-        <Stack gap={1}>
+        <Stack gap={1} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={endStroke}>
             {/* Step grid */}
             <Row align="stretch" className="gap-px overflow-x-auto pb-1">
                 {steps.map((step, index) => {
@@ -154,9 +193,11 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             >
                                 {selectorEntry.glyph}
                             </Button>
-                            {/* Velocity bar. Pointer height sets velocity; the
-                                keyboard has no height, so Enter/Space performs the
-                                same on/off toggle the right-click gesture does. */}
+                            {/* Velocity bar. Pressing starts a paint stroke;
+                                dragging across cells repaints each one it
+                                crosses; the keyboard has no height, so
+                                Enter/Space performs the same on/off toggle
+                                the right-click gesture does. */}
                             <div
                                 role="button"
                                 tabIndex={0}
@@ -164,7 +205,16 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 aria-pressed={step.active}
                                 className="relative bg-surface-inset rounded-sm overflow-hidden"
                                 style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
-                                onClick={(event) => setVelocity(index, event)}
+                                onPointerDown={(event) => {
+                                    beginStroke();
+                                    paintVelocity(index, event);
+                                }}
+                                onPointerEnter={(event) => {
+                                    if (!strokeActiveRef.current) {
+                                        return;
+                                    }
+                                    paintVelocity(index, event);
+                                }}
                                 onKeyDown={(event) => {
                                     if (event.key !== 'Enter' && event.key !== ' ') {
                                         return;

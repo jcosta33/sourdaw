@@ -152,7 +152,7 @@ use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANG
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
-    layer_routing_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
+    precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
     TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
@@ -1837,23 +1837,45 @@ fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamNam
     })
 }
 
+/// The keys of one wire record, in name order.
+///
+/// A record off the wire is a `HashMap`, and name order is the one order
+/// both patch routes share, so one record maps onto one write sequence
+/// whichever order the map draws its keys in. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) is what leads what it names, over
+/// whichever order this returns.
+fn name_ordered_keys(values: &HashMap<String, f64>) -> Vec<&str> {
+    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    keys
+}
+
 /// One device's whole `parameterValues` record, each key resolved through
 /// `resolve` and each value narrowed to the `f32` the engine applies.
 ///
 /// A body's patch is either written into the instance control-side or sent as
 /// addressed commands, so what a key resolves to differs; the record is read
 /// and the values are checked the same way either side, and one collector is
-/// what keeps that one fact.
+/// what keeps that one fact. Keys are read in name order
+/// ([`name_ordered_keys`]) rather than the `HashMap`'s own draw: gluten's
+/// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+/// (`vca.rs:159-169`), and neither is named by
+/// `BuiltinEffectType::patch_precedence`, so this route has no law to bring
+/// one ahead of the other. Name order is also the descriptor's order for
+/// that pair (`GlutenDescriptor.ts` lists `vcaCharacter` before `vcaType`),
+/// so reading keys this way makes `vca_type`'s preset win here exactly as it
+/// does on the web host, which applies a device's record in descriptor
+/// order.
 fn resolved_param_writes<T>(
     device: &DevicePayload,
     resolve: impl Fn(&str) -> Result<T, String>,
 ) -> Result<Vec<(T, f32)>, String> {
-    device
-        .parameter_values
-        .iter()
-        .map(|(key, value)| {
+    name_ordered_keys(&device.parameter_values)
+        .into_iter()
+        .map(|key| {
             let param = resolve(key)?;
-            Ok((param, finite(*value, "device parameter value")? as f32))
+            let value = device.parameter_values[key];
+            Ok((param, finite(value, "device parameter value")? as f32))
         })
         .collect()
 }
@@ -1863,7 +1885,10 @@ fn resolved_param_writes<T>(
 ///
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
-/// the fermenter answers its own.
+/// the fermenter answers its own. Sounding notes is not what decides it —
+/// gluten is an insert and still answers its own snake_case names, because the
+/// vocabulary belongs to the DSP the body hosts rather than to the kind of
+/// device it is.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1873,7 +1898,9 @@ fn builtin_parameter(
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
-        BuiltinEffectType::Fermenter | BuiltinEffectType::GrandBoule => {
+        BuiltinEffectType::Fermenter
+        | BuiltinEffectType::GrandBoule
+        | BuiltinEffectType::Gluten => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -1896,21 +1923,19 @@ fn addressed_parameter_name(param: &DeviceParam) -> &str {
 /// ordered as the body has to apply them.
 ///
 /// The record arrives unordered — a `HashMap` off the wire — and two things
-/// have to hold of what leaves here. A fermenter's layer-routing entry selects
-/// the layer every write behind it lands on, so it is emitted first; that law
-/// belongs to `FermenterBody::load_patch`, and this reuses the engine's own
-/// [`layer_routing_first`] rather than restating it. Everything else follows in
-/// name order, so one record maps onto one command sequence whichever order the
-/// map happens to draw.
+/// have to hold of what leaves here. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) — a fermenter's layer-routing
+/// entry, or a gluten's macro keys — is brought to the front, in the law's
+/// own order; that law belongs to the body's `load_patch`, and this reuses
+/// the engine's own [`precedence_first`] rather than restating it. Everything
+/// else follows in name order, so one record maps onto one command sequence
+/// whichever order the map happens to draw.
 fn immediate_device_parameters(
     builtin: BuiltinEffectType,
     values: &HashMap<String, f64>,
     device_id: &str,
 ) -> Result<Vec<(DeviceParam, f32)>, String> {
-    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-
-    let resolved = keys
+    let resolved = name_ordered_keys(values)
         .into_iter()
         .map(|key| {
             let param = builtin_parameter(builtin, key, device_id)
@@ -1920,7 +1945,12 @@ fn immediate_device_parameters(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    Ok(layer_routing_first(&resolved, addressed_parameter_name).collect())
+    Ok(precedence_first(
+        &resolved,
+        addressed_parameter_name,
+        builtin.patch_precedence(),
+    )
+    .collect())
 }
 
 /// One instance the engine already owns, as a device may bind to it: the
@@ -2036,11 +2066,12 @@ fn map_device(
     // body at all, because to a strip a device that cannot be built and one
     // that cannot be written are the same missing device.
     //
-    // Which side of the ring a patch is applied on is a property of the body.
-    // A built-in instrument's patch is dozens of the instrument's own
-    // parameters per strip and the command ring is finite, so it is written
-    // into the instance on this thread; knead's handful travel as commands
-    // behind the registration.
+    // Which side of the ring a patch is applied on is a property of the body,
+    // not of whether it sounds notes. A built-in instrument's patch is dozens
+    // of the instrument's own parameters per strip and a gluten's is some
+    // forty-five, and the command ring is finite, so both are written into the
+    // instance on this thread; knead's handful travel as commands behind the
+    // registration.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2057,6 +2088,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::grand_boule_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Gluten => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::gluten_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -8030,6 +8071,19 @@ mod tests {
         )
     }
 
+    /// Mirrors [`fermenter_write`] for the gluten fixtures below — the wrapper
+    /// is the same for any built-in that answers to [`BuiltinParamName`], but
+    /// naming it after the fermenter in a gluten test would misname what it
+    /// asserts.
+    fn gluten_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
     fn map_immediate(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
@@ -8131,6 +8185,51 @@ mod tests {
                      fixed order"
                 );
             }
+        }
+    }
+
+    /// A gluten batch routes `topology`, `style` and `amount` first, in that
+    /// order, whatever order the wire record draws — the same law
+    /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
+    /// proves for the fermenter's own routing key, applied to gluten's three
+    /// macros instead of one.
+    #[test]
+    fn set_device_parameters_routes_a_gluten_batch_macros_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "threshold": -18.0,
+            "amount": 50.0,
+            "style": 0.0,
+            "topology": 0.0,
+            "ratio": 4.0
+        });
+        let expected = vec![
+            gluten_write("topology", 0.0),
+            gluten_write("style", 0.0),
+            gluten_write("amount", 50.0),
+            gluten_write("ratio", 4.0),
+            gluten_write("threshold", -18.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-glu", BuiltinEffectType::Gluten);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-glu", record.clone()),
+                &mut registry,
+            )
+            .expect("a gluten answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: the macros must lead in descriptor order, and the rest must \
+                 follow in name order"
+            );
         }
     }
 
@@ -10526,6 +10625,272 @@ mod tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the offline render"
+        );
+    }
+
+    /// A gluten device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A store on a compressor would be a
+    /// sink nothing can ever schedule at, and a `Generator` splice would sum
+    /// the compressor's output into the strip beside the signal it was meant
+    /// to replace.
+    #[test]
+    fn a_gluten_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-glu", "gluten", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a gluten device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Gluten(_), None)
+            )),
+            "the gluten is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// A contributing strip carrying one gluten over a constant clip, rendered
+    /// offline, built with `parameter_values` as its patch.
+    ///
+    /// The mapper's own oracle for a patch: what the patch did to the instance
+    /// is audible here, or the patch never reached it. The material is hot
+    /// enough to sit above any threshold the patch names, because a compressor
+    /// handed a signal under its threshold renders its input whatever it is
+    /// set to.
+    fn render_gluten_clip(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 4_800;
+
+        let mut samples = TimelineSamplePool::default();
+        samples.insert(
+            "source-a".to_string(),
+            TimelineSample {
+                left: vec![0.9; 48_000].into(),
+                right: vec![0.9; 48_000].into(),
+                sample_rate: SAMPLE_RATE,
+            },
+        );
+
+        render_offline_batch(
+            &batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Bus",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-glu", "type": "gluten", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-clip",
+                    "playback": {
+                        "trackId": "t1",
+                        "source": { "sourceId": "source-a" },
+                        "startTime": 0,
+                        "sourceOffsetSeconds": 0,
+                        "durationSeconds": 0.1,
+                        "playbackRate": 1,
+                        "gain": 1,
+                        "fade": { "microFadeSeconds": 0 }
+                    }
+                }
+            ])),
+            &samples,
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a gluten renders offline")
+    }
+
+    /// The loudest sample in the second half of a render.
+    ///
+    /// A compressor's gain reduction is not instantaneous — it opens at the
+    /// clip's own level and settles over its attack and release — so the
+    /// loudest sample of a whole render is the onset, which every patch shares.
+    /// The window after the envelope has settled is where two thresholds are
+    /// two different levels.
+    fn settled_peak(rendered: &[f32]) -> f32 {
+        rendered[rendered.len() / 2..]
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// A gluten's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments are held to above, and for the same
+    /// reason: a patch is some forty-five of the compressor's own parameters
+    /// per strip and the command ring is finite. The render is what says the
+    /// patch was applied rather than merely not sent — a lower threshold at a
+    /// higher ratio is more gain reduction, so a patch that reached nothing
+    /// settles at the level an unpatched compressor settles at.
+    #[test]
+    fn a_gluten_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "threshold": -40.0, "ratio": 8.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the compressor's own names is a gluten parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the gluten's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let unpatched = settled_peak(&render_gluten_clip(json!({})));
+        let patched = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -40.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            unpatched > 0.0,
+            "the unpatched render settles at silence, so the comparison below proves nothing"
+        );
+        assert!(
+            patched < unpatched,
+            "the patch never reached the instance the mapper built: it settles at {patched} \
+             where an unpatched compressor settles at {unpatched}"
+        );
+    }
+
+    /// A gluten's `amount` macro lands before the names it rewrites, even
+    /// though the record it travels in crosses as a `HashMap` with no order
+    /// of its own.
+    ///
+    /// `amount` writes `threshold` and `ratio` on every topology, so a
+    /// record naming all three settles wherever the explicit `threshold` and
+    /// `ratio` land it, not wherever `amount`'s own macro computation would —
+    /// which is what proves the record reached
+    /// [`BuiltinEffectType::patch_precedence`]'s route rather than being
+    /// applied in whatever order the map drew it in. The decisive probe for
+    /// the ordering law itself is the scheduler's own parity spec
+    /// (`a_hosted_gluten_renders_the_worklet_samples_for_the_same_material`);
+    /// this only proves the control-side route reaches it.
+    #[test]
+    fn a_gluten_macro_lands_before_the_names_it_rewrites() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let with_explicit_override = settled_peak(&render_gluten_clip(
+            json!({ "amount": 100.0, "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let explicit_alone = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let macro_alone = settled_peak(&render_gluten_clip(json!({ "amount": 100.0 })));
+
+        assert!(
+            (with_explicit_override - explicit_alone).abs() <= TOLERANCE,
+            "the explicit threshold/ratio did not win over the macro: {with_explicit_override} \
+             vs {explicit_alone}"
+        );
+        assert!(
+            (with_explicit_override - macro_alone).abs() > TOLERANCE,
+            "the macro alone settles at the same level as the explicit override, so this spec \
+             cannot tell the two orders apart"
+        );
+    }
+
+    /// A gluten patch builds one compressor whatever order the record draws,
+    /// even for a pair `BuiltinEffectType::patch_precedence` names nothing
+    /// about.
+    ///
+    /// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+    /// (`vca.rs:159-169`), and neither is one of `GLUTEN_MACRO_KEYS`'s three
+    /// names, so the precedence law has no say in which of the two lands
+    /// last. `resolved_param_writes` reads the record in name order
+    /// regardless, which is why every draw below renders the same samples,
+    /// and why the render matches `vca_type`'s preset rather than
+    /// `vca_character`'s own value: `vca_character` sorts before
+    /// `vca_type`, so the type preset is the one applied last, exactly as
+    /// `GlutenDescriptor.ts` orders the pair and the web host applies it.
+    #[test]
+    fn a_gluten_patch_builds_one_compressor_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "vca_character": 0.02,
+            "vca_type": 0.0,
+            "threshold": -30.0,
+            "ratio": 8.0
+        });
+
+        let first = settled_peak(&render_gluten_clip(record.clone()));
+        for draw in 0..DRAWS {
+            let peak = settled_peak(&render_gluten_clip(record.clone()));
+            assert_eq!(
+                peak, first,
+                "draw {draw}: the same record rendered a different peak"
+            );
+        }
+
+        let type_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_type": 0.0, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+        let character_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_character": 0.02, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            (first - type_alone).abs() <= TOLERANCE,
+            "the type preset did not win over the character value: {first} vs {type_alone}"
+        );
+        assert!(
+            (first - character_alone).abs() > TOLERANCE,
+            "the character value alone settles at the same level as the type preset, so this \
+             spec cannot tell the two orders apart: {first} vs {character_alone}"
+        );
+    }
+
+    /// A camelCase key refuses a contributing strip — the fixture's
+    /// `contributesAudio` is `true` — naming the device and the key.
+    ///
+    /// The compressor answers a name it does not know by doing nothing at all,
+    /// so a descriptor id that was never one of its names would otherwise be a
+    /// write the producer believes landed and the mix never heard. `autoMakeup`
+    /// is the descriptor's spelling of a parameter the engine spells
+    /// `auto_makeup`, and it is what a device carries from the moment a panel
+    /// creates it.
+    #[test]
+    fn a_camel_case_gluten_key_is_refused_by_shape() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "autoMakeup": 1 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a key shaped unlike one of the compressor's names must refuse");
+
+        assert!(
+            refusal.contains("autoMakeup") && refusal.contains("d-glu"),
+            "the refusal must name the key and the device, got: {refusal}"
         );
     }
 }

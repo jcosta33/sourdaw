@@ -13,6 +13,7 @@ import {
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
     expectedAbsentDeliveryReceiptAuthority,
     gateRequiredCheckNames,
+    gateRequiredSkipAliases,
     parseCliArgs,
     readGateRequiredCheckNames,
     runDeliverCli,
@@ -48,21 +49,34 @@ const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
  * tests pass the real files, and a snippet that calls a workflow nobody carried reads back as
  * unreadable, exactly as a missing file at the pinned commit would.
  */
+async function gateWorkflowSummary(
+    workflowSource: string,
+    calledSources: Record<string, string> = {}
+): Promise<string> {
+    return JSON.stringify(
+        await summarizeGateWorkflow(workflowSource, (usesPath) => {
+            const source = calledSources[usesPath];
+            if (source === undefined) {
+                throw new Error(`no called-workflow fixture for ${usesPath}`);
+            }
+            return source;
+        })
+    );
+}
+
 async function gatingNamesFor(
     workflowSource: string,
     calledSources: Record<string, string> = {}
 ): Promise<ReadonlySet<string>> {
-    return gateRequiredCheckNames(
-        JSON.stringify(
-            await summarizeGateWorkflow(workflowSource, (usesPath) => {
-                const source = calledSources[usesPath];
-                if (source === undefined) {
-                    throw new Error(`no called-workflow fixture for ${usesPath}`);
-                }
-                return source;
-            })
-        )
-    );
+    return gateRequiredCheckNames(await gateWorkflowSummary(workflowSource, calledSources));
+}
+
+/** The raw template names a scope-skipped matrix run reports under, for every resolved gating name. */
+async function gatingSkipAliasesFor(
+    workflowSource: string,
+    calledSources: Record<string, string> = {}
+): Promise<ReadonlyMap<string, string>> {
+    return gateRequiredSkipAliases(await gateWorkflowSummary(workflowSource, calledSources));
 }
 
 async function refusalFor(workflowSource: string, calledSources: Record<string, string> = {}): Promise<string> {
@@ -72,6 +86,23 @@ async function refusalFor(workflowSource: string, calledSources: Record<string, 
         return String(error);
     }
     return 'no refusal';
+}
+
+/**
+ * The read's own refusal, as the port would raise it: cases that pin a delivery refusing because the
+ * workflow read refuses pass this error through `gateRequiredCheckNames` rather than restating the
+ * message, so the two layers cannot drift apart.
+ */
+async function refusalErrorFor(workflowSource: string, calledSources: Record<string, string> = {}): Promise<Error> {
+    try {
+        await gatingNamesFor(workflowSource, calledSources);
+    } catch (error) {
+        if (error instanceof Error) {
+            return error;
+        }
+        throw error;
+    }
+    throw new Error('no refusal');
 }
 
 /**
@@ -606,6 +637,22 @@ function supersededRunCheckRuns(): HeadCheckRun[] {
         }),
         checkRun({ name: 'Validation / Lint', startedAt: REVIEW_RUN_START }),
         checkRun({ startedAt: REVIEW_RUN_START }),
+    ];
+}
+
+/**
+ * A live head reports a check run under every gating name — every job a run executes reports,
+ * whatever it concluded — while the fixtures below abbreviate the rollup to the names their case
+ * decides on. This completes a fixture with a success under every gating name it does not already
+ * report, the shape a real head carries; without it, the refusal owed to a required name that never
+ * reported would fire before the behaviour a case pins.
+ */
+function withGatedCoverage(checkRuns: HeadCheckRun[]): HeadCheckRun[] {
+    return [
+        ...checkRuns,
+        ...[...gatingCheckNames]
+            .filter((name) => !checkRuns.some((run) => run.name === name))
+            .map((name) => checkRun({ name })),
     ];
 }
 
@@ -7115,7 +7162,7 @@ describe('pull-request delivery', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
-            headCheckRuns: supersededRunCheckRuns(),
+            headCheckRuns: withGatedCoverage(supersededRunCheckRuns()),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7164,7 +7211,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
             ],
@@ -7359,11 +7406,11 @@ describe('pull-request delivery', () => {
         expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-            headCheckRuns: [
+            headCheckRuns: withGatedCoverage([
                 checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
-            ],
+            ]),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7503,7 +7550,7 @@ describe('pull-request delivery', () => {
         );
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-            headCheckRuns: [
+            headCheckRuns: withGatedCoverage([
                 checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
                 checkRun({
                     name: 'Validation / Unit suite ${{ matrix.shard }}/4',
@@ -7511,7 +7558,7 @@ describe('pull-request delivery', () => {
                     startedAt: REVIEW_RUN_START,
                 }),
                 checkRun(),
-            ],
+            ]),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7561,7 +7608,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Nightly failure report', conclusion: 'CANCELLED' }),
                 checkRun({ name: 'Nightly failure report', conclusion: 'SKIPPED' }),
             ],
@@ -7585,7 +7632,7 @@ describe('pull-request delivery', () => {
         const tolerated = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: checkRuns,
-            gateRequiredCheckNames: new Set(['Gate', 'Lint']),
+            gateRequiredCheckNames: new Set(['Gate', 'Validation / Lint']),
         });
 
         deliverPullRequestWithRequiredCi(42, tolerated.port);
@@ -7595,7 +7642,7 @@ describe('pull-request delivery', () => {
         const refused = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: checkRuns,
-            gateRequiredCheckNames: new Set(['Gate', 'Lint', 'Secret scan']),
+            gateRequiredCheckNames: new Set(['Gate', 'Validation / Lint', 'Secret scan']),
         });
 
         let thrown: unknown;
@@ -7721,21 +7768,140 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * Absence is tolerated, and this pins that rather than endorsing it: the rule keys on a name
-     * cancelled with no success beside it, so a required shard that never reported at all leaves
-     * the head with no verdict for that shard and merges anyway.
+     * A required name with no check on the head at all carries no verdict in either direction: the
+     * shard was never scheduled, or the name this reader derived matches nothing GitHub reported.
+     * This used to merge, which is exactly the coverage gap the absence refusal exists to close.
      */
-    it('merges a head from which a required matrix shard name is absent altogether', async () => {
-        const unstable = { mergeStateStatus: 'UNSTABLE' };
+    it('refuses a head from which a required matrix shard name is absent altogether', async () => {
         const { port, calls } = fakePort({
-            primary: [pullRequest(unstable), pullRequest(unstable)],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [...passingUnitShards([1, 2, 3]), checkRun()],
             gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+            gateRequiredSkipAliases: await gatingSkipAliasesFor(unitMatrixWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and required check Unit suite 4/4 never reported on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A scope-skipped matrix job reports one check run under the raw template name and none under
+     * the shard names, so the template run is the report for every shard it stands for. Absence
+     * reads it through the alias — the same map `skippedAfter` consults — and the head merges on
+     * the workflow's own scope decision instead of refusing on names that were decided, not absent.
+     */
+    it('merges a head whose matrix leg was scope-skipped, its template name standing for every shard', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({
+                    name: 'Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: REVIEW_RUN_START,
+                }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+            gateRequiredSkipAliases: await gatingSkipAliasesFor(unitMatrixWorkflow),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The absence refusal keys on the name alone, so a required name that never reported refuses
+     * whatever the rest of the rollup looks like — even a head where nothing was cancelled and the
+     * gate itself succeeded.
+     */
+    const singleLegWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  scan:',
+        '    name: Dependency scan',
+        '  gate:',
+        '    name: Gate',
+        '    needs: scan',
+    ].join('\n');
+
+    it('refuses an UNSTABLE head whose required leg name never reported beside an otherwise green rollup', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [checkRun()],
+            gateRequiredCheckNames: await gatingNamesFor(singleLegWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and required check Dependency scan never reported on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * Two gated jobs rendering one check name collapse into a single rollup name, where one job's
+     * success would answer for the other job's cancellation and neither verdict can be told apart.
+     * The read refuses the workflow itself — naming both jobs — so no head under it can merge on
+     * that name's evidence.
+     */
+    const collidingJobsWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  build:',
+        '    name: Shared check',
+        '  scan:',
+        '    name: Shared check',
+        '  gate:',
+        '    name: Gate',
+        '    needs: [build, scan]',
+    ].join('\n');
+
+    it('refuses two gated jobs that render one check name, naming both jobs', async () => {
+        expect(await refusalFor(collidingJobsWorkflow)).toBe(
+            `Error: the build and scan jobs in ${WORKFLOW_PATH} both report the check name ` +
+                'Shared check, which GitHub reports as one check name this gate cannot tell apart'
+        );
+    });
+
+    it('refuses a head whose one colliding check name carries a success and a cancellation from two gated jobs', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Shared check', conclusion: 'SUCCESS', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Shared check', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await refusalErrorFor(collidingJobsWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            `Error: the build and scan jobs in ${WORKFLOW_PATH} both report the check name ` +
+                'Shared check, which GitHub reports as one check name this gate cannot tell apart'
+        );
+        expect(calls).not.toContain('merge:42:head');
     });
 
     /**
@@ -7747,7 +7913,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
             ],
@@ -7789,7 +7955,7 @@ describe('pull-request delivery', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
-            headCheckRuns: supersededRunCheckRuns(),
+            headCheckRuns: withGatedCoverage(supersededRunCheckRuns()),
         });
 
         deliverPullRequestWithRequiredCi(42, port);

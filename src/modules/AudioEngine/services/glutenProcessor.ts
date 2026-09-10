@@ -7,62 +7,13 @@
  * Effect processor: reads from inputs[0] (main) and inputs[1] (sidechain), writes to outputs[0].
  */
 
+import { GLUTEN_DSP_PARAM_NAMES } from '../models/GlutenDspParamNames';
 import { GLUTEN_RUNTIME_PARAMETER_COUNT, isGlutenRuntimeParameterId } from '../models/GlutenRuntimeControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
-
-/** Map camelCase param names from TypeScript to snake_case for Rust. */
-const PARAM_MAP: Record<string, string> = {
-    threshold: 'threshold',
-    ratio: 'ratio',
-    attack: 'attack',
-    release: 'release',
-    knee: 'knee',
-    makeup: 'makeup',
-    mix: 'mix',
-    topology: 'topology',
-    style: 'style',
-    autoMakeup: 'auto_makeup',
-    autoRelease: 'auto_release',
-    range: 'range',
-    scHpfFreq: 'sc_hpf_freq',
-    scHpfEnabled: 'sc_hpf_enabled',
-    thrust: 'thrust',
-    detection: 'detection',
-    stereoMode: 'stereo_mode',
-    stereoLink: 'stereo_link',
-    lookahead: 'lookahead',
-    bypass: 'bypass',
-    vcaCharacter: 'vca_character',
-    limitMode: 'limit_mode',
-    peakReduction: 'peak_reduction',
-    inputGain: 'input_gain',
-    outputGain: 'output_gain',
-    xfmrDrive: 'xfmr_drive',
-    allButtons: 'all_buttons',
-    recovery: 'recovery',
-    limiterThreshold: 'limiter_threshold',
-    scLpfFreq: 'sc_lpf_freq',
-    scLpfEnabled: 'sc_lpf_enabled',
-    deltaListen: 'delta_listen',
-    amount: 'amount',
-    gainMatchBypass: 'gain_match_bypass',
-    feedForward: 'feed_forward',
-    blendTopology: 'blend_topology',
-    blendAmount: 'blend_amount',
-    scEqFreq: 'sc_eq_freq',
-    scEqGain: 'sc_eq_gain',
-    scEqQ: 'sc_eq_q',
-    scEqEnabled: 'sc_eq_enabled',
-    vcaType: 'vca_type',
-    jfetK3: 'jfet_k3',
-    xfmrK2: 'xfmr_k2',
-    oversampling: 'oversampling',
-    extSidechain: 'ext_sidechain',
-};
 
 type UnknownRecord = Record<string, unknown>;
 const MAX_ID_LENGTH = 128;
@@ -229,7 +180,10 @@ class GlutenProcessor extends AudioWorkletProcessor {
             return;
         }
         const oldLatency = this._instance.get_latency_samples();
-        this._instance.set_param(PARAM_MAP[message.target.parameterId] ?? message.target.parameterId, message.value);
+        this._instance.set_param(
+            GLUTEN_DSP_PARAM_NAMES[message.target.parameterId] ?? message.target.parameterId,
+            message.value
+        );
         const newLatency = this._instance.get_latency_samples();
         if (newLatency !== oldLatency) {
             this.port.postMessage({ type: 'latency-changed', latency: newLatency });
