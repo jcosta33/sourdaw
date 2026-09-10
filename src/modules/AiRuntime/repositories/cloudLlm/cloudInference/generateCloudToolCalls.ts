@@ -40,33 +40,30 @@ export const generateCloudToolCalls = inject({ logger })(
             const unlinkCallerAbort = linkCloudRequestAbort(signal, controller);
 
             try {
-                if (runtime.provider !== 'anthropic') {
-                    const results = await generateOpenAiCompatibleToolCalls({
-                        runtime,
-                        systemPrompt,
-                        userMessage,
-                        toolSchemas,
-                        maxOutputTokens,
-                        signal: controller.signal,
-                    });
-                    controller.signal.throwIfAborted();
-                    return results;
-                }
-
-                const results = await generateAnthropicToolCalls({
-                    runtime,
-                    systemPrompt: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
-                    userMessage,
-                    toolSchemas,
-                    maxOutputTokens,
-                    signal: controller.signal,
-                });
+                const plan =
+                    runtime.provider === 'anthropic'
+                        ? await generateAnthropicToolCalls({
+                              runtime,
+                              systemPrompt: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
+                              userMessage,
+                              toolSchemas,
+                              maxOutputTokens,
+                              signal: controller.signal,
+                          })
+                        : await generateOpenAiCompatibleToolCalls({
+                              runtime,
+                              systemPrompt,
+                              userMessage,
+                              toolSchemas,
+                              maxOutputTokens,
+                              signal: controller.signal,
+                          });
                 controller.signal.throwIfAborted();
                 logger.info(
-                    `[Cloud AI] Claude returned ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
+                    `[Cloud AI] ${runtime.provider} request ${plan.providerRequestId ?? 'unreported'} returned ${String(plan.calls.length)} tool call(s): ${plan.calls.map((call) => call.name).join(', ')}`
                 );
 
-                return results;
+                return plan.calls;
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(controller.signal.reason)) {
                     throw controller.signal.reason;

@@ -494,7 +494,9 @@ describe('provider adapter conformance', () => {
                 ],
                 maxOutputTokens: 8192,
             })
-        ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
+        ).resolves.toMatchObject({
+            calls: [{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        });
         expect(fetchMock).not.toHaveBeenCalled();
         expect(
             desktopHarness.invoke.mock.calls
@@ -522,7 +524,7 @@ describe('provider adapter conformance', () => {
                 onToken,
                 signal: new AbortController().signal,
             })
-        ).resolves.toBe('stop');
+        ).resolves.toMatchObject({ finishReason: 'stop' });
         expect(onToken).toHaveBeenCalledWith('Privileged');
         expect(fetchMock).not.toHaveBeenCalled();
         const requests = desktopHarness.invoke.mock.calls.filter(([command]) => command === 'provider_gateway_request');

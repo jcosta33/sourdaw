@@ -29,7 +29,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         vi.stubGlobal('fetch', fetchMock);
         const onToken = vi.fn();
 
-        const finishReason = await streamOpenAiCompatibleChatCompletion({
+        const result = await streamOpenAiCompatibleChatCompletion({
             runtime,
             messages: [
                 { role: 'system', content: 'system' },
@@ -41,7 +41,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         });
 
         expect(onToken.mock.calls).toEqual([['Lower'], [' the vocals']]);
-        expect(finishReason).toBe('stop');
+        expect(result.finishReason).toBe('stop');
         const request = fetchMock.mock.calls[0]?.[1];
         if (!request || typeof request.body !== 'string') {
             throw new Error('Expected a JSON request body');
@@ -235,7 +235,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
                 onUnknownEvent,
                 signal: new AbortController().signal,
             })
-        ).resolves.toBe('stop');
+        ).resolves.toMatchObject({ finishReason: 'stop' });
         expect(onUnknownEvent).toHaveBeenCalledWith('openai-compatible:response.telemetry');
     });
 
@@ -301,14 +301,14 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(truncated, { status: 200 })));
 
         const onToken = vi.fn();
-        const finishReason = await streamOpenAiCompatibleChatCompletion({
+        const result = await streamOpenAiCompatibleChatCompletion({
             runtime,
             messages: [{ role: 'user', content: 'help' }],
             onToken,
             signal: new AbortController().signal,
         });
 
-        expect(finishReason).toBe('length');
+        expect(result.finishReason).toBe('length');
         expect(onToken).toHaveBeenCalledWith('partial');
     });
 
@@ -330,22 +330,24 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         ).rejects.toThrow('Hosted AI chat stream ended before normal completion');
     });
 
-    it('rejects streamed provider refusals without exposing refusal content', async () => {
+    it('finishes streamed provider refusals without exposing refusal content', async () => {
         const refusal = [
             'data: {"choices":[{"delta":{"refusal":"secret refusal detail"}}]}\n\n',
             'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
             'data: [DONE]\n\n',
         ].join('');
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(refusal, { status: 200 })));
+        const onToken = vi.fn();
 
-        await expect(
-            streamOpenAiCompatibleChatCompletion({
-                runtime,
-                messages: [{ role: 'user', content: 'help' }],
-                onToken: vi.fn(),
-                signal: new AbortController().signal,
-            })
-        ).rejects.toThrow('Hosted AI refused the chat request');
+        const result = await streamOpenAiCompatibleChatCompletion({
+            runtime,
+            messages: [{ role: 'user', content: 'help' }],
+            onToken,
+            signal: new AbortController().signal,
+        });
+
+        expect(result.finishReason).toBe('refusal');
+        expect(onToken).not.toHaveBeenCalled();
     });
 
     it('omits authorization for an auth-free compatible endpoint', async () => {

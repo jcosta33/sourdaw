@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
-import { streamCloudChatCompletion } from '../streamCloudChatCompletion';
+import { type CloudChatCompletionOutcome, streamCloudChatCompletion } from '../streamCloudChatCompletion';
+import { type OpenAiCompatibleStreamResult } from '../streamOpenAiCompatibleChatCompletion';
 
 type CloudStreamInput = {
     sessionId: string;
@@ -50,12 +51,11 @@ type CompatibleStreamInput = {
     maxTokens?: number;
 };
 
-type CloudCompletionOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
-
 const mocks = vi.hoisted(() => ({
     getCloudProviderRuntime: vi.fn(),
     stream: vi.fn<(input: CloudStreamInput) => Promise<void>>(),
-    streamOpenAiCompatibleChatCompletion: vi.fn<(input: CompatibleStreamInput) => Promise<'stop' | 'length'>>(),
+    streamOpenAiCompatibleChatCompletion:
+        vi.fn<(input: CompatibleStreamInput) => Promise<OpenAiCompatibleStreamResult>>(),
     registerCloudStreamController: vi.fn((controller: AbortController) => controller),
     unregisterCloudStreamController: vi.fn(),
     warn: vi.fn(),
@@ -110,7 +110,10 @@ describe('streamCloudChatCompletion', () => {
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'test-model',
         });
-        mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue('stop');
+        mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue({
+            finishReason: 'stop',
+            providerRequestId: null,
+        });
     });
 
     it('throws if cloud client is not configured', async () => {
@@ -166,14 +169,14 @@ describe('streamCloudChatCompletion', () => {
             tokens.push(text);
         }
 
-        const outcome: CloudCompletionOutcome = await streamCloudChatCompletion(
+        const outcome: CloudChatCompletionOutcome = await streamCloudChatCompletion(
             [{ role: 'user', content: 'test' }],
             onToken
         );
 
         expect(tokens).toHaveLength(2);
         expect(tokens).toEqual(['Hello', ' World']);
-        expect(outcome).toEqual({ status: 'complete' });
+        expect(outcome).toEqual({ status: 'complete', finishReason: 'stop', providerRequestId: null });
     });
 
     it('rejects an oversized Anthropic event before exposing its token', async () => {
@@ -275,7 +278,7 @@ describe('streamCloudChatCompletion', () => {
         expect(adapterCall?.maxTokens).toBe(1000);
         expect(mocks.stream).not.toHaveBeenCalled();
         expect(mocks.unregisterCloudStreamController).toHaveBeenCalledTimes(1);
-        expect(outcome).toEqual({ status: 'complete' });
+        expect(outcome).toEqual({ status: 'complete', finishReason: 'stop', providerRequestId: null });
     });
 
     it('aborts a hosted request before its first token when the caller stops', async () => {
@@ -318,12 +321,21 @@ describe('streamCloudChatCompletion', () => {
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
         });
-        mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue('length');
+        mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue({
+            finishReason: 'length',
+            providerRequestId: null,
+        });
 
         const outcome = await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn());
 
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('token limit'));
-        expect(outcome).toEqual({ status: 'incomplete', reason: 'token limit' });
+        expect(outcome).toEqual({
+            status: 'incomplete',
+            reason: 'token limit',
+            finishReason: 'length',
+            safeMessage: 'The hosted model stopped at its output token limit.',
+            providerRequestId: null,
+        });
     });
 
     it('rejects when configuration changes as an OpenAI-compatible stream completes', async () => {
@@ -337,7 +349,7 @@ describe('streamCloudChatCompletion', () => {
         mocks.streamOpenAiCompatibleChatCompletion.mockImplementation(() => {
             const controller = mocks.registerCloudStreamController.mock.calls[0]?.[0];
             controller?.abort(new AiRuntimeConfigurationChangedError());
-            return Promise.resolve('stop');
+            return Promise.resolve({ finishReason: 'stop' as const, providerRequestId: null });
         });
 
         await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn())).rejects.toBeInstanceOf(
@@ -369,7 +381,13 @@ describe('streamCloudChatCompletion', () => {
         const outcome = await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn());
 
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('max_tokens'));
-        expect(outcome).toEqual({ status: 'incomplete', reason: 'max_tokens' });
+        expect(outcome).toEqual({
+            status: 'incomplete',
+            reason: 'max_tokens',
+            finishReason: 'length',
+            safeMessage: 'The hosted model stopped at its output token limit.',
+            providerRequestId: null,
+        });
     });
 
     it('does not warn when the stream stops normally with end_turn', async () => {
