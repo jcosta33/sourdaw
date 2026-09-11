@@ -11,8 +11,6 @@ import {
     type WebMidiNoteKey,
 } from '../../models/WebMidiTypes';
 
-import { readPersistedInputId } from './readPersistedInputId';
-
 export type WebMidiSubscriber = () => void;
 
 const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
@@ -48,7 +46,11 @@ export const webMidiState: { current: WebMidiState } = {
     current: {
         isSupported: webMidiSupported || isDesktopRuntime(),
         inputs: [],
-        selectedInputId: readPersistedInputId(),
+        // Seeded null: which identity scheme owns the persisted id is not
+        // known until a transport branch runs, so no storage read may happen
+        // here — an untagged read would resolve an id across schemes (#4138).
+        // `initWebMidi` re-reads with the active scheme before first use.
+        selectedInputId: null,
         enumerationError: null,
     },
 };

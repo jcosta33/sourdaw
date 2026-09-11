@@ -276,7 +276,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // committing call in `flushParam`.
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 4,
         'src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts': 2,
+        // Count provenance: measured 2 in code — the `updateDeviceParam` import
+        // and its single call in `sendProofParam`, the door every live Proof
+        // parameter write now reaches the DSP through instead of the worklet
+        // bridge directly, so a natively carried Proof hears the same write.
+        'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
+        // Count provenance: new file entry, measured 2 — the `updateDevicePatch`
+        // import and its single call sending the five `chain_order_{n}` keys as
+        // one patch, so a natively carried Proof's module order matches a panel
+        // drag instead of hearing only the worklet-bridge reorder message.
+        'src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
         'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
@@ -393,14 +403,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // param replay does *not* deliver order (the worklet's `set_param`
         // matches no `chain_order_` prefix and drops all five values).
         // 'src/modules/Proof/useCases/prepareOfflineProof.ts': removed (0),
-        'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 1,
-        'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 1,
-        'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 2,
-        'src/modules/Proof/useCases/proofParamBridge/syncDynBands.ts': 9,
-        'src/modules/Proof/useCases/proofParamBridge/syncEqBands.ts': 6,
-        'src/modules/Proof/useCases/proofParamBridge/syncExciter.ts': 4,
-        'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': 13,
-        'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
+        // Count provenance: measured 0 across all eight rows below, was 1/1/2/9/
+        // 6/4/13/3 — live Proof writes now route through the device door:
+        // `sendProofParam`/`sendProofChainOrder` in `helpers.ts`/
+        // `sendProofChainOrder.ts` call `updateDeviceParam`/`updateDevicePatch`
+        // (censused in 'persistence-runtime' above) instead of the worklet
+        // bridge's `setParam`, so a natively carried Proof hears the same
+        // write. None of these files still names `setParam` or `setPadParam`;
+        // all eight rows retire in one motion.
+        // 'src/modules/Proof/useCases/proofParamBridge/helpers.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncDynBands.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncEqBands.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncExciter.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': removed (0),
         // Count provenance: measured 0 with `grep -o`, was 2 — row removed
         // rather than zeroed, since this census only records files that match.
         // Both hits were the `setPadParam`/`setParam` fields of a hand-written

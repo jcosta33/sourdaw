@@ -6,6 +6,7 @@ import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { persistInputId } from '../persistInputId';
 import { readPersistedInputId } from '../readPersistedInputId';
+import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../selectedInputIdStorageKeys';
 import { setMidiAccess } from '../setMidiAccess';
 import { setNativeMode } from '../setNativeMode';
 import { setState } from '../setState';
@@ -63,7 +64,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
     const inputs = enumerateInputs();
     const state = getState();
     const currentAccess = getMidiAccess();
-    const preferredId = readPersistedInputId();
+    const preferredId = readPersistedInputId(WEB_MIDI_IDENTITY_SCHEME);
 
     // The saved device came back (replug, hub power cycle). Restore it rather
     // than leaving the session stuck on whatever stood in for it.
@@ -72,7 +73,10 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
         if (preferredInput && inputs.some((entry) => entry.id === preferredId)) {
             detachActiveInput();
             attachInput({ input: preferredInput, onMidiMessage });
-            setState({ inputs, selectedInputId: preferredId, enumerationError: null });
+            setState(
+                { inputs, selectedInputId: preferredId, enumerationError: null },
+                { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME }
+            );
             return;
         }
     }
@@ -157,7 +161,7 @@ function settleLegacyPersistedId(
     if (resolveNativeMidiPort(ports, savedId) !== undefined) {
         return;
     }
-    persistInputId(fallbackPort.id);
+    persistInputId(fallbackPort.id, NATIVE_IDENTITY_SCHEME);
 }
 
 type PortsChangedTickInput = {
@@ -177,7 +181,7 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
     }
 
     const state = getState();
-    const preferredId = readPersistedInputId();
+    const preferredId = readPersistedInputId(NATIVE_IDENTITY_SCHEME);
 
     // The saved device came back (replug, hub power cycle). Re-open it through
     // the same sequence an explicit selection takes, rather than leaving the
@@ -192,7 +196,10 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
                     portName: preferredPort.name,
                     onMidiMessage,
                 });
-                setState({ selectedInputId: preferredPort.id });
+                setState(
+                    { selectedInputId: preferredPort.id },
+                    { persistSelection: true, identityScheme: NATIVE_IDENTITY_SCHEME }
+                );
             } catch (error) {
                 logger.warn('[MIDI] Failed to restore replugged MIDI input:', error);
             }
@@ -300,7 +307,8 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 // while the preferred device was unplugged, and resolving from
                 // it would adopt the stand-in as the target on every init after
                 // the first.
-                const targetId = readPersistedInputId() ?? state.selectedInputId ?? inputs[0]!.id;
+                const targetId =
+                    readPersistedInputId(WEB_MIDI_IDENTITY_SCHEME) ?? state.selectedInputId ?? inputs[0]!.id;
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput({ input, onMidiMessage });
@@ -336,7 +344,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 // Saved preference first, for the same reason as the Web MIDI
                 // branch: live state can hold an earlier init's stand-in.
                 const fallbackPort = ports[0]!;
-                const savedId = readPersistedInputId();
+                const savedId = readPersistedInputId(NATIVE_IDENTITY_SCHEME);
                 // A saved id matching no present port is absent, whether the
                 // device is unplugged or the id predates stable identity and is
                 // still a bare enumeration index. Either way it resolves to

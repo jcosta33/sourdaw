@@ -1,57 +1,75 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { bridges, type ProofAudioBridge } from '../helpers';
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+
+import { bridges } from '../helpers';
 import { syncDynBands } from '../syncDynBands';
 import { syncEqBands } from '../syncEqBands';
 import { syncExciter } from '../syncExciter';
 import { syncImager } from '../syncImager';
 
-type MockedProofBridge = {
-    [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
-};
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+}));
 
-function makeBridge(): MockedProofBridge {
-    return {
-        setParam: vi.fn<ProofAudioBridge['setParam']>(),
-        reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
-        resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
-    };
-}
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
 
-// These four sync* functions all guard on `bridges.get(deviceId)` before
-// touching the engine — reachable whenever a device is unregistered or not
-// yet attached when a sync fires. Covered here directly since none of the
-// higher-level callers (setProofParamWithPatch / syncFullPatch) ever invoke
-// them without a bridge already registered.
-describe('proofParamBridge sync* no-bridge guards', () => {
+// These four sync* functions send every band they walk through the device door,
+// so a natively carried Proof takes a preset load or a section resync as well
+// as the web twin does. Nothing here consults the worklet bridge registry: a
+// device the native session carries never registers one.
+describe('proofParamBridge sync* device writes', () => {
     beforeEach(() => {
         bridges.clear();
+        vi.clearAllMocks();
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
-    it('syncEqBands is a no-op when no bridge is registered for the device', () => {
-        expect(() => syncEqBands('missing-device')).not.toThrow();
+    it('sends EQ band parameters with no bridge registered for the device', () => {
+        syncEqBands('dev-1');
+
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band0_freq', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'eq_band7_q', expect.any(Number));
     });
 
-    it('syncDynBands is a no-op when no bridge is registered for the device', () => {
-        expect(() => syncDynBands('missing-device')).not.toThrow();
+    it('sends dynamics crossovers and band parameters with no bridge registered', () => {
+        syncDynBands('dev-1');
+
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_xover0', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'dyn_band0_threshold', expect.any(Number));
     });
 
-    it('syncExciter is a no-op when no bridge is registered for the device', () => {
-        expect(() => syncExciter('missing-device')).not.toThrow();
+    it('sends exciter band parameters with no bridge registered', () => {
+        syncExciter('dev-1');
+
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'exc_band0_drive', expect.any(Number));
     });
 
-    it('syncImager is a no-op when no bridge is registered for the device', () => {
-        expect(() => syncImager('missing-device')).not.toThrow();
-    });
-
-    it('sends imager band widths and mono-bass params to the registered bridge', () => {
-        const bridge = makeBridge();
-        bridges.set('dev-1', bridge);
-
+    it('sends imager band widths and mono-bass params', () => {
         syncImager('dev-1');
 
-        expect(bridge.setParam).toHaveBeenCalledWith('img_width0', expect.any(Number));
-        expect(bridge.setParam).toHaveBeenCalledWith('img_auto_mono_bass', expect.any(Number));
-        expect(bridge.setParam).toHaveBeenCalledWith('img_mono_bass_freq', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_width0', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_auto_mono_bass', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'dev-1', 'img_mono_bass_freq', expect.any(Number));
+    });
+
+    it.each(['missing', 'ineligible'] as const)('writes nothing for a %s target', (status) => {
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
+
+        syncEqBands('dev-1');
+        syncDynBands('dev-1');
+        syncExciter('dev-1');
+        syncImager('dev-1');
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 });
