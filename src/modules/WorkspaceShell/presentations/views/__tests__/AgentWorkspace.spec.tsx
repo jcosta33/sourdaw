@@ -142,6 +142,8 @@ const confirmation = (overrides: Partial<PendingConfirmation> = {}): PendingConf
     error: null,
     followUpProjectRevision: null,
     followUpStatus: null,
+    supersedes: null,
+    supersededBy: null,
     createdAt: 10,
     resolvedAt: null,
     projectRevision: 'revision-7',

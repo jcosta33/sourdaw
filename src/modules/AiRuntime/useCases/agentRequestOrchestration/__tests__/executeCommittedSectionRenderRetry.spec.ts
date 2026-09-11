@@ -197,6 +197,8 @@ function createInput(): Parameters<typeof executeCommittedSectionRenderRetry>[0]
             executedActions: [],
             status: 'failed',
             error: 'Renderer unavailable.',
+            supersedes: null,
+            supersededBy: null,
             followUpProjectRevision: 'revision-source',
             followUpStatus: 'retryable',
             createdAt: 1,

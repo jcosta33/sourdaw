@@ -8,6 +8,8 @@ import {
     proposePendingActionConfirmation,
     settlePendingActionResourceLease,
     settlePendingActionResourceLeaseBestEffort,
+    supersedePendingActionConfirmation,
+    updatePendingActionConfirmationStatus,
 } from '../pendingActionConfirmationStore';
 
 describe('pendingActionConfirmationStore', () => {
@@ -381,5 +383,61 @@ describe('pendingActionConfirmationStore', () => {
         expect(commit).toHaveBeenCalledOnce();
         expect(retain).toHaveBeenCalledOnce();
         expect(release).not.toHaveBeenCalled();
+    });
+
+    // Red when supersession writes the replacement identity onto a live proposal instead of retiring it.
+    it('retires a proposed confirmation under the identity that replaced it', () => {
+        proposePendingActionConfirmation({
+            id: 'confirmation-superseded',
+            prompt: 'lower the bass',
+            assistantMessageId: 'message-superseded',
+            actions: [{ type: 'renameTrack', payload: { trackId: 'track-bass', name: 'Bass' } }],
+            actionLabels: ['Rename Bass'],
+            projectRevision: 'revision-superseded',
+        });
+
+        const superseded = supersedePendingActionConfirmation({
+            confirmationId: 'confirmation-superseded',
+            supersededBy: 'confirmation-replacement',
+            reason: 'Superseded by a re-preview against the current project.',
+        });
+
+        expect(superseded).toMatchObject({
+            status: 'invalidated',
+            error: 'Superseded by a re-preview against the current project.',
+            supersededBy: 'confirmation-replacement',
+            supersedes: null,
+        });
+        expect(superseded?.resolvedAt).toEqual(expect.any(Number));
+        expect(getPendingActionConfirmation('confirmation-superseded')).toMatchObject({
+            status: 'invalidated',
+            supersededBy: 'confirmation-replacement',
+        });
+    });
+
+    // Red when supersession stops guarding the status and overwrites an executed confirmation's record.
+    it('refuses to supersede an executed confirmation and leaves it untouched', () => {
+        proposePendingActionConfirmation({
+            id: 'confirmation-executed',
+            prompt: 'lower the bass',
+            assistantMessageId: 'message-executed',
+            actions: [{ type: 'renameTrack', payload: { trackId: 'track-bass', name: 'Bass' } }],
+            actionLabels: ['Rename Bass'],
+            projectRevision: 'revision-executed',
+        });
+        updatePendingActionConfirmationStatus({ confirmationId: 'confirmation-executed', status: 'executed' });
+
+        expect(
+            supersedePendingActionConfirmation({
+                confirmationId: 'confirmation-executed',
+                supersededBy: 'confirmation-replacement',
+                reason: 'Superseded by a re-preview against the current project.',
+            })
+        ).toBeNull();
+        expect(getPendingActionConfirmation('confirmation-executed')).toMatchObject({
+            status: 'executed',
+            error: null,
+            supersededBy: null,
+        });
     });
 });
