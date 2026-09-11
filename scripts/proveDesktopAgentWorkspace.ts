@@ -13,10 +13,13 @@
  * Neither host is given a test-only privilege. The packaged renderer cannot
  * dynamic-import `/src/...` and the preload exposes no test hook, so the
  * provider this run admits is admitted through the Preferences form, against
- * a real OpenAI-compatible endpoint this process starts on loopback. The
- * packaged Content-Security-Policy already admits `http://127.0.0.1:*` for
- * `connect-src` (`electron/protocol.ts`), so nothing about the shipped shell
- * is relaxed for the run either.
+ * a real OpenAI-compatible endpoint this process starts on loopback. Admitting
+ * it only writes configuration, so the run then sends one explain-mode prompt
+ * — the mode with no local fast path — and waits for that endpoint's own reply
+ * in the chat log: it is the round trip, not the admission, that exercises the
+ * packaged Content-Security-Policy, which already admits `http://127.0.0.1:*`
+ * for `connect-src` (`electron/protocol.ts`), and the desktop hosted-provider
+ * branch. Nothing about the shipped shell is relaxed for the run either.
  *
  * Why no Vitest or Playwright test can answer this
  * ------------------------------------------------
@@ -47,7 +50,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { driveAgentWorkspaceProof, type ProofStep } from './desktopAgentWorkspaceDrive.ts';
-import { emptyDiagnostics } from './desktopLatencyDiagnostics.ts';
+import { emptyDiagnostics, printDiagnostics } from './desktopLatencyDiagnostics.ts';
 import { DEFAULT_APP_PATH } from './desktopLatencyReadings.ts';
 import { machineProvenance, readPayloadIdentity, writeRecord, type PayloadIdentity } from './desktopLatencyRecord.ts';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider.ts';
@@ -96,26 +99,33 @@ export function parseArgs(argv: readonly string[]): AgentProofArgs {
 }
 
 /**
- * A run that took no step drove nothing, so it cannot claim a workspace
- * verdict; one whose every step held is PROVEN, and any failed step is the
- * FAILED verdict this contract reserves exit 1 for.
+ * A run that took no step drove nothing, and neither did one the launch itself
+ * stopped before a single workspace step was recorded: both are NOT RUN, the
+ * verdict this contract reserves for a precondition or a launch that did not
+ * hold. A failed workspace step is the FAILED verdict exit 1 is reserved for,
+ * and a run whose every step held is PROVEN.
  */
 export function decideVerdict(steps: readonly ProofStep[]): AgentProofVerdict {
     if (steps.length === 0) {
         return 'not-run';
     }
-    return steps.every((entry) => entry.ok) ? 'proven' : 'failed';
+    const failed = steps.find((entry) => !entry.ok);
+    if (failed === undefined) {
+        return 'proven';
+    }
+    const droveTheWorkspace = steps.some((entry) => entry.phase === 'workspace');
+    return failed.phase === 'launch' && !droveTheWorkspace ? 'not-run' : 'failed';
 }
 
 export function describeVerdict(steps: readonly ProofStep[], verdict: AgentProofVerdict): string {
     if (verdict === 'proven') {
         return `every one of the ${String(steps.length)} workspace steps observed the state it names`;
     }
-    if (verdict === 'not-run') {
+    const failed = steps.find((entry) => !entry.ok);
+    if (failed === undefined) {
         return 'the packaged app was never driven';
     }
-    const failed = steps.find((entry) => !entry.ok);
-    return `the step "${failed?.name ?? 'unknown'}" observed ${failed?.observed ?? 'nothing'}`;
+    return `the step "${failed.name}" observed ${failed.observed}`;
 }
 
 export type BuildAgentProofRecordInput = {
@@ -150,11 +160,22 @@ function reportSteps(steps: readonly ProofStep[]): void {
     }
 }
 
+/**
+ * A failed step names the state it did not see, but not why the renderer could
+ * not produce it — so a failing drive is reported with the app's own output and
+ * diagnostics, the way a failed measurement is, and the record it leaves behind
+ * arrives with the renderer errors that caused it.
+ */
 async function runProof(binary: string, profileDir: string, provider: LoopbackOpenAiProvider): Promise<ProofStep[]> {
     const diagnostics = emptyDiagnostics();
     const app = await launchPackagedApp(binary, profileDir, diagnostics);
     try {
-        return await driveAgentWorkspaceProof(app.page, provider);
+        const steps = await driveAgentWorkspaceProof(app.page, provider);
+        if (steps.some((entry) => !entry.ok)) {
+            process.stdout.write(`\n--- packaged app output ---\n${app.output().trim()}\n`);
+            printDiagnostics(diagnostics);
+        }
+        return steps;
     } finally {
         await app.quit();
     }

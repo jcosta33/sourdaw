@@ -24,6 +24,8 @@ export type LoopbackOpenAiProvider = {
     /** OpenAI-compatible base URL, e.g. `http://127.0.0.1:41234/v1`. */
     baseUrl: string;
     model: string;
+    /** The assistant text this endpoint streams, so a driver waits for what it serves rather than a second literal. */
+    reply: string;
     /** Chat-completion request bodies the app sent, in arrival order. */
     completionRequests: readonly string[];
     close: () => Promise<void>;
@@ -130,6 +132,7 @@ export async function startLoopbackOpenAiProvider(
     return {
         baseUrl: `http://127.0.0.1:${String(port)}/v1`,
         model: MODEL_ID,
+        reply: state.reply,
         completionRequests: state.completionRequests,
         close: () =>
             new Promise<void>((resolve, reject) => {

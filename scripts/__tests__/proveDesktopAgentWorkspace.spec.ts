@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ProofStep } from '../desktopAgentWorkspaceDrive.ts';
+import { type ProofPhase, type ProofStep } from '../desktopAgentWorkspaceDrive.ts';
 import {
     buildAgentProofRecord,
     decideVerdict,
@@ -11,12 +11,14 @@ import {
 
 const PAYLOAD = { sha256: 'abc123', mtime: '2026-09-11T00:00:00.000Z', files: ['Contents/Resources/app.asar'] };
 
-function ok(name: string): ProofStep {
-    return { name, ok: true, observed: `${name} held` };
+const STREAMING_STEP = 'stream a chat answer from the admitted loopback endpoint';
+
+function ok(phase: ProofPhase, name: string): ProofStep {
+    return { name, phase, ok: true, observed: `${name} held` };
 }
 
-function failed(name: string, observed: string): ProofStep {
-    return { name, ok: false, observed };
+function failed(phase: ProofPhase, name: string, observed: string): ProofStep {
+    return { name, phase, ok: false, observed };
 }
 
 describe('parseArgs', () => {
@@ -51,33 +53,81 @@ describe('decideVerdict', () => {
     });
 
     it('reports proven when every step held', () => {
-        expect(decideVerdict([ok('open the agent workspace'), ok('end the comparison')])).toBe('proven');
+        expect(
+            decideVerdict([ok('workspace', 'open the agent workspace'), ok('workspace', 'end the comparison')])
+        ).toBe('proven');
     });
 
-    it('reports failed when any step observed the wrong state, wherever it sits', () => {
-        const steps = [ok('open the agent workspace'), failed('confirm the proposal', 'saw 2 armable tracks')];
+    it('reports failed when any workspace step observed the wrong state, wherever it sits', () => {
+        const steps = [
+            ok('workspace', 'open the agent workspace'),
+            failed('workspace', 'confirm the proposal', 'saw 2 armable tracks'),
+        ];
 
         expect(decideVerdict(steps)).toBe('failed');
         expect(decideVerdict([...steps].reverse())).toBe('failed');
+    });
+
+    it('reports failed when the streaming step never saw the endpoint answer', () => {
+        const steps = [
+            ok('launch', 'dismiss the alpha notice'),
+            ok('workspace', 'admit the loopback provider through Preferences'),
+            failed('workspace', STREAMING_STEP, 'the endpoint served completionRequests=0'),
+        ];
+
+        expect(decideVerdict(steps)).toBe('failed');
+    });
+
+    it('reports not-run when a launch step failed before any workspace step was recorded', () => {
+        const steps = [
+            ok('launch', 'wait for the workspace or the launch screen'),
+            failed('launch', 'dismiss the onboarding tour', 'the tour is still up'),
+        ];
+
+        expect(decideVerdict(steps)).toBe('not-run');
+    });
+
+    it('reports not-run when the drive stopped at the very first launch step', () => {
+        const steps = [failed('launch', 'wait for the workspace or the launch screen', 'neither ever appeared')];
+
+        expect(decideVerdict(steps)).toBe('not-run');
     });
 });
 
 describe('describeVerdict', () => {
     it('names the failing step and what it saw', () => {
-        const steps = [ok('open the agent workspace'), failed('revert the change', 'expected 1, saw 4')];
+        const steps = [
+            ok('workspace', 'open the agent workspace'),
+            failed('workspace', 'revert the change', 'expected 1, saw 4'),
+        ];
 
         expect(describeVerdict(steps, 'failed')).toBe('the step "revert the change" observed expected 1, saw 4');
     });
 
+    it('names the failing launch step behind a not-run verdict', () => {
+        const steps = [failed('launch', 'dismiss the alpha notice', 'the notice is still up')];
+
+        expect(describeVerdict(steps, decideVerdict(steps))).toBe(
+            'the step "dismiss the alpha notice" observed the notice is still up'
+        );
+    });
+
+    it('says nothing was driven when the drive took no step at all', () => {
+        expect(describeVerdict([], 'not-run')).toBe('the packaged app was never driven');
+    });
+
     it('counts the steps a proven run took', () => {
-        expect(describeVerdict([ok('one'), ok('two')], 'proven')).toBe(
+        expect(describeVerdict([ok('workspace', 'one'), ok('workspace', 'two')], 'proven')).toBe(
             'every one of the 2 workspace steps observed the state it names'
         );
     });
 });
 
 describe('buildAgentProofRecord', () => {
-    const steps = [ok('open the agent workspace'), failed('revert the change', 'expected 1, saw 4')];
+    const steps = [
+        ok('launch', 'dismiss the alpha notice'),
+        failed('workspace', 'revert the change', 'expected 1, saw 4'),
+    ];
     const verdict: AgentProofVerdict = 'failed';
 
     const record = buildAgentProofRecord({
@@ -96,8 +146,13 @@ describe('buildAgentProofRecord', () => {
             appPayloadSha256: 'abc123',
             startedAt: '2026-09-11T10:00:00.000Z',
             steps: [
-                { name: 'open the agent workspace', ok: true, observed: 'open the agent workspace held' },
-                { name: 'revert the change', ok: false, observed: 'expected 1, saw 4' },
+                {
+                    name: 'dismiss the alpha notice',
+                    phase: 'launch',
+                    ok: true,
+                    observed: 'dismiss the alpha notice held',
+                },
+                { name: 'revert the change', phase: 'workspace', ok: false, observed: 'expected 1, saw 4' },
             ],
             verdict: 'failed',
             reason: 'the step "revert the change" observed expected 1, saw 4',
@@ -107,6 +162,6 @@ describe('buildAgentProofRecord', () => {
     it('copies the steps so a later mutation of the drive log cannot rewrite a written record', () => {
         steps[0]!.observed = 'rewritten after the fact';
 
-        expect(record.steps[0]?.observed).toBe('open the agent workspace held');
+        expect(record.steps[0]?.observed).toBe('dismiss the alpha notice held');
     });
 });
