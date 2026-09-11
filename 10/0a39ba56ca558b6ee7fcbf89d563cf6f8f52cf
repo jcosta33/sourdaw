@@ -1,0 +1,39 @@
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_d2824df80c1d84::t_c211019693e813 6-7,132-133,750-833
+src/modules/SampleLibrary/useCases/findSimilarSamples.ts
+  s_d2824df80c1d84::t_74bae6aa71e5de 6-9,11-13,16,21,34-40
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_d2824df80c1d84::t_b7ac7fed21a0a2 245-246
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_d2824df80c1d84::t_99a32b3ef8b7ec 106-115,136
+src/modules/AiRuntime/models/ChatSystemPrompt.ts
+  s_9b530f08172a54::t_149928045421cf 13-14,17-19,42,54
+src/modules/SampleLibrary/useCases/__tests__/findSimilarSamples.spec.ts
+  s_9b530f08172a54::t_efaf54c2f76241 19-20,23-32
+src/modules/WorkspaceShell/presentations/hooks/useEngineFallbackNotice.ts
+  s_9b530f08172a54::t_598a76c64898bf 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "100a39ba56ca558b6ee7fcbf89d563cf6f8f52cf",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
