@@ -568,7 +568,12 @@ describe('AgentWorkspace', () => {
                     }),
                 ],
                 destructiveChanges: [
-                    { classification: 'overwrite', consequence: 'Replaces two notes', recovery: 'inverse' },
+                    {
+                        groupId: 'group-b',
+                        classification: 'overwrite',
+                        consequence: 'Replaces two notes',
+                        recovery: 'inverse',
+                    },
                 ],
                 budgets: { maxCommands: 4, maxCreatedTracks: 1 },
                 freshness: { status: 'stale', reason: 'The project moved on.' },
@@ -617,11 +622,11 @@ describe('AgentWorkspace', () => {
 
         render(<AgentWorkspace />);
 
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Include Create the bass track' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
 
-        expect(screen.getByRole('checkbox', { name: 'Include Add eight notes' })).not.toBeChecked();
-        expect(screen.getByRole('checkbox', { name: 'Include Quantize the notes' })).not.toBeChecked();
-        expect(screen.getByRole('checkbox', { name: 'Include Rename the drum track' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 3: Quantize the notes' })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 4: Rename the drum track' })).toBeChecked();
 
         fireEvent.click(screen.getByRole('button', { name: 'Re-preview selected agent actions' }));
 
@@ -647,10 +652,10 @@ describe('AgentWorkspace', () => {
 
         render(<AgentWorkspace />);
 
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Include Create the bass track' }));
-        fireEvent.click(screen.getByRole('checkbox', { name: 'Include Add eight notes' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' }));
 
-        expect(screen.getByRole('checkbox', { name: 'Include Create the bass track' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeChecked();
         expect(screen.getByRole('button', { name: 'Re-preview agent actions' })).toBeInTheDocument();
     });
 
@@ -668,8 +673,36 @@ describe('AgentWorkspace', () => {
 
         render(<AgentWorkspace />);
 
-        expect(screen.getByRole('checkbox', { name: 'Include Create the bass track' })).toBeDisabled();
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeDisabled();
         expect(screen.getByText('The batch is one indivisible group.')).toBeInTheDocument();
+    });
+
+    it('disables re-preview once every group is unchecked, even while re-preview is available', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({ id: 'group-b', summary: 'Add eight notes' }),
+                ],
+                partialAcceptance: { available: true, reason: null },
+                rePreview: { available: true, reason: null },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' }));
+
+        const rePreviewButton = screen.getByRole('button', { name: 'Re-preview agent actions' });
+        expect(rePreviewButton).toBeDisabled();
+
+        fireEvent.click(rePreviewButton);
+        expect(reproposePendingChatActionsMock).not.toHaveBeenCalled();
     });
 
     it('re-previews the whole proposal only when the projection says it is stale', () => {
@@ -723,6 +756,84 @@ describe('AgentWorkspace', () => {
 
         expect(screen.queryByRole('button', { name: 'Confirm agent actions' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Cancel agent actions' })).not.toBeInTheDocument();
+    });
+
+    it('skips a confirmation whose approval view is unavailable instead of rendering a blank card', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({
+            confirmations: [
+                confirmation({ id: 'confirmation-1', createdAt: 20 }),
+                confirmation({
+                    id: 'confirmation-2',
+                    createdAt: 10,
+                    prompt: 'Add a chorus',
+                    actionLabels: ['Create track Chorus'],
+                }),
+            ],
+        });
+        getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) =>
+            confirmationId === 'confirmation-2' ? null : approvalView({ confirmationId })
+        );
+
+        render(<AgentWorkspace />);
+
+        const approvals = within(screen.getByRole('region', { name: 'Approvals' }));
+        expect(approvals.getAllByRole('list', { name: 'Proposed actions' })).toHaveLength(1);
+        expect(approvals.getByText('Add a bassline')).toBeInTheDocument();
+        expect(approvals.queryByText('Add a chorus')).not.toBeInTheDocument();
+        expect(approvals.queryByText('Create track Chorus')).not.toBeInTheDocument();
+    });
+
+    it("re-previews the clicked card's own subset when two proposals share a run", () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({
+            confirmations: [
+                confirmation({ id: 'confirmation-1', createdAt: 20 }),
+                confirmation({
+                    id: 'confirmation-2',
+                    createdAt: 10,
+                    prompt: 'Add a chorus',
+                    actionLabels: ['Create track Chorus'],
+                }),
+            ],
+        });
+        const viewA = approvalView({
+            confirmationId: 'confirmation-1',
+            intentGroups: [
+                intentGroup({ id: 'group-a1', summary: 'Create the bass track' }),
+                intentGroup({ id: 'group-a2', summary: 'Add eight notes', dependsOnGroupIds: ['group-a1'] }),
+            ],
+        });
+        const viewB = approvalView({
+            confirmationId: 'confirmation-2',
+            prompt: 'Add a chorus',
+            intentGroups: [
+                intentGroup({ id: 'group-b1', summary: 'Create the chorus section' }),
+                intentGroup({ id: 'group-b2', summary: 'Layer harmony vocals', dependsOnGroupIds: ['group-b1'] }),
+            ],
+        });
+        getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) =>
+            confirmationId === 'confirmation-2' ? viewB : viewA
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Layer harmony vocals' }));
+
+        const rePreviewButtons = screen.getAllByRole('button', { name: 'Re-preview selected agent actions' });
+        expect(rePreviewButtons).toHaveLength(1);
+        fireEvent.click(rePreviewButtons[0]!);
+
+        expect(reproposePendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'confirmation-2',
+            selectedIntentGroupIds: ['group-b1'],
+        });
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' })).toBeChecked();
     });
 
     it('cancels the run only when the projection allows it', () => {

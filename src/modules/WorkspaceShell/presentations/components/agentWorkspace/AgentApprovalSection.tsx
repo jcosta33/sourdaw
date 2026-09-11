@@ -13,6 +13,7 @@ type ApprovalIntentGroup = {
 };
 
 type ApprovalDestructiveChange = {
+    groupId: string;
     classification: string;
     consequence: string;
     recovery: string;
@@ -174,12 +175,12 @@ function renderIntentGroups(
     }
     return (
         <ul aria-label="Intent groups" className="flex flex-col gap-1 text-foreground">
-            {view.intentGroups.map((group) => (
+            {view.intentGroups.map((group, index) => (
                 <li key={group.id} className="flex flex-col gap-0.5">
                     <label className="flex items-center gap-1">
                         <input
                             type="checkbox"
-                            aria-label={`Include ${group.summary}`}
+                            aria-label={`Include group ${index + 1}: ${group.summary}`}
                             checked={!excludedGroupIds.includes(group.id)}
                             disabled={!view.partialAcceptance.available}
                             onChange={(event) => onToggleGroup(group.id, event.currentTarget.checked)}
@@ -205,8 +206,8 @@ function renderDestructiveChanges(changes: readonly ApprovalDestructiveChange[])
     }
     return (
         <ul aria-label="Destructive changes" className="flex flex-col gap-0.5 text-destructive">
-            {changes.map((change) => (
-                <li key={`${change.classification}-${change.consequence}`}>
+            {changes.map((change, index) => (
+                <li key={`${change.groupId}-${index}`}>
                     {`${change.classification}: ${change.consequence} (recovery: ${change.recovery})`}
                 </li>
             ))}
@@ -252,8 +253,14 @@ const ApprovalCard = ({
         .filter((group) => !excludedGroupIds.includes(group.id))
         .map((group) => group.id);
     // A partially accepted proposal may still match the project, so a subset re-preview
-    // stands on its own rather than on the staleness the whole-proposal route needs.
-    const isSubset = view.partialAcceptance.available && includedGroupIds.length < view.intentGroups.length;
+    // stands on its own rather than on the staleness the whole-proposal route needs. A
+    // subset excludes both ends: the whole selection uses the undefined/whole-proposal
+    // path below, and an empty selection has no ids left to submit.
+    const isSubset =
+        view.partialAcceptance.available &&
+        includedGroupIds.length > 0 &&
+        includedGroupIds.length < view.intentGroups.length;
+    const hasNoSelection = includedGroupIds.length === 0;
 
     return (
         <Stack gap={1} className="rounded border border-border/60 bg-surface-raised/80 p-2 text-xs">
@@ -308,7 +315,7 @@ const ApprovalCard = ({
                             variant="ghost"
                             aria-label={isSubset ? 'Re-preview selected agent actions' : 'Re-preview agent actions'}
                             className="motion-reduce:transition-none"
-                            disabled={!view.rePreview.available && !isSubset}
+                            disabled={hasNoSelection || (!view.rePreview.available && !isSubset)}
                             onClick={() => onRePreview(view.confirmationId, isSubset ? includedGroupIds : undefined)}
                         >
                             {isSubset ? 'Re-preview selected' : 'Re-preview'}
