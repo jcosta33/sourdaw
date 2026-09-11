@@ -94,13 +94,8 @@ export function useAgentChangeComparisonController(
     }, []);
 
     const focusCompareButton = (groupId: string): void => {
-        const group = historyGroups.find((candidate) => candidate.groupId === groupId);
-        if (group === undefined) {
-            return;
-        }
-        const button = historySectionRef.current?.querySelector<HTMLButtonElement>(
-            `[aria-label="Compare agent changes ${group.prompt}"]`
-        );
+        const buttons = historySectionRef.current?.querySelectorAll<HTMLButtonElement>('button[data-compare-group-id]');
+        const button = Array.from(buttons ?? []).find((candidate) => candidate.dataset.compareGroupId === groupId);
         button?.focus();
     };
 

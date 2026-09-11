@@ -1,6 +1,6 @@
 import { type ComponentProps } from 'react';
 
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
@@ -1055,6 +1055,65 @@ describe('AgentWorkspace', () => {
         const compareOlder = screen.getByRole('button', { name: 'Compare agent changes Add a chorus' });
         expect(compareOlder).toBeDisabled();
         expect(screen.getByText('Newer edits exist')).toBeInTheDocument();
+    });
+
+    it('focuses the side toggle once a started comparison reports active', () => {
+        // Mutation: deleting the `requestComparisonFocus()` call in `handleCompare` leaves focus on the Compare button.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+
+        const { rerender } = render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Compare agent changes Add a bassline' }));
+
+        act(() => {
+            setComparisonView(comparisonSession({ groupId: 'g1', side: 'B' }));
+        });
+        rerender(<AgentWorkspace />);
+
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Switch comparison side' }));
+    });
+
+    it('returns focus to the Compare button after End, even when the prompt holds a double quote', async () => {
+        // Mutation: restoring the prompt-interpolated querySelector selector throws a SyntaxError, so focus never lands.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({
+            groups: [historyGroup({ groupId: 'g1', prompt: 'add a "wide" pad' })],
+            panelOpen: false,
+        });
+        setComparisonView(comparisonSession({ groupId: 'g1' }));
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'End comparison' }));
+
+        await waitFor(() => {
+            expect(document.activeElement).toBe(
+                screen.getByRole('button', { name: 'Compare agent changes add a "wide" pad' })
+            );
+        });
+    });
+
+    it('returns focus to the ended group’s own Compare button when two groups share a prompt', async () => {
+        // Mutation: restoring the prompt-interpolated querySelector selector always resolves to the first matching button.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        const newest = historyGroup({ id: 'group-1', groupId: 'g-newest', prompt: 'Add a chorus', timestamp: 200 });
+        const older = historyGroup({ id: 'group-2', groupId: 'g-older', prompt: 'Add a chorus', timestamp: 100 });
+        aiActionHistoryStore.set({ groups: [newest, older], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g-older' }));
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'End comparison' }));
+
+        await waitFor(() => {
+            const compareButtons = screen.getAllByRole('button', { name: 'Compare agent changes Add a chorus' });
+            expect(document.activeElement).toBe(compareButtons[1]);
+            expect(document.activeElement).not.toBe(compareButtons[0]);
+        });
     });
 
     it('shows the toggle label and pressed state for each side and calls toggle once per click', () => {

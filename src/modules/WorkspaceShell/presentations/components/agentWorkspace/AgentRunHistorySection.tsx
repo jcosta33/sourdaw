@@ -24,7 +24,7 @@ type AgentRunHistorySectionProps = {
     comparisonAvailability: Readonly<Record<string, ComparisonAvailability>>;
     onRevert: (groupId: string) => void;
     onCompare: (groupId: string) => void;
-    /** Lets the parent query a specific Compare button by aria-label after ending a comparison. */
+    /** Lets the parent query a specific Compare button by `data-compare-group-id` after ending a comparison. */
     ref?: Ref<HTMLElement>;
 };
 
@@ -53,6 +53,7 @@ export const AgentRunHistorySection = ({
                                     size="xs"
                                     variant="ghost"
                                     aria-label={`Compare agent changes ${group.prompt}`}
+                                    data-compare-group-id={group.groupId}
                                     disabled={!availability.available}
                                     className="motion-reduce:transition-none"
                                     onClick={() => onCompare(group.groupId)}
