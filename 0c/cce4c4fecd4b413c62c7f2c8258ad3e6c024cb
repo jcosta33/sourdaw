@@ -1,0 +1,55 @@
+scripts/__tests__/proveDesktopAgentWorkspace.spec.ts
+  s_06adf2b091dc62::t_357f410790878d 1-110
+  s_06adf2b091dc62::t_91a43aa099c0a0 111-112
+scripts/desktopLatencyConnect.ts
+  s_06adf2b091dc62::t_5339f271e2f403 580
+  s_06adf2b091dc62::t_a5381ba0d87a2a 120-122,124
+  s_06adf2b091dc62::t_9b6443f6f7d925 54
+  s_06adf2b091dc62::t_b6e2259302b312 15
+  s_06adf2b091dc62::t_23f4d9093b9ca3 2-4,7-10,13
+  s_06adf2b091dc62::t_f4947f1ee0337c 619-626,629-638
+tests/e2e/agentWorkspace.spec.ts
+  s_06adf2b091dc62::t_4e259a7bdacbe0 122-127,129-132
+  s_06adf2b091dc62::t_144e3fa5403580 1-121,128,133-235
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_06adf2b091dc62::t_b621abb2d2ffd7 3
+tests/e2e/admitLoopbackProvider.ts
+  s_06adf2b091dc62::t_289f28d7782fc6 6-24,36-41
+  s_06adf2b091dc62::t_93335071ee8a7a 1-5,25-35,42-51
+scripts/desktopLatencyProcess.ts
+  s_06adf2b091dc62::t_9c77437000f66c 2-4,6-9,12,14,16-21,24-29,38,40-41,43,47
+scripts/desktopAgentWorkspaceDrive.ts
+  s_06adf2b091dc62::t_cd201650bae4ee 1-301
+scripts/packagedAppSession.ts
+  s_06adf2b091dc62::t_62623245fad41c 1-452
+.github/workflows/nightly.yml
+  s_06adf2b091dc62::t_d903b6dd4b20b3 535-545
+  s_06adf2b091dc62::t_b4daa05cee46a7 509,515-521
+  s_06adf2b091dc62::t_d03a0db151b39e 522
+tests/e2e/loopbackOpenAiProvider.ts
+  s_06adf2b091dc62::t_541a45f5232209 2-6,9
+scripts/proveDesktopAgentWorkspace.ts
+  s_06adf2b091dc62::t_51d2d6ba11962d 1-254
+docs/06-testing.md
+  s_06adf2b091dc62::t_2284bdbb82dda7 12
+package.json
+  s_06adf2b091dc62::t_7abcaf4bee2f2a 62
+scripts/loopbackOpenAiProvider.ts
+  s_06adf2b091dc62::t_182ecaaed04869 1-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0ccce4c4fecd4b413c62c7f2c8258ad3e6c024cb",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
