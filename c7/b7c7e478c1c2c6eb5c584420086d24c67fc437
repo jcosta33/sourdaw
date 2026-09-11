@@ -1,0 +1,19 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_d2824df80c1d84::t_62486f447482c2 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7b7c7e478c1c2c6eb5c584420086d24c67fc437",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
