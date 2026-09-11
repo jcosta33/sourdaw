@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_06adf2b091dc62::t_8e54dcbcc2552b 236-237
+  s_06adf2b091dc62::t_82189bbed2625f 530-531,534-535
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_06adf2b091dc62::t_9f4dd6bb761791 250-279
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_06adf2b091dc62::t_6e6bfefa495bba 203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5591891092aab567d9303177a0544b0c4f4ba7f7",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
