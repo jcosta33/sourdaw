@@ -65,6 +65,8 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
         }
         let sourceRevision: string | null = null;
         let renderFlight: Promise<void> | null = null;
+        // A batch settlement covers every job at once, so its work id names that whole set.
+        const batchWorkId = jobs.map((job) => job.jobId).join(',');
         const render = () => {
             sourceRevision ??= captureProjectRevision();
             renderFlight ??= renderAgentProjectSections({
@@ -76,6 +78,14 @@ export const handleRenderProjectSections = createHandler<'renderProjectSections'
                         kind: 'work-attempt',
                         operation: action.type,
                         workId: job.jobId,
+                    }),
+                owner: context?.workOwner ?? null,
+                onReceipt: (receipt) =>
+                    context?.onDeferredEffectAttempt?.({
+                        kind: 'render-receipt',
+                        operation: action.type,
+                        workId: receipt.phase === 'batch-settled' ? batchWorkId : receipt.provenance.jobId,
+                        receipt,
                     }),
             });
             return renderFlight;

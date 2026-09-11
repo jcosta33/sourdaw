@@ -8,6 +8,8 @@
  * owned by other modules.
  */
 
+import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
+
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
  * other snapshot here, so this neutral contract does not depend on a model owned by
@@ -2645,8 +2647,10 @@ export type HandlerValidationContext = {
     readonly actionIndex: number;
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
-    /** Caller-scoped telemetry for actual deferred work starts; never persisted as project truth. */
+    /** Caller-scoped telemetry for actual deferred work starts and for render receipts; never persisted as project truth. */
     readonly onDeferredEffectAttempt?: (attempt: HandlerDeferredEffectAttempt) => void;
+    /** The caller's work identity, so a receipt this flight produces can be matched against the caller's live lease. */
+    readonly workOwner?: AgentWorkOwnerIdentity | null;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
 };
@@ -2659,11 +2663,18 @@ export type HandlerSessionActionEntry = {
     readonly redoAction?: AppAction;
 };
 
-export type HandlerDeferredEffectAttempt = {
-    readonly kind: 'work-attempt';
-    readonly operation: AppActionType;
-    readonly workId: string;
-};
+export type HandlerDeferredEffectAttempt =
+    | {
+          readonly kind: 'work-attempt';
+          readonly operation: AppActionType;
+          readonly workId: string;
+      }
+    | {
+          readonly kind: 'render-receipt';
+          readonly operation: AppActionType;
+          readonly workId: string;
+          readonly receipt: AgentRenderReceipt;
+      };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
@@ -2740,8 +2751,10 @@ export type ExecuteOptions = {
     shouldExecute?: () => boolean;
     /** Exact caller-owned cancellation signal propagated to handler execution and deferred effects. */
     signal?: AbortSignal;
-    /** Observe actual deferred work starts within this exact execution flight. */
+    /** Observe actual deferred work starts and render receipts within this exact execution flight. */
     onDeferredEffectAttempt?: (attempt: HandlerDeferredEffectAttempt) => void;
+    /** The caller's work identity, echoed on every receipt this flight produces. */
+    workOwner?: AgentWorkOwnerIdentity | null;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
     /**
      * When true, skip pushing an undo entry and action history entry — during

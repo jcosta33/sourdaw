@@ -38,6 +38,7 @@ const artifact = {
     frameCount: 48_000,
     channelCount: 1,
     byteSize: 192_000,
+    contentAddress: 'content-address-fixture',
     warnings: ['tail warning'],
     buffer: {} as AudioBuffer,
 };

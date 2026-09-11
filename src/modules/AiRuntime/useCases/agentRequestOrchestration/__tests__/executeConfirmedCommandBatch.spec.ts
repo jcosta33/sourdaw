@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import {
     compileVersionedCommandBatchEnvelope,
     createVerifiedBatchReceipt,
@@ -9,6 +10,7 @@ import {
     serializeVersionedCommandEnvelope,
     type executeVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunWorkLease } from '../../../models/AgentRun';
@@ -45,6 +47,7 @@ type PrepareContinuation =
     typeof import('../../prepareAgentRunPendingEffectContinuation').prepareAgentRunPendingEffectContinuation;
 type RecordTrackedAgentRunReceipt =
     typeof import('../confirmedBatchOutcomeSupport').confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt;
+type RecordArtifact = typeof import('../../agentRunLifecycle').agentRunLifecycle.recordArtifact;
 type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellation.bindAbortController;
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
@@ -69,6 +72,7 @@ const mocks = vi.hoisted(() => ({
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
     protectResourceLease: vi.fn<ProtectResourceLease>(),
+    recordArtifact: vi.fn<RecordArtifact>(),
     recordCommittedRecoveryFailure: vi.fn<RecordCommittedRecoveryFailure>(),
     recordPostCommitRecoveryFailure: vi.fn<RecordPostCommitRecoveryFailure>(),
     recordReceipt: vi.fn<RecordTrackedAgentRunReceipt>(),
@@ -104,6 +108,9 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     preparePendingActionResourceLeaseForCommit: mocks.prepareResourceLease,
     protectPendingActionResourceLease: mocks.protectResourceLease,
     updatePendingActionConfirmationStatus: mocks.updateConfirmation,
+}));
+vi.mock('../../agentRunLifecycle', () => ({
+    agentRunLifecycle: { recordArtifact: mocks.recordArtifact },
 }));
 vi.mock('../../cancelAgentRun', () => ({
     agentRunCancellation: {
@@ -312,6 +319,7 @@ function createRenderArtifact(input: {
         frameCount,
         channelCount: 2,
         byteSize: frameCount * 2 * Float32Array.BYTES_PER_ELEMENT,
+        contentAddress: 'content-address-fixture',
         warnings: [],
         buffer: createTestAudioBuffer(input.sampleRate),
     };
@@ -496,6 +504,65 @@ function createRenderBatchFixture(
     };
 }
 
+const RENDER_PROVENANCE = {
+    jobId: 'render-verse',
+    sectionId: 'section-verse',
+    sectionName: 'Verse',
+    startBeat: 0,
+    endBeat: 16,
+    sampleRate: 44_100,
+    tailSeconds: 0,
+    sourceRevision: 'revision-2',
+};
+
+const TRACKED_RENDER_OWNER: AgentWorkOwnerIdentity = {
+    runId: lease.runId,
+    workId: lease.workId,
+    leaseId: lease.leaseId,
+    cancellationGeneration: lease.cancellationGeneration,
+};
+
+function renderedReceiptFrom(owner: AgentWorkOwnerIdentity | null): AgentRenderReceipt {
+    return {
+        phase: 'rendered',
+        owner,
+        provenance: RENDER_PROVENANCE,
+        contentAddress: 'content-address-1',
+        frameCount: 4,
+        channelCount: 2,
+        renderedAt: 11,
+    };
+}
+
+function emitRenderReceipts(receipts: readonly AgentRenderReceipt[]): void {
+    mocks.executeBatch.mockImplementation(async (input) => {
+        for (const receipt of receipts) {
+            input.options?.onDeferredEffectAttempt?.({
+                kind: 'render-receipt',
+                operation: 'renderProjectSections',
+                workId: RENDER_PROVENANCE.jobId,
+                receipt,
+            });
+        }
+        return completedBatchResult;
+    });
+}
+
+/** Routes the recorder through the real run record, so what the run retains is observable here. */
+async function createDurableRunRecord() {
+    const { agentRunLifecycle } =
+        await vi.importActual<typeof import('../../agentRunLifecycle')>('../../agentRunLifecycle');
+    agentRunLifecycle.clear();
+    agentRunLifecycle.create({
+        runId: lease.runId,
+        request: 'Render the verse.',
+        mode: 'macro',
+        createdRevision: 'revision-1',
+    });
+    mocks.recordArtifact.mockImplementation(agentRunLifecycle.recordArtifact);
+    return agentRunLifecycle;
+}
+
 function execute(
     options: {
         trackedWorkLease?: AgentRunWorkLease | null;
@@ -522,6 +589,7 @@ beforeEach(() => {
     mocks.captureRevision.mockReturnValue('revision-2');
     mocks.getArtifacts.mockReturnValue([]);
     mocks.rebindArtifacts.mockReset();
+    mocks.recordArtifact.mockReset();
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
@@ -625,6 +693,79 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenNthCalledWith(1, true);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('records a rendered receipt carrying the tracked lease identity and ignores every foreign one', async () => {
+        emitRenderReceipts([
+            renderedReceiptFrom(TRACKED_RENDER_OWNER),
+            renderedReceiptFrom({ ...TRACKED_RENDER_OWNER, runId: 'run-superseded' }),
+            renderedReceiptFrom({ ...TRACKED_RENDER_OWNER, workId: 'batch-superseded' }),
+            renderedReceiptFrom({ ...TRACKED_RENDER_OWNER, leaseId: 'lease-superseded' }),
+            renderedReceiptFrom({ ...TRACKED_RENDER_OWNER, cancellationGeneration: 1 }),
+            renderedReceiptFrom(null),
+        ]);
+
+        const result = await execute();
+
+        expect(mocks.recordArtifact).toHaveBeenCalledExactlyOnceWith({
+            runId: 'run-1',
+            kind: 'render',
+            artifact: {
+                artifactId: 'render-verse',
+                workId: 'batch-1',
+                status: 'completed',
+                summary: 'content-address-1',
+            },
+        });
+        expect(mocks.executeBatch.mock.calls[0]?.[0].options).toMatchObject({ workOwner: TRACKED_RENDER_OWNER });
+        expect(result).toMatchObject({ status: 'completed', renderJobAttempts: 0 });
+    });
+
+    it('leaves one completed render entry summarized by its content address after a started then rendered job', async () => {
+        const runRecord = await createDurableRunRecord();
+        emitRenderReceipts([
+            { phase: 'started', owner: TRACKED_RENDER_OWNER, provenance: RENDER_PROVENANCE },
+            renderedReceiptFrom(TRACKED_RENDER_OWNER),
+        ]);
+
+        await execute();
+
+        expect(runRecord.get('run-1')?.renders).toEqual([
+            { artifactId: 'render-verse', workId: 'batch-1', status: 'completed', summary: 'content-address-1' },
+        ]);
+    });
+
+    it('leaves one failed render entry after a started then failed job', async () => {
+        const runRecord = await createDurableRunRecord();
+        emitRenderReceipts([
+            { phase: 'started', owner: TRACKED_RENDER_OWNER, provenance: RENDER_PROVENANCE },
+            {
+                phase: 'failed',
+                owner: TRACKED_RENDER_OWNER,
+                provenance: RENDER_PROVENANCE,
+                failureKind: 'render-error',
+            },
+        ]);
+
+        await execute();
+
+        expect(runRecord.get('run-1')?.renders).toEqual([
+            { artifactId: 'render-verse', workId: 'batch-1', status: 'failed', summary: null },
+        ]);
+    });
+
+    it('keeps the batch result and reports once when the run record refuses a render receipt', async () => {
+        const reportedWarnings = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        mocks.recordArtifact.mockImplementation(() => {
+            throw new Error('Agent run state is unavailable.');
+        });
+        emitRenderReceipts([renderedReceiptFrom(TRACKED_RENDER_OWNER)]);
+
+        const result = await execute();
+
+        expect(result).toMatchObject({ status: 'completed', renderJobAttempts: 0 });
+        expect(reportedWarnings).toHaveBeenCalledOnce();
+        reportedWarnings.mockRestore();
     });
 
     it('carries a stale-shaped binding rejection on the completed flight when the batch matches it', async () => {
