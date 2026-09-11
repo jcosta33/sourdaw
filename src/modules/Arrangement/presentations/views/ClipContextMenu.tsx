@@ -20,8 +20,6 @@ import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
-import { lockClip } from '../../useCases/clipEditing/lockClip';
-import { muteClip } from '../../useCases/clipEditing/muteClip';
 import { renameClip } from '../../useCases/clipEditing/renameClip';
 import { setClipColor } from '../../useCases/clipEditing/setClipColor';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
@@ -427,10 +425,26 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     {isAudio ? renderAudioActions() : null}
                     {isMidi ? renderMidiActions() : null}
 
-                    <DawMenuButton role="menuitem" onClick={act(() => muteClip(clipId, !isMuted))}>
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({
+                                type: 'muteClip',
+                                payload: { clipId, muted: !isMuted },
+                            });
+                        })}
+                    >
                         {isMuted ? 'Unmute Clip' : 'Mute Clip'}
                     </DawMenuButton>
-                    <DawMenuButton role="menuitem" onClick={act(() => lockClip(clipId, !isLocked))}>
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({
+                                type: 'lockClip',
+                                payload: { clipId, locked: !isLocked },
+                            });
+                        })}
+                    >
                         {isLocked ? 'Unlock Clip' : 'Lock Clip'}
                     </DawMenuButton>
 

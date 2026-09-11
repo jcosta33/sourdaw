@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -383,6 +384,44 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 Play Random
                             </option>
                         </DawCompactSelect>
+                    </Row>
+                    <Row justify="between">
+                        <label className="text-[10px] text-muted-foreground" htmlFor="clip-muted-checkbox">
+                            Muted
+                        </label>
+                        <DawCompactCheckbox
+                            id="clip-muted-checkbox"
+                            checked={clip.muted ?? false}
+                            onChange={(event) => {
+                                void executeUserAppAction({
+                                    type: 'muteClip',
+                                    payload: {
+                                        clipId: clip.id,
+                                        muted: event.target.checked,
+                                    },
+                                });
+                            }}
+                            aria-label="Mute clip"
+                        />
+                    </Row>
+                    <Row justify="between">
+                        <label className="text-[10px] text-muted-foreground" htmlFor="clip-locked-checkbox">
+                            Locked
+                        </label>
+                        <DawCompactCheckbox
+                            id="clip-locked-checkbox"
+                            checked={clip.locked ?? false}
+                            onChange={(event) => {
+                                void executeUserAppAction({
+                                    type: 'lockClip',
+                                    payload: {
+                                        clipId: clip.id,
+                                        locked: event.target.checked,
+                                    },
+                                });
+                            }}
+                            aria-label="Lock clip"
+                        />
                     </Row>
                     {clip.type === 'audio' ? (
                         <>
