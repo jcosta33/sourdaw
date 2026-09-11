@@ -13,6 +13,7 @@ import {
     type PendingActionSemanticDiff,
     clearPendingActionConfirmations,
     proposePendingActionConfirmation,
+    supersedePendingActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { getAgentApprovalView } from '../getAgentApprovalView';
@@ -166,23 +167,6 @@ function propose(id: string, overrides: ProposeOverrides = {}) {
     return confirmation;
 }
 
-function collectKeys(value: unknown, keys: Set<string>): Set<string> {
-    if (Array.isArray(value)) {
-        for (const entry of value) {
-            collectKeys(entry, keys);
-        }
-        return keys;
-    }
-    if (value === null || typeof value !== 'object') {
-        return keys;
-    }
-    for (const [key, nested] of Object.entries(value)) {
-        keys.add(key);
-        collectKeys(nested, keys);
-    }
-    return keys;
-}
-
 describe('getAgentApprovalView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -272,8 +256,28 @@ describe('getAgentApprovalView', () => {
             reason: 'The approved target fingerprints no longer match.',
             currentRevision: REVISION,
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({ available: false, reason: 'The proposal is already invalidated.' });
         expect(mocks.validateApproval).not.toHaveBeenCalled();
+    });
+
+    // Red when a proposal a replacement already retired is offered another re-preview, which the
+    // store refuses to supersede a second time.
+    it('refuses a re-preview on a proposal a newer one already replaced', () => {
+        propose('confirmation-superseded');
+        supersedePendingActionConfirmation({
+            confirmationId: 'confirmation-superseded',
+            supersededBy: 'confirmation-replacement',
+            reason: 'Superseded by a re-preview against the current project.',
+        });
+
+        const view = getAgentApprovalView({ confirmationId: 'confirmation-superseded' });
+
+        expect(view?.status).toBe('invalidated');
+        expect(view?.supersededBy).toBe('confirmation-replacement');
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'The proposal is already invalidated and a newer proposal replaced it.',
+        });
     });
 
     // Red when a settled proposal is re-validated and offered a re-preview it can no longer use.
@@ -390,6 +394,8 @@ describe('getAgentApprovalView', () => {
 
         expect(view?.supersedes).toBe('confirmation-earlier');
         expect(view?.supersededBy).toBeNull();
-        expect([...collectKeys(view, new Set<string>())]).not.toContain('serialized');
+        // The batch text is the executable artifact, so the assertion looks for its value, not a key name.
+        expect(commandBatch.serialized.length).toBeGreaterThan(100);
+        expect(JSON.stringify(view)).not.toContain(commandBatch.serialized);
     });
 });

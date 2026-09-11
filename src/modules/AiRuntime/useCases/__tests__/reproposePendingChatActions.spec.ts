@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     cancelRun: vi.fn(),
     compileApproval: vi.fn(),
     compilePartial: vi.fn(),
+    getRun: vi.fn(),
     persistConfirmation: vi.fn(),
     preview: vi.fn(),
     recordBatch: vi.fn(),
@@ -59,6 +60,7 @@ vi.mock('../agentRequestOrchestration/persistPromptActionConfirmation', () => ({
 vi.mock('../agentRunLifecycle', () => ({
     agentRunLifecycle: {
         cancelRun: mocks.cancelRun,
+        get: mocks.getRun,
         recordBatch: mocks.recordBatch,
         transitionPhase: mocks.transitionPhase,
         updateBatchStatus: mocks.updateBatchStatus,
@@ -131,13 +133,42 @@ const AGENT_APPROVAL = {
     },
 };
 
-function propose(id: string) {
+function stemImportAction(): AppAction {
+    return {
+        type: 'importStemSet',
+        payload: {
+            selectionId: 'selection-repropose',
+            groupName: 'Drums',
+            projectTempo: 120,
+            folderId: 'folder-repropose',
+            stems: [
+                {
+                    stemId: 'stem-kick',
+                    sourceName: 'kick.wav',
+                    role: 'kick',
+                    sourceTempo: 120,
+                    durationSeconds: 4,
+                    sourceBytes: 1024,
+                    decodedBytes: 4096,
+                    audioBufferId: 'buffer-kick',
+                    trackId: TRACK_IDS[0],
+                    trackName: 'Kick',
+                    trackGain: 1,
+                    trackPan: 0,
+                    clipId: 'clip-kick',
+                },
+            ],
+        },
+    };
+}
+
+function propose(id: string, actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId))) {
     const confirmation = proposePendingActionConfirmation({
         id,
         runId: 'run-repropose',
         prompt: 'Rebalance the drums',
         assistantMessageId: 'assistant-original',
-        actions: TRACK_IDS.map((trackId) => gainAction(trackId)),
+        actions: [...actions],
         actionLabels: [...ACTION_LABELS],
         commandBatch: originalBatch,
         agentApproval: AGENT_APPROVAL,
@@ -174,6 +205,7 @@ describe('reproposePendingChatActions', () => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
         mocks.compileApproval.mockReturnValue({ ...AGENT_APPROVAL, sourceRevision: CURRENT_REVISION });
+        mocks.getRun.mockReturnValue({ runId: 'run-repropose', phase: 'waiting-for-approval' });
         mocks.persistConfirmation.mockReturnValue('confirmation-reproposed');
         mocks.refresh.mockReturnValue(readyRefresh(refreshedBatch));
     });
@@ -198,6 +230,66 @@ describe('reproposePendingChatActions', () => {
             currentStatus: 'executed',
         });
         expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+    });
+
+    // Red when an invalidated proposal is replaced, because the store refuses to supersede it again
+    // and the replacement would leave the original standing with the run reported as re-proposed.
+    it('refuses a confirmation the settlement path already invalidated', async () => {
+        propose('confirmation-invalidated');
+        updatePendingActionConfirmationStatus({ confirmationId: 'confirmation-invalidated', status: 'invalidated' });
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-invalidated' })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'invalidated',
+        });
+        expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+    });
+
+    // Red when a proposal whose run already ended is replaced onto that run, which accepts no further batch.
+    it.each(['completed', 'failed', 'cancelled', 'partially-completed'] as const)(
+        'refuses a proposal whose run is already %s',
+        async (phase) => {
+            propose(`confirmation-run-${phase}`);
+            mocks.getRun.mockReturnValue({ runId: 'run-repropose', phase });
+
+            await expect(reproposePendingChatActions({ confirmationId: `confirmation-run-${phase}` })).resolves.toEqual(
+                { status: 'rejected', reason: `The run this proposal belongs to is already ${phase}.` }
+            );
+            expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+            expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        }
+    );
+
+    // Red when a proposal whose run the store no longer holds is replaced against a run that cannot record it.
+    it('refuses a proposal whose run the lifecycle no longer holds', async () => {
+        propose('confirmation-run-absent');
+        mocks.getRun.mockReturnValue(null);
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-run-absent' })).resolves.toEqual({
+            status: 'rejected',
+            reason: 'The run this proposal belongs to is no longer recorded.',
+        });
+        expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+    });
+
+    // Red when a proposal holding prepared stems is replaced: retiring it discards the lease whose
+    // release frees the very audio buffers and staged asset leases the replacement still names.
+    it('refuses a proposal holding prepared stem resources before any write', async () => {
+        propose('confirmation-stems', [stemImportAction()]);
+
+        await expect(reproposePendingChatActions({ confirmationId: 'confirmation-stems' })).resolves.toEqual({
+            status: 'rejected',
+            reason: 'This proposal holds prepared stem resources. Cancel it and ask again to re-prepare them.',
+        });
+        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+        expect(mocks.settleBestEffort).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirmation-stems')).toMatchObject({
+            status: 'proposed',
+            supersededBy: null,
+        });
     });
 
     // Red when the replacement is not bound to the superseded proposal, or the run is torn down with it.
@@ -335,8 +427,9 @@ describe('reproposePendingChatActions', () => {
         });
     });
 
-    // Red when a refused replacement retires the proposal it failed to replace.
-    it('leaves the proposal untouched when the replacement is not retained', async () => {
+    // Red when a refused replacement retires the proposal it failed to replace. Persistence is
+    // mocked here, so this observes the confirmation store alone, not the run the real persist writes.
+    it('leaves the stored proposal untouched when the replacement is not retained', async () => {
         propose('confirmation-refused');
         mocks.persistConfirmation.mockReturnValue(null);
 

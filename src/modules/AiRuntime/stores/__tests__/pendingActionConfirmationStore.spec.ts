@@ -440,4 +440,34 @@ describe('pendingActionConfirmationStore', () => {
             supersededBy: null,
         });
     });
+
+    // Red when a second supersession overwrites the first replacement's identity, orphaning it.
+    it('refuses to supersede a confirmation an earlier replacement already retired', () => {
+        proposePendingActionConfirmation({
+            id: 'confirmation-twice',
+            prompt: 'lower the bass',
+            assistantMessageId: 'message-twice',
+            actions: [{ type: 'renameTrack', payload: { trackId: 'track-bass', name: 'Bass' } }],
+            actionLabels: ['Rename Bass'],
+            projectRevision: 'revision-twice',
+        });
+        supersedePendingActionConfirmation({
+            confirmationId: 'confirmation-twice',
+            supersededBy: 'confirmation-first-replacement',
+            reason: 'Superseded by a re-preview against the current project.',
+        });
+
+        expect(
+            supersedePendingActionConfirmation({
+                confirmationId: 'confirmation-twice',
+                supersededBy: 'confirmation-second-replacement',
+                reason: 'Superseded again.',
+            })
+        ).toBeNull();
+        expect(getPendingActionConfirmation('confirmation-twice')).toMatchObject({
+            status: 'invalidated',
+            error: 'Superseded by a re-preview against the current project.',
+            supersededBy: 'confirmation-first-replacement',
+        });
+    });
 });

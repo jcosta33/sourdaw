@@ -5,6 +5,7 @@ import {
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
 
+import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { appendChatMessage, updateChatMessage } from '../stores/chatStore';
 import {
@@ -41,9 +42,47 @@ type WorkingBatch = NonNullable<PendingAppActionConfirmation['approvalSnapshot']
 const SUPERSEDED_REASON = 'Superseded by a re-preview against the current project.';
 const SUPERSEDED_MESSAGE = 'This proposal was replaced by a re-preview against the current project.';
 const REPROPOSED_CONTENT = 'Re-previewed against the current project.';
+const ALREADY_REPLACED_REASON = 'A newer proposal already replaced this one.';
+const MISSING_RUN_REASON = 'The run this proposal belongs to is no longer recorded.';
+const PREPARED_STEM_RESOURCES_REASON =
+    'This proposal holds prepared stem resources. Cancel it and ask again to re-prepare them.';
+
+const TERMINAL_RUN_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A prepared stem lease is registered for exactly the confirmations whose actions carry stems, and
+ * retiring the replaced proposal discards that lease. Its release frees every `audioBufferId` and
+ * staged asset lease the replacement, persisted from the same actions, would still reference.
+ */
+function holdsPreparedStemResources(actions: PendingAppActionConfirmation['actions']): boolean {
+    return actions.some((action) => action.type === 'importStemSet' && action.payload.stems.length > 0);
+}
+
+/** Only a live proposal on a live run can be replaced; everything else keeps the state it settled into. */
+function admitReproposal(
+    confirmation: PendingAppActionConfirmation
+): Extract<ReproposePendingChatActionsResult, { status: 'not_pending' | 'rejected' }> | null {
+    if (confirmation.status !== 'proposed') {
+        return { status: 'not_pending', currentStatus: confirmation.status };
+    }
+    if (confirmation.supersededBy !== null) {
+        return { status: 'rejected', reason: ALREADY_REPLACED_REASON };
+    }
+    const run = agentRunLifecycle.get(confirmation.runId);
+    if (!run) {
+        return { status: 'rejected', reason: MISSING_RUN_REASON };
+    }
+    if (TERMINAL_RUN_PHASES.has(run.phase)) {
+        return { status: 'rejected', reason: `The run this proposal belongs to is already ${run.phase}.` };
+    }
+    if (holdsPreparedStemResources(confirmation.actions)) {
+        return { status: 'rejected', reason: PREPARED_STEM_RESOURCES_REASON };
+    }
+    return null;
 }
 
 type SubsetSelection =
@@ -195,8 +234,9 @@ export async function reproposePendingChatActions(
     if (!confirmation) {
         return { status: 'missing' };
     }
-    if (confirmation.status !== 'proposed' && confirmation.status !== 'invalidated') {
-        return { status: 'not_pending', currentStatus: confirmation.status };
+    const refusal = admitReproposal(confirmation);
+    if (refusal) {
+        return refusal;
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {

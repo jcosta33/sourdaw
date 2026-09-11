@@ -12,6 +12,12 @@ import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandE
 const REVISION = 'revision-1';
 const RENAME_ACTION: AppAction = { type: 'renameTrack', payload: { trackId: 'track-1', name: 'Lead' } };
 const INVERSE_ACTION: AppAction = { type: 'renameTrack', payload: { trackId: 'track-1', name: 'Old' } };
+const GAIN_ACTION: AppAction = { type: 'setTrackGain', payload: { trackId: 'track-1', gain: 0.5, expectedGain: 1 } };
+const GAIN_INVERSE_ACTION: AppAction = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-1', gain: 1, expectedGain: 0.5 },
+};
+const PAN_ACTION: AppAction = { type: 'setTrackPan', payload: { trackId: 'track-1', pan: -0.5, expectedPan: 0 } };
 
 const baseHandler = {
     describe: () => ({ label: 'Rename' }),
@@ -50,19 +56,33 @@ describe('describeCommandBatchRecovery', () => {
         clearHandlerRegistry();
     });
 
-    // Red when `describeCommandBatchRecovery` stops keying recoveries by the batch's command ids.
+    // Red when `describeCommandBatchRecovery` keys one command's recovery onto another's id, or
+    // collapses a batch of mixed recoveries onto a single class.
     it('describes every command in a batch by its own command id', () => {
         registerHandlerMap({
             renameTrack: { ...baseHandler, describe: () => ({ label: 'Rename', inverseAction: INVERSE_ACTION }) },
+            // An inverse a non-undoable handler cannot replay only compensates for the write.
+            setTrackGain: {
+                ...baseHandler,
+                describe: () => ({ label: 'Set gain', inverseAction: GAIN_INVERSE_ACTION }),
+                undoable: false,
+            },
+            setTrackPan: { ...baseHandler, describe: () => ({ label: 'Set pan' }), undoable: false },
         });
-        const envelope = batchOf([RENAME_ACTION]);
+        const envelope = batchOf([RENAME_ACTION, GAIN_ACTION, PAN_ACTION]);
+        const [renameCommand, gainCommand, panCommand] = envelope.commands;
 
         const described = describeCommandBatchRecovery(envelope);
 
         expect(described).toEqual({
             status: 'described',
-            recoveryByCommandId: { [envelope.commands[0]!.commandId]: 'inverse' },
+            recoveryByCommandId: {
+                [renameCommand!.commandId]: 'inverse',
+                [gainCommand!.commandId]: 'compensable',
+                [panCommand!.commandId]: 'irreversible',
+            },
         });
+        expect(new Set([renameCommand!.commandId, gainCommand!.commandId, panCommand!.commandId]).size).toBe(3);
     });
 
     // Red when an unresolvable handler yields a described result instead of a rejection.

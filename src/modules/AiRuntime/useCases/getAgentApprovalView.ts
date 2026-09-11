@@ -134,12 +134,18 @@ function getFreshness(confirmation: PendingAppActionConfirmation): ApprovalFresh
     }
 }
 
+/** Re-proposal replaces a live proposal, so a settled or already replaced one says which it is. */
+function rePreviewRefusalReason(confirmation: PendingAppActionConfirmation): string {
+    const status = `The proposal is already ${confirmation.status}`;
+    return confirmation.supersededBy === null ? `${status}.` : `${status} and a newer proposal replaced it.`;
+}
+
 function getRePreviewAvailability(
     confirmation: PendingAppActionConfirmation,
     freshness: ApprovalFreshness
 ): { available: boolean; reason: string | null } {
-    if (confirmation.status !== 'proposed' && confirmation.status !== 'invalidated') {
-        return { available: false, reason: `The proposal is already ${confirmation.status}.` };
+    if (confirmation.status !== 'proposed' || confirmation.supersededBy !== null) {
+        return { available: false, reason: rePreviewRefusalReason(confirmation) };
     }
     if (!confirmation.approvalSnapshot.commandBatch) {
         return { available: false, reason: 'The confirmation has no approved command batch to re-preview.' };

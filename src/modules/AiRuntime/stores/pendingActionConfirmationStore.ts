@@ -588,9 +588,10 @@ type SupersedePendingActionConfirmationInput = {
 };
 
 /**
- * Retire a proposal a fresher one replaced. Only a live or already-invalidated proposal can be
+ * Retire a proposal a fresher one replaced. Only a live, never-superseded proposal can be
  * superseded: an accepted, executing, or settled confirmation owns resources and receipts whose
- * record a supersession would overwrite.
+ * record a supersession would overwrite, and a second supersession would rewrite the first
+ * replacement's identity out of the chain.
  */
 export function supersedePendingActionConfirmation(
     input: SupersedePendingActionConfirmationInput
@@ -600,7 +601,7 @@ export function supersedePendingActionConfirmation(
         return null;
     }
     const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
-    if (!current || (current.status !== 'proposed' && current.status !== 'invalidated')) {
+    if (!current || current.status !== 'proposed' || current.supersededBy !== null) {
         return null;
     }
     const updated: PendingAppActionConfirmation = {
