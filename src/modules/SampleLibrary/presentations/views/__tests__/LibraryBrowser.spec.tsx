@@ -309,4 +309,122 @@ describe('LibraryBrowser', () => {
         fireEvent.click(reprojectButton);
         expect(mocks.projectSpatialMap).not.toHaveBeenCalled();
     });
+
+    it('does not call playFile if preview is stopped while file acquisition is pending', async () => {
+        let resolveFile!: (file: File) => void;
+        const filePromise = new Promise<File>((resolve) => {
+            resolveFile = resolve;
+        });
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
+        mocks.readNativeLibrarySampleFile.mockReturnValue(filePromise);
+        mocks.libraryState = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        const { rerender } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        rerender(<LibraryBrowser preview={{ ...mocks.preview, playingId: 'sample1' }} selectedTrackId={null} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Stop Kick' }));
+
+        resolveFile(new File(['audio'], 'Kick.wav', { type: 'audio/wav' }));
+        await filePromise;
+
+        expect(mocks.preview.playFile).not.toHaveBeenCalled();
+    });
+
+    it('plays only the latest audition under reversed file-acquisition completion order', async () => {
+        let resolveFile1!: (file: File) => void;
+        let resolveFile2!: (file: File) => void;
+        const file1Promise = new Promise<File>((resolve) => {
+            resolveFile1 = resolve;
+        });
+        const file2Promise = new Promise<File>((resolve) => {
+            resolveFile2 = resolve;
+        });
+
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
+        mocks.readNativeLibrarySampleFile.mockReturnValueOnce(file1Promise).mockReturnValueOnce(file2Promise);
+
+        const state = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+        const kick = state.samples[0]!;
+        state.samples = [
+            kick,
+            {
+                ...kick,
+                id: 'sample2',
+                displayName: 'Snare',
+                relativePath: 'Drums/Snare.wav',
+            },
+        ];
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        // Click sample 1 (deferred file 1)
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        // Click sample 2 (deferred file 2)
+        fireEvent.click(screen.getByRole('button', { name: 'Play Snare' }));
+
+        // Resolve file 2 first
+        const file2 = new File(['snare'], 'Snare.wav', { type: 'audio/wav' });
+        resolveFile2(file2);
+        await file2Promise;
+
+        expect(mocks.preview.playFile).toHaveBeenCalledWith('sample2', file2);
+        expect(mocks.preview.playFile).not.toHaveBeenCalledWith('sample1', expect.anything());
+
+        // Resolve file 1 second
+        const file1 = new File(['kick'], 'Kick.wav', { type: 'audio/wav' });
+        resolveFile1(file1);
+        await file1Promise;
+
+        // Verify mocks.preview.playFile is called for sample 2 and NOT for sample 1
+        expect(mocks.preview.playFile).toHaveBeenCalledTimes(1);
+        expect(mocks.preview.playFile).toHaveBeenCalledWith('sample2', file2);
+        expect(mocks.preview.playFile).not.toHaveBeenCalledWith('sample1', expect.anything());
+    });
+
+    it('does not call playFile if LibraryBrowser unmounts while file acquisition is pending', async () => {
+        let resolveFile!: (file: File) => void;
+        const filePromise = new Promise<File>((resolve) => {
+            resolveFile = resolve;
+        });
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
+        mocks.readNativeLibrarySampleFile.mockReturnValue(filePromise);
+        mocks.libraryState = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        const { unmount } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        // Click sample
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        // Unmount component
+        unmount();
+
+        // Resolve file promise
+        resolveFile(new File(['audio'], 'Kick.wav', { type: 'audio/wav' }));
+        await filePromise;
+
+        // Verify mocks.preview.playFile was not called
+        expect(mocks.preview.playFile).not.toHaveBeenCalled();
+    });
 });
