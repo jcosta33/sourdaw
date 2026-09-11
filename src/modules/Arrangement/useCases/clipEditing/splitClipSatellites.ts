@@ -229,7 +229,37 @@ function bezierSeamControlPoints(
  * curve family it was drawn with instead of flattening to a straight ramp.
  * A straddling `bezier` segment additionally carries the de Casteljau right
  * half as `cp1`/`cp2` (`bezierSeamControlPoints`) — the family alone would
- * play the default quad. The id derives from the right clip id, so a redo
+ * play the default quad.
+ *
+ * The other shaped families cannot continue exactly: their shape laws are
+ * functions of the segment fraction, and the split re-bases the surviving
+ * span onto [0,1], which they do not commute with (#4078). `exponential`
+ * warps by `fraction ** 2 ** (3 * tension)` — the continuation
+ * (f + (1-f)·u)^p is not a power of u, and no `tension` reproduces it.
+ * `stairs` continues exactly only when the cut lands ON an interior step
+ * edge (f = k/s with k ≤ s−2): there the surviving edges re-base uniformly
+ * and `stairSteps = s − k` would replay them exactly. The seam declines that
+ * realignment — it would carry a step count the musician never authored onto
+ * user-visible, editable fragment data — and keeps the authored count, which
+ * is exact nowhere else: off-edge the surviving edges stay uniformly spaced
+ * (constant gap 1/(s·(1−f)) in the re-based span), but placing them on the
+ * fragment's own uniform lattice needs `stairSteps = s·(1−f)`, an integer
+ * only on an edge — equivalently, the leading partial step is narrower than
+ * the step gap, which no uniform count reproduces. The final edge would need
+ * a count of 1, below the evaluator's minimum of 2. `smooth`
+ * (Catmull-Rom) reads its end tangents from neighboring points' values; the
+ * seam has no left neighbor, so it and the following segment evaluate changed
+ * tangents, and the two phantom values a carried left point could supply
+ * cannot satisfy the continuation cubic's three remaining coefficients. All
+ * three keep the family and the exact seam value sampled below — the split
+ * stays continuous at the cut, and only interior shape drifts, bounded by
+ * the straddling segment's |value| span (0.42·span for exponential at
+ * |tension| ≤ 1; span/2 for stairs at 2 steps, span/3 at 3, span/4 at ≥ 4)
+ * and by the neighborhood value spread for smooth (0.15×).
+ * `splitClipNonBezierSeam.spec.ts` pins each envelope; exact continuation
+ * remains bezier-only.
+ *
+ * The id derives from the right clip id, so a redo
  * re-split reproduces exactly the point the original split's undo retired.
  */
 function seamPointFor(

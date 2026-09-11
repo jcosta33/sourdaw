@@ -222,6 +222,37 @@ function isBacteriaControlThreadOnly(paramId: string): boolean {
     return BACTERIA_CONTROL_THREAD_ONLY.has(bareBacteriaParamName(paramId));
 }
 
+/**
+ * The Proof parameter name the graph owns, and which the body therefore never
+ * applies to its chain.
+ *
+ * `PROOF_GRAPH_OWNED` in `crates/daw-engine/src/scheduler.rs` is the same name,
+ * and that constant carries the reason: a device's bypass is the graph's own
+ * `GraphCommand::SetBypass`, which skips the body's pass and re-declares its
+ * latency, so a value written into the chain instead would leave the graph
+ * still running a body it believes is switched out.
+ *
+ * `ab_bypass` is deliberately not here. It is runtime-only in the project —
+ * `setProofParam` has refused to persist it since 11563e86b (2026-08-16), so a
+ * row saved after that commit never carries it — but it is a chain control all
+ * the same: the panel's A/B compare returns the gain-matched dry signal from
+ * the head of the chain, and a compare pressed while the session rolls
+ * natively has to be audible on the carrier that is sounding. Withholding it
+ * would leave the chip reading "A / dry" over the processed mix.
+ *
+ * Unlike [BACTERIA_CONTROL_THREAD_ONLY], this is not dropped on the control
+ * thread — a live `set_param` still forwards it, because the arm it engages
+ * there is a session gesture, not a saved value. A row saved before
+ * 11563e86b can still carry `ab_bypass: 1`; `ProofBody::load_patch`
+ * (`crates/daw-engine/src/scheduler.rs`) refuses that one name at the record
+ * door with its own constant (`PROOF_RECORD_REFUSED`) rather than through this
+ * one, so an old record cannot map the body dry against the panel's default.
+ * It stays in [projectPatch] all the same: the record is the mapper's, and the
+ * mapper reads a device's bypass from the record's own `bypassed` field rather
+ * than from a parameter.
+ */
+const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
+
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
         'knead',
@@ -369,6 +400,58 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) =>
                 BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !isBacteriaControlThreadOnly(paramId),
+            latencyCompensatedByEngine: true,
+        },
+    ],
+    [
+        'proof',
+        {
+            soundsNotes: false,
+            /**
+             * No table, for the same reason as Grinder's and Bacteria's entries
+             * above: Proof's chain spells its own parameters in snake_case and
+             * project truth authors the same ids, so the id a panel or a lane
+             * writes already is the name `ProofChain::set_param` takes. Its
+             * addressing is inside the shape rule rather than beside it — a
+             * name carries the stage it routes to as a prefix (`eq_`, `dyneq_`,
+             * `match_`, `dyn_`, `img_`, `exc_`, `lim_`, `dither_`), and the
+             * chain decodes the prefix itself.
+             *
+             * The record also carries the five `chain_order_{n}` keys spelling
+             * the module order, which the chain has no `set_param` arm for at
+             * all: `ProofBody` reads them and calls the chain's own `reorder`.
+             * They are ordinary shaped names here, so they travel in the
+             * record and answer a live write like any other.
+             *
+             * `addressesParameter` refuses the one name the graph owns — see
+             * [PROOF_GRAPH_OWNED] — so an automation lane spelling it is never
+             * built into a write. A panel write skips this gate entirely
+             * (`updateDeviceParam.ts` sends every live write natively through
+             * `nativeBuiltinWriteTarget`), reaches the native door regardless,
+             * and is dropped there by `ProofBody::set_param`. `ab_bypass` is not
+             * that name: the panel's compare reaches the chain on whichever
+             * carrier is sounding, and the project has not persisted it since
+             * 11563e86b (2026-08-16) — an older row that still carries it is
+             * refused only where a saved record loads
+             * (`ProofBody::load_patch`'s `PROOF_RECORD_REFUSED`), not here.
+             *
+             * The limiter's look-ahead is a real group delay, and the native
+             * engine compensates it itself: the mapper declares the figure at
+             * registration and the audio thread re-reads it after every write,
+             * so a write of `lim_lookahead` — the one name that moves this
+             * body's figure — realigns the mix rather than sliding it
+             * (`ProofBody`, `crates/daw-engine/src/scheduler.rs`). Hence
+             * `latencyCompensatedByEngine`: on an engine-carried strip this
+             * device is excluded from the renderer's own sum, or the delay
+             * would be counted twice.
+             *
+             * The chain's meters and its LUFS reading stay on the web twin.
+             * They are display, not audio, and nothing on the engine side
+             * reads them.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: shapedNumericParametersOnly,
+            addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !PROOF_GRAPH_OWNED.has(paramId),
             latencyCompensatedByEngine: true,
         },
     ],

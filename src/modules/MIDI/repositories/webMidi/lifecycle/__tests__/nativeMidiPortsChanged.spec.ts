@@ -15,12 +15,12 @@ const getStateMock = vi.hoisted(() =>
         enumerationError: null as string | null,
     }))
 );
-const persistInputIdMock = vi.hoisted(() => vi.fn<(id: string | null) => void>());
+const persistInputIdMock = vi.hoisted(() => vi.fn<(id: string | null, scheme: string) => void>());
 const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const selectMidiInputNativeMock = vi.hoisted(() => vi.fn<() => Promise<void>>().mockResolvedValue(undefined));
 const setNativeModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
 const setStateMock = vi.hoisted(() =>
-    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => void>()
 );
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -52,7 +52,7 @@ vi.mock('../../setNativeMode', () => ({
 vi.mock('../../setState', () => ({
     // Forward the options argument only when the caller supplied one, so the
     // persistSelection assertions stay readable.
-    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean }) => {
+    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => {
         if (options === undefined) {
             setStateMock(next);
             return;

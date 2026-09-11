@@ -7,11 +7,12 @@ import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreq
 import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
-import { bridges } from './helpers';
+import { bridges, sendProofParam } from './helpers';
+import { rehydrateRestoredPatch } from './rehydrateRestoredPatch';
+import { sendProofChainOrder } from './sendProofChainOrder';
 import { syncDynBands } from './syncDynBands';
 import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
-import { syncFullPatch } from './syncFullPatch';
 import { syncImager } from './syncImager';
 
 type SetProofParamWithPatchInput = ProofPatchEdit & { deviceId: string };
@@ -324,10 +325,12 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         return;
     }
 
-    // Before bridge registration, a full sync has no engine side effects and
-    // ensures saved project values hydrate before this edit takes precedence.
+    // Before bridge registration, hydrate the store from the persisted row so
+    // this edit applies over restored values; the engine hears only the edit,
+    // because a natively carried body already holds the persisted record and
+    // the web twin takes its full sync at registration.
     if (!bridges.has(deviceId)) {
-        syncFullPatch(deviceId);
+        rehydrateRestoredPatch(deviceId);
     }
 
     const currentPatch = getProofState(deviceId).patch;
@@ -350,11 +353,8 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
             );
         }
 
-        const bridge = bridges.get(deviceId);
-        if (bridge) {
-            for (const param of normalizedAggregate.changedParams) {
-                bridge.setParam(param.name, param.value);
-            }
+        for (const param of normalizedAggregate.changedParams) {
+            sendProofParam(deviceId, param.name, param.value);
         }
         return;
     }
@@ -377,14 +377,9 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         persistDevicePatch(deviceId, Object.fromEntries(persisted_params.map((param) => [param.name, param.value])));
     }
 
-    const bridge = bridges.get(deviceId);
-    if (!bridge) {
-        return;
-    }
-
     if (mapped_param) {
         if (valueChanged) {
-            bridge.setParam(mapped_param.name, mapped_param.value);
+            sendProofParam(deviceId, mapped_param.name, mapped_param.value);
         }
         return;
     }
@@ -398,6 +393,6 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
     } else if (input.key === 'excBands') {
         syncExciter(deviceId);
     } else if (input.key === 'chainOrder') {
-        bridge.reorderModules(input.value);
+        sendProofChainOrder(deviceId, input.value);
     }
 }

@@ -6,11 +6,11 @@ const desktopInvokeMock = vi.hoisted(() => vi.fn<(command: string) => Promise<un
 const desktopListenMock = vi.hoisted(() =>
     vi.fn<(event: string, handler: PortsChangedListener) => Promise<() => void>>()
 );
-const persistInputIdMock = vi.hoisted(() => vi.fn<(id: string | null) => void>());
+const persistInputIdMock = vi.hoisted(() => vi.fn<(id: string | null, scheme: string) => void>());
 const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const selectMidiInputNativeMock = vi.hoisted(() => vi.fn<() => Promise<void>>().mockResolvedValue(undefined));
 const setStateMock = vi.hoisted(() =>
-    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => void>()
 );
 
 vi.mock('#/utils/desktopBridge', () => ({
@@ -28,7 +28,7 @@ vi.mock('../../readPersistedInputId', () => ({
 }));
 
 vi.mock('../../setState', () => ({
-    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean }) => {
+    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => {
         if (options === undefined) {
             setStateMock(next);
             return;
@@ -46,6 +46,7 @@ vi.mock('../selectMidiInputNative', () => ({
         selectMidiInputNativeMock(...args),
 }));
 
+import { NATIVE_IDENTITY_SCHEME } from '../../selectedInputIdStorageKeys';
 import { initWebMidi } from '../initWebMidi';
 
 describe('legacy persisted-id cleanup on native init', () => {
@@ -68,7 +69,9 @@ describe('legacy persisted-id cleanup on native init', () => {
         await initWebMidi({ onMidiMessage: () => {} });
 
         expect(persistInputIdMock).toHaveBeenCalledTimes(1);
-        expect(persistInputIdMock).toHaveBeenCalledWith('300');
+        // The settle writes the native scheme's key only — never an untagged
+        // or Web-MIDI-namespaced one (#4138).
+        expect(persistInputIdMock).toHaveBeenCalledWith('300', NATIVE_IDENTITY_SCHEME);
         // The fallback port is what init opened.
         expect(selectMidiInputNativeMock).toHaveBeenCalledWith({
             portIndex: 0,
