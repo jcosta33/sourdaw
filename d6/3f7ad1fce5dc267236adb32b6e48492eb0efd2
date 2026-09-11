@@ -1,0 +1,163 @@
+src/modules/Command/useCases/describeCommandBatchRecovery.ts
+  s_06adf2b091dc62::t_7b698a21d12a0b 1-62
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_06adf2b091dc62::t_5eedfd08115e58 1-357
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleVerifiedBatchReplay.spec.ts
+  s_06adf2b091dc62::t_b51a1d0550b538 132-133
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_432a3313d6aef7 145-146
+src/modules/Command/useCases/index.ts
+  s_06adf2b091dc62::t_d0074558ef089f 16-19
+  s_06adf2b091dc62::t_7a6fe30935e4dd 21
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_06adf2b091dc62::t_ca8039b508b7d4 40-41
+  s_06adf2b091dc62::t_f370ec2bb6e579 60
+  s_06adf2b091dc62::t_051767c6bd0faf 107
+  s_06adf2b091dc62::t_ccf019262548c8 121
+  s_06adf2b091dc62::t_f206ca6ad113ef 1-3
+  s_06adf2b091dc62::t_9cebdd81a05d3a 35,38,42-49
+  s_06adf2b091dc62::t_0ddd0de092f0ea 71
+src/modules/AiRuntime/useCases/index.ts
+  s_06adf2b091dc62::t_74d86e8f4e28e0 79
+  s_06adf2b091dc62::t_13830eb477984f 80
+src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts
+  s_06adf2b091dc62::t_40bdcabad2229b 84
+  s_06adf2b091dc62::t_69f381c5209861 51-52
+  s_06adf2b091dc62::t_2393b949ec11d5 1,17-18,20,22-26,29-30
+  s_e994ce60d7effb::t_b9932e9092b9e0 3,5
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_06adf2b091dc62::t_aabcad81d17ec7 153-201
+  s_06adf2b091dc62::t_1b0b8eeb807c97 1-109,115-119,121-122,125-130,132-145,149-152,202-225,228-240
+  s_06adf2b091dc62::t_78d2350cf47d16 226-227
+  s_06adf2b091dc62::t_8a5414416db8de 110-114,120,123-124,131,146-148
+src/modules/Command/useCases/classifyCommandRecovery.ts
+  s_06adf2b091dc62::t_22aa53c599d1ab 1
+  s_06adf2b091dc62::t_261628b5b0e02c 2-22
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_06adf2b091dc62::t_3fced0c554ca5b 237
+  s_06adf2b091dc62::t_baef73e667a645 224
+  s_06adf2b091dc62::t_255ebe06b3514d 239
+  s_06adf2b091dc62::t_4a6d38ce539364 49-51,62,64-69,71,84
+  s_06adf2b091dc62::t_750277423a3d36 1-19,21-48,52-61,63,70,72-83,85-92,186-223,225-230,236,238,240-274,277-284
+  s_06adf2b091dc62::t_94ad7e608f4748 117-144
+  s_06adf2b091dc62::t_210327d6d357c8 231-235
+  s_06adf2b091dc62::t_06385ddb1fa693 275-276
+  s_06adf2b091dc62::t_3fb8b8e4fc0154 93-116,145-185
+  s_06adf2b091dc62::t_03acfd208a2798 20
+src/modules/Command/useCases/getCommandBatchGroupDependencies.ts
+  s_06adf2b091dc62::t_baf61a72e7338e 1-2,4-46
+  s_06adf2b091dc62::t_45ee6114ef5c53 3
+src/modules/Command/useCases/__tests__/semanticProjectDiff.spec.ts
+  s_06adf2b091dc62::t_968e68677fb7ea 20-22
+  s_06adf2b091dc62::t_945884fca3ad07 129
+  s_06adf2b091dc62::t_2efb8dbcb156ea 626,629,631-647,652-658,662,668
+  s_06adf2b091dc62::t_834ec8fd4a33dd 610-625,627-628,630,648-651,659-661,663-667,669-707
+  s_06adf2b091dc62::t_1aad7ca36f4fd1 103-128,130-191
+  s_06adf2b091dc62::t_38874926ff683d 9
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_06adf2b091dc62::t_641cb614ba1103 11-12
+  s_06adf2b091dc62::t_35dabdcaed1977 387-442
+src/modules/Command/useCases/commandBatchGroupId.ts
+  s_06adf2b091dc62::t_aa06e1ff546426 1-6
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_06adf2b091dc62::t_0a3c8d569fd7de 89
+  s_06adf2b091dc62::t_f5b680f64284a7 6
+  s_06adf2b091dc62::t_94185af1a62fb0 52
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_06adf2b091dc62::t_3a4f5a17e22480 129-131
+  s_06adf2b091dc62::t_049cf47d8348fe 3
+  s_06adf2b091dc62::t_111dfa0395ecd6 368-369
+  s_06adf2b091dc62::t_ab5d99442be80d 102-103,110
+  s_06adf2b091dc62::t_d2e5a13e08a867 304,312
+  s_06adf2b091dc62::t_54ea25e6b6971b 584-620
+  s_06adf2b091dc62::t_aebd06736a7ccf 345
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_06adf2b091dc62::t_ec8490c068acff 129
+  s_06adf2b091dc62::t_af04a717b559c6 309
+  s_06adf2b091dc62::t_ee853f9c9d8207 305-308,310-314,319-331,333,336,338,358-363,365-368,371,373
+  s_06adf2b091dc62::t_269b148bc8ead0 15
+  s_06adf2b091dc62::t_913474f56914dc 315-318
+  s_06adf2b091dc62::t_97cfc7c82a6457 1,3,26-30
+  s_06adf2b091dc62::t_544fb6c1df7578 171-177,184-188
+  s_06adf2b091dc62::t_cb5c6066f9612f 335
+  s_06adf2b091dc62::t_c394f8088096d8 61-63,65-85,88-95,100,103-104,107
+  s_06adf2b091dc62::t_91c28bd4973c2a 86-87
+  s_06adf2b091dc62::t_101a56cfd91e23 64
+  s_06adf2b091dc62::t_0885a80a425b30 163-170
+  s_06adf2b091dc62::t_dce4a1b7327713 332,334,337,339-353,355-357,364,369-370,372
+  s_06adf2b091dc62::t_99bebda949d898 354
+  s_06adf2b091dc62::t_265a0b1e8d8a88 117
+  s_06adf2b091dc62::t_40cf94f57d627d 183
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_06adf2b091dc62::t_5aec33c3af2ad4 147-160
+  s_06adf2b091dc62::t_3bf9c934a69dd3 6-8,11-12
+  s_06adf2b091dc62::t_1e54ed6dfc10c3 13-14
+  s_e994ce60d7effb::t_3feec92cfab4c3 390,407,426
+src/modules/Command/useCases/__tests__/describeCommandBatchRecovery.spec.ts
+  s_06adf2b091dc62::t_c0fb86560929c7 1-95
+  s_9b530f08172a54::t_5702a31da1d3bc 96
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_06adf2b091dc62::t_80b2f80472627f 77-93,102
+  s_06adf2b091dc62::t_d40d514ff7e4fa 1-76,94-101,103-395
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_06adf2b091dc62::t_1feefc26f54ee9 507-514
+src/modules/Command/useCases/__tests__/classifyCommandRecovery.spec.ts
+  s_06adf2b091dc62::t_66eac3739394fb 1,5
+  s_06adf2b091dc62::t_8b8bf5196d838b 2-4,6-31
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActionsAdmission.spec.ts
+  s_9b530f08172a54::t_d6f5d536654359 35-36
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/admitCommittedSectionRenderRetry.spec.ts
+  s_9b530f08172a54::t_b2406a954d4c30 123-124
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/agentRunExecutionSettlement.spec.ts
+  s_9b530f08172a54::t_5d1691b8024e2d 54-55
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/beginConfirmedCommandExecution.spec.ts
+  s_9b530f08172a54::t_3e4700ca3c5731 115-116
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/confirmationTerminalSettlement.spec.ts
+  s_9b530f08172a54::t_d1996ab0609cde 51-52
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/confirmedBatchOutcomeSupport.spec.ts
+  s_9b530f08172a54::t_7bd86424a090dd 63-64
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_e994ce60d7effb::t_9b407478bfd4f1 200-201
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_e994ce60d7effb::t_7dcd42c86577e4 229-230
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/projectSectionRenderConfirmation.spec.ts
+  s_e994ce60d7effb::t_0c0d4da3b247a5 63-64
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_e994ce60d7effb::t_72217bafa283b4 140-141
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleConfirmedBatchOutcome.spec.ts
+  s_e994ce60d7effb::t_ac844dec7ec479 187-188
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleConfirmedCommandExecution.spec.ts
+  s_e994ce60d7effb::t_080165149207cf 197-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d63f7ad1fce5dc267236adb32b6e48492eb0efd2",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e994ce60d7effb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a48a06a7f03de8e11",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
