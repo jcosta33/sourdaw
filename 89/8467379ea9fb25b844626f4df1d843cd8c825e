@@ -1,0 +1,37 @@
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/registerNativeSampleBanks.spec.ts
+  s_9b530f08172a54::t_e6481a3ee520e6 43
+  s_9b530f08172a54::t_b3617c95928914 13,20,31
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_d974cc96229d56 147-161,172
+  s_9b530f08172a54::t_c07804467c5406 453
+  s_06adf2b091dc62::t_e9694774bdc39d 146
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_9b530f08172a54::t_6aaad16e3f5e0a 44
+  s_9b530f08172a54::t_ac14be737ec5c6 167
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_9b530f08172a54::t_ca8efd6070c03f 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "898467379ea9fb25b844626f4df1d843cd8c825e",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
