@@ -1,0 +1,21 @@
+src/modules/Toaster/useCases/__tests__/projectToasterKitToNativePatch.spec.ts
+  s_9b530f08172a54::t_363be35e0f0a99 48
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  s_9b530f08172a54::t_da9dc550649522 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "70ddd9983b35acadf50dd5475ceac94c8d273207",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
