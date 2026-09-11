@@ -4,6 +4,7 @@ import { importAgentAsset } from '../repositories/agentAssetSaga/importAgentAsse
 import { registerAgentAssetHandle } from '../repositories/agentAssetSaga/registerAgentAssetHandle';
 import { stageAgentAssetExport } from '../repositories/agentAssetSaga/stageAgentAssetExport';
 import { openViaNative } from '../repositories/nativeFileDialog/openViaNative';
+import { saveViaNative } from '../repositories/nativeFileDialog/saveViaNative';
 
 import { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable';
 
@@ -16,15 +17,17 @@ import type {
 } from '../repositories/agentAssetSaga/agentAssetSagaWire';
 import type { OpenFileOptions } from '../repositories/nativeFileDialog/helpers';
 
-type AgentAssetHandleGrant = {
-    handleId: string | null;
-    receipt: AgentAssetSagaReceipt;
-};
+type AgentAssetHandleGrant = { handleId: string; receipt: AgentAssetSagaReceipt };
 
 type AgentAssetBoundaryRefusal = {
     status: 'refused';
     reason: 'malformed-handle-id' | 'malformed-saga-id' | 'native-runtime-unavailable' | 'no-selection';
 };
+
+type AgentAssetPickResult =
+    | { status: 'granted'; handles: AgentAssetHandleGrant[]; failures: AgentAssetSagaReceipt[] }
+    | { status: 'refused'; reason: 'registration-failed'; failures: AgentAssetSagaReceipt[] }
+    | AgentAssetBoundaryRefusal;
 
 type AgentAssetBoundaryResult = { status: 'receipt'; receipt: AgentAssetSagaReceipt } | AgentAssetBoundaryRefusal;
 
@@ -44,35 +47,67 @@ function isMalformedSagaId(sagaId: string): boolean {
 }
 
 /**
+ * Select paths for one `pickAndRegister` call. `'read'` opens the open dialog, which the desktop
+ * shell grants `{ mode: 'read' }`; `'read-write'` opens the save dialog instead, because the open
+ * channel can never grant write access. A save-dialog destination is wrapped into a one-element
+ * array so both routes answer the same shape.
+ */
+async function selectPathsForMode(input: {
+    mode: AssetHandleMode;
+    multiple?: boolean;
+    filters?: OpenFileOptions['filters'];
+    suggestedName?: string;
+}): Promise<string[] | null> {
+    if (input.mode === 'read-write') {
+        const destination = await saveViaNative({ filters: input.filters, suggestedName: input.suggestedName });
+        return destination === null ? null : [destination];
+    }
+    return openViaNative({ multiple: input.multiple ?? false, filters: input.filters });
+}
+
+/**
  * Let the user pick files through the native dialog and mint an opaque handle for each one.
  *
- * Paths never leave `openViaNative` and `registerAgentAssetHandle`: this function receives them
- * only to forward them to the mint call, and neither the return value nor any thrown error carries
- * one. A caller that needs to know what happened to a specific selection reads `receipt.state` and
- * `receipt.failure` on that entry, not a path.
+ * `'read'` mints through the open dialog; `'read-write'` mints through the save dialog, since only
+ * the save channel grants write access. `suggestedName` is reduced to a file name (`saveViaNative`)
+ * before it reaches the shell.
+ *
+ * Paths never leave `openViaNative`/`saveViaNative` and `registerAgentAssetHandle`: this function
+ * receives them only to forward them to the mint call, and neither the return value nor any thrown
+ * error carries one. A caller that needs to know what happened to a specific selection reads
+ * `receipt.state` and `receipt.failure` on that entry, not a path.
  */
 async function pickAndRegister(input: {
     owner: AgentWorkOwner;
     mode: AssetHandleMode;
     multiple?: boolean;
     filters?: OpenFileOptions['filters'];
-}): Promise<{ status: 'granted'; handles: AgentAssetHandleGrant[] } | AgentAssetBoundaryRefusal> {
+    suggestedName?: string;
+}): Promise<AgentAssetPickResult> {
     if (!isNativeProjectRuntimeAvailable()) {
         return { status: 'refused', reason: 'native-runtime-unavailable' };
     }
 
-    const selectedPaths = await openViaNative({ multiple: input.multiple ?? false, filters: input.filters });
+    const selectedPaths = await selectPathsForMode(input);
     if (!selectedPaths || selectedPaths.length === 0) {
         return { status: 'refused', reason: 'no-selection' };
     }
 
     const handles: AgentAssetHandleGrant[] = [];
+    const failures: AgentAssetSagaReceipt[] = [];
     for (const path of selectedPaths) {
         const receipt = await registerAgentAssetHandle(path, input.mode, input.owner);
-        handles.push({ handleId: receipt.handleId, receipt });
+        if (receipt.handleId === null) {
+            failures.push(receipt);
+        } else {
+            handles.push({ handleId: receipt.handleId, receipt });
+        }
     }
 
-    return { status: 'granted', handles };
+    if (handles.length === 0) {
+        return { status: 'refused', reason: 'registration-failed', failures };
+    }
+    return { status: 'granted', handles, failures };
 }
 
 async function importAsset(input: {

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     finalizeAgentAssetExport: vi.fn(),
     cleanupAgentAssetSaga: vi.fn(),
     openViaNative: vi.fn(),
+    saveViaNative: vi.fn(),
     isNativeProjectRuntimeAvailable: vi.fn(),
 }));
 
@@ -31,6 +32,9 @@ vi.mock('../../repositories/agentAssetSaga/cleanupAgentAssetSaga', () => ({
 }));
 vi.mock('../../repositories/nativeFileDialog/openViaNative', () => ({
     openViaNative: mocks.openViaNative,
+}));
+vi.mock('../../repositories/nativeFileDialog/saveViaNative', () => ({
+    saveViaNative: mocks.saveViaNative,
 }));
 vi.mock('../isNativeProjectRuntimeAvailable', () => ({
     isNativeProjectRuntimeAvailable: mocks.isNativeProjectRuntimeAvailable,
@@ -96,7 +100,7 @@ describe('the agent asset file boundary', () => {
         expect(mocks.registerAgentAssetHandle).not.toHaveBeenCalled();
     });
 
-    it('T4 registers every selected path in order and never leaks a path into the result', async () => {
+    it('T4 read mode registers every open-dialog selection in order and never leaks a path into the result', async () => {
         const firstPath = '/samples/kick.wav';
         const secondPath = '/samples/snare.wav';
         mocks.openViaNative.mockResolvedValue([firstPath, secondPath]);
@@ -104,11 +108,12 @@ describe('the agent asset file boundary', () => {
         const secondReceipt = receipt({ handleId: 'asset-handle-22222222-2222-4222-8222-222222222222' });
         mocks.registerAgentAssetHandle.mockResolvedValueOnce(firstReceipt).mockResolvedValueOnce(secondReceipt);
 
-        const result = await agentAssetFileBoundary.pickAndRegister({ owner, mode: 'read-write', multiple: true });
+        const result = await agentAssetFileBoundary.pickAndRegister({ owner, mode: 'read', multiple: true });
 
+        expect(mocks.saveViaNative).not.toHaveBeenCalled();
         expect(mocks.registerAgentAssetHandle.mock.calls).toEqual([
-            [firstPath, 'read-write', owner],
-            [secondPath, 'read-write', owner],
+            [firstPath, 'read', owner],
+            [secondPath, 'read', owner],
         ]);
         expect(result).toEqual({
             status: 'granted',
@@ -116,10 +121,107 @@ describe('the agent asset file boundary', () => {
                 { handleId: firstReceipt.handleId, receipt: firstReceipt },
                 { handleId: secondReceipt.handleId, receipt: secondReceipt },
             ],
+            failures: [],
         });
         const serialized = JSON.stringify(result);
         expect(serialized).not.toContain(firstPath);
         expect(serialized).not.toContain(secondPath);
+    });
+
+    it('T4b read-write mode registers the save-dialog destination and never opens the open dialog', async () => {
+        const destination = '/exports/mix.wav';
+        const filters = [{ name: 'Audio', extensions: ['wav'] }];
+        mocks.saveViaNative.mockResolvedValue(destination);
+        const grantedReceipt = receipt({ handleId: 'asset-handle-33333333-3333-4333-8333-333333333333' });
+        mocks.registerAgentAssetHandle.mockResolvedValue(grantedReceipt);
+
+        const result = await agentAssetFileBoundary.pickAndRegister({
+            owner,
+            mode: 'read-write',
+            suggestedName: 'mix.wav',
+            filters,
+        });
+
+        expect(mocks.saveViaNative).toHaveBeenCalledWith({ filters, suggestedName: 'mix.wav' });
+        expect(mocks.openViaNative).not.toHaveBeenCalled();
+        expect(mocks.registerAgentAssetHandle.mock.calls).toEqual([[destination, 'read-write', owner]]);
+        expect(result).toEqual({
+            status: 'granted',
+            handles: [{ handleId: grantedReceipt.handleId, receipt: grantedReceipt }],
+            failures: [],
+        });
+        expect(JSON.stringify(result)).not.toContain(destination);
+    });
+
+    it('T4c read-write mode refuses when the save dialog is cancelled', async () => {
+        mocks.saveViaNative.mockResolvedValue(null);
+
+        const result = await agentAssetFileBoundary.pickAndRegister({
+            owner,
+            mode: 'read-write',
+            suggestedName: 'mix.wav',
+        });
+
+        expect(result).toEqual({ status: 'refused', reason: 'no-selection' });
+        expect(mocks.registerAgentAssetHandle).not.toHaveBeenCalled();
+    });
+
+    it('T4d refuses with registration-failed when every receipt carries a null handle id', async () => {
+        const firstPath = '/samples/kick.wav';
+        const secondPath = '/samples/snare.wav';
+        mocks.openViaNative.mockResolvedValue([firstPath, secondPath]);
+        const firstFailure = receipt({ handleId: null, state: 'failed', failure: 'access-denied' });
+        const secondFailure = receipt({ handleId: null, state: 'failed', failure: 'access-denied' });
+        mocks.registerAgentAssetHandle.mockResolvedValueOnce(firstFailure).mockResolvedValueOnce(secondFailure);
+
+        const result = await agentAssetFileBoundary.pickAndRegister({ owner, mode: 'read', multiple: true });
+
+        expect(result).toEqual({
+            status: 'refused',
+            reason: 'registration-failed',
+            failures: [firstFailure, secondFailure],
+        });
+    });
+
+    it('T4e separates failed receipts from grants on a partial registration', async () => {
+        const firstPath = '/samples/kick.wav';
+        const secondPath = '/samples/snare.wav';
+        mocks.openViaNative.mockResolvedValue([firstPath, secondPath]);
+        const grantedReceipt = receipt({ handleId: 'asset-handle-44444444-4444-4444-8444-444444444444' });
+        const failedReceipt = receipt({ handleId: null, state: 'failed', failure: 'access-denied' });
+        mocks.registerAgentAssetHandle.mockResolvedValueOnce(grantedReceipt).mockResolvedValueOnce(failedReceipt);
+
+        const result = await agentAssetFileBoundary.pickAndRegister({ owner, mode: 'read', multiple: true });
+
+        expect(result).toEqual({
+            status: 'granted',
+            handles: [{ handleId: grantedReceipt.handleId, receipt: grantedReceipt }],
+            failures: [failedReceipt],
+        });
+    });
+
+    it('T4f propagates a register rejection without adding a path to it', async () => {
+        const firstPath = '/samples/kick.wav';
+        const secondPath = '/samples/snare.wav';
+        mocks.openViaNative.mockResolvedValue([firstPath, secondPath]);
+        const rejection = new Error('Path is outside allowed native file roots');
+        mocks.registerAgentAssetHandle.mockRejectedValueOnce(rejection);
+
+        await expect(agentAssetFileBoundary.pickAndRegister({ owner, mode: 'read', multiple: true })).rejects.toThrow(
+            'Path is outside allowed native file roots'
+        );
+
+        mocks.registerAgentAssetHandle.mockClear();
+        mocks.registerAgentAssetHandle.mockRejectedValueOnce(rejection);
+        const caught = await agentAssetFileBoundary
+            .pickAndRegister({ owner, mode: 'read', multiple: true })
+            .catch((error: unknown) => error);
+
+        expect(String((caught as Error).message)).not.toContain(firstPath);
+        expect(String((caught as Error).message)).not.toContain(secondPath);
+        expect(String((caught as Error).stack ?? '')).not.toContain(firstPath);
+        expect(String((caught as Error).stack ?? '')).not.toContain(secondPath);
+        expect(mocks.registerAgentAssetHandle).toHaveBeenCalledTimes(1);
     });
 
     it.each(['/Users/x/a.wav', 'asset-handle-../etc', 'asset-handle-', '', 'C:\\x'])(
