@@ -357,6 +357,7 @@ function rollingReading(positionSeconds: number): EngineTransportPosition {
         timeSigDenom: 4,
         masterPeak: 0,
         stripPeaks: {},
+        tunerTelemetry: {},
     };
 }
 

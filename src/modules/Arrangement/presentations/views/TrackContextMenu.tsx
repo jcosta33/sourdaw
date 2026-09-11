@@ -25,6 +25,7 @@ import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
+import { useTracks } from '../hooks/useTracks';
 
 import { BounceOptionsDialog } from './BounceOptionsDialog';
 
@@ -42,6 +43,8 @@ type TrackContextMenuProps = {
 type MenuPosition = { x: number; y: number } | null;
 
 export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): ReactElement => {
+    const { tracks } = useTracks();
+    const hasSoloedTracks = tracks.some((t) => t.soloed);
     const [position, setPosition] = useState<MenuPosition>(null);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
@@ -155,6 +158,27 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             label: track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe',
             action: () => {
                 toggleSoloSafe(track.id);
+                close();
+            },
+        },
+        ...(hasSoloedTracks
+            ? [
+                  {
+                      label: 'Clear All Solos',
+                      action: () => {
+                          void executeUserAppAction({ type: 'clearSolos' });
+                          close();
+                      },
+                  },
+              ]
+            : []),
+        {
+            label: track.disabled ? 'Enable Track' : 'Disable Track',
+            action: () => {
+                void executeUserAppAction({
+                    type: 'disableTrack',
+                    payload: { trackId: track.id, disabled: !track.disabled },
+                });
                 close();
             },
         },

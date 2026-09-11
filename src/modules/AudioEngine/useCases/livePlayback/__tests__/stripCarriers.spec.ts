@@ -340,6 +340,25 @@ describe('projectStripCarriers', () => {
         expect(carrier).toEqual({ carrier: 'native' });
     });
 
+    // The Tuner is a body like any other now that the engine builds one, and
+    // it is the analyser most likely to be sitting on a strip while the take
+    // rolls — a player checks their tuning and leaves the device in the chain.
+    // Leaving that strip on Web Audio for a pass-through analyser would cost
+    // the take its native timeline for a device that changes nothing about the
+    // signal.
+    it('carries a track whose chain holds a tuner', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', devices: [createDevice({ id: 'd', type: 'native-scoring' })] }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
     // Every built-in the engine registers is a body, not only the effect it
     // started with: a strip playing clips through an instrument insert is one
     // the engine can build whole, and leaving it on Web Audio for a body the
@@ -361,6 +380,23 @@ describe('projectStripCarriers', () => {
     it('carries a clip-less MIDI track whose only body is a built-in instrument natively', () => {
         const carriers = projectStripCarriers({
             stripTracks: [createTrack({ id: 'audio-1', kind: 'midi', devices: [nativeInstrumentDevice('d')] })],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
+    });
+
+    // The sampler is the one body the engine builds from staged material
+    // rather than from its record, and it used to be the reason an orchestral
+    // strip stayed on Web Audio. It is a native instrument like any other now:
+    // the bank reaches the store before the batch that maps the device.
+    it('carries an orchestral sampler strip natively', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({ id: 'audio-1', kind: 'midi', devices: [createDevice({ id: 'd', type: 'levain' })] }),
+            ],
             attachedInstanceIds: new Set(),
             programme: programmeFor([]),
             inputMonitoredTrackIds: new Set(),

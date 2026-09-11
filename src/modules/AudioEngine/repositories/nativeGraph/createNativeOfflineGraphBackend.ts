@@ -73,6 +73,7 @@ import { deinterleaveStereoPcm, type PlanarStereo } from './deinterleaveStereoPc
 import { interleaveAudioBufferPcm } from './interleaveAudioBufferPcm';
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { readNativeStripReports } from './readNativeStripReports';
+import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
 import { type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
 
@@ -109,6 +110,13 @@ export type NativeOfflineGraphBackendDeps = Readonly<{
      * law-bearing happens on this side of it.
      */
     transport: NativeGraphTransport;
+    /**
+     * Leases the decoded bank one device's `sampleBankKey` names, so the batch
+     * can stage it before the probe is asked to map that device. Absent in a
+     * caller whose producer emits no bank-carrying device, which then stages
+     * nothing.
+     */
+    acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
 export type NativeOfflineGraphBackend = AudioGraphBackend &
@@ -178,7 +186,7 @@ function readMappedResult(value: unknown): MappedOutcome {
 }
 
 export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendDeps): NativeOfflineGraphBackend {
-    const { sampleRate, transport } = deps;
+    const { sampleRate, transport, acquireNativeSampleBank } = deps;
 
     /** Every command accepted so far, in application order, wire-shaped. */
     let wireCommands: NativeGraphWireCommand[] = [];
@@ -241,6 +249,21 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                     return rejected(`register_timeline_sample "${source.sourceId}": ${reasonOf(error)}`);
                 }
                 sentSourceIds.push(source.sourceId);
+            }
+
+            if (acquireNativeSampleBank) {
+                // Bank material after the clip material and still before the
+                // probe: a device built from a staged bank is refused by
+                // `map_device` until the bank is committed, and that refusal
+                // takes the whole batch. Staging never refuses the batch of its
+                // own accord — an instrument that could not be staged is one
+                // device the probe then names, not a bounce that never started.
+                await registerNativeSampleBanks({
+                    transport,
+                    commands: batch.commands,
+                    acquire: acquireNativeSampleBank,
+                    replaceTopology: batch.replaceTopology,
+                });
             }
 
             // The whole-batch probe (see the header): the incoming batch maps

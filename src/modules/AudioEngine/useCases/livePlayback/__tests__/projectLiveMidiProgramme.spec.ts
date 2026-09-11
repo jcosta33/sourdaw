@@ -377,6 +377,23 @@ describe('projectLiveMidiProgramme', () => {
         expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
     });
 
+    // The sampler is the instrument a natively carried orchestral strip plays
+    // through, and the engine registers its note store like any other built-in
+    // instrument's: without notes addressed to it the strip carries natively
+    // and sounds nothing at all.
+    it('addresses a MIDI strip’s notes to its orchestral sampler', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'levain' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
+    });
+
     // Chain order picks the first sink across both kinds, hosted or built-in,
     // whichever the chain places first.
     it('takes the first note sink in chain order across hosted and built-in', () => {

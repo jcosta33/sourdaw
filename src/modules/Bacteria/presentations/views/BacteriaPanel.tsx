@@ -392,7 +392,7 @@ const PresetRail = ({
                     </span>
                     <span className="text-micro text-muted-foreground/45">{state.patch.name}</span>
                 </Row>
-                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2">
+                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2 [&>*]:shrink-0">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => {
                             const active = preset.patch.name === state.patch.name;
@@ -835,7 +835,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     };
 
     return (
-        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5">
+        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5 [&>*]:shrink-0">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Modules"
@@ -1435,7 +1435,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 }
 
 const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Split"
@@ -1494,7 +1494,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 );
 
 const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Global"

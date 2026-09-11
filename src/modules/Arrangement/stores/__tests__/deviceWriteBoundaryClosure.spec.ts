@@ -390,12 +390,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
-        // Count provenance: measured 8 in code. Registration no longer routes
-        // patch initialization through the rAF write batcher: it applies the
-        // complete runtime patch synchronously before sample loading and performs
-        // no project persistence. The retired match was that registration-time
-        // `queueParam` path; explicit user edits remain the only persisted sinks.
-        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 8,
+        // Count provenance: measured 2 in code, was 8 — the `LevainDevice`
+        // handle's own `setParam` field and the one call through it. The six
+        // retired matches were the macro fan-out's direct `device.setParam`
+        // calls; every engine-spelled write in the bridge now funnels through
+        // `setRuntimeParam`, which writes the worklet *and* the native session,
+        // so a natively carried Levain hears a macro move.
+        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `setParam`. The file reads the persisted chain order off the project
         // and posts one `reorder` message to the offline worklet port; the

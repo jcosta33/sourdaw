@@ -4,6 +4,7 @@ import {
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
+import { writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 
 import { autoLoadLevainSamples } from '../autoLoadSamples';
 
@@ -16,4 +17,5 @@ export const levainBridgeDependencies = {
     persistDeviceParam,
     autoLoadLevainSamples,
     resolveEligibleDeviceWriteTarget,
+    writeNativeBuiltinParameters,
 } as const;

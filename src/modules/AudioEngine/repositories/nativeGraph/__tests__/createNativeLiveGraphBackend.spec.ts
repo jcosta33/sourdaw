@@ -9,11 +9,12 @@
  * caller would act on.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
+import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
 
 const BATCH: AudioGraphCommandBatch = {
     schemaVersion: 1,
@@ -251,5 +252,126 @@ describe('createNativeLiveGraphBackend', () => {
 
         expect(result).toEqual({ acceptance: 'rejected', application: 'not-applied', reason: 'backend disposed' });
         expect(applyGraphCommands).not.toHaveBeenCalled();
+    });
+
+    describe('sample banks', () => {
+        beforeEach(() => {
+            registeredNativeSampleBankKeys.clear();
+            inFlightNativeSampleBankShipments.clear();
+        });
+
+        const BANK_BATCH: AudioGraphCommandBatch = {
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 'audio-1',
+                    name: 'Track 1',
+                    state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                    devices: [
+                        {
+                            id: 'device-a',
+                            name: 'Levain',
+                            type: 'levain',
+                            bypassed: false,
+                            parameterValues: {},
+                            sampleBankKey: 'levain:violin-1',
+                        },
+                    ],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+            ],
+        };
+
+        function bankTransport(calls: string[]): NativeGraphTransport {
+            return {
+                applyGraphCommands: () => {
+                    calls.push('apply_graph_commands');
+                    return Promise.resolve({
+                        acceptance: 'accepted',
+                        application: 'applied',
+                        runtimeRevision: 1,
+                        reports: [],
+                    });
+                },
+                beginLevainBank: () => {
+                    calls.push('begin_levain_bank');
+                    return Promise.resolve(null);
+                },
+                registerLevainSample: () => {
+                    calls.push('register_levain_sample');
+                    return Promise.resolve(null);
+                },
+                commitLevainBank: () => {
+                    calls.push('commit_levain_bank');
+                    return Promise.resolve(null);
+                },
+                releaseLevainBank: () => Promise.reject(new Error('unexpected release_levain_bank')),
+                registerTimelineSample: () => Promise.reject(new Error('unexpected register_timeline_sample')),
+                renderGraphOffline: () => Promise.reject(new Error('unexpected render_graph_offline')),
+                mapGraphBatch: () => Promise.reject(new Error('unexpected map_graph_batch')),
+            };
+        }
+
+        // The engine refuses a Levain device whose bank is not committed yet,
+        // and that refusal takes the whole batch — every other strip in the
+        // play with it. So the stage is not merely present, it is *before*.
+        it('commits a device bank before the batch that maps the device', async () => {
+            const calls: string[] = [];
+
+            await createNativeLiveGraphBackend({
+                transport: bankTransport(calls),
+                acquireNativeSampleBank: () =>
+                    Promise.resolve({
+                        bank: {
+                            instrumentId: 'violin-1',
+                            numArticulations: 1,
+                            numMics: 1,
+                            zones: [],
+                            legatoTransitions: [],
+                            samples: [
+                                {
+                                    sampleId: '0',
+                                    sampleRate: 48_000,
+                                    channels: 1,
+                                    frameCount: 1,
+                                    pcm: new Uint8Array([1, 2, 3, 4]),
+                                },
+                            ],
+                        },
+                        release: vi.fn(),
+                    }),
+            }).apply(BANK_BATCH);
+
+            expect(calls).toEqual([
+                'begin_levain_bank',
+                'register_levain_sample',
+                'commit_levain_bank',
+                'apply_graph_commands',
+            ]);
+        });
+
+        it('still applies the batch when a bank could not be staged', async () => {
+            const calls: string[] = [];
+
+            const result = await createNativeLiveGraphBackend({
+                transport: bankTransport(calls),
+                acquireNativeSampleBank: () => Promise.reject(new Error('manifest 404')),
+            }).apply(BANK_BATCH);
+
+            // One instrument that did not load is one device the engine refuses
+            // by name, not a play gesture that refused the whole project.
+            expect(calls).toEqual(['apply_graph_commands']);
+            expect(result.acceptance).toBe('accepted');
+        });
+
+        it('stages nothing when the caller registered no bank door', async () => {
+            const calls: string[] = [];
+
+            await createNativeLiveGraphBackend({ transport: bankTransport(calls) }).apply(BANK_BATCH);
+
+            expect(calls).toEqual(['apply_graph_commands']);
+        });
     });
 });

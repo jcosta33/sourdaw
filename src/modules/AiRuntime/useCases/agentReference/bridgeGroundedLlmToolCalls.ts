@@ -2328,6 +2328,13 @@ function attributeDirectionClause(
     if (clauseNamesToken(clause, tokens.parameter)) {
         return 'this';
     }
+    if (
+        clauseNamesToken(clause, tokens.thisDevice) &&
+        clauseNamesToken(clause, tokens.otherTracks) &&
+        !clauseNamesToken(clause, tokens.ownerTrack)
+    ) {
+        return 'other';
+    }
     if (clauseNamesToken(clause, tokens.thisDevice)) {
         return 'this';
     }
@@ -2345,9 +2352,10 @@ function attributeDirectionClause(
 
 /**
  * The clauses attributed to this parameter, ranked by specificity with the first match winning: this
- * parameter, then this device, beat naming another parameter or device on any track, which in turn
- * beats this device's owner track, which beats another track. A clause naming nothing inherits the
- * nearest preceding attribution, and is this parameter's when no attributed clause precedes it.
+ * parameter, then a track-qualified same-type device naming another track over this device, then this
+ * device, beat naming another parameter or device on any track, which in turn beats this device's owner
+ * track, which beats another track. A clause naming nothing inherits the nearest preceding attribution,
+ * and is this parameter's when no attributed clause precedes it.
  */
 function selectDeviceParameterDirectionClauses(
     actionScope: ActionPromptScope,

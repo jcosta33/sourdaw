@@ -18,6 +18,7 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),
     // Present only because the barrel-mock census requires every export of

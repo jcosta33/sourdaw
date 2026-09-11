@@ -54,6 +54,7 @@ import {
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
+    isTunerTelemetryNativelyOwned,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -189,6 +190,8 @@ import {
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
+import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
@@ -453,6 +456,18 @@ configureAudioDeviceRuntimeSink({
     // gets folded into the record `projectDeviceForNativeBody` sends. See
     // `projectNativeDeviceState`.
     projectNativeDeviceState,
+    // The bank door beside the row above. One body is built from staged
+    // material rather than from its record, so the same opaque state that is
+    // projected into `parameterValues` also names the bank the engine must
+    // already hold; the graph backends stage it before the batch that maps the
+    // device. See `nativeSampleBanks`.
+    nativeSampleBankKey,
+    acquireNativeSampleBank,
+    // And the vocabulary that staged body answers to. A module writing to the
+    // engine directly imports AudioEngine, so AudioEngine asks here for its
+    // parameter names rather than importing it back. See
+    // `nativeBuiltinParameterNames`.
+    nativeBuiltinParameterName,
     // The live registry's Crumbs descriptor calls this, and the offline chain
     // reaches the same use case through the `builtin-crumbs` row of
     // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
@@ -492,7 +507,26 @@ configureAudioDeviceRuntimeSink({
     syncProofPatch: syncFullPatch,
     updateProofMeters,
     clearProofMeters,
-    updateTunerTelemetry,
+    // The Tuner is the one device two analysers can report for at once: the
+    // native body publishes on the transport poll and the Web Audio twin's
+    // worklet posts from a graph that goes on running behind a shadowed
+    // carrier. Both reach one store, so the arbitration belongs here, where
+    // both producers are visible — neither can see the other.
+    //
+    // The native reading wins for a device the session is carrying and
+    // sounding, and only there: everywhere else the web twin is what the
+    // musician hears, so its reading is the true one and the native map's
+    // entry for that device is stale or silent.
+    updateTunerTelemetry: (deviceId, telemetry) => {
+        if (isTunerTelemetryNativelyOwned(deviceId)) {
+            return;
+        }
+        updateTunerTelemetry(deviceId, telemetry);
+    },
+    // No predicate on this side: `publishNativeTunerTelemetry` already
+    // filtered the poll's map by that same answer, so a reading reaching here
+    // is one this session owns.
+    updateNativeTunerTelemetry: updateTunerTelemetry,
 });
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());

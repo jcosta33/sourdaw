@@ -39,6 +39,7 @@ import {
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
 
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
@@ -197,6 +198,17 @@ function tablePatch(
 }
 
 /**
+ * The sampler's engine name for one project parameter id, read from the module
+ * that owns that vocabulary.
+ *
+ * Asked at call time rather than held: the sink is registered by the
+ * composition root, and this table is built when the module loads.
+ */
+function levainEngineParameterName({ paramId }: { paramId: string }): string | null {
+    return getAudioDeviceRuntimeSink().nativeBuiltinParameterName({ deviceType: 'levain', paramId });
+}
+
+/**
  * The Bacteria parameter names whose engine arms allocate, and which the
  * native audio-thread door therefore drops.
  *
@@ -278,6 +290,31 @@ function isBacteriaControlThreadOnly(paramId: string): boolean {
  * than from a parameter.
  */
 const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
+
+/**
+ * `ScoringEngine::set_param` in `crates/scoring/src/lib.rs`: the closed set of
+ * names the Tuner's body resolves, less the ones it refuses.
+ *
+ * `reference` and `a4_hz` are two spellings the engine answers on one arm, and
+ * both are here because a record saved under either has to reach the body. A
+ * name outside the set has no arm at all, so the engine would drop it: the set
+ * is what keeps a command from being spent on a write nothing applies.
+ *
+ * `poly` and `instrument` do have arms and are still absent: `ScoringBody`
+ * refuses both at its live and its record door (`SCORING_NATIVE_REFUSED`,
+ * `crates/daw-engine/src/scheduler.rs`), because `instrument` allocates the
+ * poly tracker's per-string state as it lands and `poly` arms detectors that
+ * resize their own scratch inside `process` — so sending either would spend a
+ * command on a write the body drops.
+ */
+const SCORING_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
+    'a4_hz',
+    'reference',
+    'transpose',
+    'capo',
+    'tone',
+    'mute',
+]);
 
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
@@ -536,6 +573,45 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
         },
     ],
     [
+        'levain',
+        {
+            soundsNotes: true,
+            /**
+             * The orchestral sampler. Unlike every other body here it is not
+             * built from its record at all: `map_device` builds the instance
+             * from a *sample bank* the renderer staged under the device's own
+             * `sampleBankKey`, and answers `Err` for the device by name when no
+             * committed bank stands there — refusing the batch whole on any
+             * strip that contributes audio (`crates/sourdaw-native/src/commands/
+             * graph.rs`). The key reaches the wire through
+             * `projectDeviceForNativeBody`; this row is only the vocabulary the
+             * built instance then answers to.
+             *
+             * Its vocabulary is the one this table does not hold itself. Two
+             * families of project id reach it — the patch's own fields, whose
+             * ids invert the engine names `projectLevainPatchToEngineParameters`
+             * emits, and the wider automation surface `LEVAIN_DESCRIPTOR`
+             * declares — and both are Levain's to spell. Asked for through the
+             * runtime sink rather than imported, because Levain's panel writes
+             * to the engine directly and so imports this module: reading its
+             * map from here would close a cycle. The fallback is unreachable for
+             * anything a lane can spell, because `readLiveAutomationWrites`
+             * gates on `addressesParameter` before it asks for a name.
+             *
+             * The articulation choice is not a `parameterValues` entry: it is a
+             * string in `Device.deviceState`, folded into the record as
+             * `current_articulation` by `projectDeviceForNativeBody`'s merge.
+             */
+            parameterName: (paramId) => levainEngineParameterName({ paramId }) ?? paramId,
+            projectPatch: tablePatch(levainEngineParameterName),
+            addressesParameter: (paramId) => levainEngineParameterName({ paramId }) !== null,
+            // A sampled orchestral instrument: a clip note holds its key until
+            // the note ends, and its release is what triggers the release zones.
+            takesClipNoteReleases: true,
+            latencyCompensatedByEngine: false,
+        },
+    ],
+    [
         'dutch-oven',
         {
             soundsNotes: false,
@@ -585,6 +661,40 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             // Sounds no notes, so no clip release is ever addressed to it.
             takesClipNoteReleases: true,
             latencyCompensatedByEngine: true,
+        },
+    ],
+    [
+        'native-scoring',
+        {
+            soundsNotes: false,
+            /**
+             * The one body whose product is a reading rather than a signal.
+             * The Tuner analyses the block and hands it on unchanged, and what
+             * it heard reaches the renderer on the transport poll, as
+             * `tunerTelemetry` on `EngineTransportPosition` — not over a
+             * worklet port, because a native body has no port to post from.
+             * The panel paints the same needle from either carrier;
+             * `isTunerTelemetryNativelyOwned` is what decides which carrier's
+             * reading it shows.
+             *
+             * No table, for the same reason as Knead's entry above: the ids
+             * project truth authors already are the engine's own snake_case
+             * names. Admission is the closed set the body's `set_param`
+             * answers rather than the wire's shape, because every one of those
+             * names is spelled by the panel and nothing wider can land.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: (parameterValues) =>
+                Object.fromEntries(
+                    Object.entries(parameterValues).filter(
+                        (entry): entry is [string, number] =>
+                            typeof entry[1] === 'number' && SCORING_ENGINE_PARAM_NAMES.has(entry[0])
+                    )
+                ),
+            addressesParameter: (paramId) => SCORING_ENGINE_PARAM_NAMES.has(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
+            latencyCompensatedByEngine: false,
         },
     ],
 ]);

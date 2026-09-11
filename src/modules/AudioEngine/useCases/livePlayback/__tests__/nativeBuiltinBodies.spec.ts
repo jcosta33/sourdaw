@@ -18,10 +18,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
+import { getLevainEngineParameterName, projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
 import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
@@ -95,6 +98,73 @@ function readKneadEngineArmsFromRust(): readonly string[] {
     return [...body.matchAll(arm)].map((match) => match[1]!);
 }
 
+/**
+ * Every string-literal match arm inside `ScoringEngine::set_param`
+ * (`crates/scoring/src/lib.rs`) — the closed set of names the Tuner's body
+ * resolves. Read from the Rust source for the same reason Knead's set is: the
+ * Tuner's descriptor declares no parameters either, so this table is the only
+ * thing standing between a lane and any id it can spell, and a hand-copied
+ * list would drift from the engine without either side noticing.
+ *
+ * Anchored on the `impl ScoringEngine` block rather than on the first
+ * `fn set_param` in the file: `ScoringInstance` — the worklet's binding —
+ * declares one too, which merely forwards to this one.
+ */
+function readScoringEngineArmsFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/scoring/src/lib.rs'), 'utf8'));
+    const implIndex = source.search(/\bimpl\s+ScoringEngine\b/);
+    if (implIndex < 0) {
+        throw new Error("could not find 'impl ScoringEngine' in crates/scoring/src/lib.rs");
+    }
+    const signature = /\bfn\s+set_param\s*\(/g;
+    signature.lastIndex = implIndex;
+    const signatureMatch = signature.exec(source);
+    if (signatureMatch === null) {
+        throw new Error("could not find 'fn set_param' in impl ScoringEngine");
+    }
+    const openIndex = source.indexOf('{', signatureMatch.index + signatureMatch[0].length);
+    const body = readBalancedBlock(source, openIndex).replaceAll(/\s+/g, ' ');
+    const arm = /"([\w-]+)"(?=(?: \| "[\w-]+")* =>)/g;
+    return [...body.matchAll(arm)].map((match) => match[1]!);
+}
+
+/**
+ * The two names `ScoringBody` refuses at both its doors
+ * (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`), read from
+ * the Rust source for the same reason the arms are: the renderer's set is the
+ * arms *less* these, and a name added to or removed from the refusal has to
+ * move this side without an edit here.
+ */
+function readScoringNativeRefusedFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/daw-engine/src/scheduler.rs'), 'utf8'));
+    const declaration = /\bconst\s+SCORING_NATIVE_REFUSED\s*:[^=]*=\s*&\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'const SCORING_NATIVE_REFUSED' in crates/daw-engine/src/scheduler.rs");
+    }
+    return [...declaration[1]!.matchAll(/"([\w-]+)"/g)].map((match) => match[1]!);
+}
+
+/**
+ * The string literals of `SCORING_ENGINE_PARAM_NAMES` in
+ * `nativeBuiltinBodies.ts`, read from the module's own source.
+ *
+ * The registry's two Tuner closures ask the set `has`, so they answer for the
+ * names a test thinks to probe and say nothing about the ones it does not: an
+ * extra literal in the initializer is invisible to any assertion written over
+ * a sample. Reading the initializer is what turns "exactly these names" into a
+ * claim about the whole set rather than about the probes.
+ */
+function readScoringRendererNamesFromTs(): readonly string[] {
+    const source = stripComments(
+        readFileSync(resolve(REPO_ROOT, 'src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts'), 'utf8')
+    );
+    const declaration = /\bSCORING_ENGINE_PARAM_NAMES\b[^=]*=\s*new Set\(\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'SCORING_ENGINE_PARAM_NAMES' initializer in nativeBuiltinBodies.ts");
+    }
+    return [...declaration[1]!.matchAll(/'([\w-]+)'/g)].map((match) => match[1]!);
+}
+
 /** The registry entry under test, with the `null` case already refused. */
 function bodyOf(deviceType: string): NativeBuiltinBody {
     const body = nativeBuiltinBody(deviceType);
@@ -119,6 +189,8 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('proof')).not.toBeNull();
         expect(nativeBuiltinBody('dutch-oven')).not.toBeNull();
         expect(nativeBuiltinBody('toaster')).not.toBeNull();
+        expect(nativeBuiltinBody('levain')).not.toBeNull();
+        expect(nativeBuiltinBody('native-scoring')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -144,6 +216,10 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('proof').soundsNotes).toBe(false);
         expect(bodyOf('dutch-oven').soundsNotes).toBe(false);
         expect(bodyOf('toaster').soundsNotes).toBe(true);
+        expect(bodyOf('levain').soundsNotes).toBe(true);
+        // A tuner listens: it hands the block on and turns what it heard into
+        // a reading, so it sounds nothing of its own.
+        expect(bodyOf('native-scoring').soundsNotes).toBe(false);
     });
 
     // What `projectLiveMidiProgramme` reads before it writes a clip's release.
@@ -163,6 +239,10 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('bacteria').takesClipNoteReleases).toBe(true);
         expect(bodyOf('proof').takesClipNoteReleases).toBe(true);
         expect(bodyOf('dutch-oven').takesClipNoteReleases).toBe(true);
+        // A sampled orchestral note holds its key, and its release is what
+        // triggers the bank's release zones.
+        expect(bodyOf('levain').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('native-scoring').takesClipNoteReleases).toBe(true);
     });
 
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
@@ -180,6 +260,10 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('crust').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('grinder').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('toaster').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('levain').latencyCompensatedByEngine).toBe(false);
+        // A pass-through analyser declares no figure, so nothing is held for
+        // it on either side.
+        expect(bodyOf('native-scoring').latencyCompensatedByEngine).toBe(false);
     });
 
     // A device type with no native body is nothing the engine could be
@@ -833,6 +917,90 @@ describe('the toaster body', () => {
     });
 });
 
+/**
+ * Levain's own vocabulary, read through the module's published translation
+ * rather than restated here.
+ *
+ * The sampler is the one body built from staged material rather than from its
+ * record: the bank key reaches the wire through `projectDeviceForNativeBody`,
+ * and the articulation choice through the same merge. What this table owes is
+ * the *rest* — the patch fields and the wider ensemble surface a lane can
+ * author — spelled as names the engine can parse.
+ */
+describe('the levain body', () => {
+    // The one vocabulary this table does not hold itself: Levain delivers its
+    // panel writes into AudioEngine, so its map arrives through the runtime
+    // sink the composition root registers (`nativeBuiltinParameterNames.ts`)
+    // rather than through an import that would close a cycle. The map itself is
+    // still the module's own, read through its published translation.
+    beforeEach(() => {
+        setAudioDeviceRuntimeSink({
+            nativeBuiltinParameterName: ({ deviceType, paramId }) =>
+                deviceType === 'levain' ? getLevainEngineParameterName({ paramId }) : null,
+        });
+    });
+
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+    });
+
+    it('spells a project id in the engine vocabulary the sampler matches on', () => {
+        expect(bodyOf('levain').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('levain').projectPatch({ masterGain: 0.8, autoDivisiSize: 4 })).toEqual({
+            master_gain: 0.8,
+            auto_divisi_size: 4,
+        });
+    });
+
+    it('spells the project id whose engine name differs from it', () => {
+        expect(bodyOf('levain').parameterName('humanize')).toBe('humanize_amount');
+        expect(bodyOf('levain').projectPatch({ humanize: 0.4 })).toEqual({ humanize_amount: 0.4 });
+    });
+
+    // Project truth's `parameterValues` is an open record, and a key the engine
+    // cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the sampler does not address or the wire cannot send', () => {
+        expect(
+            bodyOf('levain').projectPatch({ masterGain: 0.8, presetName: 'Lush Strings', filterCutoff: 0.5 })
+        ).toEqual({ master_gain: 0.8 });
+    });
+
+    it('spells every automatable id the descriptor publishes as a name the carrier admits', () => {
+        const paramIds = (getPluginById('levain')?.parameters ?? [])
+            .filter((parameter) => parameter.automatable)
+            .map((parameter) => parameter.id);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('levain').parameterName(paramId)).toBe(getLevainEngineParameterName({ paramId }));
+            expect(bodyOf('levain').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+            expect(bodyOf('levain').addressesParameter(paramId)).toBe(true);
+        }
+    });
+
+    // The engine's own snake_case spelling is not a project id and must not
+    // resolve: admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the translation this chain is welded to.
+    it('refuses the engine spelling and an unknown id', () => {
+        expect(bodyOf('levain').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('levain').addressesParameter('bogus')).toBe(false);
+    });
+
+    // The articulation is a string in project truth, so `parameterValues`
+    // never holds it and this table has nothing to translate — it reaches the
+    // record through `projectDeviceForNativeBody`'s device-state merge. What
+    // must agree is the *name* the two routes use, or the merge would write a
+    // key the body already spells differently.
+    it('spells the articulation under the name the device-state projection emits', () => {
+        const projected = projectLevainDeviceStateToNativePatch({
+            deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } },
+        });
+
+        expect(Object.keys(projected ?? {})).toEqual([bodyOf('levain').parameterName('currentArticulation')]);
+        expect(bodyOf('levain').projectPatch({})).toEqual({});
+    });
+});
+
 describe('the knead body', () => {
     it('keeps the names the project already stores, because the engine answers to those names', () => {
         expect(bodyOf('knead').parameterName('shift_semitones')).toBe('shift_semitones');
@@ -881,5 +1049,66 @@ describe('the knead body', () => {
         const admitted = [...candidateUniverse].filter((name) => bodyOf('knead').addressesParameter(name));
 
         expect(new Set(admitted)).toEqual(new Set(engineArms));
+    });
+});
+
+describe('the scoring body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('native-scoring').parameterName('a4_hz')).toBe('a4_hz');
+        expect(bodyOf('native-scoring').projectPatch({ a4_hz: 442 })).toEqual({ a4_hz: 442 });
+    });
+
+    it('drops an entry the wire has no number to send, and one the body has no arm for', () => {
+        expect(bodyOf('native-scoring').projectPatch({ a4_hz: 442, tone: 'on', windowSize: 2048 })).toEqual({
+            a4_hz: 442,
+        });
+    });
+
+    // `ScoringEngine::set_param` (`crates/scoring/src/lib.rs`) is the closed
+    // set this mirrors, less the two names `ScoringBody` refuses at both its
+    // doors (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`).
+    // Welded against the Rust sources themselves the same way Knead's is: the
+    // Tuner's descriptor declares no parameters, so nothing else stops a
+    // lane's id from reaching a door the engine would drop it at.
+    //
+    // The set equality is read from the module's own initializer rather than
+    // probed name by name. A loop over a sample of names cannot see a literal
+    // the sample does not mention, so an id added to the renderer's set — one
+    // the engine has no arm for, or one it refuses — would keep a probing
+    // version of this case green.
+    it('resolves exactly the arms ScoringEngine::set_param matches less the refused ones', () => {
+        const engineArms = readScoringEngineArmsFromRust();
+        const refused = readScoringNativeRefusedFromRust();
+        const rendererNames = readScoringRendererNamesFromTs();
+        // Presence pins: a broken extraction would yield an empty set and
+        // every assertion below would pass vacuously against it.
+        expect(engineArms.length).toBeGreaterThan(0);
+        expect(refused.length).toBeGreaterThan(0);
+        expect(rendererNames.length).toBeGreaterThan(0);
+
+        const admitted = engineArms.filter((name) => !refused.includes(name));
+        expect(new Set(rendererNames)).toEqual(new Set(admitted));
+
+        for (const name of admitted) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(true);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({ [name]: 1 });
+        }
+
+        // The refused names have arms on the Rust side and are still not
+        // addressable: a command spent on one is dropped at the body's door,
+        // and a record carrying one must not be mapped into a patch.
+        for (const name of refused) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
+        }
+
+        // Names outside the arms, including the camelCase spelling of a real
+        // one: the wire is a snake_case vocabulary and the body must not fold
+        // case to admit an id.
+        const probeNames = ['a4Hz', 'pitch', 'mix', 'bypass', 'noteIndex'];
+        for (const name of probeNames) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
+        }
     });
 });

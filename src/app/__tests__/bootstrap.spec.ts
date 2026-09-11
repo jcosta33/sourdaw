@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
 // The kit chunk the native-device-state assertion reads comes out of Toaster's
@@ -65,6 +65,30 @@ type RuntimeSinkUnderTest = {
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => Readonly<Record<string, number>> | null;
+    nativeSampleBankKey: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => string | null;
+    acquireNativeSampleBank: (bankKey: string) => Promise<unknown>;
+    nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
+    updateTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
+    updateNativeTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
+};
+
+/**
+ * The reading both of the Tuner's publishes carry (`TunerTelemetry`,
+ * `#/modules/AudioEngine/engine/ScoringNode.ts`), restated here because this
+ * spec mocks the whole barrel it would otherwise be imported through.
+ */
+type TunerReadingUnderTest = {
+    active: boolean;
+    frequency: number;
+    cents: number;
+    confidence: number;
+    noteIndex: number;
+    octave: number;
+    midiNote: number;
+    noteName: string;
 };
 
 const {
@@ -92,6 +116,8 @@ const {
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
+    isTunerTelemetryNativelyOwnedMock,
+    updateTunerTelemetryMock,
     canExecuteCommandBatchMock,
     configureCollaborationAssetOwnerMock,
     configureDurableAssetCommitProofMock,
@@ -99,6 +125,10 @@ const {
     getDurableProjectOwnerIdMock,
     getVersionedCommandBatchCommitDispositionMock,
     prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBankMock,
+    getLevainEngineParameterNameMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffectsMock,
@@ -169,7 +199,19 @@ const {
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
+        isTunerTelemetryNativelyOwnedMock: vi.fn<(deviceId: string) => boolean>(() => false),
+        updateTunerTelemetryMock: vi.fn(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
+        projectLevainDeviceStateToNativePatchMock: vi.fn<
+            (input: { deviceState: unknown }) => Readonly<Record<string, number>> | null
+        >(() => ({ current_articulation: 4 })),
+        nativeBankKeyForLevainDeviceStateMock: vi.fn<(input: { deviceState: unknown }) => string | null>(
+            () => 'levain:violin-1'
+        ),
+        acquireLevainNativeBankMock: vi.fn(() => Promise.resolve(null)),
+        getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
+            paramId === 'masterGain' ? 'master_gain' : null
+        ),
         initBranchStateMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
             Promise.resolve({ recoveredRunIds: [] })
@@ -306,6 +348,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
     configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
+    isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -442,6 +485,10 @@ vi.mock('#/modules/Levain/useCases', () => ({
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatch: projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceState: nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBank: acquireLevainNativeBankMock,
+    getLevainEngineParameterName: getLevainEngineParameterNameMock,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -545,7 +592,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
 }));
 
-vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
+vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: updateTunerTelemetryMock }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     getWorkspaceHandlers: sentinelHandlers('Workspace'),
@@ -965,6 +1012,118 @@ describe('bootstrap', () => {
                 expect.objectContaining({ master_gain: 0.4 })
             );
             expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The sampler's articulation rides `deviceState` as a string, so an
+         * unwired `levain` row leaves a natively carried strip sounding the
+         * engine's default articulation whatever the project saved.
+         */
+        it('projects a levain device’s articulation through the Levain module', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
+
+            expect(getSink().projectNativeDeviceState({ deviceType: 'levain', deviceState: chunk })).toEqual({
+                current_articulation: 4,
+            });
+            expect(projectLevainDeviceStateToNativePatchMock).toHaveBeenCalledWith({ deviceState: chunk });
+        });
+
+        /**
+         * The bank door beside the row above. `map_device` refuses a Levain
+         * device whose key holds no committed bank, so an unwired row is a
+         * strip the engine will not build at all — and a row wired for a body
+         * built from its own record would stage material nothing reads.
+         */
+        it('names the bank a levain device sounds, and nothing for a body built from its record', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } };
+
+            expect(getSink().nativeSampleBankKey({ deviceType: 'levain', deviceState: chunk })).toBe('levain:violin-1');
+            expect(nativeBankKeyForLevainDeviceStateMock).toHaveBeenCalledWith({ deviceState: chunk });
+            expect(getSink().nativeSampleBankKey({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
+            expect(getSink().nativeSampleBankKey({ deviceType: 'builtin-eq', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The vocabulary beside those two rows. Levain delivers its panel's
+         * live writes into AudioEngine, so AudioEngine asks here for the
+         * sampler's engine names rather than importing the module back. An
+         * unwired row leaves every natively carried Levain write addressed by a
+         * panel id the engine cannot resolve — and one unresolvable name
+         * refuses the whole batch, not just its own write.
+         */
+        it('spells a levain parameter through the Levain module, and nothing for a body that spells its own', () => {
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'levain', paramId: 'masterGain' })).toBe(
+                'master_gain'
+            );
+            expect(getLevainEngineParameterNameMock).toHaveBeenCalledWith({ paramId: 'masterGain' });
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'fermenter', paramId: 'oscEngine' })).toBeNull();
+        });
+
+        it('routes a bank acquisition to the module that minted the key', async () => {
+            await getSink().acquireNativeSampleBank('levain:violin-1');
+
+            expect(acquireLevainNativeBankMock).toHaveBeenCalledWith('levain:violin-1');
+        });
+    });
+
+    /**
+     * The Tuner is the one device two analysers can report for at once: the
+     * native body publishes on the transport poll, and the Web Audio twin's
+     * worklet keeps posting from a graph that goes on rendering behind a
+     * shadowed carrier. Both publishes land in one store, so the root is where
+     * one of them has to be dropped — and it is the only place that can, since
+     * neither producer can see the other.
+     */
+    describe('tuner telemetry arbitration', () => {
+        function getSink(): RuntimeSinkUnderTest {
+            const call = configureAudioDeviceRuntimeSinkMock.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never configured the audio device runtime sink');
+            }
+            return call[0];
+        }
+
+        const reading: TunerReadingUnderTest = {
+            active: true,
+            frequency: 439.5,
+            cents: -2,
+            confidence: 0.9,
+            noteIndex: 9,
+            octave: 4,
+            midiNote: 69,
+            noteName: 'A',
+        };
+
+        beforeEach(() => {
+            updateTunerTelemetryMock.mockClear();
+            isTunerTelemetryNativelyOwnedMock.mockReset();
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(false);
+        });
+
+        it('drops the web publish for a device the native session owns', () => {
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(true);
+
+            getSink().updateTunerTelemetry('d-tuner', reading);
+
+            expect(isTunerTelemetryNativelyOwnedMock).toHaveBeenCalledWith('d-tuner');
+            expect(updateTunerTelemetryMock).not.toHaveBeenCalled();
+        });
+
+        it('lets the web publish reach the store for a device the native session does not own', () => {
+            getSink().updateTunerTelemetry('d-tuner', reading);
+
+            expect(updateTunerTelemetryMock).toHaveBeenCalledExactlyOnceWith('d-tuner', reading);
+        });
+
+        // No predicate on this side: `publishNativeTunerTelemetry` already
+        // filtered the poll's map by the same answer, so a reading arriving
+        // here is one this session owns.
+        it('lets the native publish reach the store unconditionally', () => {
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(true);
+
+            getSink().updateNativeTunerTelemetry('d-tuner', reading);
+
+            expect(updateTunerTelemetryMock).toHaveBeenCalledExactlyOnceWith('d-tuner', reading);
         });
     });
 

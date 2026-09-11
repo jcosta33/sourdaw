@@ -1,5 +1,7 @@
 import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
+import { type NativeSampleBankLease } from '../models/NativeSampleBank';
+
 import { type BacteriaMeterData } from './BacteriaNode';
 import { type CrustMeterData } from './CrustNode';
 import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
@@ -62,7 +64,31 @@ export type AudioDeviceRuntimeSink = {
     syncProofPatch: (deviceId: string) => void;
     updateProofMeters: (deviceId: string, meters: ProofMeterData) => void;
     clearProofMeters: (deviceId: string) => void;
+    /**
+     * The Web Audio twin's reading, posted by the Tuner worklet through the
+     * WASM device registry.
+     *
+     * One of two producers for one panel. The composition root arbitrates:
+     * for a device whose strip the native session is carrying and sounding,
+     * this publish is dropped and [updateNativeTunerTelemetry] below is the
+     * one that lands — the web graph is still running behind the shadowed
+     * carrier and its analyser still posts, but what it heard is not what the
+     * musician is hearing. Arbitration lives at the root rather than here
+     * because neither producer can see the other.
+     */
     updateTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
+    /**
+     * The native body's reading, carried on the transport poll
+     * (`EngineTransportPosition.tunerTelemetry`) and published by
+     * `publishNativeTunerTelemetry` for the devices that session actually
+     * sounds.
+     *
+     * Separate from [updateTunerTelemetry] so the root can arbitrate at all:
+     * one entry point would leave the two carriers overwriting each other at
+     * poll and post rate, and the panel would flicker between two analysers'
+     * answers for the same string.
+     */
+    updateNativeTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
     /**
      * Perform the engine setup an instrument needs before it can render, and
      * resolve only once it can.
@@ -106,6 +132,44 @@ export type AudioDeviceRuntimeSink = {
         deviceState: DeviceStateChunk | undefined;
     }) => Readonly<Record<string, number>> | null;
     /**
+     * The native sample bank a device sounds, as the bank store keys it, or
+     * `null` when the type sounds no bank.
+     *
+     * A sampler is the one built-in whose body cannot be built from its
+     * `parameterValues` at all: `map_device` answers `Err` for a Levain device
+     * that names no committed bank rather than splicing a mute sampler onto the
+     * strip, and on an audible strip that refuses the batch whole
+     * (`crates/sourdaw-native/src/commands/graph.rs`). So the key has to reach
+     * the wire beside the record, and only the owning module can read which
+     * instrument a device's opaque `deviceState` selects — the same reason
+     * `projectNativeDeviceState` exists, answered from the same composition
+     * root.
+     */
+    nativeSampleBankKey: (input: { deviceType: string; deviceState: DeviceStateChunk | undefined }) => string | null;
+    /**
+     * The engine's own name for one project-side parameter id of a built-in
+     * body, or `null` for an id that body does not address.
+     *
+     * Most built-ins state their vocabulary in `nativeBuiltinBodies`' own table
+     * or in a mapper this module holds. A device module whose panel writes to
+     * the engine *directly* cannot be read from there: it imports this module
+     * to deliver those writes, so this module importing it back would close a
+     * cycle. Answered from the composition root instead, which may see both.
+     */
+    nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
+    /**
+     * Decode the bank under `bankKey` and hold it, or answer `null` for a key
+     * no module claims.
+     *
+     * The other half of [nativeSampleBankKey]: the producer names a bank on the
+     * wire, and the backend stages that bank's material before the batch that
+     * names it — the ordering `register_timeline_sample` already keeps for clip
+     * material, and for the same reason. The lease is the caller's to release
+     * once the bytes have crossed; the bank's life on the native side is ended
+     * by `release_levain_bank` instead.
+     */
+    acquireNativeSampleBank: (bankKey: string) => Promise<NativeSampleBankLease | null>;
+    /**
      * Give a *live* Crumbs worklet the sample the device is set to play.
      *
      * A wasm Crumbs instance starts with an empty pool, so without this it
@@ -146,8 +210,12 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateProofMeters: () => {},
     clearProofMeters: () => {},
     updateTunerTelemetry: () => {},
+    updateNativeTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
     projectNativeDeviceState: () => null,
+    nativeSampleBankKey: () => null,
+    nativeBuiltinParameterName: () => null,
+    acquireNativeSampleBank: () => Promise.resolve(null),
     prepareCrumbsDevice: () => Promise.resolve('failed'),
 };
 
