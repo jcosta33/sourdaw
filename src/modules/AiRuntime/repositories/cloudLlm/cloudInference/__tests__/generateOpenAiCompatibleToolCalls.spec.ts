@@ -39,16 +39,6 @@ function generateToolCalls() {
     });
 }
 
-function openaiRuntime(model: string): OpenAiCompatibleCloudRuntime {
-    return {
-        provider: 'openai',
-        authentication: 'api-key',
-        session_id: 'provider-session-00000000000000000000000000000000',
-        model,
-        base_url: 'https://api.openai.com/v1',
-    };
-}
-
 async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Promise<Record<string, unknown>> {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
@@ -158,33 +148,11 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body).not.toHaveProperty('reasoning_effort');
     });
 
-    it('sends max_completion_tokens for first-party OpenAI provider', async () => {
-        const body = await requestBodyFor(openaiRuntime('gpt-5.2'));
-        expect(body.max_completion_tokens).toBe(8192);
-        expect(body).not.toHaveProperty('max_tokens');
-    });
-
     it('sends max_tokens for openai-compatible provider', async () => {
         const body = await requestBodyFor(runtime);
         expect(body.max_tokens).toBe(8192);
         expect(body).not.toHaveProperty('max_completion_tokens');
     });
-
-    it.each(['gpt-5.6', 'gpt-5.6-luna', 'gpt-5.6-luna-2026-04-01', 'gpt-5.6-unlisted-variant'])(
-        'sends reasoning_effort none for first-party OpenAI gpt-5.6 model %s',
-        async (model) => {
-            const body = await requestBodyFor(openaiRuntime(model));
-            expect(body).toMatchObject({ model, reasoning_effort: 'none' });
-        }
-    );
-
-    it.each(['gpt-5', 'gpt-5-2025-08-07', 'o3', 'o1-mini', 'gpt-4-turbo', 'gpt-4o'])(
-        'omits reasoning_effort for first-party OpenAI model %s',
-        async (model) => {
-            const body = await requestBodyFor(openaiRuntime(model));
-            expect(body).not.toHaveProperty('reasoning_effort');
-        }
-    );
 
     it('omits reasoning_effort for openai-compatible endpoints', async () => {
         const body = await requestBodyFor({

@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
+import { type HostedOpenAiStreamResult } from '../openAiStreamResult';
 import { type CloudChatCompletionOutcome, streamCloudChatCompletion } from '../streamCloudChatCompletion';
-import { type OpenAiCompatibleStreamResult } from '../streamOpenAiCompatibleChatCompletion';
 
 type CloudStreamInput = {
     sessionId: string;
@@ -36,7 +36,7 @@ type CloudStreamEvent =
     | { type: 'message_stop' }
     | { type: 'other_event' };
 
-type CompatibleStreamInput = {
+type HostedOpenAiStreamInput = {
     runtime: {
         provider: 'openai' | 'openai-compatible';
         authentication: 'api-key' | 'none';
@@ -55,7 +55,8 @@ const mocks = vi.hoisted(() => ({
     getCloudProviderRuntime: vi.fn(),
     stream: vi.fn<(input: CloudStreamInput) => Promise<void>>(),
     streamOpenAiCompatibleChatCompletion:
-        vi.fn<(input: CompatibleStreamInput) => Promise<OpenAiCompatibleStreamResult>>(),
+        vi.fn<(input: HostedOpenAiStreamInput) => Promise<HostedOpenAiStreamResult>>(),
+    streamOpenAiResponses: vi.fn<(input: HostedOpenAiStreamInput) => Promise<HostedOpenAiStreamResult>>(),
     registerCloudStreamController: vi.fn((controller: AbortController) => controller),
     unregisterCloudStreamController: vi.fn(),
     warn: vi.fn(),
@@ -75,6 +76,10 @@ vi.mock('../../unregisterCloudStreamController', () => ({
 
 vi.mock('../streamOpenAiCompatibleChatCompletion', () => ({
     streamOpenAiCompatibleChatCompletion: mocks.streamOpenAiCompatibleChatCompletion,
+}));
+
+vi.mock('../streamOpenAiResponses', () => ({
+    streamOpenAiResponses: mocks.streamOpenAiResponses,
 }));
 
 vi.mock('../requestAnthropicStream', () => ({
@@ -111,6 +116,10 @@ describe('streamCloudChatCompletion', () => {
             model: 'test-model',
         });
         mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue({
+            finishReason: 'stop',
+            providerRequestId: null,
+        });
+        mocks.streamOpenAiResponses.mockResolvedValue({
             finishReason: 'stop',
             providerRequestId: null,
         });
@@ -281,9 +290,54 @@ describe('streamCloudChatCompletion', () => {
         expect(outcome).toEqual({ status: 'complete', finishReason: 'stop', providerRequestId: null });
     });
 
-    it('aborts a hosted request before its first token when the caller stops', async () => {
+    it('dispatches first-party OpenAI providers through the responses adapter', async () => {
         const runtime = {
             provider: 'openai' as const,
+            authentication: 'api-key' as const,
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'gpt-5.2',
+            base_url: 'https://api.openai.com/v1',
+        };
+        const messages = [{ role: 'user', content: 'test' }];
+        const onToken = vi.fn();
+        mocks.getCloudProviderRuntime.mockReturnValue(runtime);
+
+        const outcome = await streamCloudChatCompletion(messages, onToken, { maxTokens: 1000 });
+
+        const adapterCall = mocks.streamOpenAiResponses.mock.calls[0]?.[0];
+        expect(adapterCall?.runtime).toBe(runtime);
+        expect(adapterCall?.messages).toBe(messages);
+        expect(adapterCall?.onToken).toBe(onToken);
+        expect(adapterCall?.maxTokens).toBe(1000);
+        expect(mocks.streamOpenAiCompatibleChatCompletion).not.toHaveBeenCalled();
+        expect(mocks.stream).not.toHaveBeenCalled();
+        expect(outcome).toEqual({ status: 'complete', finishReason: 'stop', providerRequestId: null });
+    });
+
+    it('reports a first-party OpenAI refusal as an incomplete outcome', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'openai' as const,
+            authentication: 'api-key' as const,
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'gpt-5.2',
+            base_url: 'https://api.openai.com/v1',
+        });
+        mocks.streamOpenAiResponses.mockResolvedValue({ finishReason: 'refusal', providerRequestId: 'resp_1' });
+
+        const outcome = await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn());
+
+        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('refusal'));
+        expect(outcome).toMatchObject({
+            status: 'incomplete',
+            reason: 'refusal',
+            finishReason: 'refusal',
+            providerRequestId: 'resp_1',
+        });
+    });
+
+    it('aborts a hosted request before its first token when the caller stops', async () => {
+        const runtime = {
+            provider: 'openai-compatible' as const,
             authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',
@@ -313,6 +367,25 @@ describe('streamCloudChatCompletion', () => {
         expect(mocks.unregisterCloudStreamController).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects a first-party OpenAI stream aborted before it resolved', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'openai' as const,
+            authentication: 'api-key' as const,
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'gpt-5.2',
+            base_url: 'https://api.openai.com/v1',
+        });
+        mocks.streamOpenAiResponses.mockImplementation(() => {
+            const controller = mocks.registerCloudStreamController.mock.calls[0]?.[0];
+            controller?.abort(new DOMException('Aborted', 'AbortError'));
+            return Promise.resolve({ finishReason: 'stop' as const, providerRequestId: null });
+        });
+
+        await expect(streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn())).rejects.toMatchObject({
+            name: 'AbortError',
+        });
+    });
+
     it('warns when an OpenAI-compatible stream reaches its token limit', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'openai-compatible',
@@ -340,7 +413,7 @@ describe('streamCloudChatCompletion', () => {
 
     it('rejects when configuration changes as an OpenAI-compatible stream completes', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
-            provider: 'openai' as const,
+            provider: 'openai-compatible' as const,
             authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',

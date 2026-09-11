@@ -956,7 +956,7 @@
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicProvider.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
-                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiProvider.ts",
                 "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
                 "src/modules/Preferences/presentations/views/preferences/AiSection.tsx"
             ],
@@ -968,8 +968,10 @@
             "revisions": [
                 "Anthropic API 2023-06-01",
                 "OpenAI chat completions v1",
+                "OpenAI Responses v1",
                 "adapter builtin.anthropic.messages.v1",
                 "adapter builtin.openai-compatible.chat-completions.v1",
+                "adapter builtin.openai.responses.v1",
                 "opaque native credential session v1"
             ],
             "digests": [

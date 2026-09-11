@@ -1,9 +1,10 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
-import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
+import { generateOpenAiResponsesToolCalls } from '../cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
 import { streamCloudChatCompletion } from '../cloudLlm/cloudInference/streamCloudChatCompletion';
-import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
+import { type OpenAiCloudRuntime } from '../cloudLlm/cloudSession';
+import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../providerAdapterRegistry';
 
 import {
     describeProviderProtocolConformance,
@@ -18,155 +19,168 @@ import {
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
-const mocks = vi.hoisted(() => ({ getCloudProviderRuntime: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    getCloudProviderRuntime: vi.fn(),
+    runProviderGatewayRequest: vi.fn(),
+}));
 
 vi.mock('../cloudLlm/getCloudProviderRuntime', () => ({
     getCloudProviderRuntime: mocks.getCloudProviderRuntime,
+}));
+
+vi.mock('../providerGateway', () => ({
+    runProviderGatewayRequest: mocks.runProviderGatewayRequest,
+}));
+
+vi.mock('../ensureAdapterCapabilities', () => ({
+    ensureAdapterCapabilities: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const runtime: OpenAiCompatibleCloudRuntime = {
-    provider: 'openai-compatible',
-    authentication: 'none',
-    session_id: null,
+const runtime: OpenAiCloudRuntime = {
+    provider: 'openai',
     model: FIXTURE.model,
-    base_url: 'http://localhost:1234/v1',
+    base_url: 'https://api.openai.com/v1',
+    authentication: 'api-key',
+    adapter: compileProviderAdapterInstallation({
+        adapterId: OPENAI_RESPONSES_ADAPTER_ID,
+        providerId: 'openai',
+        modelId: FIXTURE.model,
+        protocolFamily: 'openai-responses',
+        origin: 'https://api.openai.com',
+    }),
+    session_id: `provider-session-${'0'.repeat(32)}`,
 };
 
 const [firstDelta, secondDelta] = FIXTURE.textDeltas;
 const [dottedCall, plainCall] = FIXTURE.toolCalls;
 
-function event(payload: Record<string, unknown>): string {
-    return `data: ${JSON.stringify({ id: FIXTURE.providerRequestId, ...payload })}\n\n`;
+let sequenceNumber = 0;
+
+function sseEvent(type: string, payload: Record<string, unknown> = {}): string {
+    sequenceNumber += 1;
+    return `event: ${type}\ndata: ${JSON.stringify({ type, sequence_number: sequenceNumber, ...payload })}\n\n`;
 }
 
-function eventWithId(id: string, payload: Record<string, unknown>): string {
-    return `data: ${JSON.stringify({ id, ...payload })}\n\n`;
+function created(id: string): string {
+    return sseEvent('response.created', { response: { id, status: 'in_progress' } });
 }
 
-function delta(content: string): string {
-    return event({ choices: [{ delta: { content } }] });
+function textDelta(text: string): string {
+    return sseEvent('response.output_text.delta', { item_id: 'msg-1', output_index: 0, delta: text });
 }
 
-function finish(reason: string): string {
-    return event({ choices: [{ delta: {}, finish_reason: reason }] });
+function completed(id: string, usage?: Record<string, unknown>): string {
+    return sseEvent('response.completed', {
+        response: { id, status: 'completed', ...(usage ? { usage } : {}) },
+    });
 }
 
-const DONE = 'data: [DONE]\n\n';
+function incomplete(reason: string): string {
+    return sseEvent('response.incomplete', {
+        response: { id: FIXTURE.providerRequestId, status: 'incomplete', incomplete_details: { reason } },
+    });
+}
 
 function streamFixture(scenario: ProviderStreamScenario): string {
+    sequenceNumber = 0;
     if (scenario === 'final-usage') {
         return [
-            delta(firstDelta ?? ''),
-            finish('stop'),
-            event({
-                choices: [],
-                usage: {
-                    prompt_tokens: FIXTURE.usage.inputTokens,
-                    completion_tokens: FIXTURE.usage.outputTokens,
-                },
+            created(FIXTURE.providerRequestId),
+            textDelta(firstDelta ?? ''),
+            sseEvent('response.output_text.done', { item_id: 'msg-1', output_index: 0, text: firstDelta ?? '' }),
+            completed(FIXTURE.providerRequestId, {
+                input_tokens: FIXTURE.usage.inputTokens,
+                output_tokens: FIXTURE.usage.outputTokens,
+                input_tokens_details: { cached_tokens: 3 },
+                output_tokens_details: { reasoning_tokens: 2 },
             }),
-            DONE,
         ].join('');
     }
     if (scenario === 'unknown-event') {
         return [
-            `data: ${JSON.stringify({ type: FIXTURE.unknownEventType, detail: FIXTURE.providerBodyText })}\n\n`,
-            delta(firstDelta ?? ''),
-            delta(secondDelta ?? ''),
-            finish('stop'),
-            DONE,
+            created(FIXTURE.providerRequestId),
+            sseEvent(FIXTURE.unknownEventType, { detail: FIXTURE.providerBodyText }),
+            textDelta(firstDelta ?? ''),
+            textDelta(secondDelta ?? ''),
+            completed(FIXTURE.providerRequestId),
         ].join('');
     }
     if (scenario === 'refusal') {
-        return [event({ choices: [{ delta: { refusal: FIXTURE.providerBodyText } }] }), finish('stop'), DONE].join('');
+        return [
+            created(FIXTURE.providerRequestId),
+            sseEvent('response.refusal.delta', { item_id: 'msg-1', delta: FIXTURE.providerBodyText }),
+            incomplete('content_filter'),
+        ].join('');
     }
     if (scenario === 'truncation') {
-        return [delta(firstDelta ?? ''), finish('length'), DONE].join('');
+        return [created(FIXTURE.providerRequestId), textDelta(firstDelta ?? ''), incomplete('max_output_tokens')].join(
+            ''
+        );
     }
     if (scenario === 'cut-stream') {
-        return [delta(firstDelta ?? ''), finish('stop')].join('');
+        return [created(FIXTURE.providerRequestId), textDelta(firstDelta ?? '')].join('');
     }
     if (scenario === 'malformed-event') {
-        return `data: {"choices":[{"delta":{"content":"${FIXTURE.providerBodyText}"\n\n`;
+        return `event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"${FIXTURE.providerBodyText}"`;
     }
     if (scenario === 'oversized-request-id') {
         return [
-            eventWithId(FIXTURE.oversizedProviderId, { choices: [{ delta: { content: firstDelta ?? '' } }] }),
-            eventWithId(FIXTURE.oversizedProviderId, { choices: [{ delta: {}, finish_reason: 'stop' }] }),
-            DONE,
+            created(FIXTURE.oversizedProviderId),
+            textDelta(firstDelta ?? ''),
+            completed(FIXTURE.oversizedProviderId),
         ].join('');
     }
-    return [delta(firstDelta ?? ''), delta(secondDelta ?? ''), finish('stop'), DONE].join('');
+    return [
+        created(FIXTURE.providerRequestId),
+        textDelta(firstDelta ?? ''),
+        textDelta(secondDelta ?? ''),
+        completed(FIXTURE.providerRequestId),
+    ].join('');
+}
+
+function functionCall(
+    id: string | undefined,
+    wireName: string | undefined,
+    arguments_: string
+): Record<string, unknown> {
+    return { type: 'function_call', id: 'fc-item', call_id: id, name: wireName, arguments: arguments_ };
 }
 
 function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     if (scenario === 'empty-batch') {
-        return { id: FIXTURE.providerRequestId, choices: [{ finish_reason: 'stop', message: { content: '' } }] };
+        return {
+            id: FIXTURE.providerRequestId,
+            status: 'completed',
+            output: [{ type: 'message', content: [{ type: 'output_text', text: '' }] }],
+        };
     }
     if (scenario === 'malformed-arguments') {
         return {
             id: FIXTURE.providerRequestId,
-            choices: [
-                {
-                    finish_reason: 'tool_calls',
-                    message: {
-                        tool_calls: [
-                            {
-                                id: FIXTURE.malformedArgumentsCallId,
-                                function: {
-                                    name: 'muteTrack',
-                                    arguments: `{"trackId": ${FIXTURE.providerBodyText}`,
-                                },
-                            },
-                        ],
-                    },
-                },
+            status: 'completed',
+            output: [
+                functionCall(FIXTURE.malformedArgumentsCallId, 'muteTrack', `{"trackId": ${FIXTURE.providerBodyText}`),
             ],
         };
     }
     if (scenario === 'oversized-call-id') {
         return {
             id: FIXTURE.providerRequestId,
-            choices: [
-                {
-                    finish_reason: 'tool_calls',
-                    message: {
-                        tool_calls: [
-                            {
-                                id: FIXTURE.oversizedProviderId,
-                                function: {
-                                    name: 'muteTrack',
-                                    arguments: `{"trackId": ${FIXTURE.providerBodyText}`,
-                                },
-                            },
-                        ],
-                    },
-                },
-            ],
+            status: 'completed',
+            output: [functionCall(FIXTURE.oversizedProviderId, 'muteTrack', `{"trackId": ${FIXTURE.providerBodyText}`)],
         };
     }
     return {
         id: FIXTURE.providerRequestId,
-        choices: [
-            {
-                finish_reason: 'tool_calls',
-                message: {
-                    tool_calls: [
-                        {
-                            id: dottedCall?.id,
-                            function: { name: dottedCall?.wireName, arguments: JSON.stringify(dottedCall?.arguments) },
-                        },
-                        {
-                            id: plainCall?.id,
-                            function: { name: plainCall?.wireName, arguments: JSON.stringify(plainCall?.arguments) },
-                        },
-                    ],
-                },
-            },
+        status: 'completed',
+        output: [
+            functionCall(dottedCall?.id, dottedCall?.wireName, JSON.stringify(dottedCall?.arguments)),
+            { type: 'reasoning', summary: [] },
+            functionCall(plainCall?.id, plainCall?.wireName, JSON.stringify(plainCall?.arguments)),
         ],
     };
 }
@@ -175,17 +189,26 @@ let sentRequestBodies: string[] = [];
 
 function installProviderResponse(body: string, contentType: string): void {
     sentRequestBodies = [];
-    vi.stubGlobal(
-        'fetch',
-        vi.fn<typeof fetch>((_input, init) => {
-            sentRequestBodies.push(typeof init?.body === 'string' ? init.body : '');
-            return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': contentType } }));
-        })
+    mocks.runProviderGatewayRequest.mockImplementation(
+        async (request: {
+            body: string | null;
+            onResponseStart: (value: { status: number; contentType: string | null }) => void;
+            onBodyChunk: (chunk: Uint8Array) => void;
+        }) => {
+            sentRequestBodies.push(request.body ?? '');
+            request.onResponseStart({ status: 200, contentType });
+            request.onBodyChunk(new TextEncoder().encode(body));
+        }
     );
     mocks.getCloudProviderRuntime.mockReturnValue(runtime);
+    vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(() => Promise.reject(new Error('The privileged adapter must not use renderer networking')))
+    );
 }
 
 function readRequest(): ProviderRequestObservation {
+    expect(globalThis.fetch).not.toHaveBeenCalled();
     const sent = sentRequestBodies[0];
     if (sent === undefined || sent.length === 0) {
         throw new Error('Expected the adapter to send a JSON request body');
@@ -203,7 +226,7 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describeProviderProtocolConformance('OpenAI-compatible chat completions', {
+describeProviderProtocolConformance('OpenAI responses', {
     streamText: async (scenario: ProviderStreamScenario): Promise<ProviderStreamObservation> => {
         installProviderResponse(streamFixture(scenario), 'text/event-stream');
         let text = '';
@@ -244,7 +267,7 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
     planTools: async (scenario: ProviderToolScenario): Promise<ProviderToolObservation> => {
         installProviderResponse(JSON.stringify(toolFixture(scenario)), 'application/json');
         try {
-            const plan = await generateOpenAiCompatibleToolCalls({
+            const plan = await generateOpenAiResponsesToolCalls({
                 runtime,
                 systemPrompt: 'system',
                 userMessage: 'mute drums',

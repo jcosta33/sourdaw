@@ -1,8 +1,9 @@
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { type HostedOpenAiStreamResult } from './openAiStreamResult';
 import { readProviderRequestId } from './readProviderRequestId';
-import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
+import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
 
@@ -30,13 +31,6 @@ type ParsedStreamEvent = {
 };
 
 type WireFinishReason = 'stop' | 'length';
-
-export type OpenAiCompatibleFinishReason = WireFinishReason | 'refusal';
-
-export type OpenAiCompatibleStreamResult = {
-    finishReason: OpenAiCompatibleFinishReason;
-    providerRequestId: string | null;
-};
 
 type StreamState = {
     finishReason: WireFinishReason | null;
@@ -175,17 +169,14 @@ export async function streamOpenAiCompatibleChatCompletion({
     maxTokens,
     onUsage,
     onUnknownEvent,
-}: StreamOpenAiCompatibleChatCompletionInput): Promise<OpenAiCompatibleStreamResult> {
+}: StreamOpenAiCompatibleChatCompletionInput): Promise<HostedOpenAiStreamResult> {
     const body = JSON.stringify({
         model: runtime.model,
         messages: messages.filter(
             (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
         ),
-        ...(runtime.provider === 'openai'
-            ? { max_completion_tokens: maxTokens ?? 2048 }
-            : { max_tokens: maxTokens ?? 2048 }),
+        max_tokens: maxTokens ?? 2048,
         stream: true,
-        ...(runtime.provider === 'openai' ? { stream_options: { include_usage: true } } : {}),
     });
     const decoder = new TextDecoder();
     let buffer = '';
@@ -213,7 +204,7 @@ export async function streamOpenAiCompatibleChatCompletion({
             throw new Error('Hosted AI chat stream exceeded its event limit');
         }
     };
-    const response = await requestOpenAiCompatibleProvider({
+    const response = await requestHostedOpenAiProvider({
         runtime,
         body,
         signal,
