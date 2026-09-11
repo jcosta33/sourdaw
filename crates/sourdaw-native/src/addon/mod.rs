@@ -678,6 +678,59 @@ impl SourdawNative {
         )
     }
 
+    /// Open an empty Levain sample bank under `bank_key`, replacing any bank
+    /// already registered there. Returns `{ "bankKey": … }`.
+    #[napi]
+    pub async fn begin_levain_bank(
+        &self,
+        bank_key: String,
+        instrument_id: String,
+    ) -> Result<Value> {
+        reason(
+            commands::levain::begin_levain_bank(
+                bank_key,
+                instrument_id,
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Register one decoded file into a staged Levain sample bank. `pcm` is
+    /// interleaved f32 little-endian at `sample_rate`, `channels` 1 or 2.
+    /// Returns `{ "frames": n }`.
+    #[napi]
+    pub async fn register_levain_sample(
+        &self,
+        bank_key: String,
+        sample_id: String,
+        sample_rate: f64,
+        channels: u32,
+        pcm: Buffer,
+    ) -> Result<Value> {
+        reason(
+            commands::levain::register_levain_sample(
+                bank_key,
+                sample_id,
+                sample_rate,
+                channels,
+                pcm.to_vec(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Close a staged Levain sample bank against its zone layout, after which
+    /// a graph device naming this bank key builds its instrument from it.
+    #[napi]
+    pub async fn commit_levain_bank(&self, bank_key: String, layout: Value) -> Result<Value> {
+        reason(
+            commands::levain::commit_levain_bank(bank_key, layout, &self.singletons.app_state)
+                .await,
+        )
+    }
+
     /// Render a command batch deterministically with no audio device: the
     /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.

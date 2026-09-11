@@ -146,6 +146,7 @@
 //!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
 use crate::commands::crumbs::{self, CrumbsState};
+use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
@@ -571,6 +572,12 @@ pub struct DevicePayload {
     pub external_plugin_id: Option<String>,
     #[serde(default)]
     pub external_instance_id: Option<String>,
+    /// The Levain sample bank this device sounds, as `commands::levain` keys
+    /// it. Absent for every other device type, and absent on a Levain whose
+    /// producer registered no bank — which refuses the device rather than
+    /// splicing a bankless, and therefore mute, sampler onto the strip.
+    #[serde(default)]
+    pub sample_bank_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2026,6 +2033,7 @@ fn map_device(
     contributes_audio: bool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    levain_banks: &mut LevainBankStore,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<MappedDevice>, String> {
     if registry.devices.contains_key(&device.id) {
@@ -2204,25 +2212,43 @@ fn map_device(
                 },
             )
         }
-        // The one type this mapper cannot build. A sampler sounds the bank
-        // loaded into its instance and nothing else, the load is a sequence of
-        // control-thread allocations reading decoded PCM, and nothing in this
-        // shell registers a source for it yet. A body built here would
-        // therefore hold no bank and render digital silence
-        // (`PluginCore::builtin`, `crates/daw-engine/src/scheduler.rs`), so
-        // splicing one in would put a mute device on the strip and leave the
-        // player looking for the fault in their own project.
+        // The one type whose body is not built from its parameters alone. A
+        // sampler sounds the bank loaded into its instance and nothing else,
+        // and loading one is a sequence of allocations the audio thread may
+        // not perform, so the instance is loaded here, on the mapping thread,
+        // from the bank the renderer staged through `commands::levain`.
         //
-        // Refusing names the missing piece instead, and it refuses through the
-        // same door every other unbuildable device takes: audible strips carry
-        // the reason back and silent ones drop the device
-        // ([`refuse_or_degrade`]), so a muted or unrouted Levain still loads
-        // its project.
-        BuiltinEffectType::Levain => Err(format!(
-            "device '{}' of type levain needs a native sample bank, which no producer registers \
-             yet",
-            device.id
-        )),
+        // A device that names no bank, or names one this process does not hold
+        // committed, is refused rather than built: a body with no bank renders
+        // digital silence (`PluginCore::builtin`,
+        // `crates/daw-engine/src/scheduler.rs`), so splicing one in would put a
+        // mute device on the strip and leave the player looking for the fault
+        // in their own project. The refusal travels the same door every other
+        // unbuildable device takes — audible strips carry the reason back and
+        // silent ones drop the device ([`refuse_or_degrade`]) — so a muted or
+        // unrouted Levain whose bank never arrived still loads its project.
+        BuiltinEffectType::Levain => match device.sample_bank_key.as_deref() {
+            None => Err(format!(
+                "device '{}' of type levain names no sample bank",
+                device.id
+            )),
+            Some(key) if !levain_banks.is_committed(key) => Err(format!(
+                "device '{}' names levain bank '{key}', which is not registered",
+                device.id
+            )),
+            Some(key) => {
+                resolved_param_writes(device, |name| builtin_named_parameter(name, &device.id))
+                    .and_then(|patch| {
+                        Ok((
+                            PluginCore::levain_with_patch(
+                                levain_banks.build_instance(key, sample_rate)?,
+                                &patch,
+                            ),
+                            Vec::new(),
+                        ))
+                    })
+            }
+        },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
                 .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
@@ -2473,6 +2499,7 @@ fn map_batch(
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
         return Err(format!(
@@ -2506,6 +2533,7 @@ fn map_batch(
             samples,
             sample_rate,
             engine_owned_devices,
+            levain_banks,
             &mut budgets,
             &mut ops,
             &mut touched,
@@ -2570,6 +2598,7 @@ fn map_command(
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    levain_banks: &mut LevainBankStore,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
@@ -2632,6 +2661,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    levain_banks,
                     ops,
                 )?
                 else {
@@ -2738,6 +2768,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    levain_banks,
                     ops,
                 )?
                 else {
@@ -2930,6 +2961,7 @@ fn map_command(
                 strip.contributes_audio,
                 sample_rate,
                 engine_owned_devices,
+                levain_banks,
                 ops,
             )?
             else {
@@ -3572,13 +3604,17 @@ fn map_schedule_clip(
 /// Frames per channel in a raw PCM payload, refusing shapes no schedule could
 /// honour.
 ///
+/// Shared with `commands::levain`, which takes bank material in exactly this
+/// shape: the two populations of decoded PCM differ in what plays them, not in
+/// what a well-formed payload is.
+///
 /// Ragged bytes are not frames. Zero frames refuse because the contract
 /// (`AudioGraphClipSource`) forbids playing silence for a real source — a
 /// 0-frame sample registered here would render a later `schedule-clip` as
 /// exactly that. And a payload above the offline render ceiling refuses
 /// because registration copies the material, so the ceiling on allocation is
 /// the same one the renderer holds, applied per channel.
-fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
+pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
     let bytes_per_frame = 4 * channels;
     if pcm_len % bytes_per_frame != 0 {
         return Err(format!(
@@ -3901,10 +3937,17 @@ pub async fn apply_graph_commands(
     let progress = engine.graph_progress_snapshot();
     registry_guard.release_landed(progress);
 
+    // Lock order, here and in `map_graph_batch`: timeline samples first, then
+    // levain banks. Both sites take both, and a site that took them the other
+    // way round would deadlock against this one.
     let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+    let mut levain_banks = state
+        .levain_banks
+        .lock()
+        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
 
     let correlation = batch.correlation.clone();
     let mut working = registry_guard.clone();
@@ -3914,6 +3957,7 @@ pub async fn apply_graph_commands(
         &samples,
         engine.sample_rate(),
         &engine_owned_devices,
+        &mut levain_banks,
     ) {
         Ok(mapped) => mapped,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
@@ -4125,6 +4169,7 @@ fn replay_prior_commands(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
+    levain_banks: &mut LevainBankStore,
 ) -> Result<(), String> {
     while !commands.is_empty() {
         let rest = if commands.len() > MAX_BATCH_COMMANDS {
@@ -4138,8 +4183,15 @@ fn replay_prior_commands(
             replace_topology: false,
             commands,
         };
-        map_batch(&replay, registry, samples, sample_rate, &HashMap::new())
-            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        map_batch(
+            &replay,
+            registry,
+            samples,
+            sample_rate,
+            &HashMap::new(),
+            levain_banks,
+        )
+        .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
         commands = rest;
     }
     Ok(())
@@ -4232,17 +4284,30 @@ pub async fn map_graph_batch(
         None => None,
     };
 
+    // Lock order, here and in `apply_graph_commands`: timeline samples first,
+    // then levain banks. Both sites take both, and a site that took them the
+    // other way round would deadlock against this one.
     let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+    let mut levain_banks = state
+        .levain_banks
+        .lock()
+        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
 
     let mut registry = match resumed {
         Some(registry) => registry,
         None => {
             let mut registry = GraphRegistry::default();
             if !prior_commands.is_empty() {
-                replay_prior_commands(prior_commands, &mut registry, &samples, sample_rate as f32)?;
+                replay_prior_commands(
+                    prior_commands,
+                    &mut registry,
+                    &samples,
+                    sample_rate as f32,
+                    &mut levain_banks,
+                )?;
             }
             registry
         }
@@ -4264,7 +4329,9 @@ pub async fn map_graph_batch(
         &samples,
         sample_rate as f32,
         &HashMap::new(),
+        &mut levain_banks,
     );
+    drop(levain_banks);
     drop(samples);
 
     if let Some(key) = &session_key {
@@ -4309,7 +4376,18 @@ fn map_offline_batch(
     let mut registry = GraphRegistry::default();
     // An offline render has no engine and therefore no hosted plugin instances:
     // an external device on a sounding strip refuses here, as it always has.
-    Ok(map_batch(batch, &mut registry, samples, sample_rate, &HashMap::new())?.ops)
+    // A Levain maps against an empty bank store under the same law — this seam
+    // carries the batch alone, so a bank staged on the app's own state is not
+    // one this render was handed.
+    Ok(map_batch(
+        batch,
+        &mut registry,
+        samples,
+        sample_rate,
+        &HashMap::new(),
+        &mut LevainBankStore::default(),
+    )?
+    .ops)
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
@@ -4425,16 +4503,37 @@ mod tests {
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
     use serde_json::json;
 
-    /// Map a batch against an engine holding no hosted plugin instances — the
-    /// state every case below is about unless it says otherwise. A case about
-    /// binding calls [`map_batch`] itself with the lookup it wants.
+    /// Map a batch against an engine holding no hosted plugin instances and a
+    /// process holding no Levain bank — the state every case below is about
+    /// unless it says otherwise. A case about binding calls
+    /// [`map_bound_batch`] with the lookup it wants; a case about a Levain
+    /// bank calls [`map_batch`] itself with the store it wants.
     fn map_unbound_batch(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
         samples: &TimelineSamplePool,
         sample_rate: f32,
     ) -> Result<MappedBatch, String> {
-        map_batch(batch, registry, samples, sample_rate, &HashMap::new())
+        map_bound_batch(batch, registry, samples, sample_rate, &HashMap::new())
+    }
+
+    /// Map a batch against a given hosted-plugin lookup, and a process holding
+    /// no Levain bank.
+    fn map_bound_batch(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+        samples: &TimelineSamplePool,
+        sample_rate: f32,
+        engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    ) -> Result<MappedBatch, String> {
+        map_batch(
+            batch,
+            registry,
+            samples,
+            sample_rate,
+            engine_owned_devices,
+            &mut LevainBankStore::default(),
+        )
     }
 
     fn sample_pool() -> TimelineSamplePool {
@@ -5501,7 +5600,7 @@ mod tests {
     #[test]
     fn releasing_an_engine_plugin_unlinks_its_chain_entry_from_its_strip() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(json!([
                 { "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
                   "state": strip_state(0.8),
@@ -9522,7 +9621,7 @@ mod tests {
         ]);
         let mut registry = GraphRegistry::default();
 
-        let first = map_batch(
+        let first = map_bound_batch(
             &replacing_batch(live_topology_commands()),
             &mut registry,
             &samples,
@@ -9547,7 +9646,7 @@ mod tests {
                 if entry.effect_id == 1_008)
         ));
 
-        let second = map_batch(
+        let second = map_bound_batch(
             &replacing_batch(live_topology_commands()),
             &mut registry,
             &samples,
@@ -9760,7 +9859,7 @@ mod tests {
     /// clip it shares a strip with is what the splice replaces.
     #[test]
     fn an_engine_owned_instrument_inserts_as_a_generator() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9781,7 +9880,7 @@ mod tests {
     /// dropped kind.
     #[test]
     fn an_engine_owned_effect_inserts_as_an_effect() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9800,7 +9899,7 @@ mod tests {
     /// category the moment it lands on a bus instead of a track.
     #[test]
     fn an_engine_owned_instrument_on_a_bus_inserts_as_a_generator() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_bus_strip(true)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9830,7 +9929,7 @@ mod tests {
         )
         .expect("an empty strip should map");
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
                   "device": { "id": "d-plugin", "name": "Pro-Q", "type": "plugin",
@@ -9889,7 +9988,7 @@ mod tests {
     #[test]
     fn a_hosted_plugin_the_engine_holds_is_spliced_onto_a_sounding_strip_by_its_own_id() {
         let mut registry = GraphRegistry::default();
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -9939,7 +10038,7 @@ mod tests {
             "contributesAudio": true
         }]);
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(strip),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9958,7 +10057,7 @@ mod tests {
     /// the instance.
     #[test]
     fn a_bypassed_engine_owned_device_carries_its_bypass_to_the_engine() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, true)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9982,7 +10081,7 @@ mod tests {
     #[test]
     fn removing_an_engine_owned_device_releases_the_effect_instead_of_retiring_it() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -9991,7 +10090,7 @@ mod tests {
         )
         .expect("the strip binds");
 
-        let removed = map_batch(
+        let removed = map_bound_batch(
             &batch(json!([
                 { "kind": "remove-device", "trackId": "lead", "deviceId": "d-plugin" }
             ])),
@@ -10034,7 +10133,7 @@ mod tests {
     fn a_replacing_batch_releases_engine_owned_devices_and_retires_the_rest() {
         let lookup = attached("inst-1", 1_007);
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(json!([{
                 "kind": "create-track-strip",
                 "trackId": "lead",
@@ -10057,7 +10156,7 @@ mod tests {
         )
         .expect("the strip binds");
 
-        let replaced = map_batch(
+        let replaced = map_bound_batch(
             &replacing_batch(json!([])),
             &mut registry,
             &sample_pool(),
@@ -10103,7 +10202,7 @@ mod tests {
     /// A strip carrying one bound hosted plugin, ready to be written at.
     fn registry_holding_a_bound_hosted_plugin() -> GraphRegistry {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -10146,7 +10245,7 @@ mod tests {
     fn a_hosted_parameter_write_maps_to_a_hosted_stamp() {
         let mut registry = registry_holding_a_bound_hosted_plugin();
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &hosted_parameter_write("42"),
             &mut registry,
             &sample_pool(),
@@ -10176,7 +10275,7 @@ mod tests {
         for parameter_id in ["shift_semitones", "4294967296"] {
             let mut registry = registry_holding_a_bound_hosted_plugin();
 
-            let refusal = map_batch(
+            let refusal = map_bound_batch(
                 &hosted_parameter_write(parameter_id),
                 &mut registry,
                 &sample_pool(),
@@ -10504,31 +10603,133 @@ mod tests {
         );
     }
 
-    /// A Levain on a contributing strip refuses, and the refusal names the
-    /// device and the piece that is missing.
+    /// A Levain naming no bank at all refuses a contributing strip, and the
+    /// refusal names the device.
     ///
     /// The engine has a Levain body (`PluginCore::Levain`), so this is not the
     /// unrecognised-type refusal above: the type resolves, and what stops the
-    /// splice is that a sampler needs a bank and nothing in this shell loads
-    /// one yet. A body built without one would render silence, so the mapper
-    /// refuses rather than splicing a mute device onto a strip the mix needs.
+    /// splice is that a sampler needs a bank and this device names none. A body
+    /// built without one would render silence, so the mapper refuses rather
+    /// than splicing a mute device onto a strip the mix needs.
     ///
-    /// The reason has to say which piece is absent, or the caller reads a
-    /// resolvable type refusing as a mapper defect rather than as unfinished
-    /// hosting.
+    /// The reason has to name the device, or a project with several samplers
+    /// reads as one unlocatable refusal.
     #[test]
-    fn a_levain_refuses_a_contributing_strip_naming_the_bank_it_has_no_source_for() {
+    fn a_levain_device_without_a_bank_key_is_refused_naming_the_device() {
         let refusal = map_unbound_batch(
             &batch(strip_with_device("d-levain", "levain", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
         )
-        .expect_err("a sampler with no bank source must refuse a contributing strip");
+        .expect_err("a sampler naming no bank must refuse a contributing strip");
 
         assert!(
             refusal.contains("d-levain") && refusal.contains("sample bank"),
-            "the refusal must name the device and the bank it has no source for, got: {refusal}"
+            "the refusal must name the device and the bank it is missing, got: {refusal}"
+        );
+    }
+
+    /// A Levain naming a bank this process does not hold refuses, and the
+    /// refusal names the bank.
+    ///
+    /// The key is what the renderer staged its material under, so naming it
+    /// back is the whole of what makes an unregistered bank diagnosable: the
+    /// alternative is a project that refuses without saying which of its
+    /// instruments never arrived.
+    #[test]
+    fn a_levain_device_naming_an_unknown_bank_is_refused_naming_the_bank() {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t1", "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [{
+                    "id": "d-levain", "type": "levain", "bypassed": false,
+                    "parameterValues": {}, "sampleBankKey": "strings@1"
+                }],
+                "honorMuted": true, "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sampler naming a bank nothing registered must refuse");
+
+        assert!(
+            refusal.contains("d-levain") && refusal.contains("strings@1"),
+            "the refusal must name the device and the bank it could not find, got: {refusal}"
+        );
+    }
+
+    /// A Levain naming a committed bank builds, and the strip reports it.
+    ///
+    /// The end of the seam this slice opens: the bank crosses through the three
+    /// command bodies, the mapper resolves the device's `sampleBankKey` against
+    /// the store they filled, and the device appears in the realized chain. A
+    /// build that refused anywhere along that path would leave the device out
+    /// of the report under the degradation law, so the report is what the
+    /// claim rests on.
+    #[test]
+    fn a_levain_device_naming_a_committed_bank_builds_its_strip() {
+        const BANK: &str = "strings@1";
+        let state = AppState::default();
+        block_on_test(crate::commands::levain::begin_levain_bank(
+            BANK.to_string(),
+            "strings".to_string(),
+            &state,
+        ))
+        .expect("the bank opens");
+        block_on_test(crate::commands::levain::register_levain_sample(
+            BANK.to_string(),
+            "a3.wav".to_string(),
+            48_000.0,
+            1,
+            vec![0u8; 4 * 4_800],
+            &state,
+        ))
+        .expect("the bank takes its sample");
+        block_on_test(crate::commands::levain::commit_levain_bank(
+            BANK.to_string(),
+            json!({
+                "zones": [{
+                    "sampleId": "a3.wav", "articulationId": 0, "rootNote": 69,
+                    "loKey": 0, "hiKey": 127, "loVel": 0, "hiVel": 127,
+                    "rrPos": 0, "rrLen": 1, "micId": 0, "isRelease": false,
+                    "loopMode": "none", "loopStart": 0, "loopEnd": 0, "loopCrossfade": 0,
+                    "gainDb": 0.0, "attack": 0.0, "decay": 0.0, "sustain": 1.0, "release": 0.05
+                }],
+                "legatoTransitions": [],
+                "numArticulations": 1,
+                "numMics": 1
+            }),
+            &state,
+        ))
+        .expect("the bank commits");
+
+        let mut banks = state.levain_banks.lock().expect("the bank lock opens");
+        let mapped = map_batch(
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t1", "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [{
+                    "id": "d-levain", "type": "levain", "bypassed": false,
+                    "parameterValues": { "master_gain": 0.5 },
+                    "sampleBankKey": BANK
+                }],
+                "honorMuted": true, "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+            &mut banks,
+        )
+        .expect("a sampler naming a committed bank must build");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            vec!["d-levain".to_string()],
+            "the sampler must be in the realized chain, not degraded out of it"
         );
     }
 

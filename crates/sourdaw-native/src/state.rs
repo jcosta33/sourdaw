@@ -282,6 +282,16 @@ pub struct AppState {
     /// against this pool. Control-side only — the audio thread receives copies
     /// already built into `TimelineClip`s.
     pub timeline_samples: Arc<Mutex<TimelineSamplePool>>,
+    /// Levain sample banks, keyed by the bank key the renderer names.
+    ///
+    /// The sampler's counterpart to `timeline_samples`, and declared beside it
+    /// for the same reason: the identity crosses the seam, the decoded PCM is
+    /// registered here once through the `*_levain_bank` commands, and every
+    /// Levain device a graph batch maps resolves its `sampleBankKey` against
+    /// this store. Control-side only — what crosses to the audio thread is a
+    /// `LevainInstance` already loaded from a committed bank. See
+    /// `commands::levain`.
+    pub levain_banks: Arc<Mutex<crate::commands::levain::LevainBankStore>>,
     /// The control-side registry that resolves the app's string strip, device
     /// and sample ids onto the engine's `usize` node ids, plus the strip facts
     /// (kind, VCA fold, chain occupancy) batch validation needs. See
@@ -566,6 +576,9 @@ impl Default for AppState {
             plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             timeline_samples: Arc::new(Mutex::new(TimelineSamplePool::default())),
+            levain_banks: Arc::new(Mutex::new(
+                crate::commands::levain::LevainBankStore::default(),
+            )),
             graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
             graph_mapping_sessions: Arc::new(Mutex::new(
                 crate::commands::graph::GraphMappingSessions::default(),

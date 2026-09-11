@@ -61,6 +61,9 @@ vi.mock('../resolveRenderContext', async (importOriginal) => {
  */
 const stubTransport: NativeGraphTransport = {
     registerTimelineSample: () => Promise.reject(new Error('the selection spec issues no command')),
+    beginLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
+    registerLevainSample: () => Promise.reject(new Error('the selection spec issues no command')),
+    commitLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
     renderGraphOffline: () => Promise.reject(new Error('the selection spec issues no command')),
     mapGraphBatch: () => Promise.reject(new Error('the selection spec issues no command')),
     applyGraphCommands: () => Promise.reject(new Error('the selection spec issues no command')),

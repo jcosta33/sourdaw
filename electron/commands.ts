@@ -42,6 +42,7 @@ export const EXPOSED_COMMANDS = [
     'analyze_pitch',
     'apply_graph_commands',
     'arm_recording',
+    'begin_levain_bank',
     'cancel_provider_gateway_request',
     'close_midi_input',
     'close_plugin_gui',
@@ -53,6 +54,7 @@ export const EXPOSED_COMMANDS = [
     'collab_load_bundle',
     'collab_merge_bundle',
     'collab_save_bundle',
+    'commit_levain_bank',
     'commit_pitch_edit',
     'create_crumbs',
     'crumbs_all_sound_off',
@@ -84,6 +86,7 @@ export const EXPOSED_COMMANDS = [
     'parse_scl',
     'provider_gateway_request',
     'read_file_bytes',
+    'register_levain_sample',
     'register_timeline_sample',
     'render_graph_offline',
     'retire_native_engine',
@@ -142,6 +145,14 @@ export const EXPOSED_COMMANDS = [
  * native engine. It is the one exposed command that can *start* an audio
  * stream, which is why `pluginCommandAdmission` closes it with the plugin
  * runtime surface at quit.
+ *
+ * The Levain bank commands (`begin_levain_bank`, `register_levain_sample`,
+ * `commit_levain_bank`) join them for the same reason and through the same
+ * file: a native Levain device has no body until the bank it names is staged
+ * on the native side, so the renderer that already decodes a bank for its
+ * worklet stages the same material through `nativeGraphTransport.ts`. They
+ * carry decoded PCM and a zone layout and nothing else — no path, no handle,
+ * and no reach outside the sampler's own store.
  *
  * `grant_path` is denied for the reason it exists (jcosta33/sourdaw#3313). It
  * is the only way to widen what the native file commands will touch, so a

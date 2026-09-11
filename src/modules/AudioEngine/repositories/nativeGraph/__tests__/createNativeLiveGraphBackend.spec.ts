@@ -41,6 +41,9 @@ function stubTransport(applyGraphCommands: NativeGraphTransport['applyGraphComma
     return {
         applyGraphCommands,
         registerTimelineSample: unexpected('register_timeline_sample'),
+        beginLevainBank: unexpected('begin_levain_bank'),
+        registerLevainSample: unexpected('register_levain_sample'),
+        commitLevainBank: unexpected('commit_levain_bank'),
         renderGraphOffline: unexpected('render_graph_offline'),
         mapGraphBatch: unexpected('map_graph_batch'),
     };

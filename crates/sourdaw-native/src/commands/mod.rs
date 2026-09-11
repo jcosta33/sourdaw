@@ -7,6 +7,7 @@ pub mod engine_lifecycle;
 pub mod engine_transport;
 pub mod filesystem;
 pub mod graph;
+pub mod levain;
 pub mod link;
 pub mod midi;
 pub mod midi_watcher;
