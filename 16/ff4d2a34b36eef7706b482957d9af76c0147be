@@ -1,0 +1,47 @@
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  s_06adf2b091dc62::t_207582a16a2272 322-357,360-363
+  s_06adf2b091dc62::t_6dc24139965394 407-414,416-420
+  s_06adf2b091dc62::t_c26e5ca3169ec2 194-195
+  s_06adf2b091dc62::t_97d00d7e50ec20 296-297
+  s_06adf2b091dc62::t_5954b5bf13619b 396
+  s_06adf2b091dc62::t_e765ae2f5418c6 65-67,69-76,88-89
+  s_06adf2b091dc62::t_99d5d7b4cc868d 219-225,227-228
+src/modules/AiRuntime/stores/agentChangeComparisonStore.ts
+  s_06adf2b091dc62::t_6203fa6c483e74 27-34
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparison.spec.ts
+  s_06adf2b091dc62::t_69725c23cf2503 363-376
+  s_06adf2b091dc62::t_312a0ecb3303dc 394,399
+  s_06adf2b091dc62::t_4f5a78fe3c581b 459-495
+  s_06adf2b091dc62::t_4eb367276934df 412,414
+  s_06adf2b091dc62::t_913e92bf6f9cdd 291-339
+  s_06adf2b091dc62::t_8f6871d2970997 135-140,151-157
+  s_06adf2b091dc62::t_aae33a6f5da67c 348,351
+  s_9b530f08172a54::t_cce200aacf3a0e 158-159
+src/modules/AudioEngine/useCases/engineAccess/__tests__/setMasterComparisonTrimDb.spec.ts
+  s_06adf2b091dc62::t_d509bd85179738 86-101
+  s_06adf2b091dc62::t_11986fcf78daa8 13,15-19,34-48,57-58,69-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16ff4d2a34b36eef7706b482957d9af76c0147be",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
