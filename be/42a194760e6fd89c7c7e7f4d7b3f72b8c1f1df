@@ -1,0 +1,31 @@
+src/modules/Command/useCases/__tests__/getVersionedCommandBatchEffects.spec.ts
+  s_9b530f08172a54::t_68280a2032f1c1 58-88
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_9b530f08172a54::t_a1e59a79140421 27-30,34,53,57,59
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  s_f6f4021367070d::t_e4808d52a2e116 117-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "be42a194760e6fd89c7c7e7f4d7b3f72b8c1f1df",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f6f4021367070d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aba5abda1dea67f65",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
