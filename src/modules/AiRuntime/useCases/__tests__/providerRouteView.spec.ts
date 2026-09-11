@@ -136,9 +136,11 @@ describe('provider route view', () => {
                 model: 'fixture-model',
             },
             platform: { available: true, evidence: 'configured-provider', unavailableReason: null },
+            options: [{ routeId: 'cloud', admitted: true, reasons: [] }],
             capability: { operations: ['text', 'tools', 'structured-output'], modalities: ['text'], streaming: true },
             fidelity: 'configured-remote',
             fallback: { attempted: true, reasons: ['unhealthy'] },
+            fallbackPolicy: 'hosted-then-local',
             dataDisclosure: { categories: ['prompt-text'], retention: UNKNOWN_RETENTION },
             usage: {
                 provenance: 'provider-reported',
@@ -308,6 +310,45 @@ describe('provider route view', () => {
         expect(view?.fidelity).toBeNull();
     });
 
+    it('lists the hosted candidate an automatic run refuses and keeps the run local-only', () => {
+        agentRunLifecycle.create({
+            runId: 'route-auto-options',
+            request: 'Analyze the master.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'auto',
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-auto-options',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.options).toEqual([
+            { routeId: 'webllm', admitted: true, reasons: [] },
+            { routeId: 'cloud', admitted: false, reasons: ['data-policy'] },
+        ]);
+        expect(view?.fallbackPolicy).toBe('local-only');
+    });
+
+    it('admits the requested hosted route and reports a hosted-then-local fallback policy', () => {
+        agentRunLifecycle.create({
+            runId: 'route-cloud-options',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-cloud-options',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.options).toEqual([{ routeId: 'cloud', admitted: true, reasons: [] }]);
+        expect(view?.fallbackPolicy).toBe('hosted-then-local');
+    });
+
     it('returns null for an unknown run', () => {
         expect(getProviderRouteView({ runId: 'does-not-exist' })).toBeNull();
     });
@@ -369,7 +410,9 @@ describe('provider route view', () => {
             'cost',
             'dataDisclosure',
             'fallback',
+            'fallbackPolicy',
             'fidelity',
+            'options',
             'platform',
             'requested',
             'runId',
