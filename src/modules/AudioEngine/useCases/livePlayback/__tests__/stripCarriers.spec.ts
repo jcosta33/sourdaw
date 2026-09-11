@@ -340,6 +340,25 @@ describe('projectStripCarriers', () => {
         expect(carrier).toEqual({ carrier: 'native' });
     });
 
+    // The Tuner is a body like any other now that the engine builds one, and
+    // it is the analyser most likely to be sitting on a strip while the take
+    // rolls — a player checks their tuning and leaves the device in the chain.
+    // Leaving that strip on Web Audio for a pass-through analyser would cost
+    // the take its native timeline for a device that changes nothing about the
+    // signal.
+    it('carries a track whose chain holds a tuner', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', devices: [createDevice({ id: 'd', type: 'native-scoring' })] }),
+                ],
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
     // Every built-in the engine registers is a body, not only the effect it
     // started with: a strip playing clips through an instrument insert is one
     // the engine can build whole, and leaving it on Web Audio for a body the

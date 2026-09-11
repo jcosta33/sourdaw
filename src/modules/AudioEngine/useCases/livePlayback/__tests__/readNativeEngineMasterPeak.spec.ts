@@ -17,6 +17,7 @@ const readingAt = (masterPeak: number, playing = true): EngineTransportPosition 
     timeSigDenom: 4,
     masterPeak,
     stripPeaks: {},
+    tunerTelemetry: {},
 });
 
 describe('readNativeEngineMasterPeak', () => {

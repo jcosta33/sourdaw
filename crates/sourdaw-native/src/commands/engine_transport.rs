@@ -41,7 +41,7 @@
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
-use daw_engine::scheduler::{GraphCommand, StripPeak, TransportPositionSnapshot};
+use daw_engine::scheduler::{GraphCommand, ScoringReading, StripPeak, TransportPositionSnapshot};
 use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
 };
@@ -167,6 +167,58 @@ pub struct EngineTransportPosition {
     /// reading the engine never published for it, while an absent key says
     /// plainly that none exists yet.
     pub strip_peaks: BTreeMap<String, f64>,
+    /// What every native Tuner body last detected, keyed by the device id the
+    /// renderer knows it by — one entry per scoring device the registry
+    /// holds, on whatever strip and whether or not that strip is the one the
+    /// musician is hearing. That is the same law `stripPeaks` states above:
+    /// the map is keyed for everything the engine holds a reading for, and the
+    /// renderer decides which of them it may trust from its own carried set. A
+    /// map that pre-filtered by carrier would make an absent key mean either
+    /// "no such device" or "not yours", and the renderer could not tell which.
+    ///
+    /// It rides this reply for the same reason `masterPeak` does: the renderer
+    /// already polls this command once per animation frame, which is exactly
+    /// the rate a needle is painted at, and a tuner body has no port of its
+    /// own to push a reading over the way the Web Audio twin's worklet does.
+    pub tuner_telemetry: BTreeMap<String, TunerTelemetryPayload>,
+}
+
+/// One Tuner body's detection, in the wire's units.
+///
+/// The engine reads and publishes `f32`; the wire is `f64` like every other
+/// number on this payload, and the widening is the only thing done to it. A
+/// payload that rounded a frequency or rescaled the cents would put a
+/// different needle in front of the musician than the one the analyser
+/// computed.
+///
+/// An inactive reading is not an absent one: a tuner hearing nothing publishes
+/// `active: false`, and the panel has to show *that* rather than hold the last
+/// pitch it saw. So every field travels whatever `active` says, and the
+/// renderer's own projection decides what a display does with them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunerTelemetryPayload {
+    pub active: bool,
+    pub frequency: f64,
+    pub cents: f64,
+    pub confidence: f64,
+    pub note_index: u32,
+    pub octave: i32,
+    pub midi_note: i32,
+}
+
+impl From<ScoringReading> for TunerTelemetryPayload {
+    fn from(reading: ScoringReading) -> Self {
+        Self {
+            active: reading.active,
+            frequency: f64::from(reading.frequency),
+            cents: f64::from(reading.cents),
+            confidence: f64::from(reading.confidence),
+            note_index: reading.note_index,
+            octave: reading.octave,
+            midi_note: reading.midi_note,
+        }
+    }
 }
 
 /// The engine's own snapshot, in the wire's units.
@@ -181,6 +233,7 @@ fn transport_position_payload(
     snapshot: TransportPositionSnapshot,
     master_peak: f32,
     strip_peaks: BTreeMap<String, f64>,
+    tuner_telemetry: BTreeMap<String, TunerTelemetryPayload>,
     sample_rate: f64,
     rendering: bool,
 ) -> EngineTransportPosition {
@@ -196,7 +249,23 @@ fn transport_position_payload(
         time_sig_denom: snapshot.time_sig_denom,
         master_peak: f64::from(master_peak),
         strip_peaks,
+        tuner_telemetry,
     }
+}
+
+/// Every scoring device's reading, widened onto the wire.
+///
+/// The registry's own map is already keyed by device id and already holds an
+/// entry for exactly the devices with a body publishing into it
+/// ([`crate::commands::graph::GraphRegistry::scoring_readings`]), so there is
+/// nothing to select here — only the widening.
+fn tuner_telemetry_payload(
+    readings: BTreeMap<String, ScoringReading>,
+) -> BTreeMap<String, TunerTelemetryPayload> {
+    readings
+        .into_iter()
+        .map(|(device_id, reading)| (device_id, TunerTelemetryPayload::from(reading)))
+        .collect()
 }
 
 /// Every strip in `strips` the registry's own map names, keyed by the strip
@@ -398,11 +467,16 @@ pub async fn engine_transport_position(
     // position's fields make — see [`EngineTransportPosition`].
     let meter = engine.meter_snapshot();
     let strip_peaks = strip_peaks_payload(meter.strips(), &registry_guard.track_strip_ids());
+    // Read under the registry lock this call already holds. The readings
+    // themselves are atomics the audio thread publishes into, so taking them
+    // here costs the callback nothing and needs no channel of its own.
+    let tuner_telemetry = tuner_telemetry_payload(registry_guard.scoring_readings());
 
     Ok(transport_position_payload(
         snapshot,
         meter.master_peak,
         strip_peaks,
+        tuner_telemetry,
         sample_rate,
         rendering,
     ))
@@ -523,6 +597,20 @@ mod tests {
             strip_peaks: [("strip-a".to_string(), 0.25), ("strip-b".to_string(), 0.5)]
                 .into_iter()
                 .collect(),
+            tuner_telemetry: [(
+                "d-tuner".to_string(),
+                TunerTelemetryPayload {
+                    active: true,
+                    frequency: 440.5,
+                    cents: -2.5,
+                    confidence: 0.75,
+                    note_index: 9,
+                    octave: 4,
+                    midi_note: 69,
+                },
+            )]
+            .into_iter()
+            .collect(),
         })
         .expect("position should serialize");
 
@@ -532,8 +620,60 @@ mod tests {
                 r#"{"running":true,"playing":true,"positionSeconds":1.5,"#,
                 r#""playheadFrame":72000.0,"loopWraps":2.0,"batchesApplied":11.0,"#,
                 r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4,"masterPeak":0.5,"#,
-                r#""stripPeaks":{"strip-a":0.25,"strip-b":0.5}}"#
+                r#""stripPeaks":{"strip-a":0.25,"strip-b":0.5},"#,
+                r#""tunerTelemetry":{"d-tuner":{"active":true,"frequency":440.5,"#,
+                r#""cents":-2.5,"confidence":0.75,"noteIndex":9,"octave":4,"midiNote":69}}}"#
             )
+        );
+    }
+
+    /// A reading the engine published reaches the payload widened and
+    /// otherwise untouched, keyed by the device id it was published under, and
+    /// an inactive reading travels rather than being dropped.
+    ///
+    /// The panel needs the inactive one: a tuner that has stopped hearing a
+    /// note must read "nothing" on the very frame it stops, and a payload that
+    /// carried only active readings would leave the needle parked on the last
+    /// pitch heard for as long as the player was silent.
+    #[test]
+    fn the_payload_carries_every_tuner_reading_the_registry_holds() {
+        let readings: BTreeMap<String, ScoringReading> = [
+            (
+                "d-heard".to_string(),
+                ScoringReading {
+                    active: true,
+                    frequency: 440.5,
+                    cents: -2.5,
+                    confidence: 0.75,
+                    note_index: 9,
+                    octave: 4,
+                    midi_note: 69,
+                },
+            ),
+            ("d-silent".to_string(), ScoringReading::default()),
+        ]
+        .into_iter()
+        .collect();
+
+        let payload = tuner_telemetry_payload(readings);
+
+        assert_eq!(
+            payload.get("d-heard").copied(),
+            Some(TunerTelemetryPayload {
+                active: true,
+                frequency: 440.5,
+                cents: -2.5,
+                confidence: 0.75,
+                note_index: 9,
+                octave: 4,
+                midi_note: 69,
+            }),
+            "the reading reached the wire changed"
+        );
+        assert_eq!(
+            payload.get("d-silent").copied(),
+            Some(TunerTelemetryPayload::default()),
+            "an inactive tuner was dropped from the payload"
         );
     }
 
@@ -580,7 +720,14 @@ mod tests {
             ..TransportPositionSnapshot::default()
         };
 
-        let position = transport_position_payload(snapshot, 0.25, BTreeMap::new(), 48_000.0, true);
+        let position = transport_position_payload(
+            snapshot,
+            0.25,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            48_000.0,
+            true,
+        );
 
         assert_eq!(position.master_peak, 0.25);
     }
@@ -602,7 +749,14 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 0.0, BTreeMap::new(), 48_000.0, true);
+        let position = transport_position_payload(
+            snapshot,
+            0.0,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            48_000.0,
+            true,
+        );
 
         assert_eq!(position.batches_applied, 11.0);
         assert_eq!(position.playhead_frame, 72_000.0);
@@ -627,7 +781,14 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 0.5, BTreeMap::new(), 48_000.0, false);
+        let position = transport_position_payload(
+            snapshot,
+            0.5,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            48_000.0,
+            false,
+        );
 
         assert!(!position.running);
         assert!(position.playing);
