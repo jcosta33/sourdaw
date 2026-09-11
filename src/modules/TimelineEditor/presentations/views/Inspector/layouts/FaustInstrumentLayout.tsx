@@ -101,7 +101,7 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
     );
     const hasFilter = Boolean(cutoffParam);
 
-    // 3. Compressor (requires declared threshold and ratio)
+    // 3. Compressor (requires declared threshold and ratio; supports 1176 and other compressors)
     const thresholdParam = parameters.find(
         (p) => p.id === 'threshold' || p.id === 'comp-threshold' || p.id === 'Threshold'
     );
