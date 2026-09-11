@@ -10,6 +10,10 @@ export {
 } from './aiActionHistoryStore';
 export type { AiActionEntry, AiActionGroup, AiActionHistoryState } from './aiActionHistoryStore';
 
+export { agentRunStore } from './agentRunStore';
+
+export { pendingActionConfirmationStore } from './pendingActionConfirmationStore';
+
 export { aiBackendPreferenceStore } from './aiBackendPreferenceStore';
 
 export { llmStatusStore } from './llmStatusStore';
