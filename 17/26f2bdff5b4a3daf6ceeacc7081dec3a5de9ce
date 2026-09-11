@@ -1,0 +1,42 @@
+crates/daw-engine/Cargo.toml
+  s_9b530f08172a54::t_dd70400fc0278a 22-25
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_dfb32fa8005b45 383
+  s_9b530f08172a54::t_eab74693bce69d 1049,1162-1178,1192,1243,2823,2883,2893,2899,2910,2918,2925,2933,2943,2953
+  s_9b530f08172a54::t_1be87c20d0560d 35
+  s_9b530f08172a54::t_0ee21c50954ad1 314
+  s_9b530f08172a54::t_309910a576b29a 357-359
+  s_9b530f08172a54::t_0347088ad2bbf7 297
+  s_9b530f08172a54::t_562277e20b4aac 331
+  s_9b530f08172a54::t_ff8f63ca52a8de 1028,1238-1242,1244-1246,2784-2822,2824-2882,2884-2892,2894-2898,2900-2909,2911-2917,2919-2924,2926-2932,2934-2942,2944-2952,2954-3011,3058-3061,6325-6327,7367,7379-7380,19586-19989
+Cargo.lock
+  s_9b530f08172a54::t_81884b6314a1ca 629
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_c5bbcfbc88b1ff 1897-1901,1917-1918,2105-2111,2183-2192,11985-12250
+public/legal/DEPENDENCY-LICENSES.txt
+  s_9b530f08172a54::t_cb1ced9a141dec 9
+release/dependency-license-proofs.json
+  s_9b530f08172a54::t_e6978c366d3716 4,28
+release/open-source-inventory.json
+  s_9b530f08172a54::t_62392bcb3865c6 165-166,399,1710
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_e48a687fd2d696 119,129,143,153,686-745
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_5301c5ca973af8 458-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1726f2bdff5b4a3daf6ceeacc7081dec3a5de9ce",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
