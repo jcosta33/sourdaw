@@ -70,6 +70,23 @@ async function discardSupersededCandidate(runtime: CloudProviderRuntime): Promis
     throw new Error(inFlightCloudConnect.supersededMessage);
 }
 
+/**
+ * Parses the configured OpenAI-compatible base URL. A URL like
+ * `https://user:secret@host/v1` embeds the secret in userinfo, which this runtime
+ * can never honor: the compiled adapter installs only `parsedBaseUrl.origin` and
+ * `fetch` refuses credential URLs on the loopback path. Writing it anyway would
+ * park the secret in the `cloudSession` runtime and the
+ * `hostedLlmProviderStatusStore` badge data, so refuse before any store or
+ * gateway write.
+ */
+function parseCompatibleBaseUrl(baseUrl: string): URL {
+    const parsedBaseUrl = new URL(baseUrl);
+    if (parsedBaseUrl.username !== '' || parsedBaseUrl.password !== '') {
+        throw new Error('OpenAI-compatible provider base URL cannot include embedded credentials');
+    }
+    return parsedBaseUrl;
+}
+
 export const setCloudProviderConfig = inject({ logger })(
     ({ logger }) =>
         async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
@@ -100,7 +117,7 @@ export const setCloudProviderConfig = inject({ logger })(
                     if (!configuration.baseUrl) {
                         throw new Error('OpenAI-compatible provider requires a base URL');
                     }
-                    const parsedBaseUrl = new URL(configuration.baseUrl);
+                    const parsedBaseUrl = parseCompatibleBaseUrl(configuration.baseUrl);
                     const usesPrivilegedAdapter = parsedBaseUrl.protocol === 'https:';
                     if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
                         throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
