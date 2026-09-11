@@ -1,0 +1,49 @@
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_9b530f08172a54::t_da03362f2e3e35 965-970
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_9b530f08172a54::t_84efaa854e8211 682-720
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_06adf2b091dc62::t_521690db7962dc 395,838,1438,1497
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  s_06adf2b091dc62::t_36165e6f9e1b33 4,14,79-98
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_06adf2b091dc62::t_ce2a1c3ec0becd 270
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  s_06adf2b091dc62::t_ed7e340d2bcac3 206-213
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_958b383c42880b::t_93a6d2369e42d2 424-429
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_06adf2b091dc62::t_246b69966bb14d 854,894,926
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "493bc54634eb2c573117e39ca165d52d756e3104",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_958b383c42880b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a964bc222bc22634b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
