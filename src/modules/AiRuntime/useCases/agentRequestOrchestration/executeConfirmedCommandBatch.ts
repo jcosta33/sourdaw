@@ -27,6 +27,7 @@ import {
     type CommandVerifiedBatchReceipt,
     type CommittedEffectFailureResult,
 } from './confirmedBatchOutcomeSupport';
+import { getRenderReceiptAdmissionFailure } from './getRenderReceiptAdmissionFailure';
 import { pendingActionResourceSettlement } from './pendingActionResourceSettlement';
 import { recordOwnedRenderReceipt } from './recordOwnedRenderReceipt';
 
@@ -250,6 +251,27 @@ export async function executeConfirmedCommandBatch(
         groupId: approvedBatchId,
         groupLabel: confirmation.groupLabel ?? confirmation.prompt,
     };
+    const workOwner = trackedWorkLease
+        ? {
+              runId: trackedWorkLease.runId,
+              workId: trackedWorkLease.workId,
+              leaseId: trackedWorkLease.leaseId,
+              cancellationGeneration: trackedWorkLease.cancellationGeneration,
+          }
+        : null;
+    // Checked before any store or lease is touched, and only on a fresh flight: a recovery replay
+    // (`recoveringPendingEffects` or a prior verified receipt) is committed work already admitted
+    // on its own flight, not a new mutation this run is proposing now.
+    if (!hasPriorVerifiedBatchReceipt && !recoveringPendingEffects) {
+        const renderReceiptAdmissionFailure = getRenderReceiptAdmissionFailure({
+            runId: confirmation.runId,
+            workOwner,
+            actions: confirmation.approvalSnapshot.actions,
+        });
+        if (renderReceiptAdmissionFailure) {
+            return { status: 'failed', error: new Error(renderReceiptAdmissionFailure) };
+        }
+    }
     const sectionRenderArtifactsBeforeExecution = getAgentSectionRenderArtifacts();
     const aborter = new AbortController();
     setChatGenerating(true);
@@ -267,14 +289,6 @@ export async function executeConfirmedCommandBatch(
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
     let renderJobAttempts = 0;
-    const workOwner = trackedWorkLease
-        ? {
-              runId: trackedWorkLease.runId,
-              workId: trackedWorkLease.workId,
-              leaseId: trackedWorkLease.leaseId,
-              cancellationGeneration: trackedWorkLease.cancellationGeneration,
-          }
-        : null;
     let committedProjectRevision: string | null = null;
     let finalizationEvidenceFailure: string | null = null;
     let canRebindSectionRenderArtifacts = false;

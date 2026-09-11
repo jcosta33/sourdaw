@@ -4,6 +4,8 @@ import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/ag
 import { type AgentRunArtifact } from '../../models/AgentRun';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 
+import { retainedRenderReceipts } from './retainedRenderReceipts';
+
 export const RENDER_RECEIPT_PERSISTENCE_WARNING =
     'Agent run render artifact state could not be persisted. The rendered audio remains authoritative; review durable run artifact state before retrying.';
 
@@ -41,6 +43,7 @@ export function recordOwnedRenderReceipt(
     if (receipt.phase === 'batch-settled' || !owner || !ownsReceipt(owner, receipt.owner)) {
         return;
     }
+    retainedRenderReceipts.retain(runId, receipt);
     try {
         agentRunLifecycle.recordArtifact({
             runId,

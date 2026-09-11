@@ -16,6 +16,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentRunWorkLease } from '../../../models/AgentRun';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
+import { retainedRenderReceipts } from '../retainedRenderReceipts';
 
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
 type ExecuteBatchResult = Awaited<ReturnType<ExecuteBatch>>;
@@ -52,6 +53,8 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
+type RevisionMatchesLive =
+    typeof import('#/modules/CrdtDocument/useCases').projectRevisionMatchesLiveIgnoringCommandCheckpoint;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
@@ -77,6 +80,7 @@ const mocks = vi.hoisted(() => ({
     recordPostCommitRecoveryFailure: vi.fn<RecordPostCommitRecoveryFailure>(),
     recordReceipt: vi.fn<RecordTrackedAgentRunReceipt>(),
     retainCommitted: vi.fn(),
+    revisionMatchesLive: vi.fn<RevisionMatchesLive>(),
     setActiveAborter: vi.fn(),
     setChatGenerating: vi.fn(),
     updateConfirmation: vi.fn(),
@@ -98,6 +102,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
     captureProjectRevision: mocks.captureRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
 }));
 vi.mock('../../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
@@ -534,6 +539,27 @@ function renderedReceiptFrom(owner: AgentWorkOwnerIdentity | null): AgentRenderR
     };
 }
 
+/** A stored section artifact matching `renderedReceiptFrom`'s provenance, content address, frame
+ *  count and channel count exactly — what `admitAgentRenderReceipt` requires to admit it. */
+function createMatchingSectionArtifact(
+    overrides: Partial<AgentSectionRenderArtifact> = {}
+): AgentSectionRenderArtifact {
+    return {
+        ...RENDER_PROVENANCE,
+        owner: 'agent-section-render',
+        retention: 'session',
+        renderedAt: 11,
+        durationSeconds: 1,
+        frameCount: 4,
+        channelCount: 2,
+        byteSize: 4 * 2 * Float32Array.BYTES_PER_ELEMENT,
+        contentAddress: 'content-address-1',
+        warnings: [],
+        buffer: createTestAudioBuffer(RENDER_PROVENANCE.sampleRate),
+        ...overrides,
+    };
+}
+
 function emitRenderReceipts(receipts: readonly AgentRenderReceipt[]): void {
     mocks.executeBatch.mockImplementation(async (input) => {
         for (const receipt of receipts) {
@@ -587,6 +613,7 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
+    mocks.revisionMatchesLive.mockReturnValue(true);
     mocks.getArtifacts.mockReturnValue([]);
     mocks.rebindArtifacts.mockReset();
     mocks.recordArtifact.mockReset();
@@ -1582,5 +1609,102 @@ describe('executeConfirmedCommandBatch', () => {
         });
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+});
+
+describe('render receipt admission before a confirmed flight', () => {
+    const admissionAction = {
+        type: 'bounceSelection',
+        payload: { trackId: 'track-verse', startBeat: RENDER_PROVENANCE.startBeat, endBeat: RENDER_PROVENANCE.endBeat },
+    } satisfies AppAction;
+
+    function withAction(action: AppAction): PendingAppActionConfirmation {
+        return {
+            ...confirmation,
+            approvalSnapshot: { ...confirmation.approvalSnapshot, actions: [action] },
+        };
+    }
+
+    it("fails before the flight starts when the run's retained render receipt no longer matches the live revision", async () => {
+        emitRenderReceipts([renderedReceiptFrom(TRACKED_RENDER_OWNER)]);
+        await execute();
+
+        mocks.executeBatch.mockClear();
+        mocks.bindCancellation.mockClear();
+        mocks.cancelRun.mockClear();
+        mocks.setChatGenerating.mockClear();
+        mocks.setActiveAborter.mockClear();
+        mocks.revisionMatchesLive.mockReturnValue(false);
+
+        const result = await execute({ confirmation: withAction(admissionAction) });
+
+        expect(result.status).toBe('failed');
+        const failure = result as Extract<typeof result, { status: 'failed' }>;
+        expect(failure.error).toBeInstanceOf(Error);
+        expect((failure.error as Error).message).toContain('stale-revision');
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+        expect(mocks.bindCancellation).not.toHaveBeenCalled();
+        expect(mocks.cancelRun).not.toHaveBeenCalled();
+        expect(mocks.setChatGenerating).not.toHaveBeenCalled();
+        expect(mocks.setActiveAborter).not.toHaveBeenCalled();
+    });
+
+    it("executes unchanged when the run's retained render receipt still matches the live revision and artifact", async () => {
+        emitRenderReceipts([renderedReceiptFrom(TRACKED_RENDER_OWNER)]);
+        await execute();
+
+        mocks.revisionMatchesLive.mockReturnValue(true);
+        mocks.getArtifacts.mockReturnValue([createMatchingSectionArtifact()]);
+
+        const result = await execute({ confirmation: withAction(admissionAction) });
+
+        expect(result).toMatchObject({ status: 'completed' });
+        expect(mocks.executeBatch).toHaveBeenCalled();
+    });
+
+    it('executes unchanged when the bounceSelection range was never rendered by this run', async () => {
+        const unrenderedAction = {
+            type: 'bounceSelection',
+            payload: { trackId: 'track-verse', startBeat: 500, endBeat: 600 },
+        } satisfies AppAction;
+
+        const result = await execute({ confirmation: withAction(unrenderedAction) });
+
+        expect(result).toMatchObject({ status: 'completed' });
+        expect(mocks.executeBatch).toHaveBeenCalled();
+    });
+});
+
+describe('render receipt retention ownership', () => {
+    it('does not retain a rendered receipt reported under a foreign owner', async () => {
+        const pinRunId = 'run-pin-foreign-owner';
+        const pinLease = { ...lease, runId: pinRunId } satisfies AgentRunWorkLease;
+        const pinConfirmation = { ...confirmation, runId: pinRunId } satisfies PendingAppActionConfirmation;
+        const foreignOwner: AgentWorkOwnerIdentity = {
+            ...TRACKED_RENDER_OWNER,
+            runId: pinRunId,
+            workId: 'foreign-work',
+        };
+        mocks.executeBatch.mockImplementation(async (batchInput) => {
+            batchInput.options?.onDeferredEffectAttempt?.({
+                kind: 'render-receipt',
+                operation: 'renderProjectSections',
+                workId: RENDER_PROVENANCE.jobId,
+                receipt: {
+                    phase: 'rendered',
+                    owner: foreignOwner,
+                    provenance: RENDER_PROVENANCE,
+                    contentAddress: 'content-address-1',
+                    frameCount: 4,
+                    channelCount: 2,
+                    renderedAt: 11,
+                },
+            });
+            return completedBatchResult;
+        });
+
+        await execute({ confirmation: pinConfirmation, trackedWorkLease: pinLease });
+
+        expect(retainedRenderReceipts.getRetained(pinRunId)).toEqual([]);
     });
 });

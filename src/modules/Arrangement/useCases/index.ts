@@ -40,6 +40,7 @@ export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
 export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
+export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { setTrackInput } from './setTrackInput';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
