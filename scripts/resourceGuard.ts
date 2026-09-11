@@ -112,14 +112,45 @@ const measuredScriptBudgets = new Map<string, number>([
     ['deps:validate', 5.5 * 1024 ** 3],
 ]);
 
-function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
+export function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
     if (command !== 'pnpm') {
         return undefined;
     }
-    if (args[0] === 'run') {
-        return args[1];
+    const optionsWithArgument = new Set(['-C', '--dir', '-F', '--filter', '--reporter', '--loglevel']);
+    let index = 0;
+    while (index < args.length) {
+        const arg = args[index];
+        if (arg === undefined || arg === '--') {
+            return undefined;
+        }
+        if (arg === 'run') {
+            index++;
+            continue;
+        }
+        if (optionsWithArgument.has(arg)) {
+            index += 2;
+            continue;
+        }
+        if (
+            arg.startsWith('--config.') ||
+            arg.startsWith('--filter=') ||
+            arg.startsWith('-F=') ||
+            arg.startsWith('--dir=') ||
+            arg.startsWith('-C=') ||
+            arg.startsWith('--reporter=') ||
+            arg.startsWith('--loglevel=') ||
+            arg === '--silent' ||
+            arg === '-s' ||
+            arg === '--stream' ||
+            arg === '-w' ||
+            arg === '--workspace-root'
+        ) {
+            index++;
+            continue;
+        }
+        return arg;
     }
-    return args[0];
+    return undefined;
 }
 
 export function resolveDefaultMaxRssBytes(input: {

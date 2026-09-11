@@ -26,6 +26,7 @@ import {
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
+    pnpmScriptName,
     psSamplingArgs,
     readGuardFailureReceipt,
     resolveDefaultMaxRssBytes,
@@ -853,6 +854,48 @@ describe('default budgets', () => {
             args: ['test:e2e:browser-ai-webgpu-admission'],
             expected: 5.5 * 1024 ** 3,
         },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter', 'sourdaw', 'deps:validate'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter=sourdaw', 'deps:validate'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['-C', 'packages/app', 'test:e2e'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--dir', 'packages/app', 'test:e2e'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--silent', 'run', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
     ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
     });
@@ -876,6 +919,17 @@ describe('default budgets', () => {
             });
             expect(typecheckResult.code).toBe(0);
             expect(typecheckResult.maxRssBytes).toBe(6 * 1024 ** 3);
+
+            const prefixedResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(prefixedResult.code).toBe(0);
+            expect(prefixedResult.maxRssBytes).toBe(6 * 1024 ** 3);
 
             const e2eResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
@@ -913,6 +967,42 @@ describe('default budgets', () => {
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
+    });
+});
+
+describe('pnpmScriptName', () => {
+    it.each([
+        { command: 'pnpm', args: ['typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['run', 'typecheck:test'], expected: 'typecheck:test' },
+        {
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        {
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        { command: 'pnpm', args: ['--filter', 'sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-F', 'sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--filter=sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-C', '/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--dir', '/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--dir=/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--silent', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-s', 'typecheck:test'], expected: 'typecheck:test' },
+        {
+            command: 'pnpm',
+            args: ['--config.foo=bar', '--dir', '/tmp', '--silent', 'run', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        { command: 'pnpm', args: ['--silent'], expected: undefined },
+        { command: 'pnpm', args: ['--filter', 'sourdaw'], expected: undefined },
+        { command: 'pnpm', args: ['--'], expected: undefined },
+        { command: 'node', args: ['--config.foo=bar', 'typecheck:test'], expected: undefined },
+    ])('resolves script name for $command with $args to $expected', ({ command, args, expected }) => {
+        expect(pnpmScriptName(command, args)).toBe(expected);
     });
 });
 
