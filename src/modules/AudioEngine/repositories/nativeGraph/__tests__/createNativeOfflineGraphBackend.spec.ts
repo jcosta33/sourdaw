@@ -83,6 +83,9 @@ function scriptedTransport(options?: {
         async commitLevainBank() {
             throw new Error('the offline backend stages no levain bank (commit_levain_bank)');
         },
+        async releaseLevainBank() {
+            throw new Error('the offline backend stages no levain bank (release_levain_bank)');
+        },
         async renderGraphOffline(input) {
             renders.push(input);
             return interleavedBytes(input.frames, (frame, channel) => (channel === 0 ? frame : -frame));

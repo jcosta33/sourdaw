@@ -3937,9 +3937,9 @@ pub async fn apply_graph_commands(
     let progress = engine.graph_progress_snapshot();
     registry_guard.release_landed(progress);
 
-    // Lock order, here and in `map_graph_batch`: timeline samples first, then
-    // levain banks. Both sites take both, and a site that took them the other
-    // way round would deadlock against this one.
+    // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
+    // timeline samples first, then levain banks. All three sites take both, and
+    // a site that took them the other way round would deadlock against these.
     let samples = state
         .timeline_samples
         .lock()
@@ -4284,9 +4284,10 @@ pub async fn map_graph_batch(
         None => None,
     };
 
-    // Lock order, here and in `apply_graph_commands`: timeline samples first,
-    // then levain banks. Both sites take both, and a site that took them the
-    // other way round would deadlock against this one.
+    // Lock order, here and in `apply_graph_commands` and
+    // `render_graph_offline`: timeline samples first, then levain banks. All
+    // three sites take both, and a site that took them the other way round
+    // would deadlock against these.
     let samples = state
         .timeline_samples
         .lock()
@@ -4365,27 +4366,25 @@ pub async fn map_graph_batch(
 /// Map one self-contained batch for an offline render: fresh registry, no
 /// live engine.
 ///
-/// The caller holds the sample-pool lock only across this call — mapping
-/// clones the material each clip plays into its command, so the render itself
-/// runs without the lock.
+/// The caller holds the sample-pool and bank-store locks only across this call
+/// — mapping clones the material each clip plays into its command and builds
+/// each sampler's instance here, so the render itself runs without either lock.
 fn map_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
+    levain_banks: &mut LevainBankStore,
     sample_rate: f32,
 ) -> Result<Vec<GraphCommand>, String> {
     let mut registry = GraphRegistry::default();
     // An offline render has no engine and therefore no hosted plugin instances:
     // an external device on a sounding strip refuses here, as it always has.
-    // A Levain maps against an empty bank store under the same law — this seam
-    // carries the batch alone, so a bank staged on the app's own state is not
-    // one this render was handed.
     Ok(map_batch(
         batch,
         &mut registry,
         samples,
         sample_rate,
         &HashMap::new(),
-        &mut LevainBankStore::default(),
+        levain_banks,
     )?
     .ops)
 }
@@ -4434,10 +4433,11 @@ fn render_offline_ops(
 fn render_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
+    levain_banks: &mut LevainBankStore,
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
-    let ops = map_offline_batch(batch, samples, sample_rate)?;
+    let ops = map_offline_batch(batch, samples, levain_banks, sample_rate)?;
     let (left, right) = render_offline_ops(ops, frames, sample_rate)?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
@@ -4474,15 +4474,24 @@ pub async fn render_graph_offline(
         ));
     }
 
-    // The pool lock spans only the mapping: every source the batch plays is
-    // cloned into its clip command there, so the render — the long part —
-    // runs with the pool free for concurrent registrations.
+    // Both locks span only the mapping: every source the batch plays is cloned
+    // into its clip command there and every sampler's instance is built there,
+    // so the render — the long part — runs with both free for concurrent
+    // registrations.
+    //
+    // Lock order, here and in `apply_graph_commands` and `map_graph_batch`:
+    // timeline samples first, then levain banks. All three sites take both, and
+    // a site that took them the other way round would deadlock against these.
     let ops = {
         let samples = state
             .timeline_samples
             .lock()
             .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
-        map_offline_batch(&batch, &samples, sample_rate as f32)?
+        let mut levain_banks = state
+            .levain_banks
+            .lock()
+            .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+        map_offline_batch(&batch, &samples, &mut levain_banks, sample_rate as f32)?
     };
     let (left, right) = render_offline_ops(ops, frames, sample_rate as f32)?;
 
@@ -5833,10 +5842,22 @@ mod tests {
     fn an_offline_render_is_deterministic_and_a_clip_through_a_fader_is_audible() {
         let samples = sample_pool();
 
-        let first = render_offline_batch(&clip_and_gain_batch(), &samples, 4_800, 48_000.0)
-            .expect("the render should succeed");
-        let second = render_offline_batch(&clip_and_gain_batch(), &samples, 4_800, 48_000.0)
-            .expect("the render should succeed");
+        let first = render_offline_batch(
+            &clip_and_gain_batch(),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("the render should succeed");
+        let second = render_offline_batch(
+            &clip_and_gain_batch(),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("the render should succeed");
 
         assert_eq!(first, second, "same batch, same frames, same bits");
         assert!(first.iter().any(|sample| *sample != 0.0));
@@ -5858,14 +5879,26 @@ mod tests {
             { "kind": "set-track-output", "trackId": "missing", "target": { "kind": "master" } }
         ]));
 
-        let refusal = render_offline_batch(&refused, &samples, 4_800, 48_000.0)
-            .expect_err("the whole batch must refuse before any application");
+        let refusal = render_offline_batch(
+            &refused,
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect_err("the whole batch must refuse before any application");
         assert!(refusal.contains("commands[2]"));
 
         // And the refusal really did precede application: a fresh render of
         // an empty batch over the same pool is silence, bit for bit.
-        let silence = render_offline_batch(&batch(json!([])), &samples, 4_800, 48_000.0)
-            .expect("an empty batch renders");
+        let silence = render_offline_batch(
+            &batch(json!([])),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("an empty batch renders");
         assert!(silence.iter().all(|sample| *sample == 0.0));
     }
 
@@ -10189,6 +10222,7 @@ mod tests {
         let Err(refusal) = map_offline_batch(
             &batch(hosted_plugin_strip(true, false)),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             48_000.0,
         ) else {
             panic!("an offline render holds no plugin instance to bind");
@@ -10733,6 +10767,124 @@ mod tests {
         );
     }
 
+    /// Interleaved f32 LE bytes of a mono 440 Hz tone, so a bank built from it
+    /// is audible rather than a committed run of zeros.
+    fn levain_tone_pcm(frames: usize, rate: f32) -> Vec<u8> {
+        (0..frames)
+            .flat_map(|frame| {
+                let phase = std::f32::consts::TAU * 440.0 * (frame as f32) / rate;
+                ((phase.sin() * 0.5).to_le_bytes()).to_vec()
+            })
+            .collect()
+    }
+
+    /// A state holding one committed single-zone Levain bank under `bank_key`,
+    /// staged through the three command bodies exactly as the renderer stages
+    /// one.
+    fn state_holding_a_committed_levain_bank(bank_key: &str, rate: f32) -> AppState {
+        let state = AppState::default();
+        block_on_test(crate::commands::levain::begin_levain_bank(
+            bank_key.to_string(),
+            "strings".to_string(),
+            &state,
+        ))
+        .expect("the bank opens");
+        block_on_test(crate::commands::levain::register_levain_sample(
+            bank_key.to_string(),
+            "a3.wav".to_string(),
+            f64::from(rate),
+            1,
+            levain_tone_pcm(4_800, rate),
+            &state,
+        ))
+        .expect("the bank takes its sample");
+        block_on_test(crate::commands::levain::commit_levain_bank(
+            bank_key.to_string(),
+            json!({
+                "zones": [{
+                    "sampleId": "a3.wav", "articulationId": 0, "rootNote": 69,
+                    "loKey": 0, "hiKey": 127, "loVel": 0, "hiVel": 127,
+                    "rrPos": 0, "rrLen": 1, "micId": 0, "isRelease": false,
+                    "loopMode": "none", "loopStart": 0, "loopEnd": 0, "loopCrossfade": 0,
+                    "gainDb": 0.0, "attack": 0.0, "decay": 0.0, "sustain": 1.0, "release": 0.05
+                }],
+                "legatoTransitions": [],
+                "numArticulations": 1,
+                "numMics": 1
+            }),
+            &state,
+        ))
+        .expect("the bank commits");
+        state
+    }
+
+    /// An offline render maps a Levain against the bank store this process
+    /// holds, not an empty one.
+    ///
+    /// The offline seam and the mapping seam run in the same process over the
+    /// same state, so a bank the renderer staged and committed is one both must
+    /// see. While the offline seam substituted an empty store, the mapping
+    /// probe reported a device naming that bank as built and the render of the
+    /// identical batch refused it as unregistered: same process, same batch,
+    /// two answers, and an export that dropped the instrument the probe had
+    /// just admitted.
+    #[test]
+    fn an_offline_levain_render_maps_against_the_process_bank_store() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+        const BANK: &str = "strings@1";
+
+        let state = state_holding_a_committed_levain_bank(BANK, SAMPLE_RATE);
+        let sounding = midi_batch(json!([
+            {
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-levain", "type": "levain", "bypassed": false,
+                               "parameterValues": {}, "sampleBankKey": BANK } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            },
+            {
+                "kind": "schedule-midi",
+                "trackId": "t1",
+                "deviceId": "d-levain",
+                "probabilitySeed": MIDI_PROBABILITY_SEED,
+                "notes": [ note_at(0.0, 69, 0) ],
+            }
+        ]));
+
+        // `GraphCommand` carries no `Debug`, so the refusal is taken by
+        // pattern rather than `expect_err`.
+        let Err(refusal) = map_offline_batch(
+            &sounding,
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            SAMPLE_RATE,
+        ) else {
+            panic!("a store holding no bank must refuse the device");
+        };
+        assert!(
+            refusal.contains("d-levain") && refusal.contains(BANK),
+            "the refusal must name the device and the bank it could not find, got: {refusal}"
+        );
+
+        let mut banks = state.levain_banks.lock().expect("the bank lock opens");
+        assert!(
+            map_offline_batch(&sounding, &sample_pool(), &mut banks, SAMPLE_RATE).is_ok(),
+            "the committed bank this process holds must build the device"
+        );
+
+        let rendered =
+            render_offline_batch(&sounding, &sample_pool(), &mut banks, FRAMES, SAMPLE_RATE)
+                .expect("the batch renders offline against the process store");
+        assert!(
+            rendered.iter().any(|sample| sample.abs() > 0.001),
+            "the render against the committed bank is silent, so the sampler sounded nothing"
+        );
+    }
+
     /// A Levain on a silent strip drops out of the chain instead of refusing
     /// the batch.
     ///
@@ -10798,6 +10950,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -10871,6 +11024,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -11149,6 +11303,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -11255,6 +11410,7 @@ mod tests {
                 }
             ])),
             &samples,
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -12668,6 +12824,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )

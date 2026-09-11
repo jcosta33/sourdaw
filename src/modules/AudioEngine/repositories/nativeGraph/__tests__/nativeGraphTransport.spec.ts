@@ -115,6 +115,18 @@ describe('createDesktopNativeGraphTransport', () => {
         expect(result).toBe(ack);
     });
 
+    it('drops a Levain bank through release_levain_bank', async () => {
+        const ack = { bankKey: 'strings@1', released: true };
+        vi.mocked(desktopInvoke).mockResolvedValue(ack);
+
+        const result = await createDesktopNativeGraphTransport().releaseLevainBank({
+            bankKey: 'strings@1',
+        });
+
+        expect(desktopInvoke).toHaveBeenCalledWith('release_levain_bank', { bankKey: 'strings@1' });
+        expect(result).toBe(ack);
+    });
+
     it('renders through render_graph_offline on the binary-response path', async () => {
         const bytes = new Uint8Array(8);
         vi.mocked(invokeForBinaryResponse).mockResolvedValue(bytes);

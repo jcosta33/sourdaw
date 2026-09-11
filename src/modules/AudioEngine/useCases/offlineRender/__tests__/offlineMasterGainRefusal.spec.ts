@@ -41,6 +41,7 @@ function unreachableTransport(): NativeGraphTransport {
         beginLevainBank: refuse('begin_levain_bank'),
         registerLevainSample: refuse('register_levain_sample'),
         commitLevainBank: refuse('commit_levain_bank'),
+        releaseLevainBank: refuse('release_levain_bank'),
         renderGraphOffline: refuse('render_graph_offline'),
         applyGraphCommands: refuse('apply_graph_commands'),
         mapGraphBatch: refuse('map_graph_batch'),

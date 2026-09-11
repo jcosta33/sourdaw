@@ -1,5 +1,5 @@
-//! The control-side Levain sample-bank store, and the three commands that
-//! fill it.
+//! The control-side Levain sample-bank store, and the commands that fill and
+//! empty it.
 //!
 //! A sampler sounds the bank loaded into it and nothing else, and loading one
 //! is a sequence of allocations the audio thread may not perform (ADR 0020).
@@ -7,6 +7,9 @@
 //! `register_levain_sample` per decoded file, `commit_levain_bank` carrying the
 //! zone layout — and the graph mapper builds each Levain device's instance from
 //! the committed bank at strip construction (`commands::graph::map_device`).
+//! `release_levain_bank` is the other end of that: the store never evicts, so
+//! a bank stands until the renderer's own lease on the instrument ends and
+//! releases it.
 //!
 //! ## One vocabulary, two runtimes
 //!
@@ -31,12 +34,13 @@ use crate::state::AppState;
 use audioadapter_buffers::direct::InterleavedSlice;
 use daw_dsp::levain::LevainInstance;
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 /// Note-voices one natively hosted Levain can sound at once.
@@ -65,6 +69,16 @@ const RESAMPLER_CUTOFF: f32 = 0.95;
 /// accept. The ratio never moves after construction here, so this is headroom
 /// the crate requires rather than a range this caller uses.
 const RESAMPLER_MAX_RELATIVE_RATIO: f64 = 2.0;
+
+/// The bank sample rates this store accepts, in Hz, inclusive at both ends.
+///
+/// Every rate a Chromium `AudioContext` decodes instrument material at lies
+/// inside it, so the bound refuses nothing the renderer can stage. What it buys
+/// is a bounded conversion ratio — 24 either way — and therefore a bounded
+/// conversion buffer: [`resample_interleaved`] sizes its output by `to/from`,
+/// so a bank declared at a rate near zero would ask for an allocation
+/// thousands of times the material and abort the process rather than refuse.
+const BANK_SAMPLE_RATE_HZ: RangeInclusive<u32> = 8_000..=192_000;
 
 // ── Wire layout ─────────────────────────────────────────────────────────────
 
@@ -215,6 +229,15 @@ struct LevainBank {
 /// Every Levain bank this process holds, keyed by the bank key the renderer
 /// names (the same key its worklet-side cache is keyed by).
 ///
+/// The renderer owns bank lifetime, through `begin_levain_bank` and
+/// `release_levain_bank`: its decoded-bank leases release when the last device
+/// using an instrument goes away, and the release command is how that reaches
+/// here. This store therefore holds exactly what the renderer has staged and
+/// not released. **It does not evict** — unlike the bounded
+/// `TimelineSamplePool`, nothing here drops a bank the renderer still names,
+/// because a bank that vanished under a live device would refuse the next
+/// graph batch that maps it.
+///
 /// Control-side only. The audio thread never reaches it: what crosses to the
 /// engine is a fully built `LevainInstance`, constructed here.
 #[derive(Debug, Default)]
@@ -228,7 +251,7 @@ impl LevainBankStore {
     /// Replacing rather than refusing: the key names the bank's identity, and
     /// the renderer owns when that identity changes — the same law
     /// `register_timeline_sample` applies to a source id.
-    pub fn begin(&mut self, bank_key: &str, instrument_id: &str) -> Result<(), String> {
+    fn begin(&mut self, bank_key: &str, instrument_id: &str) -> Result<(), String> {
         if bank_key.is_empty() {
             return Err("Levain bank key must not be empty".to_string());
         }
@@ -269,6 +292,15 @@ impl LevainBankStore {
                  finite number"
             ));
         }
+        let rate_hz = sample_rate.round() as u32;
+        if !BANK_SAMPLE_RATE_HZ.contains(&rate_hz) {
+            return Err(format!(
+                "levain bank '{bank_key}' sample '{sample_id}': sample rate {sample_rate} Hz lies \
+                 outside the {} to {} Hz this backend converts banks across",
+                BANK_SAMPLE_RATE_HZ.start(),
+                BANK_SAMPLE_RATE_HZ.end()
+            ));
+        }
         let channels = match channels {
             1 | 2 => channels as usize,
             other => {
@@ -294,7 +326,7 @@ impl LevainBankStore {
         bank.samples.insert(
             sample_id.to_string(),
             LevainBankSample {
-                sample_rate: sample_rate.round() as u32,
+                sample_rate: rate_hz,
                 channels: channels as u8,
                 interleaved,
                 resampled: HashMap::new(),
@@ -347,6 +379,17 @@ impl LevainBankStore {
         Ok(ack)
     }
 
+    /// Drop the bank under `bank_key` with every per-rate conversion it
+    /// cached, answering whether one stood there.
+    ///
+    /// Idempotent by design: a key this process does not hold answers `false`
+    /// rather than erroring, because the renderer releases a lease it may
+    /// already have replaced, and a release that failed would leave the caller
+    /// nothing to do about it.
+    fn release(&mut self, bank_key: &str) -> bool {
+        self.banks.remove(bank_key).is_some()
+    }
+
     /// Whether `bank_key` names a bank a device could be built from.
     pub fn is_committed(&self, bank_key: &str) -> bool {
         self.banks
@@ -395,10 +438,11 @@ impl LevainBankStore {
         let mut instance = LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES);
         instance.begin_sample_bank(instrument_id);
 
-        // Sorted, because `add_sample` hands back the engine's own ascending
-        // ids: a build that walked the map's iteration order would number the
-        // same bank differently from one run to the next, and a zone's sample
-        // is addressed by that number.
+        // Sorted only so two builds of one bank number their samples
+        // identically: the zones below address their material through
+        // `engine_ids` by string id, so the order is not otherwise observable —
+        // what it buys is that a diagnostic naming engine sample 3 means the
+        // same file every run.
         let mut sample_ids: Vec<String> = samples.keys().cloned().collect();
         sample_ids.sort_unstable();
         let mut engine_ids: HashMap<String, u32> = HashMap::new();
@@ -520,13 +564,23 @@ fn scale_frames(frame: u32, from_hz: u32, to_hz: u32) -> u32 {
 }
 
 /// Convert interleaved PCM from `from_hz` to `to_hz`, preserving channel
-/// identity and answering exactly `round(frames · to / from)` frames.
+/// identity and answering exactly `round(frames · to / from)` frames, with the
+/// resampler's startup delay off the head.
 ///
-/// The resampler reports its own group delay and `process_all_into_buffer`
-/// trims it, but the trimmed length is the crate's own rounding of the ratio
-/// rather than this caller's: the result is trimmed or zero-padded to the
-/// frame count the loop points above are scaled by, so the two can never
-/// disagree.
+/// The resampler's output lags its input by `output_delay()` frames, so the
+/// head of what it produces is interpolator warm-up rather than material. This
+/// drives it directly instead of calling `process_all_into_buffer`, because
+/// that method only trims the delay inside its whole-chunk loop: a clip no
+/// longer than one chunk never enters that loop, keeps the warm-up at its head,
+/// and loses exactly as much real material off its tail when the caller
+/// truncates. Here the chunks, the partial remainder and the silent pumping
+/// that flushes the delay are all fed by hand, and the answer is the frames at
+/// `[delay, delay + target)` — the same trim for a 700-frame sample as for a
+/// 44 100-frame one.
+///
+/// The target is this caller's own rounding rather than the crate's, so the
+/// frame count can never disagree with the one the loop points above are
+/// scaled by.
 ///
 /// Deinterleaving is the adapter's job: `InterleavedSlice` presents the buffer
 /// to rubato as channels, and the output adapter writes the converted channels
@@ -566,18 +620,59 @@ fn resample_interleaved(
     )
     .map_err(|error| format!("Failed to create the levain bank resampler: {error}"))?;
 
-    let needed = resampler.process_all_needed_output_len(frames);
+    let delay = resampler.output_delay();
+    let chunk_frames = resampler.input_frames_next();
+    // Every call writes a whole output chunk wherever it is pointed, so the
+    // buffer holds what the answer needs plus one chunk of headroom for the
+    // call that reaches it.
+    let capacity = delay + target_frames + resampler.output_frames_max();
+
     let source = InterleavedSlice::new(input, channels, frames)
         .map_err(|error| format!("Levain bank resampler input error: {error}"))?;
-    let mut converted = vec![0.0_f32; needed * channels];
-    let mut destination = InterleavedSlice::new_mut(converted.as_mut_slice(), channels, needed)
-        .map_err(|error| format!("Levain bank resampler output error: {error}"))?;
-    let (_taken, produced) = resampler
-        .process_all_into_buffer(&source, &mut destination, frames, None)
-        .map_err(|error| format!("Levain bank resample error: {error}"))?;
+    let mut converted = vec![0.0_f32; capacity * channels];
+    let mut indexing = Indexing {
+        input_offset: 0,
+        output_offset: 0,
+        active_channels_mask: None,
+        partial_len: None,
+    };
+    {
+        let mut destination =
+            InterleavedSlice::new_mut(converted.as_mut_slice(), channels, capacity)
+                .map_err(|error| format!("Levain bank resampler output error: {error}"))?;
+        let mut produced = 0usize;
+        let mut frames_left = frames;
+        while frames_left > chunk_frames {
+            let (taken, made) = resampler
+                .process_into_buffer(&source, &mut destination, Some(&indexing))
+                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+            frames_left -= taken;
+            produced += made;
+            indexing.input_offset += taken;
+            indexing.output_offset += made;
+        }
+        if frames_left > 0 {
+            indexing.partial_len = Some(frames_left);
+            let (_taken, made) = resampler
+                .process_into_buffer(&source, &mut destination, Some(&indexing))
+                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+            produced += made;
+            indexing.output_offset += made;
+        }
+        // Silence from here on: the material is spent, and what is still owed
+        // is the delay's worth of it the resampler has not let out yet.
+        indexing.partial_len = Some(0);
+        while produced < delay + target_frames {
+            let (_taken, made) = resampler
+                .process_into_buffer(&source, &mut destination, Some(&indexing))
+                .map_err(|error| format!("Levain bank resample error: {error}"))?;
+            produced += made;
+            indexing.output_offset += made;
+        }
+    }
 
-    converted.truncate(produced.min(target_frames) * channels);
-    converted.resize(target_frames * channels, 0.0);
+    converted.truncate((delay + target_frames) * channels);
+    converted.drain(..delay * channels);
     Ok((converted, target_frames as u32))
 }
 
@@ -632,6 +727,22 @@ pub async fn commit_levain_bank(
         .lock()
         .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
     banks.commit(&bank_key, layout)
+}
+
+/// Drop the Levain bank under `bank_key`, with its material and every
+/// conversion of it. Returns `{ "bankKey": …, "released": bool }`.
+///
+/// This is how the renderer's decoded-bank lease reaches the native side: the
+/// store holds a bank until this command takes it away, so a release that
+/// never arrives is a bank that never goes. Releasing a key this process does
+/// not hold answers `released: false`, not an error.
+pub async fn release_levain_bank(bank_key: String, state: &AppState) -> Result<Value, String> {
+    let mut banks = state
+        .levain_banks
+        .lock()
+        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+    let released = banks.release(&bank_key);
+    Ok(serde_json::json!({ "bankKey": bank_key, "released": released }))
 }
 
 #[cfg(test)]
@@ -887,6 +998,26 @@ mod tests {
     }
 
     #[test]
+    fn a_sample_rate_outside_the_accepted_range_refuses() {
+        let mut store = LevainBankStore::default();
+        store.begin(BANK, "strings").expect("the bank opens");
+
+        for rate in [48.0_f64, 1_000_000.0] {
+            let refusal = store
+                .add_sample(BANK, SAMPLE, rate, 1, &pcm_bytes(&[0.0; 8]))
+                .expect_err("a rate outside the accepted range must refuse");
+            assert!(
+                refusal.contains(SAMPLE) && refusal.contains(&format!("{rate}")),
+                "the refusal must name the sample and the rate it read, got: {refusal}"
+            );
+        }
+
+        store
+            .add_sample(BANK, "hi.wav", 192_000.0, 1, &pcm_bytes(&[0.0; 8]))
+            .expect("the top of the accepted range is inside it");
+    }
+
+    #[test]
     fn a_duplicate_sample_id_refuses() {
         let mut store = LevainBankStore::default();
         store.begin(BANK, "strings").expect("the bank opens");
@@ -1004,6 +1135,192 @@ mod tests {
         assert!(
             middle.windows(2).all(|pair| pair[1] >= pair[0]),
             "the converted ramp is not monotonic, so the left channel is not the ramp it was"
+        );
+    }
+
+    /// The rates the startup-delay case authors at and converts to, and how
+    /// long its material stays silent before it opens.
+    const TRIM_SOURCE_RATE: u32 = 44_100;
+    const TRIM_TARGET_RATE: u32 = 48_000;
+    const TRIM_ONSET_FRAMES: usize = 200;
+    /// What counts as material rather than the floor around it.
+    const AUDIBLE: f32 = 0.01;
+
+    /// `frames` of mono material at [`TRIM_SOURCE_RATE`]: silence until
+    /// [`TRIM_ONSET_FRAMES`], then a 440 Hz tone opening over a 5 ms fade.
+    ///
+    /// The tone starts at its own peak so the fade alone decides when the
+    /// material clears [`AUDIBLE`]. Starting it at a zero crossing would put
+    /// the onset several frames past the silence for a reason that has nothing
+    /// to do with the conversion, and this case is about where the onset moves.
+    fn delayed_onset(frames: usize) -> Vec<f32> {
+        let fade = (TRIM_SOURCE_RATE as f32 * 0.005) as usize;
+        (0..frames)
+            .map(|frame| {
+                if frame < TRIM_ONSET_FRAMES {
+                    return 0.0;
+                }
+                let voiced = frame - TRIM_ONSET_FRAMES;
+                let phase =
+                    std::f32::consts::TAU * 440.0 * (voiced as f32) / (TRIM_SOURCE_RATE as f32);
+                phase.cos() * (voiced as f32 / fade as f32).min(1.0)
+            })
+            .collect()
+    }
+
+    /// The first frame of `samples` that clears [`AUDIBLE`].
+    fn onset(samples: &[f32]) -> usize {
+        samples
+            .iter()
+            .position(|sample| sample.abs() > AUDIBLE)
+            .expect("the material becomes audible somewhere")
+    }
+
+    fn converted_frames_for(frames: usize) -> usize {
+        (frames as f64 * f64::from(TRIM_TARGET_RATE) / f64::from(TRIM_SOURCE_RATE)).round() as usize
+    }
+
+    /// A conversion trims the resampler's startup delay at every clip length,
+    /// so material keeps its place in time.
+    ///
+    /// 700 frames is shorter than the resampler's 1024-frame chunk and 4096 is
+    /// several of them. The crate's own `process_all_into_buffer` trims the
+    /// delay only inside its whole-chunk loop, so the short clip is the one
+    /// that comes back with the interpolator's warm-up at its head — and, once
+    /// the caller cuts it to the frame count the loop points are scaled by,
+    /// with exactly that much real material missing off its tail.
+    #[test]
+    fn a_conversion_trims_the_startup_delay_at_every_clip_length() {
+        for frames in [700_usize, 4_096] {
+            let material = delayed_onset(frames);
+            assert!(
+                onset(&material).abs_diff(TRIM_ONSET_FRAMES) <= 4,
+                "the fixture's own onset is frame {}, not the {TRIM_ONSET_FRAMES} the case \
+                 measures the shift against",
+                onset(&material)
+            );
+
+            let (converted, converted_frames) =
+                resample_interleaved(&material, 1, TRIM_SOURCE_RATE, TRIM_TARGET_RATE)
+                    .expect("the conversion runs");
+
+            let expected_frames = converted_frames_for(frames);
+            assert_eq!(
+                converted_frames as usize, expected_frames,
+                "a {frames}-frame clip answered a frame count the loop-point scaling disagrees with"
+            );
+            assert_eq!(converted.len(), expected_frames);
+
+            let expected_onset = converted_frames_for(TRIM_ONSET_FRAMES);
+            assert!(
+                onset(&converted).abs_diff(expected_onset) <= 4,
+                "a {frames}-frame clip converted with its onset at frame {}, not the \
+                 {expected_onset} its place in time puts it at: the startup delay was not trimmed",
+                onset(&converted)
+            );
+        }
+    }
+
+    /// The three string encodings, pair by pair, against the worklet's own
+    /// tables: `LEGATO_TRANSITION_TYPE_IDS` and `LEGATO_DYNAMIC_IDS` at
+    /// `src/modules/AudioEngine/services/levainProcessor.ts` lines 48-59, and
+    /// the loop-mode arm of `addZone` at lines 535-543 of the same file.
+    ///
+    /// A name is what crosses the wire, so a table that shifted by one here
+    /// would loop a zone the wrong way or pick a neighbouring dynamic layer —
+    /// audible, and invisible to every case that only ever sends `"none"`.
+    #[test]
+    fn the_string_encodings_match_the_worklets_own_tables() {
+        assert_eq!(loop_mode_id("none"), 0);
+        assert_eq!(loop_mode_id("forward"), 1);
+        assert_eq!(loop_mode_id("pingpong"), 2);
+        assert_eq!(
+            loop_mode_id("sideways"),
+            0,
+            "an unknown loop mode is no loop"
+        );
+
+        assert_eq!(legato_transition_type_id("slurred"), 0);
+        assert_eq!(legato_transition_type_id("portamento"), 1);
+        assert_eq!(
+            legato_transition_type_id("glissando"),
+            0,
+            "an unknown transition type is slurred"
+        );
+
+        assert_eq!(legato_dynamic_id("pp"), 0);
+        assert_eq!(legato_dynamic_id("p"), 1);
+        assert_eq!(legato_dynamic_id("mp"), 2);
+        assert_eq!(legato_dynamic_id("mf"), 3);
+        assert_eq!(legato_dynamic_id("f"), 4);
+        assert_eq!(legato_dynamic_id("ff"), 5);
+        assert_eq!(legato_dynamic_id("fff"), 0, "an unknown dynamic is pp");
+    }
+
+    #[test]
+    fn releasing_a_bank_drops_it_and_a_missing_key_is_not_an_error() {
+        let mut store = committed_bank(48_000);
+
+        assert!(
+            store.release(BANK),
+            "releasing a bank the store holds must report that it was there"
+        );
+
+        assert!(
+            !store.is_committed(BANK),
+            "the released bank is still committed, so nothing was dropped"
+        );
+        let refusal = build_refusal(&mut store, "a released bank must refuse to build");
+        assert!(
+            refusal.contains(BANK) && refusal.contains("not registered"),
+            "a released bank must refuse as one this process never held, got: {refusal}"
+        );
+        assert!(
+            !store.release(BANK),
+            "releasing a key nothing holds must answer false rather than erroring"
+        );
+    }
+
+    #[test]
+    fn the_release_command_reports_the_bank_it_dropped_once() {
+        let state = AppState::default();
+        block_on_test(begin_levain_bank(
+            BANK.to_string(),
+            "strings".to_string(),
+            &state,
+        ))
+        .expect("the begin command opens the bank");
+        block_on_test(register_levain_sample(
+            BANK.to_string(),
+            SAMPLE.to_string(),
+            48_000.0,
+            1,
+            pcm_bytes(&sine(48_000)),
+            &state,
+        ))
+        .expect("the register command takes the sample");
+        block_on_test(commit_levain_bank(
+            BANK.to_string(),
+            one_zone_layout(SAMPLE),
+            &state,
+        ))
+        .expect("the commit command closes the bank");
+
+        let first = block_on_test(release_levain_bank(BANK.to_string(), &state))
+            .expect("the release command answers");
+        let second = block_on_test(release_levain_bank(BANK.to_string(), &state))
+            .expect("a second release answers rather than erroring");
+
+        assert_eq!(first["bankKey"], json!(BANK));
+        assert_eq!(first["released"], json!(true));
+        assert_eq!(second["released"], json!(false));
+        assert!(
+            !state
+                .levain_banks
+                .lock()
+                .expect("the bank lock opens")
+                .is_committed(BANK),
+            "the release left a store the mapper would still read as holding the bank"
         );
     }
 

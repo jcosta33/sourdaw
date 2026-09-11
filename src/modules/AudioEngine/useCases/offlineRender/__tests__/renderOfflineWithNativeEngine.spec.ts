@@ -95,6 +95,7 @@ function capturingTransport(frames: number): {
         beginLevainBank: () => Promise.reject(new Error('routing spec stages no levain bank')),
         registerLevainSample: () => Promise.reject(new Error('routing spec stages no levain bank')),
         commitLevainBank: () => Promise.reject(new Error('routing spec stages no levain bank')),
+        releaseLevainBank: () => Promise.reject(new Error('routing spec stages no levain bank')),
         renderGraphOffline: () => Promise.resolve(new Uint8Array(frames * 8)),
         applyGraphCommands: () => Promise.reject(new Error('an export must never start the live engine')),
         mapGraphBatch: (input: MapGraphBatchInput) => {

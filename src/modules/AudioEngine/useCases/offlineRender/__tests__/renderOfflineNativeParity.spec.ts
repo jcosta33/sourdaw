@@ -276,6 +276,9 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
         async commitLevainBank() {
             throw new Error('the export parity spec stages no levain bank (commit_levain_bank)');
         },
+        async releaseLevainBank() {
+            throw new Error('the export parity spec stages no levain bank (release_levain_bank)');
+        },
         async applyGraphCommands() {
             throw new Error('the export parity spec never touches the live engine (apply_graph_commands)');
         },

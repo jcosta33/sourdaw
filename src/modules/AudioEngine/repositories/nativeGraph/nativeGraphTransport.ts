@@ -110,6 +110,11 @@ export type CommitLevainBankInput = Readonly<{
     layout: NativeLevainBankLayout;
 }>;
 
+export type ReleaseLevainBankInput = Readonly<{
+    /** The key the bank was opened under; releasing an unheld key is not an error. */
+    bankKey: string;
+}>;
+
 export type RenderGraphOfflineInput = Readonly<{
     batch: NativeGraphWireBatch;
     frames: number;
@@ -157,6 +162,12 @@ export type NativeGraphTransport = Readonly<{
      */
     commitLevainBank: (input: CommitLevainBankInput) => Promise<unknown>;
     /**
+     * `release_levain_bank`: drop a staged bank and every conversion of it.
+     * The native store never evicts, so this is what ends a bank's life there
+     * — called when the renderer's own lease on the instrument ends.
+     */
+    releaseLevainBank: (input: ReleaseLevainBankInput) => Promise<unknown>;
+    /**
      * `render_graph_offline`: one deterministic render, no live engine.
      * Answers interleaved stereo f32 LE bytes; a refused batch is a thrown
      * error carrying the native side's per-command refusal reasons.
@@ -197,6 +208,9 @@ export function createDesktopNativeGraphTransport(): NativeGraphTransport {
         },
         async commitLevainBank({ bankKey, layout }) {
             return desktopInvoke('commit_levain_bank', { bankKey, layout });
+        },
+        async releaseLevainBank({ bankKey }) {
+            return desktopInvoke('release_levain_bank', { bankKey });
         },
         async renderGraphOffline({ batch, frames, sampleRate }) {
             return invokeForBinaryResponse({

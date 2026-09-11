@@ -731,6 +731,14 @@ impl SourdawNative {
         )
     }
 
+    /// Drop the Levain sample bank under `bank_key`, with its material and
+    /// every conversion of it. Returns `{ "bankKey": …, "released": bool }`;
+    /// a bank this process does not hold is `released: false`, not an error.
+    #[napi]
+    pub async fn release_levain_bank(&self, bank_key: String) -> Result<Value> {
+        reason(commands::levain::release_levain_bank(bank_key, &self.singletons.app_state).await)
+    }
+
     /// Render a command batch deterministically with no audio device: the
     /// D3.b null-test oracle. Returns interleaved stereo f32 little-endian
     /// PCM; a refused batch is an error carrying the batch's refusal reasons.

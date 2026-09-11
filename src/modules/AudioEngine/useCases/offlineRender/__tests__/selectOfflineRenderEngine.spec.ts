@@ -64,6 +64,7 @@ const stubTransport: NativeGraphTransport = {
     beginLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
     registerLevainSample: () => Promise.reject(new Error('the selection spec issues no command')),
     commitLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
+    releaseLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
     renderGraphOffline: () => Promise.reject(new Error('the selection spec issues no command')),
     mapGraphBatch: () => Promise.reject(new Error('the selection spec issues no command')),
     applyGraphCommands: () => Promise.reject(new Error('the selection spec issues no command')),

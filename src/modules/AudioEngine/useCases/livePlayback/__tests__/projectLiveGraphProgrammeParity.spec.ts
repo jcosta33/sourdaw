@@ -285,6 +285,9 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
         async commitLevainBank() {
             throw new Error('a parity leg stages no levain bank (commit_levain_bank)');
         },
+        async releaseLevainBank() {
+            throw new Error('a parity leg stages no levain bank (release_levain_bank)');
+        },
         async applyGraphCommands() {
             throw new Error('a parity leg never touches the live engine (apply_graph_commands)');
         },

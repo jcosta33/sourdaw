@@ -291,6 +291,13 @@ pub struct AppState {
     /// this store. Control-side only — what crosses to the audio thread is a
     /// `LevainInstance` already loaded from a committed bank. See
     /// `commands::levain`.
+    ///
+    /// Unlike the bounded `TimelineSamplePool` beside it, this store **does not
+    /// evict**. The renderer owns bank lifetime — its decoded-bank leases
+    /// release when the last device using an instrument goes away — and
+    /// `begin_levain_bank` and `release_levain_bank` are how that reaches here,
+    /// so the store holds exactly what the renderer has staged and not
+    /// released.
     pub levain_banks: Arc<Mutex<crate::commands::levain::LevainBankStore>>,
     /// The control-side registry that resolves the app's string strip, device
     /// and sample ids onto the engine's `usize` node ids, plus the strip facts

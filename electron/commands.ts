@@ -88,6 +88,7 @@ export const EXPOSED_COMMANDS = [
     'read_file_bytes',
     'register_levain_sample',
     'register_timeline_sample',
+    'release_levain_bank',
     'render_graph_offline',
     'retire_native_engine',
     'scan_plugins',
@@ -147,12 +148,14 @@ export const EXPOSED_COMMANDS = [
  * runtime surface at quit.
  *
  * The Levain bank commands (`begin_levain_bank`, `register_levain_sample`,
- * `commit_levain_bank`) join them for the same reason and through the same
- * file: a native Levain device has no body until the bank it names is staged
- * on the native side, so the renderer that already decodes a bank for its
- * worklet stages the same material through `nativeGraphTransport.ts`. They
- * carry decoded PCM and a zone layout and nothing else — no path, no handle,
- * and no reach outside the sampler's own store.
+ * `commit_levain_bank`, `release_levain_bank`) join them for the same reason
+ * and through the same file: a native Levain device has no body until the bank
+ * it names is staged on the native side, so the renderer that already decodes a
+ * bank for its worklet stages the same material through
+ * `nativeGraphTransport.ts`, and releases it there when its own lease on the
+ * instrument ends. They carry decoded PCM, a zone layout and a bank key and
+ * nothing else — no path, no handle, and no reach outside the sampler's own
+ * store.
  *
  * `grant_path` is denied for the reason it exists (jcosta33/sourdaw#3313). It
  * is the only way to widen what the native file commands will touch, so a
