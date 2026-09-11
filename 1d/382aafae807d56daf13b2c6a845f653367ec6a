@@ -1,0 +1,21 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_06adf2b091dc62::t_aecdd0101feeca 11,44-50
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_06adf2b091dc62::t_df2df8ea940096 7,9,11,15-19,91,94,98-99,102-106,109,112,145-148,205-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1d382aafae807d56daf13b2c6a845f653367ec6a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
