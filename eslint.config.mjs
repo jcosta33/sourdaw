@@ -2359,6 +2359,9 @@ export default defineConfig(
             'test-manual-fix.mjs',
             'test-manual-fix.ts',
             '**/*.md',
+            // Deliberate sourdaw-craft fixtures: they exist to fail the oxlint
+            // JS plugin and would fail this ESLint pass if parsed as app code.
+            'scripts/oxlintCraft/__tests__/fixtures/**',
         ],
     },
 
