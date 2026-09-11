@@ -653,7 +653,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // AiRuntime: compileRequest / command-envelope compilers (not device
         // hydration). sendChatMessage 3→5 is the same family, documented above.
         'src/modules/AiRuntime/models/ModelProviderProtocol.ts': 1,
-        'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
+        // Count provenance: measured 4 — one import and one call of the provider
+        // adapter registry compiler plus the declaration and one call of the
+        // hosted OpenAI adapter selector; the file compiles provider transport
+        // adapters and holds no device or AudioEngine write.
+        'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 4,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
         // Count provenance: new file entry, measured 1 — the module path in a
