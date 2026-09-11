@@ -1,0 +1,21 @@
+release/dependency-license-proofs.json
+  s_06adf2b091dc62::t_d05ccf54f00d79 64
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_3ff20f066dc5f6 166,1692
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "86bea994c15d45cff7fd6c9b63aa0e05be7a0e74",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
