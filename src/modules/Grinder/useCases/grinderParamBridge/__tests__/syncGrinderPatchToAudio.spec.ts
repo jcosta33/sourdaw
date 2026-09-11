@@ -236,4 +236,29 @@ describe('syncGrinderPatchToAudio', () => {
         expect(neural_custom_calls).toHaveLength(0);
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'neuralModelMode', 0);
     });
+
+    it('emits neuralEnabled before engineMode so exact engine mode pick lands last on the engine', () => {
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                engineMode: 'capture',
+                neuralEnabled: true,
+            })
+        );
+
+        const updateKeys = update_device_param.mock.calls.map((c) => c[2]);
+        const persistKeys = persist_device_param.mock.calls.map((c) => c[1]);
+
+        const updateNeuralIdx = updateKeys.indexOf('neuralEnabled');
+        const updateEngineIdx = updateKeys.indexOf('engineMode');
+        expect(updateNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(updateEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(updateNeuralIdx).toBeLessThan(updateEngineIdx);
+
+        const persistNeuralIdx = persistKeys.indexOf('neuralEnabled');
+        const persistEngineIdx = persistKeys.indexOf('engineMode');
+        expect(persistNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(persistEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(persistNeuralIdx).toBeLessThan(persistEngineIdx);
+    });
 });
