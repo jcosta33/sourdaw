@@ -78,6 +78,9 @@ const RESAMPLER_MAX_RELATIVE_RATIO: f64 = 2.0;
 /// conversion buffer: [`resample_interleaved`] sizes its output by `to/from`,
 /// so a bank declared at a rate near zero would ask for an allocation
 /// thousands of times the material and abort the process rather than refuse.
+/// Both factors of that ratio are held inside this range: the bank's own rate
+/// at registration (`add_sample`) and the engine's rate at build
+/// (`build_instance`).
 const BANK_SAMPLE_RATE_HZ: RangeInclusive<u32> = 8_000..=192_000;
 
 // ── Wire layout ─────────────────────────────────────────────────────────────
@@ -418,6 +421,14 @@ impl LevainBankStore {
             ));
         }
         let engine_rate = sample_rate.round() as u32;
+        if !BANK_SAMPLE_RATE_HZ.contains(&engine_rate) {
+            return Err(format!(
+                "levain bank '{bank_key}' cannot build at sample rate {sample_rate} Hz: it lies \
+                 outside the {} to {} Hz this backend converts banks across",
+                BANK_SAMPLE_RATE_HZ.start(),
+                BANK_SAMPLE_RATE_HZ.end()
+            ));
+        }
         let bank = self
             .banks
             .get_mut(bank_key)
@@ -1018,6 +1029,27 @@ mod tests {
     }
 
     #[test]
+    fn an_engine_rate_outside_the_accepted_range_refuses_to_build() {
+        let mut store = committed_bank(44_100);
+
+        for rate in [1e10_f32, 1_000.0] {
+            let refusal = build_refusal_at(
+                &mut store,
+                rate,
+                "an engine rate outside the accepted range must refuse to build",
+            );
+            assert!(
+                refusal.contains(BANK) && refusal.contains(&format!("{rate}")),
+                "the refusal must name the bank and the rate it read, got: {refusal}"
+            );
+        }
+
+        store
+            .build_instance(BANK, 192_000.0)
+            .expect("the top of the accepted range is inside it");
+    }
+
+    #[test]
     fn a_duplicate_sample_id_refuses() {
         let mut store = LevainBankStore::default();
         store.begin(BANK, "strings").expect("the bank opens");
@@ -1037,11 +1069,15 @@ mod tests {
 
     /// Why a build refused. `LevainInstance` carries no `Debug`, so
     /// `expect_err` is unavailable and the refusal is taken by pattern.
-    fn build_refusal(store: &mut LevainBankStore, why: &str) -> String {
-        match store.build_instance(BANK, 48_000.0) {
+    fn build_refusal_at(store: &mut LevainBankStore, rate: f32, why: &str) -> String {
+        match store.build_instance(BANK, rate) {
             Ok(_) => panic!("{why}"),
             Err(refusal) => refusal,
         }
+    }
+
+    fn build_refusal(store: &mut LevainBankStore, why: &str) -> String {
+        build_refusal_at(store, 48_000.0, why)
     }
 
     #[test]
