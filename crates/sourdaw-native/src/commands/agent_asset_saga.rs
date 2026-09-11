@@ -356,6 +356,7 @@ fn write_assets() -> RwLockWriteGuard<'static, HashMap<String, RegisteredAsset>>
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[cfg(test)]
 fn read_sagas() -> RwLockReadGuard<'static, HashMap<String, SagaRow>> {
     sagas()
         .read()
@@ -372,6 +373,14 @@ fn write_sagas() -> RwLockWriteGuard<'static, HashMap<String, SagaRow>> {
 #[cfg(test)]
 pub(crate) fn registered_asset(asset_id: &str) -> Option<RegisteredAsset> {
     read_assets().get(asset_id).cloned()
+}
+
+/// How many sagas the table still holds, so a test can prove a terminal row
+/// is eventually released rather than accumulating for the life of the
+/// process.
+#[cfg(test)]
+fn saga_row_count() -> usize {
+    read_sagas().len()
 }
 
 /// Install an explicit handle set for the duration of `body`, for tests only.
@@ -1112,6 +1121,20 @@ fn cleanup_one_saga(saga_id: String, owner: AgentWorkOwner) -> AgentAssetSagaRec
                 "No staged export with that saga id".to_string(),
             );
         };
+
+        if row.owner != owner {
+            let mut receipt = AgentAssetSagaReceipt::refused(
+                saga_id,
+                owner,
+                OPERATION_CLEANUP,
+                AgentAssetFailureKind::AccessDenied,
+                compensation_for(row),
+                "Saga belongs to another work owner".to_string(),
+            );
+            receipt.handle_id = Some(row.destination_handle.clone());
+            return receipt;
+        }
+
         match row.cleanup_owner.clone() {
             Some(cleanup_owner) => Err((cleanup_owner, row.destination_handle.clone())),
             None => {
@@ -1154,10 +1177,18 @@ fn cleanup_one_saga(saga_id: String, owner: AgentWorkOwner) -> AgentAssetSagaRec
 }
 
 fn sweep_orphaned_stages(owner: AgentWorkOwner) -> AgentAssetSagaReceipt {
-    let live: Vec<PathBuf> = read_sagas()
-        .values()
-        .filter_map(|row| row.staged_path.clone())
-        .collect();
+    // A row with no staged path left has no compensation left either — a
+    // committed finalize and a claimed cleanup both clear it already — so it
+    // is safe to drop here. Later than the terminal action itself, because a
+    // repeat claim right after that action still has to answer `already-owned`
+    // from the same row.
+    let live: Vec<PathBuf> = {
+        let mut rows = write_sagas();
+        rows.retain(|_, row| row.staged_path.is_some());
+        rows.values()
+            .filter_map(|row| row.staged_path.clone())
+            .collect()
+    };
 
     let mut removed = 0_u32;
     if let Ok(entries) = fs::read_dir(staging_root()) {
@@ -1231,6 +1262,32 @@ mod tests {
     impl Drop for TestDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// An existing file inside a built-in root (`ipc_temp_dir()`), for the one
+    /// test that needs a path `ensure_allowed_root` admits without any grant
+    /// at all, so the grant it withholds is `register_handle`'s own.
+    struct BuiltInRootFile {
+        path: PathBuf,
+    }
+
+    impl BuiltInRootFile {
+        fn create() -> Self {
+            let directory = ipc_temp_dir();
+            fs::create_dir_all(&directory).expect("ipc temp dir should be creatable");
+            let path = directory.join(format!(
+                "agent-asset-saga-builtin-{}.bin",
+                uuid::Uuid::new_v4()
+            ));
+            fs::write(&path, b"builtin-root-bytes").expect("test file should be written");
+            Self { path }
+        }
+    }
+
+    impl Drop for BuiltInRootFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
         }
     }
 
@@ -1354,6 +1411,22 @@ mod tests {
         assert_eq!(refused.state, AgentAssetSagaState::Failed);
         assert_eq!(refused.failure, Some(AgentAssetFailureKind::AccessDenied));
         assert_eq!(refused.handle_id, None);
+    }
+
+    #[test]
+    fn agent_asset_saga_register_handle_refuses_a_built_in_root_path_without_a_grant() {
+        let sample = BuiltInRootFile::create();
+        let owner = owner_named("lease-builtin-root");
+
+        let refused = in_saga_session(Vec::new(), || register(&sample.path, "read", &owner));
+
+        assert_eq!(refused.state, AgentAssetSagaState::Failed);
+        assert_eq!(refused.failure, Some(AgentAssetFailureKind::AccessDenied));
+        assert_eq!(refused.handle_id, None);
+        assert_eq!(
+            refused.message.as_deref(),
+            Some("Path is not covered by a file grant")
+        );
     }
 
     #[test]
@@ -1536,8 +1609,10 @@ mod tests {
         let payload = b"finalized-stem";
 
         in_saga_session(vec![directory.grant(GrantMode::ReadWrite)], || {
+            let baseline = saga_row_count();
             let handle = handle_for(&destination, "read-write", &owner);
             let saga_id = stage(&handle, &owner, &digest_of(payload), payload).saga_id;
+            assert_eq!(saga_row_count(), baseline + 1);
 
             assert_eq!(
                 finalize(&saga_id, &owner, true).state,
@@ -1551,6 +1626,22 @@ mod tests {
             assert_eq!(
                 fs::read(&destination).expect("destination should be readable"),
                 payload.to_vec()
+            );
+            assert!(
+                read_sagas()
+                    .get(&saga_id)
+                    .expect("a finalized saga still answers a repeat claim")
+                    .staged_path
+                    .is_none(),
+                "a committed finalize must not keep staged bytes behind the retained row"
+            );
+
+            let swept = cleanup(None, &owner);
+            assert_eq!(swept.state, AgentAssetSagaState::Committed);
+            assert_eq!(
+                saga_row_count(),
+                baseline,
+                "the sweep must release the finalized saga's row"
             );
         });
     }
@@ -1592,6 +1683,7 @@ mod tests {
         let pending = b"pending-stem";
 
         in_saga_session(vec![directory.grant(GrantMode::ReadWrite)], || {
+            let baseline = saga_row_count();
             let cleaned_handle = handle_for(&directory.join("cleaned.wav"), "read-write", &owner);
             let cleaned_saga = stage(&cleaned_handle, &owner, &digest_of(cleaned), cleaned).saga_id;
             assert!(staged_path_for(&cleaned_saga).exists());
@@ -1607,6 +1699,14 @@ mod tests {
             assert_eq!(repeated.failure, Some(AgentAssetFailureKind::AlreadyOwned));
             assert_eq!(repeated.compensation, AgentAssetCompensation::Completed);
             assert_eq!(repeated.cleanup_owner.as_deref(), Some("lease-cleanup"));
+            assert!(
+                read_sagas()
+                    .get(&cleaned_saga)
+                    .expect("a cleaned saga still answers a repeat claim")
+                    .staged_path
+                    .is_none(),
+                "a cleaned saga must not keep staged bytes behind the retained row"
+            );
 
             let pending_handle = handle_for(&directory.join("pending.wav"), "read-write", &owner);
             let pending_saga = stage(&pending_handle, &owner, &digest_of(pending), pending).saga_id;
@@ -1624,6 +1724,42 @@ mod tests {
                 staged_path_for(&pending_saga).exists(),
                 "a live external-pending saga keeps its staged bytes"
             );
+            assert_eq!(
+                saga_row_count(),
+                baseline + 1,
+                "the sweep must release the cleaned saga's row and keep only the pending one"
+            );
+            assert!(
+                read_sagas().get(&cleaned_saga).is_none(),
+                "the sweep must remove the cleaned saga's row"
+            );
+        });
+    }
+
+    #[test]
+    fn agent_asset_saga_cleanup_by_another_owner_claims_nothing() {
+        let directory = TestDir::create();
+        let destination = directory.join("stem.wav");
+        let owner = owner_named("lease-owner");
+        let stranger = owner_named("lease-stranger");
+        let payload = b"guarded-stem";
+
+        in_saga_session(vec![directory.grant(GrantMode::ReadWrite)], || {
+            let handle = handle_for(&destination, "read-write", &owner);
+            let saga_id = stage(&handle, &owner, &digest_of(payload), payload).saga_id;
+
+            let refused = cleanup(Some(&saga_id), &stranger);
+            assert_eq!(refused.state, AgentAssetSagaState::Refused);
+            assert_eq!(refused.failure, Some(AgentAssetFailureKind::AccessDenied));
+            assert_eq!(refused.cleanup_owner, None);
+            assert!(
+                staged_path_for(&saga_id).exists(),
+                "a refused cleanup must leave the staged bytes behind"
+            );
+
+            let committed = finalize(&saga_id, &owner, true);
+            assert_eq!(committed.state, AgentAssetSagaState::Committed);
+            assert!(destination.exists());
         });
     }
 
