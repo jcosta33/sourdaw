@@ -320,6 +320,35 @@ describe('streamOpenAiResponses', () => {
         ).rejects.toThrow('Hosted AI returned an invalid streaming event');
     });
 
+    it('rejects an incomplete response with an unmappable reason before reporting its usage', async () => {
+        const onUsage = vi.fn();
+        respondWith(
+            [
+                created(),
+                textDelta('Lower '),
+                sseEvent('response.incomplete', {
+                    response: {
+                        id: RESPONSE_ID,
+                        incomplete_details: { reason: 'unexpected_reason' },
+                        usage: { input_tokens: 11, output_tokens: 4 },
+                    },
+                }),
+            ].join('')
+        );
+
+        await expect(
+            streamOpenAiResponses({
+                runtime,
+                messages: [{ role: 'user', content: 'lower the vocals' }],
+                onToken: vi.fn(),
+                signal: new AbortController().signal,
+                onUsage,
+            })
+        ).rejects.toThrow('Hosted AI returned an invalid streaming event');
+
+        expect(onUsage).not.toHaveBeenCalled();
+    });
+
     it('rejects a stream cut before any terminal event', async () => {
         await expect(stream([created(), textDelta('Lower ')].join(''))).rejects.toThrow(
             'Hosted AI chat stream ended unexpectedly'
