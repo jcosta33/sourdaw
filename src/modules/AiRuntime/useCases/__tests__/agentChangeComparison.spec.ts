@@ -132,6 +132,12 @@ function reverted(): UndoStateDouble {
     return { past: [], future: [{ id: 'e1', groupId: GROUP_ID }] };
 }
 
+/**
+ * Ticks that carry one side to a trusted reading: eight 400 ms blocks, each of
+ * them four 100 ms sampler intervals.
+ */
+const TICKS_PER_TRUSTED_READING = 32;
+
 /** Run `ticks` sampler intervals with the master tap reading `lufs`. */
 function sample(lufs: number, ticks: number): void {
     mocks.computeMomentaryLUFS.mockReturnValue(lufs);
@@ -140,6 +146,15 @@ function sample(lufs: number, ticks: number): void {
 
 function trimCalls(): number[] {
     return mocks.setMasterComparisonTrimDb.mock.calls.map(([db]) => db);
+}
+
+/** A second group standing where a comparison could open on it. */
+function admitSecondGroup(): void {
+    doubles.aiActionHistoryStore.set({
+        groups: [makeGroup(), makeGroup({ id: 'a2', groupId: 'g2' })],
+        panelOpen: false,
+    });
+    doubles.undoHistoryStore.set({ past: [{ id: 'e2', groupId: 'g2' }], future: [] });
 }
 
 beforeEach(() => {
@@ -273,6 +288,55 @@ describe('agentChangeComparison.toggle', () => {
         releaseRevert();
         await expect(first).resolves.toEqual({ status: 'A' });
     });
+
+    // T11. Turns red if the queued work moves the project on the session the
+    // press captured rather than on the one standing when it runs: the revert
+    // would land on a comparison the ending in front of it had already closed,
+    // leaving the project on side A with nothing to bring it back.
+    it('refuses a press that lands behind the ending it raced', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+
+        const ending = agentChangeComparison.end();
+        const pressed = agentChangeComparison.toggle();
+        await ending;
+
+        await expect(pressed).resolves.toEqual({ status: 'refused', reason: 'inactive' });
+        expect(mocks.revertActionGroup).not.toHaveBeenCalled();
+    });
+
+    // T12. Turns red if a rejected revert is left to propagate: the press would
+    // reject, and the comparison would stand with `transitioning` set, its trim
+    // on the output and no press able to move it.
+    it('closes the comparison when the revert to side A rejects', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+        mocks.revertActionGroup.mockRejectedValueOnce(new Error('the revert could not be applied'));
+
+        await expect(agentChangeComparison.toggle()).resolves.toEqual({ status: 'refused', reason: 'inactive' });
+
+        const view = getAgentChangeComparisonView();
+        expect(trimCalls().at(-1)).toBe(0);
+        expect(view.active).toBeNull();
+        expect(view.lastEnded).toEqual({ groupId: GROUP_ID, side: 'B', reason: 'transition-failed' });
+        admitSecondGroup();
+        expect(agentChangeComparison.availability({ groupId: 'g2' })).toEqual({ available: true });
+    });
+
+    // T12. The same on the way back, where the move is a redo.
+    it('closes the comparison when the redo back to side B rejects', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+        await agentChangeComparison.toggle();
+        mocks.redo.mockRejectedValueOnce(new Error('the redo could not be applied'));
+        mocks.setMasterComparisonTrimDb.mockClear();
+
+        await expect(agentChangeComparison.toggle()).resolves.toEqual({ status: 'refused', reason: 'inactive' });
+
+        const view = getAgentChangeComparisonView();
+        expect(trimCalls().at(-1)).toBe(0);
+        expect(view.active).toBeNull();
+        expect(view.lastEnded).toEqual({ groupId: GROUP_ID, side: 'A', reason: 'transition-failed' });
+        admitSecondGroup();
+        expect(agentChangeComparison.availability({ groupId: 'g2' })).toEqual({ available: true });
+    });
 });
 
 describe('agentChangeComparison loudness match', () => {
@@ -281,10 +345,10 @@ describe('agentChangeComparison loudness match', () => {
     // for the average of both sides.
     it('offsets side A by the difference between the two sides', async () => {
         await agentChangeComparison.start({ groupId: GROUP_ID });
-        sample(-14, 30);
+        sample(-14, TICKS_PER_TRUSTED_READING);
 
         await agentChangeComparison.toggle();
-        sample(-20, 30);
+        sample(-20, TICKS_PER_TRUSTED_READING);
 
         const view = getAgentChangeComparisonView();
         expect(view.active?.loudness.b).toBeCloseTo(-14, 6);
@@ -294,6 +358,20 @@ describe('agentChangeComparison loudness match', () => {
 
         await agentChangeComparison.toggle();
         expect(trimCalls().at(-1)).toBe(0);
+    });
+
+    // T10. Turns red if the readings reach the accumulator at the 100 ms tick
+    // rate: its eight 400 ms blocks would then hold the last 800 ms of the side
+    // rather than its three seconds, and the quiet opening would be recorded as
+    // the loud ending — -10 instead of the mean of what the side played.
+    it('reads a side over its whole window rather than over its tail', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+
+        // Six blocks at -30 then two at -10: energy mean 10 * log10(0.206 / 8).
+        sample(-30, 24);
+        sample(-10, 8);
+
+        expect(getAgentChangeComparisonView().active?.loudness.b).toBeCloseTo(-15.89, 2);
     });
 
     // T4. Turns red if the trim's `limited` answer is discarded: the view would
@@ -313,12 +391,12 @@ describe('agentChangeComparison loudness match', () => {
         doubles.transportStore.set({ isPlaying: false });
         await agentChangeComparison.start({ groupId: GROUP_ID });
 
-        sample(-14, 30);
+        sample(-14, TICKS_PER_TRUSTED_READING);
         expect(getAgentChangeComparisonView().active?.measurement).toBe('unavailable-not-playing');
         expect(getAgentChangeComparisonView().active?.loudness.b).toBeNull();
 
         doubles.transportStore.set({ isPlaying: true });
-        sample(-14, 30);
+        sample(-14, TICKS_PER_TRUSTED_READING);
 
         expect(getAgentChangeComparisonView().active?.measurement).toBe('web-master');
         expect(getAgentChangeComparisonView().active?.loudness.b).toBeCloseTo(-14, 6);
@@ -331,9 +409,9 @@ describe('agentChangeComparison loudness match', () => {
         mocks.hasLiveNativeGraphSession.mockReturnValue(true);
         await agentChangeComparison.start({ groupId: GROUP_ID });
 
-        sample(-14, 30);
+        sample(-14, TICKS_PER_TRUSTED_READING);
         await agentChangeComparison.toggle();
-        sample(-20, 30);
+        sample(-20, TICKS_PER_TRUSTED_READING);
 
         const view = getAgentChangeComparisonView();
         expect(view.active?.measurement).toBe('unavailable-native-carrier');
@@ -376,6 +454,43 @@ describe('agentChangeComparison ending', () => {
         const view = getAgentChangeComparisonView();
         expect(view.active).toBeNull();
         expect(view.lastEnded).toEqual({ groupId: GROUP_ID, side: 'A', reason: 'user-ended' });
+    });
+
+    // T12. Turns red if a rejected redo is left to propagate out of the ending:
+    // the comparison would stand with its trim on the output after the musician
+    // closed it.
+    it('closes the comparison when the redo the ending runs rejects', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+        await agentChangeComparison.toggle();
+        mocks.redo.mockRejectedValueOnce(new Error('the redo could not be applied'));
+        mocks.setMasterComparisonTrimDb.mockClear();
+
+        await expect(agentChangeComparison.end()).resolves.toBeUndefined();
+
+        const view = getAgentChangeComparisonView();
+        expect(trimCalls()).toEqual([0]);
+        expect(view.active).toBeNull();
+        expect(view.lastEnded).toEqual({ groupId: GROUP_ID, side: 'A', reason: 'transition-failed' });
+        admitSecondGroup();
+        expect(agentChangeComparison.availability({ groupId: 'g2' })).toEqual({ available: true });
+    });
+
+    // T13. Turns red if the ending reports `user-ended` without checking what
+    // the redo landed on: the comparison would read as a return to the
+    // committed project while side A is what the musician is still hearing.
+    it('says the ending left side A standing when the redo did not return the group', async () => {
+        await agentChangeComparison.start({ groupId: GROUP_ID });
+        await agentChangeComparison.toggle();
+        mocks.setMasterComparisonTrimDb.mockClear();
+        // Answers without moving the stacks, so the group is still the next
+        // redoable unit and the project is still the one side A was left on.
+        mocks.redo.mockImplementation(async () => undefined);
+
+        await agentChangeComparison.end();
+
+        const view = getAgentChangeComparisonView();
+        expect(view.lastEnded).toEqual({ groupId: GROUP_ID, side: 'A', reason: 'left-on-a' });
+        expect(trimCalls()).toEqual([0]);
     });
 
     // T9. Turns red if the history watch is not subscribed: the comparison

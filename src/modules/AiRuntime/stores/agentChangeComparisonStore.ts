@@ -24,7 +24,14 @@ export type AgentChangeComparisonMeasurement =
     /** A stopped transport produces no programme to measure. */
     | 'unavailable-not-playing';
 
-export type AgentChangeComparisonEndReason = 'user-ended' | 'project-changed' | 'group-reverted';
+export type AgentChangeComparisonEndReason =
+    | 'user-ended'
+    | 'project-changed'
+    | 'group-reverted'
+    /** A revert or a redo rejected, so the project reached neither side and the comparison could not go on. */
+    | 'transition-failed'
+    /** The closing redo did not return the committed project, so what is still sounding is side A. */
+    | 'left-on-a';
 
 /** Short-term LUFS per side, `null` until that side has been measured. */
 export type AgentChangeComparisonLoudness = { a: number | null; b: number | null };

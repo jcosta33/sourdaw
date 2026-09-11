@@ -10,8 +10,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { clampFaderGain, dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphBackend,
+    type AudioGraphCommandBatch,
+} from '../../../models/AudioGraphBackend';
 import { nativeLiveGraphSession } from '../../livePlayback/nativeLiveGraphSessionState';
 import { masterGainState } from '../masterGainState';
 import { setMasterComparisonTrimDb } from '../setMasterComparisonTrimDb';
@@ -26,6 +31,21 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
     ensureEngine: vi.fn(),
 }));
 
+const APPLIED: AudioGraphApplyResult = {
+    acceptance: 'accepted',
+    application: 'applied',
+    runtimeRevision: 1,
+    reports: [],
+};
+
+const apply = vi.fn<(batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult>>();
+
+const backend: AudioGraphBackend = {
+    backendId: 'spec-double',
+    apply: (batch) => apply(batch),
+    dispose: () => undefined,
+};
+
 /** The level the Web Audio engine was last handed. */
 function engineLevel(): number {
     const last = mocks.setMasterGain.mock.calls.at(-1);
@@ -34,6 +54,8 @@ function engineLevel(): number {
 
 beforeEach(() => {
     mocks.setMasterGain.mockReset();
+    apply.mockReset();
+    apply.mockResolvedValue(APPLIED);
     // Module state, process-wide by design: a case inheriting the previous
     // one's trim would measure an offset it never asked for.
     nativeLiveGraphSession.backend = null;
@@ -44,6 +66,8 @@ beforeEach(() => {
 
 afterEach(() => {
     masterGainState.comparisonTrim = 1;
+    nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.pending = Promise.resolve();
 });
 
 describe('setMasterComparisonTrimDb', () => {
@@ -57,6 +81,22 @@ describe('setMasterComparisonTrimDb', () => {
         expect(engineLevel()).toBeCloseTo(0.5 * dbToGain(6), 6);
         expect(trim.limited).toBe(false);
         expect(trim.appliedDb).toBeCloseTo(6, 6);
+    });
+
+    // Turns red if the native forward sends `masterGainState.gain` instead of
+    // the effective level: the session carrying the strips would receive 0.5
+    // and go on playing at the untrimmed level while the Web Audio strips
+    // followed the match, which is the very offset the comparison is judged on.
+    it('states the trimmed level to the session carrying the strips', async () => {
+        nativeLiveGraphSession.backend = backend;
+        masterGainState.gain = 0.5;
+
+        setMasterComparisonTrimDb(6);
+        await nativeLiveGraphSession.pending;
+
+        expect(apply.mock.calls.map(([batch]) => batch.commands)).toEqual([
+            [{ kind: 'set-master-gain', gain: clampFaderGain(0.5 * dbToGain(6)) }],
+        ]);
     });
 
     // Turns red if the clamp is dropped from `effectiveMasterGain`: the engine

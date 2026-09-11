@@ -62,11 +62,18 @@ export type AgentChangeComparisonToggle =
 const SAMPLE_INTERVAL_MS = 100;
 
 /**
- * Readings one side contributes before its loudness is trusted. Thirty at
- * {@link SAMPLE_INTERVAL_MS} is three seconds — the short-term window itself,
- * so the first trusted reading is the first full one.
+ * Ticks between the readings that reach the short-term accumulator. It holds
+ * 400 ms blocks, so a reading pushed at every {@link SAMPLE_INTERVAL_MS} tick
+ * would fill its three-second window with the last 800 ms of programme.
  */
-const SAMPLES_PER_SIDE = 30;
+const TICKS_PER_BLOCK = 4;
+
+/**
+ * Blocks one side contributes before its loudness is trusted. Eight 400 ms
+ * blocks is the short-term window itself, so the first trusted reading is the
+ * first full one.
+ */
+const BLOCKS_PER_SIDE = 8;
 
 /** `ShortTermLUFS` floors here; a reading sitting on the floor measured silence, not a level. */
 const SILENCE_LUFS = -70;
@@ -78,7 +85,8 @@ type ComparisonRuntime = {
     ticker: ReturnType<typeof setInterval>;
     /** Reset whenever a side becomes current, so one side's window never carries the other's programme. */
     meter: ShortTermLUFS;
-    samplesOnSide: number;
+    blocksOnSide: number;
+    ticksSinceBlock: number;
     unsubscribe: () => void;
 };
 
@@ -183,7 +191,8 @@ function resetSideMeter(): void {
         return;
     }
     runtime.meter = new ShortTermLUFS();
-    runtime.samplesOnSide = 0;
+    runtime.blocksOnSide = 0;
+    runtime.ticksSinceBlock = 0;
 }
 
 function loudnessOnSide(session: AgentChangeComparisonSession, side: AgentChangeComparisonSide): number | null {
@@ -207,9 +216,16 @@ function sampleOnce(): void {
         return;
     }
 
+    // Every tick refreshes what the measurement is; only every fourth one
+    // contributes a block, which is the rate the window is sized in.
+    runtime.ticksSinceBlock += 1;
+    if (runtime.ticksSinceBlock < TICKS_PER_BLOCK) {
+        return;
+    }
+    runtime.ticksSinceBlock = 0;
     runtime.meter.push(runtime.sampler.readMomentaryLufs());
-    runtime.samplesOnSide += 1;
-    if (runtime.samplesOnSide < SAMPLES_PER_SIDE) {
+    runtime.blocksOnSide += 1;
+    if (runtime.blocksOnSide < BLOCKS_PER_SIDE) {
         return;
     }
 
@@ -277,7 +293,8 @@ function startSampling(): void {
             sampleOnce();
         }, SAMPLE_INTERVAL_MS),
         meter: new ShortTermLUFS(),
-        samplesOnSide: 0,
+        blocksOnSide: 0,
+        ticksSinceBlock: 0,
         unsubscribe: () => {
             unsubscribeUndo();
             unsubscribeHistory();
@@ -302,13 +319,48 @@ function settleOnSide(side: AgentChangeComparisonSide): AgentChangeComparisonTog
     return { status: side };
 }
 
-async function runToggle(groupId: string, from: AgentChangeComparisonSide): Promise<AgentChangeComparisonToggle> {
-    if (from === 'B') {
-        await revertActionGroup(groupId);
-        return settleOnSide('A');
+/**
+ * Move the project across the group, and say whether it landed.
+ *
+ * A revert or a redo that rejects leaves the project on neither side, and there
+ * is no second stack move that could put it back where it was. The comparison
+ * closes instead of standing on a transition that will never settle: the trim
+ * comes off, the sampler stops, and the ending says the transition is what
+ * failed.
+ */
+async function moveAcrossGroup(move: () => Promise<void>): Promise<boolean> {
+    try {
+        await move();
+        return true;
+    } catch {
+        finishComparison('transition-failed');
+        return false;
+    }
+}
+
+/**
+ * Run one side change.
+ *
+ * The session is read here rather than carried in from the press, because this
+ * runs behind whatever the chain already held: an `end` queued first has closed
+ * the comparison by now, and reverting or redoing on its behalf would move the
+ * project under a musician who is no longer comparing anything.
+ */
+async function runToggle(groupId: string): Promise<AgentChangeComparisonToggle> {
+    const session = activeSession();
+    if (!session || session.groupId !== groupId) {
+        return { status: 'refused', reason: 'inactive' };
     }
 
-    await redo();
+    if (session.side === 'B') {
+        const reverted = await moveAcrossGroup(() => revertActionGroup(groupId));
+        return reverted ? settleOnSide('A') : { status: 'refused', reason: 'inactive' };
+    }
+
+    const redone = await moveAcrossGroup(() => redo());
+    if (!redone) {
+        return { status: 'refused', reason: 'inactive' };
+    }
     if (!pastEndsWithGroup(groupId)) {
         // The redo did not put the group back at the head of `past`, so
         // something else now owns the newest edit and B is no longer reachable.
@@ -341,7 +393,7 @@ function toggle(): Promise<AgentChangeComparisonToggle> {
     // Marked before the work is queued, so a second press lands on a refusal
     // rather than waiting behind the revert or redo already in flight.
     markAgentChangeComparisonTransitioning(true);
-    return serialise(() => runToggle(session.groupId, session.side));
+    return serialise(() => runToggle(session.groupId));
 }
 
 function end(): Promise<void> {
@@ -352,11 +404,20 @@ function end(): Promise<void> {
         }
         // Ending is not a decision about the change: the committed project is
         // what stands, and the explicit Revert control is what keeps side A.
-        if (session.side === 'A' && futureStartsWithGroup(session.groupId)) {
-            markAgentChangeComparisonTransitioning(true);
-            await redo();
+        if (session.side !== 'A' || !futureStartsWithGroup(session.groupId)) {
+            finishComparison('user-ended');
+            return;
         }
-        finishComparison('user-ended');
+        markAgentChangeComparisonTransitioning(true);
+        const redone = await moveAcrossGroup(() => redo());
+        if (!redone) {
+            return;
+        }
+        // The redo is what returns the committed project, so the ending says so
+        // only once the group is back at the head of `past`. Reporting
+        // `user-ended` over a redo that did not land would leave the musician
+        // reading a return to a project they are in fact still hearing side A of.
+        finishComparison(pastEndsWithGroup(session.groupId) ? 'user-ended' : 'left-on-a');
     });
 }
 
