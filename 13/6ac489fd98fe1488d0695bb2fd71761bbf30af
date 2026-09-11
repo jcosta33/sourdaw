@@ -1,0 +1,29 @@
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_06adf2b091dc62::t_34736d68651c5d 178,183
+  s_06adf2b091dc62::t_da9033bfa34602 256-263
+  s_06adf2b091dc62::t_62c220a908e05f 16
+  s_06adf2b091dc62::t_47d120cd2d7711 318
+  s_06adf2b091dc62::t_6a8f1ef5ab4363 209-210
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_5d92a17fb1a32f 571
+  s_06adf2b091dc62::t_e51751dfe802fd 576,628-629,655,658,704-706,761-776,782-833,835,838
+  s_06adf2b091dc62::t_3b0e61b475ecaa 777-781
+  s_06adf2b091dc62::t_2d0aa3098f5f5e 572,575,676,680-702
+  s_06adf2b091dc62::t_ebda2451bfee22 573-574,625,627,656,703,707,834,836-837
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "136ac489fd98fe1488d0695bb2fd71761bbf30af",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
