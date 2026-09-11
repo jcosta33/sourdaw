@@ -13,7 +13,18 @@
 
 import { desktopInvoke, invokeForBinaryResponse } from '#/utils/desktopBridge';
 
+import { type NativeLevainBankLayout } from '../../models/NativeSampleBank';
+
 import { type NativeGraphWireBatch, type NativeGraphWireCommand } from './serializeAudioGraphCommand';
+
+// The bank vocabulary is a model rather than this file's own, because the
+// registration that stages a bank and the runtime sink that leases one read it
+// too. Re-exported here so the seam still names the whole of what crosses it.
+export type {
+    NativeLevainBankLayout,
+    NativeLevainLegatoTransition,
+    NativeLevainZone,
+} from '../../models/NativeSampleBank';
 
 /**
  * Names one backend's mapping session on the native side (`MappingSessionKeyPayload`
@@ -51,58 +62,6 @@ export type RegisterLevainSampleInput = Readonly<{
     channels: 1 | 2;
     /** Interleaved f32 little-endian. */
     pcm: Uint8Array;
-}>;
-
-/**
- * One zone of a Levain bank, in the same vocabulary the worklet's `addZone`
- * message carries (`src/modules/AudioEngine/services/levainProcessor.ts`).
- * `zoneId` is absent because the array's order is the numbering, on both
- * sides.
- */
-export type NativeLevainZone = Readonly<{
-    sampleId: string;
-    articulationId: number;
-    rootNote: number;
-    tuneCents?: number;
-    loKey: number;
-    hiKey: number;
-    loVel: number;
-    hiVel: number;
-    rrPos: number;
-    rrLen: number;
-    micId: number;
-    isRelease: boolean;
-    loopMode: 'none' | 'forward' | 'pingpong';
-    loopStart: number;
-    loopEnd: number;
-    loopCrossfade: number;
-    gainDb: number;
-    attack: number;
-    decay: number;
-    sustain: number;
-    release: number;
-}>;
-
-/** One recorded true-legato transition, in the worklet's own vocabulary. */
-export type NativeLevainLegatoTransition = Readonly<{
-    sampleId: string;
-    interval: number;
-    transitionType: string;
-    dynamic: string;
-    crossfadeOutMs: number;
-}>;
-
-/**
- * What closes a staged bank: the zone map to build and the dimensions to build
- * it at. The hand-maintained mirror of `LevainBankLayout`
- * (`crates/sourdaw-native/src/commands/levain.rs`), which refuses a field it
- * does not know.
- */
-export type NativeLevainBankLayout = Readonly<{
-    zones: readonly NativeLevainZone[];
-    legatoTransitions: readonly NativeLevainLegatoTransition[];
-    numArticulations: number;
-    numMics: number;
 }>;
 
 export type CommitLevainBankInput = Readonly<{

@@ -576,4 +576,90 @@ describe('createNativeOfflineGraphBackend', () => {
         });
         await expect(backend.render(1)).rejects.toThrow('native offline backend disposed');
     });
+
+    // A bounce of a carried Levain strip must sound the instrument, and
+    // `map_device` refuses the device until its bank is committed — so the
+    // stage is not merely present, it is before the probe. Clip material still
+    // goes first: the two orderings are one rule, material before mapping.
+    it('commits a device bank after clip material and before the mapping probe', async () => {
+        const calls: string[] = [];
+        const scripted = scriptedTransport();
+        const transport: NativeGraphTransport = {
+            ...scripted,
+            async registerTimelineSample(input) {
+                calls.push('register_timeline_sample');
+                return scripted.registerTimelineSample(input);
+            },
+            async beginLevainBank() {
+                calls.push('begin_levain_bank');
+                return null;
+            },
+            async registerLevainSample() {
+                calls.push('register_levain_sample');
+                return null;
+            },
+            async commitLevainBank() {
+                calls.push('commit_levain_bank');
+                return null;
+            },
+            async mapGraphBatch(input) {
+                calls.push('map_graph_batch');
+                return scripted.mapGraphBatch(input);
+            },
+        };
+
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport,
+            acquireNativeSampleBank: () =>
+                Promise.resolve({
+                    bank: {
+                        instrumentId: 'violin-1',
+                        numArticulations: 1,
+                        numMics: 1,
+                        zones: [],
+                        legatoTransitions: [],
+                        samples: [
+                            {
+                                sampleId: '0',
+                                sampleRate: SAMPLE_RATE,
+                                channels: 1,
+                                frameCount: 1,
+                                pcm: new Uint8Array([1, 2, 3, 4]),
+                            },
+                        ],
+                    },
+                    release: vi.fn(),
+                }),
+        });
+
+        const applied = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    ...TRACK_STRIP,
+                    devices: [
+                        {
+                            id: 'device-a',
+                            name: 'Levain',
+                            type: 'levain',
+                            bypassed: false,
+                            parameterValues: {},
+                            sampleBankKey: 'levain:viola',
+                        },
+                    ],
+                },
+                clipCommand('source-a', stereoBuffer([0.5], [-0.5])),
+            ],
+        });
+
+        expect(applied.application).toBe('applied');
+        expect(calls).toEqual([
+            'register_timeline_sample',
+            'begin_levain_bank',
+            'register_levain_sample',
+            'commit_levain_bank',
+            'map_graph_batch',
+        ]);
+    });
 });

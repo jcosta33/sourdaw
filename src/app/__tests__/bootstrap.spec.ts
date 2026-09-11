@@ -65,6 +65,12 @@ type RuntimeSinkUnderTest = {
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => Readonly<Record<string, number>> | null;
+    nativeSampleBankKey: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => string | null;
+    acquireNativeSampleBank: (bankKey: string) => Promise<unknown>;
+    nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
 };
 
 const {
@@ -99,6 +105,10 @@ const {
     getDurableProjectOwnerIdMock,
     getVersionedCommandBatchCommitDispositionMock,
     prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBankMock,
+    getLevainEngineParameterNameMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffectsMock,
@@ -170,6 +180,16 @@ const {
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
+        projectLevainDeviceStateToNativePatchMock: vi.fn<
+            (input: { deviceState: unknown }) => Readonly<Record<string, number>> | null
+        >(() => ({ current_articulation: 4 })),
+        nativeBankKeyForLevainDeviceStateMock: vi.fn<(input: { deviceState: unknown }) => string | null>(
+            () => 'levain:violin-1'
+        ),
+        acquireLevainNativeBankMock: vi.fn(() => Promise.resolve(null)),
+        getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
+            paramId === 'masterGain' ? 'master_gain' : null
+        ),
         initBranchStateMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
             Promise.resolve({ recoveredRunIds: [] })
@@ -442,6 +462,10 @@ vi.mock('#/modules/Levain/useCases', () => ({
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatch: projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceState: nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBank: acquireLevainNativeBankMock,
+    getLevainEngineParameterName: getLevainEngineParameterNameMock,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -965,6 +989,57 @@ describe('bootstrap', () => {
                 expect.objectContaining({ master_gain: 0.4 })
             );
             expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The sampler's articulation rides `deviceState` as a string, so an
+         * unwired `levain` row leaves a natively carried strip sounding the
+         * engine's default articulation whatever the project saved.
+         */
+        it('projects a levain device’s articulation through the Levain module', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
+
+            expect(getSink().projectNativeDeviceState({ deviceType: 'levain', deviceState: chunk })).toEqual({
+                current_articulation: 4,
+            });
+            expect(projectLevainDeviceStateToNativePatchMock).toHaveBeenCalledWith({ deviceState: chunk });
+        });
+
+        /**
+         * The bank door beside the row above. `map_device` refuses a Levain
+         * device whose key holds no committed bank, so an unwired row is a
+         * strip the engine will not build at all — and a row wired for a body
+         * built from its own record would stage material nothing reads.
+         */
+        it('names the bank a levain device sounds, and nothing for a body built from its record', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } };
+
+            expect(getSink().nativeSampleBankKey({ deviceType: 'levain', deviceState: chunk })).toBe('levain:violin-1');
+            expect(nativeBankKeyForLevainDeviceStateMock).toHaveBeenCalledWith({ deviceState: chunk });
+            expect(getSink().nativeSampleBankKey({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
+            expect(getSink().nativeSampleBankKey({ deviceType: 'builtin-eq', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The vocabulary beside those two rows. Levain delivers its panel's
+         * live writes into AudioEngine, so AudioEngine asks here for the
+         * sampler's engine names rather than importing the module back. An
+         * unwired row leaves every natively carried Levain write addressed by a
+         * panel id the engine cannot resolve — and one unresolvable name
+         * refuses the whole batch, not just its own write.
+         */
+        it('spells a levain parameter through the Levain module, and nothing for a body that spells its own', () => {
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'levain', paramId: 'masterGain' })).toBe(
+                'master_gain'
+            );
+            expect(getLevainEngineParameterNameMock).toHaveBeenCalledWith({ paramId: 'masterGain' });
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'fermenter', paramId: 'oscEngine' })).toBeNull();
+        });
+
+        it('routes a bank acquisition to the module that minted the key', async () => {
+            await getSink().acquireNativeSampleBank('levain:violin-1');
+
+            expect(acquireLevainNativeBankMock).toHaveBeenCalledWith('levain:violin-1');
         });
     });
 

@@ -61,6 +61,7 @@ export type NativeGraphWireDevice = Readonly<{
     parameterValues: Readonly<Record<string, number>>;
     externalPluginId?: string;
     externalInstanceId?: string;
+    sampleBankKey?: string;
 }>;
 
 /** `ClipSourcePayload` in `graph.rs`: the identity, never the realisation. */
@@ -172,6 +173,7 @@ function serializeDevice(device: Device): NativeGraphWireDevice {
         parameterValues: { ...device.parameterValues },
         ...(device.externalPluginId !== undefined ? { externalPluginId: device.externalPluginId } : {}),
         ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
+        ...(device.sampleBankKey !== undefined ? { sampleBankKey: device.sampleBankKey } : {}),
     };
 }
 

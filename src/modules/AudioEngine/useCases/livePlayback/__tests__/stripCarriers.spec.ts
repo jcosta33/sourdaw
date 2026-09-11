@@ -369,6 +369,23 @@ describe('projectStripCarriers', () => {
         expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
     });
 
+    // The sampler is the one body the engine builds from staged material
+    // rather than from its record, and it used to be the reason an orchestral
+    // strip stayed on Web Audio. It is a native instrument like any other now:
+    // the bank reaches the store before the batch that maps the device.
+    it('carries an orchestral sampler strip natively', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({ id: 'audio-1', kind: 'midi', devices: [createDevice({ id: 'd', type: 'levain' })] }),
+            ],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
+    });
+
     // The bound on that: a built-in *effect* is still not something for a
     // clip-less strip to sound. It processes an input and generates nothing on
     // its own, so a strip whose only body is one is as unscheduled as a strip

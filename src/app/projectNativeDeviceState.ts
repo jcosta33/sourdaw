@@ -1,4 +1,5 @@
 import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
+import { projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 import { projectToasterKitToNativePatch } from '#/modules/Toaster/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
@@ -34,20 +35,22 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // needs it folded in here the same way the web offline path pushes it after
     // construction (`prepareOfflineToaster`).
     toaster: (deviceState) => projectToasterKitToNativePatch({ deviceState }),
-    // No native body (`nativeBuiltinBodies.ts` registers no entry for it):
-    // sample zones reach a live or offline registry directly, never a
-    // `write-device-parameter` batch this projection could feed.
-    levain: null,
-    // No native body, for the same reason as Levain: Crumbs streaming is
-    // native-only through its own registry, not through a built-in body.
+    // The sampler's articulation choice is a string in `deviceState`, not a
+    // `parameterValues` entry, and the engine takes it as the numeric
+    // `current_articulation`. Its sample zones are not projected at all: they
+    // reach the engine as a staged bank, which `nativeSampleBanks.ts` answers
+    // for through this sink's own bank door.
+    levain: (deviceState) => projectLevainDeviceStateToNativePatch({ deviceState }),
+    // No native body: Crumbs streaming is native-only through its own registry,
+    // not through a built-in body.
     'builtin-crumbs': null,
     // Its knobs are a `parameterValues` table (`GrandBouleDspParamNames.ts`).
     // Its own `deviceState` also carries a piano-morph state
     // (`GrandBouleDeviceState.ts`) whose derived overrides
     // (`projectGrandBouleMorphState`) reach the web offline worklet the same
     // way Toaster's kit does — a parallel gap this projection does not close.
-    // #3124 is Toaster's kit alone; a native Grand Boule strip with morph
-    // enabled renders the unmorphed base model until that gap has its own lane.
+    // A native Grand Boule strip with morph enabled renders the unmorphed base
+    // model until that gap has its own lane.
     'grand-boule': null,
     // Every control the panel owns is a `GlutenPatch` key encoded to a number
     // and persisted as a `parameterValues` entry; nothing else to project.

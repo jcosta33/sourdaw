@@ -39,6 +39,7 @@ import {
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
 
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
@@ -194,6 +195,17 @@ function tablePatch(
         }
         return patch;
     };
+}
+
+/**
+ * The sampler's engine name for one project parameter id, read from the module
+ * that owns that vocabulary.
+ *
+ * Asked at call time rather than held: the sink is registered by the
+ * composition root, and this table is built when the module loads.
+ */
+function levainEngineParameterName({ paramId }: { paramId: string }): string | null {
+    return getAudioDeviceRuntimeSink().nativeBuiltinParameterName({ deviceType: 'levain', paramId });
 }
 
 /**
@@ -532,6 +544,44 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             // The engine reports no latency for this body and the worklet
             // declares none either, so there is nothing here for the renderer
             // to exclude from its own sum.
+            latencyCompensatedByEngine: false,
+        },
+    ],
+    [
+        'levain',
+        {
+            soundsNotes: true,
+            /**
+             * The orchestral sampler. Unlike every other body here it is not
+             * built from its record at all: `map_device` builds the instance
+             * from a *sample bank* the renderer staged under the device's own
+             * `sampleBankKey`, and refuses the device outright when no
+             * committed bank stands there (`crates/sourdaw-native/src/commands/
+             * graph.rs`). The key reaches the wire through
+             * `projectDeviceForNativeBody`; this row is only the vocabulary the
+             * built instance then answers to.
+             *
+             * Its vocabulary is the one this table does not hold itself. Two
+             * families of project id reach it — the patch's own fields, whose
+             * ids invert the engine names `projectLevainPatchToEngineParameters`
+             * emits, and the wider automation surface `LEVAIN_DESCRIPTOR`
+             * declares — and both are Levain's to spell. Asked for through the
+             * runtime sink rather than imported, because Levain's panel writes
+             * to the engine directly and so imports this module: reading its
+             * map from here would close a cycle. The fallback is unreachable for
+             * anything a lane can spell, because `readLiveAutomationWrites`
+             * gates on `addressesParameter` before it asks for a name.
+             *
+             * The articulation choice is not a `parameterValues` entry: it is a
+             * string in `Device.deviceState`, folded into the record as
+             * `current_articulation` by `projectDeviceForNativeBody`'s merge.
+             */
+            parameterName: (paramId) => levainEngineParameterName({ paramId }) ?? paramId,
+            projectPatch: tablePatch(levainEngineParameterName),
+            addressesParameter: (paramId) => levainEngineParameterName({ paramId }) !== null,
+            // A sampled orchestral instrument: a clip note holds its key until
+            // the note ends, and its release is what triggers the release zones.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],

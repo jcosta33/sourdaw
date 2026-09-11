@@ -13,4 +13,12 @@ export type Device = {
     deviceState?: unknown;
     externalPluginId?: string;
     externalInstanceId?: string;
+    /**
+     * The native sample bank this device sounds, as the bank store keys it.
+     *
+     * Not project truth and never read off a saved device: a producer sets it
+     * from `projectDeviceForNativeBody` for the one device type whose native
+     * body is built from a staged bank rather than from `parameterValues`.
+     */
+    sampleBankKey?: string;
 };

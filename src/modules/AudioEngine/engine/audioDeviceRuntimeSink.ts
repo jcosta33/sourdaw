@@ -1,5 +1,7 @@
 import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
+import { type NativeSampleBankLease } from '../models/NativeSampleBank';
+
 import { type BacteriaMeterData } from './BacteriaNode';
 import { type CrustMeterData } from './CrustNode';
 import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
@@ -106,6 +108,43 @@ export type AudioDeviceRuntimeSink = {
         deviceState: DeviceStateChunk | undefined;
     }) => Readonly<Record<string, number>> | null;
     /**
+     * The native sample bank a device sounds, as the bank store keys it, or
+     * `null` when the type sounds no bank.
+     *
+     * A sampler is the one built-in whose body cannot be built from its
+     * `parameterValues` at all: `map_device` refuses a Levain device that names
+     * no committed bank rather than splicing a mute sampler onto the strip
+     * (`crates/sourdaw-native/src/commands/graph.rs`). So the key has to reach
+     * the wire beside the record, and only the owning module can read which
+     * instrument a device's opaque `deviceState` selects — the same reason
+     * `projectNativeDeviceState` exists, answered from the same composition
+     * root.
+     */
+    nativeSampleBankKey: (input: { deviceType: string; deviceState: DeviceStateChunk | undefined }) => string | null;
+    /**
+     * The engine's own name for one project-side parameter id of a built-in
+     * body, or `null` for an id that body does not address.
+     *
+     * Most built-ins state their vocabulary in `nativeBuiltinBodies`' own table
+     * or in a mapper this module holds. A device module whose panel writes to
+     * the engine *directly* cannot be read from there: it imports this module
+     * to deliver those writes, so this module importing it back would close a
+     * cycle. Answered from the composition root instead, which may see both.
+     */
+    nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
+    /**
+     * Decode the bank under `bankKey` and hold it, or answer `null` for a key
+     * no module claims.
+     *
+     * The other half of [nativeSampleBankKey]: the producer names a bank on the
+     * wire, and the backend stages that bank's material before the batch that
+     * names it — the ordering `register_timeline_sample` already keeps for clip
+     * material, and for the same reason. The lease is the caller's to release
+     * once the bytes have crossed; the bank's life on the native side is ended
+     * by `release_levain_bank` instead.
+     */
+    acquireNativeSampleBank: (bankKey: string) => Promise<NativeSampleBankLease | null>;
+    /**
      * Give a *live* Crumbs worklet the sample the device is set to play.
      *
      * A wasm Crumbs instance starts with an empty pool, so without this it
@@ -148,6 +187,9 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
     projectNativeDeviceState: () => null,
+    nativeSampleBankKey: () => null,
+    nativeBuiltinParameterName: () => null,
+    acquireNativeSampleBank: () => Promise.resolve(null),
     prepareCrumbsDevice: () => Promise.resolve('failed'),
 };
 

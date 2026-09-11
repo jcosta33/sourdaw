@@ -167,4 +167,50 @@ describe('projectDeviceForNativeBody', () => {
 
         expect(called).toBe(false);
     });
+
+    // One body is built from staged material rather than from its record, so
+    // the key the engine looks that material up under has to ride beside the
+    // record. Without it `map_device` refuses the device by name.
+    it('carries the bank key the sink reads off a device’s own state', () => {
+        setAudioDeviceRuntimeSink({
+            nativeSampleBankKey: ({ deviceType, deviceState }) => {
+                expect(deviceType).toBe('levain');
+                expect(deviceState).toBe(A_DEVICE_STATE);
+                return 'levain:violin-1';
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'levain', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(projected.sampleBankKey).toBe('levain:violin-1');
+    });
+
+    // Absent rather than `undefined`: the payload for every body built from its
+    // record stays exactly what the engine took before banks existed.
+    it('leaves the field off a device whose state names no bank', () => {
+        setAudioDeviceRuntimeSink({ nativeSampleBankKey: () => null });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'toaster', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(Object.hasOwn(projected, 'sampleBankKey')).toBe(false);
+    });
+
+    it('leaves the field off a device holding no state at all', () => {
+        let called = false;
+        setAudioDeviceRuntimeSink({
+            nativeSampleBankKey: () => {
+                called = true;
+                return 'levain:violin-1';
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(createDevice({ id: 'device-a', type: 'levain' }));
+
+        expect(Object.hasOwn(projected, 'sampleBankKey')).toBe(false);
+        expect(called).toBe(false);
+    });
 });
