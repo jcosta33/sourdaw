@@ -10,15 +10,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphDevice } from '../../../models/AudioGraphBackend';
 import { type NativeSampleBank, type NativeSampleBankLease } from '../../../models/NativeSampleBank';
-import { type Device } from '../../../models/TrackViewTypes';
 import { collectNativeSampleBankKeys } from '../collectNativeSampleBankKeys';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
 import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
 import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
 
-function device(overrides: Partial<Device> = {}): Device {
+function device(overrides: Partial<AudioGraphDevice> = {}): AudioGraphDevice {
     return {
         id: 'device-a',
         name: 'Levain',
@@ -29,7 +28,7 @@ function device(overrides: Partial<Device> = {}): Device {
     };
 }
 
-function createStrip(trackId: string, devices: readonly Device[]): AudioGraphCommand {
+function createStrip(trackId: string, devices: readonly AudioGraphDevice[]): AudioGraphCommand {
     return {
         kind: 'create-track-strip',
         trackId,
@@ -41,7 +40,7 @@ function createStrip(trackId: string, devices: readonly Device[]): AudioGraphCom
     };
 }
 
-function createBus(busId: string, devices: readonly Device[]): AudioGraphCommand {
+function createBus(busId: string, devices: readonly AudioGraphDevice[]): AudioGraphCommand {
     return {
         kind: 'create-bus-strip',
         busId,

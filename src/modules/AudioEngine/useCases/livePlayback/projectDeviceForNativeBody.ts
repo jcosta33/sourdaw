@@ -46,7 +46,7 @@
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
-import { type Device as NativeBodyDevice } from '../../models/TrackViewTypes';
+import { type AudioGraphDevice as NativeBodyDevice } from '../../models/AudioGraphBackend';
 
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody } from './nativeBuiltinBodies';
 

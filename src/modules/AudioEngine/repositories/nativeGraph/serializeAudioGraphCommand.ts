@@ -41,6 +41,7 @@ import {
     type AudioGraphClipPlayback,
     type AudioGraphCommand,
     type AudioGraphCorrelation,
+    type AudioGraphDevice,
     type AudioGraphDeviceParameterTarget,
     type AudioGraphMidiNoteEvent,
     type AudioGraphParameterWrite,
@@ -50,7 +51,6 @@ import {
     type AudioGraphStripParameterTarget,
     type AudioGraphStripState,
 } from '../../models/AudioGraphBackend';
-import { type Device } from '../../models/TrackViewTypes';
 
 /** `DevicePayload` in `graph.rs`: project truth minus the opaque state. */
 export type NativeGraphWireDevice = Readonly<{
@@ -164,7 +164,7 @@ export type NativeGraphWireBatch = Readonly<{
     commands: readonly NativeGraphWireCommand[];
 }>;
 
-function serializeDevice(device: Device): NativeGraphWireDevice {
+function serializeDevice(device: AudioGraphDevice): NativeGraphWireDevice {
     return {
         id: device.id,
         name: device.name,
