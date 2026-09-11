@@ -12372,7 +12372,7 @@ mod tests {
     /// (`BacteriaEngine::apply_param`, `crates/daw-dsp/src/bacteria/engine.rs`).
     ///
     /// `band0_convolutionSeparation` is the longest name this vocabulary can
-    /// spell at 27 bytes, five under `BUILTIN_PARAM_NAME_CAPACITY`, and
+    /// spell at 27 bytes, 13 under `BUILTIN_PARAM_NAME_CAPACITY`, and
     /// `stepSeqVal_31` is the widest index of the engine's other dynamically
     /// named family — the step sequencer's 32 steps. Both parse, so the
     /// carrier needs no shape change to hold this body's vocabulary.
