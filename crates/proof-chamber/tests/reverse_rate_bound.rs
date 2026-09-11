@@ -166,3 +166,28 @@ fn the_instance_clamps_a_block_to_its_exported_capacity() {
         );
     }
 }
+
+/// The value arrives unclamped from the wire, so the arm's clamp against the
+/// buffer is the only thing between an over-range write and a read past the
+/// capture buffer; this is that clamp's spec.
+#[test]
+fn an_over_range_size_write_still_renders_within_the_capture_buffer() {
+    for name in ["size", "reverse_time"] {
+        let mut instance = ProofChamberInstance::new(RATE_48);
+        instance.set_param("algorithm", ALGORITHM_REVERSE);
+        // Request 10.5 s of a 3.0 s buffer: 0.5 + 4.0 * 2.5 = 10.5 s
+        instance.set_param(name, 4.0);
+
+        let (left, right) = burst();
+        // Process at least four 128-frame blocks
+        for _ in 0..4 {
+            let out = unsafe { read_output(instance.process(&left, &right, BURST as u32), BURST) };
+            for (i, sample) in out.iter().enumerate() {
+                assert!(
+                    sample.is_finite(),
+                    "set_param({name}, 4.0) produced a non-finite sample at block index {i}: {sample}"
+                );
+            }
+        }
+    }
+}
