@@ -1,0 +1,29 @@
+scripts/oxlintCraft/__tests__/plugin.spec.ts
+  s_d2824df80c1d84::t_f74452bac53cee 43-45
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  s_d2824df80c1d84::t_07ca8634eabe70 431
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_d2824df80c1d84::t_36e8cac0859dc5 278-281
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_d2824df80c1d84::t_e1a6e7acbc0415 45-48,50-53
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_d2824df80c1d84::t_93d80be3521620 149
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_d2824df80c1d84::t_447d995c787772 309-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "70fd6e5040f9ec52eca6148d5d4f6d4d8bd8882c",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
