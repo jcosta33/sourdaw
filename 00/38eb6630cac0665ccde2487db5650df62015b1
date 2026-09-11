@@ -1,0 +1,59 @@
+electron/__tests__/commands.spec.ts
+  s_06adf2b091dc62::t_d61c48e03c2c5e 343-347
+electron/commands.ts
+  s_06adf2b091dc62::t_1a499e2e9e87c1 37-41
+crates/sourdaw-native/src/addon/mod.rs
+  s_06adf2b091dc62::t_8bb15aee885f04 455-527
+crates/sourdaw-native/src/commands/mod.rs
+  s_06adf2b091dc62::t_3d5b6d62be4d10 1
+src/utils/sourdawCommandArguments.ts
+  s_06adf2b091dc62::t_2a6a6a868a09cb 22-26
+electron/__tests__/agentWebviewBoundary.spec.ts
+  s_06adf2b091dc62::t_69d3e5ef9206f4 59-63
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_06adf2b091dc62::t_d672d78794a227 369
+  s_06adf2b091dc62::t_2a1cc740465a70 378
+crates/sourdaw-native/src/commands/agent_asset_saga.rs
+  s_06adf2b091dc62::t_6863f36099b378 216,954-1006
+  s_06adf2b091dc62::t_1f27832e43f1f7 855-879
+  s_06adf2b091dc62::t_a5cc2483373cad 730
+  s_06adf2b091dc62::t_d496ab6ede1a8e 1104
+  s_06adf2b091dc62::t_29f2e1e845e1b0 1124
+  s_06adf2b091dc62::t_20080ce96771f9 346,372,382,1187
+  s_06adf2b091dc62::t_8a61b2943d1793 636
+  s_06adf2b091dc62::t_90f3059f0a13ad 680,734,737,763-764,797,886,1008,1010,1023-1028
+  s_06adf2b091dc62::t_64028d706d1f33 102,110,206-211,213-214,217,227,229-287,455,480,487,506,511,533,545,548,551,554,593-594,600,674-675,684,731-732,740,758-759,767,791-792,801,820,838,891,903,914,944,1011,1029,1035,1074,1079,1097,1151,1174,1197,1227,1233,1242,1246,1250,1254,1261,1270,1276,1285,1300,1309,1317,1321,1335,1355,1373,1396,1424,1456,1479,1527,1554,1580,1623,1655
+  s_06adf2b091dc62::t_114d23d3e691a6 1-101,103-109,111-205,212,215,218-226,228,288-345,347-371,373-381,383-454,456-479,481-486,488-505,507-510,512-532,534-544,546-547,549-550,552-553,555-592,595-599,601-635,637-673,676-679,681-683,685-729,733,735-736,738-739,741-757,760-762,765-766,768-790,793-796,798-800,802-819,821-837,839-854,880-885,887-890,892-902,904-913,915-943,945-953,1007,1009,1012-1022,1030-1034,1036-1073,1075-1078,1080-1096,1098-1103,1105-1123,1125-1150,1152-1173,1175-1186,1188-1196,1198-1226,1228-1232,1234-1241,1243-1245,1247-1249,1251-1253,1255-1260,1262-1269,1271-1275,1277-1284,1286-1299,1301-1308,1310-1316,1318-1320,1322-1334,1336-1354,1356-1372,1374-1395,1397-1423,1425-1455,1457-1478,1480-1526,1528-1553,1555-1579,1581-1622,1624-1654,1656-1661
+src/modules/Project/repositories/agentAssetSaga/__tests__/invokeAgentAssetSaga.spec.ts
+  s_06adf2b091dc62::t_6a2e4396c11c78 1-99
+src/modules/Project/repositories/agentAssetSaga/agentAssetSagaWire.ts
+  s_06adf2b091dc62::t_e10e5d98a2af07 1-111
+src/modules/Project/repositories/agentAssetSaga/cleanupAgentAssetSaga.ts
+  s_06adf2b091dc62::t_f3169e17709455 1-20
+src/modules/Project/repositories/agentAssetSaga/finalizeAgentAssetExport.ts
+  s_06adf2b091dc62::t_aeffb96890a945 1-21
+src/modules/Project/repositories/agentAssetSaga/importAgentAsset.ts
+  s_06adf2b091dc62::t_e74b1776159e76 1-21
+src/modules/Project/repositories/agentAssetSaga/parseAgentAssetSagaReceipt.ts
+  s_06adf2b091dc62::t_dae1775bf12cee 1-17
+src/modules/Project/repositories/agentAssetSaga/registerAgentAssetHandle.ts
+  s_06adf2b091dc62::t_fc954a7d9d4600 1-23
+src/modules/Project/repositories/agentAssetSaga/stageAgentAssetExport.ts
+  s_06adf2b091dc62::t_bd9cce9abbe5f1 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0038eb6630cac0665ccde2487db5650df62015b1",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
