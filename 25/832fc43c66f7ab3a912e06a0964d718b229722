@@ -1,0 +1,46 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_08a787a8696a01 1333
+  s_9b530f08172a54::t_837cffafa06215 1337
+  s_9b530f08172a54::t_fbf526f03a3b9e 1718
+crates/proof-chamber/tests/reverse_rate_bound.rs
+  s_9b530f08172a54::t_0f6532608a7fe8 1-2,10,14,17-23,28-29,32-48,51-53,68-69,74-85,165-167
+  s_9b530f08172a54::t_024098b7042705 3-9,11-13,15-16,24-27,30-31,49-50,54-67,70-73,86-164
+  s_9b530f08172a54::t_b9a9fc2b0c0201 168
+crates/proof-chamber/tests/reverb_process_rt.rs
+  s_9b530f08172a54::t_787f7b40cbdd7b 201-217
+  s_9b530f08172a54::t_0e1bbba3d20776 80-87
+crates/proof-chamber/src/reverse.rs
+  s_9b530f08172a54::t_3203cafe2d6787 66-67,71-72
+  s_9b530f08172a54::t_2b1801e515ecb3 96
+  s_9b530f08172a54::t_0776e34d15995a 116
+  s_9b530f08172a54::t_6404df6bf09b70 14-36
+crates/proof-chamber/src/lib.rs
+  s_9b530f08172a54::t_556e7cdadc690c 440
+  s_9b530f08172a54::t_4f0ab4c5c7633a 302-309
+  s_9b530f08172a54::t_15eb712b90eebb 327
+  s_9b530f08172a54::t_083d822222ad80 676,682-705
+public/wasm/manifest.json
+  s_9b530f08172a54::t_2f2f9de47ed9c8 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_9b530f08172a54::t_03a52aeaeca4f8 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_9b530f08172a54::t_80ca1e2595a287 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_9b530f08172a54::t_63eb65a024547d 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25832fc43c66f7ab3a912e06a0964d718b229722",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
