@@ -40,8 +40,9 @@ describe('sourdaw-craft plugin surface', () => {
         const first = listed[0];
         const last = listed[listed.length - 1];
         expect(listed.length).toBeGreaterThan(1);
-        expect(first).toBeDefined();
-        expect(last).toBeDefined();
+        if (typeof first !== 'string' || typeof last !== 'string') {
+            throw new TypeError('no-useless-clone-spread baseline must list at least two paths');
+        }
         expect(first).not.toBe(last);
         expect(isCraftBaselineFile(first, 'no-useless-clone-spread')).toBe(true);
         expect(isCraftBaselineFile(last, 'no-useless-clone-spread')).toBe(true);

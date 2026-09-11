@@ -306,14 +306,15 @@ beforeEach(() => {
         const stored = pendingActionConfirmationStore.value?.confirmations.find(
             (candidate) => candidate.id === confirmationId
         );
-        return stored === undefined
-            ? null
-            : approvalView({
-                  confirmationId: stored.id,
-                  status: stored.status,
-                  prompt: stored.prompt,
-                  actionLabels: stored.actionLabels,
-              });
+        if (stored === undefined) {
+            return null;
+        }
+        return approvalView({
+            confirmationId: stored.id,
+            status: stored.status,
+            prompt: stored.prompt,
+            actionLabels: stored.actionLabels,
+        });
     });
     setRuns([]);
     aiActionHistoryStore.set({ groups: [], panelOpen: false });

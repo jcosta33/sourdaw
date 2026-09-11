@@ -275,9 +275,10 @@ export async function reproposePendingChatActions(
     const { approval, parsed: parsedRefreshed, refreshed } = rebound;
 
     const { actions, actionLabels } = selectIncludedPlan(confirmation, originalCommandIds, includedOriginalCommandIds);
-    const affectedIds = selectsSubset
-        ? [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))]
-        : confirmation.affectedIds;
+    let affectedIds = confirmation.affectedIds;
+    if (selectsSubset) {
+        affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+    }
 
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({

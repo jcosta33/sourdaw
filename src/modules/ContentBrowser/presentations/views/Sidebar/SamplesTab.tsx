@@ -42,12 +42,15 @@ export const SamplesTab = ({
             trackId = newTrack.id;
         }
         const tempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
-        const cachedBuffer = sample.audioBufferId
-            ? getCachedAudioBuffer({ bufferId: sample.audioBufferId })
-            : undefined;
+        let cachedBuffer;
+        if (sample.audioBufferId) {
+            cachedBuffer = getCachedAudioBuffer({ bufferId: sample.audioBufferId });
+        }
         const durationSeconds = sample.durationSeconds ?? cachedBuffer?.duration;
-        const durationBeats =
-            durationSeconds !== undefined ? Math.max(1, Math.ceil((durationSeconds / 60) * tempo)) : 8;
+        let durationBeats = 8;
+        if (durationSeconds !== undefined) {
+            durationBeats = Math.max(1, Math.ceil((durationSeconds / 60) * tempo));
+        }
         addClip({
             trackId,
             startBeat: 0,
