@@ -17,6 +17,8 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
@@ -44,6 +46,7 @@ import { SpatialMapRenderer } from './SpatialMapRenderer';
 
 type LibraryPreview = {
     playingId: string | null;
+    play: (id: string, buffer: AudioBuffer) => void;
     playFile: (id: string, file: File) => Promise<void>;
     stop: () => void;
 };
@@ -228,6 +231,20 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
         const root = roots.find((r) => r.id === sample.libraryRootId);
         if (!root) {
+            return;
+        }
+
+        const cachedBuffer = getCachedAudioBuffer({ bufferId: sample.id });
+        if (cachedBuffer) {
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
+            previewRef.current.play(sample.id, cachedBuffer);
+            return;
+        }
+
+        if (root.id === FACTORY_LIBRARY_ROOT_ID) {
+            notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
             return;
         }
 
