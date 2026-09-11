@@ -377,4 +377,24 @@ describe('ClipInspector', () => {
 
         expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
+
+    it('should render time stretch select for audio clips and dispatch setClipStretchMode on change', () => {
+        const { container } = render(<ClipInspector {...defaultProps} />);
+        const select = container.querySelector<HTMLSelectElement>('#stretch-mode-select');
+        expect(select).toBeInTheDocument();
+        expect(select?.value).toBe('off');
+
+        fireEvent.change(select!, { target: { value: 'timestretch' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipStretchMode',
+            payload: { clipId: 'clip-1', mode: 'timestretch' },
+        });
+    });
+
+    it('should not render time stretch select for midi clips', () => {
+        const { container } = render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, type: 'midi' }} />);
+        expect(container.querySelector('#stretch-mode-select')).toBeNull();
+        expect(screen.queryByText('Time Stretch')).not.toBeInTheDocument();
+    });
 });
