@@ -380,6 +380,10 @@ const transport: NativeGraphTransport = {
         mocks.wireCalls.push(`register:${input.sampleId}`);
         return Promise.resolve();
     },
+    beginLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
+    registerLevainSample: () => Promise.reject(new Error('the live session stages no levain bank here')),
+    commitLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
+    releaseLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
     renderGraphOffline: () => Promise.reject(new Error('the live session must not render offline')),
     mapGraphBatch: () => Promise.reject(new Error('the live session must not map batches')),
 };

@@ -74,6 +74,18 @@ function scriptedTransport(options?: {
             registered.push(input);
             return { frames: input.pcm.byteLength / (4 * input.channels) };
         },
+        async beginLevainBank() {
+            throw new Error('the offline backend stages no levain bank (begin_levain_bank)');
+        },
+        async registerLevainSample() {
+            throw new Error('the offline backend stages no levain bank (register_levain_sample)');
+        },
+        async commitLevainBank() {
+            throw new Error('the offline backend stages no levain bank (commit_levain_bank)');
+        },
+        async releaseLevainBank() {
+            throw new Error('the offline backend stages no levain bank (release_levain_bank)');
+        },
         async renderGraphOffline(input) {
             renders.push(input);
             return interleavedBytes(input.frames, (frame, channel) => (channel === 0 ? frame : -frame));
