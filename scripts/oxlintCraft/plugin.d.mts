@@ -23,4 +23,6 @@ declare const plugin: {
     >;
 };
 
+// oxlint jsPlugins require a default export from plugin.mjs; this file is that module's types.
+// eslint-disable-next-line import/no-default-export -- jsPlugins loads the companion .mjs as default
 export default plugin;
