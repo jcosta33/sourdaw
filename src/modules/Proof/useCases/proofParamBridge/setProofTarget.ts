@@ -7,7 +7,7 @@ import { proofTargetToInt } from '../../services/proofTargetCodec';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
-import { syncFullPatch } from './syncFullPatch';
+import { rehydrateRestoredPatch } from './rehydrateRestoredPatch';
 
 type SetProofTargetInput = {
     deviceId: string;
@@ -24,8 +24,12 @@ export function setProofTarget({ deviceId, target }: SetProofTargetInput): void 
         return;
     }
 
+    // Before bridge registration, hydrate the store from the persisted row so
+    // this edit applies over restored values; the engine hears only the edit,
+    // because a natively carried body already holds the persisted record and
+    // the web twin takes its full sync at registration.
     if (!bridges.has(deviceId)) {
-        syncFullPatch(deviceId);
+        rehydrateRestoredPatch(deviceId);
     }
 
     const targetLufs = TARGET_LUFS[target];

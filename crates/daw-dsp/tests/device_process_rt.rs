@@ -1622,8 +1622,7 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
 
     let mut instance = ProofInstance::new(SAMPLE_RATE);
     instance.set_param("eq_linear_phase", 1.0);
-    instance.set_param("limiter_ceiling", -1.0);
-    instance.set_param("limiter_threshold", -12.0);
+    instance.set_param("lim_ceiling", -1.0);
 
     unsafe {
         fill_input(
@@ -1637,6 +1636,12 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
     assert_all_finite(&warmup, "proof");
 
     assert_no_alloc(|| {
+        // 7 ms rather than the 5 ms default: the limiter's setter only resizes
+        // when the requested figure differs from the one it holds, so writing
+        // the default would take the early return and leave the resize — the
+        // one arm of this control that touches a buffer — uncovered by the
+        // guard.
+        instance.set_param("lim_lookahead", 7.0);
         for block in 0..GUARDED_BLOCKS {
             unsafe {
                 fill_input(

@@ -1486,7 +1486,6 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     runtimeSink.registerProofDevice({
                         deviceId,
                         bridge: {
-                            setParam: result.setParam,
                             reorderModules: result.reorderModules,
                             resetIntegrated: result.resetIntegrated,
                         },

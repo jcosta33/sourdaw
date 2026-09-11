@@ -18,8 +18,14 @@ type LevainRuntimeDevice = {
     handleCc: LevainNodeResult['handleCc'];
 };
 
+/**
+ * The two Proof gestures that have no device-parameter spelling, and so are the
+ * whole of what the worklet is reached for directly.
+ *
+ * A live parameter write is deliberately absent: Proof sends every one of those
+ * through `updateDeviceParam`, so a natively carried body hears it too.
+ */
 type ProofRuntimeBridge = {
-    setParam: ProofNodeResult['setParam'];
     reorderModules: ProofNodeResult['reorderModules'];
     resetIntegrated: ProofNodeResult['resetIntegrated'];
 };
