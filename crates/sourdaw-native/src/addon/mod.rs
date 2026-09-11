@@ -452,6 +452,79 @@ impl SourdawNative {
         reason(commands::filesystem::grant_path(path, mode, recursive).await)
     }
 
+    // ── Agent asset saga ───────────────────────────────────────────────
+
+    /// Mint an opaque handle for one path a file grant already admits.
+    ///
+    /// The only command in this group that takes a path. Every other one takes
+    /// a handle id, so an agent's reach is the set of paths a user picked.
+    #[napi]
+    pub async fn agent_asset_register_handle(
+        &self,
+        path: String,
+        mode: String,
+        owner: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_register_handle(path, mode, owner).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_import(
+        &self,
+        handle_id: String,
+        owner: Value,
+        declared: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_import(handle_id, owner, declared).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_stage_export(
+        &self,
+        destination_handle_id: String,
+        owner: Value,
+        expected_sha256: String,
+        data: Buffer,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_stage_export(
+                destination_handle_id,
+                owner,
+                expected_sha256,
+                &data,
+            )
+            .await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_finalize_export(
+        &self,
+        saga_id: String,
+        owner: Value,
+        authorization: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_finalize_export(saga_id, owner, authorization)
+                .await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_cleanup(
+        &self,
+        saga_id: Option<String>,
+        owner: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_cleanup(saga_id, owner).await,
+        )?)
+    }
+
     // ── Plugin hosting ─────────────────────────────────────────────────
 
     #[napi]

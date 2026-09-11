@@ -56,6 +56,11 @@ vi.mock('electron', () => ({
 
 /** Every command that reaches file bytes, a directory listing, provider gateway credentials, a collaboration document, or the cached model store. */
 const PRIVILEGED_COMMANDS = [
+    'agent_asset_cleanup',
+    'agent_asset_finalize_export',
+    'agent_asset_import',
+    'agent_asset_register_handle',
+    'agent_asset_stage_export',
     'open_provider_gateway_session',
     'provider_gateway_request',
     'cancel_provider_gateway_request',
