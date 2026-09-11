@@ -1,0 +1,52 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/beginConfirmedCommandExecution.ts
+  s_06adf2b091dc62::t_c346675b47bd98 147-150
+  s_06adf2b091dc62::t_ad59f3d472d3a6 179
+  s_06adf2b091dc62::t_e915ba29749637 117-118
+  s_06adf2b091dc62::t_327af40db047e4 65-68
+  s_06adf2b091dc62::t_481b41e0d32501 7
+  s_06adf2b091dc62::t_a8476e93ec7a9e 119-123
+  s_06adf2b091dc62::t_655581d3073127 22
+src/modules/Arrangement/useCases/freezeBounce/admitAgentRenderReceipt.ts
+  s_06adf2b091dc62::t_dd26cd69971dee 39-42
+  s_06adf2b091dc62::t_cd87ab51f10b00 53,55,57-58
+  s_06adf2b091dc62::t_86342339f45752 15
+  s_06adf2b091dc62::t_1cf7c25c307f2b 85,89,93,103,106-108
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_06adf2b091dc62::t_119c1fa9ff6115 270-277
+src/modules/Arrangement/useCases/freezeBounce/__tests__/agentFreezeRenderReceipt.spec.ts
+  s_06adf2b091dc62::t_9729b55716cf26 174,182-215
+  s_06adf2b091dc62::t_8783eb8fc0135d 81,95,109,120,131,144,155,166,177,221,234
+  s_06adf2b091dc62::t_0034b0b3ea9e97 27-30
+  s_06adf2b091dc62::t_87913bfbcace30 57-60
+src/modules/AiRuntime/useCases/agentRequestOrchestration/getRenderReceiptAdmissionFailure.ts
+  s_06adf2b091dc62::t_a9b55b09cdfe6d 28-29,34-35,39,41-42,48-54,62,72-75
+src/modules/AiRuntime/useCases/agentRequestOrchestration/retainedRenderReceipts.ts
+  s_06adf2b091dc62::t_07c7aacba96846 27-41,46-47,52-53
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_06adf2b091dc62::t_3b57779103812c 154
+  s_06adf2b091dc62::t_c1e93f7beceb18 41
+  s_06adf2b091dc62::t_ce80d82e240fd3 116-123,135
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/beginConfirmedCommandExecution.spec.ts
+  s_06adf2b091dc62::t_245f57bf75f0d4 1,4,7,12-15
+  s_06adf2b091dc62::t_e58ccf5091b7ad 25,30
+  s_06adf2b091dc62::t_70ae4d694e1ef3 47-48
+  s_06adf2b091dc62::t_37e7cedddd17c1 187-216
+  s_06adf2b091dc62::t_6b42ce25579759 684-754
+  s_06adf2b091dc62::t_418bda59c94853 306-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bda7d9fc49cc9fa341ffca05b830da727f0a7628",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
