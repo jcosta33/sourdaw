@@ -1,3 +1,4 @@
+pub mod agent_asset_saga;
 pub mod ai_audio;
 pub mod collab;
 pub mod crumbs;

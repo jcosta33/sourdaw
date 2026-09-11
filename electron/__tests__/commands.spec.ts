@@ -340,6 +340,11 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  * change fail here instead of at a musician's first invoke.
  */
 const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['agent_asset_cleanup', ['saga_id', 'owner']],
+    ['agent_asset_finalize_export', ['saga_id', 'owner', 'authorization']],
+    ['agent_asset_import', ['handle_id', 'owner', 'declared']],
+    ['agent_asset_register_handle', ['path', 'mode', 'owner']],
+    ['agent_asset_stage_export', ['destination_handle_id', 'owner', 'expected_sha256', 'data']],
     ['analyze_pitch', ['analysis_id', 'audio_path']],
     ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],

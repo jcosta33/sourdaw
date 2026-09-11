@@ -34,6 +34,11 @@
  * addition a one-line diff at the right place rather than an append anywhere.
  */
 export const EXPOSED_COMMANDS = [
+    'agent_asset_cleanup',
+    'agent_asset_finalize_export',
+    'agent_asset_import',
+    'agent_asset_register_handle',
+    'agent_asset_stage_export',
     'analyze_pitch',
     'apply_graph_commands',
     'arm_recording',
