@@ -7,9 +7,11 @@ type AgentRouteView = {
     requested: { route: string; locality: string };
     actual: { executor: string | null; locality: string; provider: string | null; model: string | null };
     platform: { available: boolean; unavailableReason: string | null };
+    options: readonly { routeId: string; admitted: boolean; reasons: readonly string[] }[];
     capability: { operations: readonly string[]; modalities: readonly string[]; streaming: boolean } | null;
     fidelity: string | null;
     fallback: { attempted: boolean; reasons: readonly string[] };
+    fallbackPolicy: string;
     dataDisclosure: { categories: readonly string[]; retention: Readonly<Record<string, string>> } | null;
     usage: { provenance: string; attempts: number };
     cost: readonly { category: string; reserved: number; actual: number; provenance: string }[];
@@ -43,6 +45,26 @@ function formatDisclosure(disclosure: AgentRouteView['dataDisclosure']): string 
         .map(([name, value]) => `${name} ${value}`)
         .join(', ');
     return `${disclosure.categories.join(', ')} — retention ${retention}`;
+}
+
+const FALLBACK_POLICY_LABELS: Readonly<Record<string, string>> = {
+    'local-only': 'local only, never widens to a hosted provider',
+    'hosted-then-local': 'hosted first, local fallback',
+};
+
+function renderOptions(options: AgentRouteView['options']): ReactElement {
+    if (options.length === 0) {
+        return <span>none</span>;
+    }
+    return (
+        <ul aria-label="Route options" className="flex flex-col gap-0.5">
+            {options.map((option) => (
+                <li key={option.routeId} data-admitted={String(option.admitted)}>
+                    {option.admitted ? option.routeId : `${option.routeId}: ${option.reasons.join(', ')}`}
+                </li>
+            ))}
+        </ul>
+    );
 }
 
 function formatCost(cost: AgentRouteView['cost']): string {
@@ -83,12 +105,14 @@ export const AgentRouteSection = ({ route }: AgentRouteSectionProps): ReactEleme
                     `${route.actual.executor ?? 'none'} / ${route.actual.provider ?? 'none'} / ${route.actual.model ?? 'none'} (${route.actual.locality})`
                 )}
                 {renderTerm('Platform', formatPlatform(route.platform))}
+                {renderTerm('Options', renderOptions(route.options))}
                 {renderTerm('Capability', formatCapability(route.capability))}
                 {renderTerm('Fidelity', route.fidelity ?? 'none')}
                 {renderTerm(
                     'Fallback',
                     route.fallback.attempted ? `attempted: ${route.fallback.reasons.join(', ')}` : 'not attempted'
                 )}
+                {renderTerm('Fallback policy', FALLBACK_POLICY_LABELS[route.fallbackPolicy] ?? route.fallbackPolicy)}
                 {renderTerm('Data disclosure', formatDisclosure(route.dataDisclosure))}
                 {renderTerm('Usage provenance', `${route.usage.provenance} over ${route.usage.attempts} attempts`)}
                 {renderTerm('Price provenance', formatCost(route.cost))}
