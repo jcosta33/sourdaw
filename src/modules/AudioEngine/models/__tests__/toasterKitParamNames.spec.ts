@@ -11,7 +11,7 @@ import { mapToasterKitParamToDspParam, TOASTER_KIT_PARAM_NAMES } from '../Toaste
  * `grandBouleDspParamNames.spec.ts` restates it instead of importing
  * `BUILTIN_PARAM_NAME_SHAPE`.
  */
-const ENGINE_PARAM_NAME_SHAPE = /^[a-z0-9_]{1,32}$/;
+const ENGINE_PARAM_NAME_SHAPE = /^[a-z0-9_]{1,40}$/;
 
 describe('Toaster kit DSP parameter names', () => {
     it('produces only names the engine parameter carrier admits', () => {

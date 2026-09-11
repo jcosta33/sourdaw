@@ -43,7 +43,7 @@ describe('grinderNeuralProfileParams', () => {
     });
 
     // Rust's `BuiltinParamName` accepts only ASCII letters, digits, and
-    // underscore, at most 32 bytes (crates/daw-dsp `BuiltinParamName` rule).
+    // underscore, at most 40 bytes (crates/daw-dsp `BuiltinParamName` rule).
     it('should emit only names matching the BuiltinParamName shape', () => {
         const profile = buildProfile([
             [0.1, 0.2, 0.3],
@@ -51,11 +51,11 @@ describe('grinderNeuralProfileParams', () => {
         ]);
 
         for (const [name] of grinderNeuralProfileParams(profile)) {
-            expect(name).toMatch(/^[A-Za-z0-9_]{1,32}$/);
+            expect(name).toMatch(/^[A-Za-z0-9_]{1,40}$/);
         }
     });
 
-    it('should keep the longest conv-weight name within the 32-byte BuiltinParamName limit for ten layers', () => {
+    it('should keep the longest conv-weight name within the 40-byte BuiltinParamName limit for ten layers', () => {
         const convWeights: Array<[number, number, number]> = Array.from({ length: 10 }, (_, layer) => [
             layer,
             layer + 0.1,
