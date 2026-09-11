@@ -1,0 +1,43 @@
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_06adf2b091dc62::t_3dbfcf126ae4a7 118
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_06adf2b091dc62::t_8a3f6a6e0d2eaa 145
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_06adf2b091dc62::t_ae3aebd1709788 131
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_06adf2b091dc62::t_1442fee5f37ba0 104
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_06adf2b091dc62::t_8a11792bee17fc 122
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_06adf2b091dc62::t_100ba25b803a17 33
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_06adf2b091dc62::t_ca606c0fa6ea7d 190
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_06adf2b091dc62::t_88772d0f35391c 143
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_06adf2b091dc62::t_251a8534a5d943 92
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_06adf2b091dc62::t_017da3f548b6dd 58
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_06adf2b091dc62::t_56b86871562909 69
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_06adf2b091dc62::t_d340ebe8bc70cb 118
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_06adf2b091dc62::t_ceb6a36621ed04 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "499071ea3a7f462e1939fd866b6cf1673fd09a81",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
