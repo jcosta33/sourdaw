@@ -1,3 +1,5 @@
+import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
+
 import { type BacteriaMeterData } from './BacteriaNode';
 import { type CrustMeterData } from './CrustNode';
 import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
@@ -86,6 +88,24 @@ export type AudioDeviceRuntimeSink = {
         signal?: AbortSignal;
     }) => Promise<void>;
     /**
+     * A device's `deviceState` as the numeric record its native body would need
+     * merged into `parameterValues`, or `null` when the type carries no such
+     * projection.
+     *
+     * `Device.deviceState` never crosses the wire to the native engine
+     * (`serializeAudioGraphCommand.ts` drops it) — it is opaque project-owned
+     * state only the owning module can decode, the same reason
+     * `prepareOfflineInstrument` exists for the offline worklet path. This is
+     * the live/offline-via-native mirror of that seam:
+     * `projectDeviceForNativeBody` calls it, pure and synchronous, to fold a
+     * device's kit into the record a native body actually receives. A type with
+     * nothing beyond `parameterValues` — most native built-ins — answers `null`.
+     */
+    projectNativeDeviceState: (input: {
+        deviceType: string;
+        deviceState: DeviceStateChunk | undefined;
+    }) => Readonly<Record<string, number>> | null;
+    /**
      * Give a *live* Crumbs worklet the sample the device is set to play.
      *
      * A wasm Crumbs instance starts with an empty pool, so without this it
@@ -127,6 +147,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     clearProofMeters: () => {},
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
+    projectNativeDeviceState: () => null,
     prepareCrumbsDevice: () => Promise.resolve('failed'),
 };
 

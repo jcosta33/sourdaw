@@ -18,6 +18,7 @@
  */
 
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
+import { mapToasterKitParamToDspParam } from '../models/ToasterKitParamNames';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
@@ -118,20 +119,6 @@ const PAD_PARAM_MAP: Record<string, string> = {
     transientSustain: 'transient_sustain',
     busRoute: 'bus_route',
     engineType: 'engine_type',
-};
-
-/** Map camelCase kit param names to snake_case. */
-const KIT_PARAM_MAP: Record<string, string> = {
-    masterGain: 'master_gain',
-    reverbMix: 'reverb_mix',
-    reverbDecay: 'reverb_decay',
-    delayTime: 'delay_time',
-    delayFeedback: 'delay_feedback',
-    delayMix: 'delay_mix',
-    swing: 'swing',
-    lofiBits: 'lofi_bits',
-    lofiRate: 'lofi_rate',
-    lofiMix: 'lofi_mix',
 };
 
 function toEngineKitParamValue(name: string, value: number): number {
@@ -370,7 +357,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 break;
             case 'param':
                 {
-                    const name = KIT_PARAM_MAP[msg.name] ?? msg.name;
+                    const name = mapToasterKitParamToDspParam({ paramId: msg.name }) ?? msg.name;
                     inst.set_param(name, toEngineKitParamValue(name, msg.value));
                 }
                 break;

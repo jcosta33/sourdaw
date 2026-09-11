@@ -26,6 +26,7 @@ import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBacke
 import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
+import { TOASTER_KIT_PARAM_NAMES } from '../../../models/ToasterKitParamNames';
 import { isLatencyCompensatedByEngine } from '../isLatencyCompensatedByEngine';
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
@@ -117,6 +118,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('bacteria')).not.toBeNull();
         expect(nativeBuiltinBody('proof')).not.toBeNull();
         expect(nativeBuiltinBody('dutch-oven')).not.toBeNull();
+        expect(nativeBuiltinBody('toaster')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -141,6 +143,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('bacteria').soundsNotes).toBe(false);
         expect(bodyOf('proof').soundsNotes).toBe(false);
         expect(bodyOf('dutch-oven').soundsNotes).toBe(false);
+        expect(bodyOf('toaster').soundsNotes).toBe(true);
     });
 
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
@@ -157,6 +160,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('gluten').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('crust').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('grinder').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('toaster').latencyCompensatedByEngine).toBe(false);
     });
 
     // A device type with no native body is nothing the engine could be
@@ -740,6 +744,60 @@ describe('the dutch oven body', () => {
         expect(bodyOf('dutch-oven').addressesParameter('decay-eq-5')).toBe(false);
         expect(bodyOf('dutch-oven').addressesParameter('not a name')).toBe(false);
         expect(bodyOf('dutch-oven').addressesParameter('')).toBe(false);
+    });
+});
+
+/**
+ * Toaster's vocabulary is welded in a chain rather than restated here, the way
+ * Grand Boule's is. `descriptorEngineParamWeld.spec.ts` holds every
+ * `TOASTER_DESCRIPTOR` parameter id to an entry in `TOASTER_KIT_PARAM_NAMES`
+ * (with `swing` exempted there, host-side by design). What is left for this
+ * file is the last link: that the registry entry actually answers through that
+ * table, rather than through identity or a private copy of it.
+ *
+ * The kit itself — everything `deviceState` carries — is deliberately outside
+ * this body's vocabulary: `parameterValues` never holds it, so `projectPatch`
+ * has nothing to translate for it, and `projectDeviceForNativeBody` is where
+ * it actually reaches the record.
+ */
+describe('the toaster body', () => {
+    it('spells a project id in the instrument vocabulary the engine matches on', () => {
+        expect(bodyOf('toaster').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('toaster').projectPatch({ masterGain: 0.8, swing: 0.25 })).toEqual({
+            master_gain: 0.8,
+            swing: 0.25,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the instrument does not address or the wire cannot send', () => {
+        expect(bodyOf('toaster').projectPatch({ masterGain: 0.8, presetName: 'Plain Bread', kitLocked: true })).toEqual(
+            { master_gain: 0.8 }
+        );
+    });
+
+    it('spells every id in the table as a name the engine parameter carrier admits', () => {
+        const paramIds = Object.keys(TOASTER_KIT_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('toaster').parameterName(paramId)).toBe(TOASTER_KIT_PARAM_NAMES[paramId]);
+            expect(bodyOf('toaster').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+        }
+    });
+
+    // The engine is addressed in camelCase and answers in snake_case, so the
+    // engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        for (const paramId of Object.keys(TOASTER_KIT_PARAM_NAMES)) {
+            expect(bodyOf('toaster').addressesParameter(paramId)).toBe(true);
+        }
+        expect(bodyOf('toaster').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('toaster').addressesParameter('bogus')).toBe(false);
     });
 });
 

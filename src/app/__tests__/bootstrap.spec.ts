@@ -501,6 +501,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
     prepareOfflineToaster: noop,
+    projectToasterKitToNativePatch: noop,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({

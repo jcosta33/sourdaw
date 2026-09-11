@@ -10,17 +10,24 @@
  * The projector is pure, so nothing is mocked.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { type Device } from '#/modules/Arrangement/stores';
+import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { projectDeviceForNativeBody } from '../projectDeviceForNativeBody';
 
 function createDevice(overrides: Partial<Device> & { id: string }): Device {
     return { name: overrides.id, type: 'knead', bypassed: false, parameterValues: {}, ...overrides };
 }
 
+const A_DEVICE_STATE: DeviceStateChunk = { version: 1, data: { kit: { name: 'Plain Bread' } } };
+
 describe('projectDeviceForNativeBody', () => {
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+    });
+
     // The two vocabularies differ on both halves of the mapping: an override
     // renames the parameter outright, and everything else is the same word
     // respelled. A projector that did only one of them would still red here.
@@ -82,5 +89,82 @@ describe('projectDeviceForNativeBody', () => {
         const device = createDevice({ id: 'device-a', type: 'builtin-eq', parameterValues: { oscEngine: 2 } });
 
         expect(projectDeviceForNativeBody(device)).toBe(device);
+    });
+
+    // `Device.deviceState` never crosses the wire, so a body whose audible
+    // identity lives there — Toaster's kit — needs it folded into the record
+    // here. The kit wins on the overlapping name, the same way the web offline
+    // path resolves it: `parameterValues` replays first, the kit hydrates after.
+    it('merges a projected deviceState over the table projection, the kit winning on overlap', () => {
+        setAudioDeviceRuntimeSink({
+            projectNativeDeviceState: ({ deviceType, deviceState }) => {
+                expect(deviceType).toBe('toaster');
+                expect(deviceState).toBe(A_DEVICE_STATE);
+                return { master_gain: 0.4, delay_time: 375 };
+            },
+        });
+        const projected = projectDeviceForNativeBody(
+            createDevice({
+                id: 'device-a',
+                type: 'toaster',
+                parameterValues: { masterGain: 0.9, swing: 0.2 },
+                deviceState: A_DEVICE_STATE,
+            })
+        );
+
+        expect(projected.parameterValues).toEqual({ master_gain: 0.4, swing: 0.2, delay_time: 375 });
+    });
+
+    // The wire narrows every value to an `f32` and refuses a key shaped unlike
+    // any built-in's vocabulary, taking the whole batch with it — the same
+    // hazard `tablePatch` guards `parameterValues` against, so a value crossing
+    // this seam gets the same defence.
+    it('drops a mis-shaped or non-finite key from the projected deviceState', () => {
+        setAudioDeviceRuntimeSink({
+            projectNativeDeviceState: () => ({
+                master_gain: 0.4,
+                'not a name': 1,
+                lofi_bits: Number.NaN,
+            }),
+        });
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'toaster', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(projected.parameterValues).toEqual({ master_gain: 0.4 });
+    });
+
+    // A `null` projection means this device type carries nothing beyond
+    // `parameterValues` (or the projector does not recognise it), and must
+    // leave the table projection exactly as it stood.
+    it('leaves the table projection untouched when the projector answers null', () => {
+        setAudioDeviceRuntimeSink({ projectNativeDeviceState: () => null });
+        const projected = projectDeviceForNativeBody(
+            createDevice({
+                id: 'device-a',
+                type: 'grand-boule',
+                parameterValues: { masterGain: 0.6 },
+                deviceState: A_DEVICE_STATE,
+            })
+        );
+
+        expect(projected.parameterValues).toEqual({ master_gain: 0.6 });
+    });
+
+    // A device with no native body holds no vocabulary the projector could
+    // address, so asking it would be pointless at best — and at worst a sink
+    // implementation could be handed a device type it never expects.
+    it('never calls the projector for a device with no native body', () => {
+        let called = false;
+        setAudioDeviceRuntimeSink({
+            projectNativeDeviceState: () => {
+                called = true;
+                return null;
+            },
+        });
+
+        projectDeviceForNativeBody(createDevice({ id: 'device-a', type: 'builtin-eq', deviceState: A_DEVICE_STATE }));
+
+        expect(called).toBe(false);
     });
 });

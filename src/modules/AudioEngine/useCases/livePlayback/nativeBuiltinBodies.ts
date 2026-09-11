@@ -42,6 +42,7 @@ import {
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
+import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
 
 /**
  * The wire shape `BuiltinParamName::parse` admits
@@ -453,6 +454,38 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !PROOF_GRAPH_OWNED.has(paramId),
             latencyCompensatedByEngine: true,
+        },
+    ],
+    [
+        'toaster',
+        {
+            soundsNotes: true,
+            /**
+             * The automation surface is only the four descriptor ids Toaster
+             * declares (`masterGain`, `reverbMix`, `delayMix`, `swing`) —
+             * `TOASTER_DESCRIPTOR.parameters` — so those are the only keys
+             * `device.parameterValues` ever actually holds. `swing` resolves
+             * here like the other three even though no Rust arm answers it
+             * (`descriptorEngineParamWeld.spec.ts` exempts it: swing shifts
+             * the schedule, not the audio, and is applied host-side); refusing
+             * it here would gate a live automation write off the native door
+             * for a name the panel and every other producer still address.
+             *
+             * The kit itself — engine type, tuning, decay, tone, drive,
+             * filtering, sends, and the send-effect internals — is not a
+             * `parameterValues` entry at all. It is pushed as engine control
+             * writes (`projectToasterKitToEngineMessages`) from the device's
+             * `deviceState`, which reaches the native record through
+             * `projectDeviceForNativeBody`'s own merge rather than through
+             * this table.
+             */
+            parameterName: (paramId) => mapToasterKitParamToDspParam({ paramId }) ?? paramId,
+            projectPatch: tablePatch(mapToasterKitParamToDspParam),
+            addressesParameter: (paramId) => mapToasterKitParamToDspParam({ paramId }) !== null,
+            // The engine reports no latency for this body and the worklet
+            // declares none either, so there is nothing here for the renderer
+            // to exclude from its own sum.
+            latencyCompensatedByEngine: false,
         },
     ],
     [
