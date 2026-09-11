@@ -16,6 +16,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
     - **Media & Files**: `pickFiles`, `verifyAudioBufferReferences`, `exportProjectFile`, `pickAndImportProjectFile`.
     - **Interchange Contracts**: `buildProjectData`, `applyImportedProjectData`, `runProjectLoadTransaction`, `isNativeProjectRuntimeAvailable`.
     - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `getProjectScopedBriefLock`, `acceptCreativeIntent`, `querySemanticProject`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
+    - **Agent Asset File Boundary**: `agentAssetFileBoundary` (`pickAndRegister`, `importAsset`, `stageExport`, `finalizeExport`, `cleanup`) — the only handle-only surface that may drive the native agent asset saga.
     - **Recent Projects**: `getRecentProjects`, `loadRecentProject`.
     - **Handlers**: `getProjectHandlers`.
 - `presentations/views`: `ArrangementSelector`, `MissingMediaPanel`, `RecentProjectsMenu`.
