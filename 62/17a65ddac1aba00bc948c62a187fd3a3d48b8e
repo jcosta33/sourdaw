@@ -1,0 +1,19 @@
+crates/proof-chamber/tests/reverse_rate_bound.rs
+  s_9b530f08172a54::t_ba3861f19d5ae9 169-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6217a65ddac1aba00bc948c62a187fd3a3d48b8e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
