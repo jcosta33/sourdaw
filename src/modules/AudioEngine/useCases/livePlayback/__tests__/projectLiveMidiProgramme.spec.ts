@@ -247,6 +247,9 @@ describe('projectLiveMidiProgramme', () => {
             'clip-1': [
                 note({ id: 'n1', pitch: 36, startBeat: 0, duration: 4 }),
                 note({ id: 'n2', pitch: 36, startBeat: 2, duration: 4 }),
+                // A same-frame double hit on the same pad: with no key to
+                // contend over, both strikes at beat 0 must survive.
+                note({ id: 'n3', pitch: 36, startBeat: 0, duration: 4 }),
             ],
         };
         const programme = projectProgramme({
@@ -259,6 +262,7 @@ describe('projectLiveMidiProgramme', () => {
 
         expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
         expect(programme.targets[0]?.events).toEqual([
+            { time: seconds(0), note: 36, velocity: 100, channel: 0, isNoteOn: true },
             { time: seconds(0), note: 36, velocity: 100, channel: 0, isNoteOn: true },
             { time: seconds(2), note: 36, velocity: 100, channel: 0, isNoteOn: true },
         ]);
