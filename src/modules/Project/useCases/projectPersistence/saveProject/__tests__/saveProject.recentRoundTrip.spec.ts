@@ -71,6 +71,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
