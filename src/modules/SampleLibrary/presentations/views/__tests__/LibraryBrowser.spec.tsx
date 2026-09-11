@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
+
 import { type LibraryState } from '../../../stores/libraryStore';
 import { LibraryBrowser } from '../LibraryBrowser';
 
@@ -10,11 +12,13 @@ type LibraryBrowserMocks = {
     notifyUser: ReturnType<typeof vi.fn>;
     preview: {
         playingId: string | null;
+        play: Mock<(id: string, buffer: AudioBuffer) => void>;
         playFile: Mock<(id: string, file: File) => Promise<void>>;
         stop: Mock<() => void>;
     };
     projectSpatialMap: ReturnType<typeof vi.fn>;
     readNativeLibrarySampleFile: ReturnType<typeof vi.fn>;
+    getCachedAudioBuffer: Mock<(input: { bufferId: string }) => AudioBuffer | null>;
 };
 
 const mocks = vi.hoisted((): LibraryBrowserMocks => ({
@@ -23,11 +27,17 @@ const mocks = vi.hoisted((): LibraryBrowserMocks => ({
     notifyUser: vi.fn(),
     preview: {
         playingId: null,
+        play: vi.fn<(id: string, buffer: AudioBuffer) => void>(),
         playFile: vi.fn<(id: string, file: File) => Promise<void>>(),
         stop: vi.fn<() => void>(),
     },
     projectSpatialMap: vi.fn(),
     readNativeLibrarySampleFile: vi.fn(),
+    getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -116,6 +126,8 @@ describe('LibraryBrowser', () => {
         mocks.libraryState = undefined;
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(false);
         mocks.preview.playingId = null;
+        mocks.getCachedAudioBuffer.mockReset();
+        mocks.preview.play.mockReset();
     });
 
     it('should render without crashing', () => {
@@ -444,5 +456,292 @@ describe('LibraryBrowser', () => {
         const { unmount } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
         unmount();
         expect(preview.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('plays cached factory sample buffer when clicked on browser provider', async () => {
+        const dummyBuffer = {
+            duration: 1,
+            length: 44100,
+            numberOfChannels: 2,
+            sampleRate: 44100,
+        } as AudioBuffer;
+        mocks.getCachedAudioBuffer.mockReturnValue(dummyBuffer);
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(false);
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'factory-kick',
+                    libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+                    displayName: 'Kick',
+                    relativePath: 'Drums/Kick.factory',
+                    ext: 'factory',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'analyzed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-kick', dummyBuffer);
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('plays cached factory sample buffer when native desktop runtime is available', async () => {
+        const dummyBuffer = {
+            duration: 1,
+            length: 44100,
+            numberOfChannels: 2,
+            sampleRate: 44100,
+        } as AudioBuffer;
+        mocks.getCachedAudioBuffer.mockReturnValue(dummyBuffer);
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'factory-kick',
+                    libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+                    displayName: 'Kick',
+                    relativePath: 'Drums/Kick.factory',
+                    ext: 'factory',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'analyzed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-kick', dummyBuffer);
+        });
+        expect(mocks.readNativeLibrarySampleFile).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('retains warning for genuinely inaccessible external root on browser without directory handle', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(false);
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: 'ext1',
+                    name: 'External',
+                    provider: 'browser',
+                    rootRef: '',
+                    handle: undefined,
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'ext-sample',
+                    libraryRootId: 'ext1',
+                    displayName: 'External Sample',
+                    relativePath: 'Drums/Kick.wav',
+                    ext: 'wav',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'indexed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: [],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: 'ext1',
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"External Sample" can\'t be previewed — its folder is not accessible.',
+                'warning'
+            );
+        });
+        expect(mocks.preview.play).not.toHaveBeenCalled();
+    });
+
+    it('retains warning for genuinely inaccessible external root on desktop when rootRef is missing', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: 'ext1',
+                    name: 'External',
+                    provider: 'desktop',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'ext-sample',
+                    libraryRootId: 'ext1',
+                    displayName: 'External Sample',
+                    relativePath: 'Drums/Kick.wav',
+                    ext: 'wav',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'indexed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: [],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: 'ext1',
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"External Sample" can\'t be previewed — its folder is not accessible.',
+                'warning'
+            );
+        });
+        expect(mocks.preview.play).not.toHaveBeenCalled();
+    });
+
+    it('warns when factory sample buffer is missing from cache', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'factory-kick',
+                    libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+                    displayName: 'Kick',
+                    relativePath: 'Drums/Kick.factory',
+                    ext: 'factory',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'analyzed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"Kick" can\'t be previewed — audio buffer is not available.',
+                'warning'
+            );
+        });
+        expect(mocks.preview.play).not.toHaveBeenCalled();
     });
 });
