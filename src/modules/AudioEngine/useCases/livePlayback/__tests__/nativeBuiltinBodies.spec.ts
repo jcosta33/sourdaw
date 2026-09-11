@@ -116,6 +116,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('grinder')).not.toBeNull();
         expect(nativeBuiltinBody('bacteria')).not.toBeNull();
         expect(nativeBuiltinBody('proof')).not.toBeNull();
+        expect(nativeBuiltinBody('dutch-oven')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -125,6 +126,7 @@ describe('nativeBuiltinBody', () => {
     it('resolves a type spelled as a display name, the way the mapper folds it', () => {
         expect(nativeBuiltinBody('Fermenter')).toBe(nativeBuiltinBody('fermenter'));
         expect(nativeBuiltinBody('Bacteria')).toBe(nativeBuiltinBody('bacteria'));
+        expect(nativeBuiltinBody('Dutch-Oven')).toBe(nativeBuiltinBody('dutch-oven'));
     });
 
     // Mirrors `BuiltinEffectType::sounds_notes`, which is what decides whether
@@ -138,6 +140,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('grinder').soundsNotes).toBe(false);
         expect(bodyOf('bacteria').soundsNotes).toBe(false);
         expect(bodyOf('proof').soundsNotes).toBe(false);
+        expect(bodyOf('dutch-oven').soundsNotes).toBe(false);
     });
 
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
@@ -147,6 +150,7 @@ describe('nativeBuiltinBody', () => {
     it('states which bodies the engine compensates for itself', () => {
         expect(bodyOf('bacteria').latencyCompensatedByEngine).toBe(true);
         expect(bodyOf('proof').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('dutch-oven').latencyCompensatedByEngine).toBe(true);
         expect(bodyOf('knead').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('fermenter').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('grand-boule').latencyCompensatedByEngine).toBe(false);
@@ -676,6 +680,66 @@ describe('the proof body', () => {
         expect(bodyOf('proof').addressesParameter('chain-order-0')).toBe(false);
         expect(bodyOf('proof').addressesParameter('not a name')).toBe(false);
         expect(bodyOf('proof').addressesParameter('')).toBe(false);
+    });
+});
+
+describe('the dutch oven body', () => {
+    // The reverb spells its own parameters in snake_case and project truth
+    // authors the same ids, so there is no table to consult — the id a panel
+    // writes already is the name `ProofChamberInstance::set_param` takes.
+    it('keeps the names the project already stores, because the reverb answers to those names', () => {
+        expect(bodyOf('dutch-oven').parameterName('decay')).toBe('decay');
+        expect(bodyOf('dutch-oven').projectPatch({ decay: 0.8 })).toEqual({ decay: 0.8 });
+    });
+
+    // `fdn_damping_version` is the one name the record carries that no panel
+    // shows: `addDevice` merges the descriptor's `internalParameterValues` into
+    // `parameterValues` at creation. Dropping it here would open every saved
+    // FDN patch on the legacy damping curve. `algorithm` decides which of the
+    // five engines renders at all, and `decay_eq_3` is one of the six
+    // decay-rate EQ bands — all three travel in the record like any other name.
+    it('carries the engine selection, the decay-rate EQ and the internal damping version', () => {
+        expect(
+            bodyOf('dutch-oven').projectPatch({
+                algorithm: 1,
+                fdn_damping_version: 2,
+                decay_eq_3: 2,
+            })
+        ).toEqual({ algorithm: 1, fdn_damping_version: 2, decay_eq_3: 2 });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('dutch-oven').projectPatch({
+                decay: 0.8,
+                presetName: 'Cathedral',
+                'not-a-name': 1,
+            })
+        ).toEqual({ decay: 0.8 });
+    });
+
+    // Admission is the shape check and nothing narrower: the vocabulary is a
+    // union across the engines an `algorithm` write selects between, and a name
+    // the selected engine has no arm for is dropped by that engine exactly as
+    // it is under the worklet. No name is withheld — the device's bypass is not
+    // a parameter here, it is the record's own `bypassed` field.
+    it('admits a well-shaped id, whichever engine answers it', () => {
+        expect(bodyOf('dutch-oven').addressesParameter('mix')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('decay_eq_5')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('algorithm')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('vintage')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape, exactly
+    // as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('dutch-oven').addressesParameter('decay-eq-5')).toBe(false);
+        expect(bodyOf('dutch-oven').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('dutch-oven').addressesParameter('')).toBe(false);
     });
 });
 

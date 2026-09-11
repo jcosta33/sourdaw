@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
+        "cargoLockSha256": "c44803b1048296f2e2b4c6140f1bc85d8078d0d0553b5d4e7e539f926d3ebbde",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -25,7 +25,7 @@
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
-                "sha256": "fca52fba170f297695b6eef7dc4ec4971ba0fe7ed9c28ccf20bcd0306311a548"
+                "sha256": "55f2e4c3758f65c1e1349f999507d88e5d1ebedbebc9a6b84553e5293a69e607"
             },
             {
                 "path": "crates/daw-io/Cargo.toml",

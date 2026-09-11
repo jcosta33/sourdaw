@@ -32,6 +32,7 @@ use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
+use proof_chamber::ProofChamberInstance;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
 
@@ -293,6 +294,7 @@ pub enum BuiltinEffectType {
     Grinder,
     Bacteria,
     Proof,
+    DutchOven,
 }
 
 impl BuiltinEffectType {
@@ -309,6 +311,7 @@ impl BuiltinEffectType {
             Self::Grinder => "grinder",
             Self::Bacteria => "bacteria",
             Self::Proof => "proof",
+            Self::DutchOven => "dutch-oven",
         }
     }
 
@@ -325,6 +328,7 @@ impl BuiltinEffectType {
             "grinder" => Some(Self::Grinder),
             "bacteria" => Some(Self::Bacteria),
             "proof" => Some(Self::Proof),
+            "dutch-oven" => Some(Self::DutchOven),
             _ => None,
         }
     }
@@ -350,6 +354,9 @@ impl BuiltinEffectType {
             // A mastering chain is the last insert over a finished mix; it
             // sounds nothing of its own either.
             Self::Proof => false,
+            // A reverb sounds the room around whatever it is handed; the
+            // programme is the caller's.
+            Self::DutchOven => false,
         }
     }
 
@@ -373,6 +380,7 @@ impl BuiltinEffectType {
             Self::Grinder => GRINDER_PATCH_PRECEDENCE,
             Self::Bacteria => BACTERIA_PATCH_PRECEDENCE,
             Self::Proof => PROOF_PATCH_PRECEDENCE,
+            Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -1017,6 +1025,7 @@ pub enum PluginCore {
     Grinder(Box<GrinderBody>),
     Bacteria(Box<BacteriaBody>),
     Proof(Box<ProofBody>),
+    DutchOven(Box<DutchOvenBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1037,6 +1046,7 @@ impl PluginCore {
             BuiltinEffectType::Grinder => Self::grinder_with_patch(sample_rate, &[]),
             BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[]),
             BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
+            BuiltinEffectType::DutchOven => Self::dutch_oven_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1149,6 +1159,23 @@ impl PluginCore {
         Self::Proof(Box::new(body))
     }
 
+    /// Build a Dutch Oven carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a reverb's patch is the
+    /// engine selection, the vintage stage, six decay-rate EQ bands and some
+    /// twenty of the selected engine's own parameters per strip, and the
+    /// command ring is finite.
+    ///
+    /// The ordering law here is [`DUTCH_OVEN_PATCH_PRECEDENCE`], which is empty
+    /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
+    /// so the record build is one code path with the other bodies'.
+    pub fn dutch_oven_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = DutchOvenBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::DutchOven(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1162,6 +1189,7 @@ impl PluginCore {
             Self::Grinder(_) => Some(BuiltinEffectType::Grinder),
             Self::Bacteria(_) => Some(BuiltinEffectType::Bacteria),
             Self::Proof(_) => Some(BuiltinEffectType::Proof),
+            Self::DutchOven(_) => Some(BuiltinEffectType::DutchOven),
             Self::Native(_) => None,
         }
     }
@@ -1207,6 +1235,15 @@ impl PluginCore {
         match self {
             Self::Bacteria(body) => Some(body.latency_samples() as usize),
             Self::Proof(body) => Some(body.latency_samples() as usize),
+            // Every engine a wire value selects reports 0
+            // (`ProofChamberInstance::get_latency`), so this arm publishes a
+            // zero figure rather than nothing. The two answers differ: `None`
+            // leaves the graph with no figure for this effect at all, while
+            // `Some(0)` is a declaration the next write to the body can move
+            // ([`ActiveEffect::refresh_declared_latency`]) — which is what the
+            // convolution-backed engines would need if a transport for their
+            // impulse responses ever made them reachable.
+            Self::DutchOven(body) => Some(body.latency_samples() as usize),
             Self::Knead(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
@@ -2744,6 +2781,234 @@ impl ProofBody {
     }
 }
 
+/// The Dutch Oven patch keys that must land before every other entry — none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry, so a record drawn in the wrong order settles on the
+/// wrong device. The reverb has two names that look like that pair and are not.
+///
+/// `algorithm` puts the engine it selects back to its constructor state, which
+/// does discard what an earlier write left on it — and then replays the
+/// instance's own parameter cache into it (`ProofChamberInstance::set_param`,
+/// `replay_cached_parameters`, `crates/proof-chamber/src/lib.rs`). Every
+/// forwarded name is cached at the moment it is written, so a value written
+/// before the selection reaches the selected engine as surely as one written
+/// after it. `fdn_damping_version` acts on the current engine at once
+/// (`apply_fdn_damping_version`) *and* is re-applied on every later selection,
+/// so it is not lost by arriving first either — and the FDN arms it and `decay`
+/// both touch each recompute the whole absorptive filter set from the current
+/// state (`FdnReverb::update_absorptive_filters`, `crates/proof-chamber/src/fdn.rs`)
+/// rather than from the state at their own write time.
+///
+/// So a record builds the same device whatever order it is drawn in, which is
+/// what `a_dutch_oven_patch_renders_the_same_in_either_order` renders both ways
+/// to prove, and [`precedence_first`] with this empty law is the identity over
+/// it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a reverb name that does come to
+/// alias another is answered here, where every other body answers it.
+const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// Frames one hosted Dutch Oven run renders.
+///
+/// A mirror of `ProofChamberInstance`'s own `max_block`: the constructor sizes
+/// `out_left` and `out_right` at 1024 frames and `process` clamps its `frames`
+/// argument to that length without saying so, so a longer ask renders this many
+/// frames and leaves the rest of the block carrying whatever it already held.
+/// The instance keeps that figure as a local in its constructor rather than as
+/// an exported constant, so it is restated here rather than imported the way
+/// [`FERMENTER_BLOCK_FRAMES`] is — and
+/// `a_dutch_oven_body_renders_what_the_instance_renders_run_by_run` is what
+/// holds the two together, feeding a bare instance in runs of exactly this size
+/// and requiring this body to match it sample for sample.
+///
+/// The host — [`DutchOvenBody::process`] below — is what splits a callback into
+/// runs this size; the number is the reverb's, not a choice made here.
+const DUTCH_OVEN_BLOCK_FRAMES: usize = 1024;
+
+/// Dutch Oven, the multi-engine reverb, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's five
+/// preallocated engines — a plate, two FDN tanks, a spring and a reverse
+/// buffer, each with its own delay lines, pre-delay buffer and decay-rate EQ —
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`ProofChamberInstance`] rather than `ProofChamber`, the plate
+/// engine underneath it, and that choice is what makes the native render the
+/// web render. The instance owns everything the plate does not: the `algorithm`
+/// selection across five preallocated engines, the `vintage` character stage
+/// that survives a selection, the `fdn_damping_version` curve the two FDN tanks
+/// read, the parameter cache that re-forwards every written value into an
+/// engine a selection has just reset, and the sanitize pass over both output
+/// channels. A body wrapping the bare plate would answer `algorithm` and
+/// `vintage` with silence and would render a project's FDN patch on a plate.
+///
+/// ## Names the graph owns
+///
+/// None. Every name reaches the instance. The device's bypass arrives as the
+/// record's own `bypassed` field and travels as [`GraphCommand::SetBypass`],
+/// never as a parameter — the `dutch-oven` descriptor
+/// (`src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
+/// declares no `bypass` row, and `ProofChamberInstance::set_param` has no arm
+/// for one — so there is no [`PROOF_GRAPH_OWNED`] analogue to withhold. Nor is
+/// there a record-door refusal like [`PROOF_RECORD_REFUSED`]: no wire name
+/// engages a session-only audition here, and the one internal name the record
+/// carries beyond the descriptor's automatable rows,
+/// `fdn_damping_version`, is exactly the one a record *must* carry — `addDevice`
+/// (`src/modules/Arrangement/useCases/device/addDevice.ts`) merges the
+/// descriptor's `internalParameterValues` into `parameterValues` at creation, so
+/// a project that never sees the name in a panel still persists it, and
+/// withholding it would open every saved FDN patch on the legacy damping curve.
+///
+/// ## How this body is compensated
+///
+/// `ProofChamberInstance::get_latency` reports 0 for every engine an
+/// `algorithm` write can select, and 128 for the two convolution-backed engines
+/// no wire value reaches (`select_unexposed_engine` is Rust-only and nothing
+/// ships an impulse response). So in production this body declares 0 — a
+/// declaration all the same, not a refusal to declare
+/// ([`PluginCore::declared_latency_frames`]), which leaves the graph already
+/// holding a figure the next write to the body can move
+/// ([`ActiveEffect::refresh_declared_latency`]) if an IR transport ever makes a
+/// latent engine reachable. [`Self::latency_samples`] reads the instance rather
+/// than returning that 0 as a literal for the same reason: the figure is the
+/// instance's to state.
+///
+/// It ships and holds no dry line, on the law [`ProofBody`] states: a dry line
+/// is read on the bypassed pass alone, and that is the pass on which this body
+/// declares 0.
+pub struct DutchOvenBody {
+    instance: ProofChamberInstance,
+}
+
+impl DutchOvenBody {
+    /// Build the reverb on the control thread.
+    ///
+    /// `ProofChamberInstance::new` builds all five selectable engines up front
+    /// — the plate's diffusion and tank buffers, both FDN tanks' delay lines
+    /// sized for their longest reachable delay, the spring's chirp allpasses,
+    /// the reverse buffer, each engine's decay-rate EQ and output stage, the
+    /// vintage processor and the two 1024-frame output buffers. Those are
+    /// allocations the audio thread may not perform (ADR 0020), which is why
+    /// every engine is built here and a later `algorithm` write selects and
+    /// resets one rather than constructing it.
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: ProofChamberInstance::new(sample_rate),
+        }
+    }
+
+    /// Process the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the dry programme underneath the reverberated one. The
+    /// instance's own `mix` control is what decides how much dry survives.
+    ///
+    /// The block is split into runs of at most [`DUTCH_OVEN_BLOCK_FRAMES`],
+    /// each one a whole `process` call, and each run is copied back out of the
+    /// instance's buffers before the next call overwrites them. A single call
+    /// for a longer block would render one run's worth and leave the remainder
+    /// of the callback carrying its dry input — the reverb would cut out for
+    /// every frame past the first 1024 of a long callback. The instance carries
+    /// no block-scoped state across a call, so a callback rendered in runs and
+    /// the same callback rendered in one call — where the instance could take
+    /// one — produce identical samples.
+    ///
+    /// Nothing here allocates: the runs render into buffers the instance
+    /// already owns and the copies are between slices that already exist.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(DUTCH_OVEN_BLOCK_FRAMES);
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Render one run through the instance and copy both channels back.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before, for the
+        // reason given on [`FermenterBody::render_run`]: the render takes a
+        // mutable reborrow of the instance, which under the aliasing model
+        // retires any pointer derived from an earlier shared borrow of it.
+        let rendered_left = self.instance.process(left, right, run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instance's own output buffers, which `ProofChamberInstance::new`
+        // sizes at `DUTCH_OVEN_BLOCK_FRAMES` and no method resizes; `run` is
+        // bounded by that same constant in `process` above, so each slice is
+        // inside the allocation it names. The two buffers are separate heap
+        // allocations, so the pair of slices aliases nothing, and neither
+        // aliases the callback's own `left`/`right`. Nothing mutates the
+        // instance between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        left.copy_from_slice(rendered_left);
+        right.copy_from_slice(rendered_right);
+    }
+
+    /// Write one of the reverb's own parameters by name, from the audio thread.
+    ///
+    /// Every name is forwarded, because this body withholds none — see the
+    /// struct doc for why the graph owns no name in this vocabulary.
+    ///
+    /// Real-time safe. `ProofChamberInstance::set_param` resolves the name by
+    /// comparison and its three instance-level arms allocate nothing:
+    /// `algorithm` selects one of the engines the constructor already built and
+    /// `reset`s it in place, `vintage` stores a mode on a processor that
+    /// outlives the selection, and `fdn_damping_version` recomputes the two FDN
+    /// tanks' absorptive filters in place. Everything else is recorded into the
+    /// instance's fixed-capacity parameter cache — which evicts rather than
+    /// grows — and forwarded to the selected engine.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`DUTCH_OVEN_PATCH_PRECEDENCE`] is empty and the ordering is
+    /// the identity: one code path, so a future aliasing pair is answered where
+    /// the others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::DutchOven.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay the instance reports for the engine this body currently
+    /// runs.
+    ///
+    /// Read off the instance rather than tracked here, so the figure the mapper
+    /// publishes through [`PluginCore::declared_latency_frames`] and the one the
+    /// audio thread re-reads through [`ActiveEffect::refresh_declared_latency`]
+    /// are both the instance's own answer — 0 for every engine a wire value
+    /// selects, and the convolution head size for the two it does not.
+    pub fn latency_samples(&self) -> u32 {
+        self.instance.get_latency()
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -2787,6 +3052,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Bacteria(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::DutchOven(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -6053,6 +6322,9 @@ fn process_device(
         PluginCore::Proof(body) => {
             body.process(left, right);
         }
+        PluginCore::DutchOven(body) => {
+            body.process(left, right);
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -7092,6 +7364,7 @@ mod tests {
             BuiltinEffectType::Grinder,
             BuiltinEffectType::Bacteria,
             BuiltinEffectType::Proof,
+            BuiltinEffectType::DutchOven,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -7103,7 +7376,8 @@ mod tests {
                 | BuiltinEffectType::Crust
                 | BuiltinEffectType::Grinder
                 | BuiltinEffectType::Bacteria
-                | BuiltinEffectType::Proof => {}
+                | BuiltinEffectType::Proof
+                | BuiltinEffectType::DutchOven => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -19307,6 +19581,410 @@ mod timeline_tests {
             left, clean_render,
             "the poisoned block rendered exactly as the clean one did, so the non-finite input \
              never reached the output and the scrub had nothing to catch"
+        );
+    }
+
+    // ── Dutch Oven ─────────────────────────────────────────────────────────
+
+    /// The rate every Dutch Oven spec here builds its body at, which is the
+    /// rate [`Harness::new`] builds its scheduler at. Every delay length,
+    /// pre-delay buffer, modulation rate and decay-rate EQ corner in the reverb
+    /// is derived from it, so a body built at another rate is a different room.
+    const DUTCH_OVEN_RATE: f32 = 48_000.0;
+
+    /// `ProofChamberInstance::set_param`'s `algorithm` wire value for the FDN-8
+    /// tank (`crates/proof-chamber/src/lib.rs`) — an engine whose damping curve
+    /// `fdn_damping_version` really moves, unlike the default plate.
+    const DUTCH_OVEN_FDN8: f32 = 1.0;
+
+    /// One of the reverb's own parameter names, as the mapper resolves it.
+    fn dutch_oven_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Dutch Oven names in the carrier
+    /// [`PluginCore::dutch_oven_with_patch`] takes.
+    fn dutch_oven_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (dutch_oven_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::dutch_oven_with_patch`] built, unwrapped so a spec
+    /// can render through it directly.
+    fn dutch_oven_body(patch: &[(&str, f32)]) -> Box<DutchOvenBody> {
+        let PluginCore::DutchOven(body) =
+            PluginCore::dutch_oven_with_patch(DUTCH_OVEN_RATE, &dutch_oven_patch(patch))
+        else {
+            unreachable!("dutch_oven_with_patch builds the dutch oven variant");
+        };
+        body
+    }
+
+    /// A decaying two-partial burst inside unity, `frames` long, built on
+    /// `fundamental`.
+    ///
+    /// The two channels of every Dutch Oven fixture below are built on
+    /// different fundamentals, so a body that rendered one channel into both —
+    /// or that returned a channel untouched — produces a render no assertion
+    /// here can mistake for the right one.
+    fn dutch_oven_material(frames: usize, fundamental: f32) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / DUTCH_OVEN_RATE;
+                let decay = (-2.0 * t).exp();
+                let first = (2.0 * std::f32::consts::PI * fundamental * t).sin();
+                let second = 0.5 * (2.0 * std::f32::consts::PI * fundamental * 5.0 * t).sin();
+                decay * (first + second) / 3.0
+            })
+            .collect()
+    }
+
+    /// The left and right material every Dutch Oven spec feeds, `frames` long.
+    fn dutch_oven_stereo_material(frames: usize) -> (Vec<f32>, Vec<f32>) {
+        (
+            dutch_oven_material(frames, 220.0),
+            dutch_oven_material(frames, 330.0),
+        )
+    }
+
+    /// `left`/`right` rendered through `body` in one call.
+    fn dutch_oven_render(
+        body: &mut DutchOvenBody,
+        left: &[f32],
+        right: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut rendered_left = left.to_vec();
+        let mut rendered_right = right.to_vec();
+        body.process(&mut rendered_left, &mut rendered_right);
+        (rendered_left, rendered_right)
+    }
+
+    /// `left`/`right` rendered through a bare [`ProofChamberInstance`] in runs
+    /// of at most `run_frames`, the way the instance itself takes a block.
+    ///
+    /// The reference side of
+    /// [`a_dutch_oven_body_renders_what_the_instance_renders_run_by_run`]: the
+    /// instance is driven directly here, so what that spec compares is the
+    /// body's splitting and copying against the instance's own output rather
+    /// than one body against another.
+    fn dutch_oven_instance_render(
+        instance: &mut ProofChamberInstance,
+        left: &[f32],
+        right: &[f32],
+        run_frames: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let frames = left.len();
+        let mut out_left = Vec::with_capacity(frames);
+        let mut out_right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        while rendered < frames {
+            let run = (frames - rendered).min(run_frames);
+            let run_end = rendered + run;
+            let run_left = instance.process(
+                &left[rendered..run_end],
+                &right[rendered..run_end],
+                run as u32,
+            );
+            let run_right = instance.get_right_ptr();
+            // SAFETY: both pointers name the instance's own output buffers,
+            // which its constructor sizes at 1024 frames and no method resizes;
+            // `run` is bounded by `run_frames`, which every caller here passes
+            // at or below that length. Nothing mutates the instance between the
+            // render and these reads.
+            unsafe {
+                out_left.extend_from_slice(std::slice::from_raw_parts(run_left, run));
+                out_right.extend_from_slice(std::slice::from_raw_parts(run_right, run));
+            }
+            rendered = run_end;
+        }
+        (out_left, out_right)
+    }
+
+    /// A patch that engages the reverb on both channels: fully wet, a long
+    /// decay and a large room, so the output is the tail rather than the input.
+    const DUTCH_OVEN_WET_ROOM: &[(&str, f32)] = &[("mix", 1.0), ("decay", 0.8), ("size", 0.7)];
+
+    /// The body renders exactly what the instance it wraps renders, run by run.
+    ///
+    /// This is the whole claim of the body's process path. The instance clamps
+    /// its `frames` argument to its own 1024-frame output buffers without
+    /// saying so, so a host that handed it a longer callback would get one
+    /// run's worth of reverb and leave the rest of the block dry. 3000 frames
+    /// is chosen to land off that boundary: the body must split it 1024 /
+    /// 1024 / 952, which is exactly how the reference below is driven.
+    ///
+    /// The oracle is sample identity against a bare instance carrying the same
+    /// patch, on both channels — the left one says the split lines up, the
+    /// right one says the second channel is read back at all, and the two
+    /// materials are built on different fundamentals so a body that copied one
+    /// into both would fail rather than pass.
+    ///
+    /// The two assertions beside it refuse a vacuous pass: a render that came
+    /// out silent, or one that came back as its own input, would be
+    /// sample-identical to a reference that did the same nothing.
+    #[test]
+    fn a_dutch_oven_body_renders_what_the_instance_renders_run_by_run() {
+        const FRAMES: usize = 3000;
+
+        let (left, right) = dutch_oven_stereo_material(FRAMES);
+        let mut body = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        let (body_left, body_right) = dutch_oven_render(&mut body, &left, &right);
+
+        let mut instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        for (name, value) in DUTCH_OVEN_WET_ROOM {
+            instance.set_param(name, *value);
+        }
+        let (instance_left, instance_right) =
+            dutch_oven_instance_render(&mut instance, &left, &right, DUTCH_OVEN_BLOCK_FRAMES);
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instance renders for the same patch"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instance renders for the same patch"
+        );
+        assert!(
+            body_left.iter().chain(body_right.iter()).any(|s| *s != 0.0),
+            "the body rendered silence, so the identity above says nothing"
+        );
+        assert_ne!(
+            (body_left.as_slice(), body_right.as_slice()),
+            (left.as_slice(), right.as_slice()),
+            "the body handed its input back unchanged, so the identity above compares two \
+             pass-throughs"
+        );
+    }
+
+    /// The order the four keys of an engine-switching patch are drawn in does
+    /// not change the device the record builds.
+    ///
+    /// This is what [`DUTCH_OVEN_PATCH_PRECEDENCE`] being empty asserts, and the
+    /// patch is chosen to be the hardest case for it: `algorithm` resets the
+    /// engine it selects, `fdn_damping_version` moves the damping curve that
+    /// engine reads, and `decay` and `mix` are ordinary forwarded values. Drawn
+    /// forwards, the two ordinary values land on a live FDN-8 with the version
+    /// written between them; drawn backwards, they land on the plate first and
+    /// reach the FDN-8 only through the instance's parameter cache, after the
+    /// selection has applied the version.
+    ///
+    /// The oracle is sample identity between the two renders on both channels.
+    /// The non-silence assertion refuses a vacuous pass: two silent renders are
+    /// identical.
+    #[test]
+    fn a_dutch_oven_patch_renders_the_same_in_either_order() {
+        const FRAMES: usize = 3000;
+        const AUTHORED: &[(&str, f32)] = &[
+            ("algorithm", DUTCH_OVEN_FDN8),
+            ("decay", 0.8),
+            ("fdn_damping_version", 2.0),
+            ("mix", 1.0),
+        ];
+
+        let reversed: Vec<(&str, f32)> = AUTHORED.iter().rev().copied().collect();
+        let (left, right) = dutch_oven_stereo_material(FRAMES);
+
+        let mut authored = dutch_oven_body(AUTHORED);
+        let (authored_left, authored_right) = dutch_oven_render(&mut authored, &left, &right);
+        let mut drawn_backwards = dutch_oven_body(&reversed);
+        let (backwards_left, backwards_right) =
+            dutch_oven_render(&mut drawn_backwards, &left, &right);
+
+        assert_eq!(
+            authored_left, backwards_left,
+            "the record's order changed the left channel, so the patch has an ordering law this \
+             body does not state"
+        );
+        assert_eq!(
+            authored_right, backwards_right,
+            "the record's order changed the right channel, so the patch has an ordering law this \
+             body does not state"
+        );
+        assert!(
+            authored_left
+                .iter()
+                .chain(authored_right.iter())
+                .any(|s| *s != 0.0),
+            "both renders are silent, so the identity above says nothing"
+        );
+
+        // And the version key really moves this fixture, so the identity above
+        // is order-independence over a key that matters rather than over one
+        // the render cannot hear.
+        let legacy_curve: Vec<(&str, f32)> = AUTHORED
+            .iter()
+            .map(|(name, value)| {
+                if *name == "fdn_damping_version" {
+                    (*name, 1.0)
+                } else {
+                    (*name, *value)
+                }
+            })
+            .collect();
+        let mut legacy = dutch_oven_body(&legacy_curve);
+        let (legacy_left, _) = dutch_oven_render(&mut legacy, &left, &right);
+        assert_ne!(
+            authored_left, legacy_left,
+            "the damping version never reached the tank, so this patch would render the same \
+             whatever order it carried that key in"
+        );
+    }
+
+    /// The body declares the figure its own instance reports, for every engine
+    /// a wire value selects.
+    ///
+    /// Production reports 0 throughout — the five selectable engines are
+    /// algorithmic and delay nothing — so what is under test is that the body
+    /// *asks* rather than answering with a literal: the two convolution-backed
+    /// engines report a 128-frame head, and a body returning a constant would
+    /// go on declaring 0 for them if an impulse-response transport ever made
+    /// one reachable. The oracle is therefore equality with a bare instance
+    /// given the same write, not equality with a number written here.
+    #[test]
+    fn a_dutch_oven_body_reports_the_latency_its_instance_reports() {
+        let default_body = dutch_oven_body(&[]);
+        let default_instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        assert_eq!(
+            default_body.latency_samples(),
+            default_instance.get_latency(),
+            "the body's opening figure is not the one its instance reports"
+        );
+
+        for algorithm in 1..=4 {
+            let body = dutch_oven_body(&[("algorithm", algorithm as f32)]);
+            let mut instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+            instance.set_param("algorithm", algorithm as f32);
+            assert_eq!(
+                body.latency_samples(),
+                instance.get_latency(),
+                "the body's figure for algorithm {algorithm} is not the one its instance reports"
+            );
+        }
+    }
+
+    /// A poisoned block leaves this body finite.
+    ///
+    /// `ProofChamberInstance::process` scrubs both output buffers before it
+    /// hands their pointers back, and this body copies out of those buffers, so
+    /// the scrub is inherited rather than repeated — which is exactly why it
+    /// needs a spec: a body that read the engines' own state instead, or that
+    /// re-derived an output past the scrub, would carry the poison out. A NaN
+    /// reaching the device summing bus is not one bad sample: it silences the
+    /// mix from there on, and the reverb's own tank would recirculate it for
+    /// the length of the decay.
+    ///
+    /// Both channels are poisoned and both are read, because the scrub runs
+    /// twice and one call going missing would leave one channel unscrubbed.
+    ///
+    /// The finiteness assertion is the oracle. The two beside it are what stop
+    /// it passing vacuously, because an all-zero block is finite: the clean twin
+    /// says the fixture sounds at all, and the difference between the two says
+    /// the poison really reached this block's output rather than sitting in the
+    /// tank where no scrub would have been needed.
+    #[test]
+    fn a_dutch_oven_body_returns_finite_samples_from_a_poisoned_block() {
+        const FRAMES: usize = 3000;
+
+        let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
+        let mut clean = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        let (clean_left, _) = dutch_oven_render(&mut clean, &material_left, &material_right);
+
+        let mut left = material_left.clone();
+        left[8] = f32::NAN;
+        left[FRAMES / 2] = f32::INFINITY;
+        let mut right = material_right.clone();
+        right[9] = f32::NEG_INFINITY;
+        right[FRAMES - 1] = f32::NAN;
+
+        let mut poisoned = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        poisoned.process(&mut left, &mut right);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            clean_left.iter().any(|sample| *sample != 0.0),
+            "the clean twin rendered silence, so the finiteness above says nothing"
+        );
+        assert_ne!(
+            left, clean_left,
+            "the poisoned block rendered exactly as the clean one did, so the non-finite input \
+             never reached the output and the scrub had nothing to catch"
+        );
+    }
+
+    /// The body renders and switches engines without allocating.
+    ///
+    /// The guard is the oracle, and it covers the two paths the callback takes:
+    /// the render, and the writes. `algorithm` is the write that used to
+    /// construct the engine it selected (#3307) and now selects one of the five
+    /// the constructor already built; `freeze` and `shimmer` engage stages that
+    /// keep state of their own; and every forwarded name is also recorded into
+    /// the instance's parameter cache, whose backing store is taken at
+    /// construction and which evicts rather than growing.
+    ///
+    /// The body is built, patched and warmed *outside* the guard: the
+    /// constructor legitimately allocates every engine (ADR 0020), and the
+    /// reverb's own guards drive a warm-up before opening theirs
+    /// (`guarded_run_after`, `crates/proof-chamber/tests/reverb_process_rt.rs`,
+    /// eight blocks before the guarded loop), so the same discipline is copied
+    /// here — one warm-up render, leaving only the block loop and the writes
+    /// inside. The names are parsed outside for the same reason the Proof
+    /// guards parse theirs outside: the `Vec` that holds them allocates, and
+    /// that allocation is the fixture's, not the body's.
+    ///
+    /// The two assertions beside the guard refuse a vacuous pass: a render that
+    /// came out silent covered no per-sample path, and one carrying a
+    /// non-finite sample would mean a write left the reverb producing state the
+    /// scrub had to catch rather than state it kept coherent.
+    #[test]
+    fn a_dutch_oven_body_does_not_allocate_while_rendering_and_switching_engines() {
+        const FRAMES: usize = 2048;
+
+        let writes = dutch_oven_patch(&[
+            ("algorithm", 0.0),
+            ("algorithm", 1.0),
+            ("algorithm", 2.0),
+            ("algorithm", 3.0),
+            ("algorithm", 4.0),
+            ("mix", 1.0),
+            ("decay", 0.8),
+            ("size", 0.7),
+            ("shimmer", 1.0),
+            ("freeze", 1.0),
+        ]);
+        let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
+        let mut body = DutchOvenBody::new(DUTCH_OVEN_RATE);
+        let mut left = material_left.clone();
+        let mut right = material_right.clone();
+        body.process(&mut left, &mut right);
+
+        left.copy_from_slice(&material_left);
+        right.copy_from_slice(&material_right);
+        assert_no_alloc::assert_no_alloc(|| {
+            body.process(&mut left, &mut right);
+            for (name, value) in &writes {
+                body.set_param(name.as_str(), *value);
+            }
+            body.process(&mut left, &mut right);
+        });
+
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the guarded render is silent, so it covered no per-sample path"
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a write left the reverb producing non-finite samples"
         );
     }
 }

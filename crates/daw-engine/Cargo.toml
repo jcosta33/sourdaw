@@ -19,6 +19,10 @@ command-capture-fixture = []
 rtrb = "0.4"
 cpal = { version = "0.18", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }
+# The Dutch Oven reverb `DutchOvenBody` hosts. A workspace member building an
+# `rlib` that compiles natively; its wasm-only dependencies are target-gated,
+# so linking it here pulls no browser glue into the engine.
+proof-chamber = { version = "0.1.0", path = "../proof-chamber" }
 triple_buffer = "9.0.0"
 
 # The IAudioClient3/WASAPI device backend (ADR 0027). Target-gated so no
