@@ -11,8 +11,29 @@ use std::f32::consts::TAU;
 // component to scale — see `OutputStage::MONO_PARAM_NAMES`.
 use crate::output_stage::OutputStage;
 
-/// Maximum reverse time (3 seconds at 48kHz).
-const MAX_REVERSE_SAMPLES: usize = 144000;
+/// Top of the advertised reverse-time range, in seconds. A capture buffer this
+/// long holds every length the `size` control can ask for, at any device rate.
+const MAX_REVERSE_SECONDS: f32 = 3.0;
+
+/// Samples each capture buffer holds at `sample_rate`.
+///
+/// Derived from the rate rather than fixed, because `process` indexes these
+/// buffers with `reverse_len`, which is itself a number of seconds times the
+/// rate: a constant sample count is only the advertised range at the one rate
+/// it was written for, and overruns the allocation above it. Never zero —
+/// `process` writes index 0 on its first sample.
+fn capture_samples(sample_rate: f32) -> usize {
+    ((sample_rate * MAX_REVERSE_SECONDS).ceil() as usize).max(1)
+}
+
+/// The constructor's 1.5 s default length, bounded by the capture allocation.
+///
+/// `new` and `reset` have to leave the same state behind
+/// (`tests/engine_reset_is_factory_fresh.rs`) and both have to stay inside the
+/// buffers `process` indexes, so the two share one expression.
+fn default_reverse_len(sample_rate: f32, capture_len: usize) -> usize {
+    ((sample_rate * 1.5) as usize).min(capture_len)
+}
 
 pub struct ReverseReverb {
     sample_rate: f32,
@@ -42,12 +63,13 @@ pub struct ReverseReverb {
 
 impl ReverseReverb {
     pub fn new(sample_rate: f32) -> Self {
-        let reverse_len = (sample_rate * 1.5) as usize; // 1.5s default
+        let capture_len = capture_samples(sample_rate);
+        let reverse_len = default_reverse_len(sample_rate, capture_len);
         let crossfade_len = (sample_rate * 0.015) as usize; // 15ms crossfade
         Self {
             sample_rate,
-            buffer_a: vec![0.0; MAX_REVERSE_SAMPLES],
-            buffer_b: vec![0.0; MAX_REVERSE_SAMPLES],
+            buffer_a: vec![0.0; capture_len],
+            buffer_b: vec![0.0; capture_len],
             write_pos: 0,
             reverse_len,
             a_is_writing: true,
@@ -71,7 +93,7 @@ impl ReverseReverb {
         self.buffer_a.fill(0.0);
         self.buffer_b.fill(0.0);
         self.write_pos = 0;
-        self.reverse_len = (self.sample_rate * 1.5) as usize;
+        self.reverse_len = default_reverse_len(self.sample_rate, self.buffer_a.len());
         self.a_is_writing = true;
         self.read_pos = 0;
         self.crossfade_len = (self.sample_rate * 0.015) as usize;
@@ -91,7 +113,7 @@ impl ReverseReverb {
             "decay" => self.decay = value.clamp(0.0, 0.99),
             "size" | "reverse_time" => {
                 let time_s = 0.5 + value * 2.5; // 0.5-3.0 seconds
-                self.reverse_len = ((time_s * self.sample_rate) as usize).min(MAX_REVERSE_SAMPLES);
+                self.reverse_len = ((time_s * self.sample_rate) as usize).min(self.buffer_a.len());
             }
             _ => {}
         }
