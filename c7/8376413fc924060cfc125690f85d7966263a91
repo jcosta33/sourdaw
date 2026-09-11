@@ -1,0 +1,40 @@
+src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts
+  s_06adf2b091dc62::t_85a979c12c2a43 36-38
+  s_06adf2b091dc62::t_e3934fcb6f4686 103,111,113,115-116,124,131-225
+  s_06adf2b091dc62::t_5a1ad3a75a8fc5 14
+  s_06adf2b091dc62::t_e4c76ca01f7b53 226
+src/modules/Project/repositories/nativeFileDialog/__tests__/saveViaNative.spec.ts
+  s_06adf2b091dc62::t_a3c077b77f15a1 1-58
+src/modules/Project/repositories/nativeFileDialog/saveViaNative.ts
+  s_06adf2b091dc62::t_86e530d9051042 1-15
+src/modules/Project/AGENTS.md
+  s_06adf2b091dc62::t_d756a82429d152 19
+src/modules/Project/useCases/agentAssetFileBoundary.ts
+  s_06adf2b091dc62::t_78acab465de224 50-67,71-78,85-86,91,97,100-104,107-110
+  s_06adf2b091dc62::t_91800315b49cf3 7,20,27-30
+  s_9b530f08172a54::t_61674f9c04ac5e 31,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c78376413fc924060cfc125690f85d7966263a91",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
