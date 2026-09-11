@@ -293,12 +293,19 @@ const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
 
 /**
  * `ScoringEngine::set_param` in `crates/scoring/src/lib.rs`: the closed set of
- * names the Tuner's body resolves.
+ * names the Tuner's body resolves, less the ones it refuses.
  *
  * `reference` and `a4_hz` are two spellings the engine answers on one arm, and
  * both are here because a record saved under either has to reach the body. A
  * name outside the set has no arm at all, so the engine would drop it: the set
  * is what keeps a command from being spent on a write nothing applies.
+ *
+ * `poly` and `instrument` do have arms and are still absent: `ScoringBody`
+ * refuses both at its live and its record door (`SCORING_NATIVE_REFUSED`,
+ * `crates/daw-engine/src/scheduler.rs`), because `instrument` allocates the
+ * poly tracker's per-string state as it lands and `poly` arms detectors that
+ * resize their own scratch inside `process` — so sending either would spend a
+ * command on a write the body drops.
  */
 const SCORING_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
     'a4_hz',
@@ -307,8 +314,6 @@ const SCORING_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
     'capo',
     'tone',
     'mute',
-    'poly',
-    'instrument',
 ]);
 
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([

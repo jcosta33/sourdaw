@@ -128,6 +128,43 @@ function readScoringEngineArmsFromRust(): readonly string[] {
     return [...body.matchAll(arm)].map((match) => match[1]!);
 }
 
+/**
+ * The two names `ScoringBody` refuses at both its doors
+ * (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`), read from
+ * the Rust source for the same reason the arms are: the renderer's set is the
+ * arms *less* these, and a name added to or removed from the refusal has to
+ * move this side without an edit here.
+ */
+function readScoringNativeRefusedFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/daw-engine/src/scheduler.rs'), 'utf8'));
+    const declaration = /\bconst\s+SCORING_NATIVE_REFUSED\s*:[^=]*=\s*&\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'const SCORING_NATIVE_REFUSED' in crates/daw-engine/src/scheduler.rs");
+    }
+    return [...declaration[1]!.matchAll(/"([\w-]+)"/g)].map((match) => match[1]!);
+}
+
+/**
+ * The string literals of `SCORING_ENGINE_PARAM_NAMES` in
+ * `nativeBuiltinBodies.ts`, read from the module's own source.
+ *
+ * The registry's two Tuner closures ask the set `has`, so they answer for the
+ * names a test thinks to probe and say nothing about the ones it does not: an
+ * extra literal in the initializer is invisible to any assertion written over
+ * a sample. Reading the initializer is what turns "exactly these names" into a
+ * claim about the whole set rather than about the probes.
+ */
+function readScoringRendererNamesFromTs(): readonly string[] {
+    const source = stripComments(
+        readFileSync(resolve(REPO_ROOT, 'src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts'), 'utf8')
+    );
+    const declaration = /\bSCORING_ENGINE_PARAM_NAMES\b[^=]*=\s*new Set\(\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'SCORING_ENGINE_PARAM_NAMES' initializer in nativeBuiltinBodies.ts");
+    }
+    return [...declaration[1]!.matchAll(/'([\w-]+)'/g)].map((match) => match[1]!);
+}
+
 /** The registry entry under test, with the `null` case already refused. */
 function bodyOf(deviceType: string): NativeBuiltinBody {
     const body = nativeBuiltinBody(deviceType);
@@ -1028,18 +1065,41 @@ describe('the scoring body', () => {
     });
 
     // `ScoringEngine::set_param` (`crates/scoring/src/lib.rs`) is the closed
-    // set this mirrors, welded against the Rust arms themselves the same way
-    // Knead's is: the Tuner's descriptor declares no parameters, so nothing
-    // else stops a lane's id from reaching a door the engine would drop it at.
-    it('resolves exactly the arms ScoringEngine::set_param matches, and nothing else', () => {
+    // set this mirrors, less the two names `ScoringBody` refuses at both its
+    // doors (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`).
+    // Welded against the Rust sources themselves the same way Knead's is: the
+    // Tuner's descriptor declares no parameters, so nothing else stops a
+    // lane's id from reaching a door the engine would drop it at.
+    //
+    // The set equality is read from the module's own initializer rather than
+    // probed name by name. A loop over a sample of names cannot see a literal
+    // the sample does not mention, so an id added to the renderer's set — one
+    // the engine has no arm for, or one it refuses — would keep a probing
+    // version of this case green.
+    it('resolves exactly the arms ScoringEngine::set_param matches less the refused ones', () => {
         const engineArms = readScoringEngineArmsFromRust();
-        // Presence pin: a broken extraction would yield an empty set and every
-        // assertion below would pass vacuously against it.
+        const refused = readScoringNativeRefusedFromRust();
+        const rendererNames = readScoringRendererNamesFromTs();
+        // Presence pins: a broken extraction would yield an empty set and
+        // every assertion below would pass vacuously against it.
         expect(engineArms.length).toBeGreaterThan(0);
+        expect(refused.length).toBeGreaterThan(0);
+        expect(rendererNames.length).toBeGreaterThan(0);
 
-        for (const name of engineArms) {
+        const admitted = engineArms.filter((name) => !refused.includes(name));
+        expect(new Set(rendererNames)).toEqual(new Set(admitted));
+
+        for (const name of admitted) {
             expect(bodyOf('native-scoring').addressesParameter(name)).toBe(true);
             expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({ [name]: 1 });
+        }
+
+        // The refused names have arms on the Rust side and are still not
+        // addressable: a command spent on one is dropped at the body's door,
+        // and a record carrying one must not be mapped into a patch.
+        for (const name of refused) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
         }
 
         // Names outside the arms, including the camelCase spelling of a real

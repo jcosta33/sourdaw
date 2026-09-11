@@ -1277,10 +1277,12 @@ impl PluginCore {
     /// (ADR 0020).
     ///
     /// There is no ordering law over the writes — no name in this vocabulary
-    /// rewrites another, so every entry addresses the one analyser whatever
-    /// order the record is read in — and the patch is applied through
-    /// [`ScoringBody::load_patch`] all the same, so the record build is one
-    /// code path with the other bodies'.
+    /// rewrites another, so every entry the body admits addresses the one
+    /// analyser whatever order the record is read in — and the patch is
+    /// applied through [`ScoringBody::load_patch`] all the same, so the record
+    /// build is one code path with the other bodies'. That door drops the two
+    /// [`SCORING_NATIVE_REFUSED`] names, so a record naming the poly tracker
+    /// still builds the monophonic analyser this device is.
     pub fn scoring_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
         let mut body = ScoringBody::new(sample_rate);
         body.load_patch(patch);
@@ -2339,6 +2341,39 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// drops it there. Either route leaves the parameter holding whatever value
 /// the record's own patch gave it.
 const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
+
+/// The Tuner parameter names [`ScoringBody`] refuses at both of its doors —
+/// the live [`ScoringBody::set_param`] and the record's
+/// [`ScoringBody::load_patch`].
+///
+/// `instrument` allocates when it lands. Its arm calls
+/// `PolyStringTracker::set_guitar_standard` or `set_bass_4`, and both go
+/// through `set_strings` (`crates/scoring/src/poly.rs`), which builds a fresh
+/// `Vec` of targets, of band-pass filters and of detectors, one analysis
+/// buffer per string, a position table and a scratch window — plus a
+/// `YinDetector` per string, each of which allocates five `Vec`s of its own.
+///
+/// `poly` is a bool store, but what it stores is the enable on the tracker
+/// those strings were built for, and the bass configuration allocates *inside*
+/// `process`: `set_strings` sizes every per-string buffer for the lowest
+/// string's band, so at 88.2 and 96 kHz the A1, D2 and G2 detectors are each
+/// handed a window twice the length their own FFT scratch was built for and
+/// `YinDetector::detect` resizes it on the audio thread
+/// (`crates/scoring/src/yin.rs`, issue #4209). Arming the tracker is therefore
+/// the same hazard one hop later rather than a safe write.
+///
+/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose two names are *allowed* on
+/// the control thread and land through [`BacteriaBody::load_patch`], these two
+/// are refused on BOTH doors. The reason is not which thread may run the
+/// allocation but that neither name belongs to this device: the Tuner's
+/// descriptor (`native-scoring`,
+/// `src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
+/// declares `a4_hz`, `mute` and `tone` and nothing else, no producer spells
+/// either name, and the native Tuner is the monophonic analyser. A record or a
+/// live write carrying one is a producer that lost track of the device, and
+/// admitting it on the record door would arm a tracker the very next callback
+/// allocates for.
+const SCORING_NATIVE_REFUSED: &[&str] = &["poly", "instrument"];
 
 /// `name` with an optional `band{digit}` prefix stripped: the bare name the
 /// engine resolves once it has picked a band.
@@ -3934,24 +3969,42 @@ impl ScoringBody {
         self.telemetry.publish(&self.engine);
     }
 
-    /// Write one of the analyser's own parameters by name.
+    /// Write one of the analyser's own parameters by name, from the audio
+    /// thread.
     ///
-    /// Real-time safe: the name arrives inline in the command
-    /// ([`BuiltinParamName`]) and `ScoringEngine::set_param` resolves it by
-    /// comparison, allocating nothing. Its arms move the concert-A reference,
-    /// the transpose and capo offsets, the tone generator, the output mute, the
-    /// poly tracker's enable and its instrument selection — each a field write
-    /// or a fixed-size retune of state the constructor already built.
+    /// Real-time safe, and the refusal is part of what makes it so. The name
+    /// arrives inline in the command ([`BuiltinParamName`]) and
+    /// `ScoringEngine::set_param` resolves it by comparison, but not every arm
+    /// it resolves to is a field write: the two names in
+    /// [`SCORING_NATIVE_REFUSED`] are dropped here rather than forwarded,
+    /// because `instrument` rebuilds the poly tracker's per-string state as it
+    /// lands and `poly` arms detectors that resize their own scratch inside
+    /// `process`. The comparison is against borrowed `&str`s, so the refusal
+    /// itself owns nothing.
+    ///
+    /// Everything forwarded is a field write or a fixed-size retune of state
+    /// the constructor already built: the concert-A reference, the transpose
+    /// and capo offsets, the tone generator and the output mute.
     fn set_param(&mut self, name: &str, value: f32) {
+        if SCORING_NATIVE_REFUSED.contains(&name) {
+            return;
+        }
         self.engine.set_param(name, value);
     }
 
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
     ///
-    /// Every entry lands through [`Self::set_param`], the same door a live
-    /// write arrives at: no name here is one thread may run and another may
-    /// not. Ordered through [`precedence_first`] and
+    /// The two [`SCORING_NATIVE_REFUSED`] names are dropped here too — this is
+    /// the one body whose refusal is not about which thread may allocate but
+    /// about what the device is, so a persisted record naming the poly tracker
+    /// leaves the native Tuner the monophonic analyser it is rather than
+    /// building strings the next callback would allocate for. Refused on this
+    /// door on its own account, against the engine directly as
+    /// [`BacteriaBody::load_patch`] writes it, so the record door does not
+    /// hold only for as long as the live one happens to.
+    ///
+    /// Ordered through [`precedence_first`] and
     /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
     /// even though this type's law is empty and the ordering is the identity:
     /// one code path, so a future aliasing pair is answered where the others
@@ -3962,7 +4015,10 @@ impl ScoringBody {
             BuiltinParamName::as_str,
             BuiltinEffectType::Scoring.patch_precedence(),
         ) {
-            self.set_param(name.as_str(), value);
+            if SCORING_NATIVE_REFUSED.contains(&name.as_str()) {
+                continue;
+            }
+            self.engine.set_param(name.as_str(), value);
         }
     }
 
@@ -22482,30 +22538,62 @@ mod timeline_tests {
     /// call is wrong.
     const SCORING_CALLBACK: usize = 256;
 
+    /// The rate the two refusal specs below build at, and the reason they do:
+    /// the poly tracker's bass configuration sizes every per-string buffer for
+    /// the lowest string's band, and only at 88.2 and 96 kHz does that window
+    /// outgrow the FFT scratch its own detectors were built for, so three of
+    /// the four resize inside `process` (issue #4209). A spec at
+    /// [`SCORING_RATE`] would observe the `instrument` allocation alone and say
+    /// nothing about the tracker `poly` arms.
+    const SCORING_HIGH_RATE: f32 = 96_000.0;
+
+    /// Frames the refusal specs feed at [`SCORING_HIGH_RATE`]: one second,
+    /// which is thirty mono analysis hops (hop = rate / 30) and sixty poly
+    /// hops for a four-string bass (hop = rate / (15 * strings) = 1 600), so
+    /// every string's first detector tick falls inside it many times over.
+    const SCORING_HIGH_RATE_FRAMES: usize = 96_000;
+
     /// One of the analyser's own parameter names, as the mapper resolves it.
     fn scoring_name(name: &str) -> BuiltinParamName {
         BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
     }
 
-    /// `frames` of the test tone.
-    fn scoring_tone(frames: usize) -> Vec<f32> {
+    /// `frames` of an `hz` sine at `sample_rate`, at the amplitude every spec
+    /// here feeds. The phase runs from frame zero across the whole slice, so a
+    /// spec that splits one call of this into a warm-up and a guarded pass
+    /// hands the analyser an unbroken tone across the join.
+    fn scoring_tone_at(frames: usize, hz: f32, sample_rate: f32) -> Vec<f32> {
         (0..frames)
             .map(|frame| {
-                let phase = std::f32::consts::TAU * SCORING_TONE_HZ * frame as f32 / SCORING_RATE;
+                let phase = std::f32::consts::TAU * hz * frame as f32 / sample_rate;
                 phase.sin() * SCORING_TONE_AMPLITUDE
             })
             .collect()
     }
 
-    /// A Tuner core carrying `patch`, built through the door the mapper uses
-    /// ([`PluginCore::scoring_with_patch`]) together with the telemetry handle
-    /// that core hands back — the pair the mapper itself keeps.
-    fn scoring_core(patch: &[(BuiltinParamName, f32)]) -> (PluginCore, Arc<ScoringTelemetry>) {
-        let core = PluginCore::scoring_with_patch(SCORING_RATE, patch);
+    /// `frames` of the test tone.
+    fn scoring_tone(frames: usize) -> Vec<f32> {
+        scoring_tone_at(frames, SCORING_TONE_HZ, SCORING_RATE)
+    }
+
+    /// A Tuner core carrying `patch` at `sample_rate`, built through the door
+    /// the mapper uses ([`PluginCore::scoring_with_patch`]) together with the
+    /// telemetry handle that core hands back — the pair the mapper itself
+    /// keeps.
+    fn scoring_core_at(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> (PluginCore, Arc<ScoringTelemetry>) {
+        let core = PluginCore::scoring_with_patch(sample_rate, patch);
         let telemetry = core
             .scoring_telemetry()
             .expect("a scoring core publishes a telemetry channel");
         (core, telemetry)
+    }
+
+    /// A Tuner core carrying `patch` at [`SCORING_RATE`].
+    fn scoring_core(patch: &[(BuiltinParamName, f32)]) -> (PluginCore, Arc<ScoringTelemetry>) {
+        scoring_core_at(SCORING_RATE, patch)
     }
 
     /// The body inside a core built above.
@@ -22516,17 +22604,27 @@ mod timeline_tests {
         body
     }
 
+    /// Drive buffers the caller already owns through `body` in
+    /// [`SCORING_CALLBACK`]-frame callbacks, in place.
+    ///
+    /// Separate from [`scoring_render`] because it allocates nothing: the
+    /// allocation specs below need the cutting inside their guard and the
+    /// copies outside it.
+    fn scoring_drive(body: &mut ScoringBody, left: &mut [f32], right: &mut [f32]) {
+        let mut rendered = 0;
+        while rendered < left.len() {
+            let end = (rendered + SCORING_CALLBACK).min(left.len());
+            body.process(&mut left[rendered..end], &mut right[rendered..end]);
+            rendered = end;
+        }
+    }
+
     /// Drive `material` through `body` in [`SCORING_CALLBACK`]-frame callbacks,
     /// answering what the body left in the buffers.
     fn scoring_render(body: &mut ScoringBody, material: &[f32]) -> (Vec<f32>, Vec<f32>) {
         let mut left = material.to_vec();
         let mut right = material.to_vec();
-        let mut rendered = 0;
-        while rendered < material.len() {
-            let end = (rendered + SCORING_CALLBACK).min(material.len());
-            body.process(&mut left[rendered..end], &mut right[rendered..end]);
-            rendered = end;
-        }
+        scoring_drive(body, &mut left, &mut right);
         (left, right)
     }
 
@@ -22750,38 +22848,179 @@ mod timeline_tests {
     /// The construction and the material stay outside the guard: the constructor
     /// legitimately allocates the analysis ring, the extraction window and both
     /// detectors' buffers, and building the tone's `Vec` allocates too. A
-    /// warming second runs first so the guarded call falls on an analyser that
+    /// warming second runs first so the guarded pass falls on an analyser that
     /// has already detected — the extraction, YIN, MPM, the stabilizer, the
     /// vibrato detector and the publish have all run before the guard opens, and
-    /// the guarded call runs them again over state that pass populated rather
-    /// than over empty buffers.
+    /// the guarded pass runs them again over the state that second populated
+    /// rather than over empty buffers.
     ///
-    /// The assertions beside the guard refuse a vacuous pass: a guarded call
-    /// that left the analyser hearing nothing covered no detection path, and one
-    /// that left a non-finite sample would mean the pass produced state the
-    /// scrub had to catch rather than state it kept coherent.
+    /// What the guard covers is fifteen analysis hops, not one callback: the
+    /// hop is `sample_rate / 30` = 1 600 frames and [`SCORING_FRAMES`] is
+    /// exactly thirty of them, so a warm-up of that length leaves the counter
+    /// at a hop boundary and a single 256-frame guarded call never crosses the
+    /// next one — no extraction, no YIN, no MPM, no stabilizer and no vibrato
+    /// would run under the guard at all, and the `active` reading beside it
+    /// would be the warm-up's last publish rather than anything the guard saw.
+    ///
+    /// The guarded tone is a fourth below the warm-up's for the same reason:
+    /// the reading can only move from A4 to E4 if the analysis that names a
+    /// note ran inside the guard, so the note read before and after the guard
+    /// is what makes a vacuous pass impossible. The finiteness assertion stays
+    /// beside it — a guarded pass that left a non-finite sample would mean it
+    /// produced state the scrub had to catch rather than state it kept
+    /// coherent.
     #[test]
     fn a_scoring_body_does_not_allocate_while_analysing() {
-        let material = scoring_tone(SCORING_FRAMES);
+        /// The pitch the guarded pass feeds: E4, a fourth below the warm-up's
+        /// concert A and far enough from it that no detector error could
+        /// confuse the two.
+        const GUARDED_TONE_HZ: f32 = 329.63;
+        /// E4 on the MIDI scale.
+        const GUARDED_TONE_MIDI: i32 = 64;
+        /// A4 on the MIDI scale — the warm-up's own note.
+        const WARM_UP_MIDI: i32 = 69;
+
+        let warm_up = scoring_tone(SCORING_FRAMES);
+        let guarded = scoring_tone_at(SCORING_FRAMES / 2, GUARDED_TONE_HZ, SCORING_RATE);
         let (mut core, telemetry) = scoring_core(&[]);
         let body = scoring_body(&mut core);
-        scoring_render(body, &material);
+        scoring_render(body, &warm_up);
 
-        let mut left = material[..SCORING_CALLBACK].to_vec();
-        let mut right = material[..SCORING_CALLBACK].to_vec();
+        let warmed = telemetry.snapshot();
+        assert!(
+            warmed.active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+        assert_eq!(
+            warmed.midi_note, WARM_UP_MIDI,
+            "the warm-up fed a {SCORING_TONE_HZ} Hz tone and the analyser named MIDI {}, so the \
+             reading the guarded pass has to move is not the one this spec expects",
+            warmed.midi_note
+        );
+
+        let mut left = guarded.clone();
+        let mut right = guarded;
         assert_no_alloc::assert_no_alloc(|| {
-            body.process(&mut left, &mut right);
+            scoring_drive(body, &mut left, &mut right);
         });
 
+        let reading = telemetry.snapshot();
         assert!(
-            telemetry.snapshot().active,
-            "the guarded call left the analyser hearing nothing, so it covered no detection path"
+            reading.active,
+            "the guarded pass left the analyser hearing nothing, so it covered no detection path"
+        );
+        assert_eq!(
+            reading.midi_note, GUARDED_TONE_MIDI,
+            "the guarded pass fed a {GUARDED_TONE_HZ} Hz tone and the analyser still names MIDI \
+             {}, so no analysis ran inside the guard",
+            reading.midi_note
         );
         assert!(
             left.iter()
                 .chain(right.iter())
                 .all(|sample| sample.is_finite()),
-            "the guarded call left the analyser producing non-finite samples"
+            "the guarded pass left the analyser producing non-finite samples"
+        );
+    }
+
+    /// The live door refuses the two [`SCORING_NATIVE_REFUSED`] names, on the
+    /// audio thread, where forwarding either allocates.
+    ///
+    /// Both writes are made inside the guard in the order a panel would make
+    /// them — pick the instrument, then arm the tracker — because that is the
+    /// route a live write actually takes: `updateDeviceParam.ts` sends every
+    /// panel write natively without consulting `addressesParameter`, so
+    /// [`GraphCommand::SetParam`] reaches this door inside the render callback
+    /// through `apply_builtin_param`.
+    ///
+    /// Built at [`SCORING_HIGH_RATE`] so both halves of the hazard are in
+    /// range: the `instrument` arm rebuilds the tracker's per-string state as
+    /// it lands, and the bass strings it would build carry three detectors
+    /// that resize their own FFT scratch on their first tick at this rate. The
+    /// guarded pass is four poly hops long, so on revert the abort comes from
+    /// the `instrument` write itself and, failing that, from the first of those
+    /// ticks.
+    ///
+    /// The reading is asserted after the guard so the pass is not vacuous: a
+    /// guarded pass the analyser heard nothing in would have exercised no
+    /// analysis path for the refusal to sit beside.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_live_door() {
+        /// Frames driven under the guard: four poly hops at
+        /// [`SCORING_HIGH_RATE`], which is one tick per string of the bass a
+        /// forwarded `instrument` write would have built.
+        const GUARDED_FRAMES: usize = 4 * 1_600;
+
+        let tone = scoring_tone_at(
+            SCORING_HIGH_RATE_FRAMES + GUARDED_FRAMES,
+            SCORING_TONE_HZ,
+            SCORING_HIGH_RATE,
+        );
+        let (warm_up, guarded) = tone.split_at(SCORING_HIGH_RATE_FRAMES);
+        let (mut core, telemetry) = scoring_core_at(SCORING_HIGH_RATE, &[]);
+        let body = scoring_body(&mut core);
+        scoring_render(body, warm_up);
+
+        assert!(
+            telemetry.snapshot().active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+
+        let mut left = guarded.to_vec();
+        let mut right = guarded.to_vec();
+        assert_no_alloc::assert_no_alloc(|| {
+            body.set_param("instrument", 1.0);
+            body.set_param("poly", 1.0);
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
+        );
+    }
+
+    /// The record door refuses the same two names, so a persisted patch naming
+    /// the poly tracker builds the monophonic analyser the native Tuner is.
+    ///
+    /// The whole drive is inside the guard, with no warm-up, and that is the
+    /// point: the allocation a reverted refusal performs here is a *first*-tick
+    /// resize. `set_strings` sizes every per-string buffer for the lowest
+    /// string's band, so the A1, D2 and G2 detectors are each handed a window
+    /// twice the length their own FFT scratch was built for and
+    /// `YinDetector::detect` grows it once, on that string's first tick. A
+    /// warming second would spend all three of those growths outside the guard
+    /// — sixty poly hops at [`SCORING_HIGH_RATE`] is fifteen round trips over
+    /// four strings — and the guarded pass would then be allocation-free with
+    /// the refusal reverted, which is a spec that proves nothing. The guard
+    /// therefore opens before the tracker's first tick.
+    ///
+    /// A second of material covers thirty mono analysis hops and sixty poly
+    /// hops, so the reading asserted afterwards is a detection the guard itself
+    /// produced, and the pass is not vacuous for want of a warm-up.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_patch_door() {
+        let tone = scoring_tone_at(SCORING_HIGH_RATE_FRAMES, SCORING_TONE_HZ, SCORING_HIGH_RATE);
+        let (mut core, telemetry) = scoring_core_at(
+            SCORING_HIGH_RATE,
+            &[
+                (scoring_name("poly"), 1.0),
+                (scoring_name("instrument"), 1.0),
+            ],
+        );
+        let body = scoring_body(&mut core);
+
+        let mut left = tone.clone();
+        let mut right = tone;
+        assert_no_alloc::assert_no_alloc(|| {
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
         );
     }
 }
