@@ -36,10 +36,15 @@ describe('sourdaw-craft plugin surface', () => {
     it('should match listed relative paths and reject unlisted ones', () => {
         expect(relativeFilename('src/example.ts')).toBe('src/example.ts');
         expect(isCraftBaselineFile('src/not-on-any-list.ts', 'no-useless-clone-spread')).toBe(false);
-        const listed = craftBaselineFiles['no-useless-clone-spread'][0];
-        if (listed !== undefined) {
-            expect(isCraftBaselineFile(listed, 'no-useless-clone-spread')).toBe(true);
-        }
+        const listed = craftBaselineFiles['no-useless-clone-spread'];
+        const first = listed[0];
+        const last = listed[listed.length - 1];
+        expect(listed.length).toBeGreaterThan(1);
+        expect(first).toBeDefined();
+        expect(last).toBeDefined();
+        expect(first).not.toBe(last);
+        expect(isCraftBaselineFile(first, 'no-useless-clone-spread')).toBe(true);
+        expect(isCraftBaselineFile(last, 'no-useless-clone-spread')).toBe(true);
     });
 });
 
@@ -50,6 +55,10 @@ runCraftRule('no-conditional-empty-spread', {
         'const merged = { ...a, ...b };',
         'const copy = { ...record, ...(extras) };',
         'const list = [...items, extra];',
+        {
+            filename: 'Panel.tsx',
+            code: 'const node = <Panel {...props} />;',
+        },
     ],
     invalid: [
         {
@@ -62,6 +71,16 @@ runCraftRule('no-conditional-empty-spread', {
         },
         {
             code: 'fn(...(ready ? extra : []));',
+            errors: [{ message: /Do not spread a conditional or logical expression/ }],
+        },
+        {
+            filename: 'Panel.tsx',
+            code: 'const node = <Panel {...(open ? { role: "dialog" } : {})} />;',
+            errors: [{ message: /Do not spread a conditional or logical expression/ }],
+        },
+        {
+            filename: 'Panel.tsx',
+            code: 'const node = <Panel {...(open && { hidden: true })} />;',
             errors: [{ message: /Do not spread a conditional or logical expression/ }],
         },
     ],

@@ -163,6 +163,21 @@ const skipIfBaselined = (ruleId, rule) => ({
     },
 });
 
+const reportConditionalOrLogicalSpread = (context, node) => {
+    const argument = unwrap(node.argument);
+    if (!argument) {
+        return;
+    }
+    if (argument.type !== 'ConditionalExpression' && argument.type !== 'LogicalExpression') {
+        return;
+    }
+    context.report({
+        node,
+        message:
+            'Do not spread a conditional or logical expression. Assign extra keys with `if`, or build a named object. `...(cond ? { k: v } : {})` is slop.',
+    });
+};
+
 const noConditionalEmptySpread = {
     meta: {
         type: 'problem',
@@ -175,17 +190,10 @@ const noConditionalEmptySpread = {
     create(context) {
         return {
             SpreadElement(node) {
-                const argument = unwrap(node.argument);
-                if (!argument) {
-                    return;
-                }
-                if (argument.type === 'ConditionalExpression' || argument.type === 'LogicalExpression') {
-                    context.report({
-                        node,
-                        message:
-                            'Do not spread a conditional or logical expression. Assign extra keys with `if`, or build a named object. `...(cond ? { k: v } : {})` is slop.',
-                    });
-                }
+                reportConditionalOrLogicalSpread(context, node);
+            },
+            JSXSpreadAttribute(node) {
+                reportConditionalOrLogicalSpread(context, node);
             },
         };
     },
