@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_06adf2b091dc62::t_47e37601930120 811-848
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/isNegatedIntent.ts
+  s_06adf2b091dc62::t_49900411b61bd5 1,5,9
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/isNegatedIntent.spec.ts
+  s_2d8e88473e4b53::t_19db88241d9ccd 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "33aa101e675e6da2b4494e0ce8d0d3f6ed6023b8",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_2d8e88473e4b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af4bc73d141357d8a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
