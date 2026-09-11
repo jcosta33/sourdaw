@@ -299,6 +299,14 @@ impl ParameterCache {
 // WASM instance — unified interface
 // ---------------------------------------------------------------------------
 
+/// Frames one `ProofChamberInstance::process` call can render.
+///
+/// The instance's two output buffers are allocated at this length and `process`
+/// clamps its frame count to it, so this is the number of samples the pointers
+/// it returns are valid for. Exported so a host binds its run length to the
+/// capacity the instance really has instead of mirroring the number.
+pub const PROOF_CHAMBER_BLOCK_FRAMES: usize = 1024;
+
 #[wasm_bindgen]
 pub struct ProofChamberInstance {
     engines: ExposedEngines,
@@ -316,7 +324,7 @@ pub struct ProofChamberInstance {
 impl ProofChamberInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let max_block = 1024;
+        let max_block = PROOF_CHAMBER_BLOCK_FRAMES;
         Self {
             engines: ExposedEngines {
                 plate: ProofChamber::new(sample_rate),
@@ -429,7 +437,7 @@ impl ProofChamberInstance {
     }
 
     pub fn process(&mut self, left_in: &[f32], right_in: &[f32], frames: u32) -> *const f32 {
-        let size = (frames as usize).min(1024);
+        let size = (frames as usize).min(PROOF_CHAMBER_BLOCK_FRAMES);
         self.out_left[..size].copy_from_slice(&left_in[..size]);
         self.out_right[..size].copy_from_slice(&right_in[..size]);
 
@@ -665,11 +673,35 @@ impl ProofChamberInstance {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProofChamberInstance, ReverbEngine, UnexposedEngine};
+    use super::{ProofChamberInstance, ReverbEngine, UnexposedEngine, PROOF_CHAMBER_BLOCK_FRAMES};
     use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 
     #[global_allocator]
     static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+    /// `PROOF_CHAMBER_BLOCK_FRAMES` tells a host how many samples the pointers
+    /// `process` returns are valid for, so it has to be the length of the
+    /// buffers those pointers address rather than a number kept alongside them.
+    ///
+    /// This lives inside the crate because the two output buffers are private
+    /// and giving them a public length accessor would add the surface the
+    /// constant exists to avoid. Rendering cannot stand in for it: a constant
+    /// smaller than the allocation clamps consistently and sounds correct while
+    /// quietly under-running the buffers it claims to describe.
+    #[test]
+    fn the_exported_block_capacity_is_the_output_buffers_own_length() {
+        let instance = ProofChamberInstance::new(48_000.0);
+        assert_eq!(
+            instance.out_left.len(),
+            PROOF_CHAMBER_BLOCK_FRAMES,
+            "the left output buffer is not the capacity the crate exports"
+        );
+        assert_eq!(
+            instance.out_right.len(),
+            PROOF_CHAMBER_BLOCK_FRAMES,
+            "the right output buffer is not the capacity the crate exports"
+        );
+    }
 
     #[test]
     fn convolution_latency_matches_global_alignment_reference() {
