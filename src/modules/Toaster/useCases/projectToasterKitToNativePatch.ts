@@ -1,6 +1,7 @@
 import { fromToasterKitState } from '../models/ToasterKitState';
 
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
+import { toasterNativeParamName } from './toasterNativeParamName';
 
 export type ProjectToasterKitToNativePatchInput = {
     /** Project snapshot state; degrades to the default kit through `fromToasterKitState`. */
@@ -20,7 +21,8 @@ export type ProjectToasterKitToNativePatchInput = {
  * `param` becomes the message's own name, already the engine's snake_case
  * spelling, and `padParam` gets the pad index folded into the name the way
  * `ToasterBody::set_pad_param` (`crates/daw-engine/src/scheduler.rs`) expects
- * it — `pad<N>_<name>`.
+ * it. That composition is [toasterNativeParamName], shared with the live
+ * writer so one edit and the whole kit address the body identically.
  *
  * `delay_time` is left in milliseconds, exactly as the message projection
  * states it. The worklet converts to seconds at its own door
@@ -35,11 +37,7 @@ export function projectToasterKitToNativePatch({
     const kit = fromToasterKitState(deviceState);
     const patch: Record<string, number> = {};
     for (const message of projectToasterKitToEngineMessages({ kit })) {
-        if (message.type === 'param') {
-            patch[message.name] = message.value;
-        } else {
-            patch[`pad${message.pad}_${message.name}`] = message.value;
-        }
+        patch[toasterNativeParamName(message)] = message.value;
     }
     return patch;
 }

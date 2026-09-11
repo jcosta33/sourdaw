@@ -20553,60 +20553,95 @@ mod timeline_tests {
     const TOASTER_KIT: &[(&str, f32)] =
         &[("master_gain", 0.9), ("pad0_tune", 3.0), ("pad5_pan", -0.8)];
 
+    /// The frames the two parity specs below render. 3000 lands off the run
+    /// boundary, so the body must split it into twenty-three whole runs and a
+    /// 56-frame tail, which is exactly how the reference is driven.
+    const TOASTER_PARITY_FRAMES: usize = 3000;
+
+    /// Pad 0 in the low bank, the fixture's first hit.
+    const TOASTER_PARITY_KICK_NOTE: u8 = 36;
+
+    /// Pad 5 in the low bank, the fixture's panned second hit.
+    const TOASTER_PARITY_RIM_NOTE: u8 = 41;
+
+    /// The run holding frame 700, which is `700 / TOASTER_RUN_FRAMES`.
+    const TOASTER_PARITY_RIM_RUN: usize = 5;
+
+    /// The kit and the two hits of [`TOASTER_KIT`]'s fixture, driven the way
+    /// the worklet drives the instrument — the pad index and the pad-side name
+    /// apart, never as one `pad5_pan` string — so the body's own reading of
+    /// those names is what an equality against this reference tests.
+    fn drive_toaster_parity_reference(run: usize, instance: &mut ToasterInstance) {
+        if run == 0 {
+            instance.set_param("master_gain", 0.9);
+            instance.set_pad_param(0, "tune", 3.0);
+            instance.set_pad_param(5, "pan", -0.8);
+            instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+        if run == TOASTER_PARITY_RIM_RUN {
+            instance.note_on(5, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+    }
+
     /// The body renders exactly what the instrument it wraps renders, run by
-    /// run, for the same kit and the same hits.
+    /// run, for the same kit, the same hits and the same release.
     ///
     /// This is the whole claim of the body's process path: the split into runs,
     /// the pad a note addresses, the velocity scale the strike carries, the
     /// neutral `midi_note` that leaves the pad untransposed, the pad-side
-    /// spelling of `pad0_tune` and `pad5_pan`, and the sum into the pair. 3000
-    /// frames lands off the run boundary, so the body must split it into
-    /// twenty-three whole runs and a 56-frame tail, which is exactly how the
-    /// reference below is driven.
+    /// spelling of `pad0_tune` and `pad5_pan`, the release reaching
+    /// `note_off(pad)`, and the sum into the pair.
     ///
     /// The second hit is stamped at frame 700, inside run 5, so a body that
     /// delivered every event at the head of the callback would sound it
     /// nineteen runs early and fail rather than pass.
+    ///
+    /// The kick's release is stamped at frame 1500, inside run 11, and the
+    /// reference lifts pad 0 at the head of that same run. This is what keeps
+    /// the note-off arm of [`ToasterBody::deliver`] observed: a body that
+    /// dropped it would leave the kick ringing through the 1500 frames the
+    /// reference spends choking it (`DrumVoice::release`,
+    /// `crates/daw-dsp/src/toaster/voice.rs`). The engine's own stop
+    /// synthesises exactly this event per held pad
+    /// ([`ActiveEffect::release_sounding_notes`]), which is why the body must
+    /// keep taking it even though the live note producer withholds a *clip's*
+    /// release from a drum machine.
     ///
     /// The three assertions beside the equality refuse a vacuous pass: a silent
     /// render matches a silent reference, and a render whose channels are equal
     /// would match a reference that had copied one channel into both.
     #[test]
     fn a_toaster_body_renders_what_the_instance_renders_run_by_run() {
-        const FRAMES: usize = 3000;
-        /// Pad 0 in the low bank.
-        const KICK_NOTE: u8 = 36;
-        /// Pad 5 in the low bank.
-        const RIM_NOTE: u8 = 41;
-        /// The run holding frame 700, which is `700 / TOASTER_RUN_FRAMES`.
-        const RIM_RUN: usize = 5;
+        /// The frame the kick is released at.
+        const RELEASE_FRAME: u32 = 1500;
+        /// The run holding it, which is `1500 / TOASTER_RUN_FRAMES`.
+        const RELEASE_RUN: usize = 11;
 
-        let events = [toaster_hit(KICK_NOTE, 0), toaster_hit(RIM_NOTE, 700)];
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+            toaster_release(TOASTER_PARITY_KICK_NOTE, RELEASE_FRAME),
+        ];
         let mut body = toaster_body(TOASTER_KIT);
-        let (body_left, body_right) = toaster_render(&mut body, FRAMES, &events);
+        let (body_left, body_right) = toaster_render(&mut body, TOASTER_PARITY_FRAMES, &events);
 
-        // The reference writes the kit the way the worklet writes it — the pad
-        // index and the pad-side name apart, never as one `pad5_pan` string —
-        // so the body's own reading of those names is what the equality tests.
-        let (instance_left, instance_right) = render_toaster_reference(FRAMES, |run, instance| {
-            if run == 0 {
-                instance.set_param("master_gain", 0.9);
-                instance.set_pad_param(0, "tune", 3.0);
-                instance.set_pad_param(5, "pan", -0.8);
-                instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
-            }
-            if run == RIM_RUN {
-                instance.note_on(5, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
-            }
-        });
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, |run, instance| {
+                drive_toaster_parity_reference(run, instance);
+                if run == RELEASE_RUN {
+                    instance.note_off(0);
+                }
+            });
 
         assert_eq!(
             body_left, instance_left,
-            "the body's left channel is not what the instrument renders for the same kit and hits"
+            "the body's left channel is not what the instrument renders for the same kit, hits \
+             and release"
         );
         assert_eq!(
             body_right, instance_right,
-            "the body's right channel is not what the instrument renders for the same kit and hits"
+            "the body's right channel is not what the instrument renders for the same kit, hits \
+             and release"
         );
         assert!(
             body_left
@@ -20619,6 +20654,65 @@ mod timeline_tests {
             body_left, body_right,
             "the two channels are identical, so the fixture's panned pad never moved and a body \
              that read one channel twice would pass"
+        );
+    }
+
+    /// The body joins what it renders to whatever already stands in the pair.
+    ///
+    /// An instrument is a generator, and the buffers it is handed carry the
+    /// chain's material up to its place in it — a second generator on the same
+    /// strip, or a device the splice placed ahead of it. Every other fixture
+    /// here renders into silence, where `*out = *sample` and `*out += *sample`
+    /// are the same write, so this is the one spec that can tell them apart:
+    /// the pair opens on a non-zero constant and each output sample must be
+    /// that constant plus the reference instrument's own sample, exactly.
+    ///
+    /// The non-silence assertion is what stops the equality passing vacuously.
+    /// A reference that rendered nothing would make the sum and the overwrite
+    /// agree again.
+    #[test]
+    fn a_toaster_body_sums_into_what_already_stands_in_the_pair() {
+        /// What the chain has already written where this body renders. Chosen
+        /// well clear of zero so an overwrite cannot round its way to a pass.
+        const STANDING: f32 = 0.25;
+
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+        ];
+        let mut body = toaster_body(TOASTER_KIT);
+        let mut left = vec![STANDING; TOASTER_PARITY_FRAMES];
+        let mut right = vec![STANDING; TOASTER_PARITY_FRAMES];
+        body.process(&mut left, &mut right, TOASTER_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, drive_toaster_parity_reference);
+        let summed_left: Vec<f32> = instance_left
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+        let summed_right: Vec<f32> = instance_right
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+
+        assert_eq!(
+            left, summed_left,
+            "the body's left channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert_eq!(
+            right, summed_right,
+            "the body's right channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert!(
+            instance_left
+                .iter()
+                .chain(instance_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the reference rendered silence, so summing and overwriting agree and the equalities \
+             above say nothing"
         );
     }
 

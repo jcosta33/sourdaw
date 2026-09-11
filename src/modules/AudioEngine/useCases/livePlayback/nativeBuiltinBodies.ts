@@ -64,6 +64,28 @@ export type NativeBuiltinBody = Readonly<{
     /** Whether this body resolves a project-side parameter id at all — the renderer's mirror of `builtin_parameter` in `crates/daw-engine/src/graph.rs`. */
     addressesParameter: (paramId: string) => boolean;
     /**
+     * Whether a clip note's own release belongs to this body.
+     *
+     * A keyboard instrument holds the key a clip note names until the note
+     * ends, so its release is part of the part. A pad-addressed drum machine
+     * holds no key to lift: a pad is struck and decays on its own envelope, and
+     * a release arriving mid-decay chokes it. The web carrier already draws
+     * that line — `scheduleTrackClips.ts` withholds the release for the Toaster
+     * (`if (!isToaster)`) and the live worklet posts `noteOn` alone — so a
+     * native carrier that sent one would sound the same arrangement two ways.
+     *
+     * This is about a *clip's* release only. The engine's own stop still
+     * releases every pad it holds (`ActiveEffect::release_sounding_notes`,
+     * `crates/daw-engine/src/scheduler.rs`), and the body cannot tell that
+     * release from a stored one, so the exception belongs to the producer and
+     * not to `ToasterBody::deliver`.
+     *
+     * Read only for a body that is a note sink, so a body that sounds no notes
+     * answers `true`: there is no clip release to withhold from it, and `false`
+     * would read as a rule about a part it never receives.
+     */
+    takesClipNoteReleases: boolean;
+    /**
      * Whether the native engine compensates this body's own group delay for a
      * strip it carries.
      *
@@ -262,6 +284,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: numericParametersOnly,
             addressesParameter: (paramId) => KNEAD_ENGINE_PARAM_NAMES.has(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -272,6 +296,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapFermenterParamToDspParam({ paramId }),
             projectPatch: (parameterValues) => mapFermenterPatchToDspPatch({ patch: parameterValues }),
             addressesParameter: (paramId) => FERMENTER_PARAM_IDS.has(paramId),
+            // A keyboard synth: a clip note holds its key until the note ends.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -289,6 +315,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapGrandBouleParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapGrandBouleParamToDspParam),
             addressesParameter: (paramId) => mapGrandBouleParamToDspParam({ paramId }) !== null,
+            // A sampled piano: a clip note holds its key until the note ends.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -306,6 +334,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapGlutenParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapGlutenParamToDspParam),
             addressesParameter: (paramId) => mapGlutenParamToDspParam({ paramId }) !== null,
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -323,6 +353,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapCrustParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapCrustParamToDspParam),
             addressesParameter: (paramId) => mapCrustParamToDspParam({ paramId }) !== null,
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -346,6 +378,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: grinderNeuralSourceOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
         },
     ],
@@ -401,6 +435,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) =>
                 BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !isBacteriaControlThreadOnly(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: true,
         },
     ],
@@ -453,6 +489,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId) && !PROOF_GRAPH_OWNED.has(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: true,
         },
     ],
@@ -482,6 +520,12 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapToasterKitParamToDspParam({ paramId }) ?? paramId,
             projectPatch: tablePatch(mapToasterKitParamToDspParam),
             addressesParameter: (paramId) => mapToasterKitParamToDspParam({ paramId }) !== null,
+            // The one body that declines a clip's release. A pad is struck and
+            // decays on its own envelope; `DrumVoice::release`
+            // (`crates/daw-dsp/src/toaster/voice.rs`) turns a note-off into a
+            // choke fade, which is why the web carrier withholds it too
+            // (`scheduleTrackClips.ts`). Stop still releases every held pad.
+            takesClipNoteReleases: false,
             // The engine reports no latency for this body and the worklet
             // declares none either, so there is nothing here for the renderer
             // to exclude from its own sum.
@@ -535,6 +579,8 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => paramId,
             projectPatch: shapedNumericParametersOnly,
             addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
             latencyCompensatedByEngine: true,
         },
     ],

@@ -146,6 +146,25 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('toaster').soundsNotes).toBe(true);
     });
 
+    // What `projectLiveMidiProgramme` reads before it writes a clip's release.
+    // Toaster is the exception the web carrier already makes
+    // (`scheduleTrackClips.ts` withholds the release for it), because a pad
+    // decays on its own envelope and a release chokes it. Every other entry
+    // answers `true`: a keyboard body's clip note holds its key, and a body
+    // that sounds no notes never receives a clip release to withhold.
+    it('states which bodies take a clip note’s release', () => {
+        expect(bodyOf('toaster').takesClipNoteReleases).toBe(false);
+        expect(bodyOf('grand-boule').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('fermenter').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('knead').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('gluten').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('crust').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('grinder').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('bacteria').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('proof').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('dutch-oven').takesClipNoteReleases).toBe(true);
+    });
+
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
     // whether the mapper publishes a latency for the body at registration.
     // Every entry answers, because a body that declares a figure and is left

@@ -37,6 +37,9 @@ type MockTrackStrip = {
 
 const getAllTracksMock = vi.hoisted(() => vi.fn<() => MockTrack[]>(() => []));
 const getTrackStripMock = vi.hoisted(() => vi.fn<(trackId: string) => MockTrackStrip | undefined>());
+const writeNativeBuiltinParametersMock = vi.hoisted(() =>
+    vi.fn<(trackId: string, deviceId: string, values: Readonly<Record<string, number>>) => void>()
+);
 const resolveEligibleDeviceWriteTargetMock = vi.hoisted(() =>
     vi.fn<
         (
@@ -56,6 +59,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: getTrackStripMock,
+    writeNativeBuiltinParameters: writeNativeBuiltinParametersMock,
 }));
 
 vi.mock('../../stores/toasterStore', () => ({
@@ -203,6 +207,38 @@ describe('loadToasterKitPreset', () => {
         getAllTracksMock.mockReset();
         getAllTracksMock.mockReturnValue([]);
         getTrackStripMock.mockReset();
+        writeNativeBuiltinParametersMock.mockReset();
+    });
+
+    /**
+     * A preset replaces the whole kit, and none of it is a `parameterValues`
+     * entry, so nothing else would ever tell a natively carried Toaster about
+     * it: it would keep playing the kit its topology splice shipped while the
+     * panel showed the preset.
+     *
+     * One call, not one per message: `sendNativeDeviceParameters` refuses to
+     * split one gesture across two batches, and a Toaster left holding half of
+     * each preset is audibly neither. The record is the same projection the
+     * worklet was just given, keyed the way `ToasterBody` reads it.
+     */
+    it('sends the whole projected kit to the native session once on a preset load', () => {
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
+        wireToasterMocks(setParam, setPadParam);
+
+        const kit = minimalKit();
+        loadToasterKitPreset('d1', kit);
+
+        expect(writeNativeBuiltinParametersMock).toHaveBeenCalledExactlyOnceWith(
+            't1',
+            'd1',
+            expect.objectContaining({
+                master_gain: kit.masterGain,
+                reverb_mix: kit.reverbMix,
+                pad0_engine_type: TOASTER_ENGINE_MAP['kick-808'],
+                pad0_volume: kit.pads[0]?.volume,
+            })
+        );
     });
 
     it('should call loadKit and forward kit-level params when controls exist', () => {
