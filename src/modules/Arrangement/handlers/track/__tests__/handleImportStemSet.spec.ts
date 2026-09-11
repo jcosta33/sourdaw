@@ -78,6 +78,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: vi.fn(),
     getLiveEngineSampleRate: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({

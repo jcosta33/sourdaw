@@ -25,6 +25,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

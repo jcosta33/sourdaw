@@ -151,7 +151,7 @@ use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::plugin_slot::MidiNoteEvent;
+use daw_engine::plugin_slot::{MidiControlEvent, MidiNoteEvent};
 use daw_engine::scheduler::{
     precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
     ScoringReading, ScoringTelemetry, TIMELINE_CHAIN_SLOT_BUDGET,
@@ -298,6 +298,12 @@ const NOTES_PER_CHANNEL: u8 = 128;
 
 /// The hardest a MIDI note can be struck.
 const MAX_MIDI_VELOCITY: u8 = 127;
+
+/// The highest controller number a 7-bit control-change message can name.
+const MAX_MIDI_CONTROLLER: u8 = 127;
+
+/// The highest position a 7-bit controller can report.
+const MAX_MIDI_CONTROLLER_VALUE: u8 = 127;
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -476,6 +482,33 @@ pub enum GraphCommandPayload {
         velocity: u8,
         channel: i16,
         is_note_on: bool,
+    },
+    /// Apply one live controller message now at a device that sinks notes.
+    ///
+    /// The pedal wire. A MIDI clip carries no controller lanes, so a controller
+    /// is always live: it reaches the device at the head of the first block the
+    /// engine renders after this batch is applied, whether or not the transport
+    /// is playing, because a pedal under the player's foot names no timeline
+    /// position either.
+    ///
+    /// Nothing is queued and no budget is charged. A controller is a state
+    /// write on the instance rather than a frame-stamped event, so it neither
+    /// waits in the parameter queues a budget bounds nor occupies the
+    /// block-local MIDI buffer a note does — it simply applies, ahead of the
+    /// notes the same block renders.
+    ///
+    /// The engine lifts every controller on a stop or a locate
+    /// (`PluginCore::reset_controllers`), so a pedal whose release message
+    /// never arrives cannot hold an instrument ringing for the rest of the
+    /// session. A loop wrap does not: it leaves the player's foot where it is,
+    /// exactly as it leaves the key they are holding down.
+    #[serde(rename_all = "camelCase")]
+    SendMidiControl {
+        track_id: String,
+        device_id: String,
+        controller: u8,
+        value: u8,
+        channel: i16,
     },
     /// Drop a device's scheduled notes in the half-open seconds window
     /// `fromTime..toTime`; an absent or null `toTime` means the end of the
@@ -1714,14 +1747,24 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
 /// which is the same reason a stored note and a live one both come through
 /// here.
 fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), String> {
-    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
-        return Err(format!(
-            "{command}: channel {channel} has no address in the note store"
-        ));
-    }
+    check_channel_address(channel, command)?;
     if note >= NOTES_PER_CHANNEL {
         return Err(format!(
             "{command}: note {note} has no address in the note store"
+        ));
+    }
+    Ok(())
+}
+
+/// The channel half of [`check_note_address`], on its own.
+///
+/// A controller carries a channel and no note, so it needs this half and not
+/// the other. Factored rather than restated so one wire cannot start admitting
+/// a channel the other refuses.
+fn check_channel_address(channel: i16, command: &str) -> Result<(), String> {
+    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
+        return Err(format!(
+            "{command}: channel {channel} has no address in the note store"
         ));
     }
     Ok(())
@@ -3266,6 +3309,41 @@ fn map_command(
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                },
+            ));
+            Ok(())
+        }
+
+        GraphCommandPayload::SendMidiControl {
+            track_id,
+            device_id,
+            controller,
+            value,
+            channel,
+        } => {
+            let plugin_id =
+                midi_device_plugin_id(registry, track_id, device_id, "send-midi-control")?;
+            if *controller > MAX_MIDI_CONTROLLER {
+                return Err(format!(
+                    "send-midi-control: controller {controller} is outside 0..={MAX_MIDI_CONTROLLER}"
+                ));
+            }
+            if *value > MAX_MIDI_CONTROLLER_VALUE {
+                return Err(format!(
+                    "send-midi-control: value {value} is outside 0..={MAX_MIDI_CONTROLLER_VALUE}"
+                ));
+            }
+            check_channel_address(*channel, "send-midi-control")?;
+            // No budget charge, for the reason `send-midi-note` states and one
+            // more: a controller waits in no queue at all. The engine applies
+            // it to the instance on the drain rather than pushing it into the
+            // block-local MIDI buffer, so it has no capacity to overflow.
+            ops.push(GraphCommand::SendMidiControl(
+                plugin_id,
+                MidiControlEvent {
+                    controller: *controller,
+                    value: *value,
+                    channel: *channel,
                 },
             ));
             Ok(())
@@ -9470,6 +9548,168 @@ mod tests {
             assert!(
                 refusal.contains(expected),
                 "refusal must name the field and the value: {refusal}"
+            );
+        }
+    }
+
+    /// One `send-midi-control` batch, spelled the way a producer spells one.
+    fn send_midi_control_batch(
+        track_id: &str,
+        device_id: &str,
+        controller: u8,
+        value: u8,
+        channel: i16,
+    ) -> GraphBatchPayload {
+        midi_batch(json!([{
+            "kind": "send-midi-control",
+            "trackId": track_id,
+            "deviceId": device_id,
+            "controller": controller,
+            "value": value,
+            "channel": channel,
+        }]))
+    }
+
+    /// The one op a `send-midi-control` batch maps to, or a panic naming what
+    /// it mapped to instead.
+    fn only_control_op(ops: &[GraphCommand]) -> (usize, MidiControlEvent) {
+        assert_eq!(ops.len(), 1, "a live controller is one op and nothing else");
+        match &ops[0] {
+            GraphCommand::SendMidiControl(plugin_id, event) => (*plugin_id, *event),
+            _ => panic!("a live controller must map onto SendMidiControl"),
+        }
+    }
+
+    /// A pedal reaches the engine as an immediate controller op at the device's
+    /// own plugin id, carrying the raw 7-bit value the wire wrote: the
+    /// instrument's own body divides a damper position by full scale, so a
+    /// mapping that normalized here would arrive at a fraction of a fraction.
+    #[test]
+    fn send_midi_control_at_a_hosted_instrument_emits_one_immediate_control_op() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let batch = send_midi_control_batch("t1", "d1", 64, 96, 5);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live controller at a registered hosted device maps");
+
+        let (plugin_id, event) = only_control_op(&mapped.ops);
+        assert_eq!(plugin_id, MIDI_DEVICE_EFFECT_ID);
+        assert_eq!(event.controller, 64);
+        assert_eq!(event.value, 96);
+        assert_eq!(event.channel, 5);
+    }
+
+    /// A controller past MIDI's own range is refused control-side, naming the
+    /// command, the field and the value.
+    ///
+    /// The top of every range maps first, for the reason
+    /// [`send_midi_note_past_the_midi_range_is_refused_naming_field_and_value`]
+    /// states: a check written `>=` its own maximum would refuse a damper
+    /// pressed to the floor on the last channel, and no refusal taken from past
+    /// the range could tell that apart from a correct bound.
+    #[test]
+    fn send_midi_control_past_the_midi_range_is_refused_naming_field_and_value() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let mapped = map_unbound_batch(
+            &send_midi_control_batch("t1", "d1", 127, 127, 15),
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("the top of MIDI's own range is inside it");
+
+        let (_, event) = only_control_op(&mapped.ops);
+        assert_eq!(
+            event.controller, 127,
+            "controller 127 is a controller, not an overflow"
+        );
+        assert_eq!(event.value, 127, "value 127 is full scale, not past it");
+        assert_eq!(
+            event.channel, 15,
+            "channel 15 is the sixteenth, not past it"
+        );
+
+        for (controller, value, channel, expected) in [
+            (
+                128,
+                100,
+                0,
+                "send-midi-control: controller 128 is outside 0..=127",
+            ),
+            (
+                64,
+                128,
+                0,
+                "send-midi-control: value 128 is outside 0..=127",
+            ),
+            (
+                64,
+                100,
+                16,
+                "send-midi-control: channel 16 has no address in the note store",
+            ),
+            (
+                64,
+                100,
+                -1,
+                "send-midi-control: channel -1 has no address in the note store",
+            ),
+        ] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = send_midi_control_batch("t1", "d1", controller, value, channel);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a controller past MIDI's range is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the command, the field and the value: {refusal}"
+            );
+        }
+    }
+
+    /// A controller aimed at a device the registry cannot voice notes through
+    /// is refused exactly where a live note aimed at one is: both resolve their
+    /// device through `midi_device_plugin_id`, so a controller must never reach
+    /// an instrument a note could not.
+    ///
+    /// Both refusals it can draw, because they sit on different lines of that
+    /// resolution: a device the registry has never heard of, and one it holds
+    /// with no note store.
+    #[test]
+    fn send_midi_control_at_an_unknown_device_is_refused() {
+        for (device_id, expected) in [
+            ("d-nobody", "send-midi-control: unknown device 'd-nobody'"),
+            (
+                "d-knead",
+                "send-midi-control: device 'd-knead' holds no note store",
+            ),
+        ] {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+            let batch = send_midi_control_batch("t1", device_id, 64, 127, 0);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a controller at a device that voices no notes is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the command and the device: {refusal}"
             );
         }
     }

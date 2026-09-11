@@ -34,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: (type: string) => type === 'fermenter',
 }));

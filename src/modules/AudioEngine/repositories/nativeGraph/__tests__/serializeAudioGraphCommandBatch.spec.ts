@@ -329,6 +329,42 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening for a live controller, and the field the wire cannot
+     * get wrong: the position travels as the raw 7-bit byte, because the
+     * engine's Grand Boule body divides a damper position by full scale
+     * itself.
+     */
+    it('flattens a live controller batch onto the graph.rs send-midi-control spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'send-midi-control',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    controller: 64,
+                    value: 96,
+                    channel: 5,
+                },
+            ],
+        });
+
+        const sent = wire.commands[0];
+        if (sent?.kind !== 'send-midi-control') {
+            throw new Error('the batch must serialize as send-midi-control');
+        }
+        expect(sent).toEqual({
+            kind: 'send-midi-control',
+            trackId: 'track-1',
+            deviceId: 'dev-plugin',
+            controller: 64,
+            value: 96,
+            channel: 5,
+        });
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(sent)).toEqual(['kind', 'trackId', 'deviceId', 'controller', 'value', 'channel']);
+    });
+
+    /**
      * The contract nests the strip and the device in a target; `graph.rs` reads
      * them as the variant's own fields. That flattening is the whole of what
      * this serializer does for the command, so it is stated as literals.

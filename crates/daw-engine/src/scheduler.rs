@@ -14,7 +14,9 @@ use crate::midi_fx::{
     VelocityScaler,
 };
 use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
-use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
+use crate::plugin_slot::{
+    CaptureInputBlock, MidiControlEvent, MidiNoteEvent, NativePlugin, TransportState,
+};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
     ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
@@ -520,6 +522,20 @@ pub enum GraphCommand {
     /// reaches the base member channel, and only a note-off naming that
     /// channel lifts it.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Apply one live controller message to this plugin.
+    ///
+    /// The live path for a pedal, and the only one: a MIDI clip carries no
+    /// controller lanes, so nothing addresses a controller to the timeline.
+    ///
+    /// Nothing is queued. A controller is a state write on the instance rather
+    /// than a sounded event, so it applies at the head of the block that drains
+    /// this command — ahead of every note that block renders, which is what
+    /// makes a damper pressed before a key sustain the note that key sounds.
+    ///
+    /// [`AudioScheduler::release_sounding_notes`] resets a body's controllers
+    /// alongside the releases it queues for a stop or a locate, so a pedal is
+    /// not left pressed under a stopped transport.
+    SendMidiControl(usize, MidiControlEvent),
     /// Write a batch of timeline-addressed notes into a plugin's note store.
     ///
     /// The batch is built control-side and lands whole or not at all: a plugin
@@ -906,6 +922,7 @@ impl GraphCommand {
             | Self::SetBypass(..)
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
@@ -1000,6 +1017,7 @@ impl GraphCommand {
             | Self::SetParam(..)
             | Self::SetBypass(..)
             | Self::SendMidiNote(..)
+            | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
@@ -1348,6 +1366,60 @@ impl PluginCore {
     pub fn sounds_notes(&self) -> bool {
         self.builtin_type()
             .is_some_and(BuiltinEffectType::sounds_notes)
+    }
+
+    /// Apply one live controller message to this instance.
+    ///
+    /// No wildcard: a body that grows a controller surface and is not given an
+    /// arm here would take the message silently, and a pedal that does nothing
+    /// reads to a player as a broken instrument rather than as missing code.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        match self {
+            Self::GrandBoule(body) => body.control_change(event),
+            // Levain reads controllers through its own `handle_cc`, which is
+            // #4203's route rather than this one.
+            Self::Levain(_)
+            // No controller surface: an effect body takes its parameters by
+            // name ([`GraphCommand::SetParam`]), and the two instruments
+            // here take notes alone.
+            | Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Scoring(_)
+            // A hosted plugin's controllers are the plugin's own and travel on
+            // its own control path, never through this instance-side match.
+            | Self::Native(_) => {}
+        }
+    }
+
+    /// Return every controller this instance holds to its unpressed state.
+    ///
+    /// Exhaustive for the reason [`Self::control_change`] is: a held controller
+    /// nothing releases is a body left sounding after the transport stopped.
+    fn reset_controllers(&mut self) {
+        match self {
+            Self::GrandBoule(body) => body.reset_controllers(),
+            // The same bodies that take no controller in
+            // [`Self::control_change`] hold none to release here.
+            Self::Levain(_)
+            | Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Scoring(_)
+            | Self::Native(_) => {}
+        }
     }
 
     /// The latency this body reports for the patch it was built with, or `None`
@@ -1712,6 +1784,27 @@ const GRAND_BOULE_MAX_VOICES: u32 = 64;
 /// at one dynamic on both runtimes.
 const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
 
+/// The full-scale 7-bit controller value, the divisor that turns a continuous
+/// controller's byte into the `0..1` position an instrument takes.
+///
+/// The same divisor the web runtime applies to CC64 before it reaches the
+/// Grand Boule node (`controlChange.normalized` in `handleWebMidiCC.ts`), so
+/// one pedal sweep lands on one damper curve on both runtimes.
+const MIDI_CONTROLLER_FULL_SCALE: f32 = 127.0;
+
+/// Where a MIDI switch controller reads as engaged, per the specification's
+/// 0..=63 off / 64..=127 on split.
+const MIDI_SWITCH_THRESHOLD: u8 = 64;
+
+/// The damper pedal's controller number.
+const CC_SUSTAIN_PEDAL: u8 = 64;
+
+/// The sostenuto pedal's controller number.
+const CC_SOSTENUTO_PEDAL: u8 = 66;
+
+/// The una corda (soft) pedal's controller number.
+const CC_UNA_CORDA_PEDAL: u8 = 67;
+
 /// The Grand Boule piano, hosted as a built-in instrument body.
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
@@ -1719,12 +1812,13 @@ const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
 /// pool and its two channel buffers would set the size of every command the
 /// engine sends.
 ///
-/// This hosts the model alone. The instrument's attack clips
+/// This hosts the model and the three pedals. The instrument's attack clips
 /// (`GrandBouleInstance::load_attack_clip`) are optional, and with none loaded
-/// it renders from the modal engine unaided; clip transport and the three
-/// pedals (`set_sustain`, `set_una_corda`, `set_sostenuto`, reached over
-/// CC64/66/67) are follow-ups on the native-body work rather than part of this
-/// body, so a hosted piano sustains nothing a pedal was meant to hold.
+/// it renders from the modal engine unaided; clip transport is a follow-up on
+/// the native-body work rather than part of this body. The pedals arrive as
+/// controller messages over [`GraphCommand::SendMidiControl`] and are applied
+/// by [`Self::control_change`], so a hosted piano sustains what a pedal was
+/// meant to hold.
 pub struct GrandBouleBody {
     instance: GrandBouleInstance,
 }
@@ -1816,6 +1910,47 @@ impl GrandBouleBody {
             (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
             (false, None) => self.instance.note_off(event.note),
         }
+    }
+
+    /// Apply one controller message to the instrument's pedals.
+    ///
+    /// CC64 is continuous, not a switch: the position travels as the `0..1`
+    /// fraction of full scale, so half pedalling reaches the damper curve the
+    /// way a pianist plays it. A latch at 64 would flatten every intermediate
+    /// position a continuous controller sends into fully down. CC66 and CC67
+    /// are switches, which is what those two pedals physically are, and they
+    /// engage from the 64 the MIDI specification sets for a switch controller.
+    /// Any other controller is ignored: this body advertises exactly the three
+    /// pedals it has.
+    ///
+    /// The channel is not consulted. The body is one piano, and a pedal belongs
+    /// to the instrument rather than to a voice, so a damper pressed on any
+    /// channel holds every string the instrument is sounding — which is what
+    /// the mechanism physically does.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        match event.controller {
+            CC_SUSTAIN_PEDAL => self
+                .instance
+                .set_sustain(f32::from(event.value) / MIDI_CONTROLLER_FULL_SCALE),
+            CC_SOSTENUTO_PEDAL => self
+                .instance
+                .set_sostenuto(event.value >= MIDI_SWITCH_THRESHOLD),
+            CC_UNA_CORDA_PEDAL => self
+                .instance
+                .set_una_corda(event.value >= MIDI_SWITCH_THRESHOLD),
+            _ => {}
+        }
+    }
+
+    /// Lift all three pedals.
+    ///
+    /// The stop and locate answer: a pedal is a held state with no message
+    /// coming to end it, so a stop that released every key while the damper
+    /// stayed down would leave the instrument ringing on into silence.
+    fn reset_controllers(&mut self) {
+        self.instance.set_sustain(0.0);
+        self.instance.set_sostenuto(false);
+        self.instance.set_una_corda(false);
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -5882,6 +6017,31 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::SendMidiControl(id, event) => {
+                    // Nothing is queued: a controller is a state write on the
+                    // instance, not a frame-stamped event, so it applies here
+                    // — at the head of this block, ahead of every note this
+                    // block renders. That ordering is the whole point: a
+                    // damper pressed before a key is what sustains the note
+                    // that key sounds, and a controller deferred behind the
+                    // block's notes would reach the instrument after the
+                    // release it was meant to hold.
+                    //
+                    // A body nothing will hand a block to is skipped at the
+                    // door, on the same discard law
+                    // [`ActiveEffect::enqueue_midi`] states: a bypassed or
+                    // detached device's queued MIDI is thrown away unread, so
+                    // writing a pedal into one would leave it pressed on a
+                    // body the player's notes never reached.
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            if !effect.receives_no_block() {
+                                effect.instance.control_change(event);
+                            }
+                        }
+                    }
+                    None
+                }
                 GraphCommand::ScheduleMidiNotes { plugin_id, notes } => {
                     self.schedule_midi_notes(plugin_id, &notes);
                     // The batch was copied into the store; the box itself is a
@@ -6757,12 +6917,26 @@ impl AudioScheduler {
     /// buffers, which is what a master insert's stamps are measured from; a
     /// chain device is handed the span itself, so its release sits at the
     /// span's own head.
+    ///
+    /// [`ReleaseScope::All`] also lifts every body's controllers
+    /// ([`PluginCore::reset_controllers`]). A pedal is a held state with no
+    /// message coming to end it, so the stop and the locate that take the
+    /// player's hands off the keyboard take their foot off the pedal with
+    /// them; otherwise a damper left down would hold the very notes this
+    /// released. [`ReleaseScope::Stored`] does not: a loop wrap leaves the
+    /// player's foot where it is, exactly as it leaves their hands, and no DAW
+    /// lifts a musician's pedal where a region starts again. A controller is a
+    /// state write rather than a queued event, so it is applied here and now
+    /// rather than pushed into a buffer a bypassed body would discard.
     fn release_sounding_notes(&mut self, seam_offset: usize, scope: ReleaseScope) {
         for slot in 0..self.effects.len() {
             let frame_offset = match self.effects[slot].placement {
                 EffectPlacement::MasterChain => seam_offset as u32,
                 _ => 0,
             };
+            if scope == ReleaseScope::All {
+                self.effects[slot].instance.reset_controllers();
+            }
             if self.effects[slot].release_sounding_notes(
                 frame_offset,
                 scope,
@@ -10105,6 +10279,66 @@ mod tests {
                 sounding_left.iter().any(|sample| *sample != 0.0),
                 "the instrument never sounded, so the guard covered a silent path"
             );
+        }
+
+        /// A hosted Grand Boule takes all three pedals, and has them lifted,
+        /// without allocating.
+        ///
+        /// A controller is applied on the audio thread inside the command
+        /// drain, so it is held to ADR 0020 exactly as a render is. Every
+        /// pedal has its own route through the instrument — the damper's
+        /// upward crossing fires a noise burst, its downward one releases the
+        /// voices it was holding, sostenuto captures the sounding voices on its
+        /// rising edge and releases them on its falling one, and una corda
+        /// re-aims the sympathetic send — so all three are pressed and lifted
+        /// here rather than one standing in for the others.
+        ///
+        /// A note sounds first, outside the guard: sostenuto captures nothing
+        /// on a silent instrument and the damper releases nothing, so a guard
+        /// over an idle body would cover none of the routes above.
+        /// `reset_controllers` runs inside the guard as well, because the stop
+        /// that calls it calls it from the same drain.
+        #[test]
+        fn a_grand_boule_control_change_allocates_nothing() {
+            const FRAMES: usize = 512;
+            const CC_SUSTAIN: u8 = 64;
+            const CC_SOSTENUTO: u8 = 66;
+            const CC_UNA_CORDA: u8 = 67;
+
+            let mut body = GrandBouleBody::new(48_000.0);
+            let mut left = vec![0.0_f32; FRAMES];
+            let mut right = vec![0.0_f32; FRAMES];
+            let note = MidiNoteEvent {
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+            };
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&note));
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the instrument never sounded, so the guard below covers an idle body"
+            );
+
+            let control = |controller: u8, value: u8| MidiControlEvent {
+                controller,
+                value,
+                channel: 0,
+            };
+
+            assert_no_alloc(|| {
+                for controller in [CC_SUSTAIN, CC_SOSTENUTO, CC_UNA_CORDA] {
+                    body.control_change(control(controller, 127));
+                    body.control_change(control(controller, 0));
+                }
+                body.reset_controllers();
+            });
         }
 
         /// A hosted Gluten compresses a callback without allocating.
@@ -18282,6 +18516,29 @@ mod timeline_tests {
         (left, right)
     }
 
+    /// Render `callbacks` blocks of `frames`, letting `at_head` push commands
+    /// before each one.
+    ///
+    /// [`render_master`] cannot express this: a live message is drained between
+    /// callbacks, so a spec about *when* one reaches the instrument has to be
+    /// able to send it at a callback's head rather than before the whole run.
+    fn render_master_at_callback_heads(
+        harness: &mut Harness,
+        frames: usize,
+        callbacks: usize,
+        mut at_head: impl FnMut(usize, &mut Harness),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = Vec::with_capacity(frames * callbacks);
+        let mut right = Vec::with_capacity(frames * callbacks);
+        for callback in 0..callbacks {
+            at_head(callback, harness);
+            let (block_left, block_right) = harness.render(frames);
+            left.extend(block_left);
+            right.extend(block_right);
+        }
+        (left, right)
+    }
+
     /// The instance buffers exactly the frames the host's slices are bounded
     /// by.
     ///
@@ -18641,6 +18898,512 @@ mod timeline_tests {
              single channel ({}), so it reached at most one of the two voices",
             rms(&both_released[TAIL..]),
             rms(&one_released[TAIL..])
+        );
+    }
+
+    // ── Grand Boule pedals ─────────────────────────────────────────────────
+
+    /// The three pedal controller numbers, spelled as the MIDI literals rather
+    /// than imported from the body's own constants: an oracle reading the
+    /// production numbers would agree with the body whichever controller it
+    /// decided to answer.
+    const CC_SUSTAIN: u8 = 64;
+    const CC_SOSTENUTO: u8 = 66;
+    const CC_UNA_CORDA: u8 = 67;
+
+    /// Full scale on a 7-bit controller, and the divisor that turns one into
+    /// the `0..1` position the instrument takes — spelled here for the reason
+    /// [`grand_boule_velocity`] spells its own divisor.
+    const CONTROLLER_FULL_SCALE: f32 = 127.0;
+
+    /// The plugin id [`track_with_grand_boule`] registers in these specs.
+    const GRAND_BOULE_ID: usize = 7;
+
+    /// The track id those specs place it on.
+    const GRAND_BOULE_TRACK: usize = 1;
+
+    /// One live controller message for the instrument under test.
+    ///
+    /// The channel is deliberately not the note's: a pedal belongs to the
+    /// instrument, so a body that narrowed a controller to a voice's channel
+    /// would drop these.
+    fn pedal(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            GRAND_BOULE_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
+    }
+
+    /// The player letting a key on the instrument go, live.
+    fn grand_boule_release(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            is_note_on: false,
+            ..note_on(note)
+        }
+    }
+
+    /// The command that parks the transport, which is what lifts the pedals.
+    fn stop_transport() -> GraphCommand {
+        GraphCommand::SetTransport(TransportState::default())
+    }
+
+    /// A damper held down while a scheduled note is released holds that note,
+    /// and the hosted render is the worklet's own for the same programme.
+    ///
+    /// The equality is the positive claim: the reference presses the pedal at
+    /// run 0 — where a live controller sent before the first callback lands —
+    /// and releases the key at the same run the store's note-off is written
+    /// for. The RMS comparison is the discriminating half: a body that dropped
+    /// the controller, or latched it to zero, renders the second reference
+    /// instead, whose strings are damped from the release onwards.
+    ///
+    /// Reverting `GrandBouleBody::control_change`'s CC64 arm to a no-op fails
+    /// the equality; so does dropping the `SendMidiControl` drain arm.
+    #[test]
+    fn a_grand_boule_holds_a_released_note_while_the_damper_is_down() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const RELEASE_RUN: usize = 4;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        /// Far enough past the release that the damper-lift transient has died
+        /// away, so the window reads strings ringing rather than the thud.
+        const TAIL: usize = RENDERED / 2;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let reference = |damper_down: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    if damper_down {
+                        instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    }
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            })
+        };
+        let (held_left, held_right) = reference(true);
+        let (damped_left, _damped_right) = reference(false);
+
+        assert!(
+            rms(&damped_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "the two references sound the same past the release ({} against {}), so the \
+             equality below would hold whether or not the damper reached the instrument",
+            rms(&damped_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a held damper renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a held damper renders"
+        );
+    }
+
+    /// A damper lifted before the release damps the note, and the lift is the
+    /// controller's own doing rather than the body forgetting the press.
+    ///
+    /// The lift is sent at the head of callback 1, after the press reached the
+    /// instrument and while the key is still down, so it exercises a second
+    /// controller landing on a body that already holds one. The RMS comparison
+    /// is against the render where the lift never arrives.
+    ///
+    /// Making `control_change`'s CC64 arm ignore a zero value — a latch that
+    /// only ever presses — leaves the hosted render equal to the held
+    /// reference and fails the equality here.
+    #[test]
+    fn a_grand_boule_damps_a_released_note_when_the_damper_is_up() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const LIFT_CALLBACK: usize = 1;
+        const LIFT_RUN: usize = LIFT_CALLBACK * RUNS_PER_CALLBACK;
+        const RELEASE_RUN: usize = 4;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const TAIL: usize = RENDERED / 2;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == LIFT_CALLBACK {
+                    harness.send(pedal(CC_SUSTAIN, 0));
+                }
+            },
+        );
+
+        let reference = |lifted: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if lifted && run == LIFT_RUN {
+                    instance.set_sustain(0.0);
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            })
+        };
+        let (damped_left, damped_right) = reference(true);
+        let (held_left, _held_right) = reference(false);
+
+        assert!(
+            rms(&damped_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "lifting the damper changed nothing in the reference ({} against {}), so the \
+             equality below cannot tell a delivered lift from a dropped one",
+            rms(&damped_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, damped_left,
+            "the hosted left channel is not the signal a lifted damper renders"
+        );
+        assert_eq!(
+            hosted_right, damped_right,
+            "the hosted right channel is not the signal a lifted damper renders"
+        );
+    }
+
+    /// A pedal pressed on one callback is still pressed on every callback
+    /// after it.
+    ///
+    /// A controller is a state write on the instance, not a block-local event,
+    /// so nothing clears it at a block boundary. The note-off is stamped inside
+    /// callback five of twelve, so a body that cleared the pedal with its
+    /// block-local MIDI — or applied the controller for one block only — damps
+    /// the note the reference holds. That body is the second reference here,
+    /// which lifts the pedal at the head of the callback after the press.
+    #[test]
+    fn a_grand_boule_pedal_survives_the_callback_that_pressed_it() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 12;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// A run inside callback five, chosen off a callback boundary.
+        const RELEASE_RUN: usize = 11;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const TAIL: usize = (RELEASE_RUN + 2) * GRAND_BOULE_RUN_FRAMES;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let reference = |survives: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if !survives && run == RUNS_PER_CALLBACK {
+                    instance.set_sustain(0.0);
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            })
+        };
+        let (held_left, held_right) = reference(true);
+        let (one_callback_left, _one_callback_right) = reference(false);
+
+        assert!(
+            rms(&one_callback_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "a pedal cleared after one callback renders the same tail as one that survives \
+             ({} against {}), so the equality below proves nothing about its lifetime",
+            rms(&one_callback_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a pedal held across callbacks renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a pedal held across callbacks renders"
+        );
+    }
+
+    /// Stopping the transport lifts all three pedals, so nothing they were
+    /// holding rings on into a parked timeline.
+    ///
+    /// The programme puts each pedal in a position where it is actually holding
+    /// the note: the key is struck, then sostenuto captures the sounding voice,
+    /// una corda engages, the damper goes down, and only then is the key
+    /// released. Each of the three then has its own discriminating reference —
+    /// the same render with that one pedal never lifted — so an arm missing
+    /// from `PluginCore::reset_controllers` fails here by name rather than as
+    /// one lump.
+    #[test]
+    fn a_transport_stop_lifts_the_grand_boule_pedals() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// Where the three pedals go down and the key is let go.
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the transport parks, well after the pedals took the note.
+        const STOP_CALLBACK: usize = 8;
+        const STOP_RUN: usize = STOP_CALLBACK * RUNS_PER_CALLBACK;
+        /// Far enough past the stop that what the window reads is whatever the
+        /// pedals were still holding rather than the release transient.
+        const TAIL: usize = (STOP_CALLBACK + 4) * CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == PEDAL_CALLBACK {
+                    harness.send(pedal(CC_SOSTENUTO, 127));
+                    harness.send(pedal(CC_UNA_CORDA, 127));
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                    harness.send(GraphCommand::SendMidiNote(
+                        GRAND_BOULE_ID,
+                        grand_boule_release(NOTE),
+                    ));
+                }
+                if callback == STOP_CALLBACK {
+                    harness.send(stop_transport());
+                }
+            },
+        );
+
+        /// Which of the three the stop is credited with lifting in one
+        /// reference render.
+        #[derive(Clone, Copy)]
+        struct Lifts {
+            sustain: bool,
+            sostenuto: bool,
+            una_corda: bool,
+        }
+        const ALL: Lifts = Lifts {
+            sustain: true,
+            sostenuto: true,
+            una_corda: true,
+        };
+
+        let reference = |lifts: Lifts| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == PEDAL_RUN {
+                    instance.set_sostenuto(true);
+                    instance.set_una_corda(true);
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+                if run == STOP_RUN {
+                    // The order `GrandBouleBody::reset_controllers` writes
+                    // them in: the damper first, because lifting it releases
+                    // the voices only it was holding, and the sostenuto lift
+                    // behind it releases the ones it had captured.
+                    if lifts.sustain {
+                        instance.set_sustain(0.0);
+                    }
+                    if lifts.sostenuto {
+                        instance.set_sostenuto(false);
+                    }
+                    if lifts.una_corda {
+                        instance.set_una_corda(false);
+                    }
+                }
+            })
+        };
+
+        let (lifted_left, lifted_right) = reference(ALL);
+
+        for (pedal_name, held) in [
+            (
+                "the damper",
+                Lifts {
+                    sustain: false,
+                    ..ALL
+                },
+            ),
+            (
+                "the sostenuto pedal",
+                Lifts {
+                    sostenuto: false,
+                    ..ALL
+                },
+            ),
+            (
+                "the una corda pedal",
+                Lifts {
+                    una_corda: false,
+                    ..ALL
+                },
+            ),
+        ] {
+            let (held_left, _held_right) = reference(held);
+            assert_ne!(
+                held_left[TAIL..],
+                lifted_left[TAIL..],
+                "leaving {pedal_name} pressed renders exactly what lifting it renders, so the \
+                 equality below says nothing about that pedal"
+            );
+        }
+
+        assert!(
+            rms(&lifted_left[TAIL..]) < rms(&lifted_left[..PEDAL_RUN * GRAND_BOULE_RUN_FRAMES]),
+            "the reference never sounded before the stop, so its tail proves nothing"
+        );
+        assert_eq!(
+            hosted_left, lifted_left,
+            "the hosted left channel is not the signal a stop that lifts all three renders"
+        );
+        assert_eq!(
+            hosted_right, lifted_right,
+            "the hosted right channel is not the signal a stop that lifts all three renders"
+        );
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`GrandBouleInstance`] renders for a programme that sweeps the damper.
+    ///
+    /// The sibling of
+    /// [`a_hosted_grand_boule_renders_the_worklet_samples_for_the_same_programme`]
+    /// for the pedal wire: the damper is pressed at one callback head mid-note,
+    /// taken to half at a second, and lifted at a third, all before the store's
+    /// note-off. The reference applies each position at
+    /// `callback * (CALLBACK / GRAND_BOULE_RUN_FRAMES)`, which is the run a
+    /// controller drained between callbacks lands on.
+    ///
+    /// The half position is what makes this a continuous controller rather than
+    /// a switch: a body that latched CC64 at 64 would write full scale where the
+    /// reference writes `64/127`, and half pedalling — a pianist's whole
+    /// vocabulary of partial damping — would be unreachable.
+    #[test]
+    fn a_hosted_grand_boule_renders_the_worklet_samples_for_a_damper_sweep() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const PRESS_CALLBACK: usize = 2;
+        const HALF_CALLBACK: usize = 4;
+        const LIFT_CALLBACK: usize = 6;
+        /// A run inside callback seven, past the lift and off a boundary.
+        const RELEASE_RUN: usize = 15;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const HALF: u8 = 64;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| match callback {
+                PRESS_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                }
+                HALF_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, HALF));
+                }
+                LIFT_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 0));
+                }
+                _ => {}
+            },
+        );
+
+        let sweep = |positions: [f32; 3]| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                for (callback, position) in [PRESS_CALLBACK, HALF_CALLBACK, LIFT_CALLBACK]
+                    .iter()
+                    .zip(positions)
+                {
+                    if run == callback * RUNS_PER_CALLBACK {
+                        instance.set_sustain(position);
+                    }
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            })
+        };
+
+        let (worklet_left, worklet_right) = sweep([
+            127.0 / CONTROLLER_FULL_SCALE,
+            f32::from(HALF) / CONTROLLER_FULL_SCALE,
+            0.0,
+        ]);
+        let (latched_left, _latched_right) = sweep([
+            127.0 / CONTROLLER_FULL_SCALE,
+            127.0 / CONTROLLER_FULL_SCALE,
+            0.0,
+        ]);
+
+        assert_ne!(
+            worklet_left, latched_left,
+            "half pedalling renders exactly what a fully pressed pedal renders, so the equality \
+             below cannot tell a continuous controller from a latched one"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders for this sweep"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders for this sweep"
         );
     }
 

@@ -44,6 +44,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     unwireSidechainRoute: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

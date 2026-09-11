@@ -3,6 +3,7 @@ import {
     getCompensationDelay,
     getFactoryDrumKitByIndex,
     isDeviceCarriedByNativeSession,
+    sendNativeLiveMidiControl,
     sendNativeLiveMidiNote,
     soundsNativeNotes,
 } from '#/modules/AudioEngine/useCases';
@@ -62,6 +63,7 @@ export const midiMessageHandlerDependencies = {
     scheduleDrumKitNote,
     scheduleKitNote,
     scheduleNote,
+    sendNativeLiveMidiControl,
     sendNativeLiveMidiNote,
     soundsNativeNotes,
     stepRecordNoteOff,
