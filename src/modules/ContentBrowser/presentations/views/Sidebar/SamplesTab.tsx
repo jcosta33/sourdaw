@@ -42,7 +42,7 @@ export const SamplesTab = ({
             trackId = newTrack.id;
         }
         const tempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
-        let cachedBuffer;
+        let cachedBuffer: AudioBuffer | null | undefined;
         if (sample.audioBufferId) {
             cachedBuffer = getCachedAudioBuffer({ bufferId: sample.audioBufferId });
         }
