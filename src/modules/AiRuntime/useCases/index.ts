@@ -76,6 +76,8 @@ export { agentRunControls } from './getAgentRunControlProjection';
 export { agentRunCancellation } from './cancelAgentRun';
 export { confirmPendingChatActions } from './confirmPendingChatActions';
 export { cancelPendingChatActions } from './cancelPendingChatActions';
+export { getAgentApprovalView } from './getAgentApprovalView';
+export { reproposePendingChatActions } from './reproposePendingChatActions';
 export { revertAiActionGroup } from './aiHistoryActions';
 export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
