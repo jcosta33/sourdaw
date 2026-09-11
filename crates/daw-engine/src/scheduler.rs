@@ -32,7 +32,7 @@ use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
-use proof_chamber::ProofChamberInstance;
+use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
 
@@ -2810,23 +2810,6 @@ impl ProofBody {
 /// alias another is answered here, where every other body answers it.
 const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
 
-/// Frames one hosted Dutch Oven run renders.
-///
-/// A mirror of `ProofChamberInstance`'s own `max_block`: the constructor sizes
-/// `out_left` and `out_right` at 1024 frames and `process` clamps its `frames`
-/// argument to that length without saying so, so a longer ask renders this many
-/// frames and leaves the rest of the block carrying whatever it already held.
-/// The instance keeps that figure as a local in its constructor rather than as
-/// an exported constant, so it is restated here rather than imported the way
-/// [`FERMENTER_BLOCK_FRAMES`] is — and
-/// `a_dutch_oven_body_renders_what_the_instance_renders_run_by_run` is what
-/// holds the two together, feeding a bare instance in runs of exactly this size
-/// and requiring this body to match it sample for sample.
-///
-/// The host — [`DutchOvenBody::process`] below — is what splits a callback into
-/// runs this size; the number is the reverb's, not a choice made here.
-const DUTCH_OVEN_BLOCK_FRAMES: usize = 1024;
-
 /// Dutch Oven, the multi-engine reverb, hosted as a built-in effect body.
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
@@ -2907,7 +2890,7 @@ impl DutchOvenBody {
     /// would leave the dry programme underneath the reverberated one. The
     /// instance's own `mix` control is what decides how much dry survives.
     ///
-    /// The block is split into runs of at most [`DUTCH_OVEN_BLOCK_FRAMES`],
+    /// The block is split into runs of at most [`PROOF_CHAMBER_BLOCK_FRAMES`],
     /// each one a whole `process` call, and each run is copied back out of the
     /// instance's buffers before the next call overwrites them. A single call
     /// for a longer block would render one run's worth and leave the remainder
@@ -2923,7 +2906,7 @@ impl DutchOvenBody {
         let frames = left.len().min(right.len());
         let mut rendered = 0;
         while rendered < frames {
-            let run_end = rendered + (frames - rendered).min(DUTCH_OVEN_BLOCK_FRAMES);
+            let run_end = rendered + (frames - rendered).min(PROOF_CHAMBER_BLOCK_FRAMES);
             self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
             rendered = run_end;
         }
@@ -2939,10 +2922,11 @@ impl DutchOvenBody {
         let rendered_left = self.instance.process(left, right, run as u32);
         let rendered_right = self.instance.get_right_ptr();
         // SAFETY: both pointers were derived after the render and name the
-        // instance's own output buffers, which `ProofChamberInstance::new`
-        // sizes at `DUTCH_OVEN_BLOCK_FRAMES` and no method resizes; `run` is
-        // bounded by that same constant in `process` above, so each slice is
-        // inside the allocation it names. The two buffers are separate heap
+        // instance's own output buffers. `ProofChamberInstance::new` sizes
+        // both output buffers at `PROOF_CHAMBER_BLOCK_FRAMES` and `process`
+        // clamps to it, so the host's `run` bound and the instance's capacity
+        // are one exported fact; no method resizes the buffers, so each slice
+        // is inside the allocation it names. The two buffers are separate heap
         // allocations, so the pair of slices aliases nothing, and neither
         // aliases the callback's own `left`/`right`. Nothing mutates the
         // instance between the render and this copy.
@@ -19737,7 +19721,7 @@ mod timeline_tests {
             instance.set_param(name, *value);
         }
         let (instance_left, instance_right) =
-            dutch_oven_instance_render(&mut instance, &left, &right, DUTCH_OVEN_BLOCK_FRAMES);
+            dutch_oven_instance_render(&mut instance, &left, &right, PROOF_CHAMBER_BLOCK_FRAMES);
 
         assert_eq!(
             body_left, instance_left,
@@ -19756,6 +19740,36 @@ mod timeline_tests {
             (left.as_slice(), right.as_slice()),
             "the body handed its input back unchanged, so the identity above compares two \
              pass-throughs"
+        );
+    }
+
+    /// The reverse engine renders finite samples at 192 kHz with no `size` key.
+    ///
+    /// Before the reverse engine's buffers were sized by rate, a record naming
+    /// algorithm 6 without a size key indexed past its capture buffer on the
+    /// first block above 96 kHz and aborted the desktop process; this spec
+    /// holds the body at the highest common device rate.
+    #[test]
+    fn a_dutch_oven_body_renders_the_reverse_engine_finite_at_192_khz() {
+        const RATE: f32 = 192_000.0;
+        const BLOCKS: usize = 4;
+
+        let PluginCore::DutchOven(mut body) = PluginCore::dutch_oven_with_patch(
+            RATE,
+            &dutch_oven_patch(&[("algorithm", 6.0), ("mix", 1.0)]),
+        ) else {
+            unreachable!("dutch_oven_with_patch builds the dutch oven variant");
+        };
+
+        let (left, right) = dutch_oven_stereo_material(BLOCKS * PROOF_CHAMBER_BLOCK_FRAMES);
+        let (rendered_left, rendered_right) = dutch_oven_render(&mut body, &left, &right);
+
+        assert!(
+            rendered_left
+                .iter()
+                .chain(rendered_right.iter())
+                .all(|sample| sample.is_finite()),
+            "the reverse engine produced a non-finite sample at 192 kHz"
         );
     }
 

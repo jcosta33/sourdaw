@@ -25,7 +25,7 @@
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
-                "sha256": "55f2e4c3758f65c1e1349f999507d88e5d1ebedbebc9a6b84553e5293a69e607"
+                "sha256": "a259fc76d3f00c794258b2ac354a407d26ea8d7c61dbbae560e91cc896aae35f"
             },
             {
                 "path": "crates/daw-io/Cargo.toml",
