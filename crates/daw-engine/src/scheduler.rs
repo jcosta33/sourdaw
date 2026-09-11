@@ -19837,12 +19837,14 @@ mod timeline_tests {
     /// a wire value selects.
     ///
     /// Production reports 0 throughout — the five selectable engines are
-    /// algorithmic and delay nothing — so what is under test is that the body
-    /// *asks* rather than answering with a literal: the two convolution-backed
-    /// engines report a 128-frame head, and a body returning a constant would
-    /// go on declaring 0 for them if an impulse-response transport ever made
-    /// one reachable. The oracle is therefore equality with a bare instance
-    /// given the same write, not equality with a number written here.
+    /// algorithmic and delay nothing — but that leaves the loop below unable
+    /// to tell a reading from a literal: a `latency_samples` that always
+    /// returned `0` would pass it exactly as this one does. The probe after
+    /// it is what a body returning a constant cannot survive. It selects the
+    /// convolution engine directly (`select_unexposed_engine` — nothing on the
+    /// wire reaches it, which is exactly why it is the one figure the crate
+    /// reports nonzero) on both the body's own instance and a bare instance
+    /// built the same way, and the oracle is equality between the two, at 128.
     #[test]
     fn a_dutch_oven_body_reports_the_latency_its_instance_reports() {
         let default_body = dutch_oven_body(&[]);
@@ -19863,6 +19865,18 @@ mod timeline_tests {
                 "the body's figure for algorithm {algorithm} is not the one its instance reports"
             );
         }
+
+        let mut probe = dutch_oven_body(&[]);
+        probe
+            .instance
+            .select_unexposed_engine(proof_chamber::UnexposedEngine::Convolution);
+        let mut probe_instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        probe_instance.select_unexposed_engine(proof_chamber::UnexposedEngine::Convolution);
+        assert_eq!(
+            probe.latency_samples(),
+            probe_instance.get_latency(),
+            "the body's figure for the convolution engine is not the one its instance reports"
+        );
     }
 
     /// A poisoned block leaves this body finite.
@@ -19930,15 +19944,35 @@ mod timeline_tests {
     /// the instance's parameter cache, whose backing store is taken at
     /// construction and which evicts rather than growing.
     ///
-    /// The body is built, patched and warmed *outside* the guard: the
-    /// constructor legitimately allocates every engine (ADR 0020), and the
-    /// reverb's own guards drive a warm-up before opening theirs
-    /// (`guarded_run_after`, `crates/proof-chamber/tests/reverb_process_rt.rs`,
-    /// eight blocks before the guarded loop), so the same discipline is copied
-    /// here — one warm-up render, leaving only the block loop and the writes
-    /// inside. The names are parsed outside for the same reason the Proof
-    /// guards parse theirs outside: the `Vec` that holds them allocates, and
-    /// that allocation is the fixture's, not the body's.
+    /// The value parameters — `mix`, `decay`, `size`, `damping`, `shimmer`,
+    /// `freeze` and `fdn_damping_version` — are written and rendered once to
+    /// warm *outside* the guard, the same discipline the reverb's own guards
+    /// use before opening theirs (`guarded_run_after`,
+    /// `crates/proof-chamber/tests/reverb_process_rt.rs`, eight blocks before
+    /// the guarded loop): the constructor legitimately allocates every engine
+    /// (ADR 0020), and building the writes' `Vec` allocates too, so both stay
+    /// outside. This populates the parameter cache before the guard opens,
+    /// which is what makes the switches inside it exercise
+    /// `replay_cached_parameters` over a real cache rather than an empty one.
+    ///
+    /// Inside the guard, the body renders once on its warmed engine, then
+    /// walks `algorithm` through every value a wire can legally select —
+    /// 0, 1, 2, 3, 6 — rendering a block after each switch, so every one of
+    /// the five selectable engines' `process` runs under the guard and each
+    /// switch's `replay_cached_parameters` runs over the populated cache.
+    /// `algorithm` 4 and 5 are excluded because `ProofChamberInstance::set_param`
+    /// folds them to Plate — they are reserved for the two unexposed engines,
+    /// see [`DutchOvenBody`]'s struct doc — and the walk ends on 6 so the
+    /// render the two assertions below inspect is the reverse engine's.
+    ///
+    /// `mix` is written at 0.5 rather than fully wet for that same last
+    /// render's sake: `ReverseReverb::reset` clears both of its capture
+    /// buffers, so the read side plays back silence for its whole
+    /// `reverse_len` (over a second at this rate) after every switch onto it,
+    /// far longer than the one block rendered here. A fully wet mix would
+    /// make that render's non-silence assertion depend on a buffer this test
+    /// never fills; the dry half that 0.5 leaves in the mix is what the
+    /// assertion actually observes.
     ///
     /// The two assertions beside the guard refuse a vacuous pass: a render that
     /// came out silent covered no per-sample path, and one carrying a
@@ -19948,20 +19982,20 @@ mod timeline_tests {
     fn a_dutch_oven_body_does_not_allocate_while_rendering_and_switching_engines() {
         const FRAMES: usize = 2048;
 
-        let writes = dutch_oven_patch(&[
-            ("algorithm", 0.0),
-            ("algorithm", 1.0),
-            ("algorithm", 2.0),
-            ("algorithm", 3.0),
-            ("algorithm", 4.0),
-            ("mix", 1.0),
+        let value_writes = dutch_oven_patch(&[
+            ("mix", 0.5),
             ("decay", 0.8),
             ("size", 0.7),
+            ("damping", 0.3),
             ("shimmer", 1.0),
             ("freeze", 1.0),
+            ("fdn_damping_version", 2.0),
         ]);
         let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
         let mut body = DutchOvenBody::new(DUTCH_OVEN_RATE);
+        for (name, value) in &value_writes {
+            body.set_param(name.as_str(), *value);
+        }
         let mut left = material_left.clone();
         let mut right = material_right.clone();
         body.process(&mut left, &mut right);
@@ -19970,10 +20004,10 @@ mod timeline_tests {
         right.copy_from_slice(&material_right);
         assert_no_alloc::assert_no_alloc(|| {
             body.process(&mut left, &mut right);
-            for (name, value) in &writes {
-                body.set_param(name.as_str(), *value);
+            for algorithm in [0.0, 1.0, 2.0, 3.0, 6.0] {
+                body.set_param("algorithm", algorithm);
+                body.process(&mut left, &mut right);
             }
-            body.process(&mut left, &mut right);
         });
 
         assert!(
