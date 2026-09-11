@@ -1,0 +1,80 @@
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunControlsSection.tsx
+  s_06adf2b091dc62::t_89dda7fa33842f 7
+  s_06adf2b091dc62::t_1794780649c517 1-6,8-94
+  s_06adf2b091dc62::t_d06736ac4a3777 95
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_06adf2b091dc62::t_e88a1b20acd3f4 34
+  s_06adf2b091dc62::t_bfb8da01c275e0 1-33,35-84
+  s_06adf2b091dc62::t_8d78086e7702ba 85-135
+src/modules/AiRuntime/AGENTS.md
+  s_06adf2b091dc62::t_6a6521da8e861c 12-13
+  s_06adf2b091dc62::t_759eec43806c2d 9
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRouteSection.tsx
+  s_06adf2b091dc62::t_cc7c54eb686ca7 1-85,91-92
+  s_06adf2b091dc62::t_ac59f491f2e037 86-90,93-98
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_69965a3cac944c 2-3,5-8,10-218,221-397,399-481
+  s_06adf2b091dc62::t_a46649ed9d7f51 1,4,9
+  s_06adf2b091dc62::t_c99486facf44c5 219-220
+  s_06adf2b091dc62::t_64c19695512881 398
+  s_06adf2b091dc62::t_c03952a077da02 482-500
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunList.tsx
+  s_06adf2b091dc62::t_6953651e57cab9 1-19,21-64,66-74,76-87,89-104,106-107,109-110
+  s_06adf2b091dc62::t_8b0fba3cc82b70 20,65
+  s_06adf2b091dc62::t_c5bbc53ac7c095 75
+  s_06adf2b091dc62::t_7e7029f0302025 105,108
+  s_06adf2b091dc62::t_d58309c0f204b2 88
+  s_06adf2b091dc62::t_fb5a7edc701a52 111-112
+src/modules/WorkspaceShell/presentations/views/index.ts
+  s_06adf2b091dc62::t_dabffd0cd83ece 2
+src/modules/AiRuntime/presentations/views/index.ts
+  s_06adf2b091dc62::t_6fc31db91dd20a 5
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentProgressSection.tsx
+  s_06adf2b091dc62::t_e5c30c3e41083f 1-40,42
+  s_06adf2b091dc62::t_26ea6cbdacd271 41,43-44
+src/modules/AiRuntime/useCases/index.ts
+  s_06adf2b091dc62::t_5d1f91a37849db 76-79
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_06adf2b091dc62::t_4275b727c80624 1-80,82-83,85,92
+  s_06adf2b091dc62::t_01d05a11585439 81,84,86-91,93-94
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunHistorySection.tsx
+  s_06adf2b091dc62::t_44e1555ec3aee5 1-54
+  s_06adf2b091dc62::t_014658b87ef145 55-63
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_06adf2b091dc62::t_53df695438e65e 633-634
+  s_06adf2b091dc62::t_8e6ebe0198aca6 107
+  s_06adf2b091dc62::t_2cf53ab9fedc32 951-953
+  s_06adf2b091dc62::t_912b601003e0ac 179-180
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentPlanSection.tsx
+  s_06adf2b091dc62::t_58afa093e4ec01 1-73
+src/modules/AiRuntime/stores/index.ts
+  s_06adf2b091dc62::t_1c56cb28996912 13-16
+src/modules/AiRuntime/presentations/views/AgentRunDecisionPanel.tsx
+  s_06adf2b091dc62::t_9e4609b173c4e1 5,10-11
+  s_06adf2b091dc62::t_190e8cc256fd6d 1-4,6-9,12-60
+src/modules/WorkspaceShell/AGENTS.md
+  s_06adf2b091dc62::t_654498dedaa7c4 14
+  s_06adf2b091dc62::t_4ef7e82b74fbc9 23
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunSummary.tsx
+  s_06adf2b091dc62::t_8978322fd26577 86-87
+  s_06adf2b091dc62::t_779b18bf0b4351 88-118,120
+  s_06adf2b091dc62::t_3220ba47ca7100 1-85,119,121-123
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_06adf2b091dc62::t_315673afbd3a74 562-566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eba56c91b869bf2714d509d91c06d1e80197588b",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
