@@ -1,18 +1,18 @@
 /**
- * Connecting to the already-spawned packaged app over the Chrome DevTools
- * Protocol and driving it, through its own UI, all the way to a playing
- * project with the harness plugin live on a track — the two legs this
- * harness measures are samples taken while that holds.
+ * Driving the already-connected packaged app, through its own UI, all the way
+ * to a playing project with the harness plugin live on a track — the two legs
+ * this harness measures are samples taken while that holds.
  *
  * Split out of `measureDesktopLatency.ts` to keep that driver under the
- * repository's per-file line budget; this file still drives a live `Page`
- * and speaks CDP, so — like the driver, and unlike `desktopLatencyReadings.ts`
- * — it is not unit-testable without Playwright.
+ * repository's per-file line budget; this file still drives a live `Page`, so
+ * — like the driver, and unlike `desktopLatencyReadings.ts` — it is not
+ * unit-testable without Playwright. Spawning the app and connecting to it
+ * live in `packagedAppSession.ts`, shared with the agent-workspace proof.
  */
 
-import { chromium, type Browser, type Page } from 'playwright';
+import { type Page } from 'playwright';
 
-import { subscribeDiagnostics, waitForLivePluginOnTrack, type Diagnostics } from './desktopLatencyDiagnostics.ts';
+import { waitForLivePluginOnTrack, type Diagnostics } from './desktopLatencyDiagnostics.ts';
 import {
     dismissAlphaNotice,
     dismissOnboardingTour,
@@ -30,12 +30,10 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
-    findAppPageTarget,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
     readStatusBarInDocument,
-    type AppPageTarget,
     type StatusBarReading,
 } from './desktopLatencyReadings.ts';
 import {
@@ -53,10 +51,9 @@ import {
     UI_LOAD_BURST_PERIOD_MS,
     UI_LOAD_SPIN_MS,
 } from './desktopLatencyUiLoad.ts';
+import { step, STEP_TIMEOUT_MS, type CdpVersion } from './packagedAppSession.ts';
 
 const SAMPLE_INTERVAL_MS = 1_000;
-const STEP_TIMEOUT_MS = 15_000;
-const APP_READY_TIMEOUT_MS = 30_000;
 
 /** `AppShell`'s transport toolbar — shared by the Play click and the play-start probe's capture listener so both target the same element. */
 const PLAY_BUTTON_SELECTOR = '[aria-label="Playback controls"] [aria-label="Play"]';
@@ -105,8 +102,6 @@ const SCAN_STEP_TIMEOUT_MS = 150_000;
  */
 const EFFECTS_TAB_STEP_TIMEOUT_MS = STEP_TIMEOUT_MS * 5;
 
-const APP_URL_PREFIX = 'app://sourdaw/';
-
 /** `crates/sourdaw-harness-tone/src/descriptor.rs` — the name the plugin row shows. */
 const HARNESS_PLUGIN_NAME = 'Sourdaw Harness Tone';
 
@@ -119,176 +114,20 @@ const HARNESS_PLUGIN_NAME = 'Sourdaw Harness Tone';
  */
 const STREAM_ERROR_MARKER = '[AudioEngine] native engine streamError';
 
-const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
-
 /**
  * The status bar collapses its secondary readouts — "Out" among them — into a
  * Radix Popover behind `button[aria-label="More application status"]` at or
- * below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) in `StatusBar.tsx`. Electron
- * asks for a 1440×900 window in `electron/main.ts`, but the runner's own
- * screen can clamp that request narrower than 1200 px — the exact way the
- * nightly job silently dropped the app into the compact layout on 2026-09-09
- * and lost the "Out" readout this harness reads. Pinning the viewport to the
- * app's own default window size, right after connecting, keeps the expanded
- * layout regardless of the runner's screen. Viewport emulation over CDP
- * changes only what the renderer lays out; it does not touch the native
- * engine's audio rendering or the OS audio device stream this harness
- * measures.
+ * below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) in `StatusBar.tsx`, which is
+ * why `packagedAppSession.ts` pins the renderer to the app's own default
+ * window size before this file ever reads the footer.
  */
-const EXPANDED_STATUS_BAR_VIEWPORT = { width: 1440, height: 900 } as const;
-
-/**
- * The one outcome an aborted pre-connect `fetch` and an already-tripped
- * `signal` are both reported as, so `launchAndMeasure`'s caller sees one
- * consistent reason rather than a raw `AbortError` in one case and a named
- * message in the other.
- */
-const SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE = 'the packaged app process failed before its page target ever appeared';
-
-/** `fetch` rejects with a `DOMException` named `AbortError` when its `signal` fires, in both the browser and Node's own `undici`-backed implementation. */
-function isAbortError(error: unknown): boolean {
-    return error instanceof Error && error.name === 'AbortError';
-}
+const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
 
 type EngineDiagnosticsReading = {
     running: boolean;
     counters: Record<string, number>;
     events: EngineEventRecord[];
 };
-
-/**
- * The name of the step currently running, read by the `console`/`pageerror`
- * listeners in `connectAndMeasure` so a diagnostics entry can say what the
- * driver was doing when it fired, not just when.
- */
-let activeStep = '';
-
-/**
- * Every UI step is bounded. Without this a selector that never appears hangs
- * the run instead of reporting which step did not hold, and an unattributed
- * hang teaches nothing.
- */
-async function step<Result>(
-    name: string,
-    run: () => Promise<Result>,
-    timeoutMs: number = STEP_TIMEOUT_MS
-): Promise<Result> {
-    activeStep = name;
-    const startedAt = Date.now();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expiry = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-            reject(new Error(`the step "${name}" did not complete within ${timeoutMs} ms`));
-        }, timeoutMs);
-    });
-    try {
-        const result = await Promise.race([run(), expiry]);
-        process.stdout.write(`  step: ${name} … ${String(Date.now() - startedAt)} ms\n`);
-        return result;
-    } catch (error) {
-        process.stdout.write(`  step: ${name} FAILED after ${String(Date.now() - startedAt)} ms\n`);
-        throw error;
-    } finally {
-        clearTimeout(timer);
-        activeStep = '';
-    }
-}
-
-type CdpVersion = { browser: string; userAgent: string };
-
-function asCdpVersion(payload: unknown): CdpVersion {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new TypeError('/json/version did not answer with an object');
-    }
-    const browser: unknown = Reflect.get(payload, 'Browser');
-    const userAgent: unknown = Reflect.get(payload, 'User-Agent');
-    return {
-        browser: typeof browser === 'string' ? browser : 'unknown',
-        userAgent: typeof userAgent === 'string' ? userAgent : 'unknown',
-    };
-}
-
-/**
- * `connectOverCDP` must not be called until the app's page target exists and
- * has already parsed its document. In the run that hung, the page was listed
- * with an empty title while its child workers were still spawning, and one of
- * those workers detached again, unsolicited, in the middle of Playwright's own
- * auto-attach handshake; every command Playwright sent got answered, and the
- * connect promise still never resolved. Every run where `/json/list` already
- * carried the page — a real url and a non-empty, parsed title — connected in
- * about 50 ms instead. Polling this cheap, connect-free endpoint until the
- * page is actually there is what keeps `connectOverCDP` from ever attaching to
- * a target still mid-creation.
- *
- * `signal`, when given, is checked at the top of every iteration and passed
- * into the `fetch` itself: if the packaged process has already failed to
- * spawn, the debug port this polls will never open, and without a way to
- * cut the loop short it would keep polling a dead port for the rest of
- * `APP_READY_TIMEOUT_MS` regardless. Checking only at the top of the loop
- * would still leave one in-flight `fetch` to complete or time out on its
- * own; passing the signal into the `fetch` call itself aborts that request
- * too, so an abort during the request is not silently swallowed by the
- * catch block below as "the app has not opened the port yet" — `isAbortError`
- * recognises it and reports the same aborted outcome the top-of-loop check
- * does. `launchAndMeasure` aborts as soon as it has the spawn error in hand,
- * so this rejection, arriving after that, never reaches a caller —
- * `Promise.race` there has already settled on the spawn error by the time
- * it does.
- */
-async function waitForAppPageTarget(port: number, signal?: AbortSignal): Promise<AppPageTarget> {
-    const deadline = Date.now() + APP_READY_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-        if (signal?.aborted === true) {
-            throw new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE);
-        }
-        try {
-            const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`, { signal });
-            if (response.ok) {
-                const target = findAppPageTarget(await response.json(), APP_URL_PREFIX);
-                if (target !== null) {
-                    return target;
-                }
-            }
-        } catch (error) {
-            if (isAbortError(error)) {
-                throw new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE, { cause: error });
-            }
-            // The app has not opened the port yet. Keep polling until the deadline.
-        }
-        await sleep(100);
-    }
-    throw new Error(
-        `no page at ${APP_URL_PREFIX} with a parsed document appeared within ${String(APP_READY_TIMEOUT_MS)} ms`
-    );
-}
-
-async function readCdpVersion(port: number, signal?: AbortSignal): Promise<CdpVersion> {
-    let response: Response;
-    try {
-        response = await fetch(`http://127.0.0.1:${String(port)}/json/version`, { signal });
-    } catch (error) {
-        throw isAbortError(error) ? new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE, { cause: error }) : error;
-    }
-    if (!response.ok) {
-        throw new Error(`http://127.0.0.1:${String(port)}/json/version answered with HTTP ${String(response.status)}`);
-    }
-    return asCdpVersion(await response.json());
-}
-
-async function findAppPage(browser: Browser): Promise<Page> {
-    const deadline = Date.now() + APP_READY_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-        for (const context of browser.contexts()) {
-            for (const page of context.pages()) {
-                if (page.url().startsWith(APP_URL_PREFIX)) {
-                    return page;
-                }
-            }
-        }
-        await sleep(250);
-    }
-    throw new Error(`no page at ${APP_URL_PREFIX} appeared within ${APP_READY_TIMEOUT_MS} ms`);
-}
 
 /**
  * Hands `readStatusBarInDocument` itself to `page.evaluate`, which serialises
@@ -738,7 +577,7 @@ async function stopPlayback(page: Page): Promise<void> {
     }
 }
 
-type MeasuredLegsAndStart = { legs: LegRecord[]; startedAt: AppStartedAt; playStart: PlayStartRecord };
+export type MeasuredLegsAndStart = { legs: LegRecord[]; startedAt: AppStartedAt; playStart: PlayStartRecord };
 
 export type MeasuredLegs = MeasuredLegsAndStart & { version: CdpVersion };
 
@@ -777,41 +616,24 @@ async function measureLegs(
     return { legs: [idle, uiLoad], startedAt, playStart };
 }
 
-export async function connectAndMeasure(
-    port: number,
+/**
+ * Runs the whole measurement on an already-connected packaged-app page: the
+ * stream-error console subscription this record reports, then the drive to a
+ * playing project and the two legs taken while it holds. The session that
+ * produced the page owns its teardown.
+ */
+export async function measureOnPage(
+    page: Page,
     seconds: number,
     harnessPluginPath: string,
-    diagnostics: Diagnostics,
-    signal?: AbortSignal
-): Promise<MeasuredLegs> {
-    const target = await waitForAppPageTarget(port, signal);
-    process.stdout.write(`page              ${target.url} "${target.title}"\n`);
-
-    const version = await readCdpVersion(port, signal);
-    process.stdout.write(`browser           ${version.browser}\n`);
-    process.stdout.write(`user agent        ${version.userAgent}\n`);
-
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${String(port)}`);
-    try {
-        const page = await findAppPage(browser);
-        await page.setViewportSize(EXPANDED_STATUS_BAR_VIEWPORT);
-        subscribeDiagnostics(page, diagnostics, () => activeStep);
-        const consoleLog: string[] = [];
-        page.on('console', (message) => {
-            const text = message.text();
-            if (text.includes(STREAM_ERROR_MARKER)) {
-                consoleLog.push(text);
-            }
-        });
-        const { legs, startedAt, playStart } = await measureLegs(
-            page,
-            seconds,
-            consoleLog,
-            harnessPluginPath,
-            diagnostics.pageErrors
-        );
-        return { legs, version, startedAt, playStart };
-    } finally {
-        await browser.close();
-    }
+    diagnostics: Diagnostics
+): Promise<MeasuredLegsAndStart> {
+    const consoleLog: string[] = [];
+    page.on('console', (message) => {
+        const text = message.text();
+        if (text.includes(STREAM_ERROR_MARKER)) {
+            consoleLog.push(text);
+        }
+    });
+    return measureLegs(page, seconds, consoleLog, harnessPluginPath, diagnostics.pageErrors);
 }

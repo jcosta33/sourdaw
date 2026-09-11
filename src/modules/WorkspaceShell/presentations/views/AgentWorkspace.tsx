@@ -82,7 +82,7 @@ export const AgentWorkspace = (): ReactElement => {
                         }}
                     />
                 </Stack>
-                <Stack gap={3} grow className="min-h-0 min-w-0 overflow-y-auto p-3">
+                <Stack gap={3} grow className="min-h-0 min-w-0 overflow-y-auto p-3 [&>*]:shrink-0">
                     <AgentRunSummary run={selectedRun} headingRef={summaryHeadingRef} />
                     <AgentPlanSection plan={selectedRun?.plan ?? null} />
                     <AgentProgressSection progress={projection} />
