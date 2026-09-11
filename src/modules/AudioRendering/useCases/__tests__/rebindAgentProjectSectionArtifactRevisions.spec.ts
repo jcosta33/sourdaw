@@ -28,11 +28,13 @@ function createAudioBuffer() {
     const sampleRate = 44_100;
     const length = 88_200;
     const numberOfChannels = 2;
+    const channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
     return {
         sampleRate,
         length,
         numberOfChannels,
         duration: length / sampleRate,
+        getChannelData: (channel: number) => channels[channel],
     };
 }
 
