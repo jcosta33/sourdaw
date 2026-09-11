@@ -93,13 +93,11 @@ export const usePreviewAudio = (): PreviewHandle => {
 
     const play = (id: string, buffer: AudioBuffer) => {
         stop();
-        activeRequestIdRef.current++;
         startBufferPlayback(id, buffer);
     };
 
     const playTone = (id: string, frequency: number, durationSec: number) => {
         stop();
-        activeRequestIdRef.current++;
 
         const ctx = getAudioContext();
         if (ctx.state === 'suspended') {

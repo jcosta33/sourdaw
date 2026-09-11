@@ -427,4 +427,22 @@ describe('LibraryBrowser', () => {
         // Verify mocks.preview.playFile was not called
         expect(mocks.preview.playFile).not.toHaveBeenCalled();
     });
+
+    it('does not stop playback when re-rendered with an updated preview reference', () => {
+        const preview = { ...mocks.preview, stop: vi.fn(), playingId: null };
+        const { rerender } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+
+        const updatedPreview = { ...mocks.preview, stop: vi.fn(), playingId: 'sample-1' };
+        rerender(<LibraryBrowser preview={updatedPreview} selectedTrackId={null} />);
+
+        expect(preview.stop).not.toHaveBeenCalled();
+        expect(updatedPreview.stop).not.toHaveBeenCalled();
+    });
+
+    it('stops preview on unmount', () => {
+        const preview = { ...mocks.preview, stop: vi.fn() };
+        const { unmount } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+        unmount();
+        expect(preview.stop).toHaveBeenCalledTimes(1);
+    });
 });

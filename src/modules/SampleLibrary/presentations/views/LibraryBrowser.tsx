@@ -92,6 +92,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     const [activeIndex, setActiveIndex] = useState(0);
     const listRef = useRef<HTMLDivElement>(null);
 
+    const previewRef = useRef(preview);
+    previewRef.current = preview;
+
     // Cache resolved directory sub-handles per root+folder so repeated previews
     // of clips in the same folder do not re-walk the handle chain (one IPC trip
     // per path segment) on every click.
@@ -100,15 +103,15 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     const handleStopPreview = (): void => {
         previewRequestIdRef.current++;
-        preview.stop();
+        previewRef.current.stop();
     };
 
     useEffect(() => {
         return () => {
             previewRequestIdRef.current++;
-            preview.stop();
+            previewRef.current.stop();
         };
-    }, [preview]);
+    }, []);
 
     if (!state) {
         return <div />;
@@ -220,7 +223,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     };
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
-        preview.stop();
+        previewRef.current.stop();
         const requestId = ++previewRequestIdRef.current;
 
         const root = roots.find((r) => r.id === sample.libraryRootId);
@@ -290,7 +293,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
             if (previewRequestIdRef.current !== requestId) {
                 return;
             }
-            await preview.playFile(sample.id, file);
+            await previewRef.current.playFile(sample.id, file);
         } catch {
             if (previewRequestIdRef.current !== requestId) {
                 return;
