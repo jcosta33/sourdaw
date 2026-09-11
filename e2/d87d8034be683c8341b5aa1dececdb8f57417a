@@ -1,0 +1,50 @@
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunHistorySection.tsx
+  s_06adf2b091dc62::t_9f22a16055c76b 1
+  s_06adf2b091dc62::t_bfd6f0c461ec13 27-28,36,39
+  s_06adf2b091dc62::t_3e1b49f866a9c9 9,17-19,23-24,26,31-35,37,44,50-73,75
+src/modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceFocusDispatch.ts
+  s_06adf2b091dc62::t_0325bcfcf4169b 1-5,9-53
+  s_06adf2b091dc62::t_e73cddfa58d54f 6-8
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_8efcfdd124d7ab 6-11
+  s_06adf2b091dc62::t_d6689c70282a9e 252-278,283-293,300-303
+  s_06adf2b091dc62::t_8a5c00a0b8ff9a 35-41,52-53,66
+  s_06adf2b091dc62::t_f1f8568e006b62 321
+  s_06adf2b091dc62::t_826fabb980a736 1036-1202
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_06adf2b091dc62::t_154d1dec36f125 62-67
+  s_06adf2b091dc62::t_1a0a1c61e3dfe7 22
+  s_06adf2b091dc62::t_703f6f20a2986b 113-115,117,119-120,122,124,128
+  s_06adf2b091dc62::t_82f35fcac5f979 14
+  s_06adf2b091dc62::t_ab05fffd0cc515 116,118
+  s_06adf2b091dc62::t_6774a39a332af6 37-51
+  s_06adf2b091dc62::t_50f9e09ca05738 1,23
+  s_06adf2b091dc62::t_cbd5fd1730074b 36,52-60
+  s_06adf2b091dc62::t_e11f4a1d625625 24
+src/modules/WorkspaceShell/presentations/hooks/useAgentChangeComparisonController.ts
+  s_06adf2b091dc62::t_b3a5bceabe03d2 1-71,77-136
+  s_06adf2b091dc62::t_220d945395c835 72-76
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentComparisonSection.tsx
+  s_06adf2b091dc62::t_297df3a4499832 1-155
+src/modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceRunSelection.ts
+  s_06adf2b091dc62::t_fb78056a14ec4a 59-64,67
+  s_06adf2b091dc62::t_924c1c24c01e53 31-35
+  s_06adf2b091dc62::t_8b1117408fe70c 1,5-10
+  s_06adf2b091dc62::t_ed8b745a89ca78 2-4,11-30,36-58,65-66,68-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e2d87d8034be683c8341b5aa1dececdb8f57417a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
