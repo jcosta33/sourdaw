@@ -1,0 +1,91 @@
+crates/daw-engine/Cargo.toml
+  s_9b530f08172a54::t_65bd346c79e237 28-33
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_3629344ad6e5e7 22455-22759
+  s_9b530f08172a54::t_cf686037c16845 4041-4044
+  s_9b530f08172a54::t_8327fdaf929fbe 1302-1313
+  s_9b530f08172a54::t_8f24fce35d45a7 39-40
+  s_9b530f08172a54::t_90864e4bd8c099 1396
+  s_9b530f08172a54::t_4ace324c654ddf 3790-3978
+  s_9b530f08172a54::t_eaad92af3ca297 304
+  s_9b530f08172a54::t_08c09104dbc8ff 344
+  s_9b530f08172a54::t_1744b7da983982 1056
+  s_9b530f08172a54::t_294a10d30610c4 1095
+  s_9b530f08172a54::t_8c2bcb5e24dce7 1333
+  s_9b530f08172a54::t_e8e4c01e03de58 380-382
+  s_9b530f08172a54::t_df107a946e1bff 7307-7312
+  s_9b530f08172a54::t_e2b1cc1b80c341 409
+  s_9b530f08172a54::t_c12c2e5b1d0f36 1272-1301,1314-1316
+  s_9b530f08172a54::t_42365a55a6a73d 324
+  s_9b530f08172a54::t_ff8175b4dd0d53 8367,8382-8383,22760-22786
+Cargo.lock
+  s_9b530f08172a54::t_dbffb6780bdd25 631
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_9b530f08172a54::t_2b1b89e39c4199 44,170-221,236,252,256-270,470-473,479,600-613,623-625,630-679,723-730,752-759,784-791
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_f4edd223ad4e62 157,170,917-926,1069-1088,1959-1960,2054-2058,2063,2107,2252-2261,2320-2323,2365,2737,2845,3040,5461,5479,5523,5876,8065,8160,8257,8349,8939,10688,10696,11420-11497
+public/legal/DEPENDENCY-LICENSES.txt
+  s_9b530f08172a54::t_6c52c2096c0beb 9
+release/dependency-license-proofs.json
+  s_9b530f08172a54::t_bc88357acc1376 4,28
+release/open-source-inventory.json
+  s_9b530f08172a54::t_19bc52a40ba1a4 165-166,399,1712
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_3c612b4fce9822 1,74-91,119-120,202-203,351,595,1069-1129
+src/app/bootstrap.ts
+  s_9b530f08172a54::t_e427d41deb1070 57,510-529
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_9b530f08172a54::t_628bf6d7752f89 67-78,80-91,213
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_9b530f08172a54::t_91230bf94e6353 73-85,88-106,120
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_9b530f08172a54::t_13b19d8f01e21e 29-39,78,100-210
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_9b530f08172a54::t_f051207072eaa2 3-7,34-96,115
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_2e4ad5c23157ee 121-122
+src/modules/AudioEngine/useCases/livePlayback/__tests__/isTunerTelemetryNativelyOwned.spec.ts
+  s_9b530f08172a54::t_92325c58e0393e 1-61
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_572c0004671f87 101-130,156,183-185,208,227-229,1017-1054
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_9b530f08172a54::t_97f5aa3c986f04 1,5,23-24,50,53-75,90-97,366-442
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_76905c93dc25e1 678
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_027efaa02d4af3 360
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_19b9672c8d019c 180
+src/modules/AudioEngine/useCases/livePlayback/__tests__/publishNativeTunerTelemetry.spec.ts
+  s_9b530f08172a54::t_82202ea278dd4c 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineMasterPeak.spec.ts
+  s_9b530f08172a54::t_9e611ecfced203 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineStripPeak.spec.ts
+  s_9b530f08172a54::t_407697a1afc03d 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_c4d38d2c6e3045 339-357
+src/modules/AudioEngine/useCases/livePlayback/isTunerTelemetryNativelyOwned.ts
+  s_9b530f08172a54::t_f3d986a0e41b79 1-30
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_07b640debee761 294-313,661-694
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_9b530f08172a54::t_d165e27fe4de4d 63,156-162
+src/modules/AudioEngine/useCases/livePlayback/publishNativeTunerTelemetry.ts
+  s_9b530f08172a54::t_c8f4f961d4e12f 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5d2f27db5207bd166e8164542666dd00188117bc",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
