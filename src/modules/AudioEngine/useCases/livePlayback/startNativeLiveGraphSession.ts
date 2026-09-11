@@ -92,8 +92,10 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import {
     type AudioGraphApplyResult,
+    type AudioGraphBackend,
     type AudioGraphCommand,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
@@ -921,6 +923,20 @@ async function installRolledSession(input: {
     startNativeEngineLivenessWatch();
 }
 
+/**
+ * The backend this session applies its batches through.
+ *
+ * The same sink that decodes a device's opaque state names and leases its
+ * bank, so one registration answers for every device module that builds its
+ * native body from staged material rather than from its record.
+ */
+function createSessionBackend(transport: NativeGraphTransport): AudioGraphBackend {
+    return createNativeLiveGraphBackend({
+        transport,
+        acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
+    });
+}
+
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
@@ -985,7 +1001,7 @@ export function startNativeLiveGraphSession(
                     monitor,
                     programme: against,
                 });
-            const backend = createNativeLiveGraphBackend({ transport: availability.transport });
+            const backend = createSessionBackend(availability.transport);
             const firstCommands = projectTopology(topology.attachedInstanceIds, programme);
             // Everything past the claim, so that every way out of it reopens the
             // gates — a rejected sample registration, a bridge that drops mid-apply,

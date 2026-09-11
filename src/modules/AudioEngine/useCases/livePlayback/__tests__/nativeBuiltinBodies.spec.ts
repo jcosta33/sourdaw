@@ -18,10 +18,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
+import { getLevainEngineParameterName, projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
 import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
 import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
@@ -119,6 +122,7 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('proof')).not.toBeNull();
         expect(nativeBuiltinBody('dutch-oven')).not.toBeNull();
         expect(nativeBuiltinBody('toaster')).not.toBeNull();
+        expect(nativeBuiltinBody('levain')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -144,6 +148,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('proof').soundsNotes).toBe(false);
         expect(bodyOf('dutch-oven').soundsNotes).toBe(false);
         expect(bodyOf('toaster').soundsNotes).toBe(true);
+        expect(bodyOf('levain').soundsNotes).toBe(true);
     });
 
     // What `projectLiveMidiProgramme` reads before it writes a clip's release.
@@ -163,6 +168,9 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('bacteria').takesClipNoteReleases).toBe(true);
         expect(bodyOf('proof').takesClipNoteReleases).toBe(true);
         expect(bodyOf('dutch-oven').takesClipNoteReleases).toBe(true);
+        // A sampled orchestral note holds its key, and its release is what
+        // triggers the bank's release zones.
+        expect(bodyOf('levain').takesClipNoteReleases).toBe(true);
     });
 
     // Mirrors `PluginCore::declared_latency_frames`, which is what decides
@@ -180,6 +188,7 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('crust').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('grinder').latencyCompensatedByEngine).toBe(false);
         expect(bodyOf('toaster').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('levain').latencyCompensatedByEngine).toBe(false);
     });
 
     // A device type with no native body is nothing the engine could be
@@ -830,6 +839,90 @@ describe('the toaster body', () => {
         }
         expect(bodyOf('toaster').addressesParameter('master_gain')).toBe(false);
         expect(bodyOf('toaster').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Levain's own vocabulary, read through the module's published translation
+ * rather than restated here.
+ *
+ * The sampler is the one body built from staged material rather than from its
+ * record: the bank key reaches the wire through `projectDeviceForNativeBody`,
+ * and the articulation choice through the same merge. What this table owes is
+ * the *rest* — the patch fields and the wider ensemble surface a lane can
+ * author — spelled as names the engine can parse.
+ */
+describe('the levain body', () => {
+    // The one vocabulary this table does not hold itself: Levain delivers its
+    // panel writes into AudioEngine, so its map arrives through the runtime
+    // sink the composition root registers (`nativeBuiltinParameterNames.ts`)
+    // rather than through an import that would close a cycle. The map itself is
+    // still the module's own, read through its published translation.
+    beforeEach(() => {
+        setAudioDeviceRuntimeSink({
+            nativeBuiltinParameterName: ({ deviceType, paramId }) =>
+                deviceType === 'levain' ? getLevainEngineParameterName({ paramId }) : null,
+        });
+    });
+
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+    });
+
+    it('spells a project id in the engine vocabulary the sampler matches on', () => {
+        expect(bodyOf('levain').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('levain').projectPatch({ masterGain: 0.8, autoDivisiSize: 4 })).toEqual({
+            master_gain: 0.8,
+            auto_divisi_size: 4,
+        });
+    });
+
+    it('spells the project id whose engine name differs from it', () => {
+        expect(bodyOf('levain').parameterName('humanize')).toBe('humanize_amount');
+        expect(bodyOf('levain').projectPatch({ humanize: 0.4 })).toEqual({ humanize_amount: 0.4 });
+    });
+
+    // Project truth's `parameterValues` is an open record, and a key the engine
+    // cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the sampler does not address or the wire cannot send', () => {
+        expect(
+            bodyOf('levain').projectPatch({ masterGain: 0.8, presetName: 'Lush Strings', filterCutoff: 0.5 })
+        ).toEqual({ master_gain: 0.8 });
+    });
+
+    it('spells every automatable id the descriptor publishes as a name the carrier admits', () => {
+        const paramIds = (getPluginById('levain')?.parameters ?? [])
+            .filter((parameter) => parameter.automatable)
+            .map((parameter) => parameter.id);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('levain').parameterName(paramId)).toBe(getLevainEngineParameterName({ paramId }));
+            expect(bodyOf('levain').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+            expect(bodyOf('levain').addressesParameter(paramId)).toBe(true);
+        }
+    });
+
+    // The engine's own snake_case spelling is not a project id and must not
+    // resolve: admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the translation this chain is welded to.
+    it('refuses the engine spelling and an unknown id', () => {
+        expect(bodyOf('levain').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('levain').addressesParameter('bogus')).toBe(false);
+    });
+
+    // The articulation is a string in project truth, so `parameterValues`
+    // never holds it and this table has nothing to translate — it reaches the
+    // record through `projectDeviceForNativeBody`'s device-state merge. What
+    // must agree is the *name* the two routes use, or the merge would write a
+    // key the body already spells differently.
+    it('spells the articulation under the name the device-state projection emits', () => {
+        const projected = projectLevainDeviceStateToNativePatch({
+            deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } },
+        });
+
+        expect(Object.keys(projected ?? {})).toEqual([bodyOf('levain').parameterName('currentArticulation')]);
+        expect(bodyOf('levain').projectPatch({})).toEqual({});
     });
 });
 

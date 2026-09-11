@@ -144,6 +144,22 @@ export type AudioGraphStripState = Readonly<{
 }>;
 
 /**
+ * A device as it travels a graph command, carrying the native sample bank key
+ * beside project truth.
+ *
+ * Not project truth and never read off a saved device: the bank store keys it,
+ * and `projectDeviceForNativeBody` sets it for the one device type whose
+ * native body is built from a staged bank rather than from `parameterValues`.
+ *
+ * It lives on the command device rather than the project view because the
+ * Arrangement device is assigned to the project view at injected call sites
+ * such as `buildDeviceChain`, and an optional property the Arrangement device
+ * lacks makes the type-aware lint resolve those calls to the injectable's
+ * `any` signature.
+ */
+export type AudioGraphDevice = Device & { sampleBankKey?: string };
+
+/**
  * A device chain, in project order, as one splice.
  *
  * Ordering is the whole content of a chain command: the device *identities* and
@@ -153,7 +169,7 @@ export type AudioGraphStripState = Readonly<{
  * the fan-in the web `rebuildChain` permits and a strictly serial chain cannot
  * express.
  */
-export type AudioGraphDeviceChain = readonly Device[];
+export type AudioGraphDeviceChain = readonly AudioGraphDevice[];
 
 /**
  * A parameter a backend can be told to write.
@@ -434,7 +450,7 @@ export type AudioGraphRemoveSendCommand = Readonly<{
 export type AudioGraphInsertDeviceCommand = Readonly<{
     kind: 'insert-device';
     trackId: AudioGraphStripId;
-    device: Device;
+    device: AudioGraphDevice;
     index: number;
 }>;
 
