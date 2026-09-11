@@ -1,0 +1,89 @@
+src/modules/Toaster/useCases/toasterSubscriber.ts
+  s_9b530f08172a54::t_a52b2b2badc519 77-83
+src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts
+  s_9b530f08172a54::t_42a206d4e93ace 34-47
+  s_9b530f08172a54::t_08cd5386c7bf99 7-8
+src/modules/Toaster/useCases/toasterPadEngineParamName.ts
+  s_9b530f08172a54::t_d1095b5c171f4d 1-30
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterKitParam.spec.ts
+  s_9b530f08172a54::t_ff7fd746637811 5-13
+  s_9b530f08172a54::t_6d4293f0cd8793 23
+  s_9b530f08172a54::t_3050e8a86f5843 143-162
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterPadParam.spec.ts
+  s_9b530f08172a54::t_21cbe8fd953ff5 140-172
+  s_9b530f08172a54::t_a9830a50581856 40
+  s_9b530f08172a54::t_c979dd76bd09d7 28-30
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_c2f809b31eb07f 20556-20585,20587,20592-20593,20599-20609,20615-20624,20626-20634,20638-20639,20643-20644,20660-20718
+src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts
+  s_9b530f08172a54::t_049748f80f257a 54-60
+  s_9b530f08172a54::t_32b156f5cd1ced 6
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_928885dbeb867a 63
+src/modules/Toaster/useCases/setPadParamImmediate.ts
+  s_9b530f08172a54::t_5d26db06417976 8,10
+  s_9b530f08172a54::t_7328ce1b234a1c 45-49
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_1795b947ebecdc 149-167
+src/modules/Toaster/useCases/__tests__/loadToasterKit.spec.ts
+  s_9b530f08172a54::t_d7495902bef4ee 62
+  s_9b530f08172a54::t_2478bc6786da42 40-42
+  s_9b530f08172a54::t_0a097d51341de4 210-241
+src/modules/AudioEngine/useCases/deviceControls/writeNativeBuiltinParameters.ts
+  s_9b530f08172a54::t_ba99d868e2ff4d 1-34
+src/modules/Toaster/useCases/projectToasterKitToNativePatch.ts
+  s_9b530f08172a54::t_4da5aa58d2a166 40
+  s_9b530f08172a54::t_40eb050571769c 4
+  s_9b530f08172a54::t_07505ab71ed093 24-25
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_d0cca52632c961 67-87
+  s_9b530f08172a54::t_a2b033cfd46bca 66,287-288,299-300,318-319,337-338,356-357,381-382,438-439,492-493,523-528,582-583
+src/modules/Toaster/useCases/writeToasterParamsNatively.ts
+  s_9b530f08172a54::t_dc00e8d0e1fa6a 1-38
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_9b530f08172a54::t_2a376f7503181c 214-237
+  s_9b530f08172a54::t_f7467be96b01f8 67
+  s_9b530f08172a54::t_1520b42a9c4785 368-380
+  s_9b530f08172a54::t_f5d18f4eb47181 41-50
+src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts
+  s_9b530f08172a54::t_29f7bac4949f2a 28-31,38
+  s_9b530f08172a54::t_1cf41557c80fee 6
+src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts
+  s_9b530f08172a54::t_19b9d193ccc7f6 4-5
+  s_9b530f08172a54::t_ac203a6078fc42 27-31
+src/modules/Toaster/useCases/loadToasterKit.ts
+  s_9b530f08172a54::t_13bd1812b0607c 36-37,44-49
+  s_9b530f08172a54::t_987cb9f93b0ee9 9
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_0241ee3f23bb1f 64-66
+  s_9b530f08172a54::t_59d75b239ab897 941-958,960
+  s_9b530f08172a54::t_e677583cb45485 519-526
+  s_9b530f08172a54::t_a6a5b0b0d36d4d 4-9
+  s_9b530f08172a54::t_a350b341534f80 10,67,263-265,290-292,515-518,527-531,959,961-968
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_2b03920a712445 232-297
+src/modules/Toaster/useCases/toasterNativeParamName.ts
+  s_9b530f08172a54::t_b63532a345e630 1-20
+src/modules/Toaster/useCases/__tests__/disposeToasterDevice.spec.ts
+  s_9b530f08172a54::t_1ea5ebe7d81518 24
+src/modules/Toaster/useCases/__tests__/sixteenLevels.spec.ts
+  s_9b530f08172a54::t_0819a976b78894 35
+src/modules/Toaster/useCases/__tests__/toasterLiveOfflineParity.spec.ts
+  s_9b530f08172a54::t_59966a10e699a8 10,24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8a60964ba4dce90b90b7db83457a6a60b659b560",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
