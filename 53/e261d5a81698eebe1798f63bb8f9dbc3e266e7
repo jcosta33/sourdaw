@@ -1,0 +1,20 @@
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_22dfa57b23e782 959
+  s_06adf2b091dc62::t_657568c363d51f 971,974
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "53e261d5a81698eebe1798f63bb8f9dbc3e266e7",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
