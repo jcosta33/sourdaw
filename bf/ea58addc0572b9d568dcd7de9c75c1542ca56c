@@ -1,0 +1,252 @@
+Cargo.lock
+  h_1228e573df1f42 631
+crates/daw-engine/Cargo.toml
+  h_1228e573df1f42 28-33
+crates/daw-engine/src/scheduler.rs
+  h_1228e573df1f42 39-40,304,324,344,380-382,409,1056,1095,1272-1318,1335,1398,2345-2377,3825-4034,4097-4100,7363-7368,8423,8438-8439,22511-23025
+crates/sourdaw-native/src/commands/engine_transport.rs
+  h_1228e573df1f42 44,170-221,236,252,256-270,470-473,479,600-613,623-625,630-679,723-730,752-759,784-791
+crates/sourdaw-native/src/commands/graph.rs
+  h_1228e573df1f42 157,170,917-926,1069-1088,1959-1960,2054-2058,2063,2107,2252-2261,2320-2323,2365,2737,2845,3040,5461,5479,5523,5876,8065,8160,8257,8349,8939,10688,10696,11420-11497
+public/legal/DEPENDENCY-LICENSES.txt
+  h_1228e573df1f42 9
+release/dependency-license-proofs.json
+  h_1228e573df1f42 4,28
+release/open-source-inventory.json
+  h_1228e573df1f42 165-166,399,1712
+scripts/__tests__/resourceGuard.spec.ts
+  h_1228e573df1f42 29,857-898,923-933,973-1008
+scripts/resourceGuard.ts
+  h_1228e573df1f42 115,119-151,153
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 1,68-91,119-120,128-131,202-203,205-214,351,488-491,595,1016-1127
+src/app/__tests__/nativeBuiltinParameterNames.spec.ts
+  h_1228e573df1f42 1-45
+src/app/bootstrap.ts
+  h_1228e573df1f42 57,193-194,459-470,510-529
+src/app/nativeBuiltinParameterNames.ts
+  h_1228e573df1f42 1-68
+src/app/nativeSampleBanks.ts
+  h_1228e573df1f42 1-92
+src/app/projectNativeDeviceState.ts
+  h_1228e573df1f42 2,38-45,52-53
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  h_1228e573df1f42 149
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  h_1228e573df1f42 126-154,223-249,694-707
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  h_1228e573df1f42 32
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_1228e573df1f42 2331-2337,2355-2358
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  h_1228e573df1f42 14
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  h_1228e573df1f42 58
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  h_1228e573df1f42 41
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_1228e573df1f42 28,46-47,164-184
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_1228e573df1f42 24,96-102,159,813-879
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  h_1228e573df1f42 158
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  h_1228e573df1f42 147
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_1228e573df1f42 393-399
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  h_1228e573df1f42 3-4,67-78,80-91,134-171,213,216-218
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  h_1228e573df1f42 146-161,172,453
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  h_1228e573df1f42 73-85,88-106,120
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  h_1228e573df1f42 1-128
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  h_1228e573df1f42 29-39,78,100-210
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  h_1228e573df1f42 3-7,34-96,115
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  h_1228e573df1f42 12,17,256-376
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  h_1228e573df1f42 579-664
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/registerNativeSampleBanks.spec.ts
+  h_1228e573df1f42 1-355
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  h_1228e573df1f42 461-527
+src/modules/AudioEngine/repositories/nativeGraph/collectNativeSampleBankKeys.ts
+  h_1228e573df1f42 1-28
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  h_1228e573df1f42 33-39,58,70-76,173,186-196
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  h_1228e573df1f42 76,113-119,189,254-268
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  h_1228e573df1f42 16-17,20-28
+src/modules/AudioEngine/repositories/nativeGraph/registerNativeSampleBanks.ts
+  h_1228e573df1f42 1-193
+src/modules/AudioEngine/repositories/nativeGraph/registeredNativeSampleBankKeys.ts
+  h_1228e573df1f42 1-44
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  h_1228e573df1f42 44,64,167,176
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  h_1228e573df1f42 95-98,100
+src/modules/AudioEngine/useCases/index.ts
+  h_1228e573df1f42 121-122
+src/modules/AudioEngine/useCases/livePlayback/__tests__/isTunerTelemetryNativelyOwned.spec.ts
+  h_1228e573df1f42 1-61
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_1228e573df1f42 21,23,25,27,101-167,192-193,219-222,242-245,263-266,920-1003,1054-1114
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  h_1228e573df1f42 1,5,23-24,50,53-75,90-97,366-442
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  h_1228e573df1f42 678
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  h_1228e573df1f42 360
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  h_1228e573df1f42 180
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  h_1228e573df1f42 170-228
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  h_1228e573df1f42 634-641,654,664,681
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  h_1228e573df1f42 380-396
+src/modules/AudioEngine/useCases/livePlayback/__tests__/publishNativeTunerTelemetry.spec.ts
+  h_1228e573df1f42 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineMasterPeak.spec.ts
+  h_1228e573df1f42 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineStripPeak.spec.ts
+  h_1228e573df1f42 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/soundsNativeNotes.spec.ts
+  h_1228e573df1f42 18-26
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  h_1228e573df1f42 343-361,391-407
+src/modules/AudioEngine/useCases/livePlayback/isTunerTelemetryNativelyOwned.ts
+  h_1228e573df1f42 1-30
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_1228e573df1f42 42,200-210,294-318,575-613,666-699
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  h_1228e573df1f42 63,156-162
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  h_1228e573df1f42 24-35,49,76-94,100,103,105
+src/modules/AudioEngine/useCases/livePlayback/publishNativeTunerTelemetry.ts
+  h_1228e573df1f42 1-69
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  h_1228e573df1f42 95,98,926-939,1004
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  h_1228e573df1f42 61,376-383
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_1228e573df1f42 191
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 395,838,1438,1497
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  h_1228e573df1f42 4,14,79-98
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  h_1228e573df1f42 25
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  h_1228e573df1f42 52
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_1228e573df1f42 270
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  h_1228e573df1f42 206-213
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_1228e573df1f42 43
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  h_1228e573df1f42 44
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_1228e573df1f42 144
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_1228e573df1f42 965-970
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  h_1228e573df1f42 424-429
+src/modules/Levain/models/LevainNativeBankKey.ts
+  h_1228e573df1f42 1-34
+src/modules/Levain/models/LevainPatch.ts
+  h_1228e573df1f42 75-85,346
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  h_1228e573df1f42 31-52,159,166-167,169,190-192,216,223
+src/modules/Levain/stores/levainStore.ts
+  h_1228e573df1f42 41
+src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts
+  h_1228e573df1f42 1-199
+src/modules/Levain/useCases/__tests__/getLevainEngineParameterName.spec.ts
+  h_1228e573df1f42 1-59
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  h_1228e573df1f42 205-207,307
+src/modules/Levain/useCases/__tests__/levainNativeBankKey.spec.ts
+  h_1228e573df1f42 1-59
+src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts
+  h_1228e573df1f42 29
+src/modules/Levain/useCases/__tests__/projectLevainDeviceStateToNativePatch.spec.ts
+  h_1228e573df1f42 1-35
+src/modules/Levain/useCases/acquireLevainNativeBank.ts
+  h_1228e573df1f42 1-55
+src/modules/Levain/useCases/decodedBankToNativeSampleBank.ts
+  h_1228e573df1f42 1-152
+src/modules/Levain/useCases/getLevainEngineParameterName.ts
+  h_1228e573df1f42 1-61
+src/modules/Levain/useCases/index.ts
+  h_1228e573df1f42 1,4-6
+src/modules/Levain/useCases/levainNativeBankKey.ts
+  h_1228e573df1f42 1-36
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  h_1228e573df1f42 24-25,467-559
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  h_1228e573df1f42 7,43-47,50-59,78-92,108,214,265,297,320-323,325,328,331,334,340-341,344,347,350,381
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  h_1228e573df1f42 7,20
+src/modules/Levain/useCases/projectLevainDeviceStateToNativePatch.ts
+  h_1228e573df1f42 1-38
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_1228e573df1f42 235
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_1228e573df1f42 21
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_1228e573df1f42 36
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.integration.spec.ts
+  h_1228e573df1f42 31
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  h_1228e573df1f42 52
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  h_1228e573df1f42 107
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_1228e573df1f42 60
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_1228e573df1f42 74
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  h_1228e573df1f42 21
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_1228e573df1f42 38
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  h_1228e573df1f42 40
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  h_1228e573df1f42 46
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  h_1228e573df1f42 23,388-425
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_1228e573df1f42 380-399
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx
+  h_1228e573df1f42 88-114,119-144,163-166,169,179-180,184,194-199,202
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/FaustInstrumentLayout.spec.tsx
+  h_1228e573df1f42 2,87-94,138,140-146,160,173,175-178,186-318
+src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts
+  h_1228e573df1f42 20
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_1228e573df1f42 72
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  h_1228e573df1f42 116
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 854,894,926
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  h_1228e573df1f42 682-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bfea58addc0572b9d568dcd7de9c75c1542ca56c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
