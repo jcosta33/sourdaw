@@ -840,4 +840,41 @@ describe('TrackContextMenu', () => {
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'clearSolos' });
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
+
+    it('should render Disable Track when track is not disabled and dispatch disableTrack on click', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+        expect(screen.getByText('Disable Track')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Disable Track'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'disableTrack',
+            payload: { trackId: 'track1', disabled: true },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('should render Enable Track when track is disabled and dispatch disableTrack on click', () => {
+        const disabledTrack = { ...mockTrack, disabled: true };
+        renderWithTooltip(
+            <TrackContextMenu track={disabledTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+        expect(screen.getByText('Enable Track')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Enable Track'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'disableTrack',
+            payload: { trackId: 'track1', disabled: false },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
 });
