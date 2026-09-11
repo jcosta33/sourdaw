@@ -16,9 +16,11 @@ export type ProviderRouteView = {
         model: string | null;
     };
     platform: { available: boolean; evidence: string | null; unavailableReason: ModelRouteRejectionReason | null };
+    options: readonly { routeId: string; admitted: boolean; reasons: readonly ModelRouteRejectionReason[] }[];
     capability: { operations: readonly string[]; modalities: readonly string[]; streaming: boolean } | null;
     fidelity: 'release-owned-local' | 'configured-remote' | null;
     fallback: { attempted: boolean; reasons: readonly string[] };
+    fallbackPolicy: 'local-only' | 'hosted-then-local';
     dataDisclosure: { categories: readonly AgentDataCategory[]; retention: AgentDataRetention } | null;
     usage: {
         provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
@@ -35,6 +37,8 @@ export type ProviderRouteView = {
         final: boolean;
     }[];
 };
+
+type ProviderRouteOption = ProviderRouteView['options'][number];
 
 type GetProviderRouteViewInput = {
     runId: string;
@@ -103,21 +107,42 @@ function getActualRouteProjection(providerUsage: readonly AgentRunProviderUsage[
     };
 }
 
+/** Every route the resolver judged, admitted or not, in the order the caller offered the candidates. */
+function getRouteOptions(
+    resolution: ReturnType<typeof resolveModelRoute>,
+    candidates: readonly ModelRouteCandidate[]
+): ProviderRouteView['options'] {
+    const options: ProviderRouteOption[] = [
+        ...resolution.routes.map((route) => ({ routeId: route.routeId, admitted: true, reasons: [] })),
+        ...resolution.rejected.map((rejection) => ({
+            routeId: rejection.routeId,
+            admitted: false,
+            reasons: rejection.reasons,
+        })),
+    ];
+    const rankByRouteId = new Map(candidates.map((candidate, index) => [candidate.routeId, index]));
+    // A rejected id no candidate carries is an unknown requested route; it sorts after every known one.
+    const rank = (option: ProviderRouteOption): number => rankByRouteId.get(option.routeId) ?? candidates.length;
+    return options.toSorted((left, right) => rank(left) - rank(right));
+}
+
 function getRoutePlatformProjection(input: {
     requestedRoute: string;
     candidates: readonly ModelRouteCandidate[];
     dataPolicy: 'local-only' | 'remote-allowed';
-}): Pick<ProviderRouteView, 'platform' | 'capability' | 'fidelity'> {
+}): Pick<ProviderRouteView, 'platform' | 'options' | 'capability' | 'fidelity'> {
     const resolution = resolveModelRoute({
         requestedRoute: input.requestedRoute,
         requirements: { ...RELAXED_ROUTE_REQUIREMENTS, dataPolicy: input.dataPolicy },
         candidates: input.candidates,
     });
+    const options = getRouteOptions(resolution, input.candidates);
     if (resolution.status === 'ready') {
         const selected =
             resolution.routes.find((route) => route.routeId === resolution.selectedRouteId) ?? resolution.routes[0]!;
         return {
             platform: { available: true, evidence: selected.platform.evidence, unavailableReason: null },
+            options,
             capability: {
                 operations: selected.capabilities.operations,
                 modalities: selected.capabilities.modalities,
@@ -130,6 +155,7 @@ function getRoutePlatformProjection(input: {
     const unavailableReason = requestedRejection?.reasons[0] ?? resolution.rejected[0]?.reasons[0] ?? null;
     return {
         platform: { available: false, evidence: null, unavailableReason },
+        options,
         capability: null,
         fidelity: null,
     };
@@ -203,14 +229,15 @@ export function getProviderRouteView(input: GetProviderRouteViewInput): Provider
     const candidates = input.candidates ?? getDefaultCandidates();
     /**
      * The requested route carries the run's data policy; disclosures are attempt evidence
-     * that arrives only after admission.
+     * that arrives only after admission. Only an explicit hosted request widens the chain
+     * past the browser — an automatic or WebLLM preference stays local even when no local
+     * route is admitted.
      */
-    const dataPolicy: 'local-only' | 'remote-allowed' =
-        run.modelRoute.requestedRoute === 'cloud' ? 'remote-allowed' : 'local-only';
-    const { platform, capability, fidelity } = getRoutePlatformProjection({
+    const hostedRequested = run.modelRoute.requestedRoute === 'cloud';
+    const { platform, options, capability, fidelity } = getRoutePlatformProjection({
         requestedRoute: run.modelRoute.requestedRoute,
         candidates,
-        dataPolicy,
+        dataPolicy: hostedRequested ? 'remote-allowed' : 'local-only',
     });
     return {
         runId: run.runId,
@@ -220,9 +247,11 @@ export function getProviderRouteView(input: GetProviderRouteViewInput): Provider
         },
         actual: getActualRouteProjection(run.providerUsage),
         platform,
+        options,
         capability,
         fidelity,
         fallback: getFallbackProjection(run.modelRoute.requestedRoute, run.providerUsage),
+        fallbackPolicy: hostedRequested ? 'hosted-then-local' : 'local-only',
         dataDisclosure: getDataDisclosureProjection(run.providerUsage),
         usage: getUsageProjection(run.providerUsage),
         cost: getCostProjection(run),

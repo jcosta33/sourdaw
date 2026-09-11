@@ -21,6 +21,7 @@ import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
 import { setTrackColor } from '../../../useCases/setTrackGainPan/setTrackColor';
 import { toggleVariationLanes } from '../../../useCases/toggleTrackState/toggleVariationLanes';
+import { useTracks } from '../../hooks/useTracks';
 import { TrackContextMenu } from '../TrackContextMenu';
 
 // Mock external dependencies
@@ -92,6 +93,13 @@ vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
 }));
 
+vi.mock('../../hooks/useTracks', () => ({
+    useTracks: vi.fn(() => ({
+        tracks: [],
+        selectedTrackId: null,
+    })),
+}));
+
 const projectEpoch = vi.hoisted(() => {
     let epoch = 0;
     let latest: { isCurrent: () => boolean } | null = null;
@@ -148,6 +156,7 @@ describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         projectEpoch.reset();
+        vi.mocked(useTracks).mockReturnValue({ tracks: [mockTrack], selectedTrackId: mockTrack.id });
     });
 
     it('should render without crashing', () => {
@@ -800,5 +809,35 @@ describe('TrackContextMenu', () => {
         expect(toggleVariationLanes).not.toHaveBeenCalled();
         expect(renameTrack).not.toHaveBeenCalled();
         expect(track.showVariationLanes).toBe(true);
+    });
+
+    it('should not render Clear All Solos menu item when no tracks are soloed', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+        expect(screen.queryByText('Clear All Solos')).not.toBeInTheDocument();
+    });
+
+    it('should render Clear All Solos menu item and dispatch clearSolos on click when a track is soloed', () => {
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [{ ...mockTrack, soloed: true }],
+            selectedTrackId: mockTrack.id,
+        });
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+        expect(screen.getByText('Clear All Solos')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Clear All Solos'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'clearSolos' });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 });

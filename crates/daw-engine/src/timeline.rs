@@ -145,13 +145,15 @@ pub enum AutomationTarget {
 /// spells today is well inside it, and the buffer is sized for those
 /// vocabularies to grow without the wire changing shape.
 ///
-/// Grinder's own vocabulary is the one that presses closest to it: its
-/// dynamic `neuralCustomConvWeight{layer}_{idx}` family (`neural.rs`'s
-/// `parse_custom_conv_weight_param`, fed by `grinderProcessor.ts`'s
-/// `MAX_NEURAL_CONV_LAYERS` of 10 layers and a 3-wide weight index) tops out
-/// at `neuralCustomConvWeight9_2`, 25 bytes — seven bytes of headroom under
-/// this ceiling.
-pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
+/// Levain's own vocabulary is the one that presses closest to it:
+/// `LevainEngine::set_param` (`crates/daw-dsp/src/levain/engine.rs`) owns
+/// `legato_portamento_velocity_threshold`, 36 bytes — four bytes of headroom
+/// under this ceiling. Grinder's dynamic `neuralCustomConvWeight{layer}_{idx}`
+/// family (`neural.rs`'s `parse_custom_conv_weight_param`, fed by
+/// `grinderProcessor.ts`'s `MAX_NEURAL_CONV_LAYERS` of 10 layers and a 3-wide
+/// weight index) tops out at `neuralCustomConvWeight9_2`, 25 bytes, well under
+/// both.
+pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 40;
 
 /// One built-in body's own parameter name, carried inline.
 ///
@@ -181,10 +183,10 @@ pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
 /// both runtimes alike.
 ///
 /// The buffer is carried by value everywhere the address travels, and that is
-/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
-/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
-/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
-/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// what it costs: [`DeviceParam`] is 42 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 64 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 4.0 KiB rather than
+/// 1.5 KiB — roughly 15 MiB more preallocated across a scheduler's whole
 /// effect table. That is a one-off cost at construction, paid for a wire that
 /// never has to enumerate a vocabulary `daw-dsp` owns.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -3504,8 +3506,8 @@ mod tests {
         let size = std::mem::size_of::<DeviceParam>();
 
         assert_eq!(
-            size, 34,
-            "a device parameter address is {size} bytes, not the 34 documented on \
+            size, 42,
+            "a device parameter address is {size} bytes, not the 42 documented on \
              `BuiltinParamName` — move that figure, the `DeviceParamEvent` and per-queue \
              byte counts, and the per-scheduler total with it"
         );

@@ -28,6 +28,28 @@ vi.mock('../../../useCases/autoLoadSamples', () => ({
 
 const DEVICE_ID = 'levain-1';
 
+/**
+ * The native carrier's half of `setRuntimeParam`.
+ *
+ * A Levain strip has two carriers, and the bridge writes both on every
+ * engine-spelled edit: the worklet keeps the value for the moment a native
+ * session's gate reopens, and the native engine is what sounds the strip while
+ * it is carried. A panel edit that reached only the worklet would be inaudible
+ * on a natively carried strip.
+ */
+const writeNativeBuiltinParameters = vi.fn();
+
+/** Value the native carrier was last told for one engine parameter, or undefined. */
+function lastNativeValue(name: string): number | undefined {
+    const call = writeNativeBuiltinParameters.mock.calls.findLast(
+        (candidate) => name in (candidate[2] as Record<string, number>)
+    );
+    if (!call) {
+        return undefined;
+    }
+    return (call[2] as Record<string, number>)[name];
+}
+
 type PostedMessage = { type: string; name?: string; value?: number };
 
 type SetParamMock = Mock<LevainDevice['setParam']>;
@@ -134,13 +156,17 @@ describe('LevainPanel edits reach the live engine', () => {
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
+            writeNativeBuiltinParameters,
         });
 
         trackStore.set({ ...defaultTrackState, tracks: makeLevainTracks() });
         levainStore.set({});
 
         await registerLevainDevice(DEVICE_ID, { setParam, handleCc: vi.fn() }, fakePort().port);
+        // Registration applies the whole patch to both carriers. Cleared
+        // together so each case reads only what the panel edit sent.
         setParam.mockClear();
+        writeNativeBuiltinParameters.mockClear();
     });
 
     afterEach(() => {
@@ -161,6 +187,9 @@ describe('LevainPanel edits reach the live engine', () => {
 
         expect(offlineValue(posted, 'current_articulation')).toBe(13);
         expect(lastLiveValue(setParam, 'current_articulation')).toBe(offlineValue(posted, 'current_articulation'));
+        // The strip's other carrier. Natively carried, the worklet is gated
+        // shut, so this is the write a musician actually hears.
+        expect(lastNativeValue('current_articulation')).toBe(offlineValue(posted, 'current_articulation'));
     });
 
     it('keeps the panel readout on the articulation it sent', () => {
@@ -184,12 +213,14 @@ describe('LevainPanel edits reach the live engine', () => {
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' as const }),
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
+            writeNativeBuiltinParameters,
         });
         render(<LevainPanel deviceId={DEVICE_ID} />);
 
         clickArticulation('Tremolo');
 
         expect(lastLiveValue(setParam, 'current_articulation')).toBeUndefined();
+        expect(lastNativeValue('current_articulation')).toBeUndefined();
     });
 
     it('resends the mic mix to the engine when the instrument changes under it', async () => {

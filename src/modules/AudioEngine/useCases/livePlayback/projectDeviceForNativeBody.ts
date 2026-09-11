@@ -21,7 +21,18 @@
  * its kit lives entirely in `deviceState`. This is the seam that folds it back
  * in before the record leaves: `projectNativeDeviceState` turns a device's
  * opaque state into the numeric record its native body needs, and that record
- * is merged OVER the table projection. The kit wins on an overlapping name
+ * is merged OVER the table projection.
+ *
+ * One body is not built from a record at all. A Levain instance is built from a
+ * *sample bank* the renderer staged under a key, and `map_device` answers `Err`
+ * for the device by name when no committed bank stands at that key — which
+ * refuses the batch whole on any strip that contributes audio. So the same sink
+ * that decodes opaque state also names the bank the state asks for, and the key
+ * rides beside the record as `sampleBankKey` — the one field on the wire that is
+ * neither project truth nor a parameter, and the reason the return shape is
+ * AudioEngine's own device view rather than Arrangement's model.
+ *
+ * The kit wins on an overlapping name
  * (`master_gain` is both a Toaster descriptor id and a kit field) because the
  * web offline path already resolves that overlap the same way — it replays
  * `parameterValues` while building the offline strategy
@@ -35,6 +46,7 @@
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { type AudioGraphDevice as NativeBodyDevice } from '../../models/AudioGraphBackend';
 
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody } from './nativeBuiltinBodies';
 
@@ -61,15 +73,34 @@ function projectDeviceState(deviceType: string, deviceState: DeviceStateChunk | 
     return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceType, deviceState });
 }
 
-export function projectDeviceForNativeBody(device: Device): Device {
+/**
+ * The bank key a device's own state names, as an optional field to spread.
+ *
+ * Absent rather than `undefined` for every device whose body is built from its
+ * record: `serializeAudioGraphCommand` omits the field then, and the payload
+ * stays byte-identical to what the engine took before banks existed.
+ *
+ * A device holding no state is asked anyway, unlike `projectDeviceState` below.
+ * The two questions differ: a chunkless device has no state to project, but it
+ * still *sounds* something — the owning module's default instrument — and only
+ * that module can name the bank for it. Skipping the sink here would send a
+ * fresh Levain naming no bank, which refuses the batch on any audible strip.
+ */
+function sampleBankKeyField(deviceType: string, deviceState: DeviceStateChunk | undefined) {
+    const bankKey = getAudioDeviceRuntimeSink().nativeSampleBankKey({ deviceType, deviceState });
+    return bankKey === null ? {} : { sampleBankKey: bankKey };
+}
+
+export function projectDeviceForNativeBody(device: Device): NativeBodyDevice {
     const body = nativeBuiltinBody(device.type);
     if (!body) {
         return device;
     }
     const patch = body.projectPatch(device.parameterValues);
+    const bank = sampleBankKeyField(device.type, device.deviceState);
     const projectedState = projectDeviceState(device.type, device.deviceState);
     if (!projectedState) {
-        return { ...device, parameterValues: patch };
+        return { ...device, ...bank, parameterValues: patch };
     }
-    return { ...device, parameterValues: { ...patch, ...shapedFiniteProjectedState(projectedState) } };
+    return { ...device, ...bank, parameterValues: { ...patch, ...shapedFiniteProjectedState(projectedState) } };
 }

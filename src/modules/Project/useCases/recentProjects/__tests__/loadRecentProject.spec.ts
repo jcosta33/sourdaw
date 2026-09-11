@@ -35,6 +35,7 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),

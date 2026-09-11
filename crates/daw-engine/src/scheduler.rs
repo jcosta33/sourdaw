@@ -30,6 +30,7 @@ use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
+use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
 use daw_dsp::toaster::ToasterInstance;
@@ -297,6 +298,7 @@ pub enum BuiltinEffectType {
     Proof,
     DutchOven,
     Toaster,
+    Levain,
 }
 
 impl BuiltinEffectType {
@@ -315,6 +317,7 @@ impl BuiltinEffectType {
             Self::Proof => "proof",
             Self::DutchOven => "dutch-oven",
             Self::Toaster => "toaster",
+            Self::Levain => "levain",
         }
     }
 
@@ -333,6 +336,7 @@ impl BuiltinEffectType {
             "proof" => Some(Self::Proof),
             "dutch-oven" => Some(Self::DutchOven),
             "toaster" => Some(Self::Toaster),
+            "levain" => Some(Self::Levain),
             _ => None,
         }
     }
@@ -364,6 +368,10 @@ impl BuiltinEffectType {
             // A drum machine sounds its own pads: what reaches it is a note,
             // what leaves it is the kit, and it processes no input at all.
             Self::Toaster => true,
+            // A sampler sounds the bank it was loaded with: what reaches it is
+            // a note, what leaves it is the recording, and it processes no
+            // input of its own either.
+            Self::Levain => true,
         }
     }
 
@@ -389,6 +397,7 @@ impl BuiltinEffectType {
             Self::Proof => PROOF_PATCH_PRECEDENCE,
             Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
             Self::Toaster => TOASTER_PATCH_PRECEDENCE,
+            Self::Levain => LEVAIN_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -1035,6 +1044,7 @@ pub enum PluginCore {
     Proof(Box<ProofBody>),
     DutchOven(Box<DutchOvenBody>),
     Toaster(Box<ToasterBody>),
+    Levain(Box<LevainBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1057,6 +1067,22 @@ impl PluginCore {
             BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
             BuiltinEffectType::DutchOven => Self::dutch_oven_with_patch(sample_rate, &[]),
             BuiltinEffectType::Toaster => Self::toaster_with_patch(sample_rate, &[]),
+            // The one arm this constructor cannot finish building. A sampler
+            // sounds the bank loaded into its instance and nothing else, and a
+            // bank is a control-thread load this signature carries no source
+            // for ([`Self::levain_with_patch`]), so the instance built here
+            // holds none and the body renders digital silence
+            // (`tests/levain_unloaded_instance_is_silent.rs`, `daw-dsp`).
+            //
+            // Silence is the honest answer for a producer with no bank to
+            // give: a sampler holding no recordings has nothing to sound, and
+            // standing a tone in for the missing content is exactly what the
+            // instrument's own fallback is disarmed at construction to
+            // prevent. So a name-resolved Levain stays silent until a caller
+            // with a bank uses the door below, rather than singing a sine.
+            BuiltinEffectType::Levain => {
+                Self::levain_with_patch(LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES), &[])
+            }
         }
     }
 
@@ -1204,6 +1230,35 @@ impl PluginCore {
         Self::Toaster(Box::new(body))
     }
 
+    /// Build a Levain carrying `patch` around an instance the caller has
+    /// already loaded, on the control thread.
+    ///
+    /// The one door here that takes an instance rather than a sample rate,
+    /// because a sampler is its bank: a Levain holding none renders silence
+    /// whatever its patch says, and loading one is `begin_sample_bank`, an
+    /// `add_sample` per recording, an `add_zone` per zone, `build_zone_map`
+    /// and `commit_sample_bank` (`crates/daw-dsp/src/levain/mod.rs`) — every
+    /// one of them an allocation the audio thread may not perform (ADR 0020),
+    /// and the last of them a replacement of the zone map, the sample pool and
+    /// the mic mixer. So the caller loads on this thread and hands the loaded
+    /// instance over, and the body never learns where a bank comes from.
+    ///
+    /// The patch is written into the instance before it crosses the ring for
+    /// the same reason as [`Self::fermenter_with_patch`]: a sampler's patch is
+    /// the master gain, the humanization model, the legato thresholds, the
+    /// expression and vibrato ranges, the performance-intelligence keys, the
+    /// three macro knobs and three names per mic position, and the command
+    /// ring is finite.
+    ///
+    /// The ordering law here is [`LEVAIN_PATCH_PRECEDENCE`], which is empty —
+    /// applied through [`BuiltinEffectType::patch_precedence`] all the same, so
+    /// the record build is one code path with the other bodies'.
+    pub fn levain_with_patch(instance: LevainInstance, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = LevainBody::new(instance);
+        body.load_patch(patch);
+        Self::Levain(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1219,6 +1274,7 @@ impl PluginCore {
             Self::Proof(_) => Some(BuiltinEffectType::Proof),
             Self::DutchOven(_) => Some(BuiltinEffectType::DutchOven),
             Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
+            Self::Levain(_) => Some(BuiltinEffectType::Levain),
             Self::Native(_) => None,
         }
     }
@@ -1277,6 +1333,7 @@ impl PluginCore {
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Toaster(_)
+            | Self::Levain(_)
             | Self::Gluten(_)
             | Self::Crust(_)
             | Self::Grinder(_)
@@ -1535,9 +1592,11 @@ pub fn precedence_first<'a, T: Copy>(
     led.chain(rest).copied()
 }
 
-/// The Fermenter member channel a note's `i16` channel names, or `None` for a
-/// channel MIDI itself has no address for — the same addresses
-/// [`NoteAddressSet`] refuses, and the same ones the note store will not take.
+/// The member channel a note's `i16` channel names, or `None` for a channel
+/// MIDI itself has no address for — the same addresses [`NoteAddressSet`]
+/// refuses, and the same ones the note store will not take. Shared by every
+/// body that addresses its instrument per channel, so one reading of an
+/// unaddressable channel serves them all.
 fn member_channel(channel: i16) -> Option<u8> {
     if !(0..MIDI_CHANNELS).contains(&channel) {
         return None;
@@ -3382,6 +3441,295 @@ impl ToasterBody {
     }
 }
 
+/// Note-voices one hosted Levain can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`new LevainInstance(sampleRate, 64)`,
+/// `src/modules/AudioEngine/services/levainProcessor.ts`), so a strip that
+/// moves between the two runtimes steals voices at the same point rather than
+/// sounding different under load.
+const LEVAIN_MAX_VOICES: u32 = 64;
+
+/// Frames one hosted Levain run renders.
+///
+/// The web runtime's render quantum, on the reason given at
+/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drains every message stamped inside
+/// the block about to render and then makes one `process` call for that block
+/// (`LevainProcessor.process`, `levainProcessor.ts`), so a scheduled note
+/// sounds from the head of the 128-frame block holding its frame. The
+/// instrument takes no per-note sample offset — `note_on_with_channel` carries
+/// a note, a velocity and a channel and nothing else — so the run length *is*
+/// the timing resolution, and the host splits a callback into runs this long to
+/// land a note on the run the worklet lands it on.
+///
+/// The #3997 caveat on [`GRAND_BOULE_RUN_FRAMES`] applies here for the same
+/// reason: the runs are counted from the span's own frame 0 rather than from
+/// the absolute origin the worklet grids from, so a span starting off that grid
+/// sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the worklet
+/// lands it.
+///
+/// Well inside [`LEVAIN_BLOCK_FRAMES`], the ceiling the instrument's own
+/// channel buffers impose: the run is the finer of the two figures, and the
+/// only one note timing depends on.
+const LEVAIN_RUN_FRAMES: usize = 128;
+
+/// The bound [`LevainBody::render_run`] reads the instrument's channel buffers
+/// under, refused at compile time rather than asserted at render time. A run
+/// longer than the buffers would read past both of them through the raw
+/// pointers `process` returns, so the figure above may never be raised past the
+/// instrument's own ceiling.
+const _: () = assert!(LEVAIN_RUN_FRAMES <= LEVAIN_BLOCK_FRAMES);
+
+/// The names that must land on a Levain before every other entry in its patch:
+/// none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry. No arm of `LevainEngine::set_param`
+/// (`crates/daw-dsp/src/levain/engine.rs`) does that. Each one stores, clamps
+/// or scales the one field it names: `humanize` writes the humanizer's
+/// `amount` and none of the `humanize_*_max` config fields it scales
+/// (`Humanizer::set_amount`, `levain/humanize.rs`); `attack` and `release`
+/// each write their own half of the envelope scaling and then push the pair
+/// recomposed from both halves rather than from the half just written
+/// (`effective_envelope_scaling`), so neither undoes the other;
+/// `expression_dynamic_crossfade_time` rebuilds the dynamic crossfader but
+/// carries its layer count and curve across, and no other name writes either
+/// of those; and a `mic_<n>_<name>` address reaches one field of one mic
+/// position.
+///
+/// One pair does read across rather than write across: `vibrato_depth` derives
+/// the LFO's depth and rate from the `expression_vibrato_*` config fields three
+/// other names write (`VibratoLfo::set_depth_cc`, `levain/expression.rs`), so a
+/// record carrying both settles on whichever the reader draws first. Both patch
+/// routes already draw it the right way round and neither needs a law for it:
+/// the mapper reads a record's keys in name order (`name_ordered_keys`,
+/// `crates/sourdaw-native/src/commands/graph.rs`), which sorts every
+/// `expression_vibrato_*` name ahead of `vibrato_depth`, and the web host's
+/// patch projection carries those config names and leaves the macro to the
+/// panel (`projectLevainPatchToEngineParameters`,
+/// `src/modules/Levain/useCases/`). So a record builds the same device whatever
+/// order a `HashMap` draws it in, and [`precedence_first`] with this empty law
+/// is the identity over it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a Levain name that does come to
+/// alias another is answered here, where every other body answers it.
+const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// The Levain sampler, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// sixty-four voices, its zone map, its mic mixer's delay lines and its two
+/// 4096-frame channel buffers would set the size of every command the engine
+/// sends.
+///
+/// This hosts [`LevainInstance`], the object the browser worklet drives
+/// (`levainProcessor.ts`), so an instrument sounds the same under both runtimes
+/// rather than one of them re-deriving the sampler.
+///
+/// ## What this body holds, and what it does not
+///
+/// The bank. A sampler with no bank has nothing to sound, and loading one
+/// allocates, so the instance arrives loaded from the control thread
+/// ([`PluginCore::levain_with_patch`]) and this body neither loads nor names a
+/// bank source. Everything past the bank — the zones, the articulations, the
+/// mic positions, the realism layer the loaded instrument id selects — is the
+/// instance's own state, reached through the two doors below.
+pub struct LevainBody {
+    instance: LevainInstance,
+}
+
+impl LevainBody {
+    /// Take an instance the caller loaded, on the control thread.
+    ///
+    /// Takes it rather than building it because a bank load is a sequence of
+    /// allocations the audio thread may not perform (ADR 0020) and this
+    /// signature carries nothing a bank could be read from; see
+    /// [`PluginCore::levain_with_patch`], the only caller.
+    fn new(instance: LevainInstance) -> Self {
+        Self { instance }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, delivering each queued note in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what it
+    /// produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`LEVAIN_RUN_FRAMES`], each one
+    /// a whole `process` call, and every event whose frame falls inside a run is
+    /// delivered before that run renders — the split [`ToasterBody::process`]
+    /// takes, for the same reason: the instrument has no note API carrying a
+    /// sample offset, so the run boundary is the whole of the timing resolution
+    /// available, and it is exactly the resolution the web runtime has.
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a note is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(LEVAIN_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Sound or release one note, at the head of the run about to render.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same pitch
+    /// on another channel — the engine honours that narrowing
+    /// (`LevainVoicePool::release_note_matching` skips a voice whose channel
+    /// differs, `crates/daw-dsp/src/levain/voice.rs`). A channel MIDI has no
+    /// address for narrows to nothing ([`member_channel`]), and the note-off
+    /// then releases every voice at that pitch: that is the rule
+    /// [`FermenterBody::push_event`] already applies for the same reason, and
+    /// the rule the worklet applies for a message carrying no channel at all
+    /// (`_dispatch`, `levainProcessor.ts`, which calls the unnarrowed
+    /// `note_off` there). A key nothing can ever lift is the one outcome worse
+    /// than releasing more than was asked.
+    ///
+    /// The velocity crosses on the MIDI scale because `LevainEngine::note_on`
+    /// divides by 127 itself (`levain/engine.rs`); dividing here as well would
+    /// sound every note at a hundredth of its written dynamic.
+    ///
+    /// A note-on carrying velocity 0 sounds rather than releasing. The engine
+    /// does not read it as a release and neither does the worklet's `noteOn`
+    /// arm, and `is_note_on` is the whole of what a [`MidiNoteEvent`] means by
+    /// a release everywhere else in this file, so folding the MIDI running-
+    /// status convention in here alone would make the native strip diverge
+    /// from the web strip on the same event.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let channel = member_channel(event.channel);
+        if event.is_note_on {
+            // An unaddressable channel still sounds: the key went down, and the
+            // base member channel is where a note with no channel of its own
+            // belongs.
+            self.instance
+                .note_on_with_channel(event.note, event.velocity, channel.unwrap_or(0));
+            return;
+        }
+        match channel {
+            Some(channel) => self.instance.note_off_on_channel(event.note, channel),
+            None => self.instance.note_off(event.note),
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through it,
+        // which under the aliasing model retires any pointer derived from an
+        // earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `LevainInstance::new` sizes
+        // at daw-dsp's own `LEVAIN_BLOCK_FRAMES` (imported above, 4096) and no
+        // method resizes; `run` is bounded by `LEVAIN_RUN_FRAMES`, 128, which
+        // the compile-time assertion above holds inside that capacity, so
+        // `process` renders every frame read here without clamping and each
+        // slice lies inside the allocation it names. The two buffers are
+        // separate heap allocations, so the pair of slices aliases nothing, and
+        // neither aliases the callback's own `left`/`right`. Nothing mutates
+        // the instrument between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the sampler's own parameters by name.
+    ///
+    /// Every name reaches the instance verbatim: the vocabulary is a flat
+    /// record of the engine's own snake_case names, including the
+    /// `mic_<n>_<name>` addresses the engine parses itself
+    /// (`LevainEngine::handle_mic_param`), so this body owns no spelling and no
+    /// unit of its own to convert.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]), the instrument resolves it by comparison, and
+    /// every arm stores, clamps or recomputes over state the constructor
+    /// already sized — `expression_dynamic_crossfade_time` rebuilds the dynamic
+    /// crossfader, which is a fixed-size struct holding no buffer
+    /// (`DynamicCrossfader`, `crates/daw-dsp/src/levain/expression.rs`).
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`LEVAIN_PATCH_PRECEDENCE`] is empty and the ordering is the
+    /// identity: one code path, so a future aliasing pair is answered where the
+    /// others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Levain.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay this body reports: none.
+    ///
+    /// The instrument produces its material in the block it was asked for and
+    /// delays nothing on the way out. Every stage of `LevainEngine::process_block`
+    /// is a per-sample read of state the block itself advances — the voices, the
+    /// realism layer, the tone macro, the mic mixer — and the one delay line in
+    /// the instrument is the mic mixer's, which is authored per mic position
+    /// (`MicPosition::delay_samples`) and reachable by no name in the
+    /// vocabulary, so nothing a patch or a live write can do makes this figure
+    /// move.
+    ///
+    /// Declaring none is not the same as declaring zero, and this body declares
+    /// none: [`PluginCore::declared_latency_frames`] answers `None` for it, on
+    /// the Toaster's arm, so no [`GraphCommand::SetEffectLatency`] follows its
+    /// registration. There is no figure a later write could move, because the
+    /// instance publishes no latency to re-read at all.
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -3433,6 +3781,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Toaster(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Levain(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -6708,6 +7060,12 @@ fn process_device(
             body.process(left, right, frames, effect.pending_midi.as_slice());
             effect.pending_midi.clear();
         }
+        // On the same law as the three instruments above: always processed, and
+        // its MIDI always cleared.
+        PluginCore::Levain(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
+            effect.pending_midi.clear();
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -7749,6 +8107,7 @@ mod tests {
             BuiltinEffectType::Proof,
             BuiltinEffectType::DutchOven,
             BuiltinEffectType::Toaster,
+            BuiltinEffectType::Levain,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -7762,7 +8121,8 @@ mod tests {
                 | BuiltinEffectType::Bacteria
                 | BuiltinEffectType::Proof
                 | BuiltinEffectType::DutchOven
-                | BuiltinEffectType::Toaster => {}
+                | BuiltinEffectType::Toaster
+                | BuiltinEffectType::Levain => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -21134,6 +21494,704 @@ mod timeline_tests {
         assert!(
             left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
             "the whole grid rendered silence, so the finiteness above says nothing"
+        );
+    }
+
+    // ── Levain ─────────────────────────────────────────────────────────────
+
+    /// The rate every Levain spec here builds its instance at, which is the
+    /// rate the fixture's sample is authored at. The sampler derives its
+    /// playback ratio from the two, so a reference instance built at another
+    /// rate plays the same sample at another pitch.
+    const LEVAIN_RATE: f32 = 48_000.0;
+
+    /// The voice ceiling the fixture's instances are built with, spelled
+    /// independently of [`LEVAIN_MAX_VOICES`] rather than reusing it: reusing
+    /// the production constant would make the reference agree with the body by
+    /// construction even if the body started building instances of its own.
+    const LEVAIN_SPEC_VOICES: u32 = 64;
+
+    /// The MIDI velocity every Levain fixture strikes with, and — because the
+    /// body passes velocity on the MIDI scale — the figure the reference
+    /// instance is struck with too.
+    const LEVAIN_SPEC_VELOCITY: u8 = 100;
+
+    /// The note the fixture's one zone is rooted at, and the note every spec
+    /// here plays: rooted and played at the same pitch, the sample comes back
+    /// at its authored rate, so a body that sounded the right zone at the wrong
+    /// ratio has nothing to hide behind.
+    const LEVAIN_SPEC_NOTE: u8 = 69;
+
+    /// Frames in the fixture's sample: one second at [`LEVAIN_RATE`], so it
+    /// outlasts every render below and no spec's tail is the sample running
+    /// out.
+    const LEVAIN_SPEC_SAMPLE_FRAMES: usize = 48_000;
+
+    /// The frames the parity specs render: twenty-four whole runs, so the tail
+    /// window below is a whole run of the render rather than a fragment.
+    const LEVAIN_PARITY_FRAMES: usize = LEVAIN_RUN_FRAMES * 24;
+
+    /// The frame the fixture's note is released at.
+    const LEVAIN_RELEASE_FRAME: u32 = 1500;
+
+    /// The run holding it, which is `1500 / LEVAIN_RUN_FRAMES`.
+    const LEVAIN_RELEASE_RUN: usize = 11;
+
+    /// The pan the fixture's one mic position is set to, hard enough off centre
+    /// that the two channels of a mono sample's render differ — which is what
+    /// lets an equality below refuse a body that read one channel twice.
+    const LEVAIN_SPEC_PAN: f32 = -0.8;
+
+    /// One second of 440 Hz at [`LEVAIN_RATE`], with a 5 ms linear fade at each
+    /// end.
+    ///
+    /// The fades are what make the sample a usable oracle: a raw sine starting
+    /// at full amplitude clicks on every strike, and a click is broadband
+    /// enough to survive any filtering a stage might apply, so a comparison
+    /// against it would hold even for a body that lost the tone entirely.
+    fn levain_spec_sample() -> Vec<f32> {
+        /// 5 ms at [`LEVAIN_RATE`].
+        const FADE_FRAMES: f32 = 240.0;
+        /// The pitch the sample is authored at, and — rooted at
+        /// [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
+        const HERTZ: f32 = 440.0;
+
+        (0..LEVAIN_SPEC_SAMPLE_FRAMES)
+            .map(|frame| {
+                let phase = std::f32::consts::TAU * HERTZ * frame as f32 / LEVAIN_RATE;
+                let fade_in = (frame as f32 / FADE_FRAMES).min(1.0);
+                let remaining = (LEVAIN_SPEC_SAMPLE_FRAMES - frame) as f32;
+                let fade_out = (remaining / FADE_FRAMES).min(1.0);
+                phase.sin() * fade_in * fade_out
+            })
+            .collect()
+    }
+
+    /// A sampler holding one committed bank: one mono zone covering the whole
+    /// keyboard and the whole velocity range, through one mic position panned
+    /// off centre.
+    ///
+    /// Two calls build two independent instances that render identically. The
+    /// bank is loaded into this instance alone — nothing here publishes or
+    /// attaches a shared bank — and every seeded stage of the engine draws
+    /// from a constant in its own config (`Rng::new(config.seed)`,
+    /// `crates/daw-dsp/src/levain/humanize.rs`), so the reference side of a
+    /// spec below is the body's instance built twice rather than an
+    /// approximation of it.
+    fn levain_instance() -> LevainInstance {
+        let mut instance = LevainInstance::new(LEVAIN_RATE, LEVAIN_SPEC_VOICES);
+        instance.begin_sample_bank("spec");
+        let sample = instance
+            .add_sample(
+                levain_spec_sample(),
+                LEVAIN_SPEC_SAMPLE_FRAMES as u32,
+                1,
+                LEVAIN_RATE,
+            )
+            .expect("the staged bank takes the fixture's one sample");
+        instance.add_zone(
+            0,
+            sample,
+            0,
+            LEVAIN_SPEC_NOTE,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.05,
+        );
+        assert!(
+            instance.build_zone_map(1, 1),
+            "the fixture's one zone does not build a zone map, so nothing below would sound"
+        );
+        assert!(
+            instance.commit_sample_bank(),
+            "the fixture's staged bank does not commit, so nothing below would sound"
+        );
+        // After the commit, which rebuilds the mic mixer at the bank's own mic
+        // count and would otherwise drop this.
+        instance.set_param("mic_0_pan", LEVAIN_SPEC_PAN);
+        instance
+    }
+
+    /// One of the sampler's own parameter names, as the mapper resolves it.
+    fn levain_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// The body [`PluginCore::levain_with_patch`] built around a loaded
+    /// instance, unwrapped so a spec can render through it directly.
+    fn levain_body(patch: &[(BuiltinParamName, f32)]) -> Box<LevainBody> {
+        let PluginCore::Levain(body) = PluginCore::levain_with_patch(levain_instance(), patch)
+        else {
+            unreachable!("levain_with_patch builds the levain variant");
+        };
+        body
+    }
+
+    /// A strike of `note` on `channel`, stamped for `frame`.
+    fn levain_hit(note: u8, channel: i16, frame: u32) -> MidiNoteEvent {
+        let mut event = note_on(note);
+        event.velocity = LEVAIN_SPEC_VELOCITY;
+        event.channel = channel;
+        event.frame_offset = frame;
+        event
+    }
+
+    /// The release of `note` on `channel`, stamped for `frame`.
+    fn levain_release(note: u8, channel: i16, frame: u32) -> MidiNoteEvent {
+        let mut event = levain_hit(note, channel, frame);
+        event.is_note_on = false;
+        event
+    }
+
+    /// `frames` rendered through `body` into silence, which is what a strip
+    /// carrying this generator and nothing else hands it.
+    fn levain_render(
+        body: &mut LevainBody,
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0_f32; frames];
+        let mut right = vec![0.0_f32; frames];
+        body.process(&mut left, &mut right, frames, events);
+        (left, right)
+    }
+
+    /// `frames` rendered by a bare [`LevainInstance`], driven the way the
+    /// worklet drives it: [`LEVAIN_RUN_FRAMES`] at a time, with `deliver`
+    /// called with the run index before each run renders.
+    ///
+    /// The reference side of the specs below — the instrument is driven
+    /// directly here, so what they compare is the body's splitting, addressing
+    /// and summing against the instrument's own output rather than one body
+    /// against another.
+    fn render_levain_reference(
+        frames: usize,
+        mut deliver: impl FnMut(usize, &mut LevainInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = levain_instance();
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        let mut run = 0;
+        while rendered < frames {
+            let run_frames = (frames - rendered).min(LEVAIN_RUN_FRAMES);
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were derived after the render and name the
+            // instrument's own channel buffers, which its constructor sizes at
+            // `LEVAIN_BLOCK_FRAMES` and no method resizes; `run_frames` is
+            // bounded by `LEVAIN_RUN_FRAMES`, well inside that. The two
+            // buffers are separate allocations, so the reads alias nothing.
+            // Nothing mutates the instrument between the render and these
+            // reads.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+            rendered += run_frames;
+            run += 1;
+        }
+        (left, right)
+    }
+
+    /// The loudest absolute sample in `samples`.
+    fn levain_peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// The body renders exactly what the instrument it wraps renders, run by
+    /// run, for the same strike and the same release.
+    ///
+    /// This is the whole claim of the body's process path: the split into runs,
+    /// the note and channel a strike addresses, the velocity scale it carries
+    /// on, the release reaching `note_off_on_channel`, and the sum into the
+    /// pair.
+    ///
+    /// The release is stamped at frame 1500, inside run 11, and the reference
+    /// lifts the key at the head of that same run. A body that delivered every
+    /// event at the head of the callback would release at run 0 and render a
+    /// note that barely sounded, so the run split is observed rather than
+    /// assumed.
+    ///
+    /// The two assertions beside the equalities refuse a vacuous pass: a silent
+    /// render matches a silent reference, and a render whose channels are equal
+    /// would match a reference that had copied one channel into both — which is
+    /// the live hazard here, because the instrument publishes its two channels
+    /// through two pointers and a body reading the left one twice would
+    /// otherwise pass.
+    #[test]
+    fn a_levain_body_renders_what_the_instance_renders_run_by_run() {
+        /// The floor the reference's peak must clear. A sample played at unity
+        /// through a velocity of 100 stands far above this, so a fixture that
+        /// silently failed to load its bank is caught here rather than passing
+        /// an equality of two silences.
+        const AUDIBLE: f32 = 0.05;
+
+        let events = [
+            levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            levain_release(LEVAIN_SPEC_NOTE, 0, LEVAIN_RELEASE_FRAME),
+        ];
+        let mut body = levain_body(&[]);
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+                }
+            });
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instrument renders for the same strike and \
+             release"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instrument renders for the same strike and \
+             release"
+        );
+        assert!(
+            levain_peak(&instance_left).max(levain_peak(&instance_right)) > AUDIBLE,
+            "the reference rendered near silence, so the equalities above say nothing"
+        );
+        assert_ne!(
+            body_left, body_right,
+            "the two channels are identical, so the fixture's panned mic never moved and a body \
+             that read one channel twice would pass"
+        );
+    }
+
+    /// The body joins what it renders to whatever already stands in the pair.
+    ///
+    /// An instrument is a generator, and the buffers it is handed carry the
+    /// chain's material up to its place in it — a second generator on the same
+    /// strip, or a device the splice placed ahead of it. Every other fixture
+    /// here renders into silence, where `*out = *sample` and `*out += *sample`
+    /// are the same write, so this is the one spec that can tell them apart:
+    /// the pair opens on a non-zero constant and each output sample must be
+    /// that constant plus the reference instrument's own sample, exactly.
+    ///
+    /// The non-silence assertion is what stops the equality passing vacuously.
+    /// A reference that rendered nothing would make the sum and the overwrite
+    /// agree again.
+    #[test]
+    fn a_levain_body_sums_into_what_already_stands_in_the_pair() {
+        /// What the chain has already written where this body renders. Chosen
+        /// well clear of zero so an overwrite cannot round its way to a pass.
+        const STANDING: f32 = 0.25;
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+        let mut body = levain_body(&[]);
+        let mut left = vec![STANDING; LEVAIN_PARITY_FRAMES];
+        let mut right = vec![STANDING; LEVAIN_PARITY_FRAMES];
+        body.process(&mut left, &mut right, LEVAIN_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+            });
+        let summed_left: Vec<f32> = instance_left
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+        let summed_right: Vec<f32> = instance_right
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+
+        assert_eq!(
+            left, summed_left,
+            "the body's left channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert_eq!(
+            right, summed_right,
+            "the body's right channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert!(
+            instance_left
+                .iter()
+                .chain(instance_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the reference rendered silence, so the sums above are the prefill compared with \
+             itself"
+        );
+    }
+
+    /// A release narrows to the channel its strike sounded on.
+    ///
+    /// Two keys can hold the same pitch on two member channels, and lifting one
+    /// of them must leave the other sounding. The engine narrows on the channel
+    /// it is given (`LevainVoicePool::release_note_matching`,
+    /// `crates/daw-dsp/src/levain/voice.rs`), so what this pins is that the
+    /// body passes the event's own channel through rather than a constant: a
+    /// body that sent every release on channel 0 would silence the note struck
+    /// on channel 3, and one that sent every release on the strike's channel by
+    /// accident of ordering would fail the mismatched case.
+    ///
+    /// Each case is held to the instrument's own output first, so the claim is
+    /// parity rather than a hand-picked envelope. The tails then separate the
+    /// two: the fixture's zone releases over 0.05 s scaled by the family model
+    /// the unknown instrument id falls through to (`Percussion`, ×4.6 —
+    /// `InstrumentFamily::release_scale`, `crates/daw-dsp/src/levain/types.rs`),
+    /// so 11040 frames, and the last run of the render stands 1500 frames past
+    /// the release at `exp(-1500 / 11040)`, about 0.87 of the held level. The
+    /// bound below leaves that figure room while still refusing a body whose
+    /// two cases decayed identically.
+    #[test]
+    fn a_levain_body_releases_on_the_channel_the_note_came_on() {
+        /// The channel the note is struck on, and the one a narrowed release
+        /// must name to lift it.
+        const STRUCK_ON: i16 = 3;
+        /// The share of the held tail the released tail must fall below. The
+        /// release curve puts it near 0.87, so this refuses two identical
+        /// decays without asserting the curve's exact shape.
+        const RELEASED_SHARE: f32 = 0.95;
+        /// The floor the still-held tail must clear, so "quieter" is a reading
+        /// of two audible tails rather than of two silences.
+        const AUDIBLE_TAIL: f32 = 0.01;
+
+        let tail = LEVAIN_PARITY_FRAMES - LEVAIN_RUN_FRAMES;
+        let mut held_body = levain_body(&[]);
+        let (held_left, held_right) = levain_render(
+            &mut held_body,
+            LEVAIN_PARITY_FRAMES,
+            &[
+                levain_hit(LEVAIN_SPEC_NOTE, STRUCK_ON, 0),
+                levain_release(LEVAIN_SPEC_NOTE, 0, LEVAIN_RELEASE_FRAME),
+            ],
+        );
+        let mut released_body = levain_body(&[]);
+        let (released_left, released_right) = levain_render(
+            &mut released_body,
+            LEVAIN_PARITY_FRAMES,
+            &[
+                levain_hit(LEVAIN_SPEC_NOTE, STRUCK_ON, 0),
+                levain_release(LEVAIN_SPEC_NOTE, STRUCK_ON, LEVAIN_RELEASE_FRAME),
+            ],
+        );
+
+        let reference = |release_channel: u8| {
+            render_levain_reference(LEVAIN_PARITY_FRAMES, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        STRUCK_ON as u8,
+                    );
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    instance.note_off_on_channel(LEVAIN_SPEC_NOTE, release_channel);
+                }
+            })
+        };
+        let (held_reference, _) = reference(0);
+        let (released_reference, _) = reference(STRUCK_ON as u8);
+
+        assert_eq!(
+            held_left, held_reference,
+            "a release addressed to another channel does not render what the instrument renders \
+             for that release, so the body is not passing the event's channel through"
+        );
+        assert_eq!(
+            released_left, released_reference,
+            "a release addressed to the struck channel does not render what the instrument \
+             renders for it"
+        );
+
+        let held_tail = levain_peak(&held_left[tail..]).max(levain_peak(&held_right[tail..]));
+        let released_tail =
+            levain_peak(&released_left[tail..]).max(levain_peak(&released_right[tail..]));
+        assert!(
+            held_tail > AUDIBLE_TAIL,
+            "the note struck on channel {STRUCK_ON} is not sounding at the end of the render, so \
+             a release addressed elsewhere silenced it"
+        );
+        assert!(
+            released_tail < held_tail * RELEASED_SHARE,
+            "the release addressed to channel {STRUCK_ON} left the note as loud as the release \
+             addressed elsewhere, so nothing distinguishes the two channels"
+        );
+    }
+
+    /// A release MIDI has no channel address for lifts every voice at its
+    /// pitch.
+    ///
+    /// The key is down whether or not its channel was addressable, and a key
+    /// nothing can ever lift is worse than releasing more than was asked
+    /// (`crates/daw-engine/AGENTS.md`). So an unaddressable channel reaches the
+    /// instrument's unnarrowed `note_off`, which is also what the worklet sends
+    /// for a message carrying no channel at all (`_dispatch`,
+    /// `src/modules/AudioEngine/services/levainProcessor.ts`).
+    ///
+    /// Two notes of one pitch are struck on two channels so the two answers
+    /// differ: the narrowed release leaves one of them sounding, the broad one
+    /// leaves neither. Both are held to the instrument's own output, and the
+    /// inequality between them is what refuses a body that quietly narrowed the
+    /// unaddressable channel to 0.
+    #[test]
+    fn a_levain_body_releases_every_voice_at_a_pitch_for_an_unaddressable_channel() {
+        /// A channel outside `0..16`, which is what a negative or oversized
+        /// wire value reaches the body as.
+        const UNADDRESSABLE: i16 = -1;
+        /// The second channel the pitch is struck on.
+        const OTHER: i16 = 3;
+
+        let strikes = [
+            levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            levain_hit(LEVAIN_SPEC_NOTE, OTHER, 0),
+        ];
+        let events = |channel: i16| {
+            [
+                strikes[0],
+                strikes[1],
+                levain_release(LEVAIN_SPEC_NOTE, channel, LEVAIN_RELEASE_FRAME),
+            ]
+        };
+        let (broad_left, _) = levain_render(
+            &mut levain_body(&[]),
+            LEVAIN_PARITY_FRAMES,
+            &events(UNADDRESSABLE),
+        );
+        let (narrow_left, _) =
+            levain_render(&mut levain_body(&[]), LEVAIN_PARITY_FRAMES, &events(0));
+
+        let reference = |release: fn(&mut LevainInstance)| {
+            render_levain_reference(LEVAIN_PARITY_FRAMES, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                    instance.note_on_with_channel(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        OTHER as u8,
+                    );
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    release(instance);
+                }
+            })
+        };
+        let (broad_reference, _) = reference(|instance| instance.note_off(LEVAIN_SPEC_NOTE));
+        let (narrow_reference, _) =
+            reference(|instance| instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0));
+
+        assert_eq!(
+            broad_left, broad_reference,
+            "a release on an unaddressable channel does not render what the instrument's \
+             unnarrowed note_off renders, so some voice was left holding a key nothing can lift"
+        );
+        assert_eq!(
+            narrow_left, narrow_reference,
+            "a release on channel 0 does not render what the instrument's narrowed note_off \
+             renders"
+        );
+        assert_ne!(
+            broad_left, narrow_left,
+            "the broad release and the channel-0 release render the same block, so this fixture \
+             cannot tell an unnarrowed note_off from one narrowed to channel 0"
+        );
+    }
+
+    /// A sampler the name path built holds no bank, and renders silence.
+    ///
+    /// [`PluginCore::builtin`] carries no bank source, so the instance it
+    /// builds has no recordings to sound and the honest answer is nothing at
+    /// all: the instrument's own fallback tone is constructed disarmed
+    /// (`crates/daw-dsp/src/levain/fallback.rs`) precisely so a bankless
+    /// sampler does not stand a sine in for missing content, and
+    /// `levain_unloaded_instance_is_silent` in `daw-dsp` pins that for the
+    /// instance. What this adds is the body's side of it: the pair it was
+    /// handed comes back carrying exactly what stood in it, so a bankless
+    /// Levain on a strip neither sings nor erases the chain it sits in.
+    #[test]
+    fn a_bankless_levain_body_renders_silence() {
+        /// What the chain has already written where this body renders.
+        const STANDING: f32 = 0.25;
+        /// Runs rendered, enough that a voice with any attack at all would
+        /// have opened by the end of them.
+        const RUNS: usize = 8;
+
+        let PluginCore::Levain(mut body) =
+            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE)
+        else {
+            unreachable!("the name path builds the levain variant");
+        };
+        let frames = LEVAIN_RUN_FRAMES * RUNS;
+        let mut left = vec![STANDING; frames];
+        let mut right = vec![STANDING; frames];
+        body.process(
+            &mut left,
+            &mut right,
+            frames,
+            &[levain_hit(LEVAIN_SPEC_NOTE, 0, 0)],
+        );
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| *sample == STANDING),
+            "a sampler with no bank moved the chain's own material, so it either sounded content \
+             it does not have or overwrote what stood where it renders"
+        );
+    }
+
+    /// The sampler answers the wire name the mapper resolves it by, says it
+    /// sounds notes, and declares no latency.
+    ///
+    /// The wire name is the whole of the contract between a saved device and
+    /// this body: a project naming `levain` must reach the Levain variant, and
+    /// the mapper reads the name off the device rather than off an index, so
+    /// the round trip is what a renamed variant would break.
+    ///
+    /// `sounds_notes` is what puts the device on the note-carrying side of the
+    /// chain, so a strip's MIDI reaches it at all.
+    ///
+    /// The latency is two readings of one fact from the two sides the graph
+    /// uses: [`LevainBody::latency_samples`] is what the body reports, and
+    /// [`PluginCore::declared_latency_frames`] is what the mapper publishes at
+    /// registration — `None`, because the instrument publishes no latency to
+    /// read, so no `SetEffectLatency` follows the body across the ring at all.
+    #[test]
+    fn levain_answers_its_wire_name_and_declares_no_latency() {
+        assert_eq!(
+            BuiltinEffectType::from_name("levain"),
+            Some(BuiltinEffectType::Levain),
+            "the wire name a saved Levain device carries does not resolve to this variant"
+        );
+        assert_eq!(
+            BuiltinEffectType::Levain.name(),
+            "levain",
+            "the variant spells a name the mapper cannot resolve it back from"
+        );
+        assert!(
+            BuiltinEffectType::Levain.sounds_notes(),
+            "a sampler that does not sound notes is handed no MIDI, so nothing would ever play it"
+        );
+        assert_eq!(
+            levain_body(&[]).latency_samples(),
+            0,
+            "the body reports a group delay the sampler does not have"
+        );
+        assert_eq!(
+            PluginCore::levain_with_patch(levain_instance(), &[]).declared_latency_frames(),
+            None,
+            "the record path declares a figure for a body whose instance publishes none, so the \
+             graph holds every route meeting this strip back by it"
+        );
+    }
+
+    /// Levain's two longest parameter names fit the carrier.
+    ///
+    /// `legato_portamento_velocity_threshold` (36 bytes) and
+    /// `expression_dynamic_crossfade_time` (33 bytes) are `LevainEngine::set_param`'s
+    /// own widest names (`crates/daw-dsp/src/levain/engine.rs`), and the web
+    /// patch projection emits both
+    /// (`projectLevainPatchToEngineParameters.ts`). [`BuiltinParamName::parse`]
+    /// refusing either would silently drop the entry the mapper builds for it —
+    /// a name shaped exactly like the instrument's own that this carrier
+    /// cannot hold.
+    ///
+    /// This is the whole of what this spec observes: the carrier admits both
+    /// names. It does not observe that a patch carrying either name reaches
+    /// the instrument — `legato_portamento_velocity_threshold` is read only
+    /// inside a legato transition with a held note
+    /// (`crates/daw-dsp/src/levain/legato.rs`), a state the one-note fixture
+    /// below never enters, so a render comparison here would pass whether or
+    /// not the patch landed. Patch delivery in general is
+    /// `a_levain_patch_lands_on_the_instance_before_it_sounds`'s claim, not
+    /// this one's.
+    #[test]
+    fn levain_longest_parameter_names_fit_the_carrier() {
+        assert!(
+            BuiltinParamName::parse("legato_portamento_velocity_threshold").is_some(),
+            "the carrier refuses Levain's own 36-byte parameter name"
+        );
+        assert!(
+            BuiltinParamName::parse("expression_dynamic_crossfade_time").is_some(),
+            "the carrier refuses Levain's own 33-byte parameter name"
+        );
+    }
+
+    /// A Levain patch lands on the instance before the body ever renders, not
+    /// after.
+    ///
+    /// [`PluginCore::levain_with_patch`] writes the patch into the instance
+    /// before wrapping it into a body, so every entry must already be applied
+    /// by the time the body's first `process` call reaches it. A patch
+    /// dropped at that boundary would sound the fixture's untouched defaults
+    /// while every other spec in this file still reported success, because
+    /// they all render through [`levain_body`]`(&[])` alone.
+    ///
+    /// `master_gain` and `mic_0_pan` are applied in that order because that is
+    /// the record's own field order, and there is no precedence law
+    /// (`LEVAIN_PATCH_PRECEDENCE` is empty) to reorder them.
+    #[test]
+    fn a_levain_patch_lands_on_the_instance_before_it_sounds() {
+        const FRAMES: usize = LEVAIN_RUN_FRAMES * 8;
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+
+        let mut patched_body = levain_body(&[
+            (levain_name("master_gain"), 0.25),
+            (levain_name("mic_0_pan"), 0.6),
+        ]);
+        let (patched_left, patched_right) = levain_render(&mut patched_body, FRAMES, &events);
+
+        let mut reference = levain_instance();
+        reference.set_param("master_gain", 0.25);
+        reference.set_param("mic_0_pan", 0.6);
+        let mut reference_body = LevainBody::new(reference);
+        let (reference_left, reference_right) = levain_render(&mut reference_body, FRAMES, &events);
+
+        assert_eq!(
+            patched_left, reference_left,
+            "the patched body's left channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+        assert_eq!(
+            patched_right, reference_right,
+            "the patched body's right channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+
+        let mut unpatched_body = levain_body(&[]);
+        let (unpatched_left, unpatched_right) = levain_render(&mut unpatched_body, FRAMES, &events);
+        let difference = patched_left
+            .iter()
+            .zip(&unpatched_left)
+            .chain(patched_right.iter().zip(&unpatched_right))
+            .fold(0.0_f32, |peak, (a, b)| peak.max((a - b).abs()));
+
+        assert!(
+            difference > 0.001,
+            "the patched render does not differ from an unpatched body's render by more than \
+             0.001, so the equalities above hold on two identical-by-default buffers rather than \
+             because the patch landed"
         );
     }
 }

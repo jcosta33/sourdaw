@@ -458,6 +458,73 @@ describe('serializeAudioGraphCommandBatch', () => {
             },
         });
     });
+
+    /**
+     * The bank key is the one device field that is neither project truth nor a
+     * parameter: `map_device` looks the staged material up under it, and
+     * `DevicePayload` reads it by this exact spelling.
+     */
+    it('carries a device bank key onto the graph.rs sampleBankKey spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-levain',
+                        name: 'Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: { master_gain: 0.8 },
+                        sampleBankKey: 'levain:violin-1',
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        expect(inserted.device).toEqual({
+            id: 'dev-levain',
+            name: 'Levain',
+            type: 'levain',
+            bypassed: false,
+            parameterValues: { master_gain: 0.8 },
+            sampleBankKey: 'levain:violin-1',
+        });
+    });
+
+    it('omits the bank key for a device built from its own record', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-knead',
+                        name: 'Knead',
+                        type: 'knead',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        // Omitted, not `undefined`: the payload stays exactly what the engine
+        // took before banks existed.
+        expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
+    });
 });
 
 describe('collectBufferedClipSources', () => {

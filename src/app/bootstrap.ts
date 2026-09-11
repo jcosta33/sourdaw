@@ -189,6 +189,8 @@ import {
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
+import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
@@ -453,6 +455,18 @@ configureAudioDeviceRuntimeSink({
     // gets folded into the record `projectDeviceForNativeBody` sends. See
     // `projectNativeDeviceState`.
     projectNativeDeviceState,
+    // The bank door beside the row above. One body is built from staged
+    // material rather than from its record, so the same opaque state that is
+    // projected into `parameterValues` also names the bank the engine must
+    // already hold; the graph backends stage it before the batch that maps the
+    // device. See `nativeSampleBanks`.
+    nativeSampleBankKey,
+    acquireNativeSampleBank,
+    // And the vocabulary that staged body answers to. A module writing to the
+    // engine directly imports AudioEngine, so AudioEngine asks here for its
+    // parameter names rather than importing it back. See
+    // `nativeBuiltinParameterNames`.
+    nativeBuiltinParameterName,
     // The live registry's Crumbs descriptor calls this, and the offline chain
     // reaches the same use case through the `builtin-crumbs` row of
     // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two

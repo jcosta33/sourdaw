@@ -34,7 +34,7 @@ describe('Crust DSP parameter names', () => {
      */
     it('produces only names the engine parameter carrier admits', () => {
         for (const name of Object.values(CRUST_DSP_PARAM_NAMES)) {
-            expect(name).toMatch(/^[a-z0-9_]{1,32}$/);
+            expect(name).toMatch(/^[a-z0-9_]{1,40}$/);
         }
     });
 

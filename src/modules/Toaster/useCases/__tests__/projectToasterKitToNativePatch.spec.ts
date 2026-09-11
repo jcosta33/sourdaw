@@ -5,7 +5,7 @@ import { toToasterKitState } from '../../models/ToasterKitState';
 import { projectToasterKitToNativePatch } from '../projectToasterKitToNativePatch';
 
 /** `crates/sourdaw-native/src/commands/graph.rs`'s `builtin_named_parameter` shape. */
-const ENGINE_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,32}$/;
+const ENGINE_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,40}$/;
 
 function withPad2EngineType(engineType: ToasterKit['pads'][number]['engineType']): ToasterKit {
     const kit = createDefaultKit();
@@ -45,6 +45,6 @@ describe('projectToasterKitToNativePatch', () => {
         const longest = Object.keys(patch).reduce((a, b) => (b.length > a.length ? b : a), '');
 
         expect(longest).toBe('pad10_filter_resonance');
-        expect(longest.length).toBeLessThanOrEqual(32);
+        expect(longest.length).toBeLessThanOrEqual(40);
     });
 });

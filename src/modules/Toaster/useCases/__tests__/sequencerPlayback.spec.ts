@@ -17,6 +17,7 @@ import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     getAudioTime: vi.fn(() => 0),
     applyNoteExpression: vi.fn(),
     audioEngine: {},

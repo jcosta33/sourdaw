@@ -1,6 +1,8 @@
-import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
+import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 
+import { commandBatchGroupId } from './commandBatchGroupId';
 import { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
+import { getCommandBatchGroupDependencies } from './getCommandBatchGroupDependencies';
 import { type PartialCommandBatchSelection, partialCommandBatchSelection } from './partialCommandBatchSelection';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
 
@@ -11,41 +13,21 @@ type CompilePartialCommandBatchAcceptanceInput = {
     selectedIntentGroupIds: readonly string[];
 };
 
-function commandGroupId(command: VersionedCommandEnvelope): string {
-    return command.commandId;
-}
-
 function selectedCommandClosure(
-    commands: readonly VersionedCommandEnvelope[],
-    selectedGroupIds: ReadonlySet<string>,
-    bindingProducerById: ReadonlyMap<string, string>
+    envelope: VersionedCommandBatchEnvelope,
+    selectedGroupIds: ReadonlySet<string>
 ): ReadonlySet<string> {
-    const commandById = new Map(commands.map((command) => [command.commandId, command]));
+    const dependenciesByGroupId = getCommandBatchGroupDependencies(envelope);
     const includedGroupIds = new Set(selectedGroupIds);
-    let changed = true;
-    while (changed) {
-        changed = false;
-        for (const command of commands) {
-            if (!includedGroupIds.has(commandGroupId(command))) {
+    const pendingGroupIds = [...selectedGroupIds];
+    while (pendingGroupIds.length > 0) {
+        const groupId = pendingGroupIds.pop()!;
+        for (const dependencyGroupId of dependenciesByGroupId.get(groupId) ?? []) {
+            if (includedGroupIds.has(dependencyGroupId)) {
                 continue;
             }
-            const requiredCommandIds = [
-                ...command.dependencyIds,
-                ...command.objectReferences.flatMap((reference) => {
-                    if (reference.scope !== 'batch-local') {
-                        return [];
-                    }
-                    const producerId = bindingProducerById.get(reference.id);
-                    return producerId ? [producerId] : [];
-                }),
-            ];
-            for (const requiredCommandId of requiredCommandIds) {
-                const required = commandById.get(requiredCommandId);
-                if (required && !includedGroupIds.has(commandGroupId(required))) {
-                    includedGroupIds.add(commandGroupId(required));
-                    changed = true;
-                }
-            }
+            includedGroupIds.add(dependencyGroupId);
+            pendingGroupIds.push(dependencyGroupId);
         }
     }
     return includedGroupIds;
@@ -66,15 +48,8 @@ export function compilePartialCommandBatchAcceptance(input: CompilePartialComman
     if (unknownGroupId) {
         return { status: 'rejected' as const, reason: `Unknown intent group: ${unknownGroupId}` };
     }
-    const bindingProducerById = new Map(
-        envelope.batchLocalBindings.map((binding) => [binding.bindingId, binding.producerCommandId])
-    );
-    const includedGroupIds = selectedCommandClosure(
-        envelope.commands,
-        new Set(input.selectedIntentGroupIds),
-        bindingProducerById
-    );
-    const selectedCommands = envelope.commands.filter((command) => includedGroupIds.has(commandGroupId(command)));
+    const includedGroupIds = selectedCommandClosure(envelope, new Set(input.selectedIntentGroupIds));
+    const selectedCommands = envelope.commands.filter((command) => includedGroupIds.has(commandBatchGroupId(command)));
     const selectedCommandIds = new Set(selectedCommands.map((command) => command.commandId));
     const commandIdMap = new Map(selectedCommands.map((command) => [command.commandId, crypto.randomUUID()]));
     const issuedAt = Date.now();
@@ -106,7 +81,7 @@ export function compilePartialCommandBatchAcceptance(input: CompilePartialComman
     const hasDynamicEffects = envelope.dynamicEffects !== undefined;
     const dynamicEffectsAreFullySelected = envelope.commands.every(
         (command) =>
-            preview.availableIntentGroupIds.has(command.commandId) && includedGroupIds.has(commandGroupId(command))
+            preview.availableIntentGroupIds.has(command.commandId) && includedGroupIds.has(commandBatchGroupId(command))
     );
     if (hasDynamicEffects && !dynamicEffectsAreFullySelected) {
         return {

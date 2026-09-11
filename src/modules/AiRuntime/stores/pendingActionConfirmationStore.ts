@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
+import { type buildSemanticProjectDiff } from '#/modules/Command/useCases';
 
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
@@ -98,12 +99,15 @@ type PendingCommandBatch = {
     authority: PendingCommandBatchAuthority;
 };
 
+export type PendingActionSemanticDiff = ReturnType<typeof buildSemanticProjectDiff>;
+
 type PendingActionApprovalSnapshot = {
     actions: ExecutableRuntimeAction[];
     actionLabels: string[];
     commandEnvelopes?: string[];
     commandBatch?: PendingCommandBatch;
     agentApproval?: PendingAgentRiskApproval;
+    semanticDiff?: PendingActionSemanticDiff;
     protectedUnchanged: PendingActionProtectedObject[];
 };
 
@@ -122,6 +126,9 @@ type PendingActionConfirmationBase = {
     followUpFailureKind?: 'retention-capacity' | null;
     followUpProjectRevision: string | null;
     followUpStatus: ChatActionFollowUpStatus | null;
+    /** The confirmation this one replaced, and the one that replaced it; originals carry `null`. */
+    supersedes: string | null;
+    supersededBy: string | null;
     createdAt: number;
     resolvedAt: number | null;
 };
@@ -294,6 +301,7 @@ type ProposePendingActionConfirmationInput = {
     commandEnvelopes?: string[];
     commandBatch?: PendingCommandBatch;
     agentApproval?: PendingAgentRiskApproval;
+    semanticDiff?: PendingActionSemanticDiff;
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
     risk?: PendingActionRisk;
@@ -301,6 +309,7 @@ type ProposePendingActionConfirmationInput = {
     groupId?: string;
     groupLabel?: string;
     projectRevision: string;
+    supersedes?: string | null;
     resourceLease?: PendingActionResourceLease;
 };
 
@@ -333,6 +342,7 @@ export function proposePendingActionConfirmation(
         commandEnvelopes: input.commandEnvelopes ? [...input.commandEnvelopes] : undefined,
         commandBatch: input.commandBatch ? structuredClone(input.commandBatch) : undefined,
         agentApproval: input.agentApproval ? structuredClone(input.agentApproval) : undefined,
+        semanticDiff: input.semanticDiff ? structuredClone(input.semanticDiff) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
     };
     const confirmation: PendingAppActionConfirmation = {
@@ -355,6 +365,8 @@ export function proposePendingActionConfirmation(
         error: null,
         followUpProjectRevision: null,
         followUpStatus: null,
+        supersedes: input.supersedes ?? null,
+        supersededBy: null,
         createdAt: Date.now(),
         resolvedAt: null,
         projectRevision: input.projectRevision,
@@ -566,6 +578,44 @@ export function updatePendingActionConfirmationStatus(
     });
 
     pendingActionConfirmationStore.set({ confirmations });
+    return clonePendingActionConfirmation(updated);
+}
+
+type SupersedePendingActionConfirmationInput = {
+    confirmationId: string;
+    supersededBy: string;
+    reason: string;
+};
+
+/**
+ * Retire a proposal a fresher one replaced. Only a live, never-superseded proposal can be
+ * superseded: an accepted, executing, or settled confirmation owns resources and receipts whose
+ * record a supersession would overwrite, and a second supersession would rewrite the first
+ * replacement's identity out of the chain.
+ */
+export function supersedePendingActionConfirmation(
+    input: SupersedePendingActionConfirmationInput
+): PendingAppActionConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current || current.status !== 'proposed' || current.supersededBy !== null) {
+        return null;
+    }
+    const updated: PendingAppActionConfirmation = {
+        ...current,
+        status: 'invalidated',
+        error: input.reason,
+        supersededBy: input.supersededBy,
+        resolvedAt: Date.now(),
+    };
+    pendingActionConfirmationStore.set({
+        confirmations: state.confirmations.map((confirmation) =>
+            confirmation.id === input.confirmationId ? updated : confirmation
+        ),
+    });
     return clonePendingActionConfirmation(updated);
 }
 

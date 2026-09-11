@@ -90,6 +90,7 @@ export { getMasterAnalyser } from './engineAccess/getMasterAnalyser';
 export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalysers';
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
+export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';

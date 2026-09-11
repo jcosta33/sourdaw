@@ -167,4 +167,63 @@ describe('projectDeviceForNativeBody', () => {
 
         expect(called).toBe(false);
     });
+
+    // One body is built from staged material rather than from its record, so
+    // the key the engine looks that material up under has to ride beside the
+    // record. Without it `map_device` refuses the device by name.
+    it('carries the bank key the sink reads off a device’s own state', () => {
+        setAudioDeviceRuntimeSink({
+            nativeSampleBankKey: ({ deviceType, deviceState }) => {
+                expect(deviceType).toBe('levain');
+                expect(deviceState).toBe(A_DEVICE_STATE);
+                return 'levain:violin-1';
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'levain', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(projected.sampleBankKey).toBe('levain:violin-1');
+    });
+
+    // Absent rather than `undefined`: the payload for every body built from its
+    // record stays exactly what the engine took before banks existed.
+    it('leaves the field off a device whose state names no bank', () => {
+        setAudioDeviceRuntimeSink({ nativeSampleBankKey: () => null });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'toaster', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(Object.hasOwn(projected, 'sampleBankKey')).toBe(false);
+    });
+
+    // A device that has committed no state still sounds something, and only the
+    // owning module knows what. Skipping the sink here sent a fresh Levain out
+    // naming no bank, and `map_device` refuses the batch whole over one such
+    // device on an audible strip — the whole project then declines native
+    // carriage rather than playing its default instrument.
+    it('asks the sink for the bank of a device holding no state at all', () => {
+        const asked: { deviceType: string; deviceState: DeviceStateChunk | undefined }[] = [];
+        setAudioDeviceRuntimeSink({
+            nativeSampleBankKey: (input) => {
+                asked.push(input);
+                return input.deviceState === undefined ? 'levain:violin-1' : null;
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(createDevice({ id: 'device-a', type: 'levain' }));
+
+        expect(projected.sampleBankKey).toBe('levain:violin-1');
+        expect(asked).toEqual([{ deviceType: 'levain', deviceState: undefined }]);
+    });
+
+    it('leaves the field off a stateless device whose type sounds no bank', () => {
+        setAudioDeviceRuntimeSink({ nativeSampleBankKey: () => null });
+
+        const projected = projectDeviceForNativeBody(createDevice({ id: 'device-a', type: 'fermenter' }));
+
+        expect(Object.hasOwn(projected, 'sampleBankKey')).toBe(false);
+    });
 });

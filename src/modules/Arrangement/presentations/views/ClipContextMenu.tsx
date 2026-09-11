@@ -104,6 +104,30 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 4 } });
+                })}
+            >
+                Fit to 1 Bar
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 8 } });
+                })}
+            >
+                Fit to 2 Bars
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 16 } });
+                })}
+            >
+                Fit to 4 Bars
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
                     if (clip?.audioBufferId) {
                         const bpm = detectTempo(clip.audioBufferId);
                         if (bpm) {
@@ -174,6 +198,30 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         <>
             <DawMenuButton role="menuitem" onClick={act(() => toggleInlineEditing(clipId))}>
                 {clip?.isInlineEditing ? 'Close Inline Editor' : 'Open Inline Editor'}
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 0.25 } });
+                })}
+            >
+                Quantize (1/16)
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 0.5 } });
+                })}
+            >
+                Quantize (1/8)
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNoteLengths', payload: { clipId, gridSize: 0.25 } });
+                })}
+            >
+                Quantize Lengths (1/16)
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"

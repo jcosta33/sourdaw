@@ -58,6 +58,7 @@ import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
@@ -372,7 +373,14 @@ export async function renderOfflineWithNativeEngine(
     }
 
     // ── Apply and render ───────────────────────────────────────────────────
-    const backend = createNativeOfflineGraphBackend({ sampleRate, transport });
+    const backend = createNativeOfflineGraphBackend({
+        sampleRate,
+        transport,
+        // The bounce stages the same banks the live session does, through the
+        // same sink: an export of a carried Levain strip must sound the
+        // instrument the musician heard, not a strip the mapper refused.
+        acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
+    });
     try {
         const batches: { commands: readonly AudioGraphCommand[]; attempt: string }[] = [
             { commands: stripCommands, attempt: 'build the strips' },

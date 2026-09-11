@@ -8,7 +8,7 @@
  * - Searchable across entire root
  * - Sample preview, favorites, drag-to-timeline
  */
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react';
 
@@ -17,6 +17,8 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
@@ -44,6 +46,7 @@ import { SpatialMapRenderer } from './SpatialMapRenderer';
 
 type LibraryPreview = {
     playingId: string | null;
+    play: (id: string, buffer: AudioBuffer) => void;
     playFile: (id: string, file: File) => Promise<void>;
     stop: () => void;
 };
@@ -92,10 +95,26 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     const [activeIndex, setActiveIndex] = useState(0);
     const listRef = useRef<HTMLDivElement>(null);
 
+    const previewRef = useRef(preview);
+    previewRef.current = preview;
+
     // Cache resolved directory sub-handles per root+folder so repeated previews
     // of clips in the same folder do not re-walk the handle chain (one IPC trip
     // per path segment) on every click.
     const dirHandleCacheRef = useRef<Map<string, FileSystemDirectoryHandle>>(new Map());
+    const previewRequestIdRef = useRef<number>(0);
+
+    const handleStopPreview = (): void => {
+        previewRequestIdRef.current++;
+        previewRef.current.stop();
+    };
+
+    useEffect(() => {
+        return () => {
+            previewRequestIdRef.current++;
+            previewRef.current.stop();
+        };
+    }, []);
 
     if (!state) {
         return <div />;
@@ -207,8 +226,25 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     };
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
+        previewRef.current.stop();
+        const requestId = ++previewRequestIdRef.current;
+
         const root = roots.find((r) => r.id === sample.libraryRootId);
         if (!root) {
+            return;
+        }
+
+        const cachedBuffer = getCachedAudioBuffer({ bufferId: sample.id });
+        if (cachedBuffer) {
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
+            previewRef.current.play(sample.id, cachedBuffer);
+            return;
+        }
+
+        if (root.id === FACTORY_LIBRARY_ROOT_ID) {
+            notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
             return;
         }
 
@@ -220,6 +256,10 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 `"${sample.displayName}" is a .${sample.ext} file — your browser may not be able to preview it.`,
                 'warning'
             );
+        }
+
+        if (previewRequestIdRef.current !== requestId) {
+            return;
         }
 
         try {
@@ -240,8 +280,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 let dirHandle: FileSystemDirectoryHandle = root.handle;
                 let resolvedPath = '';
                 for (const part of pathParts) {
+                    if (previewRequestIdRef.current !== requestId) {
+                        return;
+                    }
                     resolvedPath = resolvedPath ? `${resolvedPath}/${part}` : part;
-                    const cacheKey = `${root.id} ${resolvedPath}`;
+                    const cacheKey = `${root.id} ${resolvedPath}`;
                     const cached = cache.get(cacheKey);
                     if (cached) {
                         dirHandle = cached;
@@ -250,15 +293,28 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                         cache.set(cacheKey, dirHandle);
                     }
                 }
+                if (previewRequestIdRef.current !== requestId) {
+                    return;
+                }
                 const fileHandle = await dirHandle.getFileHandle(fileName);
+                if (previewRequestIdRef.current !== requestId) {
+                    return;
+                }
                 file = await fileHandle.getFile();
             } else {
                 // No usable access path (e.g. an offline/path_missing root).
                 notifyUser(`"${sample.displayName}" can't be previewed — its folder is not accessible.`, 'warning');
                 return;
             }
-            await preview.playFile(sample.id, file);
+
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
+            await previewRef.current.playFile(sample.id, file);
         } catch {
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
             // File access failed (moved, permissions revoked, native read error).
             notifyUser(`Could not open "${sample.displayName}" for preview.`, 'warning');
         }
@@ -544,7 +600,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     onPlay={() => {
                                         void playSample(sample);
                                     }}
-                                    onStop={preview.stop}
+                                    onStop={handleStopPreview}
                                     onToggleFavorite={() => void toggleFavorite(sample.id)}
                                     onFindSimilar={() => handleFindSimilar(sample.id)}
                                     onDragStart={(e) => {
@@ -564,7 +620,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     onClick={() => {
                                         setActiveIndex(index);
                                         if (preview.playingId === sample.id) {
-                                            preview.stop();
+                                            handleStopPreview();
                                         } else {
                                             void playSample(sample);
                                         }

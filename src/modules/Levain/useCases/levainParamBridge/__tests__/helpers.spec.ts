@@ -21,6 +21,8 @@ function makeDeps(
     return {
         getAllTracks: vi.fn(() => []),
         persistDeviceParam: vi.fn(),
+        writeNativeBuiltinParameters:
+            vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
             if (resolutionStatus !== 'eligible') {
@@ -461,6 +463,99 @@ describe('createLevainBridge', () => {
                 expect(deps.persistDeviceParam).not.toHaveBeenCalled();
             }
         );
+    });
+
+    /**
+     * A natively carried strip keeps its Web Audio node as the fallback
+     * carrier, so every engine-spelled write has to reach both: the node holds
+     * the current value for the moment the session's gate reopens at Stop, and
+     * the native session is what a musician is actually hearing while it runs.
+     */
+    describe('native session writes', () => {
+        it('sends a flushed patch edit to the native session as well as the worklet', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            flushRaf();
+            device.setParam.mockClear();
+            deps.writeNativeBuiltinParameters.mockClear();
+
+            bridge.setLevainParamWithAudio('d1', 'masterGain', 0.62);
+            flushRaf();
+
+            expect(device.setParam).toHaveBeenCalledWith('master_gain', 0.62);
+            expect(deps.writeNativeBuiltinParameters).toHaveBeenCalledWith('track-1', 'd1', { master_gain: 0.62 });
+        });
+
+        it('sends an articulation switch natively, addressed to the owning strip', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            flushRaf();
+            deps.writeNativeBuiltinParameters.mockClear();
+
+            bridge.setLevainParamWithAudio('d1', 'currentArticulation', 'pizzicato');
+
+            expect(deps.writeNativeBuiltinParameters).toHaveBeenCalledWith('track-1', 'd1', {
+                current_articulation: 10,
+            });
+        });
+
+        it('sends a macro’s parameter slots natively, leaving its CC gestures web-only', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            flushRaf();
+            deps.writeNativeBuiltinParameters.mockClear();
+
+            // 'Space' is macro index 4 in the default labels; 'Dynamics' is 0.
+            bridge.setMacroWithAudio('d1', 4, 0.7);
+            bridge.setMacroWithAudio('d1', 0, 0.7);
+
+            expect(deps.writeNativeBuiltinParameters).toHaveBeenCalledWith('track-1', 'd1', { mic_2_volume: 0.7 });
+            expect(device.handleCc).toHaveBeenCalledWith(1, 89);
+            // A continuous controller is not a device parameter, and the native
+            // session has no door that takes one.
+            expect(deps.writeNativeBuiltinParameters).not.toHaveBeenCalledWith(
+                'track-1',
+                'd1',
+                expect.objectContaining({ cc1: expect.anything() })
+            );
+        });
+
+        it('replays the registered patch natively, so a splice mid-session hears it', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            expect(deps.writeNativeBuiltinParameters).toHaveBeenCalledWith('track-1', 'd1', {
+                current_articulation: 0,
+            });
+        });
+
+        it.each(['missing', 'ineligible'] as const)('sends nothing natively for %s ownership', (status) => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            flushRaf();
+            deps.writeNativeBuiltinParameters.mockClear();
+            deps.setResolutionStatus(status);
+
+            bridge.setLevainParamWithAudio('d1', 'masterGain', 0.62);
+            bridge.setMacroWithAudio('d1', 4, 0.7);
+            flushRaf();
+
+            expect(deps.writeNativeBuiltinParameters).not.toHaveBeenCalled();
+        });
     });
 });
 

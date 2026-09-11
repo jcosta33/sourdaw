@@ -12,6 +12,17 @@ export type { AiActionEntry, AiActionGroup, AiActionHistoryState } from './aiAct
 
 export { agentRunStore } from './agentRunStore';
 
+export { agentChangeComparisonStore } from './agentChangeComparisonStore';
+export type {
+    AgentChangeComparisonEnding,
+    AgentChangeComparisonEndReason,
+    AgentChangeComparisonLoudness,
+    AgentChangeComparisonMeasurement,
+    AgentChangeComparisonSession,
+    AgentChangeComparisonSide,
+    AgentChangeComparisonState,
+} from './agentChangeComparisonStore';
+
 export { pendingActionConfirmationStore } from './pendingActionConfirmationStore';
 
 export { aiBackendPreferenceStore } from './aiBackendPreferenceStore';

@@ -38,7 +38,7 @@ export type LevainState = {
 };
 
 export const defaultLevainState: LevainState = {
-    patch: createDefaultPatch('violin-1'),
+    patch: createDefaultPatch(),
     uiLevel: 1,
     engineReady: false,
     sampleLoadProgress: null,

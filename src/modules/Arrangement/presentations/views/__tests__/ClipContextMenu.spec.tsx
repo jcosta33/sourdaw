@@ -795,4 +795,76 @@ describe('ClipContextMenu', () => {
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
+
+    it('dispatches quantizeNotes with 1/16 grid through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize (1/16)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'midi1', gridSize: 0.25 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches quantizeNotes with 1/8 grid through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize (1/8)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'midi1', gridSize: 0.5 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches quantizeNoteLengths through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize Lengths (1/16)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNoteLengths',
+            payload: { clipId: 'midi1', gridSize: 0.25 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 1 bar through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 1 Bar' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 4 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 2 bars through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 2 Bars' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 8 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 4 bars through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 4 Bars' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 16 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
 });
