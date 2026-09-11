@@ -1,0 +1,200 @@
+src/modules/Levain/useCases/__tests__/getLevainEngineParameterName.spec.ts
+  s_9b530f08172a54::t_59e234b2aade8d 31-38
+  s_9b530f08172a54::t_98248f465f0d0a 1-2,4-30,39-59
+  s_9b530f08172a54::t_e158f8db3e4e0e 3
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_9b530f08172a54::t_2ec56dafab151b 7
+  s_9b530f08172a54::t_662bbbf2ed7503 20
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_16c50344f76db4 1004
+  s_9b530f08172a54::t_23763ba3199460 98
+  s_9b530f08172a54::t_dfc6734030fe0f 95
+  s_9b530f08172a54::t_965fbdc99cf548 926-939
+src/modules/AudioEngine/useCases/livePlayback/__tests__/soundsNativeNotes.spec.ts
+  s_9b530f08172a54::t_f813da4f05b9b5 18-26
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_8eea722022c53e 42
+  s_9b530f08172a54::t_c5dd26c8e11801 564-573,579-581
+  s_9b530f08172a54::t_e0d722cf46cacc 201-210
+  s_9b530f08172a54::t_8c124b1b5a595c 551-563,574-578,582-584
+  s_06adf2b091dc62::t_937cf4afff519a 200,550,585-587
+src/modules/Levain/useCases/__tests__/projectLevainDeviceStateToNativePatch.spec.ts
+  s_9b530f08172a54::t_3dc0986b631995 1-35
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_9b530f08172a54::t_0a95e74d45af3c 75-90,96,99,101
+  s_9b530f08172a54::t_fbf1574205a7de 48
+  s_9b530f08172a54::t_4673018e93e821 24-34
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_9b530f08172a54::t_d45aeea59bf2da 190,192
+  s_9b530f08172a54::t_41a4962c1b1b70 191
+  s_9b530f08172a54::t_b4db5b51d8e5cf 110,125-135
+  s_9b530f08172a54::t_e4b51f39d5ac25 111-124,136-146
+  s_9b530f08172a54::t_110f63e716ceaa 3-4
+src/modules/Levain/useCases/decodedBankToNativeSampleBank.ts
+  s_9b530f08172a54::t_53d5be0e3b31f5 1-152
+src/modules/AudioEngine/repositories/nativeGraph/collectNativeSampleBankKeys.ts
+  s_9b530f08172a54::t_4ccabb25b44259 1-28
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_3d31f2ef87bcce 380-396
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  s_9b530f08172a54::t_f3257d0b5718a5 95-98,100
+src/modules/AudioEngine/repositories/nativeGraph/registerNativeSampleBanks.ts
+  s_9b530f08172a54::t_c39882db76e0d7 1-27,29-73,77-157
+  s_9b530f08172a54::t_1309282021d296 74-76
+  s_9b530f08172a54::t_8b9741a6bca136 28
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_9b530f08172a54::t_a8e68f3eefa255 265
+  s_9b530f08172a54::t_9f39cc9ecf9ccc 7
+  s_9b530f08172a54::t_1c2d39656afc7f 325,328,331
+  s_9b530f08172a54::t_7d6414fc83d29b 297
+  s_9b530f08172a54::t_f8da8d47e8ce13 43-47,50-58
+  s_9b530f08172a54::t_3ca3ca54f0ea0b 78-92
+  s_9b530f08172a54::t_0b294b11e27a2f 320-323,334,340-341,344,347,350
+  s_9b530f08172a54::t_cbea8e883ccd6b 381
+  s_9b530f08172a54::t_b63e7b579a8973 108
+  s_9b530f08172a54::t_ede0d03e5a217e 214
+  s_9b530f08172a54::t_d982679615671d 59
+src/app/nativeSampleBanks.ts
+  s_9b530f08172a54::t_6ffdd586859f2e 72-76,79
+  s_9b530f08172a54::t_41624856c76d26 1-71,77-78,80
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_9b530f08172a54::t_d8e6a82cce48e3 170-215
+src/app/projectNativeDeviceState.ts
+  s_9b530f08172a54::t_3a2b178323765d 52-53
+  s_9b530f08172a54::t_92ebb80dd7cc78 2
+  s_9b530f08172a54::t_7cc46cc927fb98 38-45
+src/modules/Levain/useCases/getLevainEngineParameterName.ts
+  s_9b530f08172a54::t_163ff8f68b6a48 1-61
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/registerNativeSampleBanks.spec.ts
+  s_9b530f08172a54::t_d0fbe842a48dce 1-15,17-18,20-292
+  s_9b530f08172a54::t_ae6b19d7cde7db 16,19
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_3d2458b0d4452f 634-641
+  s_9b530f08172a54::t_6975e1aacc6a4b 664
+  s_9b530f08172a54::t_8bb5cce5656a9f 681
+  s_9b530f08172a54::t_d08f4c39c0e7c7 654
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_9b530f08172a54::t_f76219d2e08b7b 393-399
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_9b530f08172a54::t_a83ede6fe8a797 307
+  s_9b530f08172a54::t_09453f65b9fb72 205-207
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_c568906513b337 372-388
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_5212738a7aa3ed 993-1022,1039-1042
+  s_9b530f08172a54::t_f6d902273ca517 183-189
+  s_9b530f08172a54::t_64bbb207886590 73
+  s_9b530f08172a54::t_fdea2156aa11a3 190-192
+  s_9b530f08172a54::t_69d4dc06541837 1023-1038,1043
+  s_9b530f08172a54::t_fe152829eefccd 468
+  s_9b530f08172a54::t_a76b269ca8b05d 68-72
+  s_9b530f08172a54::t_fb4e96116d53c8 465-467
+  s_9b530f08172a54::t_e15dc586a1ca4a 111
+  s_9b530f08172a54::t_e2f980028a1b1f 108-110
+src/app/__tests__/nativeBuiltinParameterNames.spec.ts
+  s_9b530f08172a54::t_976fc807a2aef4 25-29
+  s_9b530f08172a54::t_bf70f26797b6a4 1-24,30-45
+src/modules/Levain/useCases/acquireLevainNativeBank.ts
+  s_9b530f08172a54::t_dda0accf72791e 1
+  s_9b530f08172a54::t_01886f77a914e1 2-51
+src/modules/AudioEngine/repositories/nativeGraph/registeredNativeSampleBankKeys.ts
+  s_9b530f08172a54::t_e48b86c51cd6b2 1-23
+src/modules/Levain/useCases/projectLevainDeviceStateToNativePatch.ts
+  s_9b530f08172a54::t_b0c0e78a8fdf14 1-38
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_9b530f08172a54::t_812b8b3f46fc0f 256-374
+  s_9b530f08172a54::t_f175d24812a401 12,17
+  s_9b530f08172a54::t_7b20102d62c96f 375
+src/app/bootstrap.ts
+  s_9b530f08172a54::t_5cd2a7fbae20e0 458-464
+  s_9b530f08172a54::t_5f685d4c6f746d 192
+  s_9b530f08172a54::t_4a6da398dd9c46 193
+  s_9b530f08172a54::t_a2fcdc7d9bd843 465-469
+src/modules/Levain/useCases/levainNativeBankKey.ts
+  s_9b530f08172a54::t_12ebbcd8935d98 2
+  s_9b530f08172a54::t_718bedf154c0cb 1,3-22
+src/app/nativeBuiltinParameterNames.ts
+  s_9b530f08172a54::t_b7c17b781ebbc0 1-68
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_9b530f08172a54::t_04c7619d713950 64
+  s_9b530f08172a54::t_b1bfb6d47d4766 176
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_9b530f08172a54::t_62b426d99bf426 16-17,20-27
+  s_9b530f08172a54::t_3cf4ee0e01e416 28
+src/modules/Levain/models/LevainNativeBankKey.ts
+  s_9b530f08172a54::t_e211d0f9a1e4e7 1-34
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_453b8d8b558413 914-925
+  s_9b530f08172a54::t_6909d0f6facf7b 893-896,900
+  s_9b530f08172a54::t_86f54bbdbd2345 25
+  s_9b530f08172a54::t_29ed44a690e7a2 856-871
+  s_9b530f08172a54::t_de6d4ad57a2860 23
+  s_9b530f08172a54::t_073e52a4cc52d3 125
+  s_9b530f08172a54::t_c5cc3f9270e595 171-173
+  s_9b530f08172a54::t_36a27913975d14 151
+  s_9b530f08172a54::t_ea450b1b4b8ea1 21
+  s_9b530f08172a54::t_e4548f65c6261f 191
+  s_9b530f08172a54::t_ecb98da32f912c 27
+  s_9b530f08172a54::t_f299a2ee0f4f44 845-855,872-892,897-899,901-913,926
+  s_06adf2b091dc62::t_b01eaca0f4581f 927-928
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_9b530f08172a54::t_5f9fcb5b9fdb5a 24
+  s_9b530f08172a54::t_c8948ea6bb7080 467-557
+  s_9b530f08172a54::t_76fc9a8836ab83 25,558-559
+src/modules/Levain/useCases/__tests__/levainNativeBankKey.spec.ts
+  s_9b530f08172a54::t_45105f5761994b 7-9
+  s_9b530f08172a54::t_571c4fab57c68d 1-6,10-13,15-17,19-31,33,35-39
+  s_9b530f08172a54::t_3058219fc39bb1 14,18,32,34
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_9b530f08172a54::t_525b3852fce657 186-195
+  s_9b530f08172a54::t_81a0eb02ac234f 33-39
+  s_9b530f08172a54::t_4e15a25fbb40a5 70-76
+  s_9b530f08172a54::t_c4cb21465a78ec 58
+  s_9b530f08172a54::t_7a9f1345733504 173
+  s_9b530f08172a54::t_c7383899e77c09 196
+src/modules/Levain/useCases/index.ts
+  s_9b530f08172a54::t_40e262e3025a92 1,4-6
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  s_9b530f08172a54::t_5a7a9f4e7b00f6 254-266
+  s_9b530f08172a54::t_a16c88eed6763d 189
+  s_9b530f08172a54::t_ace7d2b289ec34 76
+  s_9b530f08172a54::t_38addef9149847 113-119
+  s_9b530f08172a54::t_5f1aaf67dd89f0 267-268
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  s_9b530f08172a54::t_6b4595f66041a7 1-128
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_9b530f08172a54::t_14276156ee4728 579-664
+src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts
+  s_9b530f08172a54::t_ee46fd9847517d 1-175
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_9b530f08172a54::t_02b4f2b4c63558 461-527
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_ed62a4a3832828 61
+  s_9b530f08172a54::t_94900eb5c75f51 376-383
+src/modules/AudioEngine/models/TrackViewTypes.ts
+  s_9b530f08172a54::t_bf95430609f457 16-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ccfacf8fd0f0c4bd6bd9d80e42b1491f181d2ccf",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
