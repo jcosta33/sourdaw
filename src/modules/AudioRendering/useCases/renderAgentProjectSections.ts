@@ -200,6 +200,7 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
                 continue;
             }
             if (!input.replaceMismatchedRevisionArtifacts) {
+                receipts.emitFailure('revision-mismatch');
                 failures.push(`${job.jobId}: artifact is bound to a different project revision`);
                 continue;
             }

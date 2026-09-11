@@ -247,6 +247,36 @@ describe('agent offline render receipts', () => {
         expect(receipts.at(-1)).toEqual(expect.objectContaining({ phase: 'batch-settled', outcome: 'failed' }));
     });
 
+    it('skips a job whose stored artifact is bound to a different project revision, reporting a revision mismatch and leaving the stored artifact unchanged', async () => {
+        const job = createJob();
+        await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        const storedBefore = getAgentSectionRenderArtifacts().find((artifact) => artifact.jobId === job.jobId);
+        if (!storedBefore) {
+            throw new Error(`Expected a stored artifact for ${job.jobId}`);
+        }
+
+        const owner = createOwner();
+        const { receipts, onReceipt } = collectReceipts();
+
+        await expect(
+            renderAgentProjectSections({
+                jobs: [job],
+                sourceRevision: 'revision-b',
+                owner,
+                onReceipt,
+            })
+        ).rejects.toThrow('Section render follow-up requires review');
+
+        expect(phasesOf(receipts)).toEqual(['failed', 'batch-settled']);
+        expect(receipts[0]).toEqual({
+            phase: 'failed',
+            owner: createOwner(),
+            provenance: expect.objectContaining({ jobId: job.jobId, sourceRevision: 'revision-b' }),
+            failureKind: 'revision-mismatch',
+        });
+        expect(getAgentSectionRenderArtifacts().find((artifact) => artifact.jobId === job.jobId)).toEqual(storedBefore);
+    });
+
     it('fails a job whose live revision moved while the render was still pending, attaching nothing', async () => {
         let resolveRender!: (buffer: ReturnType<typeof createAudioBuffer>) => void;
         mocks.renderOffline.mockImplementation(

@@ -233,11 +233,8 @@ function renderOwnerOf(lease: AgentRunWorkLease | null): AgentWorkOwnerIdentity 
     };
 }
 
-function resolveRenderLeaseTerminalState(outcome: { cancelled: boolean; failed: boolean }): AgentRunWorkTerminalState {
-    if (outcome.cancelled) {
-        return 'cancelled';
-    }
-    return outcome.failed ? 'failed' : 'completed';
+function resolveRenderLeaseTerminalState(failed: boolean): AgentRunWorkTerminalState {
+    return failed ? 'failed' : 'completed';
 }
 
 function settleRenderAttemptLease(
@@ -471,7 +468,6 @@ export async function executeCommittedSectionRenderRetry(input: {
     let terminalFinalizationReason: string | null = null;
     let budgetPersistenceWarning: string | null = null;
     let renderLeasePersistenceWarning: string | null = null;
-    let renderCancelled = false;
     const attemptedRenderJobIds = new Set<string>();
     try {
         try {
@@ -488,7 +484,6 @@ export async function executeCommittedSectionRenderRetry(input: {
                         : 'Only the authoritative collaboration host can attach section render artifacts.',
             });
         } catch (error) {
-            renderCancelled = error instanceof Error && error.name === 'AbortError';
             const followUpFailure = getSectionRenderFollowUpFailure(error);
             if (followUpFailure?.failureKind === 'retention-capacity') {
                 retentionCapacityFailureReason = error instanceof Error ? error.message : String(error);
@@ -532,14 +527,12 @@ export async function executeCommittedSectionRenderRetry(input: {
             budgetPersistenceWarning = reconcileRetryBudgetBestEffort(confirmation, budget, attemptedRenderJobIds);
             renderLeasePersistenceWarning = settleRenderAttemptLease(
                 renderLease,
-                resolveRenderLeaseTerminalState({
-                    cancelled: renderCancelled,
-                    failed:
-                        renderFailureReason !== undefined ||
+                resolveRenderLeaseTerminalState(
+                    renderFailureReason !== undefined ||
                         retentionCapacityFailureReason !== null ||
                         terminalFinalizationReason !== null ||
-                        manualReviewProjection !== null,
-                })
+                        manualReviewProjection !== null
+                )
             );
         } finally {
             setChatGenerating(false);
