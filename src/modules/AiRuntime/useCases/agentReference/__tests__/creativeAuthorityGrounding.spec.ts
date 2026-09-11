@@ -123,6 +123,35 @@ const brightnessContext: ProjectContext = {
     ],
 };
 
+const twoFilterBrightnessContext: ProjectContext = {
+    ...brightnessContext,
+    tracks: [
+        brightnessContext.tracks[0]!,
+        {
+            ...bassTrack,
+            deviceCount: 1,
+            devices: [
+                {
+                    id: 'bass-filter-1',
+                    type: 'filter',
+                    bypassed: false,
+                    parameters: [
+                        {
+                            id: 'cutoff',
+                            name: 'Cutoff',
+                            type: 'float',
+                            value: 0.5,
+                            minValue: 0,
+                            maxValue: 1,
+                            unit: '',
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+};
+
 function buildAuthority(overrides: Partial<CreativeRequestAuthority> = {}): CreativeRequestAuthority {
     return {
         schemaVersion: 1,
@@ -186,6 +215,33 @@ function expectBrightnessGrounded(prompt: string, value: number): void {
 
 function expectBrightnessRejected(prompt: string, value: number): void {
     const result = bridgeBrightness(prompt, value);
+
+    expect(result.actions).toEqual([]);
+    expect(result.rejections).toMatchObject([{ name: 'setDeviceParameter', reason: VALUE_MISMATCH_REASON }]);
+}
+
+function bridgeTwoFilterBrightness(prompt: string, value: number) {
+    return bridge({
+        calls: [
+            { name: 'setDeviceParameter', arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value } },
+        ],
+        creativeAuthority: buildAuthority(),
+        projectContext: twoFilterBrightnessContext,
+        prompt,
+    });
+}
+
+function expectTwoFilterBrightnessGrounded(prompt: string, value: number): void {
+    const result = bridgeTwoFilterBrightness(prompt, value);
+
+    expect(result.rejections).toEqual([]);
+    expect(result.actions).toMatchObject([
+        { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value } },
+    ]);
+}
+
+function expectTwoFilterBrightnessRejected(prompt: string, value: number): void {
+    const result = bridgeTwoFilterBrightness(prompt, value);
 
     expect(result.actions).toEqual([]);
     expect(result.rejections).toMatchObject([{ name: 'setDeviceParameter', reason: VALUE_MISMATCH_REASON }]);
@@ -633,6 +689,20 @@ describe('creative authority grounding in the tool-call bridge', () => {
 
         expectBrightnessRejected(prompt, 0.8);
         expectBrightnessGrounded(prompt, 0.3);
+    });
+
+    it('attributes a same-type device clause to another track when naming that track over this device', () => {
+        const prompt = 'lower the bass filter, and raise the guitar filter';
+
+        expectTwoFilterBrightnessGrounded(prompt, 0.8);
+        expectTwoFilterBrightnessRejected(prompt, 0.3);
+    });
+
+    it('attributes a same-type device clause to this device when naming this track over another track', () => {
+        const prompt = 'lower the guitar filter, and raise the bass filter';
+
+        expectTwoFilterBrightnessGrounded(prompt, 0.3);
+        expectTwoFilterBrightnessRejected(prompt, 0.8);
     });
 
     it('attributes a clause naming another device over the owner track it also names', () => {
