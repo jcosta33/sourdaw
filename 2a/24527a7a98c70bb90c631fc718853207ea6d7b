@@ -1,0 +1,32 @@
+crates/sourdaw-native/src/commands/levain.rs
+  s_9b530f08172a54::t_f1cabd8a17aee3 424
+  s_9b530f08172a54::t_68abb702fc3725 1032-1051,1081
+  s_9b530f08172a54::t_50bca6e3d3dd38 425-431
+  s_9b530f08172a54::t_e723a03bff01db 81-83
+  s_9b530f08172a54::t_fd9976c5bdbdbe 1072-1073,1079-1080
+  s_06adf2b091dc62::t_b32ae63f0148d8 1031,1082
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2a24527a7a98c70bb90c631fc718853207ea6d7b",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
