@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_d2824df80c1d84::t_d549f270deb265 64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "20067d07a55537f43dc3914bdc04435b9e3cc3b6",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
