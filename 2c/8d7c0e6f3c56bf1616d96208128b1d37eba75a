@@ -1,0 +1,85 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_9b530f08172a54::t_906e46139b5791 279-281
+electron/commands.ts
+  s_9b530f08172a54::t_bf69f016c0f93c 91
+  s_9b530f08172a54::t_8e9eb1e028214d 151-158
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_9b530f08172a54::t_b442c4eaaf5289 98
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_9b530f08172a54::t_7d553bbe703f22 2635-2637
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_9b530f08172a54::t_882c046aa6130a 288-290
+crates/sourdaw-native/src/state.rs
+  s_9b530f08172a54::t_7a0e7c16fc27a4 294-300
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_d74c4167eb7de0 734-741
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_9b530f08172a54::t_a1680ec235952b 47
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_19ede4e594c23c 397
+crates/sourdaw-native/src/commands/levain.rs
+  s_9b530f08172a54::t_d8587851625a88 1-2,10-12
+  s_9b530f08172a54::t_c95703afe5bc84 295-303
+  s_9b530f08172a54::t_15b471e9b8580d 43
+  s_9b530f08172a54::t_6198bd3862e405 329
+  s_9b530f08172a54::t_3624b91d14ba73 567-579,581-583
+  s_9b530f08172a54::t_3a53fb26b7ae85 1000,1141-1326
+  s_9b530f08172a54::t_e5c686f96941a8 232-240,254
+  s_9b530f08172a54::t_bb66d9918fb9b9 732-747
+  s_9b530f08172a54::t_9a4b08732ae316 382-392
+  s_9b530f08172a54::t_d826513f37f688 37
+  s_9b530f08172a54::t_9e2dacc288d6ab 441-445
+  s_9b530f08172a54::t_4a89a3904842e1 73-82
+  s_9b530f08172a54::t_a5c83cf01e97a2 623-629,632-675
+  s_9b530f08172a54::t_4289c0b9a928f0 1001-1019
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_cebb08f11e96f4 386
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineMasterGainRefusal.spec.ts
+  s_9b530f08172a54::t_548aafd7bd9b61 44
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeOfflineGraphBackend.spec.ts
+  s_9b530f08172a54::t_633c05473eaf51 86-88
+src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts
+  s_9b530f08172a54::t_31b2a3de207c1e 165-169
+  s_9b530f08172a54::t_85339e152f2552 212-214
+  s_9b530f08172a54::t_81e20a52add957 113-117
+  s_9b530f08172a54::t_e6ea83510590f4 164
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_9b530f08172a54::t_0a69c2ede1d3f0 67
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_9b530f08172a54::t_a74f9b6a2620a6 118-129
+src/utils/sourdawCommandArguments.ts
+  s_9b530f08172a54::t_e25283d4fd96f0 76
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_108a6bc281ce30 4477-4484,4490-4494
+  s_9b530f08172a54::t_12d470b5dfe732 10953
+  s_9b530f08172a54::t_baa4e09f7b75f9 10858-10860,10865-10867
+  s_9b530f08172a54::t_1f0174e619ca37 12827
+  s_9b530f08172a54::t_336c5145a72846 4436,4440
+  s_9b530f08172a54::t_1ed0dcb80890fe 4287-4290
+  s_9b530f08172a54::t_ddddb90895850c 11027
+  s_9b530f08172a54::t_3dc124cb094840 5882-5889,5894-5901
+  s_9b530f08172a54::t_3146f729f1858e 4369-4371,4375,4387
+  s_9b530f08172a54::t_a030db2ad22db7 5845-5860
+  s_9b530f08172a54::t_18289fdf5af274 10225
+  s_9b530f08172a54::t_68488191b29f76 10770-10857,10861-10864,10868-10873,10878-10887
+  s_9b530f08172a54::t_0f233614d7da90 10874-10877
+  s_9b530f08172a54::t_645e7363b1808b 11306
+  s_9b530f08172a54::t_a3c35aa97fd860 11413
+  s_9b530f08172a54::t_215405085bbcf9 3940-3942
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2c8d7c0e6f3c56bf1616d96208128b1d37eba75a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
