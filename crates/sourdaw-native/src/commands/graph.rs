@@ -1915,7 +1915,8 @@ fn builtin_parameter(
         | BuiltinEffectType::Grinder
         | BuiltinEffectType::Bacteria
         | BuiltinEffectType::Proof
-        | BuiltinEffectType::DutchOven => {
+        | BuiltinEffectType::DutchOven
+        | BuiltinEffectType::Toaster => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2185,6 +2186,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::dutch_oven_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Toaster => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::toaster_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -5262,7 +5273,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "toaster", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "levain", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5280,7 +5291,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "toaster", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "levain", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5324,7 +5335,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "toaster", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "levain", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -10458,7 +10469,7 @@ mod tests {
     #[test]
     fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
         let refusal = map_unbound_batch(
-            &batch(strip_with_device("d-toaster", "toaster", json!({}))),
+            &batch(strip_with_device("d-levain", "levain", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
@@ -10466,7 +10477,7 @@ mod tests {
         .expect_err("a type with no native body must refuse a contributing strip");
 
         assert!(
-            refusal.contains("d-toaster") && refusal.contains("toaster"),
+            refusal.contains("d-levain") && refusal.contains("levain"),
             "the refusal must name the device and the type it read, got: {refusal}"
         );
     }
@@ -12303,6 +12314,141 @@ mod tests {
             builtin_param_writes(&mapped.ops).is_empty(),
             "a bacteria patch is applied control-side, not over the command ring: {:?}",
             builtin_param_writes(&mapped.ops)
+        );
+    }
+
+    /// A toaster device is registered as a built-in instrument: it carries a
+    /// note store of its own, and it splices onto the chain as a `Generator`.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A drum machine sounds its own pads
+    /// and processes nothing it is handed, so a registration with no store
+    /// leaves a kit nothing can ever be scheduled at, and an `Effect` splice
+    /// runs it over the strip's signal in place of summing its pads into the
+    /// chain.
+    #[test]
+    fn a_toaster_device_registers_as_an_instrument_with_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "toaster", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a toaster device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Toaster(_), Some(_))
+            )),
+            "the toaster is not registered as a built-in body holding a note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "an instrument spliced as an effect processes the strip instead of feeding it"
+        );
+    }
+
+    /// A toaster on a contributing strip, handed one hit at the top of the
+    /// render, built with `parameter_values` as its patch.
+    ///
+    /// The note is 60, which is the first pad of the machine's high bank
+    /// (`toaster_pad_for_note`, `crates/daw-engine/src/scheduler.rs`), so the
+    /// hit lands on pad 0 and what the patch did to that pad is audible here —
+    /// or the patch never reached the instance the mapper built.
+    fn render_patched_toaster(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+
+        render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Drums",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-toaster", "type": "toaster", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-midi",
+                    "trackId": "t1",
+                    "deviceId": "d-toaster",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED,
+                    "notes": [ note_at(0.0, 60, 0) ],
+                }
+            ])),
+            &sample_pool(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a toaster renders offline")
+    }
+
+    /// A toaster's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the other instruments are held to, and for the same reason:
+    /// a kit's patch is the machine's own globals plus some twenty parameters
+    /// for each of sixteen pads, and the command ring is finite. The render is
+    /// what says the patch was applied rather than merely not sent —
+    /// `master_gain` scales the machine's output and `pad0_tune` moves the pitch
+    /// of the struck pad, so a patch that reached nothing renders the samples an
+    /// unpatched kit does.
+    #[test]
+    fn a_toaster_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let patch = json!({ "master_gain": 0.2, "pad0_tune": 7.0 });
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "toaster", patch.clone())),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the machine's own names are toaster parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the toaster's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+        let patched = render_patched_toaster(patch);
+        assert!(
+            patched.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so the inequality below proves nothing"
+        );
+        assert_ne!(
+            patched,
+            render_patched_toaster(json!({})),
+            "the patch never reached the instance the mapper built"
+        );
+    }
+
+    /// The device type a project spells as a display name resolves to the same
+    /// body as the key.
+    ///
+    /// `builtin_device_type` case-folds before asking the registry, because the
+    /// web side spells a body as a display name as often as a key, and this
+    /// machine's display name differs from its key by case alone. Unfolded, the
+    /// strip would be refused by name and take the whole batch with it.
+    #[test]
+    fn a_display_cased_toaster_device_type_still_resolves() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "Toaster", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mapper folds a display-cased device type onto its key");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Toaster(_), Some(_))
+            )),
+            "a display-cased device type registered something other than the drum machine"
         );
     }
 }
