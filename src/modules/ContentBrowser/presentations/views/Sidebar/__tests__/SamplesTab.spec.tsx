@@ -81,8 +81,8 @@ const createPreview = (): PreviewHandle => ({
 });
 
 const mockSamples = [
-    { id: 's1', name: 'Kick', category: 'Drums', duration: '1.0s', audioBufferId: 'b1' },
-    { id: 's2', name: 'Snare', category: 'Drums', duration: '0.5s', audioBufferId: 'b2' },
+    { id: 's1', name: 'Kick', category: 'Drums', duration: '1.0s', audioBufferId: 'b1', durationSeconds: 1.0 },
+    { id: 's2', name: 'Snare', category: 'Drums', duration: '0.5s', audioBufferId: 'b2', durationSeconds: 0.5 },
 ] satisfies React.ComponentProps<typeof SamplesTab>['samples'];
 
 type RenderSamplesTabInput = {
@@ -135,6 +135,33 @@ describe('SamplesTab', () => {
 
         expect(screen.getByText('Kick')).toBeInTheDocument();
         expect(screen.getByText('Snare')).toBeInTheDocument();
+    });
+
+    it('populates dataTransfer with sample details including durationSeconds on drag start', () => {
+        renderSamplesTab();
+
+        const kickRow = screen.getByText('Kick').closest('[draggable="true"]');
+        expect(kickRow).not.toBeNull();
+
+        const setData = vi.fn();
+        const dataTransfer = {
+            setData,
+            effectAllowed: '',
+        };
+
+        fireEvent.dragStart(kickRow!, { dataTransfer });
+
+        expect(setData).toHaveBeenCalledWith(
+            'application/x-sourdaw-sample',
+            JSON.stringify({
+                name: 'Kick',
+                id: 's1',
+                duration: '1.0s',
+                audioBufferId: 'b1',
+                durationSeconds: 1.0,
+            })
+        );
+        expect(dataTransfer.effectAllowed).toBe('copy');
     });
 
     it('should preview a cached audio buffer through the AudioEngine cache read use case', () => {

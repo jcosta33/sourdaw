@@ -82,6 +82,7 @@ export const SamplesTab = ({
                                         id: sample.id,
                                         duration: sample.duration,
                                         audioBufferId: sample.audioBufferId,
+                                        durationSeconds: sample.durationSeconds,
                                     };
                                     event.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';
