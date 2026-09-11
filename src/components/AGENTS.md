@@ -13,6 +13,9 @@ lucide icons; `components.json`), `layout/` holds layout primitives behind a bar
 ## Conventions
 
 - Merge classes with `cn()` (`src/utils/Styles/cn.ts` — clsx + tailwind-merge).
+- Style `ui/` primitives through CVA variants. Do not pile Tailwind utilities onto
+  `Button`, `Input`, or other `ui/` primitives at the call site. Add a variant or a
+  named wrapper instead of `className="h-8 px-3 …"`.
 - A device's stylesheet lives in `src/styles/utilities/modules/*.css`, one per styled device, never
   beside the component.
 - Colocate every component's spec in its `__tests__/`.

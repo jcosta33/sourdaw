@@ -61,6 +61,8 @@
                 "eslint.size-baseline.mjs",
                 "index.html",
                 "knip.json",
+                "oxlint.craft-baseline.d.mts",
+                "oxlint.craft-baseline.mjs",
                 "package.json",
                 "playwright.config.ts",
                 "pnpm-lock.yaml",

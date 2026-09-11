@@ -146,7 +146,7 @@ describe('SamplesTab', () => {
         vi.mocked(addTrack).mockReset();
         vi.mocked(addTrack).mockReturnValue({ id: 'new-track-id', name: 'New Track', kind: 'audio' });
         vi.mocked(addClip).mockReset();
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
     });
 
     it('should render sample rows', () => {

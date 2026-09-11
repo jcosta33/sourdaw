@@ -61,6 +61,25 @@ if (user) {
 }
 ```
 
+Object spread copies a record while adding keys. Call-site rest (`fn(...args)`) is the other legal spread. Do not clone with `{ ...x }`, do not clone-then-map (`[...notes].map`), and do not spread a condition (`...(enabled && { extra })`).
+
+```typescript
+// ✅ Good: update one field on a copy
+const next = { ...clip, loop: true };
+
+// ✅ Good: pass through rest arguments
+fn(...args);
+
+// ❌ Bad: clone with no added keys
+const clone = { ...clip };
+
+// ❌ Bad: conditional empty spread
+const props = { ...base, ...(open && { role: 'dialog' }) };
+
+// ❌ Bad: clone then map — `.map` already returns a new array
+const transposed = [...notes].map(transpose);
+```
+
 ### Keep logic framework-agnostic
 
 ```tsx
