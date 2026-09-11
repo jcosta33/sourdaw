@@ -1,0 +1,48 @@
+src/modules/AiRuntime/stores/agentChangeComparisonStore.ts
+  s_06adf2b091dc62::t_387197fcc534f8 1-140
+src/modules/AudioEngine/useCases/engineAccess/setMasterComparisonTrimDb.ts
+  s_06adf2b091dc62::t_bc3df0a9964fb0 1-37
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  s_06adf2b091dc62::t_3e81b4802a5520 1-45,47-381
+  s_06adf2b091dc62::t_71a87ca517c346 46
+src/modules/AiRuntime/useCases/index.ts
+  s_06adf2b091dc62::t_0e3524078be96e 82
+src/modules/AudioEngine/useCases/engineAccess/masterGainState.ts
+  s_06adf2b091dc62::t_36789146c3a58a 14-33,35-37
+src/modules/AudioEngine/useCases/livePlayback/forwardMasterGainToNativeLiveGraphSession.ts
+  s_06adf2b091dc62::t_848e0714a119a6 35
+  s_06adf2b091dc62::t_ff681d42145bc8 49
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_06adf2b091dc62::t_937ccf350995f9 107
+  s_06adf2b091dc62::t_b904da1954a9d6 771
+src/modules/AudioEngine/useCases/engineAccess/setMasterGainValue.ts
+  s_06adf2b091dc62::t_51098fe3712eb7 6,15-19,24-25
+src/modules/AiRuntime/stores/index.ts
+  s_06adf2b091dc62::t_796c4c9530bd03 15-24
+  s_06adf2b091dc62::t_56f3a78c01380f 14
+src/modules/AudioEngine/useCases/engineAccess/__tests__/setMasterComparisonTrimDb.spec.ts
+  s_06adf2b091dc62::t_1bb9f311c42644 1-97
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparison.spec.ts
+  s_06adf2b091dc62::t_58cae9c8b0dd42 96
+  s_06adf2b091dc62::t_78b2f9512f8f37 46-73,75
+  s_06adf2b091dc62::t_72cba811c428d2 1-11,13-45,74,76-95,97-392
+  s_06adf2b091dc62::t_a44cef30d14278 12
+src/modules/AudioEngine/useCases/index.ts
+  s_06adf2b091dc62::t_015ba491107266 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "331ca0b1c38f7c5daf653955d1067fd51594557d",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
