@@ -1490,6 +1490,17 @@ const allowedStepConditions = [
     // The measurement record is the diagnostic for a failed latency run, so it
     // uploads even when the measurement itself failed.
     ['nightly.yml', 'desktop-measure', 'Upload the measurement record', 'always()'],
+    // The proof step runs only when the packaged build succeeded, because
+    // there is nothing to drive otherwise.
+    [
+        'nightly.yml',
+        'desktop-measure',
+        'Prove the agent workspace in the packaged app',
+        "always() && steps.build-packaged-app.outcome == 'success'",
+    ],
+    // The upload runs always, because the record is the diagnostic for a
+    // failed proof.
+    ['nightly.yml', 'desktop-measure', 'Upload the agent workspace proof record', 'always()'],
 ];
 const seenAllowedSteps = new Set();
 for (const [file, parsed] of [
