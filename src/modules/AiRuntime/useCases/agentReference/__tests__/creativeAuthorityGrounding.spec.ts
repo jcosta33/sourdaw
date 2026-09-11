@@ -808,4 +808,27 @@ describe('creative authority grounding in the tool-call bridge', () => {
             { name: 'muteTrack', reason: 'Creative authority does not extend to monitoring effects' },
         ]);
     });
+
+    it('grounds setDeviceParameter on brightness when a negated word contains an intent verb as a substring', () => {
+        expectBrightnessGrounded('make the Guitar brighter, do not touch the preset', 0.8);
+    });
+
+    it('refuses setDeviceParameter when the prompt explicitly negates that intent', () => {
+        const result = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
+                },
+            ],
+            creativeAuthority: buildAuthority(),
+            projectContext: brightnessContext,
+            prompt: 'do not set the brightness',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'setDeviceParameter', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
 });
