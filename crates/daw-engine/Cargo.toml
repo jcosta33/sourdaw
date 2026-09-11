@@ -19,6 +19,12 @@ command-capture-fixture = []
 rtrb = "0.4"
 cpal = { version = "0.18", features = [] }
 daw-dsp = { version = "0.1.0", path = "../daw-dsp" }
+# The Dutch Oven reverb `DutchOvenBody` hosts. A workspace member building an
+# `rlib` that compiles natively; only its `js-sys` and
+# `console_error_panic_hook` dependencies are target-gated to wasm32 —
+# `wasm-bindgen` itself is unconditional and enters this native tree too, as
+# attribute plumbing that compiles without pulling in browser glue.
+proof-chamber = { version = "0.1.0", path = "../proof-chamber" }
 triple_buffer = "9.0.0"
 
 # The IAudioClient3/WASAPI device backend (ADR 0027). Target-gated so no

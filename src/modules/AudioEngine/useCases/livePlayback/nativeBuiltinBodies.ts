@@ -455,6 +455,56 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             latencyCompensatedByEngine: true,
         },
     ],
+    [
+        'dutch-oven',
+        {
+            soundsNotes: false,
+            /**
+             * No table, for the same reason as Grinder's, Bacteria's and
+             * Proof's entries above: the reverb spells its own parameters in
+             * snake_case and project truth authors the same ids, so the id a
+             * panel or a lane writes already is the name
+             * `ProofChamberInstance::set_param` takes. The vocabulary is a
+             * union across the engines an `algorithm` write selects between —
+             * a name the selected engine has no arm for is dropped by that
+             * engine, exactly as it is under the worklet — so admission here is
+             * the shape check and nothing narrower.
+             *
+             * No name is withheld from that door, unlike Bacteria's two
+             * allocating arms or Proof's `bypass`. The device's bypass is not a
+             * parameter at all here: it arrives as the record's own `bypassed`
+             * field and travels as the graph's `GraphCommand::SetBypass`, and
+             * the `dutch-oven` descriptor declares no `bypass` row for a lane
+             * to spell. Nor is there an engine-selection or IR route that skips
+             * the wire — `algorithm` and `vintage` are ordinary numeric names
+             * the instance answers, and `load_ir` has no caller anywhere in the
+             * application.
+             *
+             * `fdn_damping_version` is the one name the record carries that no
+             * panel shows. `addDevice`
+             * (`#/modules/Arrangement/useCases/device/addDevice.ts`) merges the
+             * descriptor's `internalParameterValues` into `parameterValues` at
+             * creation, so every saved reverb persists it, and it is exactly
+             * the name that must travel: it picks which damping curve the two
+             * FDN tanks open on, and withholding it would render every saved
+             * FDN patch on the legacy curve.
+             *
+             * Every engine an `algorithm` write selects is algorithmic and
+             * reports no group delay, yet the mapper still declares a figure
+             * for this body at registration and the audio thread re-reads it
+             * after every write (`PluginCore::declared_latency_frames`,
+             * `crates/daw-engine/src/scheduler.rs`). That declaration is what
+             * `latencyCompensatedByEngine` mirrors: on an engine-carried strip
+             * this device is excluded from the renderer's own sum, because the
+             * engine is the one holding the figure — today zero, and whatever
+             * the instance reports if a latent engine ever becomes reachable.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: shapedNumericParametersOnly,
+            addressesParameter: (paramId) => BUILTIN_PARAM_NAME_SHAPE.test(paramId),
+            latencyCompensatedByEngine: true,
+        },
+    ],
 ]);
 
 export function nativeBuiltinBody(deviceType: string): NativeBuiltinBody | null {

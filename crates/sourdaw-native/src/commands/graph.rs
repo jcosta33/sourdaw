@@ -1894,9 +1894,11 @@ fn resolved_param_writes<T>(
 /// and so is bacteria, which spells camelCase too and prefixes most of it with
 /// the band a name aims at (`band0_filterCutoff`), and so is proof, whose
 /// snake_case names carry the stage they route to as a prefix (`lim_ceiling`)
-/// and spell the module order as five indexed keys — because the vocabulary
-/// belongs to the DSP the body hosts rather than to the kind of device it is,
-/// the case it spells its names in, or the addressing it folds into them.
+/// and spell the module order as five indexed keys, and so is dutch-oven,
+/// whose snake_case names are a union across the engines an `algorithm` write
+/// selects between — because the vocabulary belongs to the DSP the body hosts
+/// rather than to the kind of device it is, the case it spells its names in,
+/// or the addressing it folds into them.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1912,7 +1914,8 @@ fn builtin_parameter(
         | BuiltinEffectType::Crust
         | BuiltinEffectType::Grinder
         | BuiltinEffectType::Bacteria
-        | BuiltinEffectType::Proof => {
+        | BuiltinEffectType::Proof
+        | BuiltinEffectType::DutchOven => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2099,6 +2102,13 @@ fn map_device(
     // order. `ProofChain` has no `set_param` arm for them at all —
     // `ProofBody::set_param` is what turns them into the chain's own `reorder`
     // — so a saved order reaches the device through this patch or not at all.
+    //
+    // A dutch-oven's record is the engine selection, the vintage stage, six
+    // decay-rate EQ bands and some twenty of the selected engine's own
+    // parameters, and it carries one name a panel never shows —
+    // `fdn_damping_version`, merged into `parameterValues` at creation from the
+    // descriptor's `internalParameterValues` — which decides which damping
+    // curve every saved FDN patch opens on.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2165,6 +2175,16 @@ fn map_device(
                 |patch| {
                     (
                         PluginCore::proof_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::DutchOven => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::dutch_oven_with_patch(sample_rate, &patch),
                         Vec::new(),
                     )
                 },
@@ -5242,7 +5262,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "dutch-oven", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "toaster", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5260,7 +5280,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "dutch-oven", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "toaster", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5304,7 +5324,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "dutch-oven", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "toaster", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -11953,6 +11973,272 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0, false)],
             "a bypassed proof is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A dutch-oven device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_proof_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the mastering suite, applied to the reverb:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a reverb sounds the room around what it is handed rather than
+    /// material of its own.
+    #[test]
+    fn a_dutch_oven_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-oven", "dutch-oven", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(_), None)
+            )),
+            "the dutch oven is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The device type a project spells as a display name resolves to the same
+    /// body as the key.
+    ///
+    /// `builtin_device_type` case-folds before asking the registry, because the
+    /// web side spells a body as a display name as often as a key, and this
+    /// body is the one whose display name differs from its key by case alone.
+    /// Unfolded, the strip would be refused by name and take the whole batch
+    /// with it.
+    #[test]
+    fn a_display_cased_dutch_oven_device_type_still_resolves() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-oven", "Dutch-Oven", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mapper folds a display-cased device type onto its key");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(_), None)
+            )),
+            "a display-cased device type registered something other than the reverb"
+        );
+    }
+
+    /// The figure the dutch-oven body the batch built reports, in frames.
+    fn mapped_dutch_oven_latency(ops: &[GraphCommand]) -> u32 {
+        ops.iter()
+            .find_map(|op| match op {
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(body), _) => {
+                    Some(body.latency_samples())
+                }
+                _ => None,
+            })
+            .expect("the batch registers a dutch-oven body")
+    }
+
+    /// Where a batch registers its dutch-oven body, and under which id.
+    fn dutch_oven_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::DutchOven(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a dutch-oven body")
+    }
+
+    /// [`render_builtin_clip`] for a dutch-oven over a sustained tone — a
+    /// reverb handed a step or a constant says little about its wet path, while
+    /// a tone excites the tank for the whole clip.
+    fn render_dutch_oven_clip(parameter_values: Value) -> Vec<f32> {
+        let material: Vec<f32> = (0..48_000)
+            .map(|frame| 0.5 * (2.0 * std::f32::consts::PI * 220.0 * frame as f32 / 48_000.0).sin())
+            .collect();
+        render_builtin_clip("dutch-oven", "d-oven", parameter_values, material)
+    }
+
+    /// A dutch-oven's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust, grinder, bacteria and proof are
+    /// held to above, and for the same reason: the command ring is finite, and
+    /// a reverb record is the engine selection, the vintage stage, six
+    /// decay-rate EQ bands and some twenty of the selected engine's own
+    /// parameters.
+    ///
+    /// The render is what says the patch was applied rather than merely not
+    /// sent. `mix` is the one control that decides how much of the tank is
+    /// heard at all, so a fully wet render and a fully dry one over the same
+    /// tone are two different signals — and a patch that reached nothing would
+    /// give one, because the instance opens at neither extreme.
+    #[test]
+    fn a_dutch_oven_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-oven",
+                "dutch-oven",
+                json!({
+                    "mix": 1.0,
+                    "decay": 0.8,
+                    "size": 0.7,
+                    "algorithm": 1.0,
+                    "fdn_damping_version": 2.0,
+                    "decay_eq_3": 2.0
+                }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the reverb's own names are dutch-oven parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the dutch oven's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let wet = render_dutch_oven_clip(json!({ "mix": 1.0, "decay": 0.8, "size": 0.7 }));
+        let dry = render_dutch_oven_clip(json!({ "mix": 0.0, "decay": 0.8, "size": 0.7 }));
+
+        assert!(
+            wet.iter().any(|sample| *sample != 0.0),
+            "the wet render is silent, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&wet, &dry) > TOLERANCE,
+            "the mix in the patch never reached the instance the mapper built (largest \
+             difference {})",
+            max_abs_difference(&wet, &dry)
+        );
+    }
+
+    /// A dutch-oven declares the figure its instance reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// Every engine an `algorithm` write selects is algorithmic and delays
+    /// nothing, so that figure is 0 today and the record cannot move it — which
+    /// is why the oracle is the body's own reading rather than a literal, and
+    /// why this is a declaration rather than a refusal to declare. `Some(0)`
+    /// leaves the graph already holding a figure the next write to the body can
+    /// move (`ActiveEffect::refresh_declared_latency`), where `None` would leave
+    /// it with none at all; the two convolution-backed engines report a
+    /// 128-frame head, so the difference is what an impulse-response transport
+    /// would need.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. It carries no dry line, because a
+    /// line is read on the bypassed pass alone, where this body declares 0 and
+    /// the pass hands the block on untouched.
+    #[test]
+    fn a_dutch_oven_record_declares_the_latency_its_engine_reports() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-oven",
+                "dutch-oven",
+                json!({ "mix": 1.0, "algorithm": 1.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        let (registration, effect_id) = dutch_oven_registration(&mapped.ops);
+        let reported = mapped_dutch_oven_latency(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a dutch oven's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames as u32, reported,
+            "the declared figure is not the one the record's instance reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// The figure the mapper sends is already the bypassed one, so the bypass
+    /// that follows finds the graph aimed where it wants it. What this pins for
+    /// a reverb is the declaration's presence, its place ahead of the bypass and
+    /// its absent line rather than a figure the bypass moved: every selectable
+    /// engine reports 0, so the un-bypassed record declares 0 too. A body that
+    /// stopped declaring under bypass, or that shipped a line with the zero,
+    /// fails here; one whose engine ever reported a real delay would need the
+    /// bypass branch this mirrors from
+    /// [`a_bypassed_proof_record_declares_zero_and_ships_no_line`].
+    #[test]
+    fn a_bypassed_dutch_oven_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-oven", "type": "dutch-oven", "bypassed": true,
+                               "parameterValues": { "mix": 1.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed dutch oven is not declared at zero without a line"
         );
         assert!(
             declarations[0].0 < bypass_position,
