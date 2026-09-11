@@ -24,8 +24,7 @@ describe('XYMorphPad', () => {
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={vi.fn()}
-                onChangeY={vi.fn()}
+                onChange={vi.fn()}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={120}
                 height={120}
@@ -35,14 +34,12 @@ describe('XYMorphPad', () => {
     });
 
     it('stops updating the position after pointercancel', () => {
-        const onChangeX = vi.fn();
-        const onChangeY = vi.fn();
+        const onChange = vi.fn();
         const { container } = render(
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={onChangeX}
-                onChangeY={onChangeY}
+                onChange={onChange}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={120}
                 height={120}
@@ -51,25 +48,21 @@ describe('XYMorphPad', () => {
         const pad = container.firstChild as HTMLElement;
         mockRect(pad);
         fireEvent.pointerDown(pad, { clientX: 60, clientY: 60, pointerId: 1 });
-        onChangeX.mockClear();
-        onChangeY.mockClear();
+        onChange.mockClear();
         fireEvent.pointerCancel(pad, { pointerId: 1 });
         fireEvent.pointerMove(pad, { clientX: 10, clientY: 90, pointerId: 1 });
-        expect(onChangeX).not.toHaveBeenCalled();
-        expect(onChangeY).not.toHaveBeenCalled();
+        expect(onChange).not.toHaveBeenCalled();
     });
 });
 
 describe('XYMorphPad — pointer drag', () => {
-    it('fires onChangeX and onChangeY with normalized coordinates on drag', () => {
-        const onChangeX = vi.fn();
-        const onChangeY = vi.fn();
+    it('fires onChange with one normalized (x, y) position per move', () => {
+        const onChange = vi.fn();
         const { container } = render(
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={onChangeX}
-                onChangeY={onChangeY}
+                onChange={onChange}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={100}
                 height={100}
@@ -80,22 +73,18 @@ describe('XYMorphPad — pointer drag', () => {
         // Drag to x=25, y=25 → nx=0.25, ny=1-0.25=0.75
         fireEvent.pointerDown(pad, { clientX: 50, clientY: 50, pointerId: 1 });
         fireEvent.pointerMove(pad, { clientX: 25, clientY: 25, pointerId: 1 });
-        // pointerDown fires first, then pointerMove
-        const xCalls = onChangeX.mock.calls.map((c) => c[0]);
-        const yCalls = onChangeY.mock.calls.map((c) => c[0]);
-        // Last move should produce x=0.25, y=0.75
-        expect(xCalls[xCalls.length - 1]).toBeCloseTo(0.25, 5);
-        expect(yCalls[yCalls.length - 1]).toBeCloseTo(0.75, 5);
+        // The position arrives as one (x, y) pair — the shape the morph use
+        // case interpolates from.
+        expect(onChange).toHaveBeenLastCalledWith(0.25, 0.75);
     });
 
     it('does not fire onChange when moving without pointerDown', () => {
-        const onChangeX = vi.fn();
+        const onChange = vi.fn();
         const { container } = render(
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={onChangeX}
-                onChangeY={vi.fn()}
+                onChange={onChange}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={100}
                 height={100}
@@ -104,18 +93,16 @@ describe('XYMorphPad — pointer drag', () => {
         const pad = container.firstChild as HTMLElement;
         mockRect(pad, 100, 100);
         fireEvent.pointerMove(pad, { clientX: 25, clientY: 25, pointerId: 1 });
-        expect(onChangeX).not.toHaveBeenCalled();
+        expect(onChange).not.toHaveBeenCalled();
     });
 
     it('clamps coordinates to [0, 1]', () => {
-        const onChangeX = vi.fn();
-        const onChangeY = vi.fn();
+        const onChange = vi.fn();
         const { container } = render(
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={onChangeX}
-                onChangeY={onChangeY}
+                onChange={onChange}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={100}
                 height={100}
@@ -125,8 +112,7 @@ describe('XYMorphPad — pointer drag', () => {
         mockRect(pad, 100, 100);
         // Drag to negative coordinates
         fireEvent.pointerDown(pad, { clientX: -10, clientY: -10, pointerId: 1 });
-        const xVal = onChangeX.mock.calls[0]?.[0];
-        const yVal = onChangeY.mock.calls[0]?.[0];
+        const [xVal, yVal] = onChange.mock.calls[0] ?? [];
         expect(xVal).toBeGreaterThanOrEqual(0);
         expect(yVal).toBeLessThanOrEqual(1);
     });
@@ -138,8 +124,7 @@ describe('XYMorphPad — corner labels', () => {
             <XYMorphPad
                 x={0.5}
                 y={0.5}
-                onChangeX={vi.fn()}
-                onChangeY={vi.fn()}
+                onChange={vi.fn()}
                 snapshots={DEFAULT_PATCH.snapshots}
                 width={120}
                 height={120}

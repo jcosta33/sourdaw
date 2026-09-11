@@ -28,8 +28,6 @@ const PARAM_MAP: Record<string, string> = {
     crossoverSlope: 'crossoverSlope',
     crossoverMode: 'crossoverMode',
     globalRouting: 'globalRouting',
-    morphX: 'morphX',
-    morphY: 'morphY',
     macro1: 'macro1',
     macro2: 'macro2',
     macro3: 'macro3',
@@ -128,6 +126,8 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
+                } else if (msg.type === 'reset' && this._instance !== null && !this._faulted) {
+                    this._instance.reset();
                 } else if (
                     msg.type === 'init-sab' &&
                     msg.sab instanceof SharedArrayBuffer &&

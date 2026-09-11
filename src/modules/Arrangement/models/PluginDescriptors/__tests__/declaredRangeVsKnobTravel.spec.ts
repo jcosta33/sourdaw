@@ -1816,9 +1816,11 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // that into a red.
         //
         // compared = descriptor parameters on a bespoke-panel device that the
-        // scanner bound to exactly one knob with two numeric bounds.
-        expect(CENSUS.compared.length).toBe(193);
-        expect(CENSUS.agree.length).toBe(192);
+        // scanner bound to exactly one knob with two numeric bounds. Two fewer
+        // since #2076: the XY morph position is UI-resolved and no longer a
+        // descriptor parameter with a knob.
+        expect(CENSUS.compared.length).toBe(191);
+        expect(CENSUS.agree.length).toBe(190);
         expect(CENSUS.disagree.length).toBe(1);
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
@@ -1882,7 +1884,9 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             'dutch-oven': 17,
             fermenter: 57,
             gluten: 24,
-            bacteria: 42,
+            // Two fewer since #2076: the XY morph position is UI-resolved and
+            // no longer a descriptor parameter with a knob.
+            bacteria: 40,
             grinder: 25,
             crust: 6,
             // Reached only because `readBoundParamId` takes the id from any
@@ -2410,7 +2414,11 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             toaster: 0,
             levain: 1,
             gluten: 0,
-            bacteria: 1,
+            // The one pre-existing blind knob, plus the two XY morph crosshair
+            // knobs (#2076): the morph position is deliberately not a
+            // descriptor parameter — morphing resolves in the UI — so their
+            // controls carry no id this census could read.
+            bacteria: 3,
             grinder: 0,
             proof: 10,
             // Yeast's `ProcessorParams.tsx` renders one control per MIDI

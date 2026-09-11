@@ -1146,6 +1146,11 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     controller: {
                         setParam: result.setParam,
                         setBypass: result.setBypass,
+                        // Reached through the engine's generic controller sweep
+                        // (`stopAllScheduled`), like Grinder's: an engine-level
+                        // re-init or program change must leave the bands silent
+                        // whatever tails they held.
+                        reset: result.reset,
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);

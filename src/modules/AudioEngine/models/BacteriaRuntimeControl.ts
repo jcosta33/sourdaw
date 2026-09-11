@@ -17,8 +17,6 @@ const GLOBAL_PARAMETER_IDS = [
     'crossoverSlope',
     'crossoverMode',
     'globalRouting',
-    'morphX',
-    'morphY',
     'macro1',
     'macro2',
     'macro3',

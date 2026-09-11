@@ -91,11 +91,13 @@ export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalyser
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
+export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
 export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';
+export { getBuiltinLufsMeterReading } from './engineAccess/getBuiltinLufsMeterReading';
 export { getTrackStrip } from './engineAccess/getTrackStrip';
 export { getToasterDeviceControls } from './engineAccess/getToasterDeviceControls';
 export { ensureTrackStrip } from './engineAccess/ensureTrackStrip';

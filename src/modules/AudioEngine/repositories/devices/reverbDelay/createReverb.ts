@@ -1,33 +1,11 @@
 import { type OfflineDeviceNode } from '../types';
 
+import { applyReverbImpulseShape, DEFAULT_REVERB_SHAPE } from './reverbImpulse';
+
 // ── Reverb (algorithmic) ─────────────────────────────────────────────────
 
-const reverbImpulses = new WeakMap<BaseAudioContext, AudioBuffer>();
-
-function createDeterministicImpulse(ctx: BaseAudioContext): AudioBuffer {
-    const cached = reverbImpulses.get(ctx);
-    if (cached) {
-        return cached;
-    }
-
-    const length = ctx.sampleRate * 2;
-    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
-    for (let channel = 0; channel < 2; channel++) {
-        const data = impulse.getChannelData(channel);
-        let state = (0x9e3779b9 ^ ctx.sampleRate ^ Math.imul(channel + 1, 0x85ebca6b)) >>> 0;
-        for (let index = 0; index < length; index++) {
-            state ^= state << 13;
-            state ^= state >>> 17;
-            state ^= state << 5;
-            const noise = ((state >>> 0) / 0xffff_ffff) * 2 - 1;
-            data[index] = noise * Math.exp(-index / (ctx.sampleRate * 0.5));
-        }
-    }
-    reverbImpulses.set(ctx, impulse);
-    return impulse;
-}
-
 export function createReverb(ctx: BaseAudioContext): OfflineDeviceNode {
+    const splitter = ctx.createGain();
     const dry = ctx.createGain();
     dry.gain.value = 0.7;
     const wet = ctx.createGain();
@@ -39,9 +17,7 @@ export function createReverb(ctx: BaseAudioContext): OfflineDeviceNode {
     lowcut.frequency.value = 80;
     lowcut.Q.value = 0.7;
     const convolver = ctx.createConvolver();
-    convolver.buffer = createDeterministicImpulse(ctx);
     const merger = ctx.createGain();
-    const splitter = ctx.createGain();
     splitter.connect(dry);
     splitter.connect(predelay);
     predelay.connect(lowcut);
@@ -49,9 +25,12 @@ export function createReverb(ctx: BaseAudioContext): OfflineDeviceNode {
     convolver.connect(wet);
     dry.connect(merger);
     wet.connect(merger);
-    return {
+    const dn: OfflineDeviceNode = {
         inputNode: splitter,
         outputNode: merger,
         nodes: [splitter, dry, wet, convolver, merger, predelay, lowcut],
+        namedNodes: { splitter, dry, wet, convolver, merger, predelay, lowcut },
     };
+    applyReverbImpulseShape(dn, ctx, DEFAULT_REVERB_SHAPE);
+    return dn;
 }

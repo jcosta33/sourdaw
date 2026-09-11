@@ -17,6 +17,8 @@ import {
     setBacteriaActiveModule,
     setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
+import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/applyBacteriaMorph';
+import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
@@ -450,20 +452,26 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 <XYMorphPad
                     x={state.patch.morphX}
                     y={state.patch.morphY}
-                    onChangeX={(value) => setGlobalParam(deviceId, 'morphX', value)}
-                    onChangeY={(value) => setGlobalParam(deviceId, 'morphY', value)}
+                    onChange={(x, y) => applyBacteriaMorphWithAudio(deviceId, x, y)}
                     snapshots={state.patch.snapshots}
                     width={264}
                     height={212}
                 />
             </Stack>
             <Grid cols={4} gap={2}>
-                {state.patch.snapshots.slice(0, 4).map((snapshot) => (
+                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => (
                     <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
                         <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                             Snap {snapshot.id}
                         </span>
                         <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                        <BChip
+                            active={Object.keys(snapshot.paramValues).length > 0}
+                            aria-label={`Capture snapshot ${snapshot.id}`}
+                            onClick={() => captureBacteriaSnapshot(deviceId, index)}
+                        >
+                            Capture
+                        </BChip>
                     </Stack>
                 ))}
             </Grid>
@@ -582,26 +590,34 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 description="Fine-tune the resting position without dragging the pad."
             />
             <Row wrap gap={4}>
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphX}
-                    k="morphX"
-                    label="X"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphY}
-                    k="morphY"
-                    label="Y"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphX}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, value, state.patch.morphY)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph X"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">X</span>
+                </Stack>
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphY}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, state.patch.morphX, value)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph Y"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">Y</span>
+                </Stack>
             </Row>
         </Stack>
     </Stack>

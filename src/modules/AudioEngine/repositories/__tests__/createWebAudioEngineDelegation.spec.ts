@@ -547,12 +547,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         const diagnostics = engine.getDiagnostics();
 
+        // The phaser builds its full 12-filter allpass pool up front (4 active
+        // by default, #3733), so its owned-node count is 11 + 8 pooled filters.
         expect({
             deviceAudioNodes: diagnostics.graph.deviceAudioNodes,
             readyAudioNodes: diagnostics.graph.graphSlotResourcesByLoadState.ready.audioNodes,
         }).toEqual({
-            deviceAudioNodes: 11,
-            readyAudioNodes: 11,
+            deviceAudioNodes: 19,
+            readyAudioNodes: 19,
         });
     });
 

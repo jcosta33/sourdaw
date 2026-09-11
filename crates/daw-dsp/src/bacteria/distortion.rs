@@ -114,6 +114,21 @@ impl DistortionProcessor {
         0.0
     }
 
+    /// Drop the stage's in-flight signal memory.
+    ///
+    /// Smudge's overlap-add window and Bitcrush's sample-and-hold are the two
+    /// stateful shapes here — the same strands the mode-exit arms in
+    /// `set_param` clear, cleared for every mode at once because an engine
+    /// reset does not know which mode was holding audio. The memoryless
+    /// shapers have nothing to drop.
+    pub fn reset(&mut self) {
+        for channel in &mut self.smudge {
+            channel.reset();
+        }
+        self.sr_counter = [0; CHANNELS];
+        self.sr_hold = [0.0; CHANNELS];
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "distortionMode" => {

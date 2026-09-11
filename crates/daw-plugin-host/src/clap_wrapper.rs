@@ -2091,7 +2091,17 @@ impl ClapWrapper {
                 return;
             }
 
-            read_output_scratch(&self.audio, outputs, n_samp);
+            if self.audio.output_buffers.is_empty() {
+                // A successful process with no declared output bus is an
+                // input-only analyzer: it taps the signal and produces none of
+                // its own, so the dry block continues past it — the same rule
+                // the VST3 backend applies when no output bus exists. Leaving
+                // the caller's buffers alone here mutes the track, because the
+                // slot copies its zeroed scratch back over them.
+                copy_inputs_to_outputs(inputs, outputs, num_samples);
+            } else {
+                read_output_scratch(&self.audio, outputs, n_samp);
+            }
         }
     }
 
@@ -4262,6 +4272,116 @@ mod tests {
             (left, right),
             (0.25, 0.5),
             "a note effect's slot passes audio through instead of muting the track"
+        );
+    }
+
+    // ── Input-only analyzers pass the dry block through ────────────────────
+    //
+    // A plugin with audio inputs and zero audio outputs — a spectrum analyzer,
+    // a loudness meter — is not the portless note effect: it has an input port
+    // to be fed every block, and its slot must still carry the dry signal.
+    // `HostedPluginSlot` hands the wrapper its zeroed scratch and copies
+    // whatever the wrapper leaves there back over the track, so a wrapper that
+    // leaves the caller's buffers alone mutes the input.
+
+    /// What the signal-inspecting stub saw, shared across the analyzer and
+    /// generator tests and serialised by `BUFFER_TEST_LOCK` like the other
+    /// capture statics.
+    static INSPECTED_SAW: std::sync::Mutex<Option<(f32, f32)>> = std::sync::Mutex::new(None);
+    static INSPECTED_PROCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    /// A plugin that inspects its input port's first frame and writes no audio
+    /// of its own, answering CONTINUE like a healthy plugin. The declared bus
+    /// layout makes it an input-only analyzer (`[2]` in, nothing out) or a
+    /// zero-input generator (nothing in, `[2]` out).
+    unsafe extern "C" fn stub_process_signal_inspecting(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        INSPECTED_PROCESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        *CAPTURED_BUFFERS.lock().unwrap() = Some(CapturedBuffers {
+            input_count: (*process).audio_inputs_count,
+            output_count: (*process).audio_outputs_count,
+            ..CapturedBuffers::default()
+        });
+        if (*process).audio_inputs_count > 0 {
+            let buffer = &*(*process).audio_inputs;
+            if buffer.channel_count >= 2 {
+                let left = *(*(buffer.data32));
+                let right = *(*(buffer.data32.add(1)));
+                *INSPECTED_SAW.lock().unwrap() = Some((left, right));
+            }
+        }
+        CLAP_PROCESS_CONTINUE
+    }
+
+    fn signal_inspecting_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_signal_inspecting);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    #[test]
+    fn an_input_only_analyzer_sees_the_block_on_its_input_port_and_the_dry_audio_survives() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        *INSPECTED_SAW.lock().unwrap() = None;
+        INSPECTED_PROCESS_CALLS.store(0, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[2], &[]).expect("analyzer layout builds");
+        let mut wrapper = stub_wrapper_over(layout, signal_inspecting_plugin_ptr());
+
+        // The output arrays start zeroed, exactly like the slot's out_l/out_r
+        // scratch that gets copied back over the engine's channels.
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (1, 0),
+            "the analyzer has its declared input port handed to it — not the portless note-effect shape"
+        );
+        assert_eq!(INSPECTED_PROCESS_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            INSPECTED_SAW.lock().unwrap().unwrap(),
+            (0.25, 0.5),
+            "the analyzer receives the dry signal on its input port every process call"
+        );
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "the dry audio survives the slot instead of being muted by its zeroed scratch"
+        );
+    }
+
+    #[test]
+    fn a_zero_input_generator_yields_only_its_own_output_never_the_dry_input() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        *INSPECTED_SAW.lock().unwrap() = None;
+        INSPECTED_PROCESS_CALLS.store(0, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[], &[2]).expect("generator layout builds");
+        let mut wrapper = stub_wrapper_over(layout, signal_inspecting_plugin_ptr());
+
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (0, 1),
+            "the generator is handed its output port and no input buffer"
+        );
+        assert_eq!(INSPECTED_PROCESS_CALLS.load(Ordering::Relaxed), 1);
+        assert!(
+            INSPECTED_SAW.lock().unwrap().is_none(),
+            "no input port exists to inspect"
+        );
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a generator that writes nothing stays silent — the fed input must not pass through it"
         );
     }
 

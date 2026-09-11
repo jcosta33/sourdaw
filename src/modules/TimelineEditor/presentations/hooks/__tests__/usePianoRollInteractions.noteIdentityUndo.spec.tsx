@@ -37,6 +37,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: vi.fn(() => ({ playheadPosition: 2.5 })),
+    // The real Project persistence helpers this spec's graph imports read the
+    // Transport barrel too; this spec never loads or saves a project, so the
+    // seam names only need to exist (barrel-mock coverage).
+    addTempoChange: vi.fn(),
+    addTimeSignatureChange: vi.fn(),
+    defaultTransportState: {},
+    ensureTrackStrips: vi.fn(),
+    repairRuntimeGraphFromProject: vi.fn(),
+    replaceTempoMap: vi.fn(),
+    replaceTimeSignatureMap: vi.fn(),
+    restoreTimelineMapSnapshot: vi.fn(),
+    restoreTransportSnapshot: vi.fn(),
+    stopPlayback: vi.fn(),
 }));
 
 /**

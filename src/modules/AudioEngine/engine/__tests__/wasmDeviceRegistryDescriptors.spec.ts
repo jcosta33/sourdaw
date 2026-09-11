@@ -1113,6 +1113,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
+                reset: vi.fn(),
                 ready: Promise.resolve(ready),
                 emitLatency: (latency: number) => latencyCallback?.(latency),
             };

@@ -4,6 +4,8 @@ import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 
+import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
+
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
@@ -14,6 +16,40 @@ export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWri
 // pendingUpdates / latestValues Map pair.
 export type BacteriaBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher: RafBatcher<BacteriaBatchEntry> = createRafBatcher<BacteriaBatchEntry>();
+
+/**
+ * Top-level `BacteriaPatch` keys that are NOT scalar audio parameters and so
+ * are never pushed to the engine as a single `(paramId, value)` message:
+ *   - `name`            — display label, no audio meaning
+ *   - `bands`           — array; pushed per-band with a `band{i}_` prefix
+ *   - `modAssignments`  — UI/persistence-only routing metadata (see BacteriaPatch.ts)
+ *   - `snapshots`       — UI/persistence-only XY-morph metadata (see BacteriaPatch.ts)
+ *   - `morphX`/`morphY` — the morph pad's crosshair position. Morphing is
+ *     resolved in the UI and reaches the engine through the ordinary scalar
+ *     params it interpolates (see `interpolateMorphSnapshot`), so the position
+ *     itself is no more an engine parameter than the corners are.
+ *
+ * Every other key is a scalar (number / boolean / enum-string) the engine
+ * understands. Iterating the patch keys minus this set — instead of a parallel
+ * hand-maintained string list — guarantees new scalar params (e.g. lfo1Sync /
+ * lfo2Sync) are pushed without a second edit, and that the two lists can never
+ * silently drift apart.
+ */
+export const NON_SCALAR_GLOBAL_KEYS = new Set<keyof BacteriaPatch>([
+    'name',
+    'bands',
+    'modAssignments',
+    'snapshots',
+    'morphX',
+    'morphY',
+]);
+
+/**
+ * Per-band keys that are not scalar audio parameters: `convolutionIr` is an IR
+ * identifier string with no numeric encoding (encodePatchValue returns null for
+ * it), so it is excluded explicitly rather than relying on the null guard.
+ */
+export const NON_SCALAR_BAND_KEYS = new Set<keyof BacteriaBand>(['convolutionIr']);
 
 export const DISTORTION_MODE_INDEX = {
     'soft-clip': 0,

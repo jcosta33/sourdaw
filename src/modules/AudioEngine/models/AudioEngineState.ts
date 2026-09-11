@@ -1,3 +1,4 @@
+import type { BuiltinLufsMeterReader, BuiltinLufsMeterReading } from './BuiltinLufsMeterReader';
 import type {
     RuntimeGraphDeltaResult,
     RuntimeGraphProjectRevisionValidator,
@@ -234,6 +235,8 @@ export type BuiltinDeviceNode = {
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
+    /** Loudness read surface carried by analyzer devices that expose one. */
+    lufsMeter?: BuiltinLufsMeterReader;
     /** Current processor-owned lifecycle state when this device has adopted the shared contract. */
     processorLifecycle?: () => AudioProcessorLifecycleState | null;
     /** Unified controller for all device types */
@@ -455,6 +458,19 @@ export type SendNode = {
     preFader: boolean;
 };
 
+/**
+ * Control-room monitoring state as the listening path consumes it: the two
+ * gestures that shape what the musician hears without ever entering the
+ * programme. The dim level arrives already folded to a linear multiplier —
+ * the engine applies gains, it does not read monitoring state.
+ */
+export type ControlRoomMonitoring = {
+    /** Fold the listening channels to mono, (L+R)/2 onto each output channel. */
+    monoActive: boolean;
+    /** Linear attenuation of the listening feed; 1 is off. */
+    dimGain: number;
+};
+
 export type AudioEngine = {
     readonly context: AudioContext;
     readonly masterGainNode: GainNode;
@@ -474,6 +490,8 @@ export type AudioEngine = {
     suspend(): Promise<void>;
     setMasterGain(value: number): void;
     getMasterGain(): number;
+    /** Apply control-room monitoring to the listening path only; never the programme. */
+    setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void;
     getState(): AudioEngineState;
     getHealth(): AudioEngineHealth;
     getDiagnostics(): AudioEngineDiagnostics;
@@ -503,6 +521,8 @@ export type AudioEngine = {
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
     findToasterControls(deviceId: string): ToasterDeviceControls | undefined;
+    /** Live reading of the builtin LUFS meter with this device id, or null while it has no loaded node. */
+    findLufsMeterReading(deviceId: string): BuiltinLufsMeterReading | null;
     /**
      * The loaded device's own graph output, wherever it sits (track or bus —
      * bus devices live on the paired TrackNode). `null` says the device has no

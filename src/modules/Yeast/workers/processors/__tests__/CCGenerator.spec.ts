@@ -293,4 +293,160 @@ describe('CCGenerator', () => {
             expect(output.some((event) => event.kind.type === 'noteOn')).toBe(true);
         });
     });
+
+    describe('sample & hold draws once per cycle (issue #3804)', () => {
+        const transport48k: TransportInfo = { ...transport, sampleRate: 48000, bpm: 120 };
+
+        function sampleHoldGen(): CCGenerator {
+            const gen = new CCGenerator('cc-sample-hold');
+            gen.setParam('shape', 5); // sampleHold
+            gen.setParam('min', 0);
+            gen.setParam('max', 127);
+            return gen;
+        }
+
+        /** Drive the generator over `totalSamples` in fixed-size blocks, collecting all output. */
+        function runBlocks(
+            gen: CCGenerator,
+            totalSamples: number,
+            blockSizeSamples: number,
+            noteOnAtSample: number | null = null
+        ): MidiEvent[] {
+            const allOutput: MidiEvent[] = [];
+            for (let start = 0; start < totalSamples; start += blockSizeSamples) {
+                const input: MidiEvent[] =
+                    noteOnAtSample !== null && noteOnAtSample >= start && noteOnAtSample < start + blockSizeSamples
+                        ? [
+                              {
+                                  timeSamples: noteOnAtSample,
+                                  kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                              },
+                          ]
+                        : [];
+                gen.processMidi(input, allOutput, {
+                    ...transport48k,
+                    blockStartSamples: start,
+                    blockEndSamples: Math.min(start + blockSizeSamples, totalSamples),
+                });
+            }
+            return allOutput;
+        }
+
+        function ccEvents(output: readonly MidiEvent[]): Array<{ timeSamples: number; value: number }> {
+            return output
+                .filter((event) => event.kind.type === 'cc')
+                .map((event) =>
+                    event.kind.type === 'cc'
+                        ? { timeSamples: event.timeSamples, value: event.kind.value }
+                        : {
+                              timeSamples: -1,
+                              value: -1,
+                          }
+                );
+        }
+
+        // The generator seeds its LCG with 0xdead (matching Arpeggiator), so its
+        // draws are deterministic: round(state / 0x7fffffff * 127) walks
+        // 106, 93, 121, 62, 114, ... — scattered across the range, never decaying.
+        it('draws once at the start and once at the cycle boundary, holding in between (slow free rate)', () => {
+            // 0.1 Hz at 48 kHz — one cycle is 480,000 samples. The old code
+            // redrew on every 64-sample evaluation while phase < 0.01, bursting
+            // 33, 17, 9, 4, 2, 0 across the first ~450 samples of each cycle.
+            const gen = sampleHoldGen();
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 0.1);
+
+            expect(ccEvents(runBlocks(gen, 480_064, 480_064))).toEqual([
+                { timeSamples: 0, value: 106 },
+                { timeSamples: 480_000, value: 93 },
+            ]);
+        });
+
+        it('produces the same held sequence whatever block size carries the span', () => {
+            const totalSamples = 480_064;
+            const expectedValues = [106, 93];
+            for (const blockSize of [64, 4096, 24_000, 977]) {
+                const gen = sampleHoldGen();
+                gen.setParam('sync', 0);
+                gen.setParam('free_rate_hz', 0.1);
+                const events = ccEvents(runBlocks(gen, totalSamples, blockSize));
+                expect(
+                    events.map((event) => event.value),
+                    `block size ${blockSize}`
+                ).toEqual(expectedValues);
+                if (totalSamples % blockSize === 0) {
+                    // Identical evaluation grid: identical event times too.
+                    expect(events, `block size ${blockSize}`).toEqual([
+                        { timeSamples: 0, value: 106 },
+                        { timeSamples: 480_000, value: 93 },
+                    ]);
+                }
+            }
+        });
+
+        it('draws at every wrap at a tempo-synced rate, with no intra-cycle redraws', () => {
+            // Default sync mode at 120 bpm / 48 kHz with rate 1/4: one cycle is
+            // exactly one beat = 24,000 samples, so 96,000 samples hold 4 draws.
+            const expected = [
+                { timeSamples: 0, value: 106 },
+                { timeSamples: 23_936, value: 93 },
+                { timeSamples: 48_000, value: 121 },
+                { timeSamples: 71_936, value: 62 },
+                { timeSamples: 95_936, value: 114 },
+            ];
+            for (const blockSize of [24_000, 64]) {
+                const gen = sampleHoldGen(); // sync mode stays on
+                expect(ccEvents(runBlocks(gen, 96_000, blockSize)), `block size ${blockSize}`).toEqual(expected);
+            }
+        });
+
+        it('does not geometrically collapse: a long fast run keeps emitting across the full range', () => {
+            // 20 Hz at 48 kHz — a 2,400-sample cycle, 300 cycles total. The old
+            // code's feedback of the normalized output into the integer LCG
+            // state halved the value every draw (33, 17, 9, 4, 2, 1, 0) and then
+            // fell silent for the remaining cycles.
+            const gen = sampleHoldGen();
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 20);
+            const values = ccEvents(runBlocks(gen, 720_000, 4096)).map((event) => event.value);
+
+            expect(values.length).toBeGreaterThanOrEqual(200);
+            expect(Math.max(...values)).toBeGreaterThanOrEqual(96);
+            expect(Math.min(...values)).toBeLessThanOrEqual(31);
+            const risingSteps = values.filter((value, index) => index > 0 && value > values[index - 1]!);
+            expect(risingSteps.length).toBeGreaterThan(0);
+        });
+
+        it('redraws exactly once on a note retrigger and holds the new value', () => {
+            const gen = sampleHoldGen();
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 0.1);
+            gen.setParam('retrigger', 1);
+
+            const firstBlock = runBlocks(gen, 96_000, 96_000);
+            expect(ccEvents(firstBlock)).toEqual([{ timeSamples: 0, value: 106 }]);
+
+            // The note-on both passes through and resets the cycle, which draws
+            // the next LCG value (93) once at the block start and holds it.
+            const retriggerBlock = runBlocks(gen, 96_000, 96_000, 0);
+            expect(retriggerBlock.some((event) => event.kind.type === 'noteOn')).toBe(true);
+            expect(ccEvents(retriggerBlock)).toEqual([{ timeSamples: 0, value: 93 }]);
+
+            const afterRetrigger = runBlocks(gen, 64, 64);
+            expect(ccEvents(afterRetrigger)).toEqual([]);
+        });
+
+        it('reset() forces a fresh draw on the next evaluation even at the same phase', () => {
+            const gen = sampleHoldGen();
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 0.1);
+
+            expect(ccEvents(runBlocks(gen, 64, 64))).toEqual([{ timeSamples: 0, value: 106 }]);
+            gen.reset();
+            // The re-run covers the same 64 samples, so the evaluated phase
+            // matches the pre-reset one; the reset must still produce the NEXT
+            // LCG value, not re-emit 106.
+            expect(ccEvents(runBlocks(gen, 64, 64))).toEqual([{ timeSamples: 0, value: 93 }]);
+        });
+    });
 });
