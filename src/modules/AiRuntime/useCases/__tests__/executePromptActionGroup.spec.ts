@@ -66,6 +66,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
 }));
 vi.mock('../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));

@@ -71,6 +71,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
     preserveBranchStateForSession: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     replaceBranchState: vi.fn(),
     replaceCrdtDoc: vi.fn(),

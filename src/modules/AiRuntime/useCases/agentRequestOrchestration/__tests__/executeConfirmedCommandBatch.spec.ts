@@ -16,6 +16,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentRunWorkLease } from '../../../models/AgentRun';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
+import { retainedRenderReceipts } from '../retainedRenderReceipts';
 
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
 type ExecuteBatchResult = Awaited<ReturnType<ExecuteBatch>>;
@@ -1582,5 +1583,39 @@ describe('executeConfirmedCommandBatch', () => {
         });
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+});
+
+describe('render receipt retention ownership', () => {
+    it('does not retain a rendered receipt reported under a foreign owner', async () => {
+        const pinRunId = 'run-pin-foreign-owner';
+        const pinLease = { ...lease, runId: pinRunId } satisfies AgentRunWorkLease;
+        const pinConfirmation = { ...confirmation, runId: pinRunId } satisfies PendingAppActionConfirmation;
+        const foreignOwner: AgentWorkOwnerIdentity = {
+            ...TRACKED_RENDER_OWNER,
+            runId: pinRunId,
+            workId: 'foreign-work',
+        };
+        mocks.executeBatch.mockImplementation(async (batchInput) => {
+            batchInput.options?.onDeferredEffectAttempt?.({
+                kind: 'render-receipt',
+                operation: 'renderProjectSections',
+                workId: RENDER_PROVENANCE.jobId,
+                receipt: {
+                    phase: 'rendered',
+                    owner: foreignOwner,
+                    provenance: RENDER_PROVENANCE,
+                    contentAddress: 'content-address-1',
+                    frameCount: 4,
+                    channelCount: 2,
+                    renderedAt: 11,
+                },
+            });
+            return completedBatchResult;
+        });
+
+        await execute({ confirmation: pinConfirmation, trackedWorkLease: pinLease });
+
+        expect(retainedRenderReceipts.getRetained(pinRunId)).toEqual([]);
     });
 });
