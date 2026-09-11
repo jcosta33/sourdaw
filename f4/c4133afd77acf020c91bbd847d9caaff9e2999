@@ -1,0 +1,62 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_4e6d57a7ea4916 504
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_a11db42210fa14 460-490
+  s_9b530f08172a54::t_1cd2985b77a5d9 45
+  s_9b530f08172a54::t_8003b5f12c84cb 459
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_9b530f08172a54::t_cf4c41bf8aed5b 150
+  s_9b530f08172a54::t_6436d4ba9cc14f 1-2
+  s_9b530f08172a54::t_9ed33530260c90 91-107
+  s_9b530f08172a54::t_c99cb0eb0a8b73 90
+src/modules/Toaster/useCases/__tests__/projectToasterKitToNativePatch.spec.ts
+  s_9b530f08172a54::t_f14883ca7a039d 1-50
+src/modules/AudioEngine/models/__tests__/toasterKitParamNames.spec.ts
+  s_9b530f08172a54::t_4659df117e771f 1-36
+src/app/projectNativeDeviceState.ts
+  s_9b530f08172a54::t_a832baebc4cc1b 1-100
+  s_9b530f08172a54::t_d2bd8799933e95 101-102
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_7b3cb0d97fc581 163
+  s_9b530f08172a54::t_d1819d78d1ba93 29
+  s_9b530f08172a54::t_20198fbd13ee7b 121
+  s_9b530f08172a54::t_ab04f415fbd689 146
+  s_9b530f08172a54::t_7b5e7a607eb52e 750-803
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_9b530f08172a54::t_f2b97c60a9dc8c 13,15,17,24
+  s_9b530f08172a54::t_c6a6f5285f1860 27-30
+  s_9b530f08172a54::t_247af53416b9ef 93-169
+  s_9b530f08172a54::t_a8867b92be2ee9 25
+src/modules/Toaster/useCases/projectToasterKitToNativePatch.ts
+  s_9b530f08172a54::t_0dbf3f173bc749 1-45
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_9b530f08172a54::t_c60ff22fd4f768 206-213
+src/modules/AudioEngine/models/ToasterKitParamNames.ts
+  s_9b530f08172a54::t_861a60ea3fd000 1-41
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_9b530f08172a54::t_2438d34e561887 21
+  s_9b530f08172a54::t_3cc7e82fa7e6d6 360
+src/app/bootstrap.ts
+  s_9b530f08172a54::t_da65ce1e6635df 450-455
+  s_9b530f08172a54::t_6bc2592144fee8 193
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_9b530f08172a54::t_f70d10cdbe33c1 2,18-32,35-55,57-62,69-74
+src/modules/Toaster/useCases/index.ts
+  s_9b530f08172a54::t_91079eb9ae05d2 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f4c4133afd77acf020c91bbd847d9caaff9e2999",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
