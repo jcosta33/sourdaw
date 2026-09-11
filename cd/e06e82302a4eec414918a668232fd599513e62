@@ -1,0 +1,38 @@
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunList.tsx
+  s_06adf2b091dc62::t_adfe24c6ebe67e 20,24-26,38,55,57-68,77-79,81-85,102,115
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_06adf2b091dc62::t_143d1987e25f21 106-109
+  s_06adf2b091dc62::t_7e2195415b776e 46
+  s_06adf2b091dc62::t_8e5d1328a1906f 68,71-78,81-87
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentProgressSection.tsx
+  s_06adf2b091dc62::t_4fcdb55de91d80 19,21-33,38
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_f4924ab71b2391 225-249,260-263,266-338,342-347
+  s_06adf2b091dc62::t_5bc38b8a30cd12 567-568,571,574,576,579-582,594,601-605
+  s_06adf2b091dc62::t_7e0d01e20ed987 339-341
+  s_9b530f08172a54::t_8fc7350dabaebc 606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cde06e82302a4eec414918a668232fd599513e62",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
