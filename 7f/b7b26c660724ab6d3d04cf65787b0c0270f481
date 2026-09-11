@@ -1,0 +1,21 @@
+scripts/oxlintCraft/__tests__/plugin.spec.ts
+  s_d2824df80c1d84::t_8b28084b9290c0 39-47,58-61,76-85
+scripts/oxlintCraft/plugin.mjs
+  s_d2824df80c1d84::t_7353e7d0869dc1 166-180,193-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7fb7b26c660724ab6d3d04cf65787b0c0270f481",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
