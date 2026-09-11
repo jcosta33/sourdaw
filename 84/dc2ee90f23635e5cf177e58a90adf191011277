@@ -1,0 +1,16 @@
+scripts/__tests__/resourceGuard.spec.ts
+  h_1228e573df1f42 29,857-898,923-933,973-1008
+scripts/resourceGuard.ts
+  h_1228e573df1f42 115,119-151,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "84dc2ee90f23635e5cf177e58a90adf191011277",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
