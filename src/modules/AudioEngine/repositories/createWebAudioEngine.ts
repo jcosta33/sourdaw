@@ -1770,6 +1770,26 @@ class AudioEngineImpl implements AudioEngine {
         return undefined;
     }
 
+    /**
+     * The loaded device's own graph output, wherever it sits (track or bus —
+     * bus devices live on the paired TrackNode). `null` says the device has no
+     * loaded node in the graph yet: WASM worklets load asynchronously, so a
+     * just-inserted device is legitimately absent until its load resolves.
+     *
+     * Owns the strip/device-node traversal (same contract as
+     * `findToasterControls`) so foreign modules tap a device's signal without
+     * reaching into strip internals.
+     */
+    public findDeviceOutputNode(deviceId: string): AudioNode | null {
+        for (const [, trackNode] of this.trackNodes) {
+            const deviceNode = trackNode.strip.deviceNodes.find((dn) => dn.deviceId === deviceId);
+            if (deviceNode) {
+                return deviceNode.outputNode;
+            }
+        }
+        return null;
+    }
+
     public setTrackGain(trackId: string, gain: number): void {
         this.trackNodes.get(trackId)?.setGain(gain);
     }

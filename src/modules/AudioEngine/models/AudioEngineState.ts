@@ -503,6 +503,13 @@ export type AudioEngine = {
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
     findToasterControls(deviceId: string): ToasterDeviceControls | undefined;
+    /**
+     * The loaded device's own graph output, wherever it sits (track or bus —
+     * bus devices live on the paired TrackNode). `null` says the device has no
+     * loaded node in the graph yet: WASM worklets load asynchronously, so a
+     * just-inserted device is legitimately absent until its load resolves.
+     */
+    findDeviceOutputNode(deviceId: string): AudioNode | null;
     setTrackGain(trackId: string, gain: number): void;
     setTrackPan(trackId: string, pan: number): void;
     /** RT-5: PDC-aligned, a-rate automation write to the fader gain AudioParam.

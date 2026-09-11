@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
         stepRecordNoteOff: vi.fn(),
         getTransportState: vi.fn(),
         stepRecordState: { currentPitch: 62 },
+        preferencesState: null as { defaultVelocity: number } | null,
         trackState: {
             tracks: [
                 {
@@ -96,6 +97,21 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     stepRecordNoteOn: mocks.stepRecordNoteOn,
     stepRecordNoteOff: mocks.stepRecordNoteOff,
 }));
+
+vi.mock('#/modules/Preferences/stores', () => ({
+    preferencesStore: {
+        get value() {
+            return mocks.preferencesState;
+        },
+    },
+}));
+
+/**
+ * Default Velocity preference every creation spec asserts against. Deliberately
+ * not 100 — the value the note-creation paths used to hard-code — so a
+ * regression to that constant fails these specs instead of passing silently.
+ */
+const PREFERRED_DEFAULT_VELOCITY = 87;
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
@@ -194,6 +210,7 @@ const renderRoll = (
 describe('usePianoRollInteractions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.preferencesState = { defaultVelocity: PREFERRED_DEFAULT_VELOCITY };
         mocks.addMidiNote.mockImplementation((_clipId, pitch, startBeat, duration, velocity) => ({
             id: mocks.nextId(),
             pitch,
@@ -275,7 +292,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 12, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 12, 1, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('reports the scrolled beat to the context menu', () => {
@@ -296,7 +313,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
             expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
                 'Draw MIDI note',
                 expect.any(Function),
@@ -506,7 +523,7 @@ describe('usePianoRollInteractions', () => {
             const { canvas } = renderRoll({ paintMode: true, notes: [] });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             fireEvent.mouseMove(canvas, { clientX: 125, clientY: yForPitch(70) });
             const paintedBeats = mocks.addMidiNote.mock.calls.map((call) => call[2]);
@@ -527,7 +544,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['ch1', 'ch2', 'ch3']));
             expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
                 'Stamp min7 chord',
@@ -541,7 +558,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
             const advance = setStepBeat.mock.calls[0]?.[0];
             expect(advance(4)).toBe(5);
         });
@@ -572,7 +589,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(61) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(61) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 60, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 60, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
     });
 
@@ -903,7 +920,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
             const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
@@ -924,7 +941,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
             expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-2', ['ch1', 'ch2']);
@@ -944,7 +961,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
             const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
@@ -1021,7 +1038,7 @@ describe('usePianoRollInteractions', () => {
             const stamp = renderRoll({ ...staleFocus, notes: [] });
             fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             // Paint dedupe must read the fallback target's list — the
             // primary's — including notes created earlier in the gesture.
@@ -1051,7 +1068,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 70, 100);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 70, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('with no focused clip, every creation gesture still targets the primary clip', () => {
@@ -1060,23 +1077,23 @@ describe('usePianoRollInteractions', () => {
             const stamp = renderRoll({ notes: [] });
             fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             cleanup();
             const step = renderRoll({ notes: [], stepInput: true, stepBeat: 4 });
             fireEvent.mouseDown(step.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
 
             cleanup();
             mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
             const chord = renderRoll({ notes: [], chordMode: true, chordType: 'min7' });
             fireEvent.mouseDown(chord.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
 
             cleanup();
             const paint = renderRoll({ notes: [], paintMode: true });
             fireEvent.mouseDown(paint.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
     });
 

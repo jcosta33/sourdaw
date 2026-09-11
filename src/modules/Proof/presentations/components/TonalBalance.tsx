@@ -4,7 +4,7 @@
  * Shows the current signal's frequency content against the research-derived
  * Harman target curve, helping engineers achieve balanced spectral content.
  *
- * Uses the master analyser node for real-time FFT data.
+ * Reads real-time FFT data from this Proof instance's own output node.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
@@ -63,7 +63,7 @@ const GENRE_ADJUSTMENTS: Record<string, Array<{ freq: number; db: number }>> = {
 type Props = {
     /**
      * Whether the spectrum tap is connected at all. Required, because a null
-     * `fftData` alone cannot tell "the master is silent" from "there is no
+     * `fftData` alone cannot tell "the signal is silent" from "there is no
      * analyser", and the display would report both as a flat, empty spectrum.
      */
     status: ProofAnalyserStatus;

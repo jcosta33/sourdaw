@@ -94,6 +94,7 @@ export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTri
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
+export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
 export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';
 export { getTrackStrip } from './engineAccess/getTrackStrip';
 export { getToasterDeviceControls } from './engineAccess/getToasterDeviceControls';

@@ -19,7 +19,7 @@ import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
 // Mock it so the latency readout assertion can pin a known, non-44100 rate.
-// getAudioSampleRate, getMasterAnalyser, and isEngineAudioAvailable are wired
+// getAudioSampleRate, getDeviceOutputNode, and isEngineAudioAvailable are wired
 // spies; the other AudioEngine keys listed in the mock are unread graph-coverage
 // stubs (`vi.fn()` and `audioEngine: {}`).
 const sampleRateMock = vi.fn<() => number>(() => 48_000);
@@ -42,7 +42,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     getAudioSampleRate: () => sampleRateMock(),
-    getMasterAnalyser: () => null,
+    getDeviceOutputNode: () => null,
     isEngineAudioAvailable: () => true,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

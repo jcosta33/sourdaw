@@ -41,6 +41,7 @@ import {
     stepRecordNoteOn,
     stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
@@ -79,6 +80,21 @@ function buildNoteOwnershipMaps(
     }
     return { noteToClip, allNotesMap };
 }
+
+/**
+ * Velocity for a created note when the preferences store holds no value yet.
+ * Mirrors `defaultPreferences.defaultVelocity`; the store normally supplies
+ * the user's Default Velocity preference.
+ */
+const FALLBACK_NOTE_VELOCITY = 100;
+
+/**
+ * Default Velocity preference for every note created without an explicit
+ * velocity — step entry, chord stamp, paint, click stamp, and drag draw.
+ * Read at gesture time so a preference edit reaches the next created note
+ * without re-mounting the editor.
+ */
+const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
 
 function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     const tracks = trackStore.value?.tracks;
@@ -542,7 +558,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
                     if (stepInput) {
-                        const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, getDefaultNoteVelocity());
                         pushUndoEntry(
                             'Add MIDI note',
                             () => removeMidiNote(targetClipId, note.id),
@@ -552,7 +568,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         setSelectedNoteIds(new Set());
                     } else if (chordMode) {
                         const beat = snap(x / beatWidth);
-                        const created = stampChord(targetClipId, pitch, beat, gridSnap, 100, chordType);
+                        const created = stampChord(
+                            targetClipId,
+                            pitch,
+                            beat,
+                            gridSnap,
+                            getDefaultNoteVelocity(),
+                            chordType
+                        );
                         if (created.length > 0) {
                             const createdIds = created.map((node) => node.id);
                             pushUndoEntry(
@@ -564,7 +587,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                     } else if (paintMode) {
                         const beat = snap(x / beatWidth);
-                        const note = addMidiNote(targetClipId, pitch, beat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, beat, gridSnap, getDefaultNoteVelocity());
                         paintNotesRef.current = new Set([note.id]);
                         dragRef.current = {
                             mode: 'paint',
@@ -589,7 +612,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // clip on another track would otherwise audition
                         // through the primary's instrument.
                         const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
-                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, 100);
+                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
                         const beat = snap(x / beatWidth);
                         pendingStampRef.current = { pitch, beat };
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
@@ -736,7 +759,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     (node) => Math.abs(node.startBeat - snappedB) < 0.001 && node.pitch === drag.origPitch
                 );
                 if (!exists) {
-                    const note = addMidiNote(targetClipId, drag.origPitch, snappedB, gridSnap, 100);
+                    const note = addMidiNote(
+                        targetClipId,
+                        drag.origPitch,
+                        snappedB,
+                        gridSnap,
+                        getDefaultNoteVelocity()
+                    );
                     paintNotesRef.current.add(note.id);
                 }
             }
@@ -843,7 +872,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 setSelectedNoteIds(event.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
             } else if (pendingStamp) {
                 // Click without drag — stamp a note at the click location.
-                const note = addMidiNote(targetClipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100);
+                const note = addMidiNote(
+                    targetClipId,
+                    pendingStamp.pitch,
+                    pendingStamp.beat,
+                    gridSnap,
+                    getDefaultNoteVelocity()
+                );
                 pushUndoEntry(
                     'Draw MIDI note',
                     () => removeMidiNote(targetClipId, note.id),
@@ -866,7 +901,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'draw') {
             const dp = drawPreviewRef.current;
             if (dp) {
-                const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, 100);
+                const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, getDefaultNoteVelocity());
                 pushUndoEntry(
                     'Draw MIDI note',
                     () => removeMidiNote(targetClipId, note.id),

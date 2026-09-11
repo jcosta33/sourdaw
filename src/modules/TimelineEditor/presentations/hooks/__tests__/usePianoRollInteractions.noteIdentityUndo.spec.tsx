@@ -6,8 +6,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
+
+/**
+ * Default Velocity preference for every creation spec here, set on the real
+ * preferences store in beforeEach. Deliberately not 100 — the value the
+ * note-creation paths used to hard-code — so a regression to that constant
+ * fails these specs instead of passing silently.
+ */
+const PREFERRED_DEFAULT_VELOCITY = 87;
 
 // Issue #3664. Every common piano-roll edit used to reconstruct notes through
 // `addMidiNote` inside its undo/redo closures: undo restored a stripped
@@ -152,6 +162,7 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearUndoHistory();
+        preferencesStore.set({ ...defaultPreferences, defaultVelocity: PREFERRED_DEFAULT_VELOCITY });
         seedStore({ 'clip-1': [expressiveNote] });
     });
 
@@ -282,7 +293,14 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
             await redoSync();
             expect(getNotesForClip('clip-1')).toEqual([
-                { id: createdId, pitch: 70, startBeat: 4, duration: 1, velocity: 100, probability: 100 },
+                {
+                    id: createdId,
+                    pitch: 70,
+                    startBeat: 4,
+                    duration: 1,
+                    velocity: PREFERRED_DEFAULT_VELOCITY,
+                    probability: 100,
+                },
             ]);
         });
 
@@ -301,7 +319,14 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
             await redoSync();
             expect(getNotesForClip('clip-1')).toEqual([
-                { id: createdId, pitch: 70, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+                {
+                    id: createdId,
+                    pitch: 70,
+                    startBeat: 1,
+                    duration: 1,
+                    velocity: PREFERRED_DEFAULT_VELOCITY,
+                    probability: 100,
+                },
             ]);
         });
 
@@ -321,7 +346,14 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
 
             await redoSync();
             expect(getNotesForClip('clip-1')).toEqual([
-                { id: paintedId, pitch: 70, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+                {
+                    id: paintedId,
+                    pitch: 70,
+                    startBeat: 1,
+                    duration: 1,
+                    velocity: PREFERRED_DEFAULT_VELOCITY,
+                    probability: 100,
+                },
             ]);
         });
 

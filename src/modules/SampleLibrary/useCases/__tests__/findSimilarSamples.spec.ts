@@ -16,12 +16,19 @@ describe('findSimilarSamples', () => {
         });
     });
 
-    it('should return ranked results by cosine distance', () => {
-        const result = findSimilarSamples('s1', 3);
-        expect(result).toEqual(['s2', 's3', 's4']);
+    it('should return ranked matches by cosine distance', () => {
+        expect(findSimilarSamples('s1', 3)).toEqual({ status: 'matches', sampleIds: ['s2', 's3', 's4'] });
     });
 
-    it('should return empty if target not found', () => {
-        expect(findSimilarSamples('missing')).toEqual([]);
+    it('should report the target as unavailable when no embedding exists for it', () => {
+        expect(findSimilarSamples('missing')).toEqual({ status: 'unavailable' });
+    });
+
+    it('should report zero matches when only the target sample has an embedding', () => {
+        embeddingStore.set({
+            embeddings: new Map([['s1', new Float32Array([1, 0])]]),
+            modelStatus: 'ready',
+        });
+        expect(findSimilarSamples('s1')).toEqual({ status: 'matches', sampleIds: [] });
     });
 });
