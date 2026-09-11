@@ -1,0 +1,43 @@
+docs/06-testing.md
+  s_06adf2b091dc62::t_5688d64b78354d 12
+scripts/desktopAgentWorkspaceDrive.ts
+  s_06adf2b091dc62::t_d8e7a9d4b5abc5 282,288-296
+  s_06adf2b091dc62::t_a7e5c883dde27c 3-5
+  s_06adf2b091dc62::t_2f0f6b1fcb4240 358
+  s_06adf2b091dc62::t_23e6fdc0aa0651 339
+  s_06adf2b091dc62::t_70488016982f25 140-141,147-178,222
+  s_06adf2b091dc62::t_97ab8508701fb2 45-55,72,79,81
+  s_06adf2b091dc62::t_469f9de66293b9 223-268,280
+  s_06adf2b091dc62::t_79f6ff304ccadb 305,309
+  s_06adf2b091dc62::t_0a46178ac86fa6 320
+  s_06adf2b091dc62::t_3ba3fbe8b738f3 345
+  s_06adf2b091dc62::t_d5ea7f43ab8c67 331
+scripts/proveDesktopAgentWorkspace.ts
+  s_06adf2b091dc62::t_bb3cbbedb9a853 112
+  s_06adf2b091dc62::t_b9400e7337a50e 163-168,173-178
+  s_06adf2b091dc62::t_4bb2b67ef009b1 53
+  s_06adf2b091dc62::t_d25e4d069dc20b 102-106,113-117,124-125,128
+  s_06adf2b091dc62::t_250d5ce19aab4d 16-22
+scripts/loopbackOpenAiProvider.ts
+  s_06adf2b091dc62::t_dd8d8cb7748fd6 27-28
+  s_06adf2b091dc62::t_ed69a50b5a63fb 135
+scripts/__tests__/proveDesktopAgentWorkspace.spec.ts
+  s_06adf2b091dc62::t_8242c6db3e9f89 3,14-17,20-21,56-58,61-65,70-94,99-102,107-118,120,127-130,149-152
+  s_06adf2b091dc62::t_7afa6204cf28e9 153-155,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3a4e5718433a49ee4e691856adf43c11251139bf",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
