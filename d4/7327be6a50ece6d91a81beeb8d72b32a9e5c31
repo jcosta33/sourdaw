@@ -1,0 +1,45 @@
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_06adf2b091dc62::t_8f32d63dfd24ce 11,99-111,223-225,241-244,263-265,267,276-278,280-282,289-292,295-297,583,603
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_9b530f08172a54::t_504927a25ad134 312-429
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePreviewAudio.spec.ts
+  s_9b530f08172a54::t_d6ff75d8e6d75e 293-414
+src/modules/WorkspaceShell/presentations/hooks/usePreviewAudio.ts
+  s_9b530f08172a54::t_5708e4cec1ea86 13-55,62,66-68,72,78,94-99,102,109,128-129,135-137,139-141,143-146,159-161
+src/modules/ContentBrowser/presentations/hooks/__tests__/usePreviewAudio.spec.tsx
+  s_902dc3ac2018ab::t_41676491da61b1 20-38,40-48,63,66,68,153-283
+src/modules/ContentBrowser/presentations/hooks/usePreviewAudio.ts
+  s_902dc3ac2018ab::t_f37f8a0ba4b4f3 13-55,62,66-68,72,78,94-99,102,109,128-129,135-137,139-141,143-146,159-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d47327be6a50ece6d91a81beeb8d72b32a9e5c31",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_902dc3ac2018ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acbb79019723bbdf4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
