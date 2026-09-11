@@ -64,7 +64,31 @@ export type AudioDeviceRuntimeSink = {
     syncProofPatch: (deviceId: string) => void;
     updateProofMeters: (deviceId: string, meters: ProofMeterData) => void;
     clearProofMeters: (deviceId: string) => void;
+    /**
+     * The Web Audio twin's reading, posted by the Tuner worklet through the
+     * WASM device registry.
+     *
+     * One of two producers for one panel. The composition root arbitrates:
+     * for a device whose strip the native session is carrying and sounding,
+     * this publish is dropped and [updateNativeTunerTelemetry] below is the
+     * one that lands — the web graph is still running behind the shadowed
+     * carrier and its analyser still posts, but what it heard is not what the
+     * musician is hearing. Arbitration lives at the root rather than here
+     * because neither producer can see the other.
+     */
     updateTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
+    /**
+     * The native body's reading, carried on the transport poll
+     * (`EngineTransportPosition.tunerTelemetry`) and published by
+     * `publishNativeTunerTelemetry` for the devices that session actually
+     * sounds.
+     *
+     * Separate from [updateTunerTelemetry] so the root can arbitrate at all:
+     * one entry point would leave the two carriers overwriting each other at
+     * poll and post rate, and the panel would flicker between two analysers'
+     * answers for the same string.
+     */
+    updateNativeTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
     /**
      * Perform the engine setup an instrument needs before it can render, and
      * resolve only once it can.
@@ -186,6 +210,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateProofMeters: () => {},
     clearProofMeters: () => {},
     updateTunerTelemetry: () => {},
+    updateNativeTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
     projectNativeDeviceState: () => null,
     nativeSampleBankKey: () => null,

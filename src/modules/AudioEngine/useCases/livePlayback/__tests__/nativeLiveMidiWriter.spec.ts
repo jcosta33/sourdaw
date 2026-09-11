@@ -177,6 +177,7 @@ async function poll(positionSeconds: number): Promise<void> {
         timeSigDenom: 4,
         masterPeak: 0,
         stripPeaks: {},
+        tunerTelemetry: {},
     });
     nativeEnginePlayheadFeed.inFlightEpoch = null;
     pollNativeEnginePlayheadOnce();

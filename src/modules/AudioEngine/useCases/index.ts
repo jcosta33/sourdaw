@@ -118,6 +118,8 @@ export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm'
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+// Published because the composition root decides which of the Tuner's two carriers publishes a reading.
+export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
 export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
