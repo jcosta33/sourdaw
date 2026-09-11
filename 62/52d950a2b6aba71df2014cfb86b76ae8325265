@@ -1,0 +1,29 @@
+src/modules/Toaster/useCases/__tests__/projectToasterKitToNativePatch.spec.ts
+  s_9b530f08172a54::t_811d8c63fd84a7 8
+src/modules/AudioEngine/models/__tests__/grandBouleDspParamNames.spec.ts
+  s_9b530f08172a54::t_a71c6c0d7424be 39
+src/modules/Grinder/models/__tests__/GrinderNeuralProfileParams.spec.ts
+  s_9b530f08172a54::t_0fda503d321370 46,54,58
+src/modules/AudioEngine/models/__tests__/crustDspParamNames.spec.ts
+  s_9b530f08172a54::t_f10ecb19cf1d4c 37
+src/modules/AudioEngine/models/__tests__/toasterKitParamNames.spec.ts
+  s_9b530f08172a54::t_b6b989d584165d 14
+src/modules/AudioEngine/models/__tests__/glutenDspParamNames.spec.ts
+  s_9b530f08172a54::t_bd32eb50d8e64c 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6252d950a2b6aba71df2014cfb86b76ae8325265",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
