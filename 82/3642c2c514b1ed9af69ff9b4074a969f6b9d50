@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_d2824df80c1d84::t_aad2b6c691c23a 3,331-334
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_d2824df80c1d84::t_9b36305f286ef3 4,184
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_d2824df80c1d84::t_59a4ad26e777ca 99-104,479-499
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_d2824df80c1d84::t_72372d2bc1da72 13,120
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_d2824df80c1d84::t_809326483984a1 21,56-59,243,362-375
+src/utils/__tests__/devicePatchPrecedence.spec.ts
+  s_d2824df80c1d84::t_49b9886b07e931 1-112
+src/utils/devicePatchPrecedence.ts
+  s_d2824df80c1d84::t_ed9c45463bc42b 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "823642c2c514b1ed9af69ff9b4074a969f6b9d50",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
