@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_2d8e88473e4b53::t_a881545f044192 104-127,202-225
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_2d8e88473e4b53::t_c40c7cd540bcd6 798-869
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b160c9b99ac72e6c3d9eb940499458d6b4bf338",
+  "prompts": {},
+  "sessions": {
+    "s_2d8e88473e4b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af4bc73d141357d8a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
