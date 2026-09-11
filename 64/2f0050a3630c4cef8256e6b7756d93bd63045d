@@ -1,0 +1,61 @@
+src/modules/Arrangement/useCases/freezeBounce/admitAgentRenderReceipt.ts
+  s_06adf2b091dc62::t_3cce21418c740b 1-19,40-43,76-85,87,89-91,93-97,99-101,103-118
+  s_06adf2b091dc62::t_88e159c57cb957 20-37
+  s_06adf2b091dc62::t_6867f7f2819df0 60
+  s_06adf2b091dc62::t_9e3d4036815609 86,88,98
+  s_06adf2b091dc62::t_307d29b5293ca2 38-39,44-59,61-75
+  s_06adf2b091dc62::t_78f5642447fe31 92,102
+src/modules/Arrangement/AGENTS.md
+  s_06adf2b091dc62::t_cc3fb412c1d1c0 8
+src/modules/AiRuntime/useCases/agentRequestOrchestration/getRenderReceiptAdmissionFailure.ts
+  s_06adf2b091dc62::t_a78c24810d5494 2
+  s_06adf2b091dc62::t_4dcf72da5f5ab2 1,3-5,7-44,47-60,62-68
+  s_06adf2b091dc62::t_d0c4bd23911742 45
+  s_06adf2b091dc62::t_975e86939de15b 6
+  s_06adf2b091dc62::t_02fa2d27b83622 46,61
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_06adf2b091dc62::t_999c41d929030f 30
+  s_06adf2b091dc62::t_41e903fef6ff9e 254-274
+src/modules/AiRuntime/useCases/agentRequestOrchestration/retainedRenderReceipts.ts
+  s_06adf2b091dc62::t_6b30e9fd2ecda3 9,23,26-35
+  s_06adf2b091dc62::t_66d3d2848e064b 1-8,10-22,24-25
+src/modules/Arrangement/useCases/freezeBounce/__tests__/agentFreezeRenderReceipt.spec.ts
+  s_06adf2b091dc62::t_77b96eba959fb2 1-15,17-52,56-75,77-89,91-103,105-114,116-125,127-138,140-149,151-160,162-171,173-182,184-187,191-195,197-198,202-205
+  s_06adf2b091dc62::t_d616e356aeb506 16,53,55,76,90,104,115,126,139,150,161,172,183,188-190,196,199-201
+  s_06adf2b091dc62::t_2064e249b76b56 54
+src/modules/AiRuntime/useCases/agentRequestOrchestration/recordOwnedRenderReceipt.ts
+  s_06adf2b091dc62::t_8a270b8a799159 7
+  s_06adf2b091dc62::t_c18fd3f1adc25f 8
+  s_06adf2b091dc62::t_86714d4e3b9e81 46
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_06adf2b091dc62::t_a8f54ccc951bd8 19
+  s_06adf2b091dc62::t_6d67f2bb15a039 1626
+  s_06adf2b091dc62::t_9d590dc0b07c01 542-560
+  s_06adf2b091dc62::t_5e1eeea71186cd 1650
+  s_06adf2b091dc62::t_f789fa7414d58d 83
+  s_06adf2b091dc62::t_d83fafa9aa866c 1702
+  s_06adf2b091dc62::t_106d09c2af6170 105
+  s_06adf2b091dc62::t_50cc309d4a1d24 1614-1625,1627-1649,1651-1701,1703-1704
+  s_06adf2b091dc62::t_aada1072293e52 56-57
+  s_06adf2b091dc62::t_9ee545cd041044 561-562,616,1705-1710
+release/open-source-inventory.json
+  s_06adf2b091dc62::t_d048c3519ebac5 1200
+src/modules/Arrangement/useCases/index.ts
+  s_06adf2b091dc62::t_1817b8c6c980fb 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "642f0050a3630c4cef8256e6b7756d93bd63045d",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
