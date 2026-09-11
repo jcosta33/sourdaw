@@ -10,7 +10,9 @@ import {
     agentRunControls,
     cancelPendingChatActions,
     confirmPendingChatActions,
+    getAgentApprovalView,
     getProviderRouteView,
+    reproposePendingChatActions,
     revertAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
 
@@ -59,9 +61,10 @@ export const AgentWorkspace = (): ReactElement => {
 
     const projection = effectiveRunId === null ? null : agentRunControls.get(effectiveRunId);
     const route = effectiveRunId === null ? null : getProviderRouteView({ runId: effectiveRunId });
-    const confirmations = confirmationState.confirmations
+    const approvals = confirmationState.confirmations
         .filter((confirmation) => confirmation.runId === effectiveRunId)
-        .toSorted((left, right) => right.createdAt - left.createdAt);
+        .toSorted((left, right) => right.createdAt - left.createdAt)
+        .flatMap((confirmation) => getAgentApprovalView({ confirmationId: confirmation.id }) ?? []);
     const historyGroups = historyState.groups.toSorted((left, right) => right.timestamp - left.timestamp);
 
     useEffect(() => {
@@ -115,12 +118,15 @@ export const AgentWorkspace = (): ReactElement => {
                     <AgentProgressSection progress={projection} />
                     <AgentRunDecisionPanel />
                     <AgentApprovalSection
-                        confirmations={confirmations}
+                        approvals={approvals}
                         onConfirm={(confirmationId) => {
                             void confirmPendingChatActions({ confirmationId });
                         }}
                         onCancel={(confirmationId) => {
                             void cancelPendingChatActions({ confirmationId });
+                        }}
+                        onRePreview={(confirmationId, selectedIntentGroupIds) => {
+                            void reproposePendingChatActions({ confirmationId, selectedIntentGroupIds });
                         }}
                     />
                     <AgentRouteSection route={route} />

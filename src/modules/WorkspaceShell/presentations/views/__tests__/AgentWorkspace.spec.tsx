@@ -1,13 +1,18 @@
+import { type ComponentProps } from 'react';
+
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { agentRunStore, aiActionHistoryStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
 
+import { type AgentApprovalSection } from '../../components/agentWorkspace/AgentApprovalSection';
 import { AgentWorkspace } from '../AgentWorkspace';
 
 type AgentRun = NonNullable<typeof agentRunStore.value>['runs'][number];
 type AiActionGroup = NonNullable<typeof aiActionHistoryStore.value>['groups'][number];
 type PendingConfirmation = NonNullable<typeof pendingActionConfirmationStore.value>['confirmations'][number];
+type ApprovalView = ComponentProps<typeof AgentApprovalSection>['approvals'][number];
+type ApprovalIntentGroup = ApprovalView['intentGroups'][number];
 
 const agentRunControlsMock = vi.hoisted(() => ({
     get: vi.fn(),
@@ -16,8 +21,10 @@ const agentRunControlsMock = vi.hoisted(() => ({
     resumeDecision: vi.fn(),
 }));
 const getProviderRouteViewMock = vi.hoisted(() => vi.fn());
+const getAgentApprovalViewMock = vi.hoisted(() => vi.fn());
 const confirmPendingChatActionsMock = vi.hoisted(() => vi.fn());
 const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn());
+const reproposePendingChatActionsMock = vi.hoisted(() => vi.fn());
 const agentRunCancellationMock = vi.hoisted(() => ({ cancel: vi.fn() }));
 const revertAiActionGroupMock = vi.hoisted(() => vi.fn());
 
@@ -25,8 +32,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     agentRunControls: agentRunControlsMock,
     agentRunCancellation: agentRunCancellationMock,
     getProviderRouteView: getProviderRouteViewMock,
+    getAgentApprovalView: getAgentApprovalViewMock,
     confirmPendingChatActions: confirmPendingChatActionsMock,
     cancelPendingChatActions: cancelPendingChatActionsMock,
+    reproposePendingChatActions: reproposePendingChatActionsMock,
     revertAiActionGroup: revertAiActionGroupMock,
 }));
 
@@ -173,12 +182,56 @@ const routeView = () => ({
     requested: { route: 'cloud', locality: 'remote' },
     actual: { routeId: 'cloud', executor: 'cloud', locality: 'remote', provider: 'anthropic', model: 'sonnet' },
     platform: { available: false, evidence: null, unavailableReason: 'no-webgpu' },
+    options: [
+        { routeId: 'webllm', admitted: false, reasons: ['platform-unavailable', 'model-not-installed'] },
+        { routeId: 'cloud', admitted: true, reasons: [] },
+    ],
     capability: null,
     fidelity: null,
     fallback: { attempted: false, reasons: [] },
+    fallbackPolicy: 'hosted-then-local',
     dataDisclosure: null,
     usage: { provenance: 'provider-reported', inputTokens: 10, outputTokens: 5, cachedInputTokens: 0, attempts: 1 },
     cost: [],
+});
+
+const intentGroup = (overrides: Partial<ApprovalIntentGroup> = {}): ApprovalIntentGroup => ({
+    id: 'group-a',
+    summary: 'Create the bass track',
+    affectedTrackIds: [],
+    estimatedAudioImpact: { level: 'structural', summary: 'Changes the arrangement' },
+    warnings: [],
+    dependsOnGroupIds: [],
+    ...overrides,
+});
+
+const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
+    confirmationId: 'confirmation-1',
+    status: 'proposed',
+    error: null,
+    prompt: 'Add a bassline',
+    actionLabels: ['Create track Bass'],
+    scope: { targetIds: ['track-9'], protectedTargetIds: ['track-1'], protectedRanges: [{ startBeat: 0, endBeat: 4 }] },
+    risk: {
+        level: 'bounded-reversible',
+        decision: 'confirm',
+        reasons: ['Adds one track'],
+        requiredTrustMode: 'guarded',
+    },
+    intentGroups: [],
+    destructiveChanges: [],
+    partialAcceptance: { available: true, reason: null },
+    freshness: { status: 'current' },
+    rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+    consequences: null,
+    budgets: null,
+    cost: [],
+    dataDisclosure: null,
+    actor: null,
+    expiry: { revision: 'revision-7' },
+    createdAt: 10,
+    resolvedAt: null,
+    ...overrides,
 });
 
 function setRuns(runs: AgentRun[]): void {
@@ -191,6 +244,20 @@ beforeEach(() => {
     agentRunControlsMock.list.mockReturnValue([]);
     agentRunControlsMock.get.mockReturnValue(null);
     getProviderRouteViewMock.mockReturnValue(null);
+    // Mirrors the real projection: one view per stored confirmation, none for an unknown id.
+    getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) => {
+        const stored = pendingActionConfirmationStore.value?.confirmations.find(
+            (candidate) => candidate.id === confirmationId
+        );
+        return stored === undefined
+            ? null
+            : approvalView({
+                  confirmationId: stored.id,
+                  status: stored.status,
+                  prompt: stored.prompt,
+                  actionLabels: stored.actionLabels,
+              });
+    });
     setRuns([]);
     aiActionHistoryStore.set({ groups: [], panelOpen: false });
     pendingActionConfirmationStore.set({ confirmations: [] });
@@ -460,6 +527,215 @@ describe('AgentWorkspace', () => {
         expect(screen.getByText('Route not resolved')).toBeInTheDocument();
     });
 
+    it('lists every route option with its admission verdict and the run fallback policy', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        getProviderRouteViewMock.mockReturnValue(routeView());
+
+        const { rerender } = render(<AgentWorkspace />);
+
+        const options = within(screen.getByRole('list', { name: 'Route options' })).getAllByRole('listitem');
+        expect(options).toHaveLength(2);
+        expect(options[0]).toHaveAttribute('data-admitted', 'false');
+        expect(options[0]).toHaveTextContent('webllm: platform-unavailable, model-not-installed');
+        expect(options[1]).toHaveAttribute('data-admitted', 'true');
+        expect(options[1]).toHaveTextContent('cloud');
+        expect(screen.getByText('hosted first, local fallback')).toBeInTheDocument();
+
+        getProviderRouteViewMock.mockReturnValue({ ...routeView(), fallbackPolicy: 'local-only' });
+        rerender(<AgentWorkspace />);
+
+        expect(screen.getByText('local only, never widens to a hosted provider')).toBeInTheDocument();
+    });
+
+    it('renders the semantic approval view for a pending proposal', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({
+                        id: 'group-b',
+                        summary: 'Add eight notes',
+                        affectedTrackIds: ['track-9'],
+                        estimatedAudioImpact: { level: 'audible', summary: 'Changes what is heard' },
+                        warnings: ['overwrite: replaces two notes'],
+                        dependsOnGroupIds: ['group-a'],
+                    }),
+                ],
+                destructiveChanges: [
+                    {
+                        groupId: 'group-b',
+                        classification: 'overwrite',
+                        consequence: 'Replaces two notes',
+                        recovery: 'inverse',
+                    },
+                ],
+                budgets: { maxCommands: 4, maxCreatedTracks: 1 },
+                freshness: { status: 'stale', reason: 'The project moved on.' },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        const groups = within(screen.getByRole('list', { name: 'Intent groups' })).getAllByRole('listitem');
+        expect(groups).toHaveLength(2);
+        expect(groups[1]).toHaveTextContent('Add eight notes');
+        expect(groups[1]).toHaveTextContent('Tracks: track-9');
+        expect(groups[1]).toHaveTextContent('audible: Changes what is heard');
+        expect(groups[1]).toHaveTextContent('Warnings: overwrite: replaces two notes');
+        expect(
+            within(screen.getByRole('list', { name: 'Destructive changes' })).getByText(
+                'overwrite: Replaces two notes (recovery: inverse)'
+            )
+        ).toBeInTheDocument();
+        expect(screen.getByText('Scope: track-9')).toBeInTheDocument();
+        expect(screen.getByText('Protected: track-1')).toBeInTheDocument();
+        expect(screen.getByText('Protected ranges: 1')).toBeInTheDocument();
+        expect(screen.getByText('Risk: bounded-reversible — confirm')).toBeInTheDocument();
+        expect(screen.getByText('Trust mode: guarded')).toBeInTheDocument();
+        expect(screen.getByText('Budgets: maxCommands: 4, maxCreatedTracks: 1')).toBeInTheDocument();
+        expect(screen.getByText('Valid while project revision revision-7')).toBeInTheDocument();
+        expect(screen.getByText('stale')).toHaveAttribute('data-freshness', 'stale');
+        expect(screen.getByText('The project moved on.')).toBeInTheDocument();
+    });
+
+    it('carries dependents out of a deselected group and re-previews the remaining subset', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({ id: 'group-b', summary: 'Add eight notes', dependsOnGroupIds: ['group-a'] }),
+                    intentGroup({ id: 'group-c', summary: 'Quantize the notes', dependsOnGroupIds: ['group-b'] }),
+                    intentGroup({ id: 'group-d', summary: 'Rename the drum track' }),
+                ],
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
+
+        expect(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 3: Quantize the notes' })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 4: Rename the drum track' })).toBeChecked();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Re-preview selected agent actions' }));
+
+        expect(reproposePendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'confirmation-1',
+            selectedIntentGroupIds: ['group-d'],
+        });
+    });
+
+    it('carries dependencies back in when a dependent group is reselected', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({ id: 'group-b', summary: 'Add eight notes', dependsOnGroupIds: ['group-a'] }),
+                ],
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' }));
+
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeChecked();
+        expect(screen.getByRole('button', { name: 'Re-preview agent actions' })).toBeInTheDocument();
+    });
+
+    it('disables the group checkboxes and states the reason when partial acceptance is refused', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [intentGroup({ id: 'group-a', summary: 'Create the bass track' })],
+                partialAcceptance: { available: false, reason: 'The batch is one indivisible group.' },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeDisabled();
+        expect(screen.getByText('The batch is one indivisible group.')).toBeInTheDocument();
+    });
+
+    it('disables re-preview once every group is unchecked, even while re-preview is available', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({ id: 'group-b', summary: 'Add eight notes' }),
+                ],
+                partialAcceptance: { available: true, reason: null },
+                rePreview: { available: true, reason: null },
+            })
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' }));
+
+        const rePreviewButton = screen.getByRole('button', { name: 'Re-preview agent actions' });
+        expect(rePreviewButton).toBeDisabled();
+
+        fireEvent.click(rePreviewButton);
+        expect(reproposePendingChatActionsMock).not.toHaveBeenCalled();
+    });
+
+    it('re-previews the whole proposal only when the projection says it is stale', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({ intentGroups: [intentGroup({ id: 'group-a', summary: 'Create the bass track' })] })
+        );
+
+        const { rerender } = render(<AgentWorkspace />);
+
+        expect(screen.getByRole('button', { name: 'Re-preview agent actions' })).toBeDisabled();
+        expect(screen.getByText('The proposal still matches the current project.')).toBeInTheDocument();
+
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [intentGroup({ id: 'group-a', summary: 'Create the bass track' })],
+                freshness: { status: 'stale', reason: 'The project moved on.' },
+                rePreview: { available: true, reason: null },
+            })
+        );
+        rerender(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Re-preview agent actions' }));
+
+        expect(reproposePendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'confirmation-1',
+            selectedIntentGroupIds: undefined,
+        });
+    });
+
     it('confirms and cancels a proposed approval through the AiRuntime use cases', () => {
         agentRunControlsMock.list.mockReturnValue([projection()]);
         agentRunControlsMock.get.mockReturnValue(projection());
@@ -480,6 +756,84 @@ describe('AgentWorkspace', () => {
 
         expect(screen.queryByRole('button', { name: 'Confirm agent actions' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Cancel agent actions' })).not.toBeInTheDocument();
+    });
+
+    it('skips a confirmation whose approval view is unavailable instead of rendering a blank card', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({
+            confirmations: [
+                confirmation({ id: 'confirmation-1', createdAt: 20 }),
+                confirmation({
+                    id: 'confirmation-2',
+                    createdAt: 10,
+                    prompt: 'Add a chorus',
+                    actionLabels: ['Create track Chorus'],
+                }),
+            ],
+        });
+        getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) =>
+            confirmationId === 'confirmation-2' ? null : approvalView({ confirmationId })
+        );
+
+        render(<AgentWorkspace />);
+
+        const approvals = within(screen.getByRole('region', { name: 'Approvals' }));
+        expect(approvals.getAllByRole('list', { name: 'Proposed actions' })).toHaveLength(1);
+        expect(approvals.getByText('Add a bassline')).toBeInTheDocument();
+        expect(approvals.queryByText('Add a chorus')).not.toBeInTheDocument();
+        expect(approvals.queryByText('Create track Chorus')).not.toBeInTheDocument();
+    });
+
+    it("re-previews the clicked card's own subset when two proposals share a run", () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({
+            confirmations: [
+                confirmation({ id: 'confirmation-1', createdAt: 20 }),
+                confirmation({
+                    id: 'confirmation-2',
+                    createdAt: 10,
+                    prompt: 'Add a chorus',
+                    actionLabels: ['Create track Chorus'],
+                }),
+            ],
+        });
+        const viewA = approvalView({
+            confirmationId: 'confirmation-1',
+            intentGroups: [
+                intentGroup({ id: 'group-a1', summary: 'Create the bass track' }),
+                intentGroup({ id: 'group-a2', summary: 'Add eight notes', dependsOnGroupIds: ['group-a1'] }),
+            ],
+        });
+        const viewB = approvalView({
+            confirmationId: 'confirmation-2',
+            prompt: 'Add a chorus',
+            intentGroups: [
+                intentGroup({ id: 'group-b1', summary: 'Create the chorus section' }),
+                intentGroup({ id: 'group-b2', summary: 'Layer harmony vocals', dependsOnGroupIds: ['group-b1'] }),
+            ],
+        });
+        getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) =>
+            confirmationId === 'confirmation-2' ? viewB : viewA
+        );
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Layer harmony vocals' }));
+
+        const rePreviewButtons = screen.getAllByRole('button', { name: 'Re-preview selected agent actions' });
+        expect(rePreviewButtons).toHaveLength(1);
+        fireEvent.click(rePreviewButtons[0]!);
+
+        expect(reproposePendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'confirmation-2',
+            selectedIntentGroupIds: ['group-b1'],
+        });
+        expect(screen.getByRole('checkbox', { name: 'Include group 1: Create the bass track' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Include group 2: Add eight notes' })).toBeChecked();
     });
 
     it('cancels the run only when the projection allows it', () => {
@@ -591,6 +945,14 @@ describe('AgentWorkspace', () => {
         );
         setRuns([run()]);
         pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'Create the bass track' }),
+                    intentGroup({ id: 'group-b', summary: 'Add eight notes', dependsOnGroupIds: ['group-a'] }),
+                ],
+            })
+        );
         aiActionHistoryStore.set({ groups: [historyGroup()], panelOpen: false });
 
         const { container } = render(<AgentWorkspace />);
@@ -599,6 +961,12 @@ describe('AgentWorkspace', () => {
         expect(buttons.length).toBeGreaterThan(0);
         for (const button of buttons) {
             expect(button).toHaveAccessibleName();
+        }
+
+        const checkboxes = screen.getAllByRole('checkbox');
+        expect(checkboxes.length).toBeGreaterThan(0);
+        for (const checkbox of checkboxes) {
+            expect(checkbox).toHaveAccessibleName();
         }
 
         const transitioning = container.querySelectorAll('[class*="transition-"]');
