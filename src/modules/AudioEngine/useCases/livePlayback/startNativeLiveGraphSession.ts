@@ -104,7 +104,7 @@ import { type NativeGraphTransport } from '../../repositories/nativeGraph/native
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 import { getAudioContext } from '../engineAccess/getAudioContext';
-import { masterGainState } from '../engineAccess/masterGainState';
+import { effectiveMasterGain } from '../engineAccess/masterGainState';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { armNativeLiveMidiWriter } from './armNativeLiveMidiWriter';
@@ -768,7 +768,7 @@ async function rollSessionTransport(input: {
  * level.
  */
 function projectSessionTopology(input: Omit<LiveGraphTopologyInput, 'masterGain'>): readonly AudioGraphCommand[] {
-    return projectLiveGraphTopology({ ...input, masterGain: masterGainState.gain });
+    return projectLiveGraphTopology({ ...input, masterGain: effectiveMasterGain() });
 }
 
 /**

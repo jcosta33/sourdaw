@@ -32,7 +32,7 @@
  * start opened at until the fader next moves.
  */
 
-import { masterGainState } from '../engineAccess/masterGainState';
+import { effectiveMasterGain } from '../engineAccess/masterGainState';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
@@ -46,7 +46,7 @@ export function forwardMasterGainToNativeLiveGraphSession(): void {
         }
         await backend.apply({
             schemaVersion: 1,
-            commands: [{ kind: 'set-master-gain', gain: masterGainState.gain }],
+            commands: [{ kind: 'set-master-gain', gain: effectiveMasterGain() }],
         });
     }).catch(() => undefined);
 }
