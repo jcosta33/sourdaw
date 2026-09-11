@@ -43,7 +43,7 @@ describe('grinderNeuralProfileParams', () => {
     });
 
     // Rust's `BuiltinParamName` accepts only ASCII letters, digits, and
-    // underscore, at most 40 bytes (crates/daw-dsp `BuiltinParamName` rule).
+    // underscore, at most 40 bytes (crates/daw-engine `BuiltinParamName` rule).
     it('should emit only names matching the BuiltinParamName shape', () => {
         const profile = buildProfile([
             [0.1, 0.2, 0.3],

@@ -45,6 +45,6 @@ describe('projectToasterKitToNativePatch', () => {
         const longest = Object.keys(patch).reduce((a, b) => (b.length > a.length ? b : a), '');
 
         expect(longest).toBe('pad10_filter_resonance');
-        expect(longest.length).toBeLessThanOrEqual(32);
+        expect(longest.length).toBeLessThanOrEqual(40);
     });
 });
