@@ -267,7 +267,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             <Row align="stretch" grow gap={2.5} className="min-h-0">
                 <CrustGainStrip value={patch.gain} onChange={(value) => handleSetParam('gain', value)} />
 
-                <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1">
+                <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1 [&>*]:shrink-0">
                     <Grid cols={4} gap={2.5} className="shrink-0">
                         <MetricTile label="Push" value={`${patch.gain.toFixed(1)} dB`} detail="Input shove" />
                         <MetricTile

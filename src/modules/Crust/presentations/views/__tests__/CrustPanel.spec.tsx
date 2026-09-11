@@ -203,4 +203,12 @@ describe('CrustPanel', () => {
         expect(faceplate).toHaveClass('min-h-[440px]');
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
+
+    it('keeps control zone scroll container from collapsing sections with [&>*]:shrink-0', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+        const missionControlHeader = screen.getByText('Mission control');
+        const scrollContainer = missionControlHeader.closest('.overflow-y-auto');
+        expect(scrollContainer).not.toBeNull();
+        expect(scrollContainer).toHaveClass('[&>*]:shrink-0');
+    });
 });
