@@ -22105,8 +22105,7 @@ mod timeline_tests {
         );
     }
 
-    /// Levain's two longest parameter names fit the carrier and reach the
-    /// instrument the same way through a patch as through a direct write.
+    /// Levain's two longest parameter names fit the carrier.
     ///
     /// `legato_portamento_velocity_threshold` (36 bytes) and
     /// `expression_dynamic_crossfade_time` (33 bytes) are `LevainEngine::set_param`'s
@@ -22116,6 +22115,16 @@ mod timeline_tests {
     /// refusing either would silently drop the entry the mapper builds for it —
     /// a name shaped exactly like the instrument's own that this carrier
     /// cannot hold.
+    ///
+    /// This is the whole of what this spec observes: the carrier admits both
+    /// names. It does not observe that a patch carrying either name reaches
+    /// the instrument — `legato_portamento_velocity_threshold` is read only
+    /// inside a legato transition with a held note
+    /// (`crates/daw-dsp/src/levain/legato.rs`), a state the one-note fixture
+    /// below never enters, so a render comparison here would pass whether or
+    /// not the patch landed. Patch delivery in general is
+    /// `a_levain_patch_lands_on_the_instance_before_it_sounds`'s claim, not
+    /// this one's.
     #[test]
     fn levain_longest_parameter_names_fit_the_carrier() {
         assert!(
@@ -22125,34 +22134,6 @@ mod timeline_tests {
         assert!(
             BuiltinParamName::parse("expression_dynamic_crossfade_time").is_some(),
             "the carrier refuses Levain's own 33-byte parameter name"
-        );
-
-        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
-
-        let mut patched_body =
-            levain_body(&[(levain_name("legato_portamento_velocity_threshold"), 0.75)]);
-        let (patched_left, patched_right) =
-            levain_render(&mut patched_body, LEVAIN_PARITY_FRAMES, &events);
-
-        let mut reference = levain_instance();
-        reference.set_param("legato_portamento_velocity_threshold", 0.75);
-        let mut reference_body = LevainBody::new(reference);
-        let (reference_left, reference_right) =
-            levain_render(&mut reference_body, LEVAIN_PARITY_FRAMES, &events);
-
-        assert_eq!(
-            patched_left, reference_left,
-            "the carrier's longest name reaches the instrument differently through a patch than \
-             through a direct set_param"
-        );
-        assert_eq!(
-            patched_right, reference_right,
-            "the carrier's longest name reaches the instrument differently through a patch than \
-             through a direct set_param"
-        );
-        assert!(
-            levain_peak(&reference_left).max(levain_peak(&reference_right)) > 0.0,
-            "the reference rendered silence, so the equalities above say nothing"
         );
     }
 
