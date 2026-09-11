@@ -1,0 +1,81 @@
+scripts/oxlintCraft/scan.oxlintrc.json
+  s_b7cea914747f70::t_5ac2857b3a3714 1-22
+scripts/oxlintCraft/plugin.d.mts
+  s_d2824df80c1d84::t_c1cd6eebd2c343 7-14,17-23
+  s_d2824df80c1d84::t_2059448b085eaa 1-6,15-16,24-26
+.agents/skills/ui-patterns/SKILL.md
+  s_d2824df80c1d84::t_a2d9d7837c5fbd 38
+.agents/skills/review-stances/code-craft.md
+  s_d2824df80c1d84::t_804c3b240d82c5 1-32
+scripts/oxlintCraft/__tests__/craftBaseline.spec.ts
+  s_d2824df80c1d84::t_e2279a730c5d39 1-42
+oxlint.craft-baseline.mjs
+  s_d2824df80c1d84::t_d4eb0fa1e42725 2-6,8-25
+  s_b7cea914747f70::t_2a72611b635a66 1,7
+  s_d2824df80c1d84::t_fa04927439c50f 26-28
+  s_e994ce60d7effb::t_115d1922f7de38 29-1345
+scripts/oxlintCraft/plugin.mjs
+  s_d2824df80c1d84::t_75f75184028e5d 6,18-24,33-50,52,69-75,83,97-103,105-127,140,146-148,150,152-161,179,181-183,208-211,241-244,268-271,288,291-294,311,316-319,326-328,331-335,346-351
+  s_b7cea914747f70::t_9d198d5bb04ff3 1-5,7-17,25-32,51,53-68,76-82,84-96,104,128-139,141-145,149,151,162-178,180,184-207,212-240,245-267,272-287,289-290,295-310,312-315,320-325,329-330,336-345,352-355
+  s_b7cea914747f70::t_08f8ed181280b5 356-358
+  s_8c98043f979290::t_0c99ff702c697d 359-362
+oxlint.craft-baseline.d.mts
+  s_d2824df80c1d84::t_e198f485bbe3e4 1-14
+src/components/AGENTS.md
+  s_d2824df80c1d84::t_6fa06d4429a213 16-18
+scripts/oxlintCraft/__tests__/plugin.spec.ts
+  s_d2824df80c1d84::t_febe4147b84cbf 85
+  s_d2824df80c1d84::t_3c3fc672278183 5,15-21
+  s_d2824df80c1d84::t_63929f140404b3 118
+  s_d2824df80c1d84::t_c4fb0eb5f58f88 70
+  s_d2824df80c1d84::t_093783a48147a5 46
+  s_d2824df80c1d84::t_f774f9dfd757ca 136
+  s_d2824df80c1d84::t_ce88afdc6c2b6d 104
+  s_d2824df80c1d84::t_0d70c997f315a9 1-4,6-14,22-45,47-69,71-84,86-103,105-117,119-135,137-159
+.oxlintrc.json
+  s_e994ce60d7effb::t_40957c256385f9 10-14,49-52,276-284
+docs/07-conventions.md
+  s_e994ce60d7effb::t_4981972138843a 64-82
+eslint.config.mjs
+  s_e994ce60d7effb::t_6bb4a379714945 2362-2364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cc479bbd0b63db1616528f1ed3e693536f305a8f",
+  "prompts": {},
+  "sessions": {
+    "s_8c98043f979290": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea0775531d96d583",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b7cea914747f70": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9a7b9274-3cdc-4d46-b002-96249d8e6a4c",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e994ce60d7effb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a48a06a7f03de8e11",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
