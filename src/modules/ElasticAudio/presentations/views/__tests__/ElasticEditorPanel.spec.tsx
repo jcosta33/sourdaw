@@ -175,6 +175,10 @@ vi.mock('../../../stores/elasticAudio', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
+    // The strip rebuild's replay-order law travels this barrel; this spec's
+    // graph reaches the strip projection through freeze/bounce.
+    orderDevicePatchEntries: (_deviceType: string, parameterValues: Record<string, number>) =>
+        Object.entries(parameterValues),
     audioBufferCache: {
         getWaveformPeaks: (...args: unknown[]) => mocks.getWaveformPeaks(...args),
     },

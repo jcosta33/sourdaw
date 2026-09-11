@@ -1,5 +1,6 @@
 import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { type Device } from '../../models/TrackViewTypes';
+import { orderDevicePatchEntries } from '../../stores/devicePatchPrecedence';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
@@ -125,7 +126,12 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
     await result.ready;
 
     const strategy = new NativeDspDeviceStrategy(result);
-    for (const [key, val] of Object.entries(device.parameterValues)) {
+    // The offline counterpart of the strip rebuild's replay law: seed the
+    // record through `orderDevicePatchEntries` so a device whose record pairs
+    // two names for one engine slot (crust style/algorithm, grinder
+    // neuralEnabled/engineMode) or carries Gluten's macros resolves exactly
+    // as the native body's own precedence law resolves it.
+    for (const [key, val] of orderDevicePatchEntries(device.type, device.parameterValues)) {
         strategy.setParam(key, val);
     }
 

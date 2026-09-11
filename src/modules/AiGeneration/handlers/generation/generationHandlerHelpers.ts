@@ -1,4 +1,5 @@
-import { type addTrack, type getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { type Track } from '#/modules/Arrangement/stores';
+import { type addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 
 import { type ChordVoicing } from '../../models/GenerationStyles';
@@ -66,4 +67,27 @@ export function resolveOrCreateMidiTrack(
 export function getPlayheadBeat(): number {
     const transport = getTransportState();
     return transport?.playheadPosition ?? 0;
+}
+
+/**
+ * Read-only "drum track" resolution for fill material. The project model has no
+ * drum-track flag, so a drum track is identified by name (a MIDI track whose
+ * name mentions drums), falling back to the selection, then any MIDI track.
+ * Returning `null` lets the caller decide to create a dedicated track.
+ */
+export function findDrumMidiTrack(): Track | null {
+    const state = getTrackStoreState();
+    const tracks = state?.tracks ?? [];
+
+    const namedDrum = tracks.find((track) => track.kind === 'midi' && /drum/i.test(track.name));
+    if (namedDrum) {
+        return namedDrum;
+    }
+
+    const selected = state?.selectedTrackId ? tracks.find((track) => track.id === state.selectedTrackId) : undefined;
+    if (selected?.kind === 'midi') {
+        return selected;
+    }
+
+    return tracks.find((track) => track.kind === 'midi') ?? null;
 }

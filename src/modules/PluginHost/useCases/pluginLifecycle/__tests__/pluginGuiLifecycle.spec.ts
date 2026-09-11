@@ -92,15 +92,67 @@ describe('plugin editor open state', () => {
         expect(pluginGuiStore.value?.byInstanceId['inst-2']).toEqual({ isOpen: true });
     });
 
+    /**
+     * A genuine open failure destroyed the window it had tried to create on the
+     * native side before giving up, so "still closed" is what is there.
+     */
     it('keeps the host refusal against the instance whose editor would not open', async () => {
-        mocks.openGuiRepo.mockRejectedValue(new Error('Plugin GUI is already open'));
+        mocks.openGuiRepo.mockRejectedValue(new Error('Plugin does not support GUI'));
 
         await openPluginGui('inst-1');
 
         expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({
             isOpen: false,
+            error: 'Plugin does not support GUI',
+        });
+    });
+
+    /**
+     * The native host refuses an open whose editor already has a live window and
+     * leaves that window up, so the refusal is the proof the editor is open.
+     * Recording it as closed would strand the rack's toggle offering an open the
+     * host refuses forever.
+     */
+    it('records an already-open refusal as an editor that is open', async () => {
+        mocks.openGuiRepo.mockRejectedValue(new Error('Plugin GUI is already open'));
+
+        await openPluginGui('inst-1');
+
+        expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({
+            isOpen: true,
             error: 'Plugin GUI is already open',
         });
+    });
+
+    /**
+     * A double-click issues two opens against one window label. The queue runs
+     * them in order, the first opens the window, and the second comes back
+     * refused as already open — the record that refusal leaves must be one
+     * window shown as open, so the next click closes it.
+     */
+    it('leaves a double-clicked open as one editor the next click can close', async () => {
+        const firstOpenInFlight = Promise.withResolvers<PluginGuiInfo>();
+        mocks.openGuiRepo.mockReturnValueOnce(firstOpenInFlight.promise);
+        mocks.openGuiRepo.mockRejectedValueOnce(new Error('Plugin GUI is already open'));
+
+        const firstClick = openPluginGui('inst-1');
+        const secondClick = openPluginGui('inst-1');
+
+        // The window exists only once the first open's answer lands.
+        firstOpenInFlight.resolve(openedGui);
+        await firstClick;
+        await secondClick;
+
+        expect(mocks.openGuiRepo).toHaveBeenCalledTimes(2);
+        expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({
+            isOpen: true,
+            error: 'Plugin GUI is already open',
+        });
+
+        await closePluginGui('inst-1');
+
+        expect(mocks.closeGuiRepo).toHaveBeenCalledWith('inst-1');
+        expect(pluginGuiStore.value?.byInstanceId['inst-1']).toEqual({ isOpen: false });
     });
 
     /**

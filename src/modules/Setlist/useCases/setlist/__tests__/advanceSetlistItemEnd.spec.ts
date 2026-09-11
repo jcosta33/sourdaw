@@ -162,6 +162,24 @@ describe('advanceSetlistItemEnd', () => {
         expect(setlistStore.value?.currentIndex).toBe(0);
     });
 
+    it('does nothing at item end when autoStop and autoAdvance are both off', () => {
+        seed({
+            autoAdvance: false,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 0, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+        vi.runOnlyPendingTimers();
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(stopPlayback).not.toHaveBeenCalled();
+    });
+
     it('stops on the last item when autoAdvance is on and does not wrap to 0', () => {
         seed({
             autoAdvance: true,

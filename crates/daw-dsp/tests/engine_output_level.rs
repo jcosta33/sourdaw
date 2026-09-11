@@ -590,7 +590,12 @@ fn device_engines_hold_their_output_level_at_the_engine_boundary() {
         ("crust", crust_level(), 0.88986, 0.43822),
         ("proof", proof_level(), 0.81706, 0.35082),
         ("knead", knead_level(), 0.52538, 0.24745),
-        ("fermenter", fermenter_level(), 1.46824, 0.39554),
+        // Re-measured with the layer pan fix. Layer render used to take a
+        // unity/centre fast path that skipped the equal-power centre gains, so
+        // the default (level 1.0, pan centred) stimulus rendered ~3 dB above
+        // every neighbouring level. The gains now apply at every
+        // (level, pan); this row moved down by exactly that -3.01/-3.02 dB.
+        ("fermenter", fermenter_level(), 1.03820, 0.27942),
         ("grand_boule", grand_boule_level(), 0.72762, 0.16118),
         ("toaster", toaster_level(), 0.54580, 0.17768),
         ("levain", levain_level(), 0.32936, 0.19990),

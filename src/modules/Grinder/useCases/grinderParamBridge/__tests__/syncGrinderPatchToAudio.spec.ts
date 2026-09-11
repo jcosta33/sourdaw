@@ -236,4 +236,21 @@ describe('syncGrinderPatchToAudio', () => {
         expect(neural_custom_calls).toHaveLength(0);
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'neuralModelMode', 0);
     });
+
+    it('should emit neuralEnabled before engineMode to the device and into the persisted record', () => {
+        // Both names write NeuralCapture's single engine_mode field; the
+        // engineMode-first order let the boolean simplification overwrite the
+        // exact pick (GRINDER_PATCH_PRECEDENCE, issue #4141). The persist
+        // order is the persisted record's first-insertion order, so the
+        // replay path meets the pair in the same order.
+        run(migrateGrinderPatch({ ...DEFAULT_PATCH, neuralEnabled: true, engineMode: 'capture' }));
+
+        const update_keys = update_device_param.mock.calls.map(([, , key]) => key as string);
+        expect(update_keys.indexOf('neuralEnabled')).toBeGreaterThan(-1);
+        expect(update_keys.indexOf('engineMode')).toBeGreaterThan(update_keys.indexOf('neuralEnabled'));
+
+        const persist_keys = persist_device_param.mock.calls.map(([, key]) => key as string);
+        expect(persist_keys.indexOf('neuralEnabled')).toBeGreaterThan(-1);
+        expect(persist_keys.indexOf('engineMode')).toBeGreaterThan(persist_keys.indexOf('neuralEnabled'));
+    });
 });

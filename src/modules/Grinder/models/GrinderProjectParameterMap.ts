@@ -1,8 +1,14 @@
 import {
+    derivedGrinderNeuralModelId,
+    grinderNeuralProfileFromParamValues,
+    grinderNeuralProfilesEqual,
+} from './GrinderNeuralProfileParams';
+import {
     DEFAULT_PATCH,
     GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
+    type GrinderImportedNeuralModel,
     type GrinderMic,
     type GrinderPatch,
     type GrinderPedal,
@@ -27,6 +33,23 @@ export const GRINDER_PROJECT_PARAM_KEYS = (Object.keys(DEFAULT_PATCH) as Array<k
         (typeof value === 'number' || typeof value === 'boolean' || INDEXED_VALUES[key] !== undefined)
     );
 });
+
+/**
+ * `GRINDER_PROJECT_PARAM_KEYS` in the order a live bridge must emit them, and
+ * therefore the first-insertion order a record persisted from this app carries.
+ *
+ * Mirrors `GRINDER_PATCH_PRECEDENCE` (`crates/daw-engine/src/scheduler.rs`):
+ * `neuralEnabled` and `engineMode` are two names for one thing — both write
+ * NeuralCapture's single `engine_mode` field, `neuralEnabled` through the
+ * boolean simplification (Hybrid above 0.5, Circuit at or below it) and
+ * `engineMode` through the exact three-way pick. `neuralEnabled` leads so the
+ * exact pick lands last, and a replayed record resolves to the mode it names
+ * rather than to the simplification of it.
+ */
+export const GRINDER_PROJECT_PARAM_EMIT_ORDER: readonly (keyof GrinderPatch)[] = (() => {
+    const precedence: readonly (keyof GrinderPatch)[] = ['neuralEnabled'];
+    return [...precedence, ...GRINDER_PROJECT_PARAM_KEYS.filter((key) => !precedence.includes(key))];
+})();
 const MIC_TYPES: readonly GrinderMic['type'][] = ['dynamic', 'ribbon', 'condenser', 'room'];
 const PEDAL_DEFAULTS = {
     compressor: { id: 'comp1', params: { threshold: -24, ratio: 3, attack: 16, release: 220 } },
@@ -118,7 +141,8 @@ function projectPedals(
 }
 export function applyGrinderProjectParameters(
     patch: GrinderPatch,
-    parameterValues: Readonly<Record<string, unknown>>
+    parameterValues: Readonly<Record<string, unknown>>,
+    libraryEntries: readonly GrinderImportedNeuralModel[] = []
 ): GrinderPatch {
     const cabSlot = Math.round(readNumber(parameterValues, 'cabIrSlot', 0));
     const neuralSlot = Math.round(readNumber(parameterValues, 'neuralModelSlot', -1));
@@ -146,6 +170,27 @@ export function applyGrinderProjectParameters(
             value = decodeProjectValue(key, raw);
         }
         Object.assign(next, { [key]: value });
+    }
+    if (importedModel) {
+        // The record's `neuralCustom*` keys are the only carrier of an
+        // imported capture across a project reload; without this
+        // reconstruction the rebuilt patch kept `builtin` with a null profile
+        // and the neural stage silently fell back (issue #4146). A library
+        // entry with the same audible identity restores the capture's full
+        // profile and name; otherwise the patch carries the record's own
+        // profile under a stable derived id, which the panel renders as the
+        // 'Selected in this patch' card.
+        const profile = grinderNeuralProfileFromParamValues(parameterValues);
+        if (profile) {
+            const match = libraryEntries.find((entry) => grinderNeuralProfilesEqual(entry.profile, profile));
+            Object.assign(next, {
+                neuralModelSource: 'imported',
+                neuralModelProfile: match?.profile ?? profile,
+                neuralModelId: match?.id ?? derivedGrinderNeuralModelId(profile),
+                neuralModelName: match?.name ?? 'Selected in this patch',
+                neuralModelFamily: match?.family ?? DEFAULT_PATCH.neuralModelFamily,
+            });
+        }
     }
     return next;
 }

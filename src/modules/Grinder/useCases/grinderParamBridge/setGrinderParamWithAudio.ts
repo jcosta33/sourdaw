@@ -104,13 +104,26 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
             coupled = { key: 'engineMode', value: ENGINE_MODES.indexOf(engineMode) };
         }
 
-        const compositeKey = `${deviceId}:${key}`;
-        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
-
+        // Both names write NeuralCapture's single engine_mode field, so the
+        // order the batcher flushes them in decides what the engine runs
+        // (GRINDER_PATCH_PRECEDENCE, crates/daw-engine/src/scheduler.rs):
+        // `engineMode` — the exact three-way pick — must land last, and the
+        // `neuralEnabled` simplification first. Writing engineMode used to
+        // schedule its coupled boolean second, so selecting Capture ran
+        // Hybrid (issue #4141).
+        const writes: Array<{ key: keyof GrinderPatch; value: number }> = [{ key, value }];
         if (coupled) {
+            if (key === 'engineMode') {
+                writes.unshift(coupled);
+            } else {
+                writes.push(coupled);
+            }
+        }
+
+        for (const write of writes) {
             paramBatcher.schedule(
-                `${deviceId}:${coupled.key}`,
-                { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
+                `${deviceId}:${write.key}`,
+                { deviceId: target.deviceId, key: write.key, value: write.value },
                 flushParam
             );
         }

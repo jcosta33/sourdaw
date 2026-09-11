@@ -27,6 +27,9 @@ const { creators } = vi.hoisted(() => {
             (_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
                 Promise.resolve(nodeMock)
         ),
+        createCrustNode: vi.fn((_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+            Promise.resolve(nodeMock)
+        ),
         createKneadNode: vi.fn(() => Promise.resolve(nodeMock)),
     };
     return { creators };
@@ -75,6 +78,10 @@ vi.mock('../../../engine/ScoringNode', () => ({
 vi.mock('../../../engine/GrandBouleNode', () => ({
     isGrandBouleDevice: (t: string) => t === 'grandBoule',
     createGrandBouleNode: creators.createGrandBouleNode,
+}));
+vi.mock('../../../engine/CrustNode', () => ({
+    isCrustDevice: (t: string) => t === 'crust',
+    createCrustNode: creators.createCrustNode,
 }));
 vi.mock('../../../engine/KneadNode', () => ({
     isKneadDevice: (t: string) => t === 'knead',
@@ -298,6 +305,59 @@ describe('createNativeDspStrategy factory dispatch', () => {
         } as never);
         expect(setParam).toHaveBeenCalledWith('gain', 0.3);
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
+    });
+
+    it('seeds a grinder record neuralEnabled before engineMode whatever order the record was drawn in', async () => {
+        // Both names write NeuralCapture's single engine_mode; replaying the
+        // record in draw order let the boolean simplification overwrite the
+        // exact engineMode pick (issue #4141's replay half).
+        const setParam = vi.fn();
+        const seededGrinder = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        creators.createGrinderNode.mockResolvedValueOnce(seededGrinder);
+        await createNativeDspStrategy(ctx, {
+            type: 'grinder',
+            parameterValues: { engineMode: 1, neuralEnabled: 1, outputGain: 0 },
+        } as never);
+        expect(setParam.mock.calls).toEqual([
+            ['neuralEnabled', 1],
+            ['engineMode', 1],
+            ['outputGain', 0],
+        ]);
+    });
+
+    it('seeds a crust record style before algorithm so the exact pick lands last', async () => {
+        // `style` and `algorithm` both write Crust's single algorithm slot; the
+        // three-way pick must land before the eight-way one, so a stale record
+        // drawn algorithm-first still resolves to the exact pick (issue #4135).
+        const setParam = vi.fn();
+        const seededCrust = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        creators.createCrustNode.mockResolvedValueOnce(seededCrust);
+        await createNativeDspStrategy(ctx, {
+            type: 'crust',
+            parameterValues: { algorithm: 6, style: 2, gain: 3 },
+        } as never);
+        expect(setParam.mock.calls).toEqual([
+            ['style', 2],
+            ['algorithm', 6],
+            ['gain', 3],
+        ]);
+    });
+
+    it('seeds a gluten record with its macros leading ahead of the specific entries', async () => {
+        const setParam = vi.fn();
+        const seededGluten = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        creators.createGlutenNode.mockResolvedValueOnce(seededGluten);
+        await createNativeDspStrategy(ctx, {
+            type: 'gluten',
+            parameterValues: { threshold: -12, style: 2, ratio: 6, topology: 1, amount: 40 },
+        } as never);
+        expect(setParam.mock.calls).toEqual([
+            ['topology', 1],
+            ['style', 2],
+            ['amount', 40],
+            ['threshold', -12],
+            ['ratio', 6],
+        ]);
     });
 
     it('turns an offline GrandBoule processor fault into a rejected strategy signal', async () => {

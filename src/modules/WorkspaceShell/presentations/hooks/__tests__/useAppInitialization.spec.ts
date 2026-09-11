@@ -38,6 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // the whole sequence throw into the catch and every later step — including
     // `loadProject` — never runs.
     syncNativeTimelineSamples: vi.fn(() => vi.fn()),
+    syncControlRoomMonitoring: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
