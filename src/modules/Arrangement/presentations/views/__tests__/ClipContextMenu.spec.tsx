@@ -149,14 +149,6 @@ vi.mock('../../../useCases/clipEditing/renameClip', () => ({
     renameClip: vi.fn(),
 }));
 
-vi.mock('../../../useCases/clipEditing/muteClip', () => ({
-    muteClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clipEditing/lockClip', () => ({
-    lockClip: vi.fn(),
-}));
-
 vi.mock('../../../useCases/clipEditing/normalizeClip', () => ({
     normalizeClip: vi.fn(),
 }));
@@ -674,16 +666,38 @@ describe('ClipContextMenu', () => {
             expect(screen.getByRole('button', { name: 'Unmute Clip' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Unlock Clip' })).toBeInTheDocument();
 
-            const { muteClip } = await import('../../../useCases/clipEditing/muteClip');
-            const { lockClip } = await import('../../../useCases/clipEditing/lockClip');
             fireEvent.click(screen.getByRole('button', { name: 'Unmute Clip' }));
             // isMuted true → toggles to false.
-            expect(muteClip).toHaveBeenCalledWith('clipM', false);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'muteClip',
+                payload: { clipId: 'clipM', muted: false },
+            });
             fireEvent.click(screen.getByRole('button', { name: 'Unlock Clip' }));
-            expect(lockClip).toHaveBeenCalledWith('clipM', false);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'lockClip',
+                payload: { clipId: 'clipM', locked: false },
+            });
         } finally {
             trackStore.set(previous);
         }
+    });
+
+    it('dispatches muteClip and lockClip through executeUserAppAction when clicking Mute Clip and Lock Clip on an unmuted and unlocked clip', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        expect(screen.getByRole('button', { name: 'Mute Clip' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Lock Clip' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mute Clip' }));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'muteClip',
+            payload: { clipId: 'clip1', muted: true },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Lock Clip' }));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'lockClip',
+            payload: { clipId: 'clip1', locked: true },
+        });
     });
 
     it('deletes only the targeted clip when a single clip is selected', () => {
