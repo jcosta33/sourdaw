@@ -1,0 +1,64 @@
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_06adf2b091dc62::t_4abf0d6338b8db 397-399
+  s_06adf2b091dc62::t_dd14c55b33c131 16
+  s_06adf2b091dc62::t_5191f78c3216e4 259,263-280
+  s_06adf2b091dc62::t_fcb56595999bb4 281-282
+src/modules/Command/AGENTS.md
+  s_06adf2b091dc62::t_bcbfdd30b4d940 11
+src/modules/AiRuntime/AGENTS.md
+  s_06adf2b091dc62::t_876b001daf3ef8 9
+src/modules/Command/useCases/__tests__/describeCommandBatchRecovery.spec.ts
+  s_06adf2b091dc62::t_4daec75ad033d7 15-20
+  s_06adf2b091dc62::t_874bb46ecbfc37 59-60,64-70,72-73,79-83,85
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_06adf2b091dc62::t_81c341189d7283 604
+  s_06adf2b091dc62::t_37c95568cafe87 591,593-594
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_06adf2b091dc62::t_a78eca22a0290d 63
+  s_06adf2b091dc62::t_6b4c37587c1f9c 208
+  s_06adf2b091dc62::t_156cfef4777283 235-294
+  s_06adf2b091dc62::t_11b93979dc827e 430-432
+  s_06adf2b091dc62::t_0fe0d9e6f95dee 28
+  s_06adf2b091dc62::t_c3d795d94cf3f7 136-147,149-165,171
+  s_9b530f08172a54::t_a4d02820970896 148
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_06adf2b091dc62::t_c0e3a9fa1f97fc 578-579,582-586,588,591-592
+  s_06adf2b091dc62::t_c436a1cea19b5d 490-491,493,496-497
+  s_06adf2b091dc62::t_6a514c5790fd68 2559-2560,2562,2566-2567
+  s_06adf2b091dc62::t_182fadb8627ebb 6-10
+  s_06adf2b091dc62::t_fc13092a04f640 393
+  s_06adf2b091dc62::t_3aae9c70f11328 41-115
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_06adf2b091dc62::t_95b0248f667ec9 137-142,147-148
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_06adf2b091dc62::t_ccbab9f5006e26 443-472
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_06adf2b091dc62::t_0e0e49082dd558 45-50,56-86
+  s_06adf2b091dc62::t_ffcd0ff7b5d554 237-239
+  s_06adf2b091dc62::t_2fa4a4da0826fa 8
+  s_06adf2b091dc62::t_83b932441b9e83 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7df7f01854206ebbca15a8d8ded8a816a6f15bc0",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
