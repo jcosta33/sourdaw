@@ -1,0 +1,31 @@
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/reconcileScannedRoot.spec.ts
+  s_9b530f08172a54::t_fe2788ff6b3349 161-241
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/scanBrowserDirectory.spec.ts
+  s_9b530f08172a54::t_efdbbb94f13a73 1-255
+src/modules/SampleLibrary/useCases/connectFolder/reconcileScannedRoot.ts
+  s_c08e54ac5ff16e::t_3c560e1b2c3540 45-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ef805247c728327b09ab81c8079d4e959fbcfa79",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c08e54ac5ff16e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a95548314aef7198f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
