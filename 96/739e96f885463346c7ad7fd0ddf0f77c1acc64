@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_2d8e88473e4b53::t_c1f4ae2c7ed484 813
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "96739e96f885463346c7ad7fd0ddf0f77c1acc64",
+  "prompts": {},
+  "sessions": {
+    "s_2d8e88473e4b53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af4bc73d141357d8a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
