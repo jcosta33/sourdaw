@@ -1,9 +1,14 @@
 import { type ComponentProps } from 'react';
 
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { agentRunStore, aiActionHistoryStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
+import {
+    agentChangeComparisonStore,
+    agentRunStore,
+    aiActionHistoryStore,
+    pendingActionConfirmationStore,
+} from '#/modules/AiRuntime/stores';
 
 import { type AgentApprovalSection } from '../../components/agentWorkspace/AgentApprovalSection';
 import { AgentWorkspace } from '../AgentWorkspace';
@@ -27,6 +32,13 @@ const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn());
 const reproposePendingChatActionsMock = vi.hoisted(() => vi.fn());
 const agentRunCancellationMock = vi.hoisted(() => ({ cancel: vi.fn() }));
 const revertAiActionGroupMock = vi.hoisted(() => vi.fn());
+const agentChangeComparisonMock = vi.hoisted(() => ({
+    availability: vi.fn(),
+    start: vi.fn(),
+    toggle: vi.fn(),
+    end: vi.fn(),
+}));
+const getAgentChangeComparisonViewMock = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     agentRunControls: agentRunControlsMock,
@@ -37,6 +49,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     cancelPendingChatActions: cancelPendingChatActionsMock,
     reproposePendingChatActions: reproposePendingChatActionsMock,
     revertAiActionGroup: revertAiActionGroupMock,
+    agentChangeComparison: agentChangeComparisonMock,
+    getAgentChangeComparisonView: getAgentChangeComparisonViewMock,
 }));
 
 // Real `createStore` instances so `useStore` subscribes for real: the focus
@@ -49,6 +63,7 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
         agentRunStore: createStore({ initialData: { schemaVersion: 1, runs: [] } }),
         aiActionHistoryStore: createStore({ initialData: { groups: [], panelOpen: false } }),
         pendingActionConfirmationStore: createStore({ initialData: { confirmations: [] } }),
+        agentChangeComparisonStore: createStore({ initialData: { active: null, lastEnded: null } }),
     };
 });
 
@@ -234,8 +249,46 @@ const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
     ...overrides,
 });
 
+type ComparisonSide = 'A' | 'B';
+type ComparisonMeasurement = 'web-master' | 'unavailable-native-carrier' | 'unavailable-not-playing';
+type ComparisonEndReason = 'user-ended' | 'project-changed' | 'group-reverted' | 'transition-failed' | 'left-on-a';
+
+type ComparisonSession = {
+    groupId: string;
+    side: ComparisonSide;
+    loudness: { a: number | null; b: number | null };
+    matchDb: number | null;
+    matchLimited: boolean;
+    measurement: ComparisonMeasurement;
+    transitioning: boolean;
+};
+
+type ComparisonEnding = { groupId: string; side: ComparisonSide; reason: ComparisonEndReason };
+
+const comparisonSession = (overrides: Partial<ComparisonSession> = {}): ComparisonSession => ({
+    groupId: 'g1',
+    side: 'B',
+    loudness: { a: null, b: null },
+    matchDb: null,
+    matchLimited: false,
+    measurement: 'web-master',
+    transitioning: false,
+    ...overrides,
+});
+
 function setRuns(runs: AgentRun[]): void {
     agentRunStore.set({ schemaVersion: 1, runs });
+}
+
+/**
+ * `getAgentChangeComparisonView` and `agentChangeComparisonStore` are mocked
+ * independently: the view mock controls what the workspace renders, and the
+ * store carries only what the unmount cleanup reads directly. Both need
+ * setting to reproduce one real comparison state.
+ */
+function setComparisonView(active: ComparisonSession | null, lastEnded: ComparisonEnding | null = null): void {
+    getAgentChangeComparisonViewMock.mockReturnValue({ active, lastEnded });
+    agentChangeComparisonStore.set({ active, lastEnded });
 }
 
 beforeEach(() => {
@@ -244,6 +297,10 @@ beforeEach(() => {
     agentRunControlsMock.list.mockReturnValue([]);
     agentRunControlsMock.get.mockReturnValue(null);
     getProviderRouteViewMock.mockReturnValue(null);
+    agentChangeComparisonMock.availability.mockReturnValue({ available: true });
+    agentChangeComparisonMock.start.mockResolvedValue({ status: 'started' });
+    agentChangeComparisonMock.toggle.mockResolvedValue({ status: 'A' });
+    agentChangeComparisonMock.end.mockResolvedValue(undefined);
     // Mirrors the real projection: one view per stored confirmation, none for an unknown id.
     getAgentApprovalViewMock.mockImplementation(({ confirmationId }: { confirmationId: string }) => {
         const stored = pendingActionConfirmationStore.value?.confirmations.find(
@@ -261,6 +318,7 @@ beforeEach(() => {
     setRuns([]);
     aiActionHistoryStore.set({ groups: [], panelOpen: false });
     pendingActionConfirmationStore.set({ confirmations: [] });
+    setComparisonView(null);
 });
 
 describe('AgentWorkspace', () => {
@@ -974,5 +1032,231 @@ describe('AgentWorkspace', () => {
         for (const element of transitioning) {
             expect(element.className).toContain('motion-reduce:transition-none');
         }
+    });
+
+    it("enables Compare for an available group and calls start with the group's groupId, not its id; disables with the reason for later-edits", () => {
+        // Mutation: swapping `group.groupId` for `group.id` in AgentWorkspace's onCompare wiring turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        const newest = historyGroup({ id: 'group-1', groupId: 'g-newest', prompt: 'Add a bassline', timestamp: 200 });
+        const older = historyGroup({ id: 'group-2', groupId: 'g-older', prompt: 'Add a chorus', timestamp: 100 });
+        aiActionHistoryStore.set({ groups: [newest, older], panelOpen: false });
+        agentChangeComparisonMock.availability.mockImplementation(({ groupId }: { groupId: string }) =>
+            groupId === 'g-older' ? { available: false, reason: 'later-edits' } : { available: true }
+        );
+
+        render(<AgentWorkspace />);
+
+        const compareNewest = screen.getByRole('button', { name: 'Compare agent changes Add a bassline' });
+        expect(compareNewest).toBeEnabled();
+        fireEvent.click(compareNewest);
+        expect(agentChangeComparisonMock.start).toHaveBeenCalledExactlyOnceWith({ groupId: 'g-newest' });
+
+        const compareOlder = screen.getByRole('button', { name: 'Compare agent changes Add a chorus' });
+        expect(compareOlder).toBeDisabled();
+        expect(screen.getByText('Newer edits exist')).toBeInTheDocument();
+    });
+
+    it('focuses the side toggle once a started comparison reports active', () => {
+        // Mutation: deleting the `requestComparisonFocus()` call in `handleCompare` leaves focus on the Compare button.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+
+        const { rerender } = render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Compare agent changes Add a bassline' }));
+
+        act(() => {
+            setComparisonView(comparisonSession({ groupId: 'g1', side: 'B' }));
+        });
+        rerender(<AgentWorkspace />);
+
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Switch comparison side' }));
+    });
+
+    it('returns focus to the Compare button after End, even when the prompt holds a double quote', async () => {
+        // Mutation: restoring the prompt-interpolated querySelector selector throws a SyntaxError, so focus never lands.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({
+            groups: [historyGroup({ groupId: 'g1', prompt: 'add a "wide" pad' })],
+            panelOpen: false,
+        });
+        setComparisonView(comparisonSession({ groupId: 'g1' }));
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'End comparison' }));
+
+        await waitFor(() => {
+            expect(document.activeElement).toBe(
+                screen.getByRole('button', { name: 'Compare agent changes add a "wide" pad' })
+            );
+        });
+    });
+
+    it('returns focus to the ended group’s own Compare button when two groups share a prompt', async () => {
+        // Mutation: restoring the prompt-interpolated querySelector selector always resolves to the first matching button.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        const newest = historyGroup({ id: 'group-1', groupId: 'g-newest', prompt: 'Add a chorus', timestamp: 200 });
+        const older = historyGroup({ id: 'group-2', groupId: 'g-older', prompt: 'Add a chorus', timestamp: 100 });
+        aiActionHistoryStore.set({ groups: [newest, older], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g-older' }));
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'End comparison' }));
+
+        await waitFor(() => {
+            const compareButtons = screen.getAllByRole('button', { name: 'Compare agent changes Add a chorus' });
+            expect(document.activeElement).toBe(compareButtons[1]);
+            expect(document.activeElement).not.toBe(compareButtons[0]);
+        });
+    });
+
+    it('shows the toggle label and pressed state for each side and calls toggle once per click', () => {
+        // Mutation: inverting the `active.side === 'A'` branch in the toggle label turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1', side: 'B' }));
+
+        const { rerender } = render(<AgentWorkspace />);
+
+        const toggle = screen.getByRole('button', { name: 'Switch comparison side' });
+        expect(toggle).toHaveTextContent('B · after');
+        expect(toggle).toHaveAttribute('aria-pressed', 'false');
+        expect(toggle).toHaveAttribute('data-side', 'B');
+
+        fireEvent.click(toggle);
+        expect(agentChangeComparisonMock.toggle).toHaveBeenCalledOnce();
+
+        act(() => {
+            setComparisonView(comparisonSession({ groupId: 'g1', side: 'A' }));
+        });
+        rerender(<AgentWorkspace />);
+
+        const toggleOnA = screen.getByRole('button', { name: 'Switch comparison side' });
+        expect(toggleOnA).toHaveTextContent('A · before');
+        expect(toggleOnA).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('disables the toggle and announces switching while transitioning', () => {
+        // Mutation: dropping the `active.transitioning` branch in `formatStatus` turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1', transitioning: true }));
+
+        render(<AgentWorkspace />);
+
+        const comparisonRegion = within(screen.getByRole('region', { name: 'Agent comparison' }));
+        expect(screen.getByRole('button', { name: 'Switch comparison side' })).toBeDisabled();
+        expect(comparisonRegion.getByRole('status')).toHaveTextContent('Switching sides');
+    });
+
+    it('renders loudness and match readouts, including the fader-headroom note and the not-playing measurement note', () => {
+        // Mutation: dropping the `matchLimited` suffix in `formatMatch` turns the first assertion red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(
+            comparisonSession({ groupId: 'g1', loudness: { a: -20.1, b: -14 }, matchDb: 6.1, matchLimited: true })
+        );
+
+        const { rerender } = render(<AgentWorkspace />);
+        const comparisonRegion = within(screen.getByRole('region', { name: 'Agent comparison' }));
+
+        expect(comparisonRegion.getByText('A: -20.1 LUFS')).toBeInTheDocument();
+        expect(comparisonRegion.getByText('B: -14.0 LUFS')).toBeInTheDocument();
+        expect(comparisonRegion.getByText('Match: +6.1 dB on A (limited by fader headroom)')).toBeInTheDocument();
+
+        act(() => {
+            setComparisonView(comparisonSession({ groupId: 'g1', measurement: 'unavailable-not-playing' }));
+        });
+        rerender(<AgentWorkspace />);
+
+        expect(
+            within(screen.getByRole('region', { name: 'Agent comparison' })).getByText(
+                'Start playback to measure loudness'
+            )
+        ).toBeInTheDocument();
+    });
+
+    it('states the status text exactly for side A with a negative match', () => {
+        // Mutation: dropping the match clause in `formatStatus` turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1', side: 'A', matchDb: -2.0 }));
+
+        render(<AgentWorkspace />);
+
+        expect(within(screen.getByRole('region', { name: 'Agent comparison' })).getByRole('status')).toHaveTextContent(
+            'Comparing side A, match -2.0 dB'
+        );
+    });
+
+    it('ends the comparison once and renders the ending reason once the view goes inactive', async () => {
+        // Mutation: mapping `left-on-a` to the wrong text, or dropping `data-ending-reason`, turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1' }));
+
+        render(<AgentWorkspace />);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'End comparison' }));
+            await Promise.resolve();
+        });
+
+        expect(agentChangeComparisonMock.end).toHaveBeenCalledOnce();
+
+        act(() => {
+            setComparisonView(null, { groupId: 'g1', side: 'A', reason: 'left-on-a' });
+        });
+
+        expect(screen.getByText('Comparison ended on A (before); redo to restore the change')).toHaveAttribute(
+            'data-ending-reason',
+            'left-on-a'
+        );
+    });
+
+    it('does not call availability for the active group while a comparison stands', () => {
+        // Mutation: removing the `groupId === activeGroupId` short-circuit in `resolveComparisonAvailability` turns this red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        const active = historyGroup({ id: 'group-1', groupId: 'g1', prompt: 'Add a bassline' });
+        const other = historyGroup({ id: 'group-2', groupId: 'g2', prompt: 'Add a chorus', timestamp: 50 });
+        aiActionHistoryStore.set({ groups: [active, other], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1' }));
+
+        render(<AgentWorkspace />);
+
+        expect(agentChangeComparisonMock.availability).not.toHaveBeenCalledWith({ groupId: 'g1' });
+        expect(agentChangeComparisonMock.availability).toHaveBeenCalledWith({ groupId: 'g2' });
+    });
+
+    it('ends an active comparison on unmount but not when none is active', () => {
+        // Mutation: dropping the unmount cleanup's guard or its `end()` call turns the active case red.
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
+        aiActionHistoryStore.set({ groups: [historyGroup({ groupId: 'g1' })], panelOpen: false });
+        setComparisonView(comparisonSession({ groupId: 'g1' }));
+
+        const { unmount } = render(<AgentWorkspace />);
+        unmount();
+
+        expect(agentChangeComparisonMock.end).toHaveBeenCalledOnce();
+
+        agentChangeComparisonMock.end.mockClear();
+        setComparisonView(null);
+        const { unmount: unmountInactive } = render(<AgentWorkspace />);
+        unmountInactive();
+
+        expect(agentChangeComparisonMock.end).not.toHaveBeenCalled();
     });
 });
