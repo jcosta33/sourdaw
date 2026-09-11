@@ -43,6 +43,8 @@ describe('writeNativeBuiltinParameters', () => {
         writeNativeBuiltinParameters('t', 'd', { master_gain: 0.4 });
 
         expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
+        expect(nativeBuiltinWriteTarget).toHaveBeenCalledWith('t', 'd');
+        expect(nativeBuiltinWriteTarget).toHaveBeenCalledTimes(1);
     });
 
     it('sends the write once a carried body answers for the device', () => {
@@ -56,5 +58,7 @@ describe('writeNativeBuiltinParameters', () => {
             deviceId: 'd',
             values: { master_gain: 0.4 },
         });
+        expect(nativeBuiltinWriteTarget).toHaveBeenCalledWith('t', 'd');
+        expect(nativeBuiltinWriteTarget).toHaveBeenCalledTimes(1);
     });
 });
