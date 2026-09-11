@@ -1896,7 +1896,9 @@ fn resolved_param_writes<T>(
 /// snake_case names carry the stage they route to as a prefix (`lim_ceiling`)
 /// and spell the module order as five indexed keys, and so is dutch-oven,
 /// whose snake_case names are a union across the engines an `algorithm` write
-/// selects between — because the vocabulary belongs to the DSP the body hosts
+/// selects between, and so is levain, which folds a mic position's index into
+/// its snake_case names (`mic_0_volume`) and leaves the engine to parse it back
+/// out — because the vocabulary belongs to the DSP the body hosts
 /// rather than to the kind of device it is, the case it spells its names in,
 /// or the addressing it folds into them.
 fn builtin_parameter(
@@ -1916,7 +1918,8 @@ fn builtin_parameter(
         | BuiltinEffectType::Bacteria
         | BuiltinEffectType::Proof
         | BuiltinEffectType::DutchOven
-        | BuiltinEffectType::Toaster => {
+        | BuiltinEffectType::Toaster
+        | BuiltinEffectType::Levain => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2201,6 +2204,25 @@ fn map_device(
                 },
             )
         }
+        // The one type this mapper cannot build. A sampler sounds the bank
+        // loaded into its instance and nothing else, the load is a sequence of
+        // control-thread allocations reading decoded PCM, and nothing in this
+        // shell registers a source for it yet. A body built here would
+        // therefore hold no bank and render digital silence
+        // (`PluginCore::builtin`, `crates/daw-engine/src/scheduler.rs`), so
+        // splicing one in would put a mute device on the strip and leave the
+        // player looking for the fault in their own project.
+        //
+        // Refusing names the missing piece instead, and it refuses through the
+        // same door every other unbuildable device takes: audible strips carry
+        // the reason back and silent ones drop the device
+        // ([`refuse_or_degrade`]), so a muted or unrouted Levain still loads
+        // its project.
+        BuiltinEffectType::Levain => Err(format!(
+            "device '{}' of type levain needs a native sample bank, which no producer registers \
+             yet",
+            device.id
+        )),
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
                 .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
@@ -5273,7 +5295,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "levain", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "native-scoring", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5291,7 +5313,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "levain", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "native-scoring", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5335,7 +5357,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "levain", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "native-scoring", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -10469,7 +10491,7 @@ mod tests {
     #[test]
     fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
         let refusal = map_unbound_batch(
-            &batch(strip_with_device("d-levain", "levain", json!({}))),
+            &batch(strip_with_device("d-scoring", "native-scoring", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
@@ -10477,8 +10499,71 @@ mod tests {
         .expect_err("a type with no native body must refuse a contributing strip");
 
         assert!(
-            refusal.contains("d-levain") && refusal.contains("levain"),
+            refusal.contains("d-scoring") && refusal.contains("native-scoring"),
             "the refusal must name the device and the type it read, got: {refusal}"
+        );
+    }
+
+    /// A Levain on a contributing strip refuses, and the refusal names the
+    /// device and the piece that is missing.
+    ///
+    /// The engine has a Levain body (`PluginCore::Levain`), so this is not the
+    /// unrecognised-type refusal above: the type resolves, and what stops the
+    /// splice is that a sampler needs a bank and nothing in this shell loads
+    /// one yet. A body built without one would render silence, so the mapper
+    /// refuses rather than splicing a mute device onto a strip the mix needs.
+    ///
+    /// The reason has to say which piece is absent, or the caller reads a
+    /// resolvable type refusing as a mapper defect rather than as unfinished
+    /// hosting.
+    #[test]
+    fn a_levain_refuses_a_contributing_strip_naming_the_bank_it_has_no_source_for() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device("d-levain", "levain", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sampler with no bank source must refuse a contributing strip");
+
+        assert!(
+            refusal.contains("d-levain") && refusal.contains("sample bank"),
+            "the refusal must name the device and the bank it has no source for, got: {refusal}"
+        );
+    }
+
+    /// A Levain on a silent strip drops out of the chain instead of refusing
+    /// the batch.
+    ///
+    /// The degradation law is what keeps a project loadable while its hosting
+    /// is unfinished: a strip nothing listens to is not short of anything when
+    /// a device goes missing from it, so the batch builds and the strip reports
+    /// the chain it really realized. Without this a single saved Levain on a
+    /// muted track would refuse the whole graph batch.
+    #[test]
+    fn a_levain_on_a_silent_strip_degrades_out_of_the_realized_chain() {
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                  "state": strip_state(1.0),
+                  "devices": [
+                      { "id": "d-levain", "type": "levain", "bypassed": false,
+                        "parameterValues": {} },
+                      { "id": "d-knead", "type": "knead", "bypassed": false,
+                        "parameterValues": {} }
+                  ],
+                  "honorMuted": true, "contributesAudio": false }
+            ])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a silent strip carrying a bankless sampler must still build");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            vec!["d-knead".to_string()],
+            "the sampler must be visibly absent from the realized chain, not silently spliced in"
         );
     }
 
@@ -12287,7 +12372,7 @@ mod tests {
     /// (`BacteriaEngine::apply_param`, `crates/daw-dsp/src/bacteria/engine.rs`).
     ///
     /// `band0_convolutionSeparation` is the longest name this vocabulary can
-    /// spell at 27 bytes, five under `BUILTIN_PARAM_NAME_CAPACITY`, and
+    /// spell at 27 bytes, 13 under `BUILTIN_PARAM_NAME_CAPACITY`, and
     /// `stepSeqVal_31` is the widest index of the engine's other dynamically
     /// named family — the step sequencer's 32 steps. Both parse, so the
     /// carrier needs no shape change to hold this body's vocabulary.
