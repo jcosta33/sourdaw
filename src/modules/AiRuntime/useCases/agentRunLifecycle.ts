@@ -38,6 +38,7 @@ import {
 } from './agentRequestOrchestration/claimAgentRunWorkLease';
 import { recoverInterruptedAgentRunState as recoverInterruptedRunState } from './agentRequestOrchestration/recoverInterruptedAgentRunState';
 import { reduceAgentRunTransition } from './agentRequestOrchestration/reduceAgentRunTransition';
+import { retainedRenderReceipts } from './agentRequestOrchestration/retainedRenderReceipts';
 import {
     type RetryAgentRunWorkLeaseResult as RetryWorkLeaseResult,
     retryAgentRunWorkLease as retryWorkLease,
@@ -112,6 +113,14 @@ function assertNonEmpty(value: string, field: string): void {
     }
 }
 
+// A run that has reached a terminal phase proposes no further mutation, so the rendered receipts its
+// flights retained describe audio nothing can consume; the run's retention map goes with it.
+function releaseRetainedRenderReceiptsOnTerminalPhase(current: AgentRun, next: AgentRun): void {
+    if (!TERMINAL_PHASES.has(current.phase) && TERMINAL_PHASES.has(next.phase)) {
+        retainedRenderReceipts.releaseRun(next.runId);
+    }
+}
+
 function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun) => AgentRun): AgentRun {
     const state = readAgentRunState();
     const index = state.runs.findIndex((run) => run.runId === runId);
@@ -123,6 +132,7 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
+    releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
 
@@ -141,6 +151,7 @@ function updateAgentRunIfPresent(
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
+    releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
 

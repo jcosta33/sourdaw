@@ -12,6 +12,7 @@ export type AgentRenderReceiptRejectionReason =
     | 'stale-revision'
     | 'artifact-missing'
     | 'content-address-mismatch'
+    | 'artifact-shape-mismatch'
     | 'range-mismatch';
 
 export type AgentRenderReceiptAdmission =
@@ -35,6 +36,10 @@ export type AgentRenderArtifactSnapshot = {
     channelCount: number;
 };
 
+// The caller consults this adapter before it claims the mutation's own work lease, so the live side
+// of the binding is the run itself: its identity and the cancellation generation it is currently on.
+export type AgentLiveRunIdentity = { runId: string; cancellationGeneration: number };
+
 type RenderedReceipt = Extract<AgentRenderReceipt, { phase: 'rendered' }>;
 
 function isRangeMutation(
@@ -45,15 +50,12 @@ function isRangeMutation(
 
 // The render ran under its own work lease, so `workId` and `leaseId` legitimately differ from the
 // mutation's lease; the binding this checks is run identity plus cancellation generation.
-function isLeaseMismatch(
-    receiptOwner: AgentWorkOwnerIdentity | null,
-    liveOwner: AgentWorkOwnerIdentity | null
-): boolean {
+function isLeaseMismatch(receiptOwner: AgentWorkOwnerIdentity | null, liveRun: AgentLiveRunIdentity | null): boolean {
     return (
-        !liveOwner ||
+        !liveRun ||
         !receiptOwner ||
-        receiptOwner.runId !== liveOwner.runId ||
-        receiptOwner.cancellationGeneration !== liveOwner.cancellationGeneration
+        receiptOwner.runId !== liveRun.runId ||
+        receiptOwner.cancellationGeneration !== liveRun.cancellationGeneration
     );
 }
 
@@ -69,7 +71,6 @@ function artifactMatchesReceipt(artifact: AgentRenderArtifactSnapshot, receipt: 
         artifact.sourceRevision === receipt.provenance.sourceRevision;
     return (
         provenanceMatches &&
-        artifact.contentAddress === receipt.contentAddress &&
         artifact.frameCount === receipt.frameCount &&
         artifact.channelCount === receipt.channelCount
     );
@@ -81,15 +82,15 @@ function artifactMatchesReceipt(artifact: AgentRenderArtifactSnapshot, receipt: 
  */
 export function admitAgentRenderReceipt(input: {
     receipt: AgentRenderReceipt;
-    liveOwner: AgentWorkOwnerIdentity | null;
+    liveRun: AgentLiveRunIdentity | null;
     mutation: AgentRenderReceiptMutation;
     artifacts: readonly AgentRenderArtifactSnapshot[];
 }): AgentRenderReceiptAdmission {
-    const { receipt, liveOwner, mutation, artifacts } = input;
+    const { receipt, liveRun, mutation, artifacts } = input;
     if (receipt.phase !== 'rendered') {
         return { status: 'rejected', reason: 'receipt-not-rendered' };
     }
-    if (isLeaseMismatch(receipt.owner, liveOwner)) {
+    if (isLeaseMismatch(receipt.owner, liveRun)) {
         return { status: 'rejected', reason: 'lease-mismatch' };
     }
     if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(receipt.provenance.sourceRevision)) {
@@ -99,8 +100,11 @@ export function admitAgentRenderReceipt(input: {
     if (!artifact) {
         return { status: 'rejected', reason: 'artifact-missing' };
     }
-    if (!artifactMatchesReceipt(artifact, receipt)) {
+    if (artifact.contentAddress !== receipt.contentAddress) {
         return { status: 'rejected', reason: 'content-address-mismatch' };
+    }
+    if (!artifactMatchesReceipt(artifact, receipt)) {
+        return { status: 'rejected', reason: 'artifact-shape-mismatch' };
     }
     if (isRangeMutation(mutation)) {
         if (mutation.startBeat !== receipt.provenance.startBeat || mutation.endBeat !== receipt.provenance.endBeat) {

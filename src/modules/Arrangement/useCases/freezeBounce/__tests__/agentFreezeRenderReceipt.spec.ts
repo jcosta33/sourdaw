@@ -24,6 +24,10 @@ const OWNER: AgentWorkOwnerIdentity = {
     cancellationGeneration: 0,
 };
 
+// The mutation's own lease does not exist yet when the adapter is consulted, so the live side of the
+// binding is the run: its identity and the cancellation generation it is currently on.
+const LIVE_RUN = { runId: OWNER.runId, cancellationGeneration: OWNER.cancellationGeneration };
+
 const PROVENANCE = {
     jobId: 'job-verse',
     sectionId: 'section-verse',
@@ -50,7 +54,10 @@ function createRenderedReceipt(overrides: Partial<Omit<RenderedReceipt, 'phase'>
 
 function createMatchingArtifact(
     overrides: Partial<
-        Pick<AgentRenderArtifactSnapshot, 'contentAddress' | 'sourceRevision' | 'frameCount' | 'channelCount'>
+        Pick<
+            AgentRenderArtifactSnapshot,
+            'contentAddress' | 'sourceRevision' | 'frameCount' | 'channelCount' | 'sampleRate'
+        >
     > = {}
 ): AgentRenderArtifactSnapshot {
     return {
@@ -71,7 +78,7 @@ describe('admitAgentRenderReceipt', () => {
     it('admits a bounceSelection mutation as the literal range app action', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'bounceSelection', trackId: 'track-1', startBeat: 8, endBeat: 16 },
             artifacts: [createMatchingArtifact()],
         });
@@ -85,7 +92,7 @@ describe('admitAgentRenderReceipt', () => {
     it('admits a freezeTrack mutation as the literal trackId-only app action', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact()],
         });
@@ -99,7 +106,7 @@ describe('admitAgentRenderReceipt', () => {
     it('rejects a started-phase receipt as receipt-not-rendered', () => {
         const result = admitAgentRenderReceipt({
             receipt: { phase: 'started', owner: OWNER, provenance: PROVENANCE },
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact()],
         });
@@ -110,7 +117,7 @@ describe('admitAgentRenderReceipt', () => {
     it('rejects a receipt whose owner cancellation generation differs from the live owner as lease-mismatch', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt({ owner: { ...OWNER, cancellationGeneration: 1 } }),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact()],
         });
@@ -121,7 +128,7 @@ describe('admitAgentRenderReceipt', () => {
     it('admits a receipt whose owner workId differs from the live owner (binding is run identity plus cancellation generation)', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt({ owner: { ...OWNER, workId: 'other-work', leaseId: 'other-lease' } }),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact()],
         });
@@ -134,7 +141,7 @@ describe('admitAgentRenderReceipt', () => {
 
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact()],
         });
@@ -145,7 +152,7 @@ describe('admitAgentRenderReceipt', () => {
     it('rejects when no retained artifact matches the receipt job id as artifact-missing', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [],
         });
@@ -156,7 +163,7 @@ describe('admitAgentRenderReceipt', () => {
     it('rejects when the matching artifact content address differs as content-address-mismatch', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact({ contentAddress: 'content-address-2' })],
         });
@@ -164,21 +171,54 @@ describe('admitAgentRenderReceipt', () => {
         expect(result).toEqual({ status: 'rejected', reason: 'content-address-mismatch' });
     });
 
-    it('rejects when the matching artifact source revision differs as content-address-mismatch', () => {
+    it('rejects when the matching artifact source revision differs as artifact-shape-mismatch', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [createMatchingArtifact({ sourceRevision: 'revision-2' })],
         });
 
-        expect(result).toEqual({ status: 'rejected', reason: 'content-address-mismatch' });
+        expect(result).toEqual({ status: 'rejected', reason: 'artifact-shape-mismatch' });
+    });
+
+    it('rejects when the matching artifact frame count differs as artifact-shape-mismatch', () => {
+        const result = admitAgentRenderReceipt({
+            receipt: createRenderedReceipt(),
+            liveRun: LIVE_RUN,
+            mutation: { type: 'freezeTrack', trackId: 'track-1' },
+            artifacts: [createMatchingArtifact({ frameCount: 5 })],
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'artifact-shape-mismatch' });
+    });
+
+    it('rejects when the matching artifact channel count differs as artifact-shape-mismatch', () => {
+        const result = admitAgentRenderReceipt({
+            receipt: createRenderedReceipt(),
+            liveRun: LIVE_RUN,
+            mutation: { type: 'freezeTrack', trackId: 'track-1' },
+            artifacts: [createMatchingArtifact({ channelCount: 1 })],
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'artifact-shape-mismatch' });
+    });
+
+    it('rejects when the matching artifact sample rate differs as artifact-shape-mismatch', () => {
+        const result = admitAgentRenderReceipt({
+            receipt: createRenderedReceipt(),
+            liveRun: LIVE_RUN,
+            mutation: { type: 'freezeTrack', trackId: 'track-1' },
+            artifacts: [createMatchingArtifact({ sampleRate: 48_000 })],
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'artifact-shape-mismatch' });
     });
 
     it('rejects a range mutation whose beats are off by one from the provenance as range-mismatch', () => {
         const result = admitAgentRenderReceipt({
             receipt: createRenderedReceipt(),
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'bounceSelection', trackId: 'track-1', startBeat: 8, endBeat: 17 },
             artifacts: [createMatchingArtifact()],
         });
@@ -191,7 +231,7 @@ describe('admitAgentRenderReceipt', () => {
 
         const result = admitAgentRenderReceipt({
             receipt: { phase: 'started', owner: OWNER, provenance: PROVENANCE },
-            liveOwner: OWNER,
+            liveRun: LIVE_RUN,
             mutation: { type: 'freezeTrack', trackId: 'track-1' },
             artifacts: [],
         });
