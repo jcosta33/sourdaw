@@ -3,6 +3,7 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type ToasterKit } from '../../models/ToasterKit';
 import { updateKit } from '../../stores/toasterStore';
+import { writeToasterParamsNatively } from '../writeToasterParamsNatively';
 
 import { findToasterNodeOnStrip } from './findToasterNodeOnStrip';
 
@@ -50,6 +51,13 @@ function flushKitParam(cacheKey: string): void {
     if (deviceNode?.toasterControls) {
         deviceNode.toasterControls.setParam(entry.paramName, entry.value);
     }
+    // `paramName` is already the engine's own spelling, which is the vocabulary
+    // the native body takes.
+    writeToasterParamsNatively({
+        trackId: target.trackId,
+        deviceId: entry.deviceId,
+        messages: [{ type: 'param', name: entry.paramName, value: entry.value }],
+    });
 }
 
 export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(

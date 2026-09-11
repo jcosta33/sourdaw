@@ -1,6 +1,8 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
+import { writeToasterParamsNatively } from '../writeToasterParamsNatively';
+
 import { findReadyToasterControlsOnStrip } from './findReadyToasterControlsOnStrip';
 
 /**
@@ -22,4 +24,9 @@ export function setPadEngineImmediate(deviceId: string, padIndex: number, engine
     if (controls) {
         controls.setPadParam(padIndex, 'engine_type', engineIdx);
     }
+    writeToasterParamsNatively({
+        trackId: target.trackId,
+        deviceId,
+        messages: [{ type: 'padParam', pad: padIndex, name: 'engine_type', value: engineIdx }],
+    });
 }

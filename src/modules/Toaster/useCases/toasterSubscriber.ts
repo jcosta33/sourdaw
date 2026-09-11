@@ -74,6 +74,13 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
         // property, and `toasterLiveOfflineParity.spec.ts` asserts it directly.
         // Do not re-inline this loop: the two copies drifting is what let an export
         // render the engine's built-in kit while a session played the project's.
+        //
+        // Deliberately worklet-only, unlike the five live-edit sites that also
+        // write the native session (`writeToasterParamsNatively`). This is
+        // hydration on device load, and the native record already carries the
+        // kit: `projectDeviceForNativeBody` folds `projectNativeDeviceState`'s
+        // projection of the same `deviceState` into the strip the splice
+        // builds, so a send here would repeat what the splice already sent.
         for (const message of projectToasterKitToEngineMessages({ kit })) {
             if (message.type === 'param') {
                 tControls.setParam(message.name, message.value);

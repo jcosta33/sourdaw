@@ -32,6 +32,7 @@ use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::primitives::sanitize::sanitize_block;
 use daw_dsp::proof::chain::ProofChain;
+use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -295,6 +296,7 @@ pub enum BuiltinEffectType {
     Bacteria,
     Proof,
     DutchOven,
+    Toaster,
 }
 
 impl BuiltinEffectType {
@@ -312,6 +314,7 @@ impl BuiltinEffectType {
             Self::Bacteria => "bacteria",
             Self::Proof => "proof",
             Self::DutchOven => "dutch-oven",
+            Self::Toaster => "toaster",
         }
     }
 
@@ -329,6 +332,7 @@ impl BuiltinEffectType {
             "bacteria" => Some(Self::Bacteria),
             "proof" => Some(Self::Proof),
             "dutch-oven" => Some(Self::DutchOven),
+            "toaster" => Some(Self::Toaster),
             _ => None,
         }
     }
@@ -357,6 +361,9 @@ impl BuiltinEffectType {
             // A reverb sounds the room around whatever it is handed; the
             // programme is the caller's.
             Self::DutchOven => false,
+            // A drum machine sounds its own pads: what reaches it is a note,
+            // what leaves it is the kit, and it processes no input at all.
+            Self::Toaster => true,
         }
     }
 
@@ -381,6 +388,7 @@ impl BuiltinEffectType {
             Self::Bacteria => BACTERIA_PATCH_PRECEDENCE,
             Self::Proof => PROOF_PATCH_PRECEDENCE,
             Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
+            Self::Toaster => TOASTER_PATCH_PRECEDENCE,
             Self::Knead | Self::GrandBoule => &[],
         }
     }
@@ -1026,6 +1034,7 @@ pub enum PluginCore {
     Bacteria(Box<BacteriaBody>),
     Proof(Box<ProofBody>),
     DutchOven(Box<DutchOvenBody>),
+    Toaster(Box<ToasterBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1047,6 +1056,7 @@ impl PluginCore {
             BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[]),
             BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
             BuiltinEffectType::DutchOven => Self::dutch_oven_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Toaster => Self::toaster_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1176,6 +1186,24 @@ impl PluginCore {
         Self::DutchOven(Box::new(body))
     }
 
+    /// Build a Toaster carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a kit's patch is the
+    /// machine's own globals plus some twenty parameters for each of sixteen
+    /// pads, and the command ring is finite.
+    ///
+    /// The ordering law here is [`TOASTER_PATCH_PRECEDENCE`]: a pad's
+    /// `engine_type` resets that pad's own engine parameters, so the sixteen
+    /// selections are brought to the front through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`GlutenBody::load_patch`] uses for its macro keys.
+    pub fn toaster_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ToasterBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Toaster(Box::new(body))
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1190,6 +1218,7 @@ impl PluginCore {
             Self::Bacteria(_) => Some(BuiltinEffectType::Bacteria),
             Self::Proof(_) => Some(BuiltinEffectType::Proof),
             Self::DutchOven(_) => Some(BuiltinEffectType::DutchOven),
+            Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
             Self::Native(_) => None,
         }
     }
@@ -1247,6 +1276,7 @@ impl PluginCore {
             Self::Knead(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
+            | Self::Toaster(_)
             | Self::Gluten(_)
             | Self::Crust(_)
             | Self::Grinder(_)
@@ -2993,6 +3023,365 @@ impl DutchOvenBody {
     }
 }
 
+/// Pads one hosted Toaster addresses.
+///
+/// The figure the web host constructs its own worklet instance with
+/// (`TOASTER_PAD_COUNT` in
+/// `src/modules/AudioEngine/services/toasterProcessor.ts`), so a kit that moves
+/// between the two runtimes finds the same grid on both. It is also the size of
+/// the two note banks [`toaster_pad_for_note`] maps and the bound
+/// [`toaster_pad_key`] refuses a pad address past.
+const TOASTER_PAD_COUNT: u32 = 16;
+
+/// Frames one hosted Toaster run renders.
+///
+/// The web runtime's render quantum, on the reason given at
+/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drives the instrument 128 frames at
+/// a time and voices a framed message as soon as the block about to render is
+/// the one holding its frame. The instrument takes no per-hit sample offset, so
+/// the run length *is* the timing resolution, and the host splits a callback
+/// into runs this long to land a hit on the run the worklet lands it on.
+///
+/// Unlike [`GRAND_BOULE_RUN_FRAMES`] this figure cannot be refused against the
+/// instrument's own ceiling at compile time: `ToasterInstance` keeps its
+/// 4096-frame capacity private (`MAX_BLOCK_SIZE`,
+/// `crates/daw-dsp/src/toaster/mod.rs`, neither `pub` nor re-exported). The run
+/// is held well inside that capacity by being this constant rather than bound
+/// to an export, because exporting the capacity would change the daw-dsp
+/// package's hash and rebuild a committed wasm artifact for a number no
+/// renderer reads.
+const TOASTER_RUN_FRAMES: usize = 128;
+
+/// The MIDI note every hosted pad is struck with.
+///
+/// The web transport pins `TOASTER_NEUTRAL_MIDI_NOTE`
+/// (`src/utils/toasterNoteProjection.ts`) for every clip hit, so a clip note
+/// addresses a pad and transposes nothing: the pitch of a hit is the pad's own
+/// `tune`. `DrumVoice::trigger` reads `midi_note - 60`
+/// (`crates/daw-dsp/src/toaster/voice.rs`), so this is the value that leaves a
+/// pad untransposed.
+const TOASTER_NEUTRAL_MIDI_NOTE: u8 = 60;
+
+/// The note the low pad bank starts at — General MIDI's drum octave, so a part
+/// written against any other drum instrument already lands on the grid.
+const TOASTER_LOW_BANK_START: u8 = 36;
+
+/// The note the high pad bank starts at, which is the pad grid's own octave.
+const TOASTER_HIGH_BANK_START: u8 = 60;
+
+/// The prefix a per-pad parameter name carries, which is what tells a pad
+/// address from one of the kit's own names.
+const TOASTER_PAD_PREFIX: &str = "pad";
+
+/// The one name in the Toaster's vocabulary whose unit differs between the
+/// record and the instrument — see [`ToasterBody::set_param`].
+const TOASTER_DELAY_TIME: &str = "delay_time";
+
+/// Milliseconds in one second, the conversion [`ToasterBody::set_param`]
+/// applies to [`TOASTER_DELAY_TIME`].
+const MILLISECONDS_PER_SECOND: f32 = 1000.0;
+
+/// The names that must land on a Toaster before every other entry in its patch:
+/// each pad's engine selection, in pad order.
+///
+/// `Pad::set_param("engine_type")` calls `reset_engine_params`
+/// (`crates/daw-dsp/src/toaster/pad.rs`), which puts `snappy`, `noise_color`,
+/// `base_freq`, `pitch_amount`, `pitch_decay`, `noise_level`, `mod_ratio`,
+/// `mod_amount` and `feedback` back to their construction values. So a patch
+/// carrying both `pad3_engine_type` and `pad3_base_freq` must write the engine
+/// type first, whatever order the record's keys arrive in — a record off the
+/// wire has no order of its own — or the pad opens on the engine the record
+/// names carrying the defaults of the voice it described.
+///
+/// Nothing else in the vocabulary rewrites another name: every other arm of
+/// `Pad::set_param` and of `ToasterEngine::set_param` stores the one field it
+/// names, and `open` — the one pad name that reads like a mode — is not among
+/// the fields the reset touches.
+const TOASTER_PATCH_PRECEDENCE: &[&str] = &[
+    "pad0_engine_type",
+    "pad1_engine_type",
+    "pad2_engine_type",
+    "pad3_engine_type",
+    "pad4_engine_type",
+    "pad5_engine_type",
+    "pad6_engine_type",
+    "pad7_engine_type",
+    "pad8_engine_type",
+    "pad9_engine_type",
+    "pad10_engine_type",
+    "pad11_engine_type",
+    "pad12_engine_type",
+    "pad13_engine_type",
+    "pad14_engine_type",
+    "pad15_engine_type",
+];
+
+/// The pad a `pad<N>_<name>` parameter addresses and the pad-side name it
+/// carries, or `None` for a name that addresses no pad.
+///
+/// The record's own spelling: the web host maps a kit's camelCase pad fields
+/// onto these snake_case names (`PAD_PARAM_MAP`, `toasterProcessor.ts`) and
+/// addresses the pad by index, so the index has to be read back out of the name
+/// on this side.
+///
+/// `None` covers every pad-shaped name that names no pad — no digits, a pad at
+/// or past [`TOASTER_PAD_COUNT`], or an empty pad-side name — and
+/// [`ToasterBody::set_param`] drops those silently, the way the pad engine drops
+/// a name it does not have.
+fn toaster_pad_key(name: &str) -> Option<(u8, &str)> {
+    let addressed = name.strip_prefix(TOASTER_PAD_PREFIX)?;
+    let index_end = addressed
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(addressed.len());
+    let (index, separated) = addressed.split_at(index_end);
+    let pad: u32 = index.parse().ok()?;
+    if pad >= TOASTER_PAD_COUNT {
+        return None;
+    }
+    let pad_key = separated.strip_prefix('_')?;
+    if pad_key.is_empty() {
+        return None;
+    }
+    Some((pad as u8, pad_key))
+}
+
+/// The pad a note addresses, or `None` for a note in neither bank.
+///
+/// A mirror of `resolveToasterPadIndex` (`src/utils/toasterNoteProjection.ts`),
+/// the rule the web transport applies to a clip note before it reaches the
+/// worklet: [`TOASTER_LOW_BANK_START`] is General MIDI's drum octave and
+/// [`TOASTER_HIGH_BANK_START`] the pad grid's own, each sixteen pads wide. A
+/// note in neither bank addresses no pad and sounds nothing, which is what the
+/// web does with it too.
+fn toaster_pad_for_note(note: u8) -> Option<u8> {
+    [TOASTER_LOW_BANK_START, TOASTER_HIGH_BANK_START]
+        .into_iter()
+        .find_map(|bank_start| {
+            let pad = note.checked_sub(bank_start)?;
+            (u32::from(pad) < TOASTER_PAD_COUNT).then_some(pad)
+        })
+}
+
+/// The Toaster drum machine, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// thirty-two voices, sixteen pads, four bus buffers and its
+/// thirty-four-channel output buffer would set the size of every command the
+/// engine sends.
+///
+/// This hosts [`ToasterInstance`], the object the browser worklet drives
+/// (`toasterProcessor.ts`), so a kit sounds the same under both runtimes rather
+/// than one of them re-deriving the machine.
+///
+/// ## What this body reads, and what it does not
+///
+/// The instance renders a per-pad tap pair alongside its parent mix, and this
+/// body reads the parent mix alone. That is the whole of what a strip carrying
+/// one device hears: no pad is dry-routed away from the mix
+/// (`ToasterInstance::set_pad_dry_routed` is never called here, so the routing
+/// mask stays empty and every pad contributes to it), and the native chain has
+/// no per-pad output surface to send the taps to.
+pub struct ToasterBody {
+    instance: ToasterInstance,
+}
+
+impl ToasterBody {
+    /// Build the drum machine on the control thread — it allocates its voice
+    /// pool, its pads, its transient shapers, its four bus buffers and its
+    /// output buffer, none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: ToasterInstance::new(sample_rate, TOASTER_PAD_COUNT),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, striking each queued hit in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what it
+    /// produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`TOASTER_RUN_FRAMES`], each one
+    /// a whole `process` call, and every event whose frame falls inside a run is
+    /// delivered before that run renders — the split
+    /// [`GrandBouleBody::process`] takes, for the same reason: the instrument
+    /// has no note API carrying a sample offset, so the run boundary is the
+    /// whole of the timing resolution available, and it is exactly the
+    /// resolution the web runtime has.
+    ///
+    /// This block is one span, and the runs are counted from that span's own
+    /// frame 0 rather than from the timeline's absolute frame 0 the worklet
+    /// grids its own runs from, so parity with the worklet is exact only when
+    /// the span itself starts on the absolute 128-frame grid; a span starting
+    /// off it sounds a hit up to `TOASTER_RUN_FRAMES - 1` frames from where the
+    /// worklet lands it (#3997).
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a hit is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(TOASTER_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Strike or release one pad, at the head of the run about to render.
+    ///
+    /// A note in neither bank sounds nothing: it addresses no pad, and the web
+    /// transport drops it the same way rather than folding it onto a pad it was
+    /// not written for.
+    ///
+    /// The velocity crosses on the MIDI scale because `ToasterEngine::note_on`
+    /// divides by 127 itself (`crates/daw-dsp/src/toaster/engine.rs`); dividing
+    /// here as well would sound every hit at a hundredth of its written
+    /// dynamic.
+    ///
+    /// The channel is ignored. A pad is addressed by note alone and holds no
+    /// channel of its own, so a note-off releases the pad its note names
+    /// whichever channel the part was written on.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let Some(pad) = toaster_pad_for_note(event.note) else {
+            return;
+        };
+        if event.is_note_on {
+            self.instance
+                .note_on(pad, f32::from(event.velocity), TOASTER_NEUTRAL_MIDI_NOTE);
+            return;
+        }
+        self.instance.note_off(pad);
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of the instance and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of it. Derived afterwards, both pointers
+        // stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own output buffer — one allocation `ToasterInstance::new`
+        // sizes at `(2 + 2 * TOASTER_PAD_COUNT)` channels of its private
+        // 4096-frame capacity, which no method resizes. `process` returns that
+        // buffer's base, which is the left channel, and `get_right_ptr` the
+        // offset one capacity past it, so the two slices below start 4096 floats
+        // apart while `run` is at most `TOASTER_RUN_FRAMES`, 128: each lies
+        // inside the allocation, they do not overlap each other, and neither
+        // aliases the callback's own `left`/`right`. `process` clamps its own
+        // argument to that same capacity, so the frames it rendered are the
+        // frames read here. Nothing mutates the instrument between the render
+        // and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the drum machine's own parameters by name.
+    ///
+    /// Two vocabularies meet at this door and they are told apart by shape. A
+    /// `pad<N>_<name>` address is one pad's own parameter and reaches the pad it
+    /// names ([`toaster_pad_key`]); a pad-shaped name that addresses no pad is
+    /// dropped here, as the pad engine drops a name it does not have. Everything
+    /// else is one of the kit's own names and reaches the instrument verbatim.
+    ///
+    /// [`TOASTER_DELAY_TIME`] is the one name whose unit differs between the two
+    /// sides: a kit persists it in milliseconds and `StereoDelay::set_param`
+    /// consumes seconds, so the worklet converts at its own door
+    /// (`toEngineKitParamValue`, `toasterProcessor.ts`) and this body converts
+    /// at this one. Both a patch entry and a live write converge here, so the
+    /// two cannot come to disagree about what a saved 250 means.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]), the pad address is read out of it by slicing, and
+    /// the instrument resolves the rest by comparison, allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if let Some((pad, pad_key)) = toaster_pad_key(name) {
+            self.instance.set_pad_param(pad, pad_key, value);
+            return;
+        }
+        if name.starts_with(TOASTER_PAD_PREFIX) {
+            return;
+        }
+        if name == TOASTER_DELAY_TIME {
+            self.instance
+                .set_param(name, value / MILLISECONDS_PER_SECOND);
+            return;
+        }
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] under
+    /// [`TOASTER_PATCH_PRECEDENCE`], so each pad's engine selection lands ahead
+    /// of the engine parameters that selection would otherwise reset.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Toaster.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay this body reports: none.
+    ///
+    /// The instrument produces its material in the block it was asked for and
+    /// delays nothing on the way out — no stage of `ToasterEngine` holds a head
+    /// of its own — and the worklet declares no latency for its node either
+    /// (`ToasterNode.ts`), so a hosted kit and a worklet kit sit at the same
+    /// place in the arrangement.
+    ///
+    /// Declaring none is not the same as declaring zero, and this body declares
+    /// none: [`PluginCore::declared_latency_frames`] answers `None` for it, on
+    /// Grand Boule's arm, so no [`GraphCommand::SetEffectLatency`] follows its
+    /// registration. There is no figure a later write could move, because
+    /// nothing in the vocabulary reaches a latent stage.
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -3040,6 +3429,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::DutchOven(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Toaster(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -6309,6 +6702,12 @@ fn process_device(
         PluginCore::DutchOven(body) => {
             body.process(left, right);
         }
+        // On the same law as the two instruments above: always processed, and
+        // its MIDI always cleared.
+        PluginCore::Toaster(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
+            effect.pending_midi.clear();
+        }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
                 plugin.process_audio(left, right, frames);
@@ -7349,6 +7748,7 @@ mod tests {
             BuiltinEffectType::Bacteria,
             BuiltinEffectType::Proof,
             BuiltinEffectType::DutchOven,
+            BuiltinEffectType::Toaster,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -7361,7 +7761,8 @@ mod tests {
                 | BuiltinEffectType::Grinder
                 | BuiltinEffectType::Bacteria
                 | BuiltinEffectType::Proof
-                | BuiltinEffectType::DutchOven => {}
+                | BuiltinEffectType::DutchOven
+                | BuiltinEffectType::Toaster => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -20033,6 +20434,706 @@ mod timeline_tests {
                 .chain(right.iter())
                 .all(|sample| sample.is_finite()),
             "a write left the reverb producing non-finite samples"
+        );
+    }
+
+    // ── Toaster ────────────────────────────────────────────────────────────
+
+    /// The rate every Toaster spec here builds its body at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. Every envelope coefficient,
+    /// oscillator frequency and delay length in the machine is derived from it,
+    /// so a reference instance built at another rate is a different kit.
+    const TOASTER_RATE: f32 = 48_000.0;
+
+    /// The MIDI velocity every Toaster fixture stamps a hit with, and — because
+    /// the body passes velocity on the MIDI scale — the figure the reference
+    /// instance below is struck with too.
+    const TOASTER_VELOCITY: u8 = 100;
+
+    /// The `midi_note` a reference strike carries, spelled independently of
+    /// [`TOASTER_NEUTRAL_MIDI_NOTE`] rather than reusing it: reusing the
+    /// production constant would make the oracle agree with the body by
+    /// construction and pass even if the body started transposing its pads.
+    const TOASTER_REFERENCE_MIDI_NOTE: u8 = 60;
+
+    /// One of the machine's own parameter names, as the mapper resolves it.
+    fn toaster_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Toaster names in the carrier
+    /// [`PluginCore::toaster_with_patch`] takes.
+    fn toaster_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (toaster_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::toaster_with_patch`] built, unwrapped so a spec
+    /// can render through it directly.
+    fn toaster_body(patch: &[(&str, f32)]) -> Box<ToasterBody> {
+        let PluginCore::Toaster(body) =
+            PluginCore::toaster_with_patch(TOASTER_RATE, &toaster_patch(patch))
+        else {
+            unreachable!("toaster_with_patch builds the toaster variant");
+        };
+        body
+    }
+
+    /// A hit on `note`, stamped for `frame`.
+    fn toaster_hit(note: u8, frame: u32) -> MidiNoteEvent {
+        let mut event = note_on(note);
+        event.velocity = TOASTER_VELOCITY;
+        event.frame_offset = frame;
+        event
+    }
+
+    /// The release of `note`, stamped for `frame`.
+    fn toaster_release(note: u8, frame: u32) -> MidiNoteEvent {
+        let mut event = toaster_hit(note, frame);
+        event.is_note_on = false;
+        event
+    }
+
+    /// `frames` rendered through `body` into silence, which is what a strip
+    /// carrying this generator and nothing else hands it.
+    fn toaster_render(
+        body: &mut ToasterBody,
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0_f32; frames];
+        let mut right = vec![0.0_f32; frames];
+        body.process(&mut left, &mut right, frames, events);
+        (left, right)
+    }
+
+    /// `frames` rendered by a bare [`ToasterInstance`], driven the way the
+    /// worklet drives it: [`TOASTER_RUN_FRAMES`] at a time, with `deliver`
+    /// called with the run index before each run renders.
+    ///
+    /// The reference side of the specs below — the instrument is driven
+    /// directly here, so what they compare is the body's splitting, addressing
+    /// and summing against the instrument's own output rather than one body
+    /// against another.
+    fn render_toaster_reference(
+        frames: usize,
+        mut deliver: impl FnMut(usize, &mut ToasterInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = ToasterInstance::new(TOASTER_RATE, TOASTER_PAD_COUNT);
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        let mut run = 0;
+        while rendered < frames {
+            let run_frames = (frames - rendered).min(TOASTER_RUN_FRAMES);
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers name the instrument's own output buffer,
+            // whose constructor sizes every channel at 4096 frames and which no
+            // method resizes; `run_frames` is bounded by `TOASTER_RUN_FRAMES`,
+            // well inside that, and the right channel starts one such channel
+            // past the left. Nothing mutates the instrument between the render
+            // and these reads.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+            rendered += run_frames;
+            run += 1;
+        }
+        (left, right)
+    }
+
+    /// A kit patch that reaches all three doors the body has: the machine's own
+    /// `master_gain`, one pad's `tune`, and one pad panned hard enough off
+    /// centre that the two channels of the render differ.
+    const TOASTER_KIT: &[(&str, f32)] =
+        &[("master_gain", 0.9), ("pad0_tune", 3.0), ("pad5_pan", -0.8)];
+
+    /// The frames the two parity specs below render. 3000 lands off the run
+    /// boundary, so the body must split it into twenty-three whole runs and a
+    /// 56-frame tail, which is exactly how the reference is driven.
+    const TOASTER_PARITY_FRAMES: usize = 3000;
+
+    /// Pad 0 in the low bank, the fixture's first hit.
+    const TOASTER_PARITY_KICK_NOTE: u8 = 36;
+
+    /// Pad 5 in the low bank, the fixture's panned second hit.
+    const TOASTER_PARITY_RIM_NOTE: u8 = 41;
+
+    /// The run holding frame 700, which is `700 / TOASTER_RUN_FRAMES`.
+    const TOASTER_PARITY_RIM_RUN: usize = 5;
+
+    /// The kit and the two hits of [`TOASTER_KIT`]'s fixture, driven the way
+    /// the worklet drives the instrument — the pad index and the pad-side name
+    /// apart, never as one `pad5_pan` string — so the body's own reading of
+    /// those names is what an equality against this reference tests.
+    fn drive_toaster_parity_reference(run: usize, instance: &mut ToasterInstance) {
+        if run == 0 {
+            instance.set_param("master_gain", 0.9);
+            instance.set_pad_param(0, "tune", 3.0);
+            instance.set_pad_param(5, "pan", -0.8);
+            instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+        if run == TOASTER_PARITY_RIM_RUN {
+            instance.note_on(5, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+    }
+
+    /// The body renders exactly what the instrument it wraps renders, run by
+    /// run, for the same kit, the same hits and the same release.
+    ///
+    /// This is the whole claim of the body's process path: the split into runs,
+    /// the pad a note addresses, the velocity scale the strike carries, the
+    /// neutral `midi_note` that leaves the pad untransposed, the pad-side
+    /// spelling of `pad0_tune` and `pad5_pan`, the release reaching
+    /// `note_off(pad)`, and the sum into the pair.
+    ///
+    /// The second hit is stamped at frame 700, inside run 5, so a body that
+    /// delivered every event at the head of the callback would sound it
+    /// nineteen runs early and fail rather than pass.
+    ///
+    /// The kick's release is stamped at frame 1500, inside run 11, and the
+    /// reference lifts pad 0 at the head of that same run. This is what keeps
+    /// the note-off arm of [`ToasterBody::deliver`] observed: a body that
+    /// dropped it would leave the kick ringing through the 1500 frames the
+    /// reference spends choking it (`DrumVoice::release`,
+    /// `crates/daw-dsp/src/toaster/voice.rs`). The engine's own stop
+    /// synthesises exactly this event per held pad
+    /// ([`ActiveEffect::release_sounding_notes`]), which is why the body must
+    /// keep taking it even though the live note producer withholds a *clip's*
+    /// release from a drum machine.
+    ///
+    /// The three assertions beside the equality refuse a vacuous pass: a silent
+    /// render matches a silent reference, and a render whose channels are equal
+    /// would match a reference that had copied one channel into both.
+    #[test]
+    fn a_toaster_body_renders_what_the_instance_renders_run_by_run() {
+        /// The frame the kick is released at.
+        const RELEASE_FRAME: u32 = 1500;
+        /// The run holding it, which is `1500 / TOASTER_RUN_FRAMES`.
+        const RELEASE_RUN: usize = 11;
+
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+            toaster_release(TOASTER_PARITY_KICK_NOTE, RELEASE_FRAME),
+        ];
+        let mut body = toaster_body(TOASTER_KIT);
+        let (body_left, body_right) = toaster_render(&mut body, TOASTER_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, |run, instance| {
+                drive_toaster_parity_reference(run, instance);
+                if run == RELEASE_RUN {
+                    instance.note_off(0);
+                }
+            });
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instrument renders for the same kit, hits \
+             and release"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instrument renders for the same kit, hits \
+             and release"
+        );
+        assert!(
+            body_left
+                .iter()
+                .chain(body_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the body rendered silence, so the equality above says nothing"
+        );
+        assert_ne!(
+            body_left, body_right,
+            "the two channels are identical, so the fixture's panned pad never moved and a body \
+             that read one channel twice would pass"
+        );
+    }
+
+    /// The body joins what it renders to whatever already stands in the pair.
+    ///
+    /// An instrument is a generator, and the buffers it is handed carry the
+    /// chain's material up to its place in it — a second generator on the same
+    /// strip, or a device the splice placed ahead of it. Every other fixture
+    /// here renders into silence, where `*out = *sample` and `*out += *sample`
+    /// are the same write, so this is the one spec that can tell them apart:
+    /// the pair opens on a non-zero constant and each output sample must be
+    /// that constant plus the reference instrument's own sample, exactly.
+    ///
+    /// The non-silence assertion is what stops the equality passing vacuously.
+    /// A reference that rendered nothing would make the sum and the overwrite
+    /// agree again.
+    #[test]
+    fn a_toaster_body_sums_into_what_already_stands_in_the_pair() {
+        /// What the chain has already written where this body renders. Chosen
+        /// well clear of zero so an overwrite cannot round its way to a pass.
+        const STANDING: f32 = 0.25;
+
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+        ];
+        let mut body = toaster_body(TOASTER_KIT);
+        let mut left = vec![STANDING; TOASTER_PARITY_FRAMES];
+        let mut right = vec![STANDING; TOASTER_PARITY_FRAMES];
+        body.process(&mut left, &mut right, TOASTER_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, drive_toaster_parity_reference);
+        let summed_left: Vec<f32> = instance_left
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+        let summed_right: Vec<f32> = instance_right
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+
+        assert_eq!(
+            left, summed_left,
+            "the body's left channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert_eq!(
+            right, summed_right,
+            "the body's right channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert!(
+            instance_left
+                .iter()
+                .chain(instance_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the reference rendered silence, so summing and overwriting agree and the equalities \
+             above say nothing"
+        );
+    }
+
+    /// The `engine_type` wire value for the generic kick engine (`Pad::set_param`,
+    /// `crates/daw-dsp/src/toaster/pad.rs`), which is the engine whose own
+    /// `set_param` reads `base_freq` (`crates/daw-dsp/src/toaster/engines/kick.rs`).
+    const TOASTER_KICK_ENGINE: f32 = 0.0;
+
+    /// A base frequency well away from that engine's own 50 Hz default
+    /// (`DEFAULT_BASE_FREQ`) and inside the 30..200 Hz band it clamps to. Above
+    /// 1.0 as well, because the pad reads a value at or below 1.0 as "no base
+    /// frequency of my own" and stores the default instead — the same value the
+    /// reset stores, which would make a lost write indistinguishable from a
+    /// kept one.
+    const TOASTER_KICK_BASE_FREQ: f32 = 120.0;
+
+    /// A patch's `pad<N>_engine_type` lands before that pad's engine parameters,
+    /// whichever order the record is drawn in.
+    ///
+    /// This is what [`TOASTER_PATCH_PRECEDENCE`] is for. `Pad::set_param`'s
+    /// `engine_type` arm calls `reset_engine_params`, which puts `base_freq`
+    /// back to "none of my own", so a record drawn in name order — `base_freq`
+    /// before `engine_type`, which is how `immediate_device_parameters`
+    /// (`crates/sourdaw-native/src/commands/graph.rs`) orders everything outside
+    /// the law — would write the frequency and then throw it away.
+    ///
+    /// The oracle is sample identity between the two draws on both channels. The
+    /// third render is what makes that identity mean something: a pad carrying
+    /// only the engine selection sounds the engine's own default frequency, so
+    /// a body that lost the `base_freq` write in either draw renders *that*
+    /// instead and fails here.
+    #[test]
+    fn a_toaster_patch_writes_the_engine_type_before_the_engine_parameters() {
+        const FRAMES: usize = 3000;
+        /// Pad 2 in the low bank.
+        const PAD_2_NOTE: u8 = 38;
+
+        const AUTHORED: &[(&str, f32)] = &[
+            ("pad2_base_freq", TOASTER_KICK_BASE_FREQ),
+            ("pad2_engine_type", TOASTER_KICK_ENGINE),
+        ];
+        let reversed: Vec<(&str, f32)> = AUTHORED.iter().rev().copied().collect();
+        let events = [toaster_hit(PAD_2_NOTE, 0)];
+
+        let (authored_left, authored_right) =
+            toaster_render(&mut toaster_body(AUTHORED), FRAMES, &events);
+        let (reversed_left, reversed_right) =
+            toaster_render(&mut toaster_body(&reversed), FRAMES, &events);
+
+        assert_eq!(
+            authored_left, reversed_left,
+            "the record's order changed the left channel, so the engine selection did not lead \
+             the patch"
+        );
+        assert_eq!(
+            authored_right, reversed_right,
+            "the record's order changed the right channel, so the engine selection did not lead \
+             the patch"
+        );
+        assert!(
+            authored_left
+                .iter()
+                .chain(authored_right.iter())
+                .any(|sample| *sample != 0.0),
+            "both draws are silent, so the identity above says nothing"
+        );
+
+        let (selection_only_left, _) = toaster_render(
+            &mut toaster_body(&[("pad2_engine_type", TOASTER_KICK_ENGINE)]),
+            FRAMES,
+            &events,
+        );
+        assert_ne!(
+            authored_left, selection_only_left,
+            "the base frequency never reached the pad, so this patch would render the same \
+             whatever order it carried its two keys in"
+        );
+    }
+
+    /// A `pad<N>_<name>` address names the pad it spells and nothing else.
+    ///
+    /// The table is [`toaster_pad_key`]'s whole contract, including the four
+    /// shapes that address no pad: a name with no index, one whose index is past
+    /// the grid, one with an empty pad-side name, and one whose index is not
+    /// digits at all. Each of those would otherwise be handed to the pad engine
+    /// as some other pad's parameter, or to the kit's own `set_param` as a name
+    /// it would silently ignore.
+    ///
+    /// The render below is what says the address is used rather than merely
+    /// parsed: `muted` is a pad's own name, so a patch that reached pad 4 leaves
+    /// a hit on pad 4 silent while its neighbour, carrying the same patch, still
+    /// sounds.
+    #[test]
+    fn a_toaster_pad_key_addresses_the_pad_it_names() {
+        const CASES: &[(&str, Option<(u8, &str)>)] = &[
+            ("pad0_volume", Some((0, "volume"))),
+            ("pad15_send_reverb", Some((15, "send_reverb"))),
+            ("pad16_volume", None),
+            ("pad_volume", None),
+            ("pad3_", None),
+            ("padx_volume", None),
+            ("master_gain", None),
+        ];
+
+        for (name, expected) in CASES {
+            assert_eq!(
+                toaster_pad_key(name),
+                *expected,
+                "'{name}' does not address the pad it names"
+            );
+        }
+
+        const FRAMES: usize = 3000;
+        /// Pad 4 in the low bank, the pad the patch mutes.
+        const MUTED_NOTE: u8 = 40;
+        /// Pad 5 in the low bank, which the same patch leaves alone.
+        const SOUNDING_NOTE: u8 = 41;
+        const MUTE_PAD_4: &[(&str, f32)] = &[("pad4_muted", 1.0)];
+
+        let (muted_left, muted_right) = toaster_render(
+            &mut toaster_body(MUTE_PAD_4),
+            FRAMES,
+            &[toaster_hit(MUTED_NOTE, 0)],
+        );
+        let (sounding_left, sounding_right) = toaster_render(
+            &mut toaster_body(MUTE_PAD_4),
+            FRAMES,
+            &[toaster_hit(SOUNDING_NOTE, 0)],
+        );
+
+        assert!(
+            muted_left
+                .iter()
+                .chain(muted_right.iter())
+                .all(|sample| *sample == 0.0),
+            "the mute never reached pad 4, so a hit on it still sounds"
+        );
+        assert!(
+            sounding_left
+                .iter()
+                .chain(sounding_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the same patch silenced pad 5 as well, so the mute landed on the wrong pad or on \
+             every pad"
+        );
+    }
+
+    /// A note reaches the pad its bank names, and a note in neither bank sounds
+    /// nothing.
+    ///
+    /// The table is [`toaster_pad_for_note`]'s whole contract: both banks'
+    /// first and last notes, and the note one below and one above each of them.
+    /// The two banks overlap in pad index and not in note, so an off-by-one at
+    /// either end silently re-addresses sixteen pads.
+    ///
+    /// The render below is what says the mapping is used. The two banks name
+    /// the same pad, so a hit written in either octave must render the same
+    /// sound; a note between the banks names no pad, and the body sounds
+    /// nothing for it rather than folding it onto pad 0.
+    #[test]
+    fn a_toaster_note_reaches_the_pad_its_bank_names() {
+        const CASES: &[(u8, Option<u8>)] = &[
+            (35, None),
+            (36, Some(0)),
+            (51, Some(15)),
+            (52, None),
+            (59, None),
+            (60, Some(0)),
+            (75, Some(15)),
+            (76, None),
+        ];
+
+        for (note, expected) in CASES {
+            assert_eq!(
+                toaster_pad_for_note(*note),
+                *expected,
+                "note {note} does not reach the pad its bank names"
+            );
+        }
+
+        const FRAMES: usize = 3000;
+        /// Pad 0 in the low bank.
+        const LOW_BANK_NOTE: u8 = 36;
+        /// The same pad, in the high bank.
+        const HIGH_BANK_NOTE: u8 = 60;
+        /// One note past the low bank, and one short of the high one.
+        const UNBANKED_NOTE: u8 = 52;
+
+        let (low_left, low_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(LOW_BANK_NOTE, 0)],
+        );
+        let (high_left, high_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(HIGH_BANK_NOTE, 0)],
+        );
+        let (unbanked_left, unbanked_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(UNBANKED_NOTE, 0)],
+        );
+
+        assert!(
+            low_left
+                .iter()
+                .chain(low_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the low bank's own hit is silent, so the equality below says nothing"
+        );
+        assert_eq!(
+            (low_left, low_right),
+            (high_left, high_right),
+            "the two banks' first notes render differently, so they do not name one pad"
+        );
+        assert!(
+            unbanked_left
+                .iter()
+                .chain(unbanked_right.iter())
+                .all(|sample| *sample == 0.0),
+            "a note in neither bank sounded, so it was folded onto a pad it was not written for"
+        );
+    }
+
+    /// A record's `delay_time` is read as milliseconds, the unit a kit persists
+    /// it in.
+    ///
+    /// `StereoDelay::set_param` consumes seconds and multiplies by the sample
+    /// rate, while `ToasterKit` persists milliseconds and the worklet converts
+    /// at its own door (`toEngineKitParamValue`, `toasterProcessor.ts`). A body
+    /// that forwarded the figure verbatim would set a 250-*second* delay, which
+    /// the two-second line clamps to its own ceiling: the same saved kit would
+    /// echo on the beat under the worklet and not at all under the engine.
+    ///
+    /// The oracle is sample identity against a bare instrument given the
+    /// converted figure, and the render is long enough to carry the 250 ms tap.
+    /// The inequality beside it is what a missing conversion cannot survive: the
+    /// clamped line has not repeated once inside this window, so its render is
+    /// the hit alone.
+    #[test]
+    fn a_toaster_delay_time_arrives_in_milliseconds() {
+        /// Past the 12 000-frame tap at this rate, and far short of the 96 000
+        /// frames the line's own two-second ceiling would delay by.
+        const FRAMES: usize = 14_000;
+        const DELAY_MILLISECONDS: f32 = 250.0;
+        const DELAY_SECONDS: f32 = 0.25;
+        /// Pad 0 in the low bank.
+        const KICK_NOTE: u8 = 36;
+
+        let events = [toaster_hit(KICK_NOTE, 0)];
+        let mut body = toaster_body(&[
+            ("pad0_send_delay", 1.0),
+            ("delay_mix", 1.0),
+            ("delay_time", DELAY_MILLISECONDS),
+        ]);
+        let (body_left, body_right) = toaster_render(&mut body, FRAMES, &events);
+
+        let (converted_left, converted_right) =
+            render_toaster_reference(FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.set_pad_param(0, "send_delay", 1.0);
+                    instance.set_param("delay_mix", 1.0);
+                    instance.set_param("delay_time", DELAY_SECONDS);
+                    instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+                }
+            });
+        let (unconverted_left, _) = render_toaster_reference(FRAMES, |run, instance| {
+            if run == 0 {
+                instance.set_pad_param(0, "send_delay", 1.0);
+                instance.set_param("delay_mix", 1.0);
+                instance.set_param("delay_time", DELAY_MILLISECONDS);
+                instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+            }
+        });
+
+        assert_eq!(
+            body_left, converted_left,
+            "the body's left channel is not what the instrument renders for a quarter-second delay"
+        );
+        assert_eq!(
+            body_right, converted_right,
+            "the body's right channel is not what the instrument renders for a quarter-second \
+             delay"
+        );
+        assert!(
+            body_left
+                .iter()
+                .chain(body_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the body rendered silence, so the equality above says nothing"
+        );
+        assert_ne!(
+            body_left, unconverted_left,
+            "the unconverted figure renders the same block, so this window cannot tell a delay \
+             in seconds from one in milliseconds"
+        );
+    }
+
+    /// The body declares no latency, and reports none.
+    ///
+    /// The machine produces its material in the block it was asked for, and the
+    /// worklet declares nothing for its own node, so a hosted kit sits where a
+    /// worklet kit sits. The two readings are the same fact from the two sides
+    /// the graph uses: [`ToasterBody::latency_samples`] is what the body reports,
+    /// and [`PluginCore::declared_latency_frames`] is what the mapper publishes
+    /// at registration — `None`, so no `SetEffectLatency` follows the body
+    /// across the ring at all.
+    #[test]
+    fn a_toaster_body_reports_no_latency() {
+        assert_eq!(
+            toaster_body(&[]).latency_samples(),
+            0,
+            "the body reports a group delay the drum machine does not have"
+        );
+        assert_eq!(
+            PluginCore::toaster_with_patch(TOASTER_RATE, &toaster_patch(TOASTER_KIT))
+                .declared_latency_frames(),
+            None,
+            "the record path declares a figure for a body that has none, so the graph holds every \
+             route meeting this strip back by it"
+        );
+    }
+
+    /// The body renders, strikes, releases and takes writes without allocating.
+    ///
+    /// The guard is the oracle, and it covers all three paths the callback
+    /// takes: the render, the note delivery, and the parameter writes. The
+    /// writes are chosen for the arms that do the most work — `pad0_engine_type`
+    /// re-selects a pad's voice and resets its engine parameters,
+    /// `delay_time` re-derives the line's read position, and `reverb_mix`
+    /// reaches the plate — because an arm that merely stored a float could not
+    /// allocate whatever the body did around it.
+    ///
+    /// The construction, the warming render and the event slices stay outside
+    /// the guard: the constructor legitimately allocates the whole machine
+    /// (ADR 0020), and building a `Vec` of events allocates too.
+    ///
+    /// The two assertions beside the guard refuse a vacuous pass: a render that
+    /// came out silent covered no per-sample path, and one carrying a non-finite
+    /// sample would mean a write left the machine producing state the guard was
+    /// never the point of.
+    #[test]
+    fn a_toaster_body_does_not_allocate_while_rendering_notes_and_writes() {
+        const FRAMES: usize = 512;
+        /// Pad 0 in the low bank.
+        const KICK_NOTE: u8 = 36;
+        /// Pad 5 in the low bank.
+        const RIM_NOTE: u8 = 41;
+
+        let mut body = toaster_body(&[("pad0_send_reverb", 0.5), ("reverb_mix", 0.5)]);
+        let warming = [toaster_hit(KICK_NOTE, 0)];
+        let guarded = [
+            toaster_hit(KICK_NOTE, 0),
+            toaster_hit(RIM_NOTE, 200),
+            toaster_release(KICK_NOTE, 400),
+        ];
+        let quiet: [MidiNoteEvent; 0] = [];
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        body.process(&mut left, &mut right, FRAMES, &warming);
+
+        left.fill(0.0);
+        right.fill(0.0);
+        assert_no_alloc::assert_no_alloc(|| {
+            body.process(&mut left, &mut right, FRAMES, &guarded);
+            body.set_param("master_gain", 0.7);
+            body.set_param("pad0_engine_type", 14.0);
+            body.set_param("pad0_tune", -5.0);
+            body.set_param("delay_time", 250.0);
+            body.set_param("reverb_mix", 0.8);
+            body.process(&mut left, &mut right, FRAMES, &quiet);
+        });
+
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the guarded render is silent, so it covered no per-sample path"
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a write left the drum machine producing non-finite samples"
+        );
+    }
+
+    /// Every pad struck at once leaves the body finite.
+    ///
+    /// The default kit assigns a different engine to most of the sixteen pads,
+    /// so one block struck across the whole grid at full velocity runs every
+    /// family's per-sample path at once — with the voice pool half spent and the
+    /// sends, buses and master gain summing all of them. A non-finite sample
+    /// reaching the device summing bus is not one bad sample: it silences the
+    /// mix from there on.
+    ///
+    /// The non-silence assertion is what stops the finiteness passing
+    /// vacuously, because an all-zero block is finite.
+    #[test]
+    fn a_toaster_body_returns_finite_samples() {
+        const FRAMES: usize = 512;
+        const FULL_SCALE_VELOCITY: u8 = 127;
+
+        let events: Vec<MidiNoteEvent> = (0..TOASTER_PAD_COUNT)
+            .map(|pad| {
+                let mut event = toaster_hit(TOASTER_LOW_BANK_START + pad as u8, 0);
+                event.velocity = FULL_SCALE_VELOCITY;
+                event
+            })
+            .collect();
+        let (left, right) = toaster_render(&mut toaster_body(&[]), FRAMES, &events);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the whole grid rendered silence, so the finiteness above says nothing"
         );
     }
 }

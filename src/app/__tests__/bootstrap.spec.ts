@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
+// The kit chunk the native-device-state assertion reads comes out of Toaster's
+// own device-state serializer, not from a hand-written shape: a hand-written one
+// could drift from what `fromToasterKitState` accepts and degrade to the default
+// kit, which would assert the default gain rather than the stored one. The
+// factory kit arrives through the module's contract barrel, which is the only
+// door a test outside the module may use.
+import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
@@ -54,6 +61,10 @@ type RuntimeSinkUnderTest = {
         port: MessagePort;
         signal?: AbortSignal;
     }) => Promise<void>;
+    projectNativeDeviceState: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => Readonly<Record<string, number>> | null;
 };
 
 const {
@@ -249,6 +260,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getDeviceTypesForCommandDeviceIds: () => ({}),
     reserveNextTrackColorForCommand: () => 'oklch(0.40 0.08 250)',
     getAllTracks: noop,
+    // Reached only because the Toaster barrel is loaded for real below, which
+    // pulls its preset-loading compiler into this spec's graph.
+    compileLoadPresetActions: noop,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -273,6 +287,9 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: noop,
+    // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
+    // brings its subscriber and note-release paths into this spec's graph.
+    getToasterDeviceControls: noop,
     updateDevicePatch: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
@@ -495,13 +512,23 @@ vi.mock('#/modules/Setlist/useCases', () => ({
     setSetlistEventBus: noop,
 }));
 
-vi.mock('#/modules/Toaster/useCases', () => ({
-    initToasterSubscribers: noop,
-    initToasterKitPersistence: noop,
-    setToasterEventBus: noop,
-    setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
-    prepareOfflineToaster: noop,
-}));
+vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
+    // The projection and the preset serializer are taken from the real barrel:
+    // the registration assertion below reads a real engine name out of a real
+    // kit chunk, which a stub could not produce. Both are pure — kit models and
+    // the engine-message projection, no store or runtime.
+    const real = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
+
+    return {
+        initToasterSubscribers: noop,
+        initToasterKitPersistence: noop,
+        setToasterEventBus: noop,
+        setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
+        prepareOfflineToaster: noop,
+        projectToasterKitToNativePatch: real.projectToasterKitToNativePatch,
+        getToasterPresetDeviceState: real.getToasterPresetDeviceState,
+    };
+});
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportHandlers: sentinelHandlers('Transport'),
@@ -910,6 +937,34 @@ describe('bootstrap', () => {
                 getSink().prepareOfflineInstrument({ deviceId: 'gluten-1', deviceType: 'gluten', port })
             ).resolves.toBeUndefined();
             expect(prepareOfflineLevainMock).not.toHaveBeenCalled();
+        });
+
+        /**
+         * The native mirror of the rows above, and the only place that knows a
+         * Toaster's kit is not a `parameterValues` table: the mapper may not
+         * import a device module's use cases, so an unwired `toaster` row
+         * leaves a natively carried Toaster playing the engine's built-in kit
+         * instead of the project's, with nothing reporting it.
+         *
+         * The chunk comes from the Toaster model's own serializer, so the row
+         * is read through the shape the document actually stores. Gluten is the
+         * counterpart: a body whose whole surface already arrives as
+         * `parameterValues` answers `null` rather than an empty record.
+         */
+        it('projects a toaster’s stored kit into the engine’s own names, and nothing for a body with no kit', () => {
+            const stored = getToasterPresetDeviceState('init');
+            if (!stored || typeof stored.data.kit !== 'object' || stored.data.kit === null) {
+                throw new Error('the factory kit chunk is missing its kit payload');
+            }
+            if (Array.isArray(stored.data.kit)) {
+                throw new TypeError('the factory kit chunk holds an array where the kit belongs');
+            }
+            const chunk = { ...stored, data: { kit: { ...stored.data.kit, masterGain: 0.4 } } };
+
+            expect(getSink().projectNativeDeviceState({ deviceType: 'toaster', deviceState: chunk })).toEqual(
+                expect.objectContaining({ master_gain: 0.4 })
+            );
+            expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
         });
     });
 

@@ -190,6 +190,7 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
+import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
@@ -446,6 +447,12 @@ configureAudioDeviceRuntimeSink({
     // silence. Dispatch stays in the composition root; each module owns what its
     // own device needs. See `prepareOfflineDeviceSetup`.
     prepareOfflineInstrument: prepareOfflineDeviceSetup,
+    // The live/offline-via-native mirror of the row above: a device's
+    // `deviceState` never crosses the wire to the native engine, so this is
+    // where its kit (or any state a `parameterValues` table cannot carry)
+    // gets folded into the record `projectDeviceForNativeBody` sends. See
+    // `projectNativeDeviceState`.
+    projectNativeDeviceState,
     // The live registry's Crumbs descriptor calls this, and the offline chain
     // reaches the same use case through the `builtin-crumbs` row of
     // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
