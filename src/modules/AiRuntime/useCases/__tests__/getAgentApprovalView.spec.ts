@@ -73,6 +73,28 @@ const ROUTE_VIEW = {
     dataDisclosure: { categories: ['prompt-text'], retention: 'none' },
 };
 
+function collectStrings(value: unknown, into: string[]): string[] {
+    if (typeof value === 'string') {
+        into.push(value);
+        return into;
+    }
+
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            collectStrings(item, into);
+        }
+        return into;
+    }
+
+    if (value !== null && typeof value === 'object') {
+        for (const item of Object.values(value)) {
+            collectStrings(item, into);
+        }
+    }
+
+    return into;
+}
+
 function buildCommandBatch() {
     const commands = [
         {
@@ -394,8 +416,11 @@ describe('getAgentApprovalView', () => {
 
         expect(view?.supersedes).toBe('confirmation-earlier');
         expect(view?.supersededBy).toBeNull();
-        // The batch text is the executable artifact, so the assertion looks for its value, not a key name.
+        // The batch text is the executable artifact, so the assertion inspects string values at any
+        // depth instead of `JSON.stringify`, whose escaped quotes hide the batch text from `toContain`.
         expect(commandBatch.serialized.length).toBeGreaterThan(100);
-        expect(JSON.stringify(view)).not.toContain(commandBatch.serialized);
+        const strings = collectStrings(view, []);
+        expect(strings.length).toBeGreaterThan(0);
+        expect(strings.some((value) => value.includes(commandBatch.serialized))).toBe(false);
     });
 });
