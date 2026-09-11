@@ -21627,6 +21627,11 @@ mod timeline_tests {
         instance
     }
 
+    /// One of the sampler's own parameter names, as the mapper resolves it.
+    fn levain_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
     /// The body [`PluginCore::levain_with_patch`] built around a loaded
     /// instance, unwrapped so a spec can render through it directly.
     fn levain_body(patch: &[(BuiltinParamName, f32)]) -> Box<LevainBody> {
@@ -22097,6 +22102,115 @@ mod timeline_tests {
             None,
             "the record path declares a figure for a body whose instance publishes none, so the \
              graph holds every route meeting this strip back by it"
+        );
+    }
+
+    /// Levain's two longest parameter names fit the carrier and reach the
+    /// instrument the same way through a patch as through a direct write.
+    ///
+    /// `legato_portamento_velocity_threshold` (36 bytes) and
+    /// `expression_dynamic_crossfade_time` (33 bytes) are `LevainEngine::set_param`'s
+    /// own widest names (`crates/daw-dsp/src/levain/engine.rs`), and the web
+    /// patch projection emits both
+    /// (`projectLevainPatchToEngineParameters.ts`). [`BuiltinParamName::parse`]
+    /// refusing either would silently drop the entry the mapper builds for it —
+    /// a name shaped exactly like the instrument's own that this carrier
+    /// cannot hold.
+    #[test]
+    fn levain_longest_parameter_names_fit_the_carrier() {
+        assert!(
+            BuiltinParamName::parse("legato_portamento_velocity_threshold").is_some(),
+            "the carrier refuses Levain's own 36-byte parameter name"
+        );
+        assert!(
+            BuiltinParamName::parse("expression_dynamic_crossfade_time").is_some(),
+            "the carrier refuses Levain's own 33-byte parameter name"
+        );
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+
+        let mut patched_body =
+            levain_body(&[(levain_name("legato_portamento_velocity_threshold"), 0.75)]);
+        let (patched_left, patched_right) =
+            levain_render(&mut patched_body, LEVAIN_PARITY_FRAMES, &events);
+
+        let mut reference = levain_instance();
+        reference.set_param("legato_portamento_velocity_threshold", 0.75);
+        let mut reference_body = LevainBody::new(reference);
+        let (reference_left, reference_right) =
+            levain_render(&mut reference_body, LEVAIN_PARITY_FRAMES, &events);
+
+        assert_eq!(
+            patched_left, reference_left,
+            "the carrier's longest name reaches the instrument differently through a patch than \
+             through a direct set_param"
+        );
+        assert_eq!(
+            patched_right, reference_right,
+            "the carrier's longest name reaches the instrument differently through a patch than \
+             through a direct set_param"
+        );
+        assert!(
+            levain_peak(&reference_left).max(levain_peak(&reference_right)) > 0.0,
+            "the reference rendered silence, so the equalities above say nothing"
+        );
+    }
+
+    /// A Levain patch lands on the instance before the body ever renders, not
+    /// after.
+    ///
+    /// [`PluginCore::levain_with_patch`] writes the patch into the instance
+    /// before wrapping it into a body, so every entry must already be applied
+    /// by the time the body's first `process` call reaches it. A patch
+    /// dropped at that boundary would sound the fixture's untouched defaults
+    /// while every other spec in this file still reported success, because
+    /// they all render through [`levain_body`]`(&[])` alone.
+    ///
+    /// `master_gain` and `mic_0_pan` are applied in that order because that is
+    /// the record's own field order, and there is no precedence law
+    /// (`LEVAIN_PATCH_PRECEDENCE` is empty) to reorder them.
+    #[test]
+    fn a_levain_patch_lands_on_the_instance_before_it_sounds() {
+        const FRAMES: usize = LEVAIN_RUN_FRAMES * 8;
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+
+        let mut patched_body = levain_body(&[
+            (levain_name("master_gain"), 0.25),
+            (levain_name("mic_0_pan"), 0.6),
+        ]);
+        let (patched_left, patched_right) = levain_render(&mut patched_body, FRAMES, &events);
+
+        let mut reference = levain_instance();
+        reference.set_param("master_gain", 0.25);
+        reference.set_param("mic_0_pan", 0.6);
+        let mut reference_body = LevainBody::new(reference);
+        let (reference_left, reference_right) = levain_render(&mut reference_body, FRAMES, &events);
+
+        assert_eq!(
+            patched_left, reference_left,
+            "the patched body's left channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+        assert_eq!(
+            patched_right, reference_right,
+            "the patched body's right channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+
+        let mut unpatched_body = levain_body(&[]);
+        let (unpatched_left, unpatched_right) = levain_render(&mut unpatched_body, FRAMES, &events);
+        let difference = patched_left
+            .iter()
+            .zip(&unpatched_left)
+            .chain(patched_right.iter().zip(&unpatched_right))
+            .fold(0.0_f32, |peak, (a, b)| peak.max((a - b).abs()));
+
+        assert!(
+            difference > 0.001,
+            "the patched render does not differ from an unpatched body's render by more than \
+             0.001, so the equalities above hold on two identical-by-default buffers rather than \
+             because the patch landed"
         );
     }
 }
