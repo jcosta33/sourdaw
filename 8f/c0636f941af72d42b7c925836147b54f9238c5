@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_06adf2b091dc62::t_b5a70c69527967 352-361
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_06adf2b091dc62::t_b1aa7c198de324 85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8fc0636f941af72d42b7c925836147b54f9238c5",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
