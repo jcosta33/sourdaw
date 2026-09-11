@@ -810,22 +810,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
     });
 
     it('grounds setDeviceParameter on brightness when a negated word contains an intent verb as a substring', () => {
-        const result = bridge({
-            calls: [
-                {
-                    name: 'setDeviceParameter',
-                    arguments: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 },
-                },
-            ],
-            creativeAuthority: buildAuthority(),
-            projectContext: brightnessContext,
-            prompt: 'do not touch the preset, set the brightness to 0.8',
-        });
-
-        expect(result.rejections).toEqual([]);
-        expect(result.actions).toMatchObject([
-            { type: 'setDeviceParameter', payload: { deviceId: 'guitar-filter-1', paramId: 'brightness', value: 0.8 } },
-        ]);
+        expectBrightnessGrounded('make the Guitar brighter, do not touch the preset', 0.8);
     });
 
     it('refuses setDeviceParameter when the prompt explicitly negates that intent', () => {
