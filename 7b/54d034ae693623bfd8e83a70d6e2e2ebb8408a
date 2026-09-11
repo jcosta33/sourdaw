@@ -1,0 +1,14 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx
+  h_1228e573df1f42 104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7b54d034ae693623bfd8e83a70d6e2e2ebb8408a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
