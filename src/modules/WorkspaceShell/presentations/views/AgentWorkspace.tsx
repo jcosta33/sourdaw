@@ -43,9 +43,9 @@ export const AgentWorkspace = (): ReactElement => {
     'use no memo';
 
     const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+    const [focusRequest, setFocusRequest] = useState<'heading' | 'list' | null>(null);
     const runListRef = useRef<HTMLDivElement>(null);
     const summaryHeadingRef = useRef<HTMLHeadingElement>(null);
-    const previousRunIdRef = useRef<string | null | undefined>(undefined);
 
     const agentRunState = useStore(agentRunStore, EMPTY_AGENT_RUN_STATE);
     const historyState = useStore(aiActionHistoryStore, EMPTY_HISTORY_STATE);
@@ -65,18 +65,26 @@ export const AgentWorkspace = (): ReactElement => {
     const historyGroups = historyState.groups.toSorted((left, right) => right.timestamp - left.timestamp);
 
     useEffect(() => {
-        const previousRunId = previousRunIdRef.current;
-        previousRunIdRef.current = effectiveRunId;
-        // The first render establishes the baseline; it must not steal focus.
-        if (previousRunId === undefined || previousRunId === effectiveRunId) {
+        if (!selectionRemoved) {
             return;
         }
-        if (selectionRemoved) {
+        // Clearing the stale selection is what stops this effect from re-firing:
+        // once selectedRunId is null, selectionRemoved is false on the next render.
+        setSelectedRunId(null);
+        setFocusRequest('list');
+    }, [selectionRemoved]);
+
+    useEffect(() => {
+        if (focusRequest === null) {
+            return;
+        }
+        if (focusRequest === 'heading') {
+            summaryHeadingRef.current?.focus();
+        } else {
             runListRef.current?.focus();
-            return;
         }
-        summaryHeadingRef.current?.focus();
-    }, [effectiveRunId, selectionRemoved]);
+        setFocusRequest(null);
+    }, [focusRequest]);
 
     const revertHistoryGroup = (group: AiActionHistoryState['groups'][number] | undefined): void => {
         if (group === undefined) {
@@ -95,6 +103,10 @@ export const AgentWorkspace = (): ReactElement => {
                         runs={runs}
                         selectedRunId={effectiveRunId}
                         onSelect={setSelectedRunId}
+                        onActivate={(runId) => {
+                            setSelectedRunId(runId);
+                            setFocusRequest('heading');
+                        }}
                     />
                 </Stack>
                 <Stack gap={3} grow className="min-h-0 min-w-0 overflow-y-auto p-3">

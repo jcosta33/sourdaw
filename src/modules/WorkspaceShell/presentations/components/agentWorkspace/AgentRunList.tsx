@@ -17,8 +17,12 @@ type AgentRunListProps = {
     runs: readonly AgentRunListItem[];
     selectedRunId: string | null;
     onSelect: (runId: string) => void;
+    onActivate: (runId: string) => void;
     ref?: Ref<HTMLDivElement>;
 };
+
+const LISTBOX_CLASS_NAME =
+    'flex min-h-0 flex-col gap-0.5 overflow-y-auto p-1 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70';
 
 function optionId(runId: string): string {
     return `agent-run-option-${runId}`;
@@ -31,7 +35,7 @@ function truncateRequest(request: string): string {
     return `${request.slice(0, MAX_REQUEST_LABEL_LENGTH)}…`;
 }
 
-/** `null` for a key the listbox does not own, so the event keeps its default. */
+/** `null` for a key the listbox does not move selection for, so the event keeps its default. */
 function getSelectionIndex(key: string, currentIndex: number, count: number): number | null {
     if (key === 'ArrowDown') {
         return Math.min(currentIndex + 1, count - 1);
@@ -45,15 +49,23 @@ function getSelectionIndex(key: string, currentIndex: number, count: number): nu
     if (key === 'End') {
         return count - 1;
     }
-    if (key === 'Enter' || key === ' ') {
-        return currentIndex;
-    }
     return null;
 }
 
-export const AgentRunList = ({ runs, selectedRunId, onSelect, ref }: AgentRunListProps): ReactElement => {
+export const AgentRunList = ({ runs, selectedRunId, onSelect, onActivate, ref }: AgentRunListProps): ReactElement => {
     if (runs.length === 0) {
-        return <DawEmptyState title="No agent runs yet" compact />;
+        return (
+            <div
+                ref={ref}
+                role="listbox"
+                aria-label="Agent runs"
+                tabIndex={0}
+                onKeyDown={() => undefined}
+                className={LISTBOX_CLASS_NAME}
+            >
+                <DawEmptyState title="No agent runs yet" compact />
+            </div>
+        );
     }
 
     const selectedIndex = Math.max(
@@ -62,7 +74,15 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, ref }: AgentRunLis
     );
     const activeRun = runs[selectedIndex]!;
 
+    // Arrow/Home/End move the active option but keep DOM focus on the listbox
+    // itself (the ARIA listbox pattern with aria-activedescendant); Enter/Space
+    // activate the currently active option instead of moving selection.
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onActivate(activeRun.runId);
+            return;
+        }
         const nextIndex = getSelectionIndex(event.key, selectedIndex, runs.length);
         if (nextIndex === null) {
             return;
@@ -79,7 +99,7 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, ref }: AgentRunLis
             aria-activedescendant={optionId(activeRun.runId)}
             tabIndex={0}
             onKeyDown={handleKeyDown}
-            className="flex min-h-0 flex-col gap-0.5 overflow-y-auto p-1 outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
+            className={LISTBOX_CLASS_NAME}
         >
             {runs.map((run) => {
                 const selected = run.runId === selectedRunId;
@@ -92,7 +112,7 @@ export const AgentRunList = ({ runs, selectedRunId, onSelect, ref }: AgentRunLis
                         aria-selected={selected}
                         tabIndex={-1}
                         data-state={selected ? 'selected' : 'idle'}
-                        onClick={() => onSelect(run.runId)}
+                        onClick={() => onActivate(run.runId)}
                         className={cn(
                             'cursor-pointer rounded px-2 py-1.5 transition-colors motion-reduce:transition-none',
                             selected

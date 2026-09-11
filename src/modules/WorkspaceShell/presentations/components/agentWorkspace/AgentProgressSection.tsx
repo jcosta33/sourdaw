@@ -16,29 +16,25 @@ type AgentProgressSectionProps = {
  */
 const TERMINAL_PHASES: readonly string[] = ['completed', 'failed', 'cancelled', 'partially-completed'];
 
-export const AgentProgressSection = ({ progress }: AgentProgressSectionProps): ReactElement | null => {
-    if (progress === null) {
-        return null;
-    }
-
-    const terminal = TERMINAL_PHASES.includes(progress.phase);
-
+export const AgentProgressSection = ({ progress }: AgentProgressSectionProps): ReactElement => {
     return (
-        <section role="status" aria-live="polite" aria-atomic="true" className="flex flex-col gap-1">
-            <p className="text-xs text-foreground" data-state={progress.phase}>
-                {`Phase: ${progress.phase}`}
-            </p>
-            {terminal ? (
+        <div className="flex flex-col gap-1">
+            <section role="status" aria-live="polite" aria-atomic="true" className="flex flex-col gap-1">
+                <p className="text-xs text-foreground" data-state={progress?.phase ?? 'none'}>
+                    {progress === null ? 'No run selected' : `Phase: ${progress.phase}`}
+                </p>
+                {progress !== null && progress.cancellation.requested ? (
+                    <p
+                        className="text-xs text-muted-foreground"
+                        data-state={progress.cancellation.acknowledgement}
+                    >{`Cancel requested — acknowledgement: ${progress.cancellation.acknowledgement}`}</p>
+                ) : null}
+            </section>
+            {progress !== null && TERMINAL_PHASES.includes(progress.phase) ? (
                 <p role="alert" className="text-xs text-foreground">
                     {`Run ${progress.phase}`}
                 </p>
             ) : null}
-            {progress.cancellation.requested ? (
-                <p
-                    className="text-xs text-muted-foreground"
-                    data-state={progress.cancellation.acknowledgement}
-                >{`Cancel requested — acknowledgement: ${progress.cancellation.acknowledgement}`}</p>
-            ) : null}
-        </section>
+        </div>
     );
 };

@@ -222,7 +222,31 @@ describe('AgentWorkspace', () => {
         expect(summary.getByText('Newest request')).toBeInTheDocument();
     });
 
-    it('moves selection with ArrowDown and places focus on the summary heading', () => {
+    it('moves selection with ArrowDown while focus stays on the listbox', () => {
+        agentRunControlsMock.list.mockReturnValue([
+            projection({ runId: 'run-3', request: 'Newest request' }),
+            projection({ runId: 'run-2', request: 'Middle request' }),
+            projection({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        setRuns([
+            run({ runId: 'run-3', request: 'Newest request' }),
+            run({ runId: 'run-2', request: 'Middle request' }),
+            run({ runId: 'run-1', request: 'Older request' }),
+        ]);
+
+        render(<AgentWorkspace />);
+        const listbox = screen.getByRole('listbox');
+        listbox.focus();
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+
+        const options = screen.getAllByRole('option');
+        expect(options[2]).toHaveAttribute('aria-selected', 'true');
+        expect(listbox).toHaveAttribute('aria-activedescendant', options[2]!.id);
+        expect(document.activeElement).toBe(listbox);
+    });
+
+    it('activates a run with Enter and moves focus to the summary heading', () => {
         agentRunControlsMock.list.mockReturnValue([
             projection({ runId: 'run-2', request: 'Newest request' }),
             projection({ runId: 'run-1', request: 'Older request' }),
@@ -233,11 +257,94 @@ describe('AgentWorkspace', () => {
         ]);
 
         render(<AgentWorkspace />);
-        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowDown' });
+        const listbox = screen.getByRole('listbox');
+        listbox.focus();
+        fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+        fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
 
-        const options = screen.getAllByRole('option');
-        expect(options[1]).toHaveAttribute('aria-selected', 'true');
         expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Run summary' }));
+        const summary = within(screen.getByRole('region', { name: 'Run summary' }));
+        expect(summary.getByText('Older request')).toBeInTheDocument();
+    });
+
+    it('activates a run with a click and moves focus to the summary heading', () => {
+        agentRunControlsMock.list.mockReturnValue([
+            projection({ runId: 'run-2', request: 'Newest request' }),
+            projection({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        setRuns([
+            run({ runId: 'run-2', request: 'Newest request' }),
+            run({ runId: 'run-1', request: 'Older request' }),
+        ]);
+
+        render(<AgentWorkspace />);
+        fireEvent.click(screen.getAllByRole('option')[1]!);
+
+        expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Run summary' }));
+        const summary = within(screen.getByRole('region', { name: 'Run summary' }));
+        expect(summary.getByText('Older request')).toBeInTheDocument();
+    });
+
+    it("shows only the selected run's pending approvals", () => {
+        agentRunControlsMock.list.mockReturnValue([
+            projection({ runId: 'run-2', request: 'Newest request' }),
+            projection({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        setRuns([
+            run({ runId: 'run-2', request: 'Newest request' }),
+            run({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        pendingActionConfirmationStore.set({
+            confirmations: [
+                confirmation({ id: 'confirmation-2', runId: 'run-2', actionLabels: ['Create track Drums'] }),
+                confirmation({ id: 'confirmation-1', runId: 'run-1', actionLabels: ['Create track Bass'] }),
+            ],
+        });
+
+        render(<AgentWorkspace />);
+
+        expect(screen.getByText('Create track Drums')).toBeInTheDocument();
+        expect(screen.queryByText('Create track Bass')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getAllByRole('option')[1]!);
+
+        expect(screen.getByText('Create track Bass')).toBeInTheDocument();
+        expect(screen.queryByText('Create track Drums')).not.toBeInTheDocument();
+    });
+
+    it("reverts the receipt's own history group when several exist", () => {
+        const receipts = [{ workId: 'work-1', receiptIdentity: 'receipt-1', revertGroupId: 'g2' }];
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection({ committedReceipts: receipts }));
+        setRuns([run()]);
+        const newestGroup = historyGroup({ id: 'group-1', groupId: 'g1', timestamp: 200 });
+        const receiptGroup = historyGroup({ id: 'group-2', groupId: 'g2', timestamp: 100 });
+        aiActionHistoryStore.set({ groups: [newestGroup, receiptGroup], panelOpen: false });
+
+        render(<AgentWorkspace />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Revert receipt work-1' }));
+
+        expect(revertAiActionGroupMock).toHaveBeenCalledExactlyOnceWith(receiptGroup);
+        expect(revertAiActionGroupMock).not.toHaveBeenCalledWith(newestGroup);
+    });
+
+    it('keeps the polite phase region mounted before a run exists and announces terminal outcomes as a sibling alert', () => {
+        const { rerender } = render(<AgentWorkspace />);
+
+        expect(screen.getByRole('status')).toBeInTheDocument();
+
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection({ phase: 'completed' }));
+        act(() => {
+            setRuns([run()]);
+        });
+        rerender(<AgentWorkspace />);
+
+        const status = screen.getByRole('status');
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeInTheDocument();
+        expect(status).not.toContainElement(alert);
     });
 
     it('renders scope, protections and granted flags for the selected run', () => {
@@ -457,27 +564,22 @@ describe('AgentWorkspace', () => {
     });
 
     it('returns focus to the run list when the selected run disappears', () => {
-        const newest = projection({ runId: 'run-2', request: 'Newest request' });
-        const older = projection({ runId: 'run-1', request: 'Older request' });
-        agentRunControlsMock.list.mockReturnValue([newest, older]);
-        setRuns([
-            run({ runId: 'run-2', request: 'Newest request' }),
-            run({ runId: 'run-1', request: 'Older request' }),
-        ]);
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        setRuns([run()]);
 
         render(<AgentWorkspace />);
-        fireEvent.click(screen.getAllByRole('option')[1]!);
+        fireEvent.click(screen.getByRole('option'));
         expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Run summary' }));
 
-        agentRunControlsMock.list.mockReturnValue([newest]);
+        agentRunControlsMock.list.mockReturnValue([]);
         act(() => {
-            setRuns([run({ runId: 'run-2', request: 'Newest request' })]);
+            setRuns([]);
         });
 
-        expect(document.activeElement).toBe(screen.getByRole('listbox'));
-        const options = screen.getAllByRole('option');
-        expect(options).toHaveLength(1);
-        expect(options[0]).toHaveAttribute('aria-selected', 'true');
+        const listbox = screen.getByRole('listbox');
+        expect(listbox).toBeInTheDocument();
+        expect(listbox).toHaveTextContent('No agent runs yet');
+        expect(document.activeElement).toBe(listbox);
     });
 
     it('every interactive control has an accessible name', () => {
@@ -489,12 +591,18 @@ describe('AgentWorkspace', () => {
         pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
         aiActionHistoryStore.set({ groups: [historyGroup()], panelOpen: false });
 
-        render(<AgentWorkspace />);
+        const { container } = render(<AgentWorkspace />);
 
         const buttons = screen.getAllByRole('button');
         expect(buttons.length).toBeGreaterThan(0);
         for (const button of buttons) {
             expect(button).toHaveAccessibleName();
+        }
+
+        const transitioning = container.querySelectorAll('[class*="transition-"]');
+        expect(transitioning.length).toBeGreaterThan(0);
+        for (const element of transitioning) {
+            expect(element.className).toContain('motion-reduce:transition-none');
         }
     });
 });
