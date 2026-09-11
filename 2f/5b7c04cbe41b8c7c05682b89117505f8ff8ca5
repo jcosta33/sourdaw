@@ -1,0 +1,19 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiResponses.spec.ts
+  s_06adf2b091dc62::t_36ce9d5a7de246 323-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2f5b7c04cbe41b8c7c05682b89117505f8ff8ca5",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
