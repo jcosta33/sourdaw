@@ -18,8 +18,12 @@ import { decodedBankToNativeSampleBank } from './decodedBankToNativeSampleBank';
  *
  * `null` for a key this module does not own, or whose instrument this build
  * does not know. A decode that *fails* throws instead — the caller leaves the
- * key unregistered so the next batch retries it, and the mapper meanwhile
- * refuses the device by name rather than splicing a mute sampler.
+ * key unregistered so the next batch retries it, and `map_device` meanwhile
+ * answers `Err` for the device by name rather than splicing a mute sampler.
+ * On a strip that contributes audio that `Err` refuses the batch whole, so the
+ * musician's play gesture declines native carriage with this bank in its reason
+ * and the project plays on the Web Audio carrier; only a device on a strip that
+ * contributes no audio is dropped by itself.
  *
  * The lease is released by the caller once the bytes have crossed the bridge;
  * the bank's life on the native side is ended by `release_levain_bank`, which

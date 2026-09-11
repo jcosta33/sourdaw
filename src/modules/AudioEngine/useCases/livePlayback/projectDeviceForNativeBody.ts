@@ -24,8 +24,9 @@
  * is merged OVER the table projection.
  *
  * One body is not built from a record at all. A Levain instance is built from a
- * *sample bank* the renderer staged under a key, and `map_device` refuses the
- * device outright when no committed bank stands at that key. So the same sink
+ * *sample bank* the renderer staged under a key, and `map_device` answers `Err`
+ * for the device by name when no committed bank stands at that key — which
+ * refuses the batch whole on any strip that contributes audio. So the same sink
  * that decodes opaque state also names the bank the state asks for, and the key
  * rides beside the record as `sampleBankKey` — the one field on the wire that is
  * neither project truth nor a parameter, and the reason the return shape is
@@ -78,11 +79,14 @@ function projectDeviceState(deviceType: string, deviceState: DeviceStateChunk | 
  * Absent rather than `undefined` for every device whose body is built from its
  * record: `serializeAudioGraphCommand` omits the field then, and the payload
  * stays byte-identical to what the engine took before banks existed.
+ *
+ * A device holding no state is asked anyway, unlike `projectDeviceState` below.
+ * The two questions differ: a chunkless device has no state to project, but it
+ * still *sounds* something — the owning module's default instrument — and only
+ * that module can name the bank for it. Skipping the sink here would send a
+ * fresh Levain naming no bank, which refuses the batch on any audible strip.
  */
 function sampleBankKeyField(deviceType: string, deviceState: DeviceStateChunk | undefined) {
-    if (!deviceState) {
-        return {};
-    }
     const bankKey = getAudioDeviceRuntimeSink().nativeSampleBankKey({ deviceType, deviceState });
     return bankKey === null ? {} : { sampleBankKey: bankKey };
 }

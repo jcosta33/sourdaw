@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
+import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
 
 const BATCH: AudioGraphCommandBatch = {
     schemaVersion: 1,
@@ -257,6 +257,7 @@ describe('createNativeLiveGraphBackend', () => {
     describe('sample banks', () => {
         beforeEach(() => {
             registeredNativeSampleBankKeys.clear();
+            inFlightNativeSampleBankShipments.clear();
         });
 
         const BANK_BATCH: AudioGraphCommandBatch = {

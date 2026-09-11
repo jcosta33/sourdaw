@@ -9,8 +9,15 @@ export type NativeSampleBankKeyInput = {
     deviceState: DeviceStateChunk | undefined;
 };
 
-/** What one native device's `deviceState` names as its bank, once it names one. */
-type NativeSampleBankKeyForDeviceState = (deviceState: DeviceStateChunk) => string | null;
+/**
+ * What one native device's `deviceState` names as its bank.
+ *
+ * `undefined` is passed through rather than shortcut here: a device that has
+ * committed no chunk still sounds *something* on the Web Audio carrier, and
+ * only the owning module knows what — so the owner decides whether a chunkless
+ * device names a bank.
+ */
+type NativeSampleBankKeyForDeviceState = (deviceState: DeviceStateChunk | undefined) => string | null;
 
 /**
  * Every native-DSP device, and the bank key its `deviceState` names.
@@ -28,7 +35,8 @@ const NATIVE_SAMPLE_BANK_KEYS: Record<NativeDspDeviceType, NativeSampleBankKeyFo
     // Its kit is projected into the record, not staged as material.
     toaster: null,
     // The one body the engine builds from a bank rather than from a record:
-    // `map_device` refuses a Levain device whose key holds no committed bank.
+    // `map_device` answers `Err` for a Levain device whose key holds no
+    // committed bank, and on an audible strip that refuses the batch whole.
     levain: (deviceState) => nativeBankKeyForLevainDeviceState({ deviceState }),
     // Also sample-backed, but streamed from disk by the engine itself rather
     // than staged by the renderer: Crumbs has no native built-in body here.
@@ -58,7 +66,7 @@ const NATIVE_SAMPLE_BANK_KEYS: Record<NativeDspDeviceType, NativeSampleBankKeyFo
  */
 export function nativeSampleBankKey(input: NativeSampleBankKeyInput): string | null {
     const deviceType = resolveNativeDspDeviceType(input.deviceType);
-    if (!deviceType || !input.deviceState) {
+    if (!deviceType) {
         return null;
     }
 
@@ -73,7 +81,11 @@ export function nativeSampleBankKey(input: NativeSampleBankKeyInput): string | n
  * does the routing — without a second table of who owns what, and without a
  * copy here of a prefix the owning module defines. A decode that *fails* throws
  * instead; `registerNativeSampleBanks` leaves the key unregistered either way,
- * and the engine then refuses that one device rather than the whole batch.
+ * and `map_device` then answers `Err` for the device by name. On an audible
+ * strip that `Err` refuses the batch whole, so the play gesture declines native
+ * carriage with the bank in its reason and the project plays on the Web Audio
+ * carrier (`startNativeLiveGraphSession`); only a device on a strip that
+ * contributes no audio is dropped on its own.
  */
 export async function acquireNativeSampleBank(bankKey: string) {
     return acquireLevainNativeBank(bankKey);

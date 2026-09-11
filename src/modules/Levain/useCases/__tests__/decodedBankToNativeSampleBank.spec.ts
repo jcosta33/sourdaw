@@ -97,6 +97,30 @@ describe('decodedBankToNativeSampleBank', () => {
         expect(translated.samples[0]?.pcm).toEqual(new Uint8Array(new Float32Array([0.25, -0.25, 0.5, -0.5]).buffer));
     });
 
+    it('copies the PCM from the view’s own window rather than the head of its buffer', () => {
+        const frames = [0.25, -0.25, 0.5, -0.5];
+        const buffer = new SharedArrayBuffer(64);
+        // A view that does not start at byte 0 is the decoder's ordinary case:
+        // it packs material into one shared allocation, so a sample's bytes
+        // begin where its own view begins. Sentinels stand where a copy
+        // reading from the buffer's head would land instead.
+        new Float32Array(buffer, 0, 4).set([9, 9, 9, 9]);
+        const data = new Float32Array(buffer, 16, frames.length);
+        data.set(frames);
+
+        const translated = decodedBankToNativeSampleBank(
+            bank({
+                samples: new Map<string, DecodedSample>([
+                    ['sustain-c4.wav', { data, frameCount: 2, channels: 2, sampleRate: 48_000 }],
+                    ['legato-up2.wav', decodedSample([0.125, 0.25], 1, 44_100)],
+                ]),
+            })
+        );
+
+        expect(translated.samples[0]?.pcm).toEqual(new Uint8Array(new Float32Array(frames).buffer));
+        expect(translated.samples[0]?.pcm).toHaveLength(frames.length * 4);
+    });
+
     it('passes a non-looping zone through with a zeroed loop window', () => {
         const translated = decodedBankToNativeSampleBank(bank());
 

@@ -112,8 +112,9 @@ export type AudioDeviceRuntimeSink = {
      * `null` when the type sounds no bank.
      *
      * A sampler is the one built-in whose body cannot be built from its
-     * `parameterValues` at all: `map_device` refuses a Levain device that names
-     * no committed bank rather than splicing a mute sampler onto the strip
+     * `parameterValues` at all: `map_device` answers `Err` for a Levain device
+     * that names no committed bank rather than splicing a mute sampler onto the
+     * strip, and on an audible strip that refuses the batch whole
      * (`crates/sourdaw-native/src/commands/graph.rs`). So the key has to reach
      * the wire beside the record, and only the owning module can read which
      * instrument a device's opaque `deviceState` selects — the same reason

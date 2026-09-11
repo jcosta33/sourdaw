@@ -15,7 +15,7 @@ import { type NativeSampleBank, type NativeSampleBankLease } from '../../../mode
 import { type Device } from '../../../models/TrackViewTypes';
 import { collectNativeSampleBankKeys } from '../collectNativeSampleBankKeys';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
+import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
 import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
 
 function device(overrides: Partial<Device> = {}): Device {
@@ -105,6 +105,15 @@ function lease(release: () => void, overrides: Partial<NativeSampleBank> = {}): 
     return { bank: bank(overrides), release };
 }
 
+/** A step the case holds open, so a second caller arrives genuinely mid-flight. */
+function deferred(): { promise: Promise<void>; settle: () => void } {
+    let settle: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, settle };
+}
+
 describe('collectNativeSampleBankKeys', () => {
     it('reads every command kind that carries a device', () => {
         expect(
@@ -140,6 +149,7 @@ describe('collectNativeSampleBankKeys', () => {
 describe('registerNativeSampleBanks', () => {
     beforeEach(() => {
         registeredNativeSampleBankKeys.clear();
+        inFlightNativeSampleBankShipments.clear();
     });
 
     const commands = [createStrip('audio-1', [device({ sampleBankKey: 'levain:violin-1' })])];
@@ -231,8 +241,10 @@ describe('registerNativeSampleBanks', () => {
             .mockRejectedValueOnce(new Error('manifest 404'))
             .mockResolvedValueOnce(lease(release));
 
-        // Never a throw: a bank that could not be staged is one device the
-        // mapper refuses, not a play gesture that refused the whole project.
+        // Never a throw. The batch still goes out, and `refuse_or_degrade`
+        // decides what the missing bank costs: the gesture declines native
+        // carriage on an audible strip and the device is dropped on a silent
+        // one. Throwing here would only take the batch's other strips down too.
         await expect(registerNativeSampleBanks({ transport, commands, acquire })).resolves.toEqual([]);
         expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(false);
 
@@ -288,5 +300,57 @@ describe('registerNativeSampleBanks', () => {
         // An incremental batch says nothing about the strips it did not mention.
         expect(calls.filter((call) => call.startsWith('release:'))).toEqual([]);
         expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+    });
+
+    // The live backend and the offline render stage into one process-wide store
+    // from queues that do not know about each other, and the committed-key memo
+    // only answers after the fact. A second `begin_levain_bank` landing mid
+    // shipment replaces the bank the first one was filling, so the commit that
+    // follows describes material the store no longer holds.
+    it('waits on a shipment already in flight instead of staging the key twice', async () => {
+        const begun = deferred();
+        const beginLevainBank = vi.fn(() => begun.promise.then(() => null));
+        const { transport, calls } = recordingTransport({ beginLevainBank });
+        const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
+
+        const first = registerNativeSampleBanks({ transport, commands, acquire });
+        const second = registerNativeSampleBanks({ transport, commands, acquire });
+        begun.settle();
+
+        // The key was staged by the first call, so only it takes credit — the
+        // second learns its own staging did nothing.
+        await expect(first).resolves.toEqual(['levain:violin-1']);
+        await expect(second).resolves.toEqual([]);
+        expect(beginLevainBank).toHaveBeenCalledTimes(1);
+        expect(calls.filter((call) => call.startsWith('sample:'))).toEqual([
+            'sample:levain:violin-1:0',
+            'sample:levain:violin-1:1',
+        ]);
+        expect(calls.filter((call) => call.startsWith('commit:'))).toEqual(['commit:levain:violin-1']);
+        expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(true);
+        expect(inFlightNativeSampleBankShipments.size).toBe(0);
+    });
+
+    it('leaves a key whose in-flight shipment failed stageable by a later call', async () => {
+        const beginLevainBank = vi.fn().mockResolvedValue(null);
+        const commitLevainBank = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('bank store refused the layout'))
+            .mockResolvedValue(null);
+        const { transport } = recordingTransport({ beginLevainBank, commitLevainBank });
+        const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
+
+        const first = registerNativeSampleBanks({ transport, commands, acquire });
+        const second = registerNativeSampleBanks({ transport, commands, acquire });
+
+        // A waiter inherits the failure as an uncommitted key, not as a throw:
+        // staging never refuses the batch of its own accord.
+        await expect(first).resolves.toEqual([]);
+        await expect(second).resolves.toEqual([]);
+        expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(false);
+        expect(inFlightNativeSampleBankShipments.size).toBe(0);
+
+        await expect(registerNativeSampleBanks({ transport, commands, acquire })).resolves.toEqual(['levain:violin-1']);
+        expect(beginLevainBank).toHaveBeenCalledTimes(2);
     });
 });

@@ -32,8 +32,28 @@ describe('levainNativeBankKey', () => {
     });
 
     it('answers null for state that names no loadable instrument', () => {
-        // Not a default instrument: the mapper refuses a Levain device naming no
-        // bank, which is what tells a musician the device did not load.
+        // A chunk is present and unreadable, which is a device that did not
+        // load. Substituting the default here would sound a different
+        // instrument than the file asked for and say nothing about it.
         expect(nativeBankKeyForLevainDeviceState({ deviceState: { version: 1, data: {} } })).toBeNull();
+    });
+
+    it('answers null for a chunk whose instrument id is not even a string', () => {
+        expect(
+            nativeBankKeyForLevainDeviceState({ deviceState: { version: 1, data: { instrumentId: 42 } } })
+        ).toBeNull();
+    });
+
+    it('names the default instrument for a device that has committed no chunk', () => {
+        // `initLevainDeviceStatePersistence` records a fresh device without
+        // committing a chunk, and the Web Audio carrier plays
+        // `createDefaultPatch`'s instrument for it. Answering `null` instead
+        // would put a device naming no bank on the wire, and `map_device`
+        // refuses the batch whole over one on an audible strip — so a project
+        // with one untouched Levain would decline native carriage entirely.
+        expect(nativeBankKeyForLevainDeviceState({ deviceState: undefined })).toBe('levain:violin-1');
+        expect(nativeBankKeyForLevainDeviceState({ deviceState: undefined })).toBe(
+            levainNativeBankKey(createDefaultPatch().instrumentId)
+        );
     });
 });

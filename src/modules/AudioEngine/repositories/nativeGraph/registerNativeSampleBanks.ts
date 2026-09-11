@@ -3,17 +3,23 @@
  * (#3124).
  *
  * A Levain device is not built from its record: `map_device` looks the device's
- * `sampleBankKey` up in the bank store and refuses the device by name when no
- * committed bank stands there. So a batch carrying such a device owes its
- * material to the store *first*, exactly as a `schedule-clip` owes its PCM to
- * the timeline pool (`nativeTimelineSamplePool.ts`), and for the same reason:
- * the alternative to ordering is a strip that silently maps without its
+ * `sampleBankKey` up in the bank store and answers `Err` for the device by name
+ * when no committed bank stands there. So a batch carrying such a device owes
+ * its material to the store *first*, exactly as a `schedule-clip` owes its PCM
+ * to the timeline pool (`nativeTimelineSamplePool.ts`), and for the same
+ * reason: the alternative to ordering is a strip that silently maps without its
  * instrument.
  *
- * Registration never throws. A bank that cannot be decoded or staged leaves its
- * key unregistered and the batch goes out regardless — the mapper then refuses
- * that one device, which is a strip a musician can see did not load, rather
- * than a play gesture that refused the whole project.
+ * Registration never throws, but a key it fails to stage is not a small loss.
+ * The batch goes out regardless and `refuse_or_degrade` decides what that `Err`
+ * costs: on a strip that contributes audio it refuses the batch whole, so the
+ * play gesture declines native carriage with the bank named in its reason and
+ * the project plays on the Web Audio carrier instead
+ * (`startNativeLiveGraphSession`). Only a device on a strip that contributes no
+ * audio — muted, or routed nowhere the mix reads — is dropped on its own.
+ * Throwing here would buy nothing over that: the same gesture declines either
+ * way, and the batch's other strips would lose their one chance to be heard
+ * natively.
  *
  * Only a topology replacement releases. A `replaceTopology` batch states the
  * whole graph, so a key it does not name is an instrument nothing plays any
@@ -27,7 +33,7 @@ import { type NativeSampleBankLease } from '../../models/NativeSampleBank';
 
 import { collectNativeSampleBankKeys } from './collectNativeSampleBankKeys';
 import { type NativeGraphTransport } from './nativeGraphTransport';
-import { registeredNativeSampleBankKeys } from './registeredNativeSampleBankKeys';
+import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from './registeredNativeSampleBankKeys';
 
 /** Leases the bank one key names, or `null` for a key no module owns. */
 export type AcquireNativeSampleBank = (bankKey: string) => Promise<NativeSampleBankLease | null>;
@@ -105,6 +111,26 @@ async function registerBank(
     }
 }
 
+/**
+ * Stage one key as *the* shipment for it, so a concurrent caller can wait
+ * rather than start a second `begin` over this one's samples.
+ *
+ * The entry is published before the first await and withdrawn when the shipment
+ * settles, whichever way it settled: a failed stage left the key uncommitted,
+ * and the next batch is entitled to try it again.
+ */
+async function shipBank(
+    transport: NativeGraphTransport,
+    bankKey: string,
+    acquire: AcquireNativeSampleBank
+): Promise<void> {
+    const shipment = registerBank(transport, bankKey, acquire).finally(() => {
+        inFlightNativeSampleBankShipments.delete(bankKey);
+    });
+    inFlightNativeSampleBankShipments.set(bankKey, shipment);
+    await shipment;
+}
+
 async function releaseUnnamedBanks(transport: NativeGraphTransport, named: readonly string[]): Promise<void> {
     for (const bankKey of [...registeredNativeSampleBankKeys]) {
         if (named.includes(bankKey)) {
@@ -137,11 +163,21 @@ export async function registerNativeSampleBanks(input: RegisterNativeSampleBanks
         if (registeredNativeSampleBankKeys.has(bankKey)) {
             continue;
         }
+        const inFlight = inFlightNativeSampleBankShipments.get(bankKey);
+        if (inFlight !== undefined) {
+            // Someone else's shipment owns this key. Wait for it — the batch
+            // must not go out ahead of the commit it needs — and take no credit
+            // for it: the key was staged by that call, not this one, so a
+            // caller reading the answer learns what its own staging did.
+            await inFlight.catch(() => undefined);
+            continue;
+        }
         try {
-            await registerBank(transport, bankKey, acquire);
+            await shipBank(transport, bankKey, acquire);
         } catch {
-            // Decode or transport failure. The key stays unregistered; the
-            // engine refuses this one device and the next batch tries again.
+            // Decode or transport failure. The key stays unregistered, so
+            // `map_device` answers `Err` for the devices naming it and the next
+            // batch stages it again.
             continue;
         }
         if (registeredNativeSampleBankKeys.has(bankKey)) {

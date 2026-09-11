@@ -555,8 +555,9 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
              * The orchestral sampler. Unlike every other body here it is not
              * built from its record at all: `map_device` builds the instance
              * from a *sample bank* the renderer staged under the device's own
-             * `sampleBankKey`, and refuses the device outright when no
-             * committed bank stands there (`crates/sourdaw-native/src/commands/
+             * `sampleBankKey`, and answers `Err` for the device by name when no
+             * committed bank stands there — refusing the batch whole on any
+             * strip that contributes audio (`crates/sourdaw-native/src/commands/
              * graph.rs`). The key reaches the wire through
              * `projectDeviceForNativeBody`; this row is only the vocabulary the
              * built instance then answers to.
