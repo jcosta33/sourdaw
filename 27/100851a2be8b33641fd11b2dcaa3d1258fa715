@@ -1,0 +1,19 @@
+src/modules/Levain/useCases/__tests__/getLevainEngineParameterName.spec.ts
+  s_d2824df80c1d84::t_6f5e4fada2faf4 37-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "27100851a2be8b33641fd11b2dcaa3d1258fa715",
+  "prompts": {},
+  "sessions": {
+    "s_d2824df80c1d84": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "806bae1e-083e-4ef6-b726-305af5e01e83",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
