@@ -1,0 +1,16 @@
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  h_1228e573df1f42 23,388-425
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_1228e573df1f42 380-399
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "560d7760076d7b9995d07f93e8d89acaac7cf4d3",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
