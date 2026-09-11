@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { AiActionHistoryPanel } from './AiActionHistoryPanel';
+export { AgentRunDecisionPanel } from './AgentRunDecisionPanel';
 export { AiChangeToast } from './AiChangeToast';
 export { ChatPanel } from './ChatPanel';
 export { GenerativeAiPanel } from './GenerativeAiPanel';
