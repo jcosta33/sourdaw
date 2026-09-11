@@ -79,6 +79,7 @@ export { cancelPendingChatActions } from './cancelPendingChatActions';
 export { getAgentApprovalView } from './getAgentApprovalView';
 export { reproposePendingChatActions } from './reproposePendingChatActions';
 export { revertAiActionGroup } from './aiHistoryActions';
+export { agentChangeComparison, getAgentChangeComparisonView } from './agentChangeComparison';
 export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
