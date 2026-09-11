@@ -50,9 +50,12 @@ import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames'
  * ASCII letters, digits and underscores. The carrier does not keep a
  * vocabulary table for any one instrument, so this is the whole of what it
  * refuses by — snake_case and camelCase both parse, because Fermenter spells
- * one and Grinder spells the other.
+ * one and Grinder spells the other. The capacity is 40, not a round number:
+ * Levain's own vocabulary needs it, its longest name,
+ * `legato_portamento_velocity_threshold`, is 36 bytes, four short of a
+ * narrower carrier.
  */
-export const BUILTIN_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,32}$/;
+export const BUILTIN_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,40}$/;
 
 export type NativeBuiltinBody = Readonly<{
     /** Whether the engine registers a note store for this body (mirror of `BuiltinEffectType::sounds_notes`). */

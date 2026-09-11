@@ -193,6 +193,19 @@ describe('nativeBuiltinBody', () => {
     });
 });
 
+// Pins the carrier's own byte boundary, not any one body's vocabulary:
+// `BUILTIN_PARAM_NAME_CAPACITY` (`crates/daw-engine/src/timeline.rs`) is 40
+// because Levain's longest name, `legato_portamento_velocity_threshold`, is
+// 36 bytes — a narrower carrier would drop it from a projected patch before
+// the wire.
+describe('BUILTIN_PARAM_NAME_SHAPE', () => {
+    it('admits Levain’s longest name and the carrier’s full 40-byte capacity, and refuses one byte more', () => {
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('legato_portamento_velocity_threshold')).toBe(true);
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('a'.repeat(40))).toBe(true);
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('a'.repeat(41))).toBe(false);
+    });
+});
+
 describe('the fermenter body', () => {
     it('expands the macro slots the patch carries as an array into one name each', () => {
         expect(bodyOf('fermenter').projectPatch({ macros: [0.5, 0.25] })).toEqual({ macro0: 0.5, macro1: 0.25 });
