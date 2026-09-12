@@ -8,14 +8,13 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 function computeMaxTimelinePreRoll(clipB: Clip): { stretchFactor: number; maxTimelinePreRoll: number } {
     const stretchFactor = consumedStretchFactor(clipB);
-    let maxTimelinePreRoll = Number.POSITIVE_INFINITY;
-    if (clipB.audioOffsetBeats !== undefined) {
-        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.audioOffsetBeats) / stretchFactor);
+    if (clipB.type === 'midi') {
+        return { stretchFactor, maxTimelinePreRoll: Math.max(0, clipB.midiOffsetBeats ?? 0) };
     }
-    if (clipB.midiOffsetBeats !== undefined) {
-        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.midiOffsetBeats));
-    }
-    return { stretchFactor, maxTimelinePreRoll };
+    return {
+        stretchFactor,
+        maxTimelinePreRoll: Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor,
+    };
 }
 
 function isValidCrossfadeGeometry(
@@ -54,9 +53,9 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     const clipBDelta = clipBStartBeat - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
     const newClipBAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined ? clipB.audioOffsetBeats + contentDelta : undefined;
+        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
     const newClipBMidiOffsetBeats =
-        clipB.midiOffsetBeats !== undefined ? clipB.midiOffsetBeats + clipBDelta : undefined;
+        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
 
     if (
         !isValidCrossfadeGeometry(

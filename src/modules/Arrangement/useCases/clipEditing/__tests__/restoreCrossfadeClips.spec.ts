@@ -215,4 +215,23 @@ describe('restoreCrossfadeClips', () => {
         });
         expect(result).toBe(true);
     });
+
+    it('returns true when only midiOffsetBeats differs between current state and replacement', () => {
+        const clipA = makeClip('c1', { endBeat: 4, fadeOutBeats: 0 });
+        const clipB = makeClip('c2', { startBeat: 4, fadeInBeats: 0, midiOffsetBeats: 1.75 });
+        mockGetTrackState.mockReturnValue(makeState([clipA, clipB]));
+
+        const result = restoreCrossfadeClips({
+            clipAId: 'c1',
+            clipBId: 'c2',
+            replacement: {
+                clipAEndBeat: 4,
+                clipAFadeOutBeats: 0,
+                clipBStartBeat: 4,
+                clipBFadeInBeats: 0,
+                clipBMidiOffsetBeats: 2,
+            },
+        });
+        expect(result).toBe(true);
+    });
 });

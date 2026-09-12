@@ -5,6 +5,13 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 
 import { consumedStretchFactor } from './consumedStretchFactor';
 
+function computeMaxTimelinePreRoll(clipB: Clip, stretchFactor: number): number {
+    if (clipB.type === 'midi') {
+        return Math.max(0, clipB.midiOffsetBeats ?? 0);
+    }
+    return Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor;
+}
+
 export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): boolean {
     if (clipAId === clipBId || !Number.isFinite(durationBeats) || durationBeats < 0) {
         return false;
@@ -41,13 +48,7 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const unclampedClipBStart = clipB.startBeat - halfLen;
 
     const stretchFactor = consumedStretchFactor(clipB);
-    let maxTimelinePreRoll = Number.POSITIVE_INFINITY;
-    if (clipB.audioOffsetBeats !== undefined) {
-        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.audioOffsetBeats) / stretchFactor);
-    }
-    if (clipB.midiOffsetBeats !== undefined) {
-        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.midiOffsetBeats));
-    }
+    const maxTimelinePreRoll = computeMaxTimelinePreRoll(clipB, stretchFactor);
 
     const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
     const newClipBStart = Math.max(unclampedClipBStart, boundedClipBStart);
@@ -56,8 +57,9 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const clipBDelta = newClipBStart - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
     const newAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined ? clipB.audioOffsetBeats + contentDelta : undefined;
-    const newMidiOffsetBeats = clipB.midiOffsetBeats !== undefined ? clipB.midiOffsetBeats + clipBDelta : undefined;
+        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
+    const newMidiOffsetBeats =
+        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
 
     if (
         !Number.isFinite(halfLen) ||

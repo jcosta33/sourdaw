@@ -110,7 +110,7 @@ describe('handleCrossfadeClips', () => {
             payload: {
                 clipAId: 'c1',
                 clipBId: 'c2',
-                expected: { clipAEndBeat: 4.5, clipAFadeOutBeats: 1, clipBStartBeat: 3.5, clipBFadeInBeats: 1 },
+                expected: { clipAEndBeat: 4.5, clipAFadeOutBeats: 0.5, clipBStartBeat: 4, clipBFadeInBeats: 0.5 },
                 replacement: { clipAEndBeat: 4, clipAFadeOutBeats: 0, clipBStartBeat: 4, clipBFadeInBeats: 0 },
             },
         });
@@ -120,7 +120,7 @@ describe('handleCrossfadeClips', () => {
                 clipAId: 'c1',
                 clipBId: 'c2',
                 expected: { clipAEndBeat: 4, clipAFadeOutBeats: 0, clipBStartBeat: 4, clipBFadeInBeats: 0 },
-                replacement: { clipAEndBeat: 4.5, clipAFadeOutBeats: 1, clipBStartBeat: 3.5, clipBFadeInBeats: 1 },
+                replacement: { clipAEndBeat: 4.5, clipAFadeOutBeats: 0.5, clipBStartBeat: 4, clipBFadeInBeats: 0.5 },
             },
         });
     });
@@ -308,6 +308,77 @@ describe('handleCrossfadeClips', () => {
                     clipBStartBeat: 3.5,
                     clipBFadeInBeats: 1,
                     clipBMidiOffsetBeats: 1.5,
+                },
+            },
+        });
+    });
+
+    it('describes compensating undo and redo snapshots with pre-roll handle clamping when clip B pre-roll handle is smaller than halfDuration', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            audioOffsetBeats: 0.1,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.1,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.1,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
                 },
             },
         });

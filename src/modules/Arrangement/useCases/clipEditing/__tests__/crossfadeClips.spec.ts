@@ -134,13 +134,13 @@ describe('crossfadeClips', () => {
     });
 
     it('extends clip A endBeat and clip B startBeat by half the duration each', () => {
-        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 2 })];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
         expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(1);
-        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8)]));
+        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 2 })]));
 
         const clipA = result.clips.find((context) => context.id === 'a');
         const clipB = result.clips.find((context) => context.id === 'b');
@@ -149,12 +149,12 @@ describe('crossfadeClips', () => {
     });
 
     it('uses default duration of 0.5 beats', () => {
-        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 2 })];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
         crossfadeClips('a', 'b');
 
-        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8)]));
+        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 2 })]));
         const clipA = result.clips.find((context) => context.id === 'a');
         const clipB = result.clips.find((context) => context.id === 'b');
         expect(clipA).toMatchObject({ endBeat: 4.25, fadeOutBeats: 0.5 });
@@ -162,12 +162,14 @@ describe('crossfadeClips', () => {
     });
 
     it('clamps clip B start at 0 and widens the overlap accordingly', () => {
-        const clips = [makeClip('a', 0, 0.25), makeClip('b', 0.25, 4)];
+        const clips = [makeClip('a', 0, 0.25), makeClip('b', 0.25, 4, { audioOffsetBeats: 1 })];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
         crossfadeClips('a', 'b', 1.0);
 
-        const result = capturedMapper()(makeTrack([makeClip('a', 0, 0.25), makeClip('b', 0.25, 4)]));
+        const result = capturedMapper()(
+            makeTrack([makeClip('a', 0, 0.25), makeClip('b', 0.25, 4, { audioOffsetBeats: 1 })])
+        );
         const clipA = result.clips.find((context) => context.id === 'a');
         const clipB = result.clips.find((context) => context.id === 'b');
         expect(clipB).toMatchObject({ startBeat: 0, fadeInBeats: 0.75 });
@@ -347,5 +349,32 @@ describe('crossfadeClips', () => {
         const result = capturedMapper()(makeTrack(clips));
         const clipB = result.clips.find((context) => context.id === 'b');
         expect(clipB).toMatchObject({ startBeat: 3.75, fadeInBeats: 0.5, midiOffsetBeats: 1.75 });
+    });
+
+    it('does not extend untrimmed clip B earlier when audioOffsetBeats is undefined', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 4, fadeInBeats: 0.5 });
+        expect(clipB?.audioOffsetBeats).toBeUndefined();
+        expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+    });
+
+    it('allows audio clip B to extend left when midiOffsetBeats is 0 as set by prepareClipSplit', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 2, midiOffsetBeats: 0 })];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 3.5, fadeInBeats: 1.0, audioOffsetBeats: 1.5 });
+        expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 1.0 });
     });
 });
