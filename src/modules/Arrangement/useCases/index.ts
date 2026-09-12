@@ -158,6 +158,7 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
 export { deleteTime } from './timeOperations/deleteTime';
+export { getLastClipEndBeat } from './getLastClipEndBeat';
 export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 export { insertTime } from './timeOperations/insertTime';
 export { executeUndoableDuplicateTimeRange } from './timeOperations/executeUndoableDuplicateTimeRange';

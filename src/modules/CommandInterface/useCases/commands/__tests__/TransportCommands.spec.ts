@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getLastClipEndBeat } from '#/modules/Arrangement/useCases';
 import { panicAllNotes, seekPlayhead } from '#/modules/Transport/useCases';
 
-import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { transportCommands } from '../TransportCommands';
@@ -11,7 +11,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     seekPlayhead: vi.fn(),
     panicAllNotes: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: vi.fn().mockReturnValue(0) }));
+vi.mock('#/modules/Arrangement/useCases', () => ({ getLastClipEndBeat: vi.fn().mockReturnValue(0) }));
 vi.mock('../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: vi.fn() }));
 vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: vi.fn() }));
 

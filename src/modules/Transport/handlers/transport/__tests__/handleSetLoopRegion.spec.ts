@@ -36,7 +36,10 @@ describe('handleSetLoopRegion', () => {
         ).toMatchObject({
             inverseAction: {
                 type: 'restoreLoopRegion',
-                payload: { loopStart: 4, loopEnd: 12, isLooping: false },
+                payload: {
+                    expected: { loopStart: 0, loopEnd: 8, isLooping: false },
+                    replacement: { loopStart: 4, loopEnd: 12, isLooping: false },
+                },
             },
         });
     });

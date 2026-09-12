@@ -18,14 +18,14 @@ describe('toggleLoop', () => {
         vi.mocked(updateTransportState).mockClear();
     });
 
-    it('should flip isLooping when transport state exists', () => {
+    it('enables an invalid loop with a complete first-bar region', () => {
         const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isLooping: false });
         vi.mocked(updateTransportState).mockImplementation(update);
 
         toggleLoop();
 
-        expect(update).toHaveBeenCalledWith({ isLooping: true });
+        expect(update).toHaveBeenCalledWith({ loopStart: 0, loopEnd: 4, isLooping: true });
     });
 
     it('should not update when transport state is missing', () => {

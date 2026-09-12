@@ -114,6 +114,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
     setMarqueeSelection: vi.fn(),
+    getLastClipEndBeat: getLastClipEndBeatMock,
 }));
 
 vi.mock('#/modules/SessionLauncher/stores', () => ({
@@ -168,7 +169,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     };
 });
 vi.mock('../../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn(() => []) }));
-vi.mock('../../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: getLastClipEndBeatMock }));
 vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goToNextMarkerMock }));
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
 vi.mock('../../clipShortcuts/duplicateSelectedClipsForward', () => ({ duplicateSelectedClipsForward: vi.fn() }));

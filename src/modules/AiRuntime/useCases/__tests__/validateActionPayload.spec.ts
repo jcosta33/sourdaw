@@ -898,6 +898,40 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         );
     });
 
+    it('admits only complete valid loop restore triples', () => {
+        const guard = PAYLOAD_VALIDATORS.restoreLoopRegion;
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+
+        expect(
+            guard({
+                expected: { loopStart: 0, loopEnd: 4, isLooping: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            })
+        ).toBe(true);
+        expect(guard({ loopStart: 0, loopEnd: 4, isLooping: true })).toBe(false);
+        expect(
+            guard({
+                expected: { loopStart: 0, loopEnd: 0, isLooping: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            })
+        ).toBe(false);
+        expect(
+            guard({
+                expected: { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            })
+        ).toBe(false);
+        expect(
+            guard({
+                expected: { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            })
+        ).toBe(false);
+    });
+
     it.each([
         ['setTrackGain', { trackId: 'track-1', gain: 0 }],
         ['setTrackPan', { trackId: 'track-1', pan: 50 }],
