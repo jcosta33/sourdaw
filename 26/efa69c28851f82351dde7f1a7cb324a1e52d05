@@ -1,0 +1,23 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_0fee6631b6be8c 36-48,1429,1436,1464,1468
+src/modules/Arrangement/useCases/clip/__tests__/clipAutomationLaneTransitionMatchesStore.spec.ts
+  s_87ab0a2f60ccf8::t_0fee6631b6be8c 38
+src/infra/store/__tests__/createStore.sanitizeWriteBack.spec.ts
+  s_87ab0a2f60ccf8::t_a1a90957095a15 40-52,330,361,445,448,490,493,518-519,563-564,594,599,623,630,654,660,685,689,716,721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "26efa69c28851f82351dde7f1a7cb324a1e52d05",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
