@@ -5,10 +5,12 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { notRunningEngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
+import { getEngineRtDiagnostics } from '../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../../services/mainThreadLongTaskLatch';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
 import { collectAudioDeadlineEvidence } from '../collectAudioDeadlineEvidence';
 import { getEngineState } from '../engineAccess/getEngineState';
+import { refreshEngineRtDiagnostics } from '../engineAccess/refreshEngineRtDiagnostics';
 
 import type { AudioEngineState } from '../../models/AudioEngineState';
 import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
@@ -17,6 +19,12 @@ vi.mock('../engineAccess/getEngineState', () => ({ getEngineState: vi.fn() }));
 vi.mock('../../services/mainThreadLongTaskLatch', () => ({
     LONG_TASK_OBSERVATION_UNSUPPORTED: 'unsupported',
     readMainThreadLongTasks: vi.fn(),
+}));
+vi.mock('../../repositories/engineDiagnostics/getEngineRtDiagnostics', () => ({
+    getEngineRtDiagnostics: vi.fn(),
+}));
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 const runningEngineState: AudioEngineState = {
@@ -180,6 +188,7 @@ describe('collectAudioDeadlineEvidence', () => {
     it('counts the accumulated stream-error events while the native engine runs', () => {
         engineRtDiagnosticsStore.set({
             latest: runningNativeDiagnostics,
+            nativeEngineObserved: true,
             events: [
                 { type: 'streamError', side: 'output', kind: 'xrun' },
                 { type: 'streamError', side: 'input', kind: 'deviceBusy' },
@@ -196,23 +205,50 @@ describe('collectAudioDeadlineEvidence', () => {
         // its rate is the one its stream opened at — with the fault standing.
         engineRtDiagnosticsStore.set({
             latest: { ...runningNativeDiagnostics, running: false, outputStreamFault: 'deviceChanged' },
+            nativeEngineObserved: true,
             events: [{ type: 'streamError', side: 'output', kind: 'deviceChanged' }],
         });
 
         expect(collectAudioDeadlineEvidence().nativeStreamFaults).toEqual({ coverage: 'observed', events: 1 });
     });
 
-    it('reports no native coverage when no native engine has been started', () => {
+    it('keeps counting the fault after the engine that reported it was retired', async () => {
+        // The live sequence, driven through the store's only writer: the error
+        // callback pushes the fault, the watchdog clears `running`, and the
+        // liveness watch then retires the abandoned backend, dropping its
+        // handle. Every poll after that reads the no-engine shape while the
+        // fault it already recorded still stands in the history.
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce({
+            ...runningNativeDiagnostics,
+            running: false,
+            outputStreamFault: 'deviceChanged',
+            events: [{ type: 'streamError', side: 'output', kind: 'deviceChanged' }],
+        });
+        await refreshEngineRtDiagnostics();
+
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(notRunningEngineRtDiagnostics);
+        await refreshEngineRtDiagnostics();
+
+        const evidence = collectAudioDeadlineEvidence();
+
+        expect(evidence.nativeStreamFaults).toEqual({ coverage: 'observed', events: 1 });
+        // No engine is open to name, on the same reading that still counts the
+        // fault: the count spans engine generations, the carrier entry does not.
+        expect(evidence.workload.nativeEngine).toBeNull();
+    });
+
+    it('reports no native coverage until a reading from a native engine has been recorded', async () => {
         // The shape the native command answers with no engine handle, and the
-        // shape the browser build reports: every reading zeroed, so there is no
-        // engine whose faults could have been counted.
-        engineRtDiagnosticsStore.set({ latest: notRunningEngineRtDiagnostics, events: [] });
+        // shape the browser build reports: every reading zeroed, so no engine
+        // whose faults could have been counted was ever read.
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValue(notRunningEngineRtDiagnostics);
+        await refreshEngineRtDiagnostics();
 
         const reading = collectAudioDeadlineEvidence().nativeStreamFaults;
 
         expect(reading).toEqual({
             coverage: 'unavailable',
-            reason: expect.stringContaining('no reading from a native engine'),
+            reason: expect.stringContaining('no reading from a native engine has been recorded this session'),
         });
         expect('events' in reading).toBe(false);
     });
@@ -236,6 +272,7 @@ describe('collectAudioDeadlineEvidence', () => {
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, sampleRate: 48_000 });
         engineRtDiagnosticsStore.set({
             latest: { ...runningNativeDiagnostics, sampleRate: 44_100, outputBufferFrames: 512 },
+            nativeEngineObserved: true,
             events: [],
         });
 
@@ -252,6 +289,7 @@ describe('collectAudioDeadlineEvidence', () => {
         // produced.
         engineRtDiagnosticsStore.set({
             latest: { ...runningNativeDiagnostics, outputBufferFrames: 0 },
+            nativeEngineObserved: true,
             events: [],
         });
 
@@ -261,7 +299,7 @@ describe('collectAudioDeadlineEvidence', () => {
     });
 
     it('correlates the reading to the workload it was taken under', () => {
-        engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, events: [] });
+        engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, nativeEngineObserved: true, events: [] });
         trackStore.set({
             tracks: [
                 { id: 'a', name: 'A' },
@@ -286,7 +324,7 @@ describe('collectAudioDeadlineEvidence', () => {
 
     it('leaves the web carrier entry null while its context is not running', () => {
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, state: 'closed', isReady: false });
-        engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, events: [] });
+        engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, nativeEngineObserved: true, events: [] });
 
         const workload = collectAudioDeadlineEvidence().workload;
 
@@ -295,12 +333,12 @@ describe('collectAudioDeadlineEvidence', () => {
     });
 
     it('keeps naming the native carrier on a reading taken after rendering stopped', () => {
-        // The fault count beside it was taken against this engine, so the entry
-        // that names the rate it was counted at has to survive the stream
-        // stopping.
+        // A stream that stopped rendering still has its handle and the rate it
+        // negotiated, so the engine is open and there is a carrier to name.
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, sampleRate: 44_100 });
         engineRtDiagnosticsStore.set({
             latest: { ...runningNativeDiagnostics, running: false, sampleRate: 44_100, outputBufferFrames: 512 },
+            nativeEngineObserved: true,
             events: [{ type: 'streamError', side: 'output', kind: 'deviceNotAvailable' }],
         });
 
@@ -311,7 +349,11 @@ describe('collectAudioDeadlineEvidence', () => {
     });
 
     it('leaves the native carrier entry null when no native engine reading is on record', () => {
-        engineRtDiagnosticsStore.set({ latest: notRunningEngineRtDiagnostics, events: [] });
+        engineRtDiagnosticsStore.set({
+            latest: notRunningEngineRtDiagnostics,
+            nativeEngineObserved: false,
+            events: [],
+        });
 
         expect(collectAudioDeadlineEvidence().workload.nativeEngine).toBeNull();
 

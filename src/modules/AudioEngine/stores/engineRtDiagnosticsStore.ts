@@ -13,6 +13,18 @@ export type EngineRtDiagnosticsState = {
     /** Null until the first refresh — no reading is not the same as all zeros. */
     latest: EngineRtDiagnostics | null;
     /**
+     * Whether a reading taken from a native engine that exists has been
+     * published at any point this session.
+     *
+     * Sticky: it never returns to false once set. The events below outlive the
+     * engine that reported them, while an engine that stops rendering is
+     * retired and its handle dropped, so every reading after that carries the
+     * no-engine shape. A reader that asked `latest` whether an engine exists
+     * would discard a recorded fault at the moment that fault retired the
+     * engine which reported it.
+     */
+    nativeEngineObserved: boolean;
+    /**
      * Every event observed so far, oldest first.
      *
      * Accumulated rather than replaced: the native command drains its ring, so
@@ -24,6 +36,7 @@ export type EngineRtDiagnosticsState = {
 
 export const defaultEngineRtDiagnosticsState: EngineRtDiagnosticsState = {
     latest: null,
+    nativeEngineObserved: false,
     events: [],
 };
 

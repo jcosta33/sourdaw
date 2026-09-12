@@ -2,6 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { dropoutCounters } from '../engine/dropoutCounter';
+import { isExistingEngineReading } from '../models/EngineRtDiagnostics';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../services/mainThreadLongTaskLatch';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../stores/engineRtDiagnosticsStore';
 
@@ -12,7 +13,6 @@ import type {
     AudioDeadlineWorkload,
     DeadlineCategoryReading,
 } from '../models/AudioDeadlineEvidence';
-import type { EngineRtDiagnostics } from '../models/EngineRtDiagnostics';
 
 /**
  * No external loopback signal is captured anywhere in the product. The desktop
@@ -45,36 +45,28 @@ function readEngineUnderruns(): DeadlineCategoryReading {
 }
 
 /**
- * Whether a reading came from a native engine that exists.
+ * Count the stream faults a native engine has reported this session.
  *
- * `sampleRate` is the discriminator, not `running`. The rate is taken from the
- * output stream's negotiated format when the engine handle is built and is
- * never rewritten afterwards, while the shape reported with no handle at all —
- * the native command's default payload, and what the browser build reports —
- * carries zero in it along with every other reading.
- */
-function isExistingEngineReading(latest: EngineRtDiagnostics | null): latest is EngineRtDiagnostics {
-    return latest !== null && latest.sampleRate > 0;
-}
-
-/**
- * Count the stream faults an existing native engine has reported, whether or
- * not it is still rendering.
+ * Coverage is the store's standing record of having read a native engine, not
+ * the shape of its latest reading. The faults counted here describe a stream
+ * that stopped, and an engine that has stopped rendering is retired with its
+ * handle dropped, so the readings taken from then on carry the no-engine shape
+ * while the fault that caused it still stands in the history. Deciding coverage
+ * from the latest reading would report none at exactly the moment the count
+ * holds the fault worth reporting.
  *
- * Liveness is not the condition. The watchdog clears `running` once the output
- * stream stops, and a stream stopping is exactly what the faults being counted
- * describe: the backend's error callback records one as it happens, the store
- * accumulates it, and the poll that drains the engine's events keeps reading it
- * either way. Gating on `running` would discard the fault at the moment it
- * occurs, which is the only moment it matters.
+ * The count is cumulative for the session and can span engine generations: the
+ * history survives one engine being retired and the next one opening, so a
+ * fault counted here need not belong to the engine `workload.nativeEngine`
+ * names.
  */
 function readNativeStreamFaults(): DeadlineCategoryReading {
     const diagnostics = engineRtDiagnosticsStore.value ?? defaultEngineRtDiagnosticsState;
 
-    if (!isExistingEngineReading(diagnostics.latest)) {
+    if (!diagnostics.nativeEngineObserved) {
         return {
             coverage: 'unavailable',
-            reason: 'no reading from a native engine is on record, so there are no native stream faults to count',
+            reason: 'no reading from a native engine has been recorded this session, so there are no native stream faults to count',
         };
     }
 
@@ -108,14 +100,15 @@ function readWebEngine(): AudioDeadlineWorkload['webEngine'] {
 }
 
 /**
- * The rate the native output stream actually opened at and the frames its most
- * recent callback asked for — both figures `nativeStreamFaults` was counted
- * against, and neither one describing the web carrier beside it.
+ * The rate the native output stream currently open actually opened at, and the
+ * frames its most recent callback asked for — neither figure describing the web
+ * carrier beside it.
  *
- * Present for any reading from an engine that exists, on the same condition
- * `nativeStreamFaults` uses rather than on liveness: an entry that went null
- * once the stream stopped would leave the fault count with no carrier named
- * precisely when that count holds the fault which stopped it.
+ * Names the native engine that exists now, and is null once none does. It
+ * survives the stream ceasing to render, because the handle and its negotiated
+ * rate outlive that, but not the engine being retired. It is therefore not a
+ * carrier for `nativeStreamFaults`, whose count is cumulative for the session
+ * and can hold faults an earlier engine reported at another rate.
  *
  * The frames slot is written only from inside the render callback, so it holds
  * zero on a stream that has opened but never rendered. That zero is a figure
@@ -154,9 +147,11 @@ function readTransport(): AudioDeadlineWorkload['transport'] {
  * written. A category whose observer this platform does not have comes back
  * `unavailable` with the reason, never as a count of zero.
  *
- * The workload entries pair each count with the carrier that produced it:
- * `engineUnderruns` belongs to `webEngine`, `nativeStreamFaults` belongs to
- * `nativeEngine`.
+ * `engineUnderruns` belongs to the `webEngine` entry beside it: the counter is
+ * fed by the worklets that context hosts, and closing it ends the coverage.
+ * `nativeStreamFaults` has no such carrier. Its count is cumulative for the
+ * session and can span native engine generations, so `nativeEngine` names the
+ * native engine open now rather than the one each fault was counted against.
  */
 export function collectAudioDeadlineEvidence(): AudioDeadlineEvidence {
     return {

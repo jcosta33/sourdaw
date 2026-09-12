@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type EngineRtDiagnostics, isExistingEngineReading } from '../../models/EngineRtDiagnostics';
 import { getEngineRtDiagnostics } from '../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import {
     clearEngineDiagnosticsReadFailure,
@@ -10,8 +11,6 @@ import {
     ENGINE_EVENT_HISTORY_LIMIT,
     engineRtDiagnosticsStore,
 } from '../../stores/engineRtDiagnosticsStore';
-
-import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
 
 /**
  * Read the native engine's real-time diagnostics and publish them.
@@ -31,6 +30,11 @@ import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
  * not-running shape for it would erase the last real reading and the event
  * history with it. A failure is logged once per distinct cause — the poll runs
  * every second, so reporting each one would bury the log.
+ *
+ * A reading taken from an engine that exists also records that fact on the
+ * store, and nothing here clears it. The events accumulated above outlive the
+ * engine that reported them, so the record of having read one has to outlive it
+ * too.
  */
 export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics | null> {
     let diagnostics: EngineRtDiagnostics;
@@ -56,6 +60,7 @@ export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics 
 
         return {
             latest: diagnostics,
+            nativeEngineObserved: current.nativeEngineObserved || isExistingEngineReading(diagnostics),
             events: events.slice(Math.max(0, events.length - ENGINE_EVENT_HISTORY_LIMIT)),
         };
     });
