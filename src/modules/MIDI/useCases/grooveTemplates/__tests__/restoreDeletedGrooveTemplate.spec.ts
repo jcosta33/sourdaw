@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBuiltinGrooveTemplates } from '#/modules/MIDI/models/BuiltinGrooveTemplates';
-import { type GrooveTemplate, type GrooveTemplateProvenance } from '#/modules/MIDI/models/GrooveTemplate';
 
 const { mockStore, mockMarkWrite, mockResolveName } = vi.hoisted(() => ({
     mockStore: {
@@ -44,6 +43,8 @@ vi.mock('../resolveGrooveTemplateName', () => ({ resolveGrooveTemplateName: mock
 
 import { type DeletedGrooveTemplateSnapshot } from '../deleteGrooveTemplate';
 import { restoreDeletedGrooveTemplate } from '../restoreDeletedGrooveTemplate';
+
+import type { GrooveTemplate, GrooveTemplateProvenance } from '../../../models/GrooveTemplate';
 
 const validTemplate: GrooveTemplate = {
     id: 'groove-custom-1',

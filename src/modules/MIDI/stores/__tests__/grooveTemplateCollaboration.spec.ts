@@ -8,13 +8,14 @@ import {
     getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { createBuiltinGrooveTemplates } from '../../models/BuiltinGrooveTemplates';
-import { type GrooveTemplate } from '../../models/GrooveTemplate';
+import { isGrooveTemplate, type GrooveTemplate } from '../../models/GrooveTemplate';
 import { createGrooveTemplateAutomergeStorage } from '../grooveTemplateAutomergeStorage';
 import { type GrooveTemplateState } from '../grooveTemplateStore';
 
-type RootDocument = { grooveTemplates?: unknown };
+type RootDocument = Record<string, unknown> & { grooveTemplates?: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 // Automerge orders root conflicts by op id (`counter@actorId`), and the storage
@@ -51,7 +52,7 @@ function createPeer(initialDoc: Doc<RootDocument>): {
             getSemanticMessage: () => undefined,
             hasDoc: (docId) => docId === 'root',
             mutateDoc: ({ changeFn }) => {
-                doc = change(doc, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+                doc = change(doc, (draft) => changeFn(draft));
             },
         },
     };
@@ -122,7 +123,7 @@ describe('groove template collaboration storage', () => {
                 hasDoc: (docId) => docId === 'root',
                 mutateDoc: ({ changeFn }) => {
                     mutationOwners.push(getCurrentAutomergeStorageMutationOwner());
-                    doc = change(doc, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+                    doc = change(doc, (draft) => changeFn(draft));
                     const listener = afterPublication;
                     afterPublication = undefined;
                     listener?.();
@@ -136,10 +137,20 @@ describe('groove template collaboration storage', () => {
             });
             afterPublication = () => {
                 doc = change(doc, (draft) => {
-                    const rawState = draft.grooveTemplates as {
-                        templates: Record<string, { deleted: boolean; value: GrooveTemplate }>;
-                    };
-                    rawState.templates[templateId]!.value.name = 'Remote';
+                    const rawState = draft.grooveTemplates;
+                    if (
+                        !isRecord(rawState) ||
+                        rawState.schemaVersion !== 1 ||
+                        !isRecord(rawState.templates) ||
+                        !isRecord(rawState.assignments)
+                    ) {
+                        throw new Error('Expected valid groove template CRDT state');
+                    }
+                    const entity = rawState.templates[templateId];
+                    if (!isRecord(entity) || entity.deleted !== false || !isGrooveTemplate(entity.value)) {
+                        throw new Error(`Expected live groove template entity: ${templateId}`);
+                    }
+                    entity.value.name = 'Remote';
                 });
                 expect(storage.hydrate?.()).toBe(true);
                 if (nestedFlush) {
