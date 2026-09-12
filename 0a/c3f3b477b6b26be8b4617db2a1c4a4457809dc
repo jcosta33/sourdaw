@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_1228e573df1f42 288-300,304-307,309
+src/modules/AudioEngine/repositories/devices/reverbDelay/reverbImpulse.ts
+  h_1228e573df1f42 51-59,169-175
+src/modules/AiGeneration/useCases/__tests__/generateMidiVariationsProjection.integration.spec.ts
+  h_1228e573df1f42 126,132
+  h_1228e573df1f42 26
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  h_1228e573df1f42 905-949
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  h_1228e573df1f42 233-245
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/reverbImpulse.spec.ts
+  h_1228e573df1f42 234-267
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidiContinuation.integration.spec.ts
+  h_1228e573df1f42 162,168
+  h_1228e573df1f42 28
+src/modules/AudioEngine/engine/AdjustmentBusNode.ts
+  h_1228e573df1f42 51-55
+src/modules/Grinder/models/__tests__/GrinderProjectParameterMap.spec.ts
+  h_1228e573df1f42 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0ac3f3b477b6b26be8b4617db2a1c4a4457809dc",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
