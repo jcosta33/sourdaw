@@ -1,0 +1,16 @@
+src/modules/BrowserAi/workers/__tests__/onnxInferenceWorker.spec.ts
+  h_1228e573df1f42 172-526
+src/modules/BrowserAi/workers/onnxInferenceWorker.ts
+  h_1228e573df1f42 58-64,70-71,159-209,216-257,259-261,263,265,582-590,592-593,595,606-607,613-614,617,628-629,679-683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e7474fba9bfc60a84fccb1373c59083ed0c130d0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
