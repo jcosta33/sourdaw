@@ -1,0 +1,19 @@
+src/modules/BrowserAi/workers/__tests__/onnxInferenceWorker.spec.ts
+  s_6c14aac49a2357::t_c36d35c19bbd2f 646-651,662,665,669-670
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c140b48e3794dba011f48b3549f5a8e6ada5e9dd",
+  "prompts": {},
+  "sessions": {
+    "s_6c14aac49a2357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0970b-c959-7251-b6d5-26dbde0f21f6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
