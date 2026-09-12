@@ -330,17 +330,24 @@ function totalNodeCreationCalls(mockCtx: MockAudioContext, workletNodeCallCount:
     );
 }
 
-/** Connect calls on the master-tap nodes the harness exposes: the master gain
- *  and the three analysers. The constructor also wires a stereo splitter and a
- *  tap sink, which stay private to the engine, so this sum is bounded to those
- *  four nodes rather than every master-tap node. */
-function totalMasterNodeConnectCalls(engine: AudioEngineTopologyTestHarness): number {
-    return (
-        (engine.masterGainNode.connect as unknown as Mock).mock.calls.length +
-        (engine.masterAnalyser.connect as unknown as Mock).mock.calls.length +
-        (engine.masterAnalyserLeft.connect as unknown as Mock).mock.calls.length +
-        (engine.masterAnalyserRight.connect as unknown as Mock).mock.calls.length
-    );
+/** Connect calls summed across every node any factory in
+ *  `CONTEXT_NODE_FACTORY_NAMES` has produced on this mock context, read from
+ *  each factory's `mock.results` rather than a fixed set of nodes a test
+ *  happens to hold a reference to. The master gain and its three analysers
+ *  are themselves products of `createGain`/`createAnalyser`, so this census
+ *  already counts them; nothing sums them a second time. It does not cover a
+ *  worklet device's own outgoing connects: a worklet node comes from
+ *  `new AudioWorkletNode(...)`, never a context factory, so it never appears
+ *  in a factory's `mock.results` — the `AudioWorkletNode` construction spy
+ *  above covers that route instead. */
+function totalConnectCallsAcrossMockContextNodes(mockCtx: MockAudioContext): number {
+    return CONTEXT_NODE_FACTORY_NAMES.reduce((total, name) => {
+        const factory = mockCtx[name] as unknown as Mock<(...args: unknown[]) => { connect: Mock }>;
+        const returnedNodes = factory.mock.results
+            .filter((result): result is { type: 'return'; value: { connect: Mock } } => result.type === 'return')
+            .map((result) => result.value);
+        return total + returnedNodes.reduce((sum, node) => sum + node.connect.mock.calls.length, 0);
+    }, 0);
 }
 
 const INVALID_DELTA_INPUT = { schemaVersion: 1, command: 'not-a-real-command' };
@@ -381,7 +388,10 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         const { engine, mockCtx } = createHarness();
         const revisionBefore = engine.getRuntimeGraphRevision();
         const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
-        const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
+        const connectCallsBefore = totalConnectCallsAcrossMockContextNodes(mockCtx);
+        // Vacuity guard: a census that saw nothing would pass the unchanged
+        // assertion below no matter what the rejected input did.
+        expect(connectCallsBefore).toBeGreaterThan(0);
 
         const result = engine.applyRuntimeGraphDelta(INVALID_DELTA_INPUT);
 
@@ -394,14 +404,17 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         // that the graph was untouched — both halves are required.
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
         expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
-        expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
+        expect(totalConnectCallsAcrossMockContextNodes(mockCtx)).toBe(connectCallsBefore);
     });
 
     it('leaves the live graph unchanged when initializeTrackStripFromSnapshot rejects an invalid snapshot', () => {
         const { engine, mockCtx } = createHarness();
         const revisionBefore = engine.getRuntimeGraphRevision();
         const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
-        const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
+        const connectCallsBefore = totalConnectCallsAcrossMockContextNodes(mockCtx);
+        // Vacuity guard: a census that saw nothing would pass the unchanged
+        // assertion below no matter what the rejected input did.
+        expect(connectCallsBefore).toBeGreaterThan(0);
 
         const result = engine.initializeTrackStripFromSnapshot(INVALID_DELTA_INPUT);
 
@@ -412,7 +425,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         });
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
         expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
-        expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
+        expect(totalConnectCallsAcrossMockContextNodes(mockCtx)).toBe(connectCallsBefore);
     });
 });
 
