@@ -280,6 +280,45 @@ describe('crossfadeClips', () => {
         expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
     });
 
+    it('clamps MIDI clip B extension to available pre-roll handle when handle is smaller than halfDuration', () => {
+        const clips = [
+            makeClip('a', 0, 4, { type: 'midi' }),
+            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0.1 }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        // Pre-roll handle is 0.1 beats -> clipB start clamps to 3.9, midiOffsetBeats clamps to 0.0
+        // clipA ends at 4.5 -> actualOverlap is 4.5 - 3.9 = 0.6
+        expect(clipB?.startBeat).toBeCloseTo(3.9);
+        expect(clipB?.fadeInBeats).toBeCloseTo(0.6);
+        expect(clipB?.midiOffsetBeats).toBeCloseTo(0);
+        expect(clipA?.endBeat).toBeCloseTo(4.5);
+        expect(clipA?.fadeOutBeats).toBeCloseTo(0.6);
+    });
+
+    it('clamps MIDI clip B start at its original start when midiOffsetBeats is 0 (zero pre-roll handle)', () => {
+        const clips = [
+            makeClip('a', 0, 4, { type: 'midi' }),
+            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0 }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        // Cannot extend earlier than 4 -> startBeat remains 4, midiOffsetBeats remains 0
+        // clipA ends at 4.5 -> actualOverlap is 4.5 - 4.0 = 0.5
+        expect(clipB).toMatchObject({ startBeat: 4, fadeInBeats: 0.5, midiOffsetBeats: 0 });
+        expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+    });
+
     it('clamps clip B start at beat zero when source offset allows extending past 0', () => {
         const clips = [makeClip('a', 0, 0.25), makeClip('b', 0.25, 4, { audioOffsetBeats: 1 })];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });

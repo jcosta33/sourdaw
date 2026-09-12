@@ -126,6 +126,41 @@ describe('handleRestoreCrossfadeClips — execute', () => {
             replacement: { ...matchingExpected, clipBAudioOffsetBeats: 1.5 },
         });
     });
+
+    it('returns conflict when expected clipBMidiOffsetBeats does not match current clip midiOffsetBeats', () => {
+        setClips([makeClip('a'), makeClip('b', { midiOffsetBeats: 2 })]);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'a',
+                clipBId: 'b',
+                expected: { ...matchingExpected, clipBMidiOffsetBeats: 1.5 },
+                replacement: matchingExpected,
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it('writes when expected matches current clip state including clipBMidiOffsetBeats', () => {
+        setClips([makeClip('a'), makeClip('b', { midiOffsetBeats: 2 })]);
+        mockedRestore.mockReturnValue(true);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'a',
+                clipBId: 'b',
+                expected: { ...matchingExpected, clipBMidiOffsetBeats: 2 },
+                replacement: { ...matchingExpected, clipBMidiOffsetBeats: 1.5 },
+            },
+        });
+        expect(result).toEqual({ status: 'written' });
+        expect(mockedRestore).toHaveBeenCalledWith({
+            clipAId: 'a',
+            clipBId: 'b',
+            replacement: { ...matchingExpected, clipBMidiOffsetBeats: 1.5 },
+        });
+    });
 });
 
 describe('handleRestoreCrossfadeClips — isNoop', () => {
@@ -184,6 +219,36 @@ describe('handleRestoreCrossfadeClips — isNoop', () => {
                     clipBId: 'b',
                     expected: { ...matchingExpected, clipBAudioOffsetBeats: 2 },
                     replacement: { ...matchingExpected, clipBAudioOffsetBeats: 1.5 },
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('returns true when replacement matches current state including midiOffsetBeats', () => {
+        setClips([makeClip('a'), makeClip('b', { midiOffsetBeats: 2 })]);
+        expect(
+            handleRestoreCrossfadeClips.isNoop!({
+                type: 'restoreCrossfadeClips',
+                payload: {
+                    clipAId: 'a',
+                    clipBId: 'b',
+                    expected: { ...matchingExpected, clipBMidiOffsetBeats: 2 },
+                    replacement: { ...matchingExpected, clipBMidiOffsetBeats: 2 },
+                },
+            })
+        ).toBe(true);
+    });
+
+    it('returns false when replacement differs from current state only in midiOffsetBeats', () => {
+        setClips([makeClip('a'), makeClip('b', { midiOffsetBeats: 2 })]);
+        expect(
+            handleRestoreCrossfadeClips.isNoop!({
+                type: 'restoreCrossfadeClips',
+                payload: {
+                    clipAId: 'a',
+                    clipBId: 'b',
+                    expected: { ...matchingExpected, clipBMidiOffsetBeats: 2 },
+                    replacement: { ...matchingExpected, clipBMidiOffsetBeats: 1.5 },
                 },
             })
         ).toBe(false);

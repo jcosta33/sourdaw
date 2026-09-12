@@ -241,6 +241,78 @@ describe('handleCrossfadeClips', () => {
         });
     });
 
+    it('describes compensating undo and redo snapshots with clipBMidiOffsetBeats when clip B has midi offset', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            type: 'midi',
+                            midiOffsetBeats: 2,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBMidiOffsetBeats: 1.5,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBMidiOffsetBeats: 2,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBMidiOffsetBeats: 2,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBMidiOffsetBeats: 1.5,
+                },
+            },
+        });
+    });
+
     it('restores audioOffsetBeats on clip B when executing compensation', () => {
         const trackState = {
             tracks: [
