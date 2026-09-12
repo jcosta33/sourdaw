@@ -539,6 +539,50 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(resetMetronomeBeat)).toHaveBeenCalledWith(expect.closeTo(0.1, 5));
     });
 
+    it('plays straight through without wrapping when starting playback at or past loopEnd (#4117)', async () => {
+        transportStoreState.value = playingState({
+            playheadPosition: 4.5,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Advance linearly past 4.5 by 0.2 beats to 4.7, NOT wrapping to 0.7.
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(4.7, 5);
+        expect(vi.mocked(panicYeastRuntime)).not.toHaveBeenCalled();
+        expect(audioEngineMocks.stopAllScheduled).not.toHaveBeenCalled();
+    });
+
+    it('plays straight through without wrapping when starting playback exactly at loopEnd (#4117)', async () => {
+        transportStoreState.value = playingState({
+            playheadPosition: 4.0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Advance linearly from 4.0 by 0.2 beats to 4.2, NOT wrapping to 0.2.
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(4.2, 5);
+        expect(vi.mocked(panicYeastRuntime)).not.toHaveBeenCalled();
+        expect(audioEngineMocks.stopAllScheduled).not.toHaveBeenCalled();
+    });
+
     it('opens a take lane and adds a take referencing the recording clip for each armed track on a loop wrap while recording', async () => {
         trackStoreState.value = {
             tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] }],
