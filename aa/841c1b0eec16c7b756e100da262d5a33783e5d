@@ -1,0 +1,45 @@
+crates/scoring/src/lib.rs
+  s_87ab0a2f60ccf8::t_71c2e3935d6bc7 1318-1349
+crates/scoring/src/poly.rs
+  s_87ab0a2f60ccf8::t_8f54a4ddea6db3 139-141
+crates/scoring/src/yin.rs
+  s_87ab0a2f60ccf8::t_dd2a63a97bfc2a 147-157,163-164,203-208
+public/wasm/manifest.json
+  s_87ab0a2f60ccf8::t_9b52346afee1d6 40,44-46,49
+public/wasm/scoring/scoring.d.ts
+  s_87ab0a2f60ccf8::t_4da70b4aa80709 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_87ab0a2f60ccf8::t_60f776f13c95c6 1
+release/open-source-inventory.json
+  s_837563b2c921d3::t_a6e6615008a08a 1338,1341,1722
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_87ab0a2f60ccf8::t_0be7fadae74cc5 1
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_87ab0a2f60ccf8::t_fbced9443d4c85 542-585
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_87ab0a2f60ccf8::t_536d8769d1c094 261-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aa841c1b0eec16c7b756e100da262d5a33783e5d",
+  "prompts": {},
+  "sessions": {
+    "s_837563b2c921d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0954c-854d-7882-9e43-601f8adb9f7c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
