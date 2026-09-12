@@ -1,0 +1,200 @@
+.agents/skills/review-stances/code-craft.md
+  h_1228e573df1f42 1-32
+.agents/skills/ui-patterns/SKILL.md
+  h_1228e573df1f42 38
+.github/workflows/nightly.yml
+  h_1228e573df1f42 509,515-522,535-545
+.oxlintrc.json
+  h_1228e573df1f42 10-14,49-52,276-284
+Cargo.lock
+  h_1228e573df1f42 631
+crates/daw-engine/Cargo.toml
+  h_1228e573df1f42 28-33
+crates/daw-engine/src/scheduler.rs
+  h_1228e573df1f42 39-40,304,324,344,380-382,409,1056,1095,1272-1318,1335,1398,2345-2377,3825-4034,4097-4100,7363-7368,8423,8438-8439,22644-23158
+crates/sourdaw-native/src/commands/engine_transport.rs
+  h_1228e573df1f42 44,170-221,236,252,256-270,470-473,479,600-613,623-625,630-679,723-730,752-759,784-791
+crates/sourdaw-native/src/commands/graph.rs
+  h_1228e573df1f42 157,170,938-947,1090-1109,1980-1981,2075-2079,2084,2128,2273-2282,2341-2344,2386,2758,2866,3061,5515,5533,5577,5930,8119,8214,8311,8403,9093,10842,10850,11574-11651
+docs/06-testing.md
+  h_1228e573df1f42 12
+docs/07-conventions.md
+  h_1228e573df1f42 64-82
+eslint.config.mjs
+  h_1228e573df1f42 2362-2364
+oxlint.craft-baseline.d.mts
+  h_1228e573df1f42 1-14
+oxlint.craft-baseline.mjs
+  h_1228e573df1f42 1-1345
+package.json
+  h_1228e573df1f42 62
+public/legal/DEPENDENCY-LICENSES.txt
+  h_1228e573df1f42 9
+release/dependency-license-proofs.json
+  h_1228e573df1f42 4,28,64
+release/open-source-inventory.json
+  h_1228e573df1f42 64-65,167-168,401,1694,1714
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_1228e573df1f42 1495,1502-1506,1514-1523
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_1228e573df1f42 391-407
+scripts/__tests__/proveDesktopAgentWorkspace.spec.ts
+  h_1228e573df1f42 1-167
+scripts/desktopAgentWorkspaceDrive.ts
+  h_1228e573df1f42 1-376
+scripts/desktopLatencyConnect.ts
+  h_1228e573df1f42 2-4,7-10,13,15,54,120-122,124,580,619-626,629-638
+scripts/desktopLatencyProcess.ts
+  h_1228e573df1f42 2-4,6-9,12,14,16-21,24-29,38,40-41,43,47
+scripts/healthGateWorkflowContract.ts
+  h_1228e573df1f42 338,340
+scripts/loopbackOpenAiProvider.ts
+  h_1228e573df1f42 1-149
+scripts/oxlintCraft/__tests__/craftBaseline.spec.ts
+  h_1228e573df1f42 1-42
+scripts/oxlintCraft/__tests__/plugin.spec.ts
+  h_1228e573df1f42 1-179
+scripts/oxlintCraft/plugin.d.mts
+  h_1228e573df1f42 1-28
+scripts/oxlintCraft/plugin.mjs
+  h_1228e573df1f42 1-370
+scripts/oxlintCraft/scan.oxlintrc.json
+  h_1228e573df1f42 1-22
+scripts/packagedAppSession.ts
+  h_1228e573df1f42 1-449
+scripts/proveDesktopAgentWorkspace.ts
+  h_1228e573df1f42 1-280
+scripts/test-health-gate-scripts.sh
+  h_1228e573df1f42 1493-1503
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 1,74-91,119-120,202-203,351,595,1069-1129
+src/app/bootstrap.ts
+  h_1228e573df1f42 57,510-529
+src/components/AGENTS.md
+  h_1228e573df1f42 16-18
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  h_1228e573df1f42 431
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  h_1228e573df1f42 126-154,223-249,694-707
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_1228e573df1f42 2331-2337,2355-2358
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  h_1228e573df1f42 278-281
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  h_1228e573df1f42 3,331-334
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  h_1228e573df1f42 4,184
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  h_1228e573df1f42 428-436,439-447
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_1228e573df1f42 175-184
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  h_1228e573df1f42 671-674,676-679,685-702
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_1228e573df1f42 843-879
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  h_1228e573df1f42 99-104,506-526
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  h_1228e573df1f42 13,120
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  h_1228e573df1f42 67-78,80-91,213
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  h_1228e573df1f42 73-85,88-106,120
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  h_1228e573df1f42 1-2,130
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  h_1228e573df1f42 21,59-62,250,422-435
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  h_1228e573df1f42 29-39,78,100-210
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  h_1228e573df1f42 3-7,34-96,115
+src/modules/AudioEngine/useCases/index.ts
+  h_1228e573df1f42 124-125
+src/modules/AudioEngine/useCases/livePlayback/__tests__/isTunerTelemetryNativelyOwned.spec.ts
+  h_1228e573df1f42 1-61
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_1228e573df1f42 101-167,193,220-222,245,264-266,1054-1114
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  h_1228e573df1f42 1,5,23-24,50,53-75,90-97,366-442
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  h_1228e573df1f42 678
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  h_1228e573df1f42 360
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  h_1228e573df1f42 180
+src/modules/AudioEngine/useCases/livePlayback/__tests__/publishNativeTunerTelemetry.spec.ts
+  h_1228e573df1f42 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineMasterPeak.spec.ts
+  h_1228e573df1f42 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineStripPeak.spec.ts
+  h_1228e573df1f42 20
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  h_1228e573df1f42 339-357
+src/modules/AudioEngine/useCases/livePlayback/isTunerTelemetryNativelyOwned.ts
+  h_1228e573df1f42 1-30
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_1228e573df1f42 294-318,666-699
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  h_1228e573df1f42 63,156-162
+src/modules/AudioEngine/useCases/livePlayback/publishNativeTunerTelemetry.ts
+  h_1228e573df1f42 1-69
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 397,854,1454,1513
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  h_1228e573df1f42 4,14,79-98
+src/modules/Command/useCases/__tests__/executableAppActionEffects.spec.ts
+  h_1228e573df1f42 31-32,104-107,109-114,116-125
+src/modules/Command/useCases/__tests__/getVersionedCommandBatchEffects.spec.ts
+  h_1228e573df1f42 83-113
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  h_1228e573df1f42 17-71
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  h_1228e573df1f42 45-48,50-53
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  h_1228e573df1f42 149
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_1228e573df1f42 270
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  h_1228e573df1f42 206-213
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_1228e573df1f42 965-970
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  h_1228e573df1f42 424-429
+src/modules/Levain/useCases/__tests__/getLevainEngineParameterName.spec.ts
+  h_1228e573df1f42 37-39
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  h_1228e573df1f42 3,388-425
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_1228e573df1f42 8-21,414-471
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  h_1228e573df1f42 85
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  h_1228e573df1f42 309-317,353-362
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 854,894,926
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  h_1228e573df1f42 682-720
+src/utils/__tests__/devicePatchPrecedence.spec.ts
+  h_1228e573df1f42 3,5-8,12-21,23,25-40,44-49,51,55-62,66-71,73-109
+src/utils/devicePatchPrecedence.ts
+  h_1228e573df1f42 1-2,4,6-11,13,17-35,39-42,44,46-47,49-50,55-56,58-62,65-66
+tests/e2e/admitLoopbackProvider.ts
+  h_1228e573df1f42 1-51
+tests/e2e/agentWorkspace.spec.ts
+  h_1228e573df1f42 1-235
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  h_1228e573df1f42 3
+tests/e2e/loopbackOpenAiProvider.ts
+  h_1228e573df1f42 2-6,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "53b81f8f6715dc7e6ac5da08f278694f90a03ff0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
