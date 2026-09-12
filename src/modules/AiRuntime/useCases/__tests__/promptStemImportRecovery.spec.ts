@@ -145,6 +145,7 @@ vi.mock('#/modules/Command/useCases', async () => {
 });
 // discardPreparedStemImportResources imports releasePreviewAudioBuffer.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     analyzePitchForClip: vi.fn(),

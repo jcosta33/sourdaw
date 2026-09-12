@@ -37,7 +37,48 @@ pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worke
 /// bounded — this decides how long a scan waits before saying so, not whether
 /// it ever does.
 pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+/// The largest response a leaf worker may write and the supervisor will read.
+///
+/// Sized from measurement, and the measurement is enforced rather than trusted:
+/// `the_response_limit_admits_the_stated_worst_case_parameter_list` serializes
+/// a parameter list at [`MAX_RESPONSE_PARAMETERS`], every descriptor maximal (a
+/// 128-byte name beside a 128-byte module — the scanner's own text caps — plus
+/// a full-width id, three full-width floats and four booleans), and fails the
+/// moment the compact JSON outgrows this bound or loses its headroom.
+///
+/// The former 256 KiB cap was sized for the CLAP world, where the scanner
+/// bounds its own parameter walks (at most 256 descriptors carrying at most
+/// 32 KiB of name text), so no instance response could come near it. VST3's
+/// parameter walk is bounded by nothing but the plugin's own parameter count,
+/// and a large instrument answers in full — so the old cap refused the whole
+/// response, the helper exited 3, and the plugin's registry row was stored as
+/// if it had never answered (#3866).
+///
+/// The supervisor's read is `take(MAX_RESPONSE_BYTES + 1)`, so its buffering
+/// is this constant and nothing more. The worker child collects the parameter
+/// list before any serialization; that cost is the scanner's shape, unchanged
+/// by this bound.
+const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The parameter-count policy behind [`MAX_RESPONSE_BYTES`], stated here
+/// because the scanner does not bound the count for every format: 16,384
+/// descriptors is beyond any known instrument, including modular-scale hosts
+/// that expose thousands. At the enforced measurement
+/// (`the_response_limit_admits_the_stated_worst_case_parameter_list`) that
+/// list serializes to 7,542,027 bytes compact, and the byte cap is the
+/// smallest power of two that keeps at least twofold headroom above it.
+const MAX_RESPONSE_PARAMETERS: usize = 16_384;
+
+/// The refusal for a response whose compact serialization measures past
+/// [`MAX_RESPONSE_BYTES`]. Both sides of the process boundary use it: the leaf
+/// refuses to write such a response, and the supervisor refuses to read one.
+fn oversized_response_error(bytes: usize) -> String {
+    format!("{HELPER_RESPONSE_OVER_LIMIT_PREFIX}{bytes} bytes exceeded the scan helper's {MAX_RESPONSE_BYTES}-byte limit")
+}
+
+/// The prefix of [`oversized_response_error`], so a refusal can be recognized
+/// as the helper's limit without restating the sentence.
+const HELPER_RESPONSE_OVER_LIMIT_PREFIX: &str = "Plugin scan helper response of ";
 
 /// The refusal `scan_worker` returns when the helper child exited with a
 /// non-zero status, minus the path it is formatted with. See
@@ -363,7 +404,7 @@ fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Re
     let bytes = serde_json::to_vec(response)
         .map_err(|error| format!("Cannot serialize plugin scan response: {error}"))?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err("Plugin scan response exceeded its byte limit".to_string());
+        return Err(oversized_response_error(bytes.len()));
     }
     let mut file = OpenOptions::new()
         .write(true)
@@ -411,12 +452,63 @@ pub fn scan_instance_metadata(
 /// `is_process_failure` does recognize.
 fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
     if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
-        return format!(
-            "Plugin scan helper could not write its response for {}",
-            path.display()
-        );
+        return response_write_refusal_error(path);
     }
     format!("{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}", path.display())
+}
+
+/// The supervisor-side refusal for a helper that self-reported a response-write
+/// refusal, naming the helper's own limit.
+///
+/// The message states what happened (the helper could not write) and the one
+/// helper fact every exit-3 cause shares (its response limit). It deliberately
+/// does not claim which cause fired: an oversize refusal and a broken
+/// environment share the exit code, and the child has no channel that could
+/// carry the distinction — stderr is null, and a refusal sidecar would carry
+/// text from the same process the plugin's own code ran in toward strings the
+/// registry publishes, which the reason contract forbids. The measured size
+/// therefore appears only where it is observable, in
+/// [`oversized_response_error`]'s read-side refusal.
+///
+/// `pub` so the reason-shaping side (`commands::plugins`) and the tests can
+/// build the exact string the supervisor produces, the same way
+/// [`is_process_failure`] is `pub` for its callers.
+pub fn response_write_refusal_error(path: &Path) -> String {
+    format!(
+        "{HELPER_RESPONSE_WRITE_REFUSAL_PREFIX}{}; the scan helper's response limit is {MAX_RESPONSE_BYTES} bytes",
+        path.display()
+    )
+}
+
+/// The prefix of [`response_write_refusal_error`].
+const HELPER_RESPONSE_WRITE_REFUSAL_PREFIX: &str =
+    "Plugin scan helper could not write its response for ";
+
+/// Whether a scan refusal is the helper's own response limit rather than
+/// anything the plugin did — an oversized response, or any other failure to
+/// write one.
+///
+/// [`is_process_failure`]'s mirror: the `String` error contract is baked into
+/// [`scan_worker`]'s signature, so classification reads the message, and the
+/// prefixes it matches are the ones this file itself generates.
+pub fn is_response_limit_refusal(error: &str) -> bool {
+    error.starts_with(HELPER_RESPONSE_WRITE_REFUSAL_PREFIX)
+        || error.starts_with(HELPER_RESPONSE_OVER_LIMIT_PREFIX)
+}
+
+/// The registry-facing reason for a response-write refusal.
+///
+/// The plugin answered — the instance was created and inspected successfully,
+/// and the helper failed only when writing the answer down — so the generic
+/// "could not safely complete inspection" reason would blame the plugin for
+/// silence that was the helper's. This says which one it was, with the limit
+/// as a number and nothing else: it is published through
+/// `parameter_metadata_reason`, whose contract is a safe scanner disposition,
+/// never a plugin-originated diagnostic payload.
+pub fn response_limit_metadata_reason() -> String {
+    format!(
+        "The plugin answered the scan, but the scan helper could not write its response — its response limit is {MAX_RESPONSE_BYTES} bytes — so no parameter contract was recorded."
+    )
 }
 
 fn scan_worker<T: DeserializeOwned>(
@@ -465,7 +557,7 @@ fn scan_worker<T: DeserializeOwned>(
         .read_to_end(&mut bytes)
         .map_err(|error| format!("Cannot read plugin scan helper response: {error}"))?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err("Plugin scan helper response exceeded its byte limit".to_string());
+        return Err(oversized_response_error(bytes.len()));
     }
     let response: WorkerResponse<T> = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Plugin scan helper returned invalid metadata: {error}"))?;
@@ -532,6 +624,7 @@ fn terminate_process_tree(child: &mut Child) {
 mod tests {
     use super::*;
     use daw_plugin_host::scanner::FormatScanSupport;
+    use daw_plugin_host::scanner::{ScannedInstanceCapabilities, ScannedParameterDescriptor};
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
@@ -1099,14 +1192,178 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert!(!is_process_failure(
             "No plugin scan backend for format vst2"
         ));
-        assert!(!is_process_failure(
-            "Plugin scan helper response exceeded its byte limit"
-        ));
+        assert!(!is_process_failure(&oversized_response_error(
+            MAX_RESPONSE_BYTES as usize
+        )));
         assert!(!is_process_failure(
             "Plugin scan helper returned invalid metadata: EOF"
         ));
         assert!(!is_process_failure(
             "Cannot start plugin scan helper: denied"
         ));
+    }
+
+    /// One `ScannedParameterDescriptor` at the scanner's own text caps: a
+    /// 128-byte name beside a 128-byte module, a full-width id, three
+    /// full-width floats, every boolean set. The largest single descriptor any
+    /// scan can legally produce.
+    fn maximal_parameter(id: u32) -> ScannedParameterDescriptor {
+        ScannedParameterDescriptor {
+            id,
+            name: "n".repeat(128),
+            module: Some("m".repeat(128)),
+            min_value: f64::MIN,
+            max_value: f64::MAX,
+            default_value: 1.0,
+            is_automatable: true,
+            is_modulatable: true,
+            is_stepped: true,
+            is_enum: true,
+        }
+    }
+
+    fn maximal_instance_response() -> (WorkerResponse<ScannedInstance>, usize) {
+        let response = WorkerResponse {
+            worker_pid: std::process::id().wrapping_add(1),
+            result: Ok(ScannedInstance {
+                parameters: (0..MAX_RESPONSE_PARAMETERS as u32)
+                    .map(maximal_parameter)
+                    .collect(),
+                capabilities: ScannedInstanceCapabilities::default(),
+            }),
+        };
+        let bytes = serde_json::to_vec(&response)
+            .expect("a maximal instance response should serialize")
+            .len();
+        (response, bytes)
+    }
+
+    /// The measurement [`MAX_RESPONSE_BYTES`] is sized from, enforced rather
+    /// than trusted: a parameter list at the policy ceiling
+    /// ([`MAX_RESPONSE_PARAMETERS`]), every descriptor maximal, must fit under
+    /// the cap with at least twofold headroom. Mutation this catches: growing
+    /// the descriptors' serialized shape, or shrinking the cap below what this
+    /// build's own scanner can emit.
+    #[test]
+    fn the_response_limit_admits_the_stated_worst_case_parameter_list() {
+        let (_, bytes) = maximal_instance_response();
+        let bytes = bytes as u64;
+
+        assert!(
+            bytes <= MAX_RESPONSE_BYTES,
+            "the measured worst case ({MAX_RESPONSE_PARAMETERS} maximal descriptors, \
+             {bytes} bytes compact) must fit the response cap of {MAX_RESPONSE_BYTES}"
+        );
+        assert!(
+            bytes * 2 <= MAX_RESPONSE_BYTES,
+            "the cap must keep headroom above the measured worst case: \
+             {bytes} bytes doubled already exceeds {MAX_RESPONSE_BYTES}"
+        );
+    }
+
+    /// #3866: a parameter list over the FORMER 256 KiB cap is written whole.
+    /// Before the cap was resized, this response was refused, the helper exited
+    /// 3, and the registry row was stored as if the plugin had never answered.
+    /// Mutation this catches: restoring the old cap fails the write below.
+    #[test]
+    fn a_parameter_list_over_the_former_cap_is_written_in_full() {
+        const FORMER_MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+        let parameter_count = 2_048u32;
+        let response = WorkerResponse {
+            worker_pid: std::process::id().wrapping_add(1),
+            result: Ok(ScannedInstance {
+                parameters: (0..parameter_count).map(maximal_parameter).collect(),
+                capabilities: ScannedInstanceCapabilities::default(),
+            }),
+        };
+        let expected_len = serde_json::to_vec(&response)
+            .expect("the response should serialize")
+            .len();
+        assert!(
+            expected_len as u64 > FORMER_MAX_RESPONSE_BYTES,
+            "the synthetic list must exceed the former cap for this test to prove \
+             anything: {expected_len} bytes"
+        );
+
+        let directory =
+            ResponseDirectory::create().expect("the response directory should be created");
+        let response_path = directory.0.join("metadata.json");
+
+        write_response(&response_path, &response)
+            .expect("a parameter list over the former cap must be written in full");
+
+        let written = fs::read(&response_path).expect("the written response should be readable");
+        assert_eq!(written.len(), expected_len);
+        let parsed: WorkerResponse<ScannedInstance> =
+            serde_json::from_slice(&written).expect("the written response should parse");
+        let scanned = parsed
+            .result
+            .expect("the response should carry the instance");
+        assert_eq!(
+            scanned.parameters.len(),
+            parameter_count as usize,
+            "every parameter must survive the response"
+        );
+        assert_eq!(
+            scanned.parameters.last().expect("a non-empty list").id,
+            parameter_count - 1,
+            "the last parameter must be the real one, not a truncated remnant"
+        );
+    }
+
+    /// The exit-3 refusal is the helper's own limit, named as such: the
+    /// supervisor message carries the limit, never reads as plugin silence,
+    /// and is classified as a response-limit refusal rather than a process
+    /// failure (#2911's distinction, #3866's wording).
+    #[cfg(unix)]
+    #[test]
+    fn a_response_write_refusal_names_the_helpers_limit() {
+        let path = Path::new("/plugins/Innocent.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        let message = process_failure_message(path, &status);
+
+        assert!(
+            message.contains(&MAX_RESPONSE_BYTES.to_string()),
+            "the refusal must name the helper's limit so the plugin is not blamed \
+             for its silence: {message}"
+        );
+        assert!(
+            !is_process_failure(&message),
+            "a response-write refusal must never be classified as a process failure: {message}"
+        );
+        assert!(is_response_limit_refusal(&message));
+    }
+
+    /// The oversized-response refusal carries the one number the refusing side
+    /// can actually measure, and classifies as the helper's limit.
+    #[test]
+    fn an_oversized_response_refusal_names_the_size_and_the_helpers_limit() {
+        let error = oversized_response_error(700_000);
+
+        assert!(
+            error.contains("700000") && error.contains(&MAX_RESPONSE_BYTES.to_string()),
+            "the refusal must name both the measured size and the helper's limit: {error}"
+        );
+        assert!(
+            !is_process_failure(&error),
+            "a limit refusal is data-level, never quarantine evidence: {error}"
+        );
+        assert!(is_response_limit_refusal(&error));
+    }
+
+    /// Only the helper's own limit refusals classify as such — a timeout, a
+    /// crash, or any other refusal must keep its own classification.
+    #[test]
+    fn only_the_helpers_own_limit_refusals_are_response_limit_refusals() {
+        assert!(is_response_limit_refusal(&response_write_refusal_error(
+            Path::new("/plugins/X.clap")
+        )));
+        assert!(is_response_limit_refusal(&oversized_response_error(1)));
+        assert!(!is_response_limit_refusal("Plugin scan helper timed out"));
+        assert!(!is_response_limit_refusal(
+            "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
+        ));
+        assert!(!is_response_limit_refusal("deadline"));
     }
 }

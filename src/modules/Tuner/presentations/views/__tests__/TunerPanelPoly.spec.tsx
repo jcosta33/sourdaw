@@ -26,7 +26,9 @@ vi.mock('#/modules/Arrangement/stores', async () => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     updateDeviceParam: vi.fn(),
+    importScoringTuning: vi.fn(),
 }));
 
 import { tunerStore, updateTunerTelemetry } from '../../../stores/tunerStore';

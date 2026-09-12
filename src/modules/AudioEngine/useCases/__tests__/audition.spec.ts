@@ -4,13 +4,19 @@ import { registerFaustDSP } from '#/modules/PluginHost/useCases';
 import {
     scheduleDrumKitNote as scheduleDrumKitNoteReal,
     getDrumKitDefByIndex as getDrumKitDefByIndexReal,
+    scheduleKitNote as scheduleKitNoteReal,
 } from '#/modules/Synth/useCases';
 
+import { getDrumKitByIndex as getDrumKitByIndexReal } from '../audioEngineQueries/getDrumKitByIndex';
 import { playAuditionNote } from '../audition';
 import { startFaustNote as startFaustNoteReal } from '../faustScheduler/startFaustNote';
 
 const scheduleDrumKitNote = vi.mocked(scheduleDrumKitNoteReal);
 const getDrumKitDefByIndex = vi.mocked(getDrumKitDefByIndexReal);
+const scheduleKitNote = vi.mocked(scheduleKitNoteReal);
+// Real AudioEngine lookup over the real factory table: the regression oracle
+// must observe the production kit data the fallback resolves, not a stub.
+const getDrumKitByIndex = vi.mocked(getDrumKitByIndexReal);
 const startFaustNote = vi.mocked(startFaustNoteReal);
 
 /**
@@ -68,6 +74,16 @@ const { mocks } = vi.hoisted(() => {
             setTargetAtTime,
             stop,
             getSynthParamsFromDevices: vi.fn(() => synthParams),
+            // Factory-kit fallback voice dispatch (issue #3725). The mock returns
+            // the same `_env`-carrying shape the real scheduleKitNote produces
+            // through the builtin synth scheduler.
+            scheduleKitNote: vi.fn(
+                () =>
+                    ({
+                        stop,
+                        _env: { gain: { cancelScheduledValues, setTargetAtTime } },
+                    }) as unknown as OscillatorNode | null
+            ),
             // scheduleNote always attaches the amplitude-envelope GainNode as
             // `_env` (see the built-in synth scheduler). The audition note-off applies the
             // exponential smooth release through it.
@@ -95,6 +111,7 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
         ...actual,
         getDrumKitDefByIndex: vi.fn(() => null),
         scheduleDrumKitNote: vi.fn(),
+        scheduleKitNote: mocks.scheduleKitNote,
         scheduleNote: mocks.scheduleNote,
         getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
     };
@@ -313,17 +330,18 @@ describe('playAuditionNote device dispatch', () => {
         );
     });
 
-    it('drum-kit falls back to kitId when kit is absent, and no-ops when the kit def is missing', () => {
-        // kit absent → uses kitId (5).
+    it('resolves a missing dedicated kit def through the factory table, deriving the index from kitId', () => {
+        // kit absent → uses kitId (5). No dedicated def exists for 5, but the
+        // factory table declares it (Trap), so a voice must dispatch (issue #3725).
         setTrack({
             tracks: [
                 { id: 'tk', devices: [{ id: 'd', type: 'drum-kit', parameterValues: { kitId: 5 } }], parentId: null },
             ],
         });
-        getDrumKitDefByIndex.mockReturnValueOnce(null);
         playAuditionNote('tk', 38, 90);
         expect(getDrumKitDefByIndex).toHaveBeenCalledWith(5);
         expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+        expect(scheduleKitNote).toHaveBeenCalledTimes(1);
     });
 
     it('fermenter device: triggers noteOn when ready and noteOff on release', () => {
@@ -542,5 +560,127 @@ describe('playAuditionNote device dispatch', () => {
         expect(noteOn).toHaveBeenCalledWith(55, 80);
         stop();
         expect(noteOff).toHaveBeenCalledWith(55);
+    });
+});
+
+/**
+ * Issue #3725 regression oracle: piano-roll audition was silent for drum kit
+ * selections 1-5 because it consulted only the dedicated 808 kit-definition
+ * table and returned even when no kit was found. The hardware MIDI path falls
+ * back to the factory kit table; the audition must too.
+ *
+ * The drum-kit descriptor declares exactly six kit choices in this order
+ * (`Arrangement` BuiltinInstrumentDescriptors, `kit` parameter, maxValue 5:
+ * 808 Kit, Analog Kit, Electronic Kit, Acoustic Kit, Lo-fi Vinyl, Trap), and
+ * AudioEngine's factory table declares the same six selections in the same
+ * order, so iterating indices 0-5 here covers every descriptor choice through
+ * the real production lookup the fallback uses.
+ */
+describe('playAuditionNote resolves every declared drum kit selection (issue #3725)', () => {
+    const DECLARED_KIT_INDICES = [0, 1, 2, 3, 4, 5] as const;
+    // Mirrors the real dedicated table: only index 0 (808) has a kit definition.
+    const KIT_808_DEF_STUB = { id: 'kit-808', name: '808 Drum Machine', voices: [] };
+
+    function setKitDevice(kitIndex: number): { gainNode: AudioNode; deviceNodes: [] } {
+        mocks.trackStoreValue = {
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [{ id: 'd', type: 'builtin-drum-kit', parameterValues: { kit: kitIndex } }],
+                    parentId: null,
+                },
+            ],
+        };
+        const strip = { gainNode: {} as AudioNode, deviceNodes: [] as [] };
+        mocks.trackStrips.set('tk', strip);
+        return strip;
+    }
+
+    beforeEach(() => {
+        mocks.trackStoreValue = null;
+        mocks.trackStrips.clear();
+        mocks.ensureTrackStrip.mockClear();
+        mocks.scheduleNote.mockClear();
+        mocks.getSynthParamsFromDevices.mockClear();
+        mocks.cancelScheduledValues.mockClear();
+        mocks.setTargetAtTime.mockClear();
+        mocks.stop.mockClear();
+        scheduleDrumKitNote.mockClear();
+        scheduleKitNote.mockClear();
+        getDrumKitDefByIndex.mockReset();
+        getDrumKitDefByIndex.mockImplementation((index: number) => (index === 0 ? KIT_808_DEF_STUB : null));
+    });
+
+    it.each(DECLARED_KIT_INDICES)('dispatches a voice for declared kit selection %i', (kitIndex) => {
+        const strip = setKitDevice(kitIndex);
+
+        const stopNote = playAuditionNote('tk', 36, 100);
+
+        if (kitIndex === 0) {
+            expect(scheduleDrumKitNote).toHaveBeenCalledTimes(1);
+            expect(scheduleKitNote).not.toHaveBeenCalled();
+        } else {
+            // The dedicated table has no definition for this selection, so the
+            // factory-kit fallback must dispatch — the exact hunk whose removal
+            // made selections 1-5 silent.
+            expect(scheduleKitNote).toHaveBeenCalledTimes(1);
+            expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+            const [ctx, destination, kit, pitch, startTime, duration, velocity] = scheduleKitNote.mock.calls[0]!;
+            expect(ctx).toBe(mocks.audioContext);
+            expect(destination).toBe(strip.gainNode);
+            expect(pitch).toBe(36);
+            expect(startTime).toBe(0);
+            expect(duration).toBe(60);
+            expect(velocity).toBe(100);
+            expect(kit).toEqual(getDrumKitByIndex(kitIndex));
+        }
+        expect(() => stopNote()).not.toThrow();
+    });
+
+    it('kit 1 (Analog) voices with factory analog parameters, not 808 or default synth params', () => {
+        setKitDevice(1);
+
+        playAuditionNote('tk', 36, 100);
+
+        expect(scheduleKitNote).toHaveBeenCalledTimes(1);
+        const kit = scheduleKitNote.mock.calls[0]![2];
+        expect(kit.id).toBe('factory-analog');
+        expect(kit.name).toBe('Analog Kit');
+        const kick = kit.voices.find((voice) => voice.pitchRange[0] === 36 && voice.pitchRange[1] === 36);
+        expect(kick).toBeDefined();
+        if (!kick) {
+            return;
+        }
+        // KIT_ANALOG kick values. Each differs from both the 808 factory kit
+        // (sine / decay 0.4 / cutoff 200 / gain 0.8) and defaultSynthParams
+        // (sawtooth / decay 0.2 / cutoff 5000 / gain 0.3), so a dispatch of
+        // either wrong kit fails these assertions.
+        expect(kick?.params.waveform).toBe('sine');
+        expect(kick?.params.decay).toBe(0.5);
+        expect(kick?.params.filterCutoff).toBe(150);
+        expect(kick?.params.gain).toBe(0.9);
+    });
+
+    it('factory-kit audition releases through the amplitude envelope on note-off', () => {
+        setKitDevice(1);
+
+        const stopNote = playAuditionNote('tk', 36, 100);
+        stopNote();
+
+        expect(mocks.cancelScheduledValues).toHaveBeenCalledTimes(1);
+        // setTargetAtTime(target=0, startTime, timeConstant=release/3); the
+        // track-device synth params mock carries release 0.3.
+        expect(mocks.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), mocks.synthParams.release / 3);
+        expect(mocks.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches nothing for an undeclared kit index', () => {
+        setKitDevice(99);
+
+        const stopNote = playAuditionNote('tk', 36, 100);
+
+        expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+        expect(scheduleKitNote).not.toHaveBeenCalled();
+        expect(() => stopNote()).not.toThrow();
     });
 });
