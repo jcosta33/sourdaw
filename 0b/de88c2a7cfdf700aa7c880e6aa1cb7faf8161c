@@ -1,0 +1,19 @@
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_159146fff2d53c::t_7257c873679bd8 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0bde88c2a7cfdf700aa7c880e6aa1cb7faf8161c",
+  "prompts": {},
+  "sessions": {
+    "s_159146fff2d53c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09556-856b-7a21-8f3b-9e9449e8195d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
