@@ -535,6 +535,46 @@ const voicePairingCases: readonly VoicePairingCase[] = [
     },
 ];
 
+type IdentitylessDecisionCase = {
+    name: string;
+    create: () => MidiProcessor;
+    configureFirst: (processor: MidiProcessor) => void;
+    configureSecond: (processor: MidiProcessor) => void;
+    inputNote: number;
+    firstOutputNote: number;
+    secondOutputNote: number | undefined;
+};
+
+const identitylessDecisionCases: readonly IdentitylessDecisionCase[] = [
+    {
+        name: 'Transposer',
+        create: () => new Transposer('identityless-transposer'),
+        configureFirst: (processor) => processor.setParam('semitones', 1),
+        configureSecond: (processor) => processor.setParam('semitones', 12),
+        inputNote: 60,
+        firstOutputNote: 61,
+        secondOutputNote: 72,
+    },
+    {
+        name: 'ScaleQuantizer',
+        create: () => new ScaleQuantizer('identityless-scale'),
+        configureFirst: (processor) => processor.setParam('remap_mode', 2),
+        configureSecond: (processor) => processor.setParam('remap_mode', 1),
+        inputNote: 61,
+        firstOutputNote: 60,
+        secondOutputNote: 62,
+    },
+    {
+        name: 'NoteFilter',
+        create: () => new NoteFilter('identityless-filter'),
+        configureFirst: () => undefined,
+        configureSecond: (processor) => processor.setParam('note_min', 61),
+        inputNote: 60,
+        firstOutputNote: 60,
+        secondOutputNote: undefined,
+    },
+];
+
 describe('MidiRack', () => {
     it('exports MidiRack', () => {
         expect(MidiRack).toBeDefined();
@@ -887,6 +927,155 @@ describe('MidiRack', () => {
             expect(releases).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } }]);
             expect(rack.allNotesOff(384)).toEqual([]);
         });
+    });
+
+    describe('identityless out-of-order releases', () => {
+        const scenarios = [
+            {
+                name: 'keeps channel decisions separate on one track',
+                first: { trackId: 'track-a', channel: 0 },
+                second: { trackId: 'track-a', channel: 1 },
+            },
+            {
+                name: 'keeps route decisions separate on one channel',
+                first: { trackId: 'track-a', channel: 0 },
+                second: { trackId: 'track-b', channel: 0 },
+            },
+        ] as const;
+
+        for (const scenario of scenarios) {
+            for (const testCase of identitylessDecisionCases) {
+                it(`${testCase.name} ${scenario.name}`, () => {
+                    const rack = new MidiRack('rack-a');
+                    const processor = testCase.create();
+                    rack.addProcessor(processor);
+                    const process = (events: MidiEvent[], blockStartSamples: number): MidiEvent[] => [
+                        ...rack.processBlock(
+                            events,
+                            blockStartSamples,
+                            blockStartSamples + 128,
+                            transport,
+                            'fallback-track',
+                            false,
+                            'rack-a',
+                            'route-a',
+                            0,
+                            true
+                        ),
+                    ];
+
+                    testCase.configureFirst(processor);
+                    const firstOn = process(
+                        [
+                            {
+                                timeSamples: 0,
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.first.channel,
+                                    note: testCase.inputNote,
+                                    velocity: 100,
+                                },
+                            },
+                        ],
+                        0
+                    );
+                    testCase.configureSecond(processor);
+                    const secondOn = process(
+                        [
+                            {
+                                timeSamples: 128,
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.second.channel,
+                                    note: testCase.inputNote,
+                                    velocity: 100,
+                                },
+                            },
+                        ],
+                        128
+                    );
+                    const releases = process(
+                        [
+                            {
+                                timeSamples: 256,
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.second.channel,
+                                    note: testCase.inputNote,
+                                },
+                            },
+                            {
+                                timeSamples: 257,
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.inputNote,
+                                },
+                            },
+                        ],
+                        256
+                    );
+
+                    expect(firstOn).toMatchObject([
+                        {
+                            trackId: scenario.first.trackId,
+                            kind: {
+                                type: 'noteOn',
+                                channel: scenario.first.channel,
+                                note: testCase.firstOutputNote,
+                            },
+                        },
+                    ]);
+                    if (testCase.secondOutputNote === undefined) {
+                        expect(secondOn).toEqual([]);
+                        expect(releases).toMatchObject([
+                            {
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.firstOutputNote,
+                                },
+                            },
+                        ]);
+                    } else {
+                        expect(secondOn).toMatchObject([
+                            {
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.second.channel,
+                                    note: testCase.secondOutputNote,
+                                },
+                            },
+                        ]);
+                        expect(releases).toMatchObject([
+                            {
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.second.channel,
+                                    note: testCase.secondOutputNote,
+                                },
+                            },
+                            {
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.firstOutputNote,
+                                },
+                            },
+                        ]);
+                    }
+                    expect(rack.allNotesOff(384)).toEqual([]);
+                });
+            }
+        }
     });
 
     describe('removeProcessor (fix #1: hung notes on mid-playback removal)', () => {

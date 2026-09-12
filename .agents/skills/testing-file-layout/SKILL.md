@@ -46,11 +46,12 @@ An unrun test is not a test.
 ### 7. MIDI note-correlation regressions prove the rack boundary
 
 When a MIDI transform or filter stores a Note On decision for a later Note Off,
-test supplied `noteInstanceId` values through `MidiRack`. Use two equal-pitch
-notes, change the deciding parameter while both are held, then release the
-second identity before the first. Assert the emitted identity and transformed
-pitch or suppression, and make the fixture fail if instance correlation is
-replaced by channel/pitch FIFO. Keep identityless FIFO coverage separate.
+test supplied `noteInstanceId` values through `MidiRack`. Attack one equal-pitch
+note, change the deciding parameter while it remains held, then attack and
+release a second identity before the first. Assert the emitted identity and
+transformed pitch or suppression, and make the fixture fail if instance
+correlation is replaced by channel/pitch FIFO. Keep identityless FIFO coverage
+separate.
 
 ## References
 
