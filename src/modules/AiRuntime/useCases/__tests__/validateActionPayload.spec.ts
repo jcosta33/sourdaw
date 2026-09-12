@@ -860,11 +860,14 @@ const guardedPayloadContractCases = [
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     it('backs every executable app-action tool with a strict payload validator', () => {
-        const uncheckedActionTypes = getExecutableAppActionToolSchemas()
-            .map((schema) => schema.function.name)
-            .filter((actionType) => PAYLOAD_VALIDATORS[actionType] === 'unchecked');
+        for (const schema of getExecutableAppActionToolSchemas()) {
+            const validatorEntry = Object.entries(PAYLOAD_VALIDATORS).find(
+                ([actionName]) => actionName === schema.function.name
+            );
 
-        expect(uncheckedActionTypes).toEqual([]);
+            expect(validatorEntry).toBeDefined();
+            expect(validatorEntry?.[1]).toBeTypeOf('function');
+        }
     });
 
     describe('declared RuntimeAction payload contracts', () => {
