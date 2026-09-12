@@ -341,6 +341,7 @@ describe('TrackContextMenu', () => {
             type: 'unfreezeTrack',
             payload: { trackId: 'fz1' },
         });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
     it('shows Update Freeze label when the freeze state is stale', () => {
@@ -375,6 +376,7 @@ describe('TrackContextMenu', () => {
             type: 'flattenTrack',
             payload: { trackId: 'fz2' },
         });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
     it('deletes the track after confirming', async () => {
@@ -625,6 +627,7 @@ describe('TrackContextMenu', () => {
             type: 'freezeTrack',
             payload: { trackId: 'track1' },
         });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
     it('duplicates the track', () => {
