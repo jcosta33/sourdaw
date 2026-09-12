@@ -1,0 +1,28 @@
+src/modules/AudioEngine/useCases/startMainThreadLongTaskObservation.ts
+  s_06adf2b091dc62::t_a357b43b787b74 1-13
+src/app/__tests__/bootstrap.spec.ts
+  s_06adf2b091dc62::t_cf13b7553f1cb3 352
+src/modules/AudioEngine/useCases/index.ts
+  s_06adf2b091dc62::t_d54f605828a1e7 82
+src/app/bootstrap.ts
+  s_06adf2b091dc62::t_719610e1c04042 550-552
+  s_06adf2b091dc62::t_effc592f176dd2 58
+src/modules/AudioEngine/useCases/__tests__/startMainThreadLongTaskObservation.spec.ts
+  s_06adf2b091dc62::t_16933c718d23c2 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b3112bb56f1ed7c470579a1fc4cf9e60d4a9a7e2",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
