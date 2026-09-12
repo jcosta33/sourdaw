@@ -2027,6 +2027,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         );
     };
 
+    const assertWriteAdmissionCurrent = (
+        context: AutomergeStorageWriteContext,
+        admittedProjectionGeneration: number
+    ): void => {
+        const scopedOwnerClosed = context.scoped && !openAutomergeStorageCommitOwners.has(context.commitOwner);
+        if (projectionGeneration !== admittedProjectionGeneration || scopedOwnerClosed) {
+            throw new AutomergeStorageWriteConflictError(
+                `Automerge storage write admission expired during preparation: ${docId}:${key}`
+            );
+        }
+    };
+
     /**
      * Audit CC-2 — drop this projection so the outgoing project's value cannot
      * survive an authority switch. Pending writes are released (never flushed:
@@ -2118,9 +2130,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 return;
             }
             const context = getWriteContext();
+            const admittedProjectionGeneration = projectionGeneration;
             const intentBase = cachedValue;
             const capturedMetadata = captureWriteMetadata(intentBase, value, 'set');
             const scopedValue = prepareScopedValueAfterPredecessor(context, value, intentBase, capturedMetadata);
+            assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
             const existingPending = pendingWritesByOwner.get(context.commitOwner);
             const pending = existingPending ?? createPendingWrite(context, capturedMetadata);
             if (existingPending) {
@@ -2138,9 +2152,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 return;
             }
             const context = getWriteContext();
+            const admittedProjectionGeneration = projectionGeneration;
             const intentBase = cachedValue;
             const capturedMetadata = captureWriteMetadata(intentBase, null, 'clear');
             const scopedValue = prepareScopedValueAfterPredecessor(context, null, intentBase, capturedMetadata);
+            assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
             const existingPending = pendingWritesByOwner.get(context.commitOwner);
             const pending = existingPending ?? createPendingWrite(context, capturedMetadata);
             if (existingPending) {

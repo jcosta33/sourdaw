@@ -84,6 +84,19 @@ function createJournalStorage() {
     });
 }
 
+function createReplacementStorage() {
+    return createAutomergeStorage<State, { readonly value: State | null }>('root', 'state', {
+        writeMetadata: {
+            capture: ({ nextValue }) => ({ value: structuredClone(nextValue) }),
+            reduce: ({ captured }) => captured,
+        },
+        rebasePending: ({ metadata }) => structuredClone(metadata?.value ?? null),
+        mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile }) => {
+            reconcile(structuredClone(metadata?.value ?? null), authorityValue);
+        },
+    });
+}
+
 describe('createAutomergeStorage metadata predecessor settlement', () => {
     let frames: FrameRequestCallback[];
 
@@ -287,6 +300,70 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
         expect(storage.get()).toEqual(doc.state);
         expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
+
+    it.each([
+        ['set', 'abort', 'commit'],
+        ['clear', 'abort', 'commit'],
+        ['set', 'replace', 'commit'],
+        ['set', 'replace', 'abort'],
+        ['clear', 'replace', 'commit'],
+        ['clear', 'replace', 'abort'],
+    ] as const)(
+        'refuses scoped %s when predecessor settlement synchronously triggers %s before later %s',
+        (operation, intervention, terminal) => {
+            let doc: { state: State } = { state: { items: [], selected: null } };
+            let transaction!: ReturnType<typeof runWithAutomergeStorageTransaction>;
+            let storage!: ReturnType<typeof createReplacementStorage>;
+            let intervene = true;
+            configureAutomergeStoragePort({
+                getDoc: () => doc,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(doc);
+                    if (!intervene) {
+                        return;
+                    }
+                    intervene = false;
+                    if (intervention === 'abort') {
+                        transaction.abort();
+                        return;
+                    }
+                    doc = { state: { items: ['a'], selected: null } };
+                    resetAutomergeStorageProjections('root');
+                    expect(storage.hydrate?.()).toBe(true);
+                },
+            });
+            storage = createReplacementStorage();
+            expect(storage.hydrate?.()).toBe(true);
+            storage.set({ items: ['a'], selected: null });
+            transaction = runWithAutomergeStorageTransaction(undefined, () => undefined);
+
+            expect(() =>
+                transaction.scope(() => {
+                    if (operation === 'clear') {
+                        storage.clear();
+                        return;
+                    }
+                    storage.set({ items: ['a'], selected: 'a' });
+                })
+            ).toThrow(AutomergeStorageWriteConflictError);
+            expect({ raw: doc.state, cached: storage.get(), pending: countPendingAutomergeStorageWrites() }).toEqual({
+                raw: { items: ['a'], selected: null },
+                cached: { items: ['a'], selected: null },
+                pending: 0,
+            });
+
+            transaction[terminal]();
+            flushAutomergeStorageWrites();
+
+            expect({ raw: doc.state, cached: storage.get(), pending: countPendingAutomergeStorageWrites() }).toEqual({
+                raw: { items: ['a'], selected: null },
+                cached: { items: ['a'], selected: null },
+                pending: 0,
+            });
+        }
+    );
 
     it('does not start a snapshot retry for an arbitrary port failure', () => {
         const doc: { state: State } = { state: { items: [], selected: null } };
