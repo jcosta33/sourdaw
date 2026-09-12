@@ -14,7 +14,7 @@ Cross-cutting technical infrastructure: singleton AudioContext management, Audio
 ## Architectural Invariants (Hard)
 
 - **Strict Layer Isolation (deps error)**: `src/infra/` MUST NEVER import from `src/modules/*` or `src/app/`. Infra provides domain-agnostic technical primitives only.
-- **AudioContext Singleton**: The browser WebAudio graph MUST share the single `AudioContext` provided by `src/infra/audioContext/`—never instantiate ad-hoc `new AudioContext()` in modules or components.
+- **AudioContext Singleton**: The browser WebAudio graph MUST share the single `AudioContext` constructed by `src/modules/AudioEngine/repositories/createWebAudioEngine.ts`—never instantiate ad-hoc `new AudioContext()` in modules or components.
 - **Pure Infrastructure**: Code here contains no DAW business logic, track structures, or CRDT document schemas.
 
 ## Verification

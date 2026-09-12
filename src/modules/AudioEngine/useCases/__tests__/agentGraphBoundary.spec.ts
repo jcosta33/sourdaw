@@ -1,6 +1,44 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import {
+    createAudioEngineTopologyTestHarness,
+    type AudioEngineTopologyTestHarness,
+} from '../../repositories/__tests__/createAudioEngineTopologyTestHarness';
+import { cachePreviewAudioBuffer } from '../cachePreviewAudioBuffer';
 import { compileRuntimeGraphDelta } from '../compileRuntimeGraphDelta';
+import { playCachedAudioBufferPreview } from '../playCachedAudioBufferPreview';
+import { renderOffline } from '../renderOffline';
+
+const previewSeamMocks = vi.hoisted(() => ({
+    getAudioContext: vi.fn(),
+    createBufferSource: vi.fn(),
+    resolveRenderContext: vi.fn(),
+}));
+
+// The preview cache/playback seam: both run on the live context per
+// `cachePreviewAudioBuffer.ts`/`playCachedAudioBufferPreview.ts`, so this test
+// controls exactly what "the live context" is without touching the app
+// singleton (`audioEngine`) other tests in this file construct directly.
+vi.mock('../engineAccess/getAudioContext', () => ({
+    getAudioContext: previewSeamMocks.getAudioContext,
+}));
+vi.mock('../scheduling/createBufferSource', () => ({
+    createBufferSource: previewSeamMocks.createBufferSource,
+}));
+vi.mock('../offlineRender/resolveRenderContext', () => ({
+    resolveRenderContext: previewSeamMocks.resolveRenderContext,
+}));
+
+const previewBufferStore = new Map<string, unknown>();
+vi.mock('../../stores/audioBufferCache', () => ({
+    audioBufferCache: {
+        get: (id: string) => previewBufferStore.get(id),
+        set: (id: string, buffer: unknown) => {
+            previewBufferStore.set(id, buffer);
+        },
+    },
+}));
 
 type DeltaInput = {
     schemaVersion: number;
@@ -248,5 +286,177 @@ describe('agent runtime graph boundary', () => {
         ],
     ])('rejects malformed initialization snapshots before a live strip can publish: %s', (_label, snapshot) => {
         expect(compileRuntimeGraphDelta(snapshot).status).toBe('invalid');
+    });
+});
+
+// Every context node-factory the live engine's constructor and device chains
+// can call. Summing all of them, rather than one or two a test happens to
+// think of, is what proves "no node created" instead of "no node this
+// assertion bothered to check".
+const CONTEXT_NODE_FACTORY_NAMES = [
+    'createGain',
+    'createStereoPanner',
+    'createChannelSplitter',
+    'createChannelMerger',
+    'createAnalyser',
+    'createBiquadFilter',
+    'createDynamicsCompressor',
+    'createConvolver',
+    'createOscillator',
+    'createDelay',
+    'createBufferSource',
+] as const;
+
+function totalNodeCreationCalls(mockCtx: MockAudioContext): number {
+    return CONTEXT_NODE_FACTORY_NAMES.reduce((total, name) => total + mockCtx[name].mock.calls.length, 0);
+}
+
+/** The four master-tap nodes the engine wires in its constructor — the whole
+ *  set a rejected call could reach without creating a new node at all. */
+function totalMasterNodeConnectCalls(engine: AudioEngineTopologyTestHarness): number {
+    return (
+        (engine.masterGainNode.connect as unknown as Mock).mock.calls.length +
+        (engine.masterAnalyser.connect as unknown as Mock).mock.calls.length +
+        (engine.masterAnalyserLeft.connect as unknown as Mock).mock.calls.length +
+        (engine.masterAnalyserRight.connect as unknown as Mock).mock.calls.length
+    );
+}
+
+const INVALID_DELTA_INPUT = { schemaVersion: 1, command: 'not-a-real-command' };
+
+describe('agent runtime graph boundary — live engine rejection', () => {
+    // Both entry points share compileRuntimeGraphDelta's invalid branch
+    // (createWebAudioEngine.ts:1203-1209 and :1354-1359), so the same
+    // malformed input reaches the identical early return in each.
+    function createHarness(): { engine: AudioEngineTopologyTestHarness; mockCtx: MockAudioContext } {
+        const mockCtx = createMockAudioContext();
+        const engine = createAudioEngineTopologyTestHarness(mockCtx as unknown as AudioContext);
+        return { engine, mockCtx };
+    }
+
+    it('leaves the live graph unchanged when applyRuntimeGraphDelta rejects an invalid delta', () => {
+        const { engine, mockCtx } = createHarness();
+        const revisionBefore = engine.getRuntimeGraphRevision();
+        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx);
+        const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
+
+        const result = engine.applyRuntimeGraphDelta(INVALID_DELTA_INPUT);
+
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Runtime graph delta schema version or command is unsupported',
+        });
+        // The returned result alone proves only what the function returned, not
+        // that the graph was untouched — both halves are required.
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
+        expect(totalNodeCreationCalls(mockCtx)).toBe(nodeCreationsBefore);
+        expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
+    });
+
+    it('leaves the live graph unchanged when initializeTrackStripFromSnapshot rejects an invalid snapshot', () => {
+        const { engine, mockCtx } = createHarness();
+        const revisionBefore = engine.getRuntimeGraphRevision();
+        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx);
+        const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
+
+        const result = engine.initializeTrackStripFromSnapshot(INVALID_DELTA_INPUT);
+
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'Runtime graph delta schema version or command is unsupported',
+        });
+        expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
+        expect(totalNodeCreationCalls(mockCtx)).toBe(nodeCreationsBefore);
+        expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
+    });
+});
+
+function createFakeRenderContext(overrides: Record<string, unknown> = {}) {
+    return {
+        tracks: null,
+        midi: null,
+        transport: null,
+        defaultTempo: 120,
+        changes: [],
+        durationSeconds: 1,
+        projectMidiEvents: vi.fn(),
+        selectMidiEventProbability: vi.fn(() => true),
+        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
+        projectPpqEndpoints: vi.fn(() => ({ durationSeconds: 0 })),
+        resolveTempoAtBeat: ({ defaultTempo }: { defaultTempo: number }) => defaultTempo,
+        processYeastMidi: vi.fn(),
+        ...overrides,
+    };
+}
+
+describe('agent runtime graph boundary — preview isolation from offline render', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    // Every node a render created on it forwards its `connect` argument here,
+    // so the offline render's own routing is observed rather than asserted.
+    let recordedOfflineConnectArgs: unknown[];
+
+    // Local fake sized to what this case drives (renderOffline.spec.ts:154-161's
+    // pattern): a gain factory for the unconditional master-gain connect at
+    // `renderOffline.ts:275-277`, and a `startRendering` so the unsegmented
+    // fallback in `renderInSegments` (no `suspend`/`resume` here) resolves.
+    class RecordingOfflineAudioContext {
+        readonly destination = {};
+        readonly sampleRate = 48_000;
+
+        createGain(): { gain: { value: number }; connect: (dest: unknown) => unknown } {
+            return {
+                gain: { value: 0 },
+                connect: (dest: unknown) => {
+                    recordedOfflineConnectArgs.push(dest);
+                    return dest;
+                },
+            };
+        }
+
+        startRendering(): Promise<AudioBuffer> {
+            return Promise.resolve({} as AudioBuffer);
+        }
+    }
+
+    it('connects no node an offline render creates to a preview node playing on the live context', async () => {
+        recordedOfflineConnectArgs = [];
+        const livePreviewDestination = { role: 'live-preview-destination' };
+        const livePreviewSource = {
+            buffer: null as unknown,
+            connect: vi.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
+            onended: null as (() => void) | null,
+        };
+        previewSeamMocks.getAudioContext.mockReturnValue({
+            createBuffer: () => ({ getChannelData: () => new Float32Array(4) }),
+            destination: livePreviewDestination,
+            sampleRate: 48_000,
+        });
+        previewSeamMocks.createBufferSource.mockReturnValue(livePreviewSource);
+        previewSeamMocks.resolveRenderContext.mockReturnValue(createFakeRenderContext());
+
+        // Cache and start a preview on the live context (`cachePreviewAudioBuffer`/
+        // `playCachedAudioBufferPreview`) before the offline render runs.
+        const bufferId = cachePreviewAudioBuffer({ audio: new Float32Array([0.1, 0.2, 0.3, 0.4]), sampleRate: 48_000 });
+        const playback = playCachedAudioBufferPreview({ bufferId, onEnded: () => {} });
+        expect(playback).not.toBeNull();
+        expect(livePreviewSource.connect).toHaveBeenCalledWith(livePreviewDestination);
+
+        vi.stubGlobal('OfflineAudioContext', RecordingOfflineAudioContext);
+
+        await renderOffline(4).catch(() => undefined);
+
+        // Vacuity guard: at least one node the fake itself created did connect
+        // something (renderOffline.ts:277's unconditional master-gain wiring),
+        // so an empty recording set cannot pass this silently.
+        expect(recordedOfflineConnectArgs.length).toBeGreaterThan(0);
+        expect(recordedOfflineConnectArgs).not.toContain(livePreviewSource);
+        expect(recordedOfflineConnectArgs).not.toContain(livePreviewDestination);
     });
 });
