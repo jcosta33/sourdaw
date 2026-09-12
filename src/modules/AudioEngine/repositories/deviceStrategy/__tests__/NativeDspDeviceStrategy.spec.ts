@@ -18,6 +18,7 @@ const { creators } = vi.hoisted(() => {
             Promise.resolve(nodeMock)
         ),
         createGlutenNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createCrustNode: vi.fn(() => Promise.resolve(nodeMock)),
         createBacteriaNode: vi.fn(() => Promise.resolve(nodeMock)),
         createGrinderNode: vi.fn(() => Promise.resolve(nodeMock)),
         createProofNode: vi.fn(() => Promise.resolve(nodeMock)),
@@ -51,6 +52,10 @@ vi.mock('../../../engine/CrumbsNode', () => ({
 vi.mock('../../../engine/GlutenNode', () => ({
     isGlutenDevice: (t: string) => t === 'gluten',
     createGlutenNode: creators.createGlutenNode,
+}));
+vi.mock('../../../engine/CrustNode', () => ({
+    isCrustDevice: (t: string) => t === 'crust',
+    createCrustNode: creators.createCrustNode,
 }));
 vi.mock('../../../engine/BacteriaNode', () => ({
     isBacteriaDevice: (t: string) => t === 'bacteria',
@@ -235,6 +240,7 @@ describe('createNativeDspStrategy factory dispatch', () => {
         ['levain', 'createLevainNode'],
         ['builtin-crumbs', 'createCrumbsNode'],
         ['gluten', 'createGlutenNode'],
+        ['crust', 'createCrustNode'],
         ['bacteria', 'createBacteriaNode'],
         ['grinder', 'createGrinderNode'],
         ['proof', 'createProofNode'],
@@ -352,5 +358,19 @@ describe('createNativeDspStrategy factory dispatch', () => {
         onFault('offline processor crashed');
 
         await rejected;
+    });
+
+    it('replays crust parameterValues with style before algorithm regardless of object key order', async () => {
+        const setParam = vi.fn();
+        const seeded = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        creators.createCrustNode.mockResolvedValueOnce(seeded);
+        await createNativeDspStrategy(ctx, {
+            type: 'crust',
+            parameterValues: { algorithm: 6, style: 2 },
+        } as never);
+        expect(setParam.mock.calls).toEqual([
+            ['style', 2],
+            ['algorithm', 6],
+        ]);
     });
 });

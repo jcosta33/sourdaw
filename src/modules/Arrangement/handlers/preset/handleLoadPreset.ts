@@ -1,6 +1,7 @@
 import { getTrackStrip, initializeTrackStripFromSnapshot, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 import {
     type AppAction,
     type DeviceChainTopologySnapshot,
@@ -180,7 +181,7 @@ function createPostCommitRuntimeEffect(
         // Parameter controls are intentionally separate from the topology
         // delta. They run only after the exact live chain was accepted.
         for (const device of runtimeTarget.devices) {
-            for (const [parameterId, value] of Object.entries(device.parameterValues)) {
+            for (const [parameterId, value] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
                 updateDeviceParam(runtimeTarget.id, device.id, parameterId, value);
             }
         }
