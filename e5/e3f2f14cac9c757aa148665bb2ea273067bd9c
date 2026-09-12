@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_1228e573df1f42 199-202,204-207,218-221
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_1228e573df1f42 340-343,374-377,624-627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e5e3f2f14cac9c757aa148665bb2ea273067bd9c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
