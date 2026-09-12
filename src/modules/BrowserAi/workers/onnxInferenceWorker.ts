@@ -55,11 +55,20 @@ type SessionEntry = {
     lastUsedAt: number;
 };
 
+type SessionLoad = {
+    modelId: string;
+    controller: AbortController;
+    subscribers: Set<string | symbol>;
+    promise: Promise<SessionEntry>;
+};
+
 // ── Session manager ────────────────────────────────────────────────────────
 
 const SESSION_MEMORY_BUDGET = 1024 * 1024 * 1024; // 1 GB
 
 const sessionCache: Map<string, SessionEntry> = new Map();
+const sessionLoads = new Map<string, SessionLoad>();
+const activeRequests = new Map<string, AbortController>();
 let totalMemoryBytes = 0;
 // Cache the in-flight import PROMISE (not just the resolved module): self.onmessage
 // async chains interleave at every await, so two concurrent first messages could
@@ -147,33 +156,113 @@ async function evictLru(): Promise<void> {
     }
 }
 
-async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Promise<SessionEntry> {
+function waitForSession(load: SessionLoad, requestId?: string, signal?: AbortSignal): Promise<SessionEntry> {
+    const subId = requestId ?? Symbol();
+    load.subscribers.add(subId);
+
+    if (signal?.aborted) {
+        load.subscribers.delete(subId);
+        if (load.subscribers.size === 0) {
+            load.controller.abort();
+        }
+        return Promise.reject(new Error(`Session creation was cancelled: ${load.modelId}`));
+    }
+
+    return new Promise<SessionEntry>((resolve, reject) => {
+        const onAbort = (): void => {
+            cleanup();
+            load.subscribers.delete(subId);
+            if (load.subscribers.size === 0) {
+                load.controller.abort();
+            }
+            reject(new Error(`Session creation was cancelled: ${load.modelId}`));
+        };
+
+        const cleanup = (): void => {
+            signal?.removeEventListener('abort', onAbort);
+        };
+
+        if (signal) {
+            signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        load.promise.then(
+            (entry) => {
+                cleanup();
+                load.subscribers.delete(subId);
+                resolve(entry);
+            },
+            (error: unknown) => {
+                cleanup();
+                load.subscribers.delete(subId);
+                reject(error);
+            }
+        );
+    });
+}
+
+async function getOrCreateSession(
+    modelId: string,
+    modelData: ArrayBuffer,
+    requestId?: string,
+    signal?: AbortSignal
+): Promise<SessionEntry> {
     const cached = sessionCache.get(modelId);
     if (cached) {
         cached.lastUsedAt = Date.now();
         return cached;
     }
 
-    const ort = await getOrt();
-    // Capture the model weight BEFORE create(): onnxruntime-web may consume or
-    // detach the ArrayBuffer during session creation, after which byteLength reads
-    // 0. Reading it afterwards would leave totalMemoryBytes near 0 and evictLru
-    // would never fire, defeating the 1 GB budget.
-    const sizeBytes = modelData.byteLength;
-    const { session, executionProviders } = await createSessionWithProviderTruth(ort, modelData);
+    const inFlight = sessionLoads.get(modelId);
+    if (inFlight) {
+        return waitForSession(inFlight, requestId, signal);
+    }
 
-    const entry: SessionEntry = {
-        session,
+    const controller = new AbortController();
+    const subscribers = new Set<string | symbol>();
+    let created: Pick<SessionEntry, 'session' | 'executionProviders'> | undefined;
+
+    const loadPromise = (async (): Promise<SessionEntry> => {
+        try {
+            const ort = await getOrt();
+            if (controller.signal.aborted) {
+                throw new Error('Session creation was cancelled');
+            }
+            const sizeBytes = modelData.byteLength;
+            created = await createSessionWithProviderTruth(ort, modelData);
+            if (controller.signal.aborted || subscribers.size === 0) {
+                throw new Error('Session creation was cancelled');
+            }
+            const entry: SessionEntry = {
+                session: created.session,
+                modelId,
+                executionProviders: created.executionProviders,
+                sizeBytes,
+                lastUsedAt: Date.now(),
+            };
+            sessionCache.set(modelId, entry);
+            totalMemoryBytes += sizeBytes;
+            created = undefined;
+            await evictLru();
+            return entry;
+        } finally {
+            sessionLoads.delete(modelId);
+            if (created) {
+                await created.session.release();
+            }
+        }
+    })();
+    loadPromise.catch(() => {});
+
+    const load: SessionLoad = {
         modelId,
-        executionProviders,
-        sizeBytes,
-        lastUsedAt: Date.now(),
+        controller,
+        subscribers,
+        promise: loadPromise,
     };
-    sessionCache.set(modelId, entry);
-    totalMemoryBytes += sizeBytes;
+    sessionLoads.set(modelId, load);
 
-    await evictLru();
-    return entry;
+    return waitForSession(load, requestId, signal);
 }
 
 function receiveModelData(port: MessagePort): Promise<ArrayBuffer> {
@@ -490,9 +579,20 @@ async function runKokoroOnnx(
 self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     const req = event.data;
 
+    if (req.type === 'cancel-request') {
+        const controller = activeRequests.get(req.requestId);
+        if (controller) {
+            controller.abort();
+            activeRequests.delete(req.requestId);
+        }
+        return;
+    }
+
     if (req.type === 'create-session') {
+        const controller = new AbortController();
+        activeRequests.set(req.requestId, controller);
         try {
-            const entry = await getOrCreateSession(req.modelId, req.modelData);
+            const entry = await getOrCreateSession(req.modelId, req.modelData, req.requestId, controller.signal);
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,
@@ -503,14 +603,18 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
         } catch (error) {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
             self.postMessage(response);
+        } finally {
+            activeRequests.delete(req.requestId);
         }
         return;
     }
 
     if (req.type === 'create-session-from-model-port') {
+        const controller = new AbortController();
+        activeRequests.set(req.requestId, controller);
         try {
             const modelData = await receiveModelData(req.modelDataPort);
-            const entry = await getOrCreateSession(req.modelId, modelData);
+            const entry = await getOrCreateSession(req.modelId, modelData, req.requestId, controller.signal);
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,
@@ -521,6 +625,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
         } catch (error) {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
             self.postMessage(response);
+        } finally {
+            activeRequests.delete(req.requestId);
         }
         return;
     }
@@ -570,6 +676,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     }
 
     if (req.type === 'release-session') {
+        const inFlight = sessionLoads.get(req.modelId);
+        if (inFlight) {
+            inFlight.controller.abort();
+            sessionLoads.delete(req.modelId);
+        }
         const entry = sessionCache.get(req.modelId);
         if (entry) {
             // Delete from the cache and adjust accounting BEFORE awaiting release(),

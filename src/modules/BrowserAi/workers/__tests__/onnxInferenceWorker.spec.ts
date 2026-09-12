@@ -169,3 +169,358 @@ describe('onnxInferenceWorker session provider reporting', () => {
         } satisfies WorkerResponse);
     });
 });
+
+type Deferred<T> = {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+    reject: (error: unknown) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+    let deferredResolve!: (value: T) => void;
+    let deferredReject!: (error: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+        deferredResolve = resolve;
+        deferredReject = reject;
+    });
+    return { promise, resolve: deferredResolve, reject: deferredReject };
+}
+
+describe('onnxInferenceWorker session coalescing and cancellation', () => {
+    beforeEach(async () => {
+        vi.resetModules();
+        createSession.mockReset().mockResolvedValue({ run: vi.fn(), release: vi.fn() });
+        installNavigator({});
+        Object.defineProperty(globalThis, 'crossOriginIsolated', { configurable: true, value: false });
+        self.postMessage = vi.fn();
+        await import('../onnxInferenceWorker');
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('coalesces concurrent cold create-session calls for the same modelId', async () => {
+        const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementation(() => deferred.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-1',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const p2 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-2',
+                modelId: 'model-1',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        deferred.resolve({ run: vi.fn(), release: mockRelease });
+        await Promise.all([p1, p2]);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-1',
+            modelId: 'model-1',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2',
+            modelId: 'model-1',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: ['model-1'],
+            memoryUsageBytes: 8,
+        } satisfies WorkerResponse);
+    });
+
+    it('coalesces concurrent cold create-session and create-session-from-model-port for the same modelId', async () => {
+        const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        createSession.mockImplementation(() => deferred.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-shared',
+                modelData: new ArrayBuffer(16),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const channel = new MessageChannel();
+        const modelData = new ArrayBuffer(16);
+        channel.port2.postMessage({ type: 'model-data', modelData }, [modelData]);
+
+        const p2 = onmessage({
+            data: {
+                type: 'create-session-from-model-port',
+                requestId: 'req-2',
+                modelId: 'model-shared',
+                modelDataPort: channel.port1,
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        deferred.resolve({ run: vi.fn(), release: vi.fn().mockResolvedValue(undefined) });
+        await Promise.all([p1, p2]);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-1',
+            modelId: 'model-shared',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2',
+            modelId: 'model-shared',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+    });
+
+    it('clears in-flight reservation when session creation fails so subsequent requests can retry', async () => {
+        const deferred1 = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        createSession.mockImplementationOnce(() => deferred1.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'fail-1',
+                modelId: 'model-fail',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const p2 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'fail-2',
+                modelId: 'model-fail',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        deferred1.reject(new Error('Corrupt model data'));
+        await Promise.all([p1, p2]);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'fail-1',
+            error: expect.stringContaining('Corrupt model data'),
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'fail-2',
+            error: expect.stringContaining('Corrupt model data'),
+        } satisfies WorkerResponse);
+
+        createSession.mockResolvedValueOnce({ run: vi.fn(), release: vi.fn().mockResolvedValue(undefined) });
+        await onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'retry-3',
+                modelId: 'model-fail',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(createSession).toHaveBeenCalledTimes(2);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'retry-3',
+            modelId: 'model-fail',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+    });
+
+    it('does not resurrect session when release occurs during in-flight creation', async () => {
+        const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementation(() => deferred.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const createPromise = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'create-req',
+                modelId: 'model-release-in-flight',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        const releasePromise = onmessage({
+            data: {
+                type: 'release-session',
+                modelId: 'model-release-in-flight',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        deferred.resolve({ run: vi.fn(), release: mockRelease });
+        await Promise.all([createPromise, releasePromise]);
+
+        await vi.waitFor(() => expect(mockRelease).toHaveBeenCalledOnce());
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: [],
+            memoryUsageBytes: 0,
+        } satisfies WorkerResponse);
+    });
+
+    it('aborts in-flight creation and releases session when all subscribers cancel', async () => {
+        const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementation(() => deferred.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const createPromise = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-cancel-all',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        await onmessage({
+            data: {
+                type: 'cancel-request',
+                requestId: 'req-1',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        deferred.resolve({ run: vi.fn(), release: mockRelease });
+        await createPromise;
+
+        await vi.waitFor(() => expect(mockRelease).toHaveBeenCalledOnce());
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: [],
+            memoryUsageBytes: 0,
+        } satisfies WorkerResponse);
+    });
+
+    it('preserves session for remaining subscriber when one subscriber cancels', async () => {
+        const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementation(() => deferred.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-multi-sub',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const p2 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-2',
+                modelId: 'model-multi-sub',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        await onmessage({
+            data: {
+                type: 'cancel-request',
+                requestId: 'req-1',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        deferred.resolve({ run: vi.fn(), release: mockRelease });
+        await Promise.all([p1, p2]);
+
+        expect(mockRelease).not.toHaveBeenCalled();
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'req-1',
+            error: expect.stringContaining('Session creation was cancelled'),
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2',
+            modelId: 'model-multi-sub',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: ['model-multi-sub'],
+            memoryUsageBytes: 8,
+        } satisfies WorkerResponse);
+    });
+});
