@@ -144,12 +144,24 @@ pub struct YinDetector {
 
 impl YinDetector {
     pub fn new(sample_rate: f32, fmin: f32, fmax: f32) -> Self {
+        Self::new_with_window(
+            sample_rate,
+            fmin,
+            fmax,
+            max_analysis_window(sample_rate, fmin),
+        )
+    }
+
+    /// Preallocate for an explicit maximum analysis window (such as a shared
+    /// poly-tracker analysis buffer), ensuring detect() never allocates on the audio thread.
+    pub fn new_with_window(sample_rate: f32, fmin: f32, fmax: f32, max_window: usize) -> Self {
         let max_tau = (sample_rate / fmin) as usize + 1;
         let min_tau = (sample_rate / fmax) as usize;
         let win_size = max_tau.min(MAX_TAU);
         // Preallocate for the largest window this detector will ever see, so
         // detect() never allocates on the audio thread.
-        let fft_size = next_pow2(max_analysis_window(sample_rate, fmin) * 2);
+        let window = max_window.max(max_analysis_window(sample_rate, fmin));
+        let fft_size = next_pow2(window * 2);
 
         Self {
             sample_rate,
@@ -188,11 +200,12 @@ impl YinDetector {
         // resize only fires for external buffers larger than the configured
         // range ever produces — never on the engine/poly audio path.
         let fft_size = next_pow2(len * 2);
-        if self.autocorr.len() < fft_size {
-            self.autocorr.resize(fft_size, 0.0);
-            self.scratch_re.resize(fft_size, 0.0);
-            self.scratch_im.resize(fft_size, 0.0);
-        }
+        debug_assert!(
+            self.autocorr.len() >= fft_size,
+            "YinDetector FFT scratch underequipped: have {}, need {}",
+            self.autocorr.len(),
+            fft_size
+        );
         fft_autocorrelation(
             &buffer[..len],
             &mut self.autocorr,
