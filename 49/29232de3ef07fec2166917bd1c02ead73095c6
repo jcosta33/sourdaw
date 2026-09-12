@@ -1,0 +1,30 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_87ab0a2f60ccf8::t_06677c5b4b474e 1661,1670,1748,1753-1756
+  s_87ab0a2f60ccf8::t_1ce74fbcea9aa6 1740-1742
+  s_87ab0a2f60ccf8::t_383fc05e226bcf 1657-1660,1662-1669,1671-1709,1714-1717,1719,1723,1735,1743,1749-1752,1757,1874
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_e7bade27cd26a6 1251
+  s_87ab0a2f60ccf8::t_36641ccd5ef079 1221-1250,1252-1298
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_87ab0a2f60ccf8::t_1339d2bb370079 1413
+  s_87ab0a2f60ccf8::t_d4c19ed218055b 768-777,1324,1326,1391,1393
+  s_87ab0a2f60ccf8::t_1d001cfde6635b 59,1307-1321,1325,1327,1334-1336,1338-1342,1344-1346,1348-1349,1353-1354
+  s_87ab0a2f60ccf8::t_4efb4c5e5fec0a 1401
+  s_87ab0a2f60ccf8::t_36641ccd5ef079 6,1306,1322-1323,1328-1333,1337,1343,1347,1350-1352,1355-1390,1392,1394-1400,1402-1412,1414-1434,1567,1571-1576
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4929232de3ef07fec2166917bd1c02ead73095c6",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
