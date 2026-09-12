@@ -1,26 +1,24 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { TrackHeaderSection } from '../TrackHeaderSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockRenameTrack = vi.fn();
-const mockSetTrackColor = vi.fn();
-const mockFreezeTrack = vi.fn();
-const mockUnfreezeTrack = vi.fn();
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
-        renameTrack: (...args: unknown[]) => mockRenameTrack(...args),
         setTrackNotes: vi.fn(),
         setTrackPan: vi.fn(),
         setTrackGain: vi.fn(),
-        setTrackColor: (...args: unknown[]) => mockSetTrackColor(...args),
-        unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
-        freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
     };
 });
 
@@ -196,7 +194,10 @@ describe('TrackHeaderSection', () => {
             throw new Error('expected a second color preset button');
         }
         fireEvent.click(secondColorButton);
-        expect(mockSetTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setTrackColor',
+            payload: { trackId: 'track-1', color: '#00ff00' },
+        });
     });
 
     it('marks the active color preset aria-pressed true and others false', () => {
@@ -205,5 +206,47 @@ describe('TrackHeaderSection', () => {
         const colorButtons = screen.getAllByLabelText(/Set color/i);
         expect(colorButtons[0]).toHaveAttribute('aria-pressed', 'true');
         expect(colorButtons[1]).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('dispatches renameTrack through executeUserAppAction when name is committed', () => {
+        render(<TrackHeaderSection track={mockTrack} />);
+        const nameButton = screen.getByText('Test Track');
+        fireEvent.click(nameButton);
+        const input = screen.getByTestId('compact-input');
+        fireEvent.change(input, { target: { value: 'New Name' } });
+        fireEvent.blur(input);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track-1', name: 'New Name' },
+        });
+    });
+
+    it('dispatches freezeTrack through executeUserAppAction when freeze button is clicked on unfrozen track', () => {
+        render(<TrackHeaderSection track={mockTrack} />);
+        fireEvent.click(screen.getByText(/Freeze/i));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'freezeTrack',
+            payload: { trackId: 'track-1' },
+        });
+    });
+
+    it('dispatches unfreezeTrack through executeUserAppAction when unfreeze button is clicked on frozen track', () => {
+        const frozenTrack = { ...mockTrack, frozen: true, freezeState: { status: 'frozen' as const } };
+        render(<TrackHeaderSection track={frozenTrack} />);
+        fireEvent.click(screen.getByText(/Unfreeze/i));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'unfreezeTrack',
+            payload: { trackId: 'track-1' },
+        });
+    });
+
+    it('dispatches unfreezeTrack through executeUserAppAction when update freeze button is clicked on stale track', () => {
+        const staleTrack = { ...mockTrack, frozen: true, freezeState: { status: 'stale' as const } };
+        render(<TrackHeaderSection track={staleTrack} />);
+        fireEvent.click(screen.getByText(/Update Freeze/i));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'unfreezeTrack',
+            payload: { trackId: 'track-1' },
+        });
     });
 });
