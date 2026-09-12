@@ -1,0 +1,19 @@
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_87ab0a2f60ccf8::t_f8c638a2ef68ad 80,90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f12acb520e717b9bcffcff4ba31487d4b1f639a4",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
