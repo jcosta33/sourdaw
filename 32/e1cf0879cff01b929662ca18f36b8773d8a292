@@ -1,0 +1,43 @@
+.github/workflows/validation.yml
+  s_87ab0a2f60ccf8::t_4a4248fb55c724 548,550-551,553
+.github/workflows/heavy-gates.yml
+  s_159146fff2d53c::t_7b7885ef686b1d 101-110
+.github/workflows/nightly.yml
+  s_159146fff2d53c::t_73980637a1995d 584-593
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_159146fff2d53c::t_cf9c818ad7de47 20-21,629-636,1060,2204-2220
+scripts/test-health-gate-scripts.sh
+  s_159146fff2d53c::t_4262971ef75590 189,1449-1450,1454,1462,1464-1465
+src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx
+  s_159146fff2d53c::t_a8546bf1ad08c7 10-11,36-39,115-118,120-123,198-203
+src/modules/TimelineEditor/presentations/views/Inspector/TrackNotesSection.tsx
+  s_159146fff2d53c::t_406a00bdadc5ab 4,53-56
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx
+  s_159146fff2d53c::t_55615e97f08ef2 4-5,11-15,198-201,211-252
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackNotesSection.spec.tsx
+  s_159146fff2d53c::t_83e7893b5c12f3 4-5,10-13,136-139,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "32e1cf0879cff01b929662ca18f36b8773d8a292",
+  "prompts": {},
+  "sessions": {
+    "s_159146fff2d53c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09556-856b-7a21-8f3b-9e9449e8195d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
