@@ -523,4 +523,173 @@ describe('onnxInferenceWorker session coalescing and cancellation', () => {
             memoryUsageBytes: 8,
         } satisfies WorkerResponse);
     });
+
+    it('creates a fresh session when a new request arrives after all previous subscribers were cancelled', async () => {
+        const deferred1 = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const deferred2 = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease1 = vi.fn().mockResolvedValue(undefined);
+        const mockRelease2 = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementationOnce(() => deferred1.promise).mockImplementationOnce(() => deferred2.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+
+        // 1. Start create-session for req-1 (model-resub)
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-resub',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+
+        // 2. Send cancel-request for req-1
+        await onmessage({
+            data: {
+                type: 'cancel-request',
+                requestId: 'req-1',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        // 3. While createSession is still pending, send a new create-session for req-2 (model-resub)
+        const p2 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-2',
+                modelId: 'model-resub',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(2));
+
+        // 4. Resolve createSession
+        deferred1.resolve({ run: vi.fn(), release: mockRelease1 });
+        deferred2.resolve({ run: vi.fn(), release: mockRelease2 });
+        await Promise.all([p1, p2]);
+
+        // 5. Verify req-1 received cancellation error, req-2 received session-created, and model-resub is cached
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'req-1',
+            error: expect.stringContaining('Session creation was cancelled'),
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2',
+            modelId: 'model-resub',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: ['model-resub'],
+            memoryUsageBytes: 8,
+        } satisfies WorkerResponse);
+    });
+
+    it('does not evict replacement load when earlier aborted load completes', async () => {
+        const deferred1 = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const deferred2 = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const mockRelease1 = vi.fn().mockResolvedValue(undefined);
+        const mockRelease2 = vi.fn().mockResolvedValue(undefined);
+        createSession.mockImplementationOnce(() => deferred1.promise).mockImplementationOnce(() => deferred2.promise);
+
+        const onmessage = self.onmessage as WorkerMessageHandler;
+
+        // 1. Start load 1 for model-replace
+        const p1 = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-1',
+                modelId: 'model-replace',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+
+        // 2. Send release-session for model-replace (aborts load 1 and clears map)
+        const pRelease = onmessage({
+            data: {
+                type: 'release-session',
+                modelId: 'model-replace',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        // 3. Start load 2 for model-replace with req-2a
+        const p2a = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-2a',
+                modelId: 'model-replace',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(2));
+
+        // 4. Start load 2 companion request with req-2b
+        const p2b = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'req-2b',
+                modelId: 'model-replace',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        // 5. Resolve load 1 (finishes its finally block)
+        deferred1.resolve({ run: vi.fn(), release: mockRelease1 });
+        await Promise.all([p1, pRelease]);
+
+        // 6. Verify load 2 is STILL present in sessionLoads so req-2b coalesced onto load 2
+        expect(createSession).toHaveBeenCalledTimes(2);
+
+        // 7. Resolve load 2. Verify both req-2a and req-2b succeed
+        deferred2.resolve({ run: vi.fn(), release: mockRelease2 });
+        await Promise.all([p2a, p2b]);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2a',
+            modelId: 'model-replace',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'req-2b',
+            modelId: 'model-replace',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: ['model-replace'],
+            memoryUsageBytes: 8,
+        } satisfies WorkerResponse);
+    });
 });

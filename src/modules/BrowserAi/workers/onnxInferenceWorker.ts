@@ -164,6 +164,9 @@ function waitForSession(load: SessionLoad, requestId?: string, signal?: AbortSig
         load.subscribers.delete(subId);
         if (load.subscribers.size === 0) {
             load.controller.abort();
+            if (sessionLoads.get(load.modelId) === load) {
+                sessionLoads.delete(load.modelId);
+            }
         }
         return Promise.reject(new Error(`Session creation was cancelled: ${load.modelId}`));
     }
@@ -174,6 +177,9 @@ function waitForSession(load: SessionLoad, requestId?: string, signal?: AbortSig
             load.subscribers.delete(subId);
             if (load.subscribers.size === 0) {
                 load.controller.abort();
+                if (sessionLoads.get(load.modelId) === load) {
+                    sessionLoads.delete(load.modelId);
+                }
             }
             reject(new Error(`Session creation was cancelled: ${load.modelId}`));
         };
@@ -214,13 +220,14 @@ async function getOrCreateSession(
     }
 
     const inFlight = sessionLoads.get(modelId);
-    if (inFlight) {
+    if (inFlight && !inFlight.controller.signal.aborted) {
         return waitForSession(inFlight, requestId, signal);
     }
 
     const controller = new AbortController();
     const subscribers = new Set<string | symbol>();
     let created: Pick<SessionEntry, 'session' | 'executionProviders'> | undefined;
+    let load: SessionLoad | undefined;
 
     const loadPromise = (async (): Promise<SessionEntry> => {
         try {
@@ -246,7 +253,9 @@ async function getOrCreateSession(
             await evictLru();
             return entry;
         } finally {
-            sessionLoads.delete(modelId);
+            if (sessionLoads.get(modelId) === load) {
+                sessionLoads.delete(modelId);
+            }
             if (created) {
                 await created.session.release();
             }
@@ -254,7 +263,7 @@ async function getOrCreateSession(
     })();
     loadPromise.catch(() => {});
 
-    const load: SessionLoad = {
+    load = {
         modelId,
         controller,
         subscribers,
