@@ -302,7 +302,8 @@ export function startPlayheadScheduler(): void {
                     const passIndex = Math.max(0, priorPassTakes - 1);
                     const loopLength = current.loopEnd - current.loopStart;
                     const runUpBeats = Math.max(0, current.loopStart - recordingClip.startBeat);
-                    const startedInsideLoop = recordingClip.startBeat > current.loopStart;
+                    const startedInsideLoop =
+                        recordingClip.startBeat > current.loopStart && recordingClip.startBeat < current.loopEnd;
                     const firstPassStart = runUpBeats;
                     const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
                     const sourceOffsetBeats =
