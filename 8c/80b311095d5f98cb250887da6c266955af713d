@@ -1,0 +1,52 @@
+src/modules/Yeast/useCases/__tests__/setYeastGrooveTemplate.spec.ts
+  s_87ab0a2f60ccf8::t_da08be79d37d35 50
+  s_87ab0a2f60ccf8::t_b7bced90cfe96b 13
+  s_87ab0a2f60ccf8::t_574104ccb5c3f9 1,34,40
+  s_87ab0a2f60ccf8::t_0d9ee80ab638ca 54,78
+src/modules/Yeast/presentations/__tests__/GrooveDropTarget.spec.tsx
+  s_87ab0a2f60ccf8::t_da08be79d37d35 91,174
+  s_87ab0a2f60ccf8::t_b14d025fa203cf 1,82-83,85,90,92,170,173,175
+  s_87ab0a2f60ccf8::t_bb610734d3b548 262
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts
+  s_87ab0a2f60ccf8::t_da08be79d37d35 119
+  s_87ab0a2f60ccf8::t_d45440b298a1ac 1,108,112,151-169
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_87ab0a2f60ccf8::t_a8f556dd3e3155 175-176
+  s_87ab0a2f60ccf8::t_56f09eb1612937 171-172
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_56f09eb1612937 890-898,900
+  s_87ab0a2f60ccf8::t_651728ffff1104 881-889,899,901
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_87ab0a2f60ccf8::t_e40f978d1c557c 5-8
+  s_87ab0a2f60ccf8::t_a8f556dd3e3155 79
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_87ab0a2f60ccf8::t_d1596ae7f2845a 497,505
+  s_87ab0a2f60ccf8::t_9c23295a6973c2 516-517,519,522
+  s_87ab0a2f60ccf8::t_0dec70071bc030 20,51-59
+  s_87ab0a2f60ccf8::t_96ca709e8f3432 507
+  s_87ab0a2f60ccf8::t_747063a8dfecae 60
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_87ab0a2f60ccf8::t_49d984326c5f60 26,93-98,320,322-325
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_87ab0a2f60ccf8::t_a8f556dd3e3155 447-448
+src/modules/Yeast/__tests__/grooveTemplateLifecycle.spec.ts
+  s_87ab0a2f60ccf8::t_b14d025fa203cf 1,33,35
+  s_87ab0a2f60ccf8::t_a8f556dd3e3155 25-26,28
+  s_87ab0a2f60ccf8::t_da08be79d37d35 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8c80b311095d5f98cb250887da6c266955af713d",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
