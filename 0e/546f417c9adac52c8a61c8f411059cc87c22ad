@@ -1,0 +1,43 @@
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  s_87ab0a2f60ccf8::t_952283e4b38cb2 145
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_837563b2c921d3::t_118e1ed423294a 94-102,355-358,387-395,405-410,479-484
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_837563b2c921d3::t_e5e7cf3f6fa595 68-71,82-85,159-162,199-202,204-207,218-221,293-296
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_837563b2c921d3::t_3c896aec549249 611-614,623,631,881-928
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_837563b2c921d3::t_300b7a47b47a46 340-344,375-379,434-437,451,597-600,626-630,641-644,682-685,724,763-766,803,873-888
+src/modules/Grinder/models/GrinderProjectParameterMap.ts
+  s_837563b2c921d3::t_8ecf6c40694306 29,36-44
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderParamEngineModePrecedence.spec.ts
+  s_837563b2c921d3::t_3e00688f52ef64 1,5,12,27,32-34,37,42,73,78,82,88,93,97
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderParamWithAudio.spec.ts
+  s_837563b2c921d3::t_6c9f3f0a0812bb 93,113-121,124,140-148
+src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts
+  s_837563b2c921d3::t_478becdda43b70 107,109-126,128-129,132-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e546f417c9adac52c8a61c8f411059cc87c22ad",
+  "prompts": {},
+  "sessions": {
+    "s_837563b2c921d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0954c-854d-7882-9e43-601f8adb9f7c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
