@@ -1,0 +1,44 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipSplitStateRestorable.spec.ts
+  s_87ab0a2f60ccf8::t_24dc73e10b1c42 1-67
+src/modules/MIDI/useCases/midiClipData/__tests__/midiClipSplitStateMatches.spec.ts
+  s_87ab0a2f60ccf8::t_24dc73e10b1c42 1-67
+src/modules/Arrangement/useCases/clip/__tests__/clipAutomationLaneTransitionMatchesStore.spec.ts
+  s_87ab0a2f60ccf8::t_24dc73e10b1c42 2-4,9,17-37,41-43,47-65
+  s_87ab0a2f60ccf8::t_c611b9cad5a005 1,5-8,10-16,38-40,44-46
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipGlueStateRestorable.spec.ts
+  s_87ab0a2f60ccf8::t_24dc73e10b1c42 1-73
+src/modules/Arrangement/useCases/clip/clipAutomationLaneTransitionMatchesStore.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 3,40
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 1-2,27
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 2,25-26
+src/modules/MIDI/useCases/midiClipData/__tests__/midiClipGlueStateMatches.spec.ts
+  s_87ab0a2f60ccf8::t_b9b51b711c2c9f 52,56,59-65,68-76
+  s_87ab0a2f60ccf8::t_24dc73e10b1c42 1-51,53-55,57-58,66-67,77-78
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 6,49-58,133,139,209-212
+src/modules/MIDI/useCases/midiClipData/midiClipGlueStateMatches.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 2,46
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_87ab0a2f60ccf8::t_b9ff883620e4cb 359-405
+  s_87ab0a2f60ccf8::t_c2dd000362659c 49-53,74,93,113-132,138-156,203,219,227,232,239,259,277,304,327,343,346,348,355,417,420-421,434
+src/modules/Arrangement/useCases/clipEditing/clipGlueStateRestorable.ts
+  s_87ab0a2f60ccf8::t_f373d31932b712 3,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b90937599772b36d9c471efa425cc3e21e16e42f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
