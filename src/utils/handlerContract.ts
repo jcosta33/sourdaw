@@ -1862,12 +1862,16 @@ export type AppAction =
                   clipAFadeOutBeats: number;
                   clipBStartBeat: number;
                   clipBFadeInBeats: number;
+                  clipBAudioOffsetBeats?: number;
+                  clipBMidiOffsetBeats?: number;
               };
               replacement: {
                   clipAEndBeat: number;
                   clipAFadeOutBeats: number;
                   clipBStartBeat: number;
                   clipBFadeInBeats: number;
+                  clipBAudioOffsetBeats?: number;
+                  clipBMidiOffsetBeats?: number;
               };
           };
       }
