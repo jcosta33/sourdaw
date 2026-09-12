@@ -1,0 +1,23 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_b54a4024c0359f 102
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_87ab0a2f60ccf8::t_b54a4024c0359f 150
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_87ab0a2f60ccf8::t_b54a4024c0359f 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1685bc6435bdd7994b905eb794a9ab332085ccdc",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
