@@ -91,9 +91,17 @@ type TakeLaneWriteIntent =
     | { readonly kind: 'comp-region-interval'; readonly patch: TakeLaneCompRegionPatch }
     | { readonly kind: 'replace-state' };
 
+type LaneWriteOperation = Exclude<
+    TakeLaneWriteOperation,
+    | { readonly kind: 'replace-state' }
+    | { readonly kind: 'comp-region-interval' }
+    | { readonly kind: 'insert-lane' }
+    | { readonly kind: 'remove-lane' }
+>;
+
 let pendingWriteIntent: TakeLaneWriteIntent | undefined;
 
-function cloneValue<T>(value: T): T {
+function cloneValue<Value>(value: Value): Value {
     return structuredClone(value);
 }
 
@@ -136,7 +144,7 @@ function optionalNumber(source: Take, field: 'sourceOffsetBeats'): OptionalNumbe
     return { present: false };
 }
 
-function previousIdentity<T extends { readonly id: string }>(items: readonly T[], index: number): string | null {
+function previousIdentity<Item extends { readonly id: string }>(items: readonly Item[], index: number): string | null {
     return index > 0 ? (items[index - 1]?.id ?? null) : null;
 }
 
@@ -388,7 +396,11 @@ function findTake(lane: TakeLane, takeId: string): Take | undefined {
     return lane.takes.find((take) => take.id === takeId);
 }
 
-function insertAfter<T extends { readonly id: string }>(items: readonly T[], item: T, afterId: string | null): T[] {
+function insertAfter<Item extends { readonly id: string }>(
+    items: readonly Item[],
+    item: Item,
+    afterId: string | null
+): Item[] {
     const result = [...items];
     const afterIndex = afterId === null ? -1 : result.findIndex((candidate) => candidate.id === afterId);
     result.splice(afterIndex < 0 ? 0 : afterIndex + 1, 0, cloneValue(item));
@@ -397,6 +409,90 @@ function insertAfter<T extends { readonly id: string }>(items: readonly T[], ite
 
 function replaceLane(state: TakeLaneStoreValue, replacement: TakeLane): TakeLaneStoreValue {
     return { lanes: state.lanes.map((lane) => (lane.id === replacement.id ? replacement : lane)) };
+}
+
+function applyTakeFieldOperation(
+    state: TakeLaneStoreValue,
+    lane: TakeLane,
+    operation: TakeFieldOperation
+): TakeLaneStoreValue | undefined {
+    const take = findTake(lane, operation.takeId);
+    if (!take) {
+        return undefined;
+    }
+    let replacementTake: Take;
+    if (operation.kind === 'take-source-offset-field') {
+        if (!valuesEqual(optionalNumber(take, 'sourceOffsetBeats'), operation.expected)) {
+            return undefined;
+        }
+        replacementTake = cloneValue(take);
+        if (operation.replacement.present) {
+            replacementTake.sourceOffsetBeats = operation.replacement.value;
+        } else {
+            delete replacementTake.sourceOffsetBeats;
+        }
+    } else if (operation.kind === 'take-selected-field') {
+        if (take.selected !== operation.expected) {
+            return undefined;
+        }
+        replacementTake = { ...take, selected: operation.replacement };
+    } else {
+        if (take[operation.field] !== operation.expected) {
+            return undefined;
+        }
+        replacementTake = { ...take, [operation.field]: operation.replacement };
+    }
+    return replaceLane(state, {
+        ...lane,
+        takes: lane.takes.map((candidate) => (candidate.id === take.id ? replacementTake : candidate)),
+    });
+}
+
+function applyLaneOperation(
+    state: TakeLaneStoreValue,
+    lane: TakeLane,
+    operation: LaneWriteOperation
+): TakeLaneStoreValue | undefined {
+    if (operation.kind === 'lane-track-field') {
+        if (lane.trackId !== operation.expected) {
+            return undefined;
+        }
+        return replaceLane(state, { ...lane, trackId: operation.replacement });
+    }
+    if (operation.kind === 'lane-automation-field') {
+        if (!valuesEqual(optionalString(lane, 'automationLaneId'), operation.expected)) {
+            return undefined;
+        }
+        const replacement = cloneValue(lane);
+        if (operation.replacement.present) {
+            replacement.automationLaneId = operation.replacement.value;
+        } else {
+            delete replacement.automationLaneId;
+        }
+        return replaceLane(state, replacement);
+    }
+    if (operation.kind === 'insert-take') {
+        if (findTake(lane, operation.take.id)) {
+            return undefined;
+        }
+        return replaceLane(state, {
+            ...lane,
+            takes: insertAfter(lane.takes, operation.take, operation.afterTakeId),
+        });
+    }
+    if (operation.kind === 'remove-take') {
+        if (!findTake(lane, operation.takeId)) {
+            return undefined;
+        }
+        return replaceLane(state, { ...lane, takes: lane.takes.filter((take) => take.id !== operation.takeId) });
+    }
+    if (operation.kind === 'replace-comp-regions') {
+        if (!valuesEqual(lane.activeCompRegions, operation.expected)) {
+            return undefined;
+        }
+        return replaceLane(state, { ...lane, activeCompRegions: operation.replacement.map(cloneValue) });
+    }
+    return applyTakeFieldOperation(state, lane, operation);
 }
 
 function applyOperation(
@@ -428,80 +524,7 @@ function applyOperation(
     if (!lane) {
         return undefined;
     }
-    if (operation.kind === 'lane-track-field') {
-        if (lane.trackId !== operation.expected) {
-            return undefined;
-        }
-        return replaceLane(current, { ...lane, trackId: operation.replacement });
-    }
-    if (operation.kind === 'lane-automation-field') {
-        if (!valuesEqual(optionalString(lane, 'automationLaneId'), operation.expected)) {
-            return undefined;
-        }
-        const replacement = cloneValue(lane);
-        if (operation.replacement.present) {
-            replacement.automationLaneId = operation.replacement.value;
-        } else {
-            delete replacement.automationLaneId;
-        }
-        return replaceLane(current, replacement);
-    }
-    if (operation.kind === 'insert-take') {
-        if (findTake(lane, operation.take.id)) {
-            return undefined;
-        }
-        return replaceLane(current, {
-            ...lane,
-            takes: insertAfter(lane.takes, operation.take, operation.afterTakeId),
-        });
-    }
-    if (operation.kind === 'remove-take') {
-        if (!findTake(lane, operation.takeId)) {
-            return undefined;
-        }
-        return replaceLane(current, { ...lane, takes: lane.takes.filter((take) => take.id !== operation.takeId) });
-    }
-    if (operation.kind === 'replace-comp-regions') {
-        if (!valuesEqual(lane.activeCompRegions, operation.expected)) {
-            return undefined;
-        }
-        return replaceLane(current, { ...lane, activeCompRegions: operation.replacement.map(cloneValue) });
-    }
-    const take = findTake(lane, operation.takeId);
-    if (!take) {
-        return undefined;
-    }
-    let replacementTake: Take;
-    if (operation.kind === 'take-source-offset-field') {
-        if (!valuesEqual(optionalNumber(take, 'sourceOffsetBeats'), operation.expected)) {
-            return undefined;
-        }
-        replacementTake = cloneValue(take);
-        if (operation.replacement.present) {
-            replacementTake.sourceOffsetBeats = operation.replacement.value;
-        } else {
-            delete replacementTake.sourceOffsetBeats;
-        }
-    } else if (operation.kind === 'take-selected-field') {
-        if (take.selected !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, selected: operation.replacement };
-    } else if (operation.kind === 'take-string-field') {
-        if (take[operation.field] !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, [operation.field]: operation.replacement };
-    } else {
-        if (take[operation.field] !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, [operation.field]: operation.replacement };
-    }
-    return replaceLane(current, {
-        ...lane,
-        takes: lane.takes.map((candidate) => (candidate.id === take.id ? replacementTake : candidate)),
-    });
+    return applyLaneOperation(current, lane, operation);
 }
 
 export function replayTakeLaneWriteJournal(

@@ -304,6 +304,22 @@ export function sanitize_take_lane_store_state(value: unknown): TakeLaneStoreSta
     };
 }
 
+function get_replay_authority(
+    authority_value: TakeLaneStoreState | null,
+    metadata: TakeLaneWriteJournal
+): TakeLaneStoreState | null {
+    if (authority_value !== null) {
+        return sanitize_take_lane_store_state(authority_value);
+    }
+
+    const initial_operation = metadata[0];
+    if (initial_operation?.kind === 'replace-state' && initial_operation.expected === null) {
+        return null;
+    }
+
+    return defaultTakeLaneStoreState;
+}
+
 export const takeLaneStore = createStore<TakeLaneStoreState>({
     storage: createAutomergeStorage<TakeLaneStoreState, TakeLaneWriteJournal>(DOC_PREFIX_ROOT, 'takeLanes', {
         // Audit CC-2 — projection default for a document without this slot, so
@@ -325,10 +341,7 @@ export const takeLaneStore = createStore<TakeLaneStoreState>({
                 reconcile(value, baseValue);
                 return;
             }
-            let authority = defaultTakeLaneStoreState;
-            if (authorityValue) {
-                authority = sanitize_take_lane_store_state(authorityValue);
-            }
+            const authority = get_replay_authority(authorityValue, metadata);
             const replay = replayTakeLaneWriteJournal(authority, metadata);
             if (replay.status === 'conflict') {
                 throw new AutomergeStorageWriteConflictError(

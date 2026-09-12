@@ -1046,24 +1046,23 @@ describe('setCompRegion command integration', () => {
     });
 
     it('rejects a supplied comp envelope when its captured prefix is omitted', async () => {
-        const actions = [
-            {
-                type: 'setCompRegion' as const,
-                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            },
-            {
-                type: 'setCompRegion' as const,
-                payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
-            },
-        ];
+        const firstAction = {
+            type: 'setCompRegion' as const,
+            payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+        };
+        const secondAction = {
+            type: 'setCompRegion' as const,
+            payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
+        };
+        const actions = [firstAction, secondAction];
         const supplied = migrateLegacyAppActionToVersionedCommandEnvelope({
-            action: actions[1],
+            action: secondAction,
             expectedEffect: 'Set the second comp interval',
             materializationContext: { actions, actionIndex: 1 },
             options: { groupId: 'captured-comp-prefix' },
         });
 
-        const result = await executeAppActionBatch([actions[1]], {
+        const result = await executeAppActionBatch([secondAction], {
             commandEnvelopes: [supplied],
             groupId: 'captured-comp-prefix',
         });
@@ -1240,6 +1239,73 @@ describe('setCompRegion command integration', () => {
         expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toEqual({
             lanes: [otherLane],
         });
+    });
+
+    it('writes a replacement in a separate transaction after clearing the take-lane slot', () => {
+        const clearTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.clear();
+        });
+
+        expect(clearTransaction.status).toBe('returned');
+        clearTransaction.commit();
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toBeUndefined();
+        expect(takeLaneStore.value).toBeNull();
+
+        const replacement = { lanes: [structuredClone(otherLane)] };
+        const replacementTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.set(replacement);
+        });
+
+        expect(replacementTransaction.status).toBe('returned');
+        let commitError: unknown;
+        try {
+            replacementTransaction.commit();
+        } catch (error) {
+            commitError = error;
+        }
+
+        expect(commitError).toBeUndefined();
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof otherLane)[] } }>('root')?.takeLanes).toEqual(replacement);
+        expect(takeLaneStore.value).toEqual(replacement);
+    });
+
+    it.each([
+        ['a populated slot', { lanes: [structuredClone(lane)] }],
+        ['a present empty slot', { lanes: [] }],
+    ])('refuses a captured absent replacement when a peer creates %s', (_description, peerAuthority) => {
+        const clearTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.clear();
+        });
+
+        expect(clearTransaction.status).toBe('returned');
+        clearTransaction.commit();
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toBeUndefined();
+        expect(takeLaneStore.value).toBeNull();
+
+        const replacementTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.set({ lanes: [structuredClone(otherLane)] });
+        });
+
+        expect(replacementTransaction.status).toBe('returned');
+        mutateCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes = structuredClone(peerAuthority);
+            },
+        });
+        let commitError: unknown;
+        try {
+            replacementTransaction.commit();
+        } catch (error) {
+            commitError = error;
+        } finally {
+            replacementTransaction.abort();
+        }
+
+        expect(commitError).toBeInstanceOf(AutomergeStorageWriteConflictError);
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toEqual(peerAuthority);
+        expect(takeLaneStore.value).toEqual(peerAuthority);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
 
     it('writes the first take lane over an absent document slot', () => {
