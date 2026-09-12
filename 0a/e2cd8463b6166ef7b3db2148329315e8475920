@@ -1,0 +1,29 @@
+src/modules/PluginHost/useCases/faustEngine/dsp/hammond-b3.dsp
+  s_87ab0a2f60ccf8::t_faa407f1915a9e 32,34
+src/modules/PluginHost/useCases/faustEngine/__tests__/hammondB3RotorDspBehavior.spec.ts
+  s_837563b2c921d3::t_0d0dc1f982f5cc 1-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0ae2cd8463b6166ef7b3db2148329315e8475920",
+  "prompts": {},
+  "sessions": {
+    "s_837563b2c921d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0954c-854d-7882-9e43-601f8adb9f7c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
