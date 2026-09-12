@@ -1,0 +1,52 @@
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_87ab0a2f60ccf8::t_9128a133c8ac94 33,431-434
+  s_87ab0a2f60ccf8::t_4e6db9893860b2 1,10,403-430,435,437-460
+  s_87ab0a2f60ccf8::t_53304837f1a613 13,436
+  s_87ab0a2f60ccf8::t_4f429cff668185 135,153,172
+  s_87ab0a2f60ccf8::t_32ceeb2aace758 461-462
+src/modules/Arrangement/useCases/__tests__/restoreTrackAtIndexWithDeferredAddedEvent.spec.ts
+  s_87ab0a2f60ccf8::t_d67cac686060e6 20-21
+  s_87ab0a2f60ccf8::t_21347667606146 1,4,19,22-24,95,102,109-127
+  s_87ab0a2f60ccf8::t_8c664b4248cfdd 128-129
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_379bde7b1bc675 80,82
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_87ab0a2f60ccf8::t_bcc4fb785ae5b6 33-34,138-141
+  s_87ab0a2f60ccf8::t_54836028cecb7f 46-47
+  s_87ab0a2f60ccf8::t_3c8eb26ff3b862 11-16
+  s_87ab0a2f60ccf8::t_f635ec208e52b0 4,24-29,83-88,145
+  s_87ab0a2f60ccf8::t_6f5892fb2930e5 212
+  s_87ab0a2f60ccf8::t_1ee093e8637d8a 3,5-8,10,17-22,79-82,89-90,131-137,142-144,146,167-170,176-178,211,213-243
+  s_87ab0a2f60ccf8::t_efac10ad666d54 244-245
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/commitAdjustmentLayerMutation.spec.ts
+  s_87ab0a2f60ccf8::t_6fea0564031378 3,8,37,56,58,64,66,76-80,88,115,127,139,152,184,226
+  s_87ab0a2f60ccf8::t_295770c5f2222c 5
+  s_87ab0a2f60ccf8::t_40bb442c4fb6ad 211
+src/modules/Yeast/handlers/__tests__/yeastGrooveAssignmentUndo.spec.ts
+  s_87ab0a2f60ccf8::t_61797b81ce5323 34,159-187,190,193-197,200-222,239-248,255-259
+src/modules/Arrangement/handlers/batchFeature/__tests__/adjustmentLayerFreezeStaleness.spec.ts
+  s_87ab0a2f60ccf8::t_a606f0f2b348b9 1,4-7,427-495
+  s_87ab0a2f60ccf8::t_08bd297b4c153b 496
+src/modules/Arrangement/services/createEffectiveAdjustmentLayerSignature.ts
+  s_87ab0a2f60ccf8::t_d67cac686060e6 44-45
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  s_87ab0a2f60ccf8::t_5cf69583f5794f 184-193,199
+src/modules/Arrangement/services/__tests__/createEffectiveAdjustmentLayerSignature.spec.ts
+  s_87ab0a2f60ccf8::t_01a6371819306b 164-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c8669558892c08c1d7ab720be0666bf8b7625e6b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
