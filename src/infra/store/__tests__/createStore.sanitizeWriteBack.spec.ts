@@ -37,6 +37,19 @@ type LaneState = { lanes: LaneRow[] };
 type TestDoc = { [key: string]: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
+function readCount(value: unknown): number | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const count = Object.entries(value).find(([key]) => key === 'count')?.[1];
+    return typeof count === 'number' ? count : undefined;
+}
+
+function sanitizeCount(value: unknown): { count: number } | null {
+    const count = readCount(value);
+    return count === undefined ? null : { count };
+}
+
 function createTestPort(initialDoc: TestDoc): {
     doc: TestDoc;
     port: TestPort;
@@ -314,7 +327,7 @@ describe('createStore sanitization against a shared document', () => {
             });
             store = createStore({
                 storage,
-                sanitize: (value) => (value === null ? null : { count: value.count }),
+                sanitize: sanitizeCount,
             });
         };
 
@@ -345,7 +358,7 @@ describe('createStore sanitization against a shared document', () => {
         const successor = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
         const store = createStore({
             storage,
-            sanitize: (value) => (value === null ? null : { count: value.count }),
+            sanitize: sanitizeCount,
         });
 
         successor.abort();
@@ -429,10 +442,10 @@ describe('createStore sanitization against a shared document', () => {
             initialData: { count: 9 },
             logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error, setWriters: vi.fn() },
             sanitize: (value) => {
-                if (value?.count === 0) {
+                if (readCount(value) === 0) {
                     throw new Error('default rejected');
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const successor = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
@@ -474,10 +487,10 @@ describe('createStore sanitization against a shared document', () => {
             initialData: { count: 9 },
             logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error, setWriters: vi.fn() },
             sanitize: (value) => {
-                if (value?.count === 2) {
+                if (readCount(value) === 2) {
                     throw new Error('intervening value rejected');
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const transaction = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
@@ -502,8 +515,8 @@ describe('createStore sanitization against a shared document', () => {
             const store = createStore({
                 storage,
                 sanitize: (value) => {
-                    if (value?.count !== 7) {
-                        return value;
+                    if (readCount(value) !== 7) {
+                        return sanitizeCount(value);
                     }
                     if (mode === 'throws') {
                         throw new Error('count 7 rejected');
@@ -547,8 +560,8 @@ describe('createStore sanitization against a shared document', () => {
             const store = createStore({
                 storage,
                 sanitize: (value) => {
-                    if (value?.count !== 2) {
-                        return value;
+                    if (readCount(value) !== 2) {
+                        return sanitizeCount(value);
                     }
                     if (mode === 'throws') {
                         throw new Error('count 2 rejected');
@@ -578,12 +591,12 @@ describe('createStore sanitization against a shared document', () => {
         const store = createStore({
             storage,
             sanitize: (value) => {
-                if (publishNested && value?.count === 1) {
+                if (publishNested && readCount(value) === 1) {
                     publishNested = false;
                     const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
                     nested.commit();
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const outer = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
@@ -607,14 +620,14 @@ describe('createStore sanitization against a shared document', () => {
         const store = createStore({
             storage,
             sanitize: (value) => {
-                if (publishNested && value?.count === 1) {
+                if (publishNested && readCount(value) === 1) {
                     publishNested = false;
                     if (!earlier) {
                         throw new Error('Earlier transaction was not initialized');
                     }
                     earlier.commit();
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         earlier = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 2 }));
@@ -638,13 +651,13 @@ describe('createStore sanitization against a shared document', () => {
         const store = createStore({
             storage,
             sanitize: (value) => {
-                if (hydrateNested && value?.count === 1) {
+                if (hydrateNested && readCount(value) === 1) {
                     hydrateNested = false;
                     doc.state = { count: 2 };
                     bumpHeads();
                     store.hydrate();
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const outer = runWithAutomergeStorageTransaction(undefined, () => store.set({ count: 1 }));
@@ -669,11 +682,11 @@ describe('createStore sanitization against a shared document', () => {
         const store = createStore({
             storage,
             sanitize: (value) => {
-                if (resetDuringHydrate && value?.count === 1) {
+                if (resetDuringHydrate && readCount(value) === 1) {
                     resetDuringHydrate = false;
                     resetAutomergeStorageProjections('root');
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         doc.state = { count: 1 };
@@ -700,12 +713,12 @@ describe('createStore sanitization against a shared document', () => {
         const store = createStore({
             storage,
             sanitize: (value) => {
-                if (publishNested && value?.count === 0) {
+                if (publishNested && readCount(value) === 0) {
                     publishNested = false;
                     const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
                     nested.commit();
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
 

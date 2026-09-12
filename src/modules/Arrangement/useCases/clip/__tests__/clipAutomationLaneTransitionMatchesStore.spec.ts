@@ -35,7 +35,7 @@ function lane(): ClipAutomationLaneSnapshot {
 }
 
 function setLiveLanes(lanes: readonly ClipAutomationLaneSnapshot[]): void {
-    const clonedLanes = structuredClone(lanes);
+    const clonedLanes = structuredClone([...lanes]);
     mocks.getAutomationLanes.mockReturnValue(clonedLanes);
     mocks.readClipScopedAutomationLanes.mockReturnValue(clonedLanes);
 }

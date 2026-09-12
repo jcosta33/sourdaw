@@ -33,6 +33,19 @@ type CreateTestPortInput = {
     getSemanticMessage?: () => string | undefined;
 };
 
+function readCount(value: unknown): number | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const count = Object.entries(value).find(([key]) => key === 'count')?.[1];
+    return typeof count === 'number' ? count : undefined;
+}
+
+function sanitizeCount(value: unknown): { count: number } | null {
+    const count = readCount(value);
+    return count === undefined ? null : { count };
+}
+
 const createTestPort = (
     input: CreateTestPortInput = {}
 ): { doc: TestDoc; mutations: MutationRecord[]; port: TestPort } => {
@@ -1413,14 +1426,14 @@ describe('createAutomergeStorage', () => {
         createStore({
             storage: firstStorage,
             sanitize: (value) => {
-                if (publishNewerSecond && value?.count === 1) {
+                if (publishNewerSecond && readCount(value) === 1) {
                     publishNewerSecond = false;
                     const nested = runWithAutomergeStorageTransaction(undefined, () => {
                         secondStorage.set({ count: 2 });
                     });
                     nested.commit();
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const transaction = runWithAutomergeStorageTransaction(undefined, () => {
@@ -1448,11 +1461,11 @@ describe('createAutomergeStorage', () => {
         createStore({
             storage,
             sanitize: (value) => {
-                if (resetDuringProjection && value?.count === 1) {
+                if (resetDuringProjection && readCount(value) === 1) {
                     resetDuringProjection = false;
                     resetAutomergeStorageProjections('root');
                 }
-                return value;
+                return sanitizeCount(value);
             },
         });
         const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
