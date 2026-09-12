@@ -1,0 +1,26 @@
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_87ab0a2f60ccf8::t_d62032f5e35dca 307-322,344
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_87ab0a2f60ccf8::t_02db81d2b16ae3 94-101,451-455,460,472,478,487,493,495-505,508-512,515-518,521,523-527
+  s_87ab0a2f60ccf8::t_d62032f5e35dca 104,147,399-403,414-420,423-425,428-435,438-443,445-450
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_87ab0a2f60ccf8::t_e4435ba3e4cc5e 1244-1248,1250,1252,1254-1257,1259-1269,1309-1310
+  s_87ab0a2f60ccf8::t_d62032f5e35dca 1049-1057,1059,1065
+  s_87ab0a2f60ccf8::t_2f2a276ac43d47 1249,1251,1253,1258,1270-1308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a715cc324513d82e7cf83f5165805767422633da",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
