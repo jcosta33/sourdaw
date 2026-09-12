@@ -1,0 +1,25 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_19827e213974df 7,1117-1146,1150-1151,1163-1170,1172-1174,1176-1199,1201-1219
+  s_87ab0a2f60ccf8::t_3fa2b1163bafaa 1147-1149,1152-1162,1171,1175,1200
+  s_87ab0a2f60ccf8::t_846ef3c29e2e8b 1220
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_87ab0a2f60ccf8::t_19827e213974df 7,57-58,1253-1293
+src/infra/store/storage/createAutomergeStorage.ts
+  s_87ab0a2f60ccf8::t_3fa2b1163bafaa 1005-1011
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4372c5d09f486058ebb770676f619c842c3eefc1",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
