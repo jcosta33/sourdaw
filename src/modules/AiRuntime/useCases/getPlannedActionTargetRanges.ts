@@ -19,12 +19,13 @@ import { type AgentRunScope } from '../models/AgentRun';
  * reference belongs to the confirm-time compile that executes the batch, which states its own
  * reason, and a throw escaping here would instead discard the whole plan before anything judged it.
  */
-function measureCompilableAction(action: AppAction) {
+function measureCompilableAction(action: AppAction, actions: readonly AppAction[], actionIndex: number) {
     try {
         return [
             migrateLegacyAppActionToVersionedCommandEnvelope({
                 action: structuredClone(action),
                 expectedEffect: action.type,
+                materializationContext: { actions, actionIndex },
                 reserveApplicationDefaults: false,
             }),
         ];
@@ -39,5 +40,7 @@ function measureCompilableAction(action: AppAction) {
  * off the commands through the batch compiler's own derivation instead of restating them.
  */
 export function getPlannedActionTargetRanges(actions: readonly AppAction[]): AgentRunScope['targetRanges'] {
-    return getVersionedCommandTargetRanges(actions.flatMap(measureCompilableAction));
+    return getVersionedCommandTargetRanges(
+        actions.flatMap((action, actionIndex) => measureCompilableAction(action, actions, actionIndex))
+    );
 }

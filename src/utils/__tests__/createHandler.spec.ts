@@ -37,6 +37,20 @@ describe('createHandler', () => {
         expect(handler.batchRestriction).toBeUndefined();
     });
 
+    it('forwards admission-time command materialization metadata', () => {
+        const handler = createHandler<'setTempo'>({
+            undoable: true,
+            execute: vi.fn(),
+            describe: () => ({ label: 'Set tempo' }),
+            validate: () => true,
+            materializeCommandArguments: vi.fn(),
+            materializeCommandArgumentsAt: 'admission',
+        });
+
+        expect(handler.materializeCommandArgumentsAt).toBe('admission');
+        expect(handler.batchExecution).toBeUndefined();
+    });
+
     it('distinguishes an explicit domain singleton from a missing validator', () => {
         const handler = createHandler<'setTempo'>({
             undoable: true,

@@ -294,6 +294,11 @@ export type ClipAutomationLaneSnapshot = {
     readonly color?: string;
 };
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
+export type CompSelectionSpanSnapshot = {
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly takeId: string;
+};
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiClipNoteSnapshot = {
     readonly id: string;
@@ -1820,6 +1825,31 @@ export type AppAction =
               replacement: ClipGlueActionSnapshot;
           };
       }
+    | {
+          type: 'setCompRegion';
+          payload: {
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              takeId: string;
+              /** Internal identity and state guards captured before Command's first await. */
+              laneId?: string;
+              expected?: readonly CompSelectionSpanSnapshot[];
+              replacement?: readonly CompSelectionSpanSnapshot[];
+          };
+      }
+    | {
+          /** Guarded interval replay emitted by `setCompRegion`. */
+          type: 'restoreCompRegionInterval';
+          payload: {
+              laneId: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              expected: readonly CompSelectionSpanSnapshot[];
+              replacement: readonly CompSelectionSpanSnapshot[];
+          };
+      }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
@@ -2659,6 +2689,8 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
+export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */
 export type HandlerSessionActionEntry = {
@@ -2702,7 +2734,9 @@ type ActionHandlerCommon<Action extends AppAction> = {
      */
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
-    materializeCommandArguments?: (action: Action) => void;
+    materializeCommandArguments?: (action: Action, context?: HandlerMaterializationContext) => void;
+    /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
+    materializeCommandArgumentsAt?: 'admission';
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Owner-provided strict validation for an internal persisted replay payload. */

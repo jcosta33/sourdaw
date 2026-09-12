@@ -17,6 +17,8 @@ export function registerCrdtStorageRuntime(): void {
         getDocHeads: (docId) => automergeRepository.getHeads(docId),
         getSemanticMessage: () => getSemanticContext()?.message,
         hasDoc: (docId) => hasCrdtDoc(docId),
+        isMutationBlockedBySnapshotTransaction: (docId, snapshotTransaction) =>
+            automergeRepository.isMutationBlockedBySnapshotTransaction(docId, snapshotTransaction),
         mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
             mutateCrdtDoc<StorageRuntimeDoc>({
                 id: docId,

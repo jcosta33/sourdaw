@@ -109,6 +109,31 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.parameters.properties).not.toHaveProperty('replacement');
     });
 
+    it('keeps comp interval serialization hidden and reserves its guard witness for the owner', () => {
+        const descriptor = executableAppActionDescriptorByType.get('setCompRegion');
+
+        expect(descriptor).toMatchObject({
+            actionType: 'setCompRegion',
+            discoverability: 'hidden',
+            intentPhrases: [],
+            materializedArgumentsValidation: 'owner-required',
+            risk: 'bounded-reversible',
+            targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+            parameters: {
+                required: ['trackId', 'takeId', 'startBeat', 'endBeat'],
+                properties: {
+                    trackId: { type: 'string' },
+                    takeId: { type: 'string' },
+                    startBeat: { type: 'number', minimum: 0 },
+                    endBeat: { type: 'number', exclusiveMinimum: 0 },
+                },
+            },
+        });
+        expect(descriptor?.parameters.properties).not.toHaveProperty('laneId');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('expected');
+        expect(descriptor?.parameters.properties).not.toHaveProperty('replacement');
+    });
+
     it('exposes an explicit authority-sensitive punch-enabled setter without replay fields', () => {
         const descriptor = executableAppActionDescriptorByType.get('setPunchEnabled');
 

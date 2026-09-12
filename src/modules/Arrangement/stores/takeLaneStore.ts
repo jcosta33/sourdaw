@@ -1,7 +1,17 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
+
+import {
+    appendTakeLaneWriteJournal,
+    captureTakeLaneWriteJournal,
+    replayTakeLaneWriteJournal,
+    type TakeLaneWriteJournal,
+} from './takeLaneWriteJournal';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -294,11 +304,52 @@ export function sanitize_take_lane_store_state(value: unknown): TakeLaneStoreSta
     };
 }
 
+function get_replay_authority(
+    authority_value: TakeLaneStoreState | null,
+    metadata: TakeLaneWriteJournal
+): TakeLaneStoreState | null {
+    if (authority_value !== null) {
+        return sanitize_take_lane_store_state(authority_value);
+    }
+
+    const initial_operation = metadata[0];
+    if (initial_operation?.kind === 'replace-state' && initial_operation.expected === null) {
+        return null;
+    }
+
+    return defaultTakeLaneStoreState;
+}
+
 export const takeLaneStore = createStore<TakeLaneStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'takeLanes', {
+    storage: createAutomergeStorage<TakeLaneStoreState, TakeLaneWriteJournal>(DOC_PREFIX_ROOT, 'takeLanes', {
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTakeLaneStoreState,
+        writeMetadata: {
+            capture: ({ beforeValue, nextValue }) => captureTakeLaneWriteJournal({ beforeValue, nextValue }),
+            reduce: ({ current, captured }) => appendTakeLaneWriteJournal(current, captured),
+        },
+        rebasePending: ({ hydratedValue, metadata, pendingValue }) => {
+            if (!metadata) {
+                return pendingValue;
+            }
+            const replay = replayTakeLaneWriteJournal(hydratedValue, metadata);
+            return replay.status === 'applied' ? replay.value : hydratedValue;
+        },
+        mutateCrdtWithMetadata: ({ authorityValue, baseValue, metadata, reconcile, value }) => {
+            if (!metadata) {
+                reconcile(value, baseValue);
+                return;
+            }
+            const authority = get_replay_authority(authorityValue, metadata);
+            const replay = replayTakeLaneWriteJournal(authority, metadata);
+            if (replay.status === 'conflict') {
+                throw new AutomergeStorageWriteConflictError(
+                    'Take lane write conflicts with current authoritative state'
+                );
+            }
+            reconcile(replay.value, authority);
+        },
     }),
     initialData: defaultTakeLaneStoreState,
     sanitize: sanitize_take_lane_store_state,

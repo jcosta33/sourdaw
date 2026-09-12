@@ -41,6 +41,39 @@ type DivergedFixture = {
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     {
+        // Live selection is take-a in [2,4); the captured forward guard expects take-b.
+        title: 'setCompRegion refuses to write against a diverged interval',
+        actionType: 'setCompRegion',
+        divergedAction: {
+            type: 'setCompRegion',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                takeId: 'take-b',
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+            },
+        },
+    },
+    {
+        // Live selection is take-a in [2,4); the captured replay guard expects take-b.
+        title: 'restoreCompRegionInterval refuses to write against a diverged interval',
+        actionType: 'restoreCompRegionInterval',
+        divergedAction: {
+            type: 'restoreCompRegionInterval',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+            },
+        },
+    },
+    {
         // Live track muted=false; the guard expects muted=true.
         title: 'muteTrack refuses to write against a diverged document',
         actionType: 'muteTrack',
@@ -233,6 +266,15 @@ function seedLiveProjectState(): void {
     }
     takeLaneStore.set({
         lanes: [
+            {
+                id: 'lane-live',
+                trackId: 'track-comp',
+                takes: [
+                    { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 8, selected: true },
+                    { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 8, selected: false },
+                ],
+                activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-a' }],
+            },
             {
                 id: 'take-lane-live',
                 trackId: 'track-live',

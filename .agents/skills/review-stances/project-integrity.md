@@ -109,3 +109,13 @@ guard, and local-field projection sequence with a document-authority epoch, incl
 the outer write. A stale continuation settles its published claim against the retained newer baseline; author revision
 order cannot replace actual publication order. Treat `null` from an inbound projector as an accepted value, not as a
 missing callback result, and keep ambiguous publish-then-throw outcomes on the committed terminal path.
+
+## Lesson from the comp-interval escape
+
+A comp selection over `[start, end)` edits only that musical interval. Removing every intersecting
+region also removes the left and right complements, while callback undo over a captured lane-store
+snapshot overwrites later edits in other lanes and outside the requested interval. Review the actual
+selected take at each beat: retain both complement fragments, and require guarded semantic undo and
+redo to apply interval surgery to current state while preserving unrelated lane metadata and
+same-lane selections outside the footprint. A source-count assertion does not prove that the
+resolved playback retains the selected source phase; verify source timing separately.

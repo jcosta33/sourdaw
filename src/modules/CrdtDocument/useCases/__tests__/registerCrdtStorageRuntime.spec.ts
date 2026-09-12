@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     getHeads: vi.fn(),
+    isMutationBlockedBySnapshotTransaction: vi.fn(),
     waitForSnapshotTransaction: vi.fn(),
     getSemanticContext: vi.fn(),
 }));
@@ -17,6 +18,7 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getHeads: mocks.getHeads,
+        isMutationBlockedBySnapshotTransaction: mocks.isMutationBlockedBySnapshotTransaction,
         waitForSnapshotTransaction: mocks.waitForSnapshotTransaction,
     },
 }));
@@ -111,6 +113,17 @@ describe('registerCrdtStorageRuntime', () => {
         const result = port.getSemanticMessage();
 
         expect(result).toBeUndefined();
+    });
+
+    it('isMutationBlockedBySnapshotTransaction delegates to automergeRepository', () => {
+        const snapshotTransaction = { id: 'snap-1' };
+        mocks.isMutationBlockedBySnapshotTransaction.mockReturnValue(true);
+
+        const port = getRegisteredPort();
+        const result = port.isMutationBlockedBySnapshotTransaction('doc-4', snapshotTransaction);
+
+        expect(mocks.isMutationBlockedBySnapshotTransaction).toHaveBeenCalledWith('doc-4', snapshotTransaction);
+        expect(result).toBe(true);
     });
 
     it('mutateDoc delegates to mutateCrdtDoc with mapped field names', () => {
