@@ -245,3 +245,16 @@ Probe that would have caught it: cross a fresh document projection for creation 
 guarded inverse checks, construct equal typed values with different top-level and nested key order,
 and assert their JSON strings differ. Unchanged values must admit the no-write or inverse path,
 while changed timing, dynamics, identity, and array order must still refuse.
+
+### 2026-09-12 — MIDI split fixtures equated absent keys with undefined (escaped via PRs #638 and #1874)
+
+PR #638 rebuilt split-right notes with absent optional fields materialized as own keys whose values
+were `undefined`; PR #1874 repeated the shape while adding two expression fields. Automerge's JSON
+boundary removed those keys, so the prepared undo guard could never match committed project truth.
+
+Blind spot: the producer specs used `toEqual` with explicit `undefined` properties, an oracle that
+also passes when those properties are absent.
+
+Probe that would have caught it: compare generated optional-field objects with `toStrictEqual` or
+explicit `Object.hasOwn` assertions before a serialized undo round trip. Require absent optionals to
+stay absent, defined zero values to survive, and changed values and array order to remain distinct.
