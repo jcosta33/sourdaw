@@ -643,7 +643,12 @@ describe('onnxInferenceWorker session coalescing and cancellation', () => {
 
         await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(2));
 
-        // 4. Start load 2 companion request with req-2b
+        // 4. Resolve load 1 (finishes its finally block, which must not evict load 2)
+        deferred1.resolve({ run: vi.fn(), release: mockRelease1 });
+        await Promise.all([p1, pRelease]);
+
+        // 5. Start companion request req-2b AFTER load 1 finished.
+        // It must find load 2 still in sessionLoads and coalesce rather than creating load 3.
         const p2b = onmessage({
             data: {
                 type: 'create-session',
@@ -654,16 +659,14 @@ describe('onnxInferenceWorker session coalescing and cancellation', () => {
             },
         } as MessageEvent<WorkerRequest>);
 
-        // 5. Resolve load 1 (finishes its finally block)
-        deferred1.resolve({ run: vi.fn(), release: mockRelease1 });
-        await Promise.all([p1, pRelease]);
-
-        // 6. Verify load 2 is STILL present in sessionLoads so req-2b coalesced onto load 2
+        // Verify load 2 was NOT evicted, so req-2b coalesced onto load 2
         expect(createSession).toHaveBeenCalledTimes(2);
 
-        // 7. Resolve load 2. Verify both req-2a and req-2b succeed
+        // 6. Resolve load 2. Verify both req-2a and req-2b succeed
         deferred2.resolve({ run: vi.fn(), release: mockRelease2 });
         await Promise.all([p2a, p2b]);
+
+        expect(createSession).toHaveBeenCalledTimes(2);
 
         expect(self.postMessage).toHaveBeenCalledWith({
             type: 'session-created',
