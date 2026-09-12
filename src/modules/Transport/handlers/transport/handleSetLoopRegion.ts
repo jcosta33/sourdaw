@@ -33,23 +33,23 @@ export const handleSetLoopRegion = createHandler<'setLoopRegion'>({
     describe: (action) => {
         const previous = getTransportState();
         const { loopStart, loopEnd } = normalizeLoopRegion(action.payload.startBeat, action.payload.endBeat);
-        const next = previous ? { loopStart, loopEnd, isLooping: previous.isLooping } : null;
+        const label = `Set loop region from beat ${loopStart} to ${loopEnd}`;
+
+        if (!previous) {
+            return { label, inverseAction: null, redoAction: action };
+        }
+
+        const before = {
+            loopStart: previous.loopStart,
+            loopEnd: previous.loopEnd,
+            isLooping: previous.isLooping,
+        };
+        const after = { loopStart, loopEnd, isLooping: previous.isLooping };
+
         return {
-            label: `Set loop region from beat ${loopStart} to ${loopEnd}`,
-            inverseAction: previous
-                ? restoreLoopRegionAction(next!, {
-                      loopStart: previous.loopStart,
-                      loopEnd: previous.loopEnd,
-                      isLooping: previous.isLooping,
-                  })
-                : null,
-            redoAction:
-                previous && next
-                    ? restoreLoopRegionAction(
-                          { loopStart: previous.loopStart, loopEnd: previous.loopEnd, isLooping: previous.isLooping },
-                          next
-                      )
-                    : action,
+            label,
+            inverseAction: restoreLoopRegionAction(after, before),
+            redoAction: restoreLoopRegionAction(before, after),
         };
     },
     undoable: true,
