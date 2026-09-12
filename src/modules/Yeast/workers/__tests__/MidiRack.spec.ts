@@ -681,6 +681,214 @@ describe('MidiRack', () => {
         }
     });
 
+    describe('identified out-of-order releases', () => {
+        it('keeps Transposer endpoint identities and pitches paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new Transposer('transpose-a');
+            rack.addProcessor(processor);
+            processor.setParam('semitones', 1);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('semitones', 12);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 61 } }]);
+            expect(secondOn).toMatchObject([{ noteInstanceId: 'voice-b', kind: { type: 'noteOn', note: 72 } }]);
+            expect(releases).toMatchObject([
+                { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 72 } },
+                { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 61 } },
+            ]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+
+        it('keeps ScaleQuantizer endpoint identities and pitches paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new ScaleQuantizer('scale-a');
+            rack.addProcessor(processor);
+            processor.setParam('remap_mode', 2);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('remap_mode', 1);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 61 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 61 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(secondOn).toMatchObject([{ noteInstanceId: 'voice-b', kind: { type: 'noteOn', note: 62 } }]);
+            expect(releases).toMatchObject([
+                { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 62 } },
+                { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } },
+            ]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+
+        it('keeps NoteFilter endpoint identities paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new NoteFilter('filter-a');
+            rack.addProcessor(processor);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('note_min', 61);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(secondOn).toEqual([]);
+            expect(releases).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } }]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+    });
+
     describe('removeProcessor (fix #1: hung notes on mid-playback removal)', () => {
         it('emits a Note Off for every note still sounding when a processor is removed', () => {
             const rack = new MidiRack();

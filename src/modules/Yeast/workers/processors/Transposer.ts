@@ -18,8 +18,8 @@ export class Transposer extends BaseMidiProcessor {
     private clampMin = 0;
     private clampMax = 127;
     private rngState = 0xface;
-    // Numeric key (channel << 7) | inNote → outNote. Matches MidiRack/ScaleQuantizer
-    // and avoids a per-event template-literal allocation on the audio thread.
+    // `noteInstanceId` keeps identified overlapping voices independent; the
+    // numeric channel/pitch key preserves FIFO pairing for identityless input.
     private noteVoices = new BoundedNoteVoiceQueue<number>();
 
     constructor(id?: string) {
@@ -48,7 +48,8 @@ export class Transposer extends BaseMidiProcessor {
                 const low = Math.min(this.clampMin, this.clampMax);
                 const high = Math.max(this.clampMin, this.clampMax);
                 const note = Math.max(low, Math.min(high, event.kind.note + offset));
-                this.noteVoices.push(event.trackId, (event.kind.channel << 7) | event.kind.note, note);
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
+                this.noteVoices.push(event.trackId, key, note);
 
                 const transformed: MidiEvent = {
                     ...event,
@@ -57,7 +58,7 @@ export class Transposer extends BaseMidiProcessor {
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const note = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
 
                 const transformed: MidiEvent = {

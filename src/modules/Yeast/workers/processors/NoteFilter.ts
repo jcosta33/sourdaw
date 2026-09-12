@@ -16,10 +16,8 @@ export class NoteFilter extends BaseMidiProcessor {
     private velMax = 127;
     private allowedPitchClasses = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]); // all by default
     private invert = false;
-    // Track every Note On decision so overlapping equal-key voices consume the
-    // matching FIFO decision and suppress only the offs whose ons were filtered.
-    // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer/Humanizer
-    // and avoids a per-event template-literal allocation on the audio thread.
+    // Track every Note On decision so identified overlapping voices consume
+    // their own decision; identityless equal-key voices retain FIFO pairing.
     private noteDecisions = new BoundedNoteVoiceQueue<boolean>();
 
     constructor(id?: string) {
@@ -29,7 +27,7 @@ export class NoteFilter extends BaseMidiProcessor {
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 let passes = this.passesFilter(event.kind.note, event.kind.velocity);
                 if (this.invert) {
                     passes = !passes;
@@ -42,7 +40,7 @@ export class NoteFilter extends BaseMidiProcessor {
                     this.noteDecisions.push(event.trackId, key, false);
                 }
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const passed = this.noteDecisions.shift(event.trackId, key);
                 if (passed !== false) {
                     output.push(event);
