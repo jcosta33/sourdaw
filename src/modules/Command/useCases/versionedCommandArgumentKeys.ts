@@ -2935,6 +2935,8 @@ const schemaDefinitions = [
             clipAFadeOutBeats: 1,
             clipBStartBeat: 1,
             clipBFadeInBeats: 1,
+            clipBAudioOffsetBeats: 1,
+            clipBMidiOffsetBeats: 1,
         },
         required: ['clipAEndBeat', 'clipAFadeOutBeats', 'clipBStartBeat', 'clipBFadeInBeats'],
         additionalProperties: false,

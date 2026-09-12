@@ -1,8 +1,117 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { type Clip } from '../../models/Track';
+import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
 import { crossfadeClips } from '../../useCases/clipEditing/crossfadeClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+function computeMaxTimelinePreRoll(clipB: Clip): { stretchFactor: number; maxTimelinePreRoll: number } {
+    const stretchFactor = consumedStretchFactor(clipB);
+    let maxTimelinePreRoll = Number.POSITIVE_INFINITY;
+    if (clipB.audioOffsetBeats !== undefined) {
+        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.audioOffsetBeats) / stretchFactor);
+    }
+    if (clipB.midiOffsetBeats !== undefined) {
+        maxTimelinePreRoll = Math.min(maxTimelinePreRoll, Math.max(0, clipB.midiOffsetBeats));
+    }
+    return { stretchFactor, maxTimelinePreRoll };
+}
+
+function isValidCrossfadeGeometry(
+    clipAEndBeat: number,
+    clipBStartBeat: number,
+    overlap: number,
+    newClipBAudioOffsetBeats?: number,
+    newClipBMidiOffsetBeats?: number
+): boolean {
+    if (
+        !Number.isFinite(clipAEndBeat) ||
+        !Number.isFinite(clipBStartBeat) ||
+        !Number.isFinite(overlap) ||
+        overlap < 0
+    ) {
+        return false;
+    }
+    if (newClipBAudioOffsetBeats !== undefined && !Number.isFinite(newClipBAudioOffsetBeats)) {
+        return false;
+    }
+    if (newClipBMidiOffsetBeats !== undefined && !Number.isFinite(newClipBMidiOffsetBeats)) {
+        return false;
+    }
+    return true;
+}
+
+function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: number) {
+    const halfDuration = durationBeats / 2;
+    const clipAEndBeat = clipA.endBeat + halfDuration;
+
+    const { stretchFactor, maxTimelinePreRoll } = computeMaxTimelinePreRoll(clipB);
+    const unclampedClipBStart = clipB.startBeat - halfDuration;
+    const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
+    const clipBStartBeat = Math.max(unclampedClipBStart, boundedClipBStart);
+    const overlap = clipAEndBeat - clipBStartBeat;
+    const clipBDelta = clipBStartBeat - clipB.startBeat;
+    const contentDelta = clipBDelta * stretchFactor;
+    const newClipBAudioOffsetBeats =
+        clipB.audioOffsetBeats !== undefined ? clipB.audioOffsetBeats + contentDelta : undefined;
+    const newClipBMidiOffsetBeats =
+        clipB.midiOffsetBeats !== undefined ? clipB.midiOffsetBeats + clipBDelta : undefined;
+
+    if (
+        !isValidCrossfadeGeometry(
+            clipAEndBeat,
+            clipBStartBeat,
+            overlap,
+            newClipBAudioOffsetBeats,
+            newClipBMidiOffsetBeats
+        )
+    ) {
+        return null;
+    }
+
+    const previous: {
+        clipAEndBeat: number;
+        clipAFadeOutBeats: number;
+        clipBStartBeat: number;
+        clipBFadeInBeats: number;
+        clipBAudioOffsetBeats?: number;
+        clipBMidiOffsetBeats?: number;
+    } = {
+        clipAEndBeat: clipA.endBeat,
+        clipAFadeOutBeats: clipA.fadeOutBeats,
+        clipBStartBeat: clipB.startBeat,
+        clipBFadeInBeats: clipB.fadeInBeats,
+    };
+    if (clipB.audioOffsetBeats !== undefined) {
+        previous.clipBAudioOffsetBeats = clipB.audioOffsetBeats;
+    }
+    if (clipB.midiOffsetBeats !== undefined) {
+        previous.clipBMidiOffsetBeats = clipB.midiOffsetBeats;
+    }
+
+    const next: {
+        clipAEndBeat: number;
+        clipAFadeOutBeats: number;
+        clipBStartBeat: number;
+        clipBFadeInBeats: number;
+        clipBAudioOffsetBeats?: number;
+        clipBMidiOffsetBeats?: number;
+    } = {
+        clipAEndBeat,
+        clipAFadeOutBeats: overlap,
+        clipBStartBeat,
+        clipBFadeInBeats: overlap,
+    };
+    if (newClipBAudioOffsetBeats !== undefined) {
+        next.clipBAudioOffsetBeats = newClipBAudioOffsetBeats;
+    }
+    if (newClipBMidiOffsetBeats !== undefined) {
+        next.clipBMidiOffsetBeats = newClipBMidiOffsetBeats;
+    }
+
+    return { previous, next };
+}
 
 export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
     execute: (alpha) => {
@@ -18,30 +127,10 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
         if (!clipA || !clipB || clipA.id === clipB.id || !Number.isFinite(durationBeats) || durationBeats < 0) {
             return { label: 'Crossfade clips', inverseAction: null };
         }
-        const halfDuration = durationBeats / 2;
-        const clipAEndBeat = clipA.endBeat + halfDuration;
-        const clipBStartBeat = Math.max(0, clipB.startBeat - halfDuration);
-        const overlap = clipAEndBeat - clipBStartBeat;
-        if (
-            !Number.isFinite(clipAEndBeat) ||
-            !Number.isFinite(clipBStartBeat) ||
-            !Number.isFinite(overlap) ||
-            overlap < 0
-        ) {
+        const snapshots = computeCrossfadeSnapshots(clipA, clipB, durationBeats);
+        if (!snapshots) {
             return { label: 'Crossfade clips', inverseAction: null };
         }
-        const previous = {
-            clipAEndBeat: clipA.endBeat,
-            clipAFadeOutBeats: clipA.fadeOutBeats,
-            clipBStartBeat: clipB.startBeat,
-            clipBFadeInBeats: clipB.fadeInBeats,
-        };
-        const next = {
-            clipAEndBeat,
-            clipAFadeOutBeats: overlap,
-            clipBStartBeat,
-            clipBFadeInBeats: overlap,
-        };
         return {
             label: 'Crossfade clips',
             inverseAction: {
@@ -49,8 +138,8 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
                 payload: {
                     clipAId: clipA.id,
                     clipBId: clipB.id,
-                    expected: next,
-                    replacement: previous,
+                    expected: snapshots.next,
+                    replacement: snapshots.previous,
                 },
             },
             redoAction: {
@@ -58,8 +147,8 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
                 payload: {
                     clipAId: clipA.id,
                     clipBId: clipB.id,
-                    expected: previous,
-                    replacement: next,
+                    expected: snapshots.previous,
+                    replacement: snapshots.next,
                 },
             },
         };

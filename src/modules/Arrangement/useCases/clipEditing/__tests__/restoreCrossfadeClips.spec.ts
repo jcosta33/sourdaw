@@ -134,4 +134,85 @@ describe('restoreCrossfadeClips', () => {
         expect(updatedB.startBeat).toBe(4);
         expect(updatedB.fadeInBeats).toBe(0.5);
     });
+
+    it('returns false when clipBAudioOffsetBeats is not finite', () => {
+        const result = restoreCrossfadeClips({
+            clipAId: 'c1',
+            clipBId: 'c2',
+            replacement: {
+                clipAEndBeat: 4,
+                clipAFadeOutBeats: 1,
+                clipBStartBeat: 4,
+                clipBFadeInBeats: 1,
+                clipBAudioOffsetBeats: Number.NaN,
+            },
+        });
+        expect(result).toBe(false);
+    });
+
+    it('returns false when clipBMidiOffsetBeats is not finite', () => {
+        const result = restoreCrossfadeClips({
+            clipAId: 'c1',
+            clipBId: 'c2',
+            replacement: {
+                clipAEndBeat: 4,
+                clipAFadeOutBeats: 1,
+                clipBStartBeat: 4,
+                clipBFadeInBeats: 1,
+                clipBMidiOffsetBeats: Number.POSITIVE_INFINITY,
+            },
+        });
+        expect(result).toBe(false);
+    });
+
+    it('restores audioOffsetBeats and midiOffsetBeats on clip B when specified', () => {
+        const clipA = makeClip('c1', { endBeat: 4.5, fadeOutBeats: 1 });
+        const clipB = makeClip('c2', { startBeat: 3.5, fadeInBeats: 1, audioOffsetBeats: 1.5, midiOffsetBeats: 1.5 });
+        mockGetTrackState.mockReturnValue(makeState([clipA, clipB]));
+
+        const result = restoreCrossfadeClips({
+            clipAId: 'c1',
+            clipBId: 'c2',
+            replacement: {
+                clipAEndBeat: 4,
+                clipAFadeOutBeats: 0,
+                clipBStartBeat: 4,
+                clipBFadeInBeats: 0,
+                clipBAudioOffsetBeats: 2,
+                clipBMidiOffsetBeats: 2,
+            },
+        });
+        expect(result).toBe(true);
+        expect(mockMapAllTracks).toHaveBeenCalledTimes(1);
+        const updater = mockMapAllTracks.mock.calls[0]?.[0];
+        const updatedTrack = updater({
+            id: 't1',
+            name: 'T1',
+            clips: [clipA, clipB],
+        });
+        const updatedB = updatedTrack.clips[1];
+        expect(updatedB.startBeat).toBe(4);
+        expect(updatedB.fadeInBeats).toBe(0);
+        expect(updatedB.audioOffsetBeats).toBe(2);
+        expect(updatedB.midiOffsetBeats).toBe(2);
+    });
+
+    it('returns true when only audioOffsetBeats differs between current state and replacement', () => {
+        const clipA = makeClip('c1', { endBeat: 4, fadeOutBeats: 0 });
+        const clipB = makeClip('c2', { startBeat: 4, fadeInBeats: 0, audioOffsetBeats: 1.75 });
+        mockGetTrackState.mockReturnValue(makeState([clipA, clipB]));
+
+        const result = restoreCrossfadeClips({
+            clipAId: 'c1',
+            clipBId: 'c2',
+            replacement: {
+                clipAEndBeat: 4,
+                clipAFadeOutBeats: 0,
+                clipBStartBeat: 4,
+                clipBFadeInBeats: 0,
+                clipBAudioOffsetBeats: 2,
+            },
+        });
+        expect(result).toBe(true);
+    });
 });
