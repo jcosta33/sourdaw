@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { GrooveExtractionActionError } from '../../errors/GrooveExtractionActionError';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
@@ -18,7 +19,7 @@ type ExtractGroovePlan =
     | { outcome: 'conflict'; error: GrooveExtractionActionError };
 
 function templatesEqual(left: ExtractedGrooveTemplate, right: ExtractedGrooveTemplate): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return valuesEqual(left, right);
 }
 
 function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {

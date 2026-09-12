@@ -121,7 +121,36 @@ describe('restoreGrooveAssignment', () => {
         expect(state.assignments[0]?.templateId).toBe('swing-heavy');
     });
 
-    it('throws when current assignment diverges from expectedAssignment', () => {
+    it('accepts an expected assignment whose object keys were reordered in current state', () => {
+        const expected = assignment('clip', 'clip-1', 'groove-straight', 1);
+        const reordered: GrooveTemplateAssignment = {
+            amount: expected.amount,
+            templateId: expected.templateId,
+            consumerId: expected.consumerId,
+            consumerType: expected.consumerType,
+        };
+        mockStore.value = {
+            templates: [...defaultGrooveTemplateState.templates],
+            assignments: [reordered],
+        };
+
+        expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(expected));
+        restoreGrooveAssignment({
+            consumerType: 'clip',
+            consumerId: 'clip-1',
+            assignment: null,
+            expectedAssignment: expected,
+        });
+
+        expect(mockStore.set).toHaveBeenCalledTimes(1);
+        expect(mockStore.value.assignments).toEqual([]);
+        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['template identity', assignment('clip', 'clip-1', 'wrong-template', 1)],
+        ['amount', assignment('clip', 'clip-1', 'groove-straight', 0.5)],
+    ])('throws without writing when current assignment diverges in %s', (_field, expectedAssignment) => {
         mockStore.value = {
             templates: [...defaultGrooveTemplateState.templates],
             assignments: [assignment('clip', 'clip-1', 'groove-straight', 1)],
@@ -131,9 +160,11 @@ describe('restoreGrooveAssignment', () => {
                 consumerType: 'clip',
                 consumerId: 'clip-1',
                 assignment: null,
-                expectedAssignment: assignment('clip', 'clip-1', 'wrong-template', 0.5),
+                expectedAssignment,
             })
         ).toThrow('diverged');
+        expect(mockStore.set).not.toHaveBeenCalled();
+        expect(mockMarkWrite).not.toHaveBeenCalled();
     });
 
     it('throws when assignment fails isGrooveTemplateAssignment validation', () => {

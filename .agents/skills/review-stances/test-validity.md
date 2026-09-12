@@ -231,3 +231,17 @@ Probe that would have caught it: for every nesting comparison independently vali
 case with equal start timestamps and one with equal end timestamps; for each pair, add a third
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
+
+### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
+
+PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
+guard in `c166247ea4`. They compared `JSON.stringify` output, so a fresh Automerge projection with
+the same template or assignment fields in a different object-key order was rejected as changed.
+
+Blind spot: the fixtures reused author-constructed objects and never crossed a fresh document
+projection, while their retry assertions used the same insertion order as the producer.
+
+Probe that would have caught it: cross a fresh document projection for creation idempotence and
+guarded inverse checks, construct equal typed values with different top-level and nested key order,
+and assert their JSON strings differ. Unchanged values must admit the no-write or inverse path,
+while changed timing, dynamics, identity, and array order must still refuse.
