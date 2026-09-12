@@ -1,0 +1,57 @@
+crates/daw-dsp/src/proof/biquad.rs
+  s_06adf2b091dc62::t_8b155c1bb9feb5 165-169
+crates/daw-engine/src/timeline.rs
+  s_06adf2b091dc62::t_2d2c259f418a6f 1214-1218,1231-1235,1276-1277,1375-1378,1398-1399,1542-1615,2657-2661,2682-2683,2710-2712,2761-2763,2765-2766,2769-2771,3909-3949,3952,3964-3967,3971-3991,3995,3999-4011,4014-4015,4018-4030,4036,4051-4071,4121,4132-4151,4155-4200,4203-4251,4254-4255,4257-4372
+crates/daw-plugin-host/src/runtime.rs
+  s_06adf2b091dc62::t_39f7cf871bcaec 213-216
+crates/daw-plugin-host/src/traits.rs
+  s_06adf2b091dc62::t_1dc33ad1550677 516-528
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_06adf2b091dc62::t_6ce4c061b7b619 74-77,177-239
+src/modules/BrowserAi/useCases/renderKokoroTts.ts
+  s_06adf2b091dc62::t_b890bd79917a1c 5-8,146-159,193
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_06adf2b091dc62::t_432e8be20659ae 6,306-321,330-446
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_06adf2b091dc62::t_ae7867570f4fca 74-89,91-94
+crates/daw-dsp/src/proof/imager.rs
+  s_ef2a8d14919dbc::t_f73ae78e7c077d 2-23,27,40-42,64-65,78-89,93,126-142,150,156-162,202-258,272-640
+crates/daw-engine/src/scheduler.rs
+  s_9930aeb28af7d4::t_92521f14e49cc3 11463-11469,11841,11855-11858,11869,11880-11884,11963,11979-11983,13243,13253-13254,13257-13258,13265-13266,14226-14331,14821,14830-14833,14835-14836,14851,14859,14876,14885,14899-14910
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_06adf2b091dc62::t_6e394ef1d92575 81,149-155,875,913,2017-2018,2105-2106,2131-2144,2180-2182,2486-2503,2957-2960,3180,6259-6422
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipMidiAiSection.spec.tsx
+  s_06adf2b091dc62::t_cea11dae1e317d 450-472,1102-1272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6bb7102d87da52b45ec7bc467941ab8c3516615a",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9930aeb28af7d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebf0f7125abb232d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef2a8d14919dbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2a423013c704aa90",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
