@@ -13,18 +13,14 @@ import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
-import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { bounceTrack, type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
 import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { renameTrack } from '../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
-import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
 import { useTracks } from '../hooks/useTracks';
 
 import { BounceOptionsDialog } from './BounceOptionsDialog';
@@ -72,7 +68,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     useContextMenuDismiss(menuRef, close);
 
     const handleDuplicate = () => {
-        duplicateTrack(track.id);
+        void executeUserAppAction({
+            type: 'duplicateTrack',
+            payload: { trackId: track.id },
+        });
         close();
     };
 
@@ -83,7 +82,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
 
     const handleRenameCommit = () => {
         if (renameValue.trim()) {
-            renameTrack(track.id, renameValue.trim());
+            void executeUserAppAction({
+                type: 'renameTrack',
+                payload: { trackId: track.id, name: renameValue.trim() },
+            });
         }
         close();
     };
@@ -157,7 +159,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: track.soloSafe ? 'Disable Solo Safe' : 'Solo Safe',
             action: () => {
-                toggleSoloSafe(track.id);
+                void executeUserAppAction({
+                    type: 'toggleSoloSafe',
+                    payload: { trackId: track.id },
+                });
                 close();
             },
         },
@@ -279,7 +284,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             active={track.color === color}
                             className={cn('size-5 transition-transform hover:scale-110')}
                             onClick={() => {
-                                setTrackColor(track.id, color);
+                                void executeUserAppAction({
+                                    type: 'setTrackColor',
+                                    payload: { trackId: track.id, color },
+                                });
                                 close();
                             }}
                             aria-label={`Set color`}

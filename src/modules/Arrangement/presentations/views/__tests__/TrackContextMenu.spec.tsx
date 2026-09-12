@@ -8,7 +8,6 @@ import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { addClip } from '../../../useCases/clip/addClip';
-import { duplicateTrack } from '../../../useCases/duplicateTrack';
 import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
 import { flattenTrack } from '../../../useCases/freezeBounce/flattenTrack';
 import { freezeTrack } from '../../../useCases/freezeBounce/freezeTrack';
@@ -16,10 +15,8 @@ import { unfreezeTrack } from '../../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../../useCases/importMidiFile';
 import { removeTrack } from '../../../useCases/removeTrack';
-import { renameTrack } from '../../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
-import { setTrackColor } from '../../../useCases/setTrackGainPan/setTrackColor';
 import { toggleVariationLanes } from '../../../useCases/toggleTrackState/toggleVariationLanes';
 import { useTracks } from '../../hooks/useTracks';
 import { TrackContextMenu } from '../TrackContextMenu';
@@ -37,20 +34,12 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: vi.fn(),
 }));
 
-vi.mock('../../../useCases/toggleTrackState/toggleSoloSafe', () => ({
-    toggleSoloSafe: vi.fn(),
-}));
-
 vi.mock('../../../useCases/toggleTrackState/toggleVariationLanes', () => ({
     toggleVariationLanes: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/renameTrack', () => ({
-    renameTrack: vi.fn(),
 }));
 
 vi.mock('../../../useCases/freezeBounce/unfreezeTrack', () => ({
@@ -69,10 +58,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
 }));
 
-vi.mock('../../../useCases/duplicateTrack', () => ({
-    duplicateTrack: vi.fn(),
-}));
-
 vi.mock('../../../useCases/importAudioClipToTrack', () => ({
     importAudioClipToTrack: vi.fn(),
 }));
@@ -83,10 +68,6 @@ vi.mock('../../../useCases/saveTrackAsTemplate', () => ({
 
 vi.mock('../../../useCases/setTrackGainPan/setInputMonitoring', () => ({
     setInputMonitoring: vi.fn(),
-}));
-
-vi.mock('../../../useCases/setTrackGainPan/setTrackColor', () => ({
-    setTrackColor: vi.fn(),
 }));
 
 vi.mock('../../../useCases/importMidiFile', () => ({
@@ -457,7 +438,10 @@ describe('TrackContextMenu', () => {
         const input = screen.getByDisplayValue('Test Track');
         fireEvent.change(input, { target: { value: '  Renamed  ' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(vi.mocked(renameTrack)).toHaveBeenCalledWith('track1', 'Renamed');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track1', name: 'Renamed' },
+        });
     });
 
     it('does not rename when the submitted value is blank', () => {
@@ -471,7 +455,7 @@ describe('TrackContextMenu', () => {
         const input = screen.getByDisplayValue('Test Track');
         fireEvent.change(input, { target: { value: '   ' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(vi.mocked(renameTrack)).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameTrack' }));
     });
 
     it('applies the selected input monitoring value', () => {
@@ -617,7 +601,10 @@ describe('TrackContextMenu', () => {
         fireEvent.click(screen.getByText('Track Color...'));
         const swatches = screen.getAllByRole('button', { name: 'Set color' });
         fireEvent.click(swatches[0]!);
-        expect(vi.mocked(setTrackColor)).toHaveBeenCalledWith('track1', expect.any(String));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'setTrackColor',
+            payload: { trackId: 'track1', color: expect.any(String) },
+        });
     });
 
     it('routes disarming through the canonical AppAction write path', () => {
@@ -654,7 +641,10 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Duplicate Track'));
-        expect(vi.mocked(duplicateTrack)).toHaveBeenCalledWith('track1');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'duplicateTrack',
+            payload: { trackId: 'track1' },
+        });
     });
 
     it('preserves showVariationLanes as false when committing track rename via Enter', () => {
@@ -692,7 +682,10 @@ describe('TrackContextMenu', () => {
         expect(enterEvent.defaultPrevented).toBe(true);
         expect(onUnexpectedAction).not.toHaveBeenCalled();
         expect(toggleVariationLanes).not.toHaveBeenCalled();
-        expect(vi.mocked(renameTrack)).toHaveBeenCalledWith('track1', 'Renamed Track');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track1', name: 'Renamed Track' },
+        });
         expect(track.showVariationLanes).toBe(false);
     });
 
@@ -731,7 +724,7 @@ describe('TrackContextMenu', () => {
         expect(escapeEvent.defaultPrevented).toBe(true);
         expect(onUnexpectedAction).not.toHaveBeenCalled();
         expect(toggleVariationLanes).not.toHaveBeenCalled();
-        expect(renameTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameTrack' }));
         expect(track.showVariationLanes).toBe(false);
     });
 
@@ -770,7 +763,10 @@ describe('TrackContextMenu', () => {
         expect(enterEvent.defaultPrevented).toBe(true);
         expect(onUnexpectedAction).not.toHaveBeenCalled();
         expect(toggleVariationLanes).not.toHaveBeenCalled();
-        expect(vi.mocked(renameTrack)).toHaveBeenCalledWith('track1', 'Renamed Track Again');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'renameTrack',
+            payload: { trackId: 'track1', name: 'Renamed Track Again' },
+        });
         expect(track.showVariationLanes).toBe(true);
     });
 
@@ -807,7 +803,7 @@ describe('TrackContextMenu', () => {
         expect(escapeEvent.defaultPrevented).toBe(true);
         expect(onUnexpectedAction).not.toHaveBeenCalled();
         expect(toggleVariationLanes).not.toHaveBeenCalled();
-        expect(renameTrack).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameTrack' }));
         expect(track.showVariationLanes).toBe(true);
     });
 
@@ -874,6 +870,22 @@ describe('TrackContextMenu', () => {
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'disableTrack',
             payload: { trackId: 'track1', disabled: false },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('routes toggling solo safe through executeUserAppAction', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+        fireEvent.click(screen.getByText('Solo Safe'));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'toggleSoloSafe',
+            payload: { trackId: 'track1' },
         });
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
