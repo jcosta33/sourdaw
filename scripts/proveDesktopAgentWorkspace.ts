@@ -143,7 +143,12 @@ export function buildAgentProofRecord(input: BuildAgentProofRecordInput): AgentP
         checkoutGitSha: input.checkoutGitSha,
         appPayloadSha256: input.payload.sha256,
         startedAt: input.startedAt,
-        steps: input.steps.map((entry) => ({ ...entry })),
+        steps: input.steps.map((entry) => ({
+            name: entry.name,
+            phase: entry.phase,
+            ok: entry.ok,
+            observed: entry.observed,
+        })),
         verdict: input.verdict,
         reason: input.reason,
     };
