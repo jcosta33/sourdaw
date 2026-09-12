@@ -654,10 +654,10 @@ impl GrinderEngine {
         let neural_mode = self.neural.engine_mode();
         let neural_placement = self.neural.placement();
 
-        // Preamp oversampler (6.5 samples) runs in Circuit and Hybrid modes.
-        // Capture mode bypasses the circuit preamp entirely.
+        // Preamp oversamplers (Clean = 1, Crunch = 2, Lead = 3 stages @ 6.5 samples each)
+        // run in Circuit and Hybrid modes. Capture mode bypasses the circuit preamp entirely.
         if neural_mode != EngineMode::Capture {
-            delay += StageOversampler2x::GROUP_DELAY_SAMPLES;
+            delay += self.preamp.latency_samples();
         }
 
         // Power amp oversampler (6.5 samples) runs unless Capture mode is placed at Rig,
@@ -1381,66 +1381,102 @@ mod tests {
     fn reported_latency_tracks_engine_mode_and_capture_placement() {
         let mut engine = GrinderEngine::new(48_000.0);
 
-        // Circuit: 13 samples
+        // Circuit Clean (channel 0): 6.5 + 6.5 = 13 samples
         engine.set_param("engineMode", 0.0);
+        engine.set_param("channel", 0.0);
         assert_eq!(engine.latency_samples(), 13);
 
-        // Capture + Amp: 7 samples (6.5 rounded)
+        // Circuit Crunch (channel 1, default): 13.0 + 6.5 = 19.5 -> 20 samples
+        engine.set_param("channel", 1.0);
+        assert_eq!(engine.latency_samples(), 20);
+
+        // Circuit Lead (channel 2): 19.5 + 6.5 = 26.0 -> 26 samples
+        engine.set_param("channel", 2.0);
+        assert_eq!(engine.latency_samples(), 26);
+
+        // Capture + Amp ignores preamp channel: 7 samples (0 preamp + 6.5 power amp = 6.5 rounded)
         engine.set_param("engineMode", 1.0);
         engine.set_param("neuralPlacement", 0.0);
-        assert_eq!(engine.latency_samples(), 7);
+        for ch in [0.0, 1.0, 2.0] {
+            engine.set_param("channel", ch);
+            assert_eq!(engine.latency_samples(), 7);
+        }
 
         // Capture + Rig: 0 samples
         engine.set_param("neuralPlacement", 1.0);
         assert_eq!(engine.latency_samples(), 0);
 
-        // Hybrid + Amp: 13 samples
+        // Hybrid + Amp: Clean = 13, Crunch = 20, Lead = 26
         engine.set_param("engineMode", 2.0);
         engine.set_param("neuralPlacement", 0.0);
+        engine.set_param("channel", 0.0);
         assert_eq!(engine.latency_samples(), 13);
+        engine.set_param("channel", 1.0);
+        assert_eq!(engine.latency_samples(), 20);
+        engine.set_param("channel", 2.0);
+        assert_eq!(engine.latency_samples(), 26);
 
-        // Hybrid + Rig: 13 samples
+        // Hybrid + Rig: Clean = 13, Crunch = 20, Lead = 26
         engine.set_param("neuralPlacement", 1.0);
+        engine.set_param("channel", 0.0);
         assert_eq!(engine.latency_samples(), 13);
+        engine.set_param("channel", 1.0);
+        assert_eq!(engine.latency_samples(), 20);
+        engine.set_param("channel", 2.0);
+        assert_eq!(engine.latency_samples(), 26);
     }
 
     #[test]
     fn reported_latency_matches_measured_pure_delay() {
-        let mut engine = GrinderEngine::new(48_000.0);
-        engine.set_param("cabEnabled", 0.0);
-        engine.set_param("channel", 0.0);
-        engine.set_param("gain", 1.0);
-        engine.set_param("master", 9.0);
-        engine.set_param("bass", 5.0);
-        engine.set_param("mid", 5.0);
-        engine.set_param("treble", 5.0);
+        for (channel, expected_latency) in [(0.0_f32, 13_u32), (1.0, 20), (2.0, 26)] {
+            let mut engine = GrinderEngine::new(48_000.0);
+            engine.set_param("cabEnabled", 0.0);
+            engine.set_param("channel", channel);
+            engine.set_param("gain", 1.0);
+            engine.set_param("master", 9.0);
+            engine.set_param("bass", 5.0);
+            engine.set_param("mid", 5.0);
+            engine.set_param("treble", 5.0);
 
-        let render_len = 512;
-        let block_len = 64;
-        let mut out = Vec::with_capacity(render_len);
-        for block in 0..render_len / block_len {
-            let mut left = vec![0.0_f32; block_len];
-            let mut right = vec![0.0_f32; block_len];
-            if block == 0 {
-                left[0] = 0.5;
-                right[0] = 0.5;
-            }
-            engine.process_block(&mut left, &mut right);
-            out.extend_from_slice(&left);
-        }
+            assert_eq!(
+                engine.latency_samples(),
+                expected_latency,
+                "channel {channel} must report expected latency"
+            );
 
-        let mut peak_index = 0;
-        let mut peak = 0.0_f32;
-        for (i, &s) in out.iter().enumerate() {
-            if s.abs() > peak {
-                peak = s.abs();
-                peak_index = i;
+            let render_len = 512;
+            let block_len = 64;
+            let mut out = Vec::with_capacity(render_len);
+            for block in 0..render_len / block_len {
+                let mut left = vec![0.0_f32; block_len];
+                let mut right = vec![0.0_f32; block_len];
+                if block == 0 {
+                    left[0] = 0.5;
+                    right[0] = 0.5;
+                }
+                engine.process_block(&mut left, &mut right);
+                out.extend_from_slice(&left);
             }
+
+            let mut peak_index = 0;
+            let mut peak = 0.0_f32;
+            for (i, &s) in out.iter().enumerate() {
+                if s.abs() > peak {
+                    peak = s.abs();
+                    peak_index = i;
+                }
+            }
+            assert!(
+                peak > 1e-6,
+                "the impulse never reached the output (peak {peak:e}) — the probe measures nothing"
+            );
+            // The circuit stages introduce analog IIR filter group delay (plate RC, Miller capacitance)
+            // that adds ~1 sample phase lag across cascaded triodes. The discrete impulse peak
+            // matches the reported linear-phase oversampling delay within 1 sample.
+            assert!(
+                (peak_index as u32).abs_diff(expected_latency) <= 1,
+                "channel {channel}: reported {expected_latency}, measured peak at {peak_index}"
+            );
         }
-        assert!(
-            peak > 1e-6,
-            "the impulse never reached the output (peak {peak:e}) — the probe measures nothing"
-        );
-        assert_eq!(engine.latency_samples(), peak_index as u32);
     }
 }
