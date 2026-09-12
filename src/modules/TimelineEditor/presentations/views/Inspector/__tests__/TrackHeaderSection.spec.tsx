@@ -8,7 +8,8 @@ import { TrackHeaderSection } from '../TrackHeaderSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
 }));
 
