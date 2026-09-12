@@ -6,16 +6,30 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type ReadCrossfadeSnapshotInput = {
     clipA: { endBeat: number; fadeOutBeats: number };
-    clipB: { startBeat: number; fadeInBeats: number };
+    clipB: { startBeat: number; fadeInBeats: number; audioOffsetBeats?: number; midiOffsetBeats?: number };
 };
 
 function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
-    return {
+    const snapshot: {
+        clipAEndBeat: number;
+        clipAFadeOutBeats: number;
+        clipBStartBeat: number;
+        clipBFadeInBeats: number;
+        clipBAudioOffsetBeats?: number;
+        clipBMidiOffsetBeats?: number;
+    } = {
         clipAEndBeat: clipA.endBeat,
         clipAFadeOutBeats: clipA.fadeOutBeats,
         clipBStartBeat: clipB.startBeat,
         clipBFadeInBeats: clipB.fadeInBeats,
     };
+    if (clipB.audioOffsetBeats !== undefined) {
+        snapshot.clipBAudioOffsetBeats = clipB.audioOffsetBeats;
+    }
+    if (clipB.midiOffsetBeats !== undefined) {
+        snapshot.clipBMidiOffsetBeats = clipB.midiOffsetBeats;
+    }
+    return snapshot;
 }
 
 type SnapshotsMatchInput = {
@@ -28,7 +42,9 @@ function snapshotsMatch({ left, right }: SnapshotsMatchInput) {
         left.clipAEndBeat === right.clipAEndBeat &&
         left.clipAFadeOutBeats === right.clipAFadeOutBeats &&
         left.clipBStartBeat === right.clipBStartBeat &&
-        left.clipBFadeInBeats === right.clipBFadeInBeats
+        left.clipBFadeInBeats === right.clipBFadeInBeats &&
+        left.clipBAudioOffsetBeats === right.clipBAudioOffsetBeats &&
+        left.clipBMidiOffsetBeats === right.clipBMidiOffsetBeats
     );
 }
 
