@@ -434,6 +434,27 @@ describe('handleCrossfadeClips', () => {
                 },
             },
         });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.2,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+            },
+        });
     });
 
     it('restores audioOffsetBeats on clip B when executing compensation', () => {
