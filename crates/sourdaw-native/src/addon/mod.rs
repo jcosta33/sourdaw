@@ -145,6 +145,7 @@ impl SourdawNative {
             Arc::clone(&events),
             Arc::clone(&singletons.app_state.engine_plugins),
         );
+        crate::commands::midi_watcher::start(Arc::clone(&events));
         crate::host::plugin_parameter_events::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),
@@ -451,6 +452,79 @@ impl SourdawNative {
         reason(commands::filesystem::grant_path(path, mode, recursive).await)
     }
 
+    // ── Agent asset saga ───────────────────────────────────────────────
+
+    /// Mint an opaque handle for one path a file grant already admits.
+    ///
+    /// The only command in this group that takes a path. Every other one takes
+    /// a handle id, so an agent's reach is the set of paths a user picked.
+    #[napi]
+    pub async fn agent_asset_register_handle(
+        &self,
+        path: String,
+        mode: String,
+        owner: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_register_handle(path, mode, owner).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_import(
+        &self,
+        handle_id: String,
+        owner: Value,
+        declared: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_import(handle_id, owner, declared).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_stage_export(
+        &self,
+        destination_handle_id: String,
+        owner: Value,
+        expected_sha256: String,
+        data: Buffer,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_stage_export(
+                destination_handle_id,
+                owner,
+                expected_sha256,
+                &data,
+            )
+            .await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_finalize_export(
+        &self,
+        saga_id: String,
+        owner: Value,
+        authorization: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_finalize_export(saga_id, owner, authorization)
+                .await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn agent_asset_cleanup(
+        &self,
+        saga_id: Option<String>,
+        owner: Value,
+    ) -> Result<Value> {
+        json(reason(
+            commands::agent_asset_saga::agent_asset_cleanup(saga_id, owner).await,
+        )?)
+    }
+
     // ── Plugin hosting ─────────────────────────────────────────────────
 
     #[napi]
@@ -602,6 +676,67 @@ impl SourdawNative {
             )
             .await,
         )
+    }
+
+    /// Open an empty Levain sample bank under `bank_key`, replacing any bank
+    /// already registered there. Returns `{ "bankKey": … }`.
+    #[napi]
+    pub async fn begin_levain_bank(
+        &self,
+        bank_key: String,
+        instrument_id: String,
+    ) -> Result<Value> {
+        reason(
+            commands::levain::begin_levain_bank(
+                bank_key,
+                instrument_id,
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Register one decoded file into a staged Levain sample bank. `pcm` is
+    /// interleaved f32 little-endian at `sample_rate`, `channels` 1 or 2.
+    /// Returns `{ "frames": n }`.
+    #[napi]
+    pub async fn register_levain_sample(
+        &self,
+        bank_key: String,
+        sample_id: String,
+        sample_rate: f64,
+        channels: u32,
+        pcm: Buffer,
+    ) -> Result<Value> {
+        reason(
+            commands::levain::register_levain_sample(
+                bank_key,
+                sample_id,
+                sample_rate,
+                channels,
+                pcm.to_vec(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    /// Close a staged Levain sample bank against its zone layout, after which
+    /// a graph device naming this bank key builds its instrument from it.
+    #[napi]
+    pub async fn commit_levain_bank(&self, bank_key: String, layout: Value) -> Result<Value> {
+        reason(
+            commands::levain::commit_levain_bank(bank_key, layout, &self.singletons.app_state)
+                .await,
+        )
+    }
+
+    /// Drop the Levain sample bank under `bank_key`, with its material and
+    /// every conversion of it. Returns `{ "bankKey": …, "released": bool }`;
+    /// a bank this process does not hold is `released: false`, not an error.
+    #[napi]
+    pub async fn release_levain_bank(&self, bank_key: String) -> Result<Value> {
+        reason(commands::levain::release_levain_bank(bank_key, &self.singletons.app_state).await)
     }
 
     /// Render a command batch deterministically with no audio device: the

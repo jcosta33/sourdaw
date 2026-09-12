@@ -513,6 +513,19 @@ pub trait HostedPluginRuntime: AudioPlugin {
         None
     }
 
+    /// Whether the plugin is actively draining a tail it declared right now.
+    /// Control path only.
+    ///
+    /// The signal comes from a format's own process result — CLAP answers
+    /// `CLAP_PROCESS_TAIL` and leaves the question to `clap.tail` — so a backend
+    /// whose process call carries no status has no moment it could ever observe.
+    /// The default is `false` for that reason: VST3's processor call answers
+    /// nothing about its state, and a format that gains an equivalent overrides
+    /// this.
+    fn is_tail_active(&self) -> bool {
+        false
+    }
+
     /// Say out loud what the audio thread recorded about this plugin.
     ///
     /// The audio thread may not allocate or take the I/O lock, so a plugin that

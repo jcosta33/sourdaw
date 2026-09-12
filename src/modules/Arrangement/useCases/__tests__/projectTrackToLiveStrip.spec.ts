@@ -96,6 +96,12 @@ describe('projectTrackToLiveStrip', () => {
         // `clearAllMocks` clears calls, not implementations, so a test that
         // takes the engine away has to hand it back here.
         mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
+        mocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            runtimeRevision: 1,
+        });
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
@@ -330,6 +336,33 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
     });
 
+    it('replays a crust record style before algorithm so the exact pick lands last', () => {
+        // Wrong-ordered records already exist: `persistDeviceParam` appends, so
+        // a crust written before the style/algorithm contract carries
+        // `algorithm` first. Both names write the engine's single algorithm
+        // slot — record-order replay ran the eight-way pick first and let the
+        // three-way style pick overwrite it (issue #4135).
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.devices = [
+            {
+                id: 'crust-1',
+                name: 'Crust',
+                type: 'crust',
+                bypassed: false,
+                parameterValues: { algorithm: 6, style: 2, gain: 3 },
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['audio-1', 'crust-1', 'style', 2],
+            ['audio-1', 'crust-1', 'algorithm', 6],
+            ['audio-1', 'crust-1', 'gain', 3],
+        ]);
+    });
+
     it('keeps MIDI-only Yeast out of the audio graph and predecessor order', () => {
         const track = createTrack({ id: 'midi-1', name: 'MIDI', kind: 'midi' });
         track.devices = [
@@ -469,5 +502,26 @@ describe('projectTrackToLiveStrip', () => {
         projectTrackToLiveStrip({ trackId: 'audio-1' });
 
         expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('replays crust device parameters with style before algorithm', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio' });
+        track.devices = [
+            {
+                id: 'crust-1',
+                name: 'Crust',
+                type: 'crust',
+                bypassed: false,
+                parameterValues: { algorithm: 6, style: 2 },
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['audio-1', 'crust-1', 'style', 2],
+            ['audio-1', 'crust-1', 'algorithm', 6],
+        ]);
     });
 });

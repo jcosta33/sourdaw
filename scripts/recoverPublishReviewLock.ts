@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import {
     REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
     assertRequiredRepository,
     authenticateRole,
-    isReviewerBotNodeId,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -15,6 +16,7 @@ import { fail } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
 import {
     parseReviewDocument,
+    parseAcceptanceDocument,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
     type PublishReviewAuthentication,
@@ -71,6 +73,7 @@ type PersistedRecoveryReceipt = {
 export type RecoverPublishReviewDependencies = {
     primaryRoot: () => string;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
+    authenticateOrchestrator?: () => Promise<PublishReviewAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     inspect: (
         number: number,
@@ -108,6 +111,7 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
     return {
         primaryRoot: () => resolvePrimaryRoot(),
         authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        authenticateOrchestrator,
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,
@@ -330,11 +334,20 @@ async function reconcileRecoveredOwner(
     attestation: AttestedRecoveryOwner,
     dependencies: RecoverPublishReviewDependencies
 ): Promise<number> {
-    const auth = await dependencies.authenticateReviewer(primaryRoot);
+    if (
+        attestation.expectedActorNodeId !== REVIEWER_BOT_NODE_ID &&
+        attestation.expectedActorNodeId !== ORCHESTRATOR_USER_NODE_ID
+    ) {
+        fail('review-publication recovery retained an unknown actor');
+    }
+    const auth =
+        attestation.expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID
+            ? await (
+                  dependencies.authenticateOrchestrator ??
+                  fail('orchestrator authentication is required for acceptance recovery')
+              )()
+            : await dependencies.authenticateReviewer(primaryRoot);
     try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
         if (auth.minted.actorNodeId !== attestation.expectedActorNodeId) {
             fail('review-publication recovery retained reviewer actor does not match the authenticated reviewer');
         }
@@ -383,7 +396,11 @@ function readRecoveryBundleDocument(
     attestation: AttestedRecoveryOwner
 ): ReviewDocument {
     const bundle = reviewBundlePath(primaryRoot, number, attestation.expectedHead);
-    const document = parseReviewDocument(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')) as unknown);
+    const isAcceptance = attestation.expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID;
+    const parsed = JSON.parse(
+        readFileSync(join(bundle, isAcceptance ? 'acceptance.json' : 'review.json'), 'utf8')
+    ) as unknown;
+    const document = isAcceptance ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertReviewCommentLinesInBundleDiff(document.comments, readFileSync(join(bundle, 'diff.patch'), 'utf8'));
     if (
         attestation.legacyIncident !== undefined &&

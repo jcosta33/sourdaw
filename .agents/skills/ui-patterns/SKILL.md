@@ -35,7 +35,7 @@ Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels befor
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density.
+Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density. Extend CVA variants on `src/components/ui/` primitives; do not dump a long `className` pile onto `Button` / `Input` / other `ui/` primitives at the call site.
 
 ### 6. No happy-path-only coding
 

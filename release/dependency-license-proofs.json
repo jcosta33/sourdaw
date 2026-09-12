@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
+        "cargoLockSha256": "5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -25,7 +25,7 @@
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
-                "sha256": "fca52fba170f297695b6eef7dc4ec4971ba0fe7ed9c28ccf20bcd0306311a548"
+                "sha256": "15af61a05dd29f125bf3c59d5bfb6da095415cff391327d8f7d528f4600af581"
             },
             {
                 "path": "crates/daw-io/Cargo.toml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "e7dbf1e11709be55608d2028996d902bf2d12790b0bb1656725652ddd11be049"
+                "sha256": "81a0407f4df4dc5e72e2b95f03e42934cd0937c783fc501f9fd04ee465607e25"
             },
             {
                 "path": "rust-toolchain.toml",

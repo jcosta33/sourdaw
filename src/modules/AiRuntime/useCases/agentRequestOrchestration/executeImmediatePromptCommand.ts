@@ -7,6 +7,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { executePlannedActions } from '../executePlannedActions';
 import { getProjectCommitFinalizationWarning } from '../getProjectCommitFinalizationWarning';
+import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 
 import { AGENT_RUN_PERSISTENCE_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
@@ -16,6 +17,7 @@ import type { generateGroupId, parseVersionedCommandBatchEnvelope } from '#/modu
 type ExecuteInput = Parameters<typeof executePlannedActions>[0];
 type CommandExecutionInput = Extract<ExecuteInput, { commandBatch: unknown }>;
 type ParsedCommandBatch = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>;
+type AgentApproval = Parameters<typeof issueAgentCommandApprovalBinding>[0]['approval'];
 type AgentApplyReceipt = Extract<
     Awaited<ReturnType<typeof executePlannedActions>>,
     { status: 'committed' | 'executed' }
@@ -30,6 +32,7 @@ type ExecuteImmediatePromptCommandInput = {
     projectRevision: string;
     executionMode: ExecuteInput['executionMode'];
     group: ReturnType<typeof generateGroupId>;
+    agentApproval?: AgentApproval | null;
     commandBatch: CommandExecutionInput['commandBatch'];
     parsedCommandBatch: ParsedCommandBatch;
     onExecutionSettlementWarning: (warning: string | null) => void;
@@ -119,6 +122,23 @@ export async function executeImmediatePromptCommand(
         controller: abortController,
         reason: 'User cancelled the run while command execution was active.',
     });
+    // The compiled allow-path approval is re-bound here with an observer so the
+    // validator's staleness classification is read back by planned-action
+    // settlement through the getter below; this re-binding replaces the
+    // observer-less binding minted at compile time.
+    const approvalBindingRejectionRef: { current: { reason: string; stale: boolean } | null } = { current: null };
+    const boundCommandBatch = input.agentApproval
+        ? {
+              ...commandBatch,
+              approvalBinding: issueAgentCommandApprovalBinding({
+                  approval: input.agentApproval,
+                  commandBatch,
+                  onRejection: (rejection) => {
+                      approvalBindingRejectionRef.current = rejection;
+                  },
+              }),
+          }
+        : commandBatch;
     let execution: Awaited<ReturnType<typeof executePlannedActions>>;
     try {
         execution = await executePlannedActions({
@@ -128,7 +148,8 @@ export async function executeImmediatePromptCommand(
             projectRevision,
             executionMode,
             signal: abortController.signal,
-            commandBatch,
+            commandBatch: boundCommandBatch,
+            getApprovalBindingRejection: () => approvalBindingRejectionRef.current,
         });
         if (execution.status === 'invalidated' || execution.status === 'cancelled') {
             await agentRunCancellation.cancel({

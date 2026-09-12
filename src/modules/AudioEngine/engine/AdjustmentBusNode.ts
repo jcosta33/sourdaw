@@ -48,12 +48,11 @@ export const ADJUSTMENT_PARAM_MAP: Record<AdjustmentEffectType, Record<string, s
         Size: 'rev-mix',
         'Pre-Delay': 'rev-predelay',
         Damping: 'rev-lowcut',
-        // NOTE: No `Decay` entry. The builtin reverb device (`applyReverbParams`)
-        // has no `rev-decay` branch, so mapping the adjustment-layer Decay knob to
-        // `rev-decay` would translate to a key that reaches no audio node — a
-        // silent no-op. Adding real reverb decay is gated on Architecture-decision
-        // #1 (whether the builtin reverb gets room-size/decay params); until then
-        // the knob must not be wired here. See AdjustmentBusNode.spec.ts.
+        // NOTE: Still no `Decay` entry. `rev-decay` now reaches the DSP (#3731
+        // renders the impulse from it), but these adjustment stopgaps predate
+        // that wiring: Size maps to `rev-mix` and Damping to `rev-lowcut`, so
+        // remapping or adding the Decay knob here is a deliberate follow-up, not
+        // part of this repair. See AdjustmentBusNode.spec.ts.
     },
     delay: {
         Time: 'delay-time',

@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
+import { runAcceptReviewCli } from '../acceptReview.ts';
 import {
     DeliveryMergeRejectedError,
     coordinateDelivery,
@@ -26,7 +27,12 @@ import {
     shellPort,
     withPullRequestDeliveryLock,
 } from '../deliverPullRequest.ts';
-import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import {
+    ORCHESTRATOR_USER_NODE_ID,
+    AUTHOR_BOT_NODE_ID,
+    REQUIRED_REPOSITORY,
+    REVIEWER_BOT_NODE_ID,
+} from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
     runPublishReviewCli,
@@ -515,6 +521,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewCommentDiffPreflight.ts',
         'reviewPublicationRecoveryReceipt.ts',
         'reviewPublicationRemoteInspection.ts',
+        'pullRequestReviewState.ts',
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
     }
@@ -651,57 +658,58 @@ describe('package scripts and gitignore', () => {
             expectedActorNodeId: AUTHOR_BOT_NODE_ID,
         },
         {
-            label: 'foreign bot',
-            graphQlMergedBy: { __typename: 'Bot', id: 'B_foreign-bot-node-id' },
-            expectedActorNodeId: 'B_foreign-bot-node-id',
+            label: 'orchestrator user',
+            graphQlMergedBy: { __typename: 'User', id: ORCHESTRATOR_USER_NODE_ID },
+            expectedActorNodeId: ORCHESTRATOR_USER_NODE_ID,
         },
-    ])(
-        'reads the immutable merged bot ID from GraphQL for a $label merger',
-        ({ graphQlMergedBy, expectedActorNodeId }) => {
-            const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
-            const requests: Array<{ command: string; args: string[] }> = [];
-            const port = shellPort(
-                'jcosta33/sourdaw',
-                {
-                    capture: (command, args) => {
-                        requests.push({ command, args });
-                        if (args[0] === 'pr' && args[1] === 'view') {
-                            return ghPullRequestView(mergedSnapshot, {
-                                is_bot: true,
-                                login: 'sourdaw-author[bot]',
-                            });
-                        }
-                        if (args[0] === 'api' && args[1] === 'graphql') {
-                            return ghMergedByGraphql(graphQlMergedBy);
-                        }
-                        throw new Error(`unexpected shell capture: ${command} ${args.join(' ')}`);
-                    },
-                    run: () => expect.fail('pullRequest should not run shell commands'),
+    ])('reads the immutable merger ID from GraphQL for a $label merger', ({ graphQlMergedBy, expectedActorNodeId }) => {
+        const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
+        const requests: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (command, args) => {
+                    requests.push({ command, args });
+                    if (args[0] === 'pr' && args[1] === 'view') {
+                        return ghPullRequestView(mergedSnapshot, {
+                            is_bot: true,
+                            login: 'sourdaw-author[bot]',
+                        });
+                    }
+                    if (args[0] === 'api' && args[1] === 'graphql') {
+                        return ghMergedByGraphql(graphQlMergedBy);
+                    }
+                    throw new Error(`unexpected shell capture: ${command} ${args.join(' ')}`);
                 },
-                {}
-            );
+                run: () => expect.fail('pullRequest should not run shell commands'),
+            },
+            {}
+        );
 
-            const snapshot = port.pullRequest(2495);
+        const snapshot = port.pullRequest(2495);
 
-            expect(snapshot.mergedByActorNodeId).toBe(expectedActorNodeId);
-            expect(requests).toHaveLength(2);
-            expect(requests[0]?.args).toEqual([
-                'pr',
-                'view',
-                '2495',
-                '--repo',
-                'jcosta33/sourdaw',
-                '--json',
-                expect.stringContaining('mergedBy'),
-            ]);
-            expect(requests[1]?.args).toContain('graphql');
-            expect(requests[1]?.args.some((arg) => arg.includes('mergedBy{__typename ... on Bot{id}}'))).toBe(true);
-        }
-    );
+        expect(snapshot.mergedByActorNodeId).toBe(expectedActorNodeId);
+        expect(requests).toHaveLength(2);
+        expect(requests[0]?.args).toEqual([
+            'pr',
+            'view',
+            '2495',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--json',
+            expect.stringContaining('mergedBy'),
+        ]);
+        expect(requests[1]?.args).toContain('graphql');
+        expect(
+            requests[1]?.args.some((arg) => arg.includes('mergedBy{__typename ... on Bot{id} ... on User{id}}'))
+        ).toBe(true);
+    });
 
     it.each([
         { label: 'null merger', graphQlMergedBy: null },
-        { label: 'non-Bot merger', graphQlMergedBy: { __typename: 'User' } },
+        { label: 'user without ID', graphQlMergedBy: { __typename: 'User' } },
+        { label: 'foreign bot', graphQlMergedBy: { __typename: 'Bot', id: 'B_foreign-bot-node-id' } },
+        { label: 'foreign user', graphQlMergedBy: { __typename: 'User', id: 'foreign-user-node-id' } },
     ])('fails closed when GraphQL returns a $label for a merged PR', ({ graphQlMergedBy }) => {
         const mergedSnapshot = pullRequestSnapshot({ state: 'MERGED' });
         const port = shellPort(
@@ -732,7 +740,7 @@ describe('package scripts and gitignore', () => {
         const final = pullRequestSnapshot({
             state: 'MERGED',
             mergeable: 'UNKNOWN',
-            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+            mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
         });
         const dependentBefore: StackedPullRequest = {
             number: 2601,
@@ -779,7 +787,11 @@ describe('package scripts and gitignore', () => {
             gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
             requiredStatusCheckContexts: () => ['Gate'],
-            reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
+            reviewState: () => ({
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            }),
             dependents: (baseBranch) => (dependentAfter.baseRefName === baseBranch ? [dependentAfter] : []),
             repositoryDeletesMergedBranches: () => false,
             merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
@@ -824,7 +836,9 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
+        expect(pkg.scripts['review:accept']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:accept');
         expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
+        expect(pkg.scripts['review:accept']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:accept');
         expect(pkg.scripts['review:publish:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
         );
@@ -964,6 +978,7 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
+            'scripts/pullRequestReviewState.ts',
             'scripts/recoverDeliveryLock.ts',
             'scripts/deliveryLockLegacyIncidents.ts',
             'scripts/deliveryRemoteInspection.ts',
@@ -983,6 +998,7 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverPublishReviewLock.ts',
             'scripts/publishReview.ts',
+            'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewPublicationLegacyIncidents.ts',
             'scripts/reviewPublicationRecoveryReceipt.ts',
@@ -1071,6 +1087,7 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/deliverPullRequest.ts',
+                    'scripts/pullRequestReviewState.ts',
                     'scripts/recoverDeliveryLock.ts',
                     'scripts/deliveryLockLegacyIncidents.ts',
                     'scripts/deliveryRemoteInspection.ts',
@@ -1082,12 +1099,29 @@ describe('package scripts and gitignore', () => {
                 ],
             },
             {
+                command: 'review:accept' as const,
+                entry: 'scripts/acceptReview.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/acceptReview.ts',
+                    'scripts/publishReview.ts',
+                    'scripts/pullRequestReviewState.ts',
+                    'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/prepareReview.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
                 command: 'review:publish' as const,
                 entry: 'scripts/publishReview.ts',
                 required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
@@ -1103,6 +1137,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/recoverPublishReviewLock.ts',
                     'scripts/publishReview.ts',
+                    'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewPublicationLegacyIncidents.ts',
                     'scripts/reviewPublicationRecoveryReceipt.ts',
@@ -1660,7 +1695,12 @@ describe('package scripts and gitignore', () => {
                     gitPath: realpathSync(windowsGitWrapper),
                     ghPath: realpathSync(windowsGhWrapper),
                 });
-                for (const command of ['deliver', 'review:publish', 'review:publish:recover'] as const) {
+                for (const command of [
+                    'deliver',
+                    'review:accept',
+                    'review:publish',
+                    'review:publish:recover',
+                ] as const) {
                     expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, command)).toThrow(
                         /cannot resolve trusted ps executable/i
                     );
@@ -1824,34 +1864,39 @@ describe('package scripts and gitignore', () => {
      * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
      * for every command would make them fail over a file and a parser they never use.
      */
-    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:publish:recover', 'review:resolve'] as const)(
-        'reads no gating workflow for %s',
-        async (command) => {
-            const originReads: string[] = [];
-            let gateWorkflow: unknown = 'unset';
+    it.each([
+        'lane:publish',
+        'issue:reconcile',
+        'review:accept',
+        'review:publish',
+        'review:publish:recover',
+        'review:resolve',
+    ] as const)('reads no gating workflow for %s', async (command) => {
+        const originReads: string[] = [];
+        let gateWorkflow: unknown = 'unset';
 
-            await runTrustedGithubWriteCommand(command, [], {
-                resolveOriginMain: () => 'pinned-sha',
-                readOriginSource: (_commit, path) => {
-                    originReads.push(path);
-                    return 'trusted';
-                },
-                executeSnapshot: async (_command, _args, snapshot) => {
-                    gateWorkflow = snapshot.gateWorkflow;
-                    return 0;
-                },
-            });
+        await runTrustedGithubWriteCommand(command, [], {
+            resolveOriginMain: () => 'pinned-sha',
+            readOriginSource: (_commit, path) => {
+                originReads.push(path);
+                return 'trusted';
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                gateWorkflow = snapshot.gateWorkflow;
+                return 0;
+            },
+        });
 
-            expect(originReads).toEqual([...trustedDependencyPaths(command)]);
-            expect(gateWorkflow).toBeUndefined();
-        }
-    );
+        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+        expect(gateWorkflow).toBeUndefined();
+    });
 
     it('keeps the loader inside its own trusted closure', () => {
         for (const command of [
             'deliver',
             'issue:reconcile',
             'lane:publish',
+            'review:accept',
             'review:publish',
             'review:publish:recover',
             'review:resolve',
@@ -1953,6 +1998,12 @@ describe('package scripts and gitignore', () => {
 
     it.each([
         {
+            command: 'review:accept' as const,
+            entry: 'scripts/acceptReview.ts',
+            runner: 'runAcceptReviewCli',
+            args: ['3239', 'value with spaces'],
+        },
+        {
             command: 'review:publish' as const,
             entry: 'scripts/publishReview.ts',
             runner: 'runPublishReviewCli',
@@ -1989,6 +2040,7 @@ describe('package scripts and gitignore', () => {
             ).resolves.toBe(0);
             expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
             const importedRunners = {
+                'review:accept': runAcceptReviewCli,
                 'review:publish': runPublishReviewCli,
                 'review:publish:recover': runRecoverPublishReviewLockCli,
                 'review:resolve': runResolveReviewThreadCli,
@@ -2052,6 +2104,10 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: { env: {}, configDir: '/unused', dispose: () => undefined },
+            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2167,6 +2223,10 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: { env: {}, configDir: '/unused', dispose: () => undefined },
+            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2416,7 +2476,7 @@ describe('package scripts and gitignore', () => {
                         },
                         run: failDispatch,
                     },
-                    { markRemoteMutationAttempt }
+                    { markRemoteMutationAttempt, mergeCapture: failDispatch }
                 );
                 mutate(port);
             });
@@ -2476,6 +2536,10 @@ describe('package scripts and gitignore', () => {
                 const dependencies: DeliveryCoordinatorDependencies = {
                     primaryRoot: () => root,
                     serializeDelivery: withPullRequestDeliveryLock,
+                    authenticateOrchestrator: async () => ({
+                        minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                        session: { env: {}, configDir: '/unused', dispose: () => undefined },
+                    }),
                     authenticateAuthor: async () => authentication,
                     authenticateTracker: async () => authentication,
                     repositoryName: () => 'jcosta33/sourdaw',
@@ -2538,6 +2602,10 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: { env: {}, configDir: '/unused', dispose: () => undefined },
+            }),
             authenticateAuthor: async () => authentication,
             authenticateTracker: async () => authentication,
             repositoryName: () => 'jcosta33/sourdaw',
@@ -2973,6 +3041,62 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('routes only merge mutation through the user runner and preserves author receipt writes', () => {
+        const calls: Array<{ actor: string; args: string[] }> = [];
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    calls.push({ actor: 'author', args });
+                    if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                        return JSON.stringify({
+                            allow_merge_commit: false,
+                            allow_rebase_merge: false,
+                            allow_squash_merge: true,
+                            delete_branch_on_merge: false,
+                        });
+                    }
+                    expect(args).toEqual([
+                        'api',
+                        '--method',
+                        'POST',
+                        'repos/jcosta33/sourdaw/issues/2495/comments',
+                        '-f',
+                        'body=receipt',
+                    ]);
+                    return JSON.stringify({
+                        id: 1,
+                        node_id: 'IC_receipt',
+                        body: 'receipt',
+                        user: { node_id: AUTHOR_BOT_NODE_ID, type: 'Bot' },
+                        created_at: '2026-01-01T00:00:00Z',
+                        updated_at: '2026-01-01T00:00:00Z',
+                    });
+                },
+                run: () => expect.fail('unexpected run'),
+            },
+            {
+                mergeCapture: (_command, args) => {
+                    calls.push({ actor: 'orchestrator', args });
+                    expect(args).toEqual([
+                        'api',
+                        '--method',
+                        'PUT',
+                        'repos/jcosta33/sourdaw/pulls/2495/merge',
+                        '-f',
+                        'sha=head',
+                        '-f',
+                        'merge_method=squash',
+                    ]);
+                    return JSON.stringify({ merged: true, message: 'merged' });
+                },
+            }
+        );
+        expect(port.addDeliveryReceipt(2495, 'receipt').authorNodeId).toBe(AUTHOR_BOT_NODE_ID);
+        port.merge(2495, 'head', false);
+        expect(calls.map((call) => call.actor)).toEqual(['author', 'author', 'orchestrator']);
+    });
+
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
         const disposed: string[] = [];
         const authentication = (token: string, permissions: Record<string, string>): DeliveryAuthentication => ({
@@ -3006,6 +3130,11 @@ describe('package scripts and gitignore', () => {
             clearDeliveryReceiptAuthority: () => undefined,
             log: () => undefined,
         };
+        const orchestratorSession = {
+            env: { GH_TOKEN: 'user-merge-sentinel' },
+            configDir: '/orchestrator-only',
+            dispose: () => undefined,
+        };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
@@ -3023,13 +3152,19 @@ describe('package scripts and gitignore', () => {
                     seen.push(`lock:${number}:release`);
                 }
             },
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: orchestratorSession,
+            }),
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
             repositoryName: (session) => {
                 seen.push(`repository:${session.env.GH_TOKEN ?? ''}`);
                 return 'jcosta33/sourdaw';
             },
-            deliveryPort: (_repository, auth) => {
+            deliveryPort: (_repository, auth, _root, _markAttempt, mergeSession) => {
+                expect(mergeSession).toBe(orchestratorSession);
+                expect(mergeSession).not.toBe(auth.session);
                 seen.push(`delivery:${auth.session.env.GH_TOKEN ?? ''}`);
                 return deliveryPort;
             },

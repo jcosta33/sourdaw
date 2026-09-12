@@ -66,6 +66,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: () => mocks.projectRevision.value,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
 }));
 vi.mock('../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
@@ -277,6 +278,29 @@ function buildAgentApproval(fixture: BatchFixture): NonNullable<AgentApproval> {
             reasons: ['The planning workflow requires explicit confirmation.'],
             requiredTrustMode: 'apply-reversible',
             risk: 'bounded-reversible',
+        },
+    };
+}
+
+function buildAllowAgentApproval(fixture: BatchFixture): NonNullable<AgentApproval> {
+    return {
+        ...buildAgentApproval(fixture),
+        policy: {
+            decision: 'allow',
+            reasons: [],
+            requiredTrustMode: 'apply-reversible',
+            risk: 'bounded-reversible',
+        },
+    };
+}
+
+function admittedImmediateAllow(fixture: BatchFixture, agentApproval: NonNullable<AgentApproval>) {
+    return {
+        runId: RUN_ID,
+        prepared: {
+            commandBatch: fixture.commandBatch,
+            agentApproval,
+            requiresConfirmation: false,
         },
     };
 }
@@ -534,6 +558,100 @@ describe('executePromptActionGroup', () => {
 
         expect(mocks.notifyAiChange).toHaveBeenCalledWith(
             'Command not executed: The project changed after this proposal was created. Review and submit the command again.',
+            []
+        );
+    });
+
+    it('binds the compiled allow-policy approval to the immediate command batch and threads its rejection getter', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        const approval = buildAllowAgentApproval(fixture);
+        const rejection = { reason: 'The approved target fingerprints no longer match.', stale: true };
+        let observedBySettlement: { reason: string; stale: boolean } | null | 'not-read' = 'not-read';
+        mocks.issueApprovalBinding.mockImplementation(({ onRejection }) => {
+            onRejection?.(rejection);
+            return { token: 'exact-approval' };
+        });
+        mocks.executePlannedActions.mockImplementation(async (input) => {
+            observedBySettlement = input.getApprovalBindingRejection?.() ?? null;
+            return {
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            };
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admittedImmediateAllow(fixture, approval),
+            })
+        ).resolves.toEqual({ status: 'invalidated' });
+
+        expect(observedBySettlement).toEqual(rejection);
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith(
+            expect.objectContaining({ approval, commandBatch: fixture.commandBatch })
+        );
+        expect(mocks.executePlannedActions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                commandBatch: expect.objectContaining({ approvalBinding: { token: 'exact-approval' } }),
+            })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Command not executed: The project changed after this proposal was created. Review and submit the command again.',
+            []
+        );
+    });
+
+    it('settles an incompatible divergence gate as invalidated on the allow-policy immediate route', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        let observedBySettlement: { reason: string; stale: boolean } | null | 'not-read' = 'not-read';
+        mocks.executePlannedActions.mockImplementation(async (input) => {
+            observedBySettlement = input.getApprovalBindingRejection?.() ?? null;
+            return {
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            };
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admittedImmediateAllow(fixture, buildAllowAgentApproval(fixture)),
+            })
+        ).resolves.toEqual({ status: 'invalidated' });
+
+        expect(observedBySettlement).toBeNull();
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledOnce();
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Command not executed: The project changed after this proposal was created. Review and submit the command again.',
+            []
+        );
+    });
+
+    it('keeps a genuine allow-policy rejection failed on the immediate route', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'failed',
+            reason: 'The approved action hashes no longer match.',
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admittedImmediateAllow(fixture, buildAllowAgentApproval(fixture)),
+            })
+        ).resolves.toEqual({ status: 'failed' });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Command not executed: The approved action hashes no longer match.',
             []
         );
     });

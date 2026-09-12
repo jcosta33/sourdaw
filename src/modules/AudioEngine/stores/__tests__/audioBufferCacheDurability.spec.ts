@@ -4,6 +4,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -25,7 +28,14 @@ let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRunt
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
 
-const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE] as const;
+const CURRENT_STORES = [
+    BUFFER_STORE,
+    META_STORE,
+    RECOVERY_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+] as const;
 
 function makeBuffer(values: readonly number[]): AudioBuffer {
     const buffer = createAudioBuffer({ length: values.length, sampleRate: 48_000 });

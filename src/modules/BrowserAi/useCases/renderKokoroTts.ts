@@ -2,9 +2,10 @@
  * Use case: Render Kokoro TTS vocal preview.
  *
  * Pipeline (spec §12, §13):
- * 1. Load Kokoro ONNX model from OPFS into the inference worker session cache
- * 2. Fetch the per-voice style embedding from HuggingFace CDN (indexed by token count)
- * 3. Tokenize text: ARPAbet phonemizer → Kokoro IPA token IDs
+ * 1. Tokenize text: ARPAbet phonemizer → Kokoro IPA token IDs — text past the
+ *    model's context limit is refused here, before any render work (#3761)
+ * 2. Load Kokoro ONNX model from OPFS into the inference worker session cache
+ * 3. Fetch the per-voice style embedding from HuggingFace CDN (indexed by token count)
  * 4. Run Kokoro ONNX inference in the worker (24 kHz output)
  * 5. Resample 24 kHz → 44.1 kHz
  * 6. Time-stretch to fit the target region duration (simple rate adjustment)
@@ -142,6 +143,20 @@ export const renderKokoroTts = inject({
                 throw new Error(`Unknown Kokoro voice "${speakerId}"`);
             }
 
+            // 1. Tokenize before superseding or queueing anything: the tokenizer caps input at
+            //    the model's context limit and reports the loss as a warning. Refusing on that
+            //    warning keeps a truncated render out of the queue, the cache, and the "ready"
+            //    announcement, and leaves the caller's text intact for the user to shorten (#3761).
+            const { inputIds, tokenCount, warnings } = textToKokoroInputIds(text);
+            const truncationWarning = warnings.find((warning) => /truncat/i.test(warning));
+            if (truncationWarning !== undefined) {
+                // Only truncation silently drops input; the tokenizer's other warnings
+                // (dropped unknown phonemes) are non-fatal and must still render.
+                throw new Error(
+                    `Vocal preview text too long — ${truncationWarning}. Shorten the text and render again.`
+                );
+            }
+
             // Deterministic cache key
             const textEncoder = new TextEncoder();
             const durationKey =
@@ -175,7 +190,7 @@ export const renderKokoroTts = inject({
 
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
-                // 1. Load Kokoro model from OPFS → worker session cache
+                // 2. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
                 const modelDataPort = await readVerifiedModel({
                     family: 'kokoro',
@@ -192,9 +207,6 @@ export const renderKokoroTts = inject({
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelDataPort });
                 assertCurrentRenderRequest(phraseId, requestId);
-
-                // 2. Tokenize text on the main thread
-                const { inputIds, tokenCount } = textToKokoroInputIds(text);
 
                 // 3. Fetch voice embedding (CDN, cached in memory)
                 const style = await fetchVoiceStyle(voice, tokenCount);

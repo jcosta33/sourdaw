@@ -156,4 +156,109 @@ describe('syncGrinderPatchToAudio', () => {
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveTone', 9);
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveLevel', 6);
     });
+
+    it('should send an imported profile as the engine-named numeric writes before neuralModelMode', () => {
+        const profile = {
+            derivedFrom: 'nam' as const,
+            sourceArchitecture: 'wavenet',
+            sourceSampleRate: 48_000,
+            sourceWeightCount: 6,
+            preferredTier: 'lite' as const,
+            inputDrive: 1.2,
+            asymmetry: -0.1,
+            outputTrim: 0.9,
+            contourMix: 0.3,
+            recurrentBias: 0.05,
+            convWeights: [
+                [0.1, 0.2, 0.3],
+                [0.4, 0.5, 0.6],
+            ] as Array<[number, number, number]>,
+        };
+
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                neuralModelSource: 'imported',
+                neuralModelProfile: profile,
+            })
+        );
+
+        const neural_calls = update_device_param.mock.calls.filter(
+            ([, , key]) => (key as string).startsWith('neuralCustom') || key === 'neuralModelMode'
+        );
+        expect(neural_calls).toEqual([
+            ['track-1', 'device-1', 'neuralCustomTier', 1],
+            ['track-1', 'device-1', 'neuralCustomInputDrive', 1.2],
+            ['track-1', 'device-1', 'neuralCustomAsymmetry', -0.1],
+            ['track-1', 'device-1', 'neuralCustomOutputTrim', 0.9],
+            ['track-1', 'device-1', 'neuralCustomContourMix', 0.3],
+            ['track-1', 'device-1', 'neuralCustomLstmBias', 0.05],
+            ['track-1', 'device-1', 'neuralCustomConvWeight0_0', 0.1],
+            ['track-1', 'device-1', 'neuralCustomConvWeight0_1', 0.2],
+            ['track-1', 'device-1', 'neuralCustomConvWeight0_2', 0.3],
+            ['track-1', 'device-1', 'neuralCustomConvWeight1_0', 0.4],
+            ['track-1', 'device-1', 'neuralCustomConvWeight1_1', 0.5],
+            ['track-1', 'device-1', 'neuralCustomConvWeight1_2', 0.6],
+            ['track-1', 'device-1', 'neuralModelMode', 1],
+        ]);
+
+        const persisted_calls = persist_device_param.mock.calls.filter(
+            ([, key]) => (key as string).startsWith('neuralCustom') || key === 'neuralModelMode'
+        );
+        expect(persisted_calls).toEqual([
+            ['device-1', 'neuralCustomTier', 1],
+            ['device-1', 'neuralCustomInputDrive', 1.2],
+            ['device-1', 'neuralCustomAsymmetry', -0.1],
+            ['device-1', 'neuralCustomOutputTrim', 0.9],
+            ['device-1', 'neuralCustomContourMix', 0.3],
+            ['device-1', 'neuralCustomLstmBias', 0.05],
+            ['device-1', 'neuralCustomConvWeight0_0', 0.1],
+            ['device-1', 'neuralCustomConvWeight0_1', 0.2],
+            ['device-1', 'neuralCustomConvWeight0_2', 0.3],
+            ['device-1', 'neuralCustomConvWeight1_0', 0.4],
+            ['device-1', 'neuralCustomConvWeight1_1', 0.5],
+            ['device-1', 'neuralCustomConvWeight1_2', 0.6],
+            ['device-1', 'neuralModelMode', 1],
+        ]);
+
+        expect(update_device_patch).toHaveBeenCalledWith('track-1', 'device-1', {
+            neuralModelMode: 'imported',
+            profile,
+        });
+    });
+
+    it('should send no neuralCustom writes for a built-in model', () => {
+        run(migrateGrinderPatch({ ...DEFAULT_PATCH }));
+
+        const neural_custom_calls = update_device_param.mock.calls.filter(([, , key]) =>
+            (key as string).startsWith('neuralCustom')
+        );
+        expect(neural_custom_calls).toHaveLength(0);
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'neuralModelMode', 0);
+    });
+
+    it('emits neuralEnabled before engineMode so exact engine mode pick lands last on the engine', () => {
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                engineMode: 'capture',
+                neuralEnabled: true,
+            })
+        );
+
+        const updateKeys = update_device_param.mock.calls.map((c) => c[2]);
+        const persistKeys = persist_device_param.mock.calls.map((c) => c[1]);
+
+        const updateNeuralIdx = updateKeys.indexOf('neuralEnabled');
+        const updateEngineIdx = updateKeys.indexOf('engineMode');
+        expect(updateNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(updateEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(updateNeuralIdx).toBeLessThan(updateEngineIdx);
+
+        const persistNeuralIdx = persistKeys.indexOf('neuralEnabled');
+        const persistEngineIdx = persistKeys.indexOf('engineMode');
+        expect(persistNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(persistEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(persistNeuralIdx).toBeLessThan(persistEngineIdx);
+    });
 });

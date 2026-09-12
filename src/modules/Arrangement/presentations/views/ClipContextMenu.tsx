@@ -17,18 +17,11 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
-import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
-import { lockClip } from '../../useCases/clipEditing/lockClip';
-import { muteClip } from '../../useCases/clipEditing/muteClip';
-import { renameClip } from '../../useCases/clipEditing/renameClip';
-import { setClipColor } from '../../useCases/clipEditing/setClipColor';
-import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
 import { exportMidiClip } from '../../useCases/exportMidiClip';
-import { stripSilence } from '../../useCases/stripSilence';
 
 type ClipContextMenuProps = {
     x: number;
@@ -98,8 +91,40 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             >
                 Reverse
             </DawMenuButton>
-            <DawMenuButton role="menuitem" onClick={act(() => stripSilence(clipId))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({
+                        type: 'stripSilence',
+                        payload: { clipId },
+                    });
+                })}
+            >
                 Strip Silence
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 4 } });
+                })}
+            >
+                Fit to 1 Bar
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 8 } });
+                })}
+            >
+                Fit to 2 Bars
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'fitClipToBeats', payload: { clipId, targetBeats: 16 } });
+                })}
+            >
+                Fit to 4 Bars
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
@@ -174,6 +199,30 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         <>
             <DawMenuButton role="menuitem" onClick={act(() => toggleInlineEditing(clipId))}>
                 {clip?.isInlineEditing ? 'Close Inline Editor' : 'Open Inline Editor'}
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 0.25 } });
+                })}
+            >
+                Quantize (1/16)
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 0.5 } });
+                })}
+            >
+                Quantize (1/8)
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeUserAppAction({ type: 'quantizeNoteLengths', payload: { clipId, gridSize: 0.25 } });
+                })}
+            >
+                Quantize Lengths (1/16)
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
@@ -303,7 +352,10 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     onSubmit={() => {
                         const trimmed = newName.trim();
                         if (trimmed) {
-                            renameClip(clipId, trimmed);
+                            void executeUserAppAction({
+                                type: 'renameClip',
+                                payload: { clipId, name: trimmed },
+                            });
                         }
                         onClose();
                     }}
@@ -332,7 +384,15 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         Rename Clip
                     </DawMenuButton>
 
-                    <DawMenuButton role="menuitem" onClick={act(() => splitClipWithUndo(clipId, splitBeat))}>
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({
+                                type: 'splitClip',
+                                payload: { clipId, beat: splitBeat },
+                            });
+                        })}
+                    >
                         Split at Cursor
                     </DawMenuButton>
                     <DawMenuButton role="menuitem" shortcut="⌘D" onClick={act(duplicateSelected)}>
@@ -342,7 +402,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         <DawMenuButton
                             role="menuitem"
                             shortcut="⌥D"
-                            onClick={act(() => duplicateClipToNextBar(clipId))}
+                            onClick={act(() => {
+                                void executeUserAppAction({
+                                    type: 'duplicateClipToNextBar',
+                                    payload: { clipId },
+                                });
+                            })}
                         >
                             Duplicate to Next Bar
                         </DawMenuButton>
@@ -379,10 +444,26 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                     {isAudio ? renderAudioActions() : null}
                     {isMidi ? renderMidiActions() : null}
 
-                    <DawMenuButton role="menuitem" onClick={act(() => muteClip(clipId, !isMuted))}>
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({
+                                type: 'muteClip',
+                                payload: { clipId, muted: !isMuted },
+                            });
+                        })}
+                    >
                         {isMuted ? 'Unmute Clip' : 'Mute Clip'}
                     </DawMenuButton>
-                    <DawMenuButton role="menuitem" onClick={act(() => lockClip(clipId, !isLocked))}>
+                    <DawMenuButton
+                        role="menuitem"
+                        onClick={act(() => {
+                            void executeUserAppAction({
+                                type: 'lockClip',
+                                payload: { clipId, locked: !isLocked },
+                            });
+                        })}
+                    >
                         {isLocked ? 'Unlock Clip' : 'Lock Clip'}
                     </DawMenuButton>
 
@@ -395,7 +476,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                                 key={color || 'default'}
                                 color={color || 'var(--color-muted)'}
                                 active={clip?.color === color}
-                                onClick={act(() => setClipColor(clipId, color))}
+                                onClick={act(() => {
+                                    void executeUserAppAction({
+                                        type: 'setClipColor',
+                                        payload: { clipId, color },
+                                    });
+                                })}
                                 aria-label={color || 'Default color'}
                             />
                         ))}

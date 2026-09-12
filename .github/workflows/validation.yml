@@ -75,6 +75,10 @@ jobs:
 
       - name: Filter changed paths
         id: filter
+        # A transient GitHub API failure while listing the changed files must
+        # not fail the job; the retry step below re-runs this filter, and
+        # `Resolve scope` fails the job when neither attempt produced verdicts.
+        continue-on-error: true
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           # Negated patterns only subtract under this quantifier. The default
@@ -88,6 +92,83 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - 'scripts/health-gates-server.sh'
+              - 'scripts/health-gates-rust.sh'
+            server:
+              - 'server/**'
+              - 'scripts/health-gates-server.sh'
+              - 'package.json'
+              - 'vite.config.ts'
+              - 'scripts/checkVitestCollectionScope.ts'
+              - '.github/workflows/health-gates.yml'
+              - '.github/workflows/nightly.yml'
+            e2e:
+              - 'src/**'
+              - 'public/**'
+              - 'tests/e2e/**'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            web:
+              - 'src/**'
+              - 'public/**'
+              - 'electron/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+            # Everything the scopes above do not claim, minus the two places
+            # that hold nothing but prose. Repository metadata is machine-read,
+            # not documentation: issue templates, the pull-request template and
+            # workflow definitions all land here and force the fast lane that
+            # polices them. A path nobody has classified lands here too, which
+            # is the point — an unknown path costs a full lane rather than
+            # silently skipping the checks that would have observed it.
+            unclassified:
+              - '**'
+              - '!docs/**'
+              - '!*.md'
+              - '!crates/**'
+              - '!Cargo.toml'
+              - '!Cargo.lock'
+              - '!rust-toolchain.toml'
+              - '!server/**'
+              - '!src/**'
+              - '!public/**'
+              - '!electron/**'
+              - '!scripts/**'
+              - '!tests/e2e/**'
+              - '!package.json'
+              - '!pnpm-lock.yaml'
+              - '!vite.config.ts'
+              - '!playwright.config.ts'
+              - '!tsconfig*.json'
+
+      # On a pull request's shallow checkout the filter lists the changed files
+      # through the GitHub REST API, which intermittently answers 500; that one
+      # transient answer used to fail the whole job and block Gate (#3592). The
+      # retry re-runs the identical filter, and `Resolve scope` fails loudly
+      # when neither attempt produced verdicts, so a persistent failure cannot
+      # read as an all-false scope that silently skips every lane.
+      - name: Retry changed-paths filter after a transient API failure
+        id: filter-retry
+        # An explicit `if` fully replaces the implicit `success()`, so this
+        # runs despite the first attempt's failure.
+        if: steps.filter.outcome == 'failure'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # Must stay identical to the `Filter changed paths` step's `with:`
+          # block above: a retry that filtered differently would resolve the
+          # scope from rules no pin reads.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'scripts/health-gates-server.sh'
+              - 'scripts/health-gates-rust.sh'
             server:
               - 'server/**'
               - 'scripts/health-gates-server.sh'
@@ -143,13 +224,24 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
-          RUST: ${{ steps.filter.outputs.rust }}
-          SERVER: ${{ steps.filter.outputs.server }}
-          E2E: ${{ steps.filter.outputs.e2e }}
-          WEB: ${{ steps.filter.outputs.web }}
-          UNCLASSIFIED: ${{ steps.filter.outputs.unclassified }}
+          # The retry attempt's verdict wins; its empty outputs (it never ran,
+          # or it failed too) fall through to the first attempt's, and both
+          # being empty leaves the value empty for the guard below to refuse.
+          RUST: ${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}
+          SERVER: ${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}
+          E2E: ${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}
+          WEB: ${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}
+          UNCLASSIFIED: ${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}
         run: |
           set -euo pipefail
+          # An empty verdict means both filter attempts failed or never ran;
+          # letting it read as `false` would skip every lane under a green job.
+          for verdict in "$RUST" "$SERVER" "$E2E" "$WEB" "$UNCLASSIFIED"; do
+            if [ "$verdict" != "true" ] && [ "$verdict" != "false" ]; then
+              printf 'No scope verdict: both "Filter changed paths" and "Retry changed-paths filter after a transient API failure" failed or produced no output.\n' >&2
+              exit 1
+            fi
+          done
           heavy=false
           if [ "$EVENT" = "pull_request_review" ]; then heavy=true; fi
           rust=$RUST
@@ -200,8 +292,15 @@ jobs:
           # Only this job needs the history; the others stay shallow.
           fetch-depth: 0
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -279,8 +378,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -310,8 +416,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -344,8 +457,15 @@ jobs:
           # The unit matrix therefore needs the immutable source history.
           fetch-depth: 0
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -398,8 +518,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -410,8 +537,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # `--with-deps` shells out to apt-get for the browser library set, and a
+      # transient mirror outage (apt exiting 100) red this job and Gate on an
+      # otherwise-green head (#4085). Three attempts with a 15s then 30s
+      # backoff; the last failure still fails the step.
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm exec playwright install --with-deps chromium; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -428,8 +568,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -453,8 +600,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -464,8 +618,24 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
+      # apt-get update flakes on transient mirror outages (exit 100), reding
+      # this job and Gate on an otherwise-green head (#4085), so the install
+      # retries three times with a 15s then 30s backoff; the last failure
+      # still fails the step. Package list unchanged: libasound2-dev only.
       - name: Install ALSA development headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y libasound2-dev; then
+              exit 0
+            fi
+            printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1
 
       # No version is pinned here on purpose: `rustup show` reads
       # rust-toolchain.toml, so the toolchain cannot drift from a local run.
@@ -573,8 +743,15 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Enable Corepack
-        run: corepack enable
+      # Provisions the exact pnpm declared in package.json's `packageManager`
+      # field, replacing the Corepack shim this setup used to rely on: a
+      # truncated registry stream inside that hot-path fetch crashed Node's
+      # undici and red the job before any check ran (#3851). Must precede
+      # `Set up Node` so `cache: pnpm` resolves the store path.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

@@ -85,7 +85,7 @@ function fakeCli(port: OpenLanePort): OpenLaneCli {
     return { verifyTrustedBlob: () => undefined, createPort: () => port };
 }
 
-function fakePort(exists = false) {
+function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => string | undefined) {
     const calls: string[] = [];
     const logs: string[] = [];
     const port: OpenLanePort = {
@@ -94,6 +94,7 @@ function fakePort(exists = false) {
         ensureWorktreeParent: (path) => calls.push(`mkdir:${path}`),
         fetchMain: () => calls.push('fetch'),
         worktreeAdd: (path, branch) => calls.push(`add:${path}:${branch}`),
+        nodeModulesLinkTarget: nodeModulesLinkTarget ?? (() => undefined),
         lock: (path) => calls.push(`lock:${path}`),
         log: (message) => logs.push(message),
     };
@@ -292,5 +293,39 @@ describe('lane open', () => {
         }).toThrow(message);
 
         expect(calls).toEqual([]);
+    });
+});
+
+/**
+ * Issue #4118: a lane whose node_modules symlinks into another checkout makes every pnpm run
+ * through the link rewrite that checkout's install metadata, and the next pnpm run there aborts
+ * every trusted delivery script with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. lane:open
+ * refuses the configuration before locking the lane.
+ */
+describe('lane open refuses a node_modules symlinked outside the lane', () => {
+    it('refuses with the symlink, the target, and the sanctioned route, before the lock', () => {
+        const { port, calls } = fakePort(false, () => '/other-checkout/node_modules');
+
+        expect(() => openLane(12, 'work', port)).toThrow(
+            /node_modules is a symlink to \/other-checkout\/node_modules, outside the lane[\s\S]*`pnpm install` in \/repo\/\.agents\/worktrees\/agent-12-work/
+        );
+        expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-work:agent/12/work');
+        expect(calls).not.toContain('lock:/repo/.agents/worktrees/agent-12-work');
+    });
+
+    it('locks the lane when node_modules is a real directory or absent', () => {
+        const { port, calls } = fakePort(false, () => undefined);
+
+        openLane(12, 'work', port);
+
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
+    });
+
+    it('locks the lane when the link resolves inside the lane root', () => {
+        const { port, calls } = fakePort(false, () => '/repo/.agents/worktrees/agent-12-work/vendor/store');
+
+        openLane(12, 'work', port);
+
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
     });
 });

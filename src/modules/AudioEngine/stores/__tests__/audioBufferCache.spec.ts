@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
-import { BUFFER_STORE, installFakeAudioIndexedDb, META_STORE, RECOVERY_STORE } from './fakeAudioBufferIndexedDb';
+import {
+    BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+} from './fakeAudioBufferIndexedDb';
 import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
 // Loaded fresh per test. The cache holds one IndexedDB connection for the life
@@ -666,7 +674,16 @@ describe('audioBufferCache conversions', () => {
 
         vi.resetModules();
         ({ audioBufferCache } = await import('../audioBufferCache'));
-        const aborted = installFakeAudioIndexedDb();
+        const aborted = installFakeAudioIndexedDb({
+            existingStores: [
+                BUFFER_STORE,
+                META_STORE,
+                RECOVERY_STORE,
+                CHECKPOINT_RETENTION_STORE,
+                CHECKPOINT_AUDIO_VERSION_STORE,
+                CHECKPOINT_AUDIO_VERSION_META_STORE,
+            ],
+        });
         aborted.abortWrites();
         await expect(
             audioBufferCache.persistPreparedBuffer({

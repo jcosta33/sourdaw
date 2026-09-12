@@ -3,16 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
+    getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { createBuiltinGrooveTemplates } from '../../models/BuiltinGrooveTemplates';
-import { type GrooveTemplate } from '../../models/GrooveTemplate';
+import { isGrooveTemplate, type GrooveTemplate } from '../../models/GrooveTemplate';
 import { createGrooveTemplateAutomergeStorage } from '../grooveTemplateAutomergeStorage';
 import { type GrooveTemplateState } from '../grooveTemplateStore';
 
-type RootDocument = { grooveTemplates?: unknown };
+type RootDocument = Record<string, unknown> & { grooveTemplates?: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 // Automerge orders root conflicts by op id (`counter@actorId`), and the storage
@@ -49,7 +52,7 @@ function createPeer(initialDoc: Doc<RootDocument>): {
             getSemanticMessage: () => undefined,
             hasDoc: (docId) => docId === 'root',
             mutateDoc: ({ changeFn }) => {
-                doc = change(doc, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+                doc = change(doc, (draft) => changeFn(draft));
             },
         },
     };
@@ -62,6 +65,14 @@ function createBaseline(state: GrooveTemplateState): Doc<RootDocument> {
     storage.set(state);
     flushAutomergeStorageWrites();
     return peer.getDoc();
+}
+
+function readTemplateName(state: GrooveTemplateState | null, id: string): string {
+    const template = state?.templates.find((candidate) => candidate.id === id);
+    if (!template) {
+        throw new Error(`Groove template is absent: ${id}`);
+    }
+    return template.name;
 }
 
 function mergePeers({
@@ -90,6 +101,73 @@ describe('groove template collaboration storage', () => {
         configureAutomergeStoragePort(null);
         vi.unstubAllGlobals();
     });
+
+    it.each([true, false])(
+        'projects the latest published groove value after a commit listener hydrates (nested flush: %s)',
+        (nestedFlush) => {
+            vi.stubGlobal(
+                'requestAnimationFrame',
+                vi.fn(() => 73)
+            );
+            vi.stubGlobal('cancelAnimationFrame', vi.fn());
+            const templateId = 'terminal-authority-template';
+            const original = { ...createTemplate(templateId), name: 'Original' };
+            const local = { ...original, name: 'Local' };
+            const baseline = createBaseline({ templates: [original], assignments: [] });
+            let doc = baseline;
+            let afterPublication: (() => void) | undefined;
+            const mutationOwners: Array<object | undefined> = [];
+            const port: TestPort = {
+                getDoc: () => doc,
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => docId === 'root',
+                mutateDoc: ({ changeFn }) => {
+                    mutationOwners.push(getCurrentAutomergeStorageMutationOwner());
+                    doc = change(doc, (draft) => changeFn(draft));
+                    const listener = afterPublication;
+                    afterPublication = undefined;
+                    listener?.();
+                },
+            };
+            configureAutomergeStoragePort(port);
+            const storage = createGrooveTemplateAutomergeStorage();
+            expect(storage.hydrate?.()).toBe(true);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ templates: [local], assignments: [] });
+            });
+            afterPublication = () => {
+                doc = change(doc, (draft) => {
+                    const rawState = draft.grooveTemplates;
+                    if (
+                        !isRecord(rawState) ||
+                        rawState.schemaVersion !== 1 ||
+                        !isRecord(rawState.templates) ||
+                        !isRecord(rawState.assignments)
+                    ) {
+                        throw new Error('Expected valid groove template CRDT state');
+                    }
+                    const entity = rawState.templates[templateId];
+                    if (!isRecord(entity) || entity.deleted !== false || !isGrooveTemplate(entity.value)) {
+                        throw new Error(`Expected live groove template entity: ${templateId}`);
+                    }
+                    entity.value.name = 'Remote';
+                });
+                expect(storage.hydrate?.()).toBe(true);
+                if (nestedFlush) {
+                    flushAutomergeStorageWrites();
+                }
+            };
+
+            transaction.commit();
+
+            const freshStorage = createGrooveTemplateAutomergeStorage();
+            expect(freshStorage.hydrate?.()).toBe(true);
+            expect(mutationOwners).toHaveLength(1);
+            expect(readTemplateName(storage.get(), templateId)).toBe('Remote');
+            expect(readTemplateName(freshStorage.get(), templateId)).toBe('Remote');
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
 
     it.each(['left-right', 'right-left'] as const)(
         'reconciles concurrent templates and assignments when merged $0',

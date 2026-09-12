@@ -15,6 +15,8 @@ import {
 } from '../models/GrinderPatch';
 import { applyGrinderProjectParameters } from '../models/GrinderProjectParameterMap';
 
+import { grinderNeuralLibraryStore } from './grinderNeuralLibraryStore';
+
 export type GrinderState = {
     patch: GrinderPatch;
     basePatch: GrinderPatch;
@@ -115,7 +117,14 @@ export function replaceGrinderProjectParameters(
         ...instances,
         [deviceId]: {
             ...state,
-            patch: applyGrinderProjectParameters(state.patch, parameterValues),
+            // The imported-neural library rides along so a record carrying a
+            // capture's `neuralCustom*` keys can resolve back to its library
+            // entry's full profile and name on project reload.
+            patch: applyGrinderProjectParameters(
+                state.patch,
+                parameterValues,
+                grinderNeuralLibraryStore.value?.entries ?? []
+            ),
         },
     });
 }

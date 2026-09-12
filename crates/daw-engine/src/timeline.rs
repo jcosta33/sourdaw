@@ -144,23 +144,35 @@ pub enum AutomationTarget {
 /// Bytes a [`BuiltinParamName`] holds. The longest name any built-in body
 /// spells today is well inside it, and the buffer is sized for those
 /// vocabularies to grow without the wire changing shape.
-pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
+///
+/// Levain's own vocabulary is the one that presses closest to it:
+/// `LevainEngine::set_param` (`crates/daw-dsp/src/levain/engine.rs`) owns
+/// `legato_portamento_velocity_threshold`, 36 bytes — four bytes of headroom
+/// under this ceiling. Grinder's dynamic `neuralCustomConvWeight{layer}_{idx}`
+/// family (`neural.rs`'s `parse_custom_conv_weight_param`, fed by
+/// `grinderProcessor.ts`'s `MAX_NEURAL_CONV_LAYERS` of 10 layers and a 3-wide
+/// weight index) tops out at `neuralCustomConvWeight9_2`, 25 bytes, well under
+/// both.
+pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 40;
 
 /// One built-in body's own parameter name, carried inline.
 ///
 /// Named rather than numbered because a modelled instrument's patch is a flat
-/// record of the instrument's own snake_case names, and its discrete selectors
-/// — the engine, the waveform, the modes, layer management, the temperament —
-/// are not in the automation table an ordinal addresses at all. Fixed-size and
-/// inline for the reason given on [`AutomationTarget`]: a command carrying a
-/// `String` would have its allocation freed on the audio thread. Matching a
-/// name on that thread is comparisons alone, so the write itself is real-time
-/// safe.
+/// record of the instrument's own names, spelled as its `set_param` takes
+/// them, and its discrete selectors — the engine, the waveform, the modes,
+/// layer management, the temperament — are not in the automation table an
+/// ordinal addresses at all. Fixed-size and inline for the reason given on
+/// [`AutomationTarget`]: a command carrying a `String` would have its
+/// allocation freed on the audio thread. Matching a name on that thread is
+/// comparisons alone, so the write itself is real-time safe.
 ///
 /// The type is body-neutral by construction and not by coincidence: the shape
 /// rule below is the only thing the engine knows about any of these names, so
 /// one carrier serves every built-in that answers to its own vocabulary rather
-/// than to the engine's.
+/// than to the engine's. Most built-ins spell that vocabulary in snake_case;
+/// Grinder spells its own in camelCase, and the shape admits both, because the
+/// carrier does not know which vocabulary a given name belongs to and has no
+/// business preferring one spelling over the other.
 ///
 /// Shape is the only refusal available here. The instrument owns its
 /// vocabulary and answers a name it does not know by doing nothing at all —
@@ -171,10 +183,10 @@ pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
 /// both runtimes alike.
 ///
 /// The buffer is carried by value everywhere the address travels, and that is
-/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
-/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
-/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
-/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// what it costs: [`DeviceParam`] is 42 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 64 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 4.0 KiB rather than
+/// 1.5 KiB — roughly 15 MiB more preallocated across a scheduler's whole
 /// effect table. That is a one-off cost at construction, paid for a wire that
 /// never has to enumerate a vocabulary `daw-dsp` owns.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -216,10 +228,11 @@ impl BuiltinParamName {
     }
 }
 
-/// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
-/// spells its parameters in.
+/// Whether `byte` belongs to the ASCII identifier vocabulary a built-in
+/// spells its parameters in — snake_case for most, camelCase for Grinder —
+/// the carrier does not know which.
 const fn is_builtin_name_byte(byte: u8) -> bool {
-    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// A parameter of a built-in device, addressed without an owned name for the
@@ -1198,6 +1211,11 @@ pub struct TrackSend {
 /// taps. Held separately from `muted` so the two reasons never overwrite each
 /// other: releasing solo restores the tap without clearing a mute the user
 /// actually pressed.
+///
+/// Neither gate steps. Both drive a [`GateRamp`] — the same ~5 ms one-pole the
+/// web engine's `setTargetAtTime(…, 0.005)` gates ride — so toggling either
+/// control mid-playback glides to silence or back without a click, on native
+/// exactly as on web.
 pub struct TimelineTrack {
     id: usize,
     input_left: Vec<f32>,
@@ -1210,6 +1228,11 @@ pub struct TimelineTrack {
     pan: RampedParam,
     muted: bool,
     solo_gated: bool,
+    /// The declicking glides the two flags drive, one level each so a mute
+    /// and a solo closing together ramp at their own strip points
+    /// independently. See [`GateRamp`].
+    mute_gate: GateRamp,
+    solo_gate: GateRamp,
     output: RouteTarget,
     /// Plugin delay compensation for this track's own clips. Whatever is
     /// routed into this track's input arrives at that input's compensated
@@ -1250,6 +1273,8 @@ impl TimelineTrack {
             pan: RampedParam::new(0.0),
             muted: false,
             solo_gated: false,
+            mute_gate: GateRamp::new(),
+            solo_gate: GateRamp::new(),
             output: RouteTarget::Master,
             source_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
             output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
@@ -1347,6 +1372,10 @@ pub struct TimelineBus {
     pan: RampedParam,
     muted: bool,
     solo_gated: bool,
+    /// The declicking glides the two flags drive, on the same law as a
+    /// track's. See [`GateRamp`].
+    mute_gate: GateRamp,
+    solo_gate: GateRamp,
     output: RouteTarget,
     /// Plugin delay compensation for this bus's own output, on the same law as
     /// a track's: a bus is a contributor to whatever it feeds.
@@ -1366,6 +1395,8 @@ impl TimelineBus {
             pan: RampedParam::new(0.0),
             muted: false,
             solo_gated: false,
+            mute_gate: GateRamp::new(),
+            solo_gate: GateRamp::new(),
             output: RouteTarget::Master,
             output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
@@ -1451,8 +1482,12 @@ pub(crate) trait DeviceChain {
 /// latency and re-aims a generator's line: two closures over one table cannot
 /// hold the shared and the exclusive borrow at once.
 pub(crate) trait CompensationDevices {
-    /// What one device declares, bypassed or not: bypass keeps latency, so an
-    /// A/B never moves the mix.
+    /// What one device declares, bypassed or not: the pass reads the figure
+    /// the slot holds and never the bypass beside it. A hosted plugin's figure
+    /// stands through bypass, so an A/B never moves the mix. A body that
+    /// declares its own figure may have moved it on the bypass itself
+    /// (`ActiveEffect::refresh_declared_latency`), and the slot already holds
+    /// the moved figure by the time this pass reads it.
     fn device_latency(&self, effect_id: usize) -> usize;
 
     /// Aim one generator's input hold at `depth`, and answer whether the
@@ -1503,6 +1538,80 @@ enum MixNode {
 /// distance before it runs out of step. Everywhere louder the step underflows
 /// first, and [`MasterFader::next`] ends the approach on that stall instead.
 const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
+
+/// The time constant a mute or a solo gate declicks on, in seconds.
+///
+/// The web engine's gates — `TrackNode::setMute` and `TrackNode::setSoloGate` —
+/// ride `setTargetAtTime(target, now, 0.005)`, and the native gate has to glide
+/// on the same curve: a hard step silences at a block boundary with a click
+/// the web side does not have (issue #2126).
+const GATE_TIME_CONSTANT_SEC: f32 = 0.005;
+
+/// The fraction of the remaining distance one frame covers:
+/// `1 - exp(-1 / (GATE_TIME_CONSTANT_SEC * 48_000))`, the per-sample
+/// coefficient the Web Audio `setTargetAtTime` recursion runs at the engine's
+/// 48 kHz block rate. `f32::exp` is not a `const fn`, so the figure is spelled
+/// out and pinned against that formula by a test.
+const GATE_SMOOTHING: f32 = 0.004_157_998;
+
+/// How close a gliding gate must stand to its target before it snaps onto it.
+/// A closed gate has to hold exact silence — the steady state the block fill
+/// it replaced guaranteed — and an open one has to return to the untouched
+/// path; the snap also keeps the descent out of the denormals.
+const GATE_SETTLED_EPSILON: f32 = 1e-6;
+
+/// One declicking gate — a mute or a solo — held as a single level in the
+/// strip's own preallocated state, because the glide runs on the audio
+/// callback and must not allocate, lock, or block.
+///
+/// The law is the one `MasterFader` runs and the one the web gate rides:
+/// `setTargetAtTime` approaches its target as
+/// `target + (start - target) * exp(-t / tau)`, which sampled per frame is
+/// `level += (target - level) * GATE_SMOOTHING` — the same recursion at the
+/// same time constant, so toggling mute or solo glides on native exactly as it
+/// does on web. The frame the toggle lands on is multiplied by the level the
+/// gate already held, so the edge carries no step at all, and a reversal
+/// mid-glide re-anchors on the level actually reached, the way the web gate
+/// re-reads `param.value` before re-arming.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GateRamp {
+    level: f32,
+}
+
+impl GateRamp {
+    pub(crate) const fn new() -> Self {
+        Self { level: 1.0 }
+    }
+
+    /// Carry one block across the gate. `engaged` is the strip's mute or solo
+    /// flag, read beside the level so a toggle applied in the command drain
+    /// begins its glide on this block's first frame without a step.
+    fn run(&mut self, engaged: bool, left: &mut [f32], right: &mut [f32]) {
+        let target = if engaged { 0.0 } else { 1.0 };
+        if self.level == target {
+            if engaged {
+                // Settled shut: the gate holds the block at the exact silence
+                // the step it replaced guaranteed.
+                left.fill(0.0);
+                right.fill(0.0);
+            }
+            // Settled open: the untouched path, bit for bit.
+            return;
+        }
+
+        for index in 0..left.len() {
+            left[index] *= self.level;
+            right[index] *= self.level;
+            let advanced = self.level + (target - self.level) * GATE_SMOOTHING;
+            self.level =
+                if advanced == self.level || (target - advanced).abs() < GATE_SETTLED_EPSILON {
+                    target
+                } else {
+                    advanced
+                };
+        }
+    }
+}
 
 /// The master fader: a level the mix approaches sample by sample, holding no
 /// timeline coordinate of its own.
@@ -2545,11 +2654,11 @@ impl TimelineGraph {
                         // Solo-in-place, ahead of both send taps. Placed with the mute
                         // instead, every track the engineer is not listening to would
                         // go on feeding its pre-fader send into the return buses. See
-                        // `TimelineTrack`.
-                        if track.solo_gated {
-                            left.fill(0.0);
-                            right.fill(0.0);
-                        }
+                        // `TimelineTrack`. The gate declicks rather than stepping:
+                        // the send sees the glide, exactly as the web engine's
+                        // `preFaderTap` does.
+                        let solo_engaged = track.solo_gated;
+                        track.solo_gate.run(solo_engaged, left, right);
                         run_sends(
                             track,
                             SendTap::PreFader,
@@ -2570,10 +2679,8 @@ impl TimelineGraph {
                             right,
                             diagnostics,
                         );
-                        if track.muted {
-                            left.fill(0.0);
-                            right.fill(0.0);
-                        }
+                        let muted = track.muted;
+                        track.mute_gate.run(muted, left, right);
                         apply_pan(
                             &mut track.pan,
                             block_start,
@@ -2600,8 +2707,9 @@ impl TimelineGraph {
                         //
                         // Run on every block this strip renders, whether or
                         // not it holds: nothing above skips the line — mute
-                        // and solo zero the block rather than leaving it — so
-                        // the ring keeps pace with the strip.
+                        // and solo hand it silence or the glide toward it,
+                        // never nothing — so the ring keeps pace with the
+                        // strip.
                         track.output_delay.run(left, right, frames);
                         // What this strip hands its route, after the fader,
                         // pan, mute and output delay above — the same pair
@@ -2650,21 +2758,17 @@ impl TimelineGraph {
                         // Solo-in-place, ahead of the fader, matching the
                         // track law. A bus has no send taps today, so the
                         // placement is still the one a later tap would have
-                        // to sit behind.
-                        if bus.solo_gated {
-                            left.fill(0.0);
-                            right.fill(0.0);
-                        }
+                        // to sit behind. The gate declicks like a track's.
+                        let solo_engaged = bus.solo_gated;
+                        bus.solo_gate.run(solo_engaged, left, right);
                         apply_gain(&mut bus.gain, block_start, frames, left, right, diagnostics);
-                        if bus.muted {
-                            left.fill(0.0);
-                            right.fill(0.0);
-                        }
+                        let muted = bus.muted;
+                        bus.mute_gate.run(muted, left, right);
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
                         // Run on every block this bus renders, for the reason
-                        // a track's output line is: mute and solo zero the
-                        // block rather than leaving it, so nothing above skips
-                        // the line.
+                        // a track's output line is: mute and solo hand the
+                        // line silence or the glide toward it, never nothing,
+                        // so nothing above skips the line.
                         bus.output_delay.run(left, right, frames);
                     }
 
@@ -3489,8 +3593,8 @@ mod tests {
         let size = std::mem::size_of::<DeviceParam>();
 
         assert_eq!(
-            size, 34,
-            "a device parameter address is {size} bytes, not the 34 documented on \
+            size, 42,
+            "a device parameter address is {size} bytes, not the 42 documented on \
              `BuiltinParamName` — move that figure, the `DeviceParamEvent` and per-queue \
              byte counts, and the per-scheduler total with it"
         );
@@ -3511,13 +3615,16 @@ mod tests {
         assert_eq!(parsed.as_str(), longest);
     }
 
-    /// A key that was never one of the instrument's names is refused by shape.
+    /// A key that was never shaped like any built-in's name is refused by
+    /// shape.
     ///
     /// The instrument answers a name it does not know by doing nothing, so a
     /// misspelled key would otherwise be a parameter write the producer
     /// believes landed and the mix never heard. Shape is the whole of the
     /// refusal the engine can make without keeping a copy of the instrument's
-    /// table, and each row here is a different way to miss the vocabulary.
+    /// table, and each row here is a different way to miss every built-in's
+    /// vocabulary — snake_case and camelCase alike, since the shape admits
+    /// both.
     #[test]
     fn a_key_shaped_unlike_a_builtin_param_name_is_refused() {
         let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
@@ -3528,25 +3635,38 @@ mod tests {
             "the empty key names no parameter"
         );
         assert_eq!(
-            BuiltinParamName::parse("Cutoff"),
-            None,
-            "the instrument spells its names in lowercase"
-        );
-        assert_eq!(
             BuiltinParamName::parse("cut off"),
             None,
-            "a space is not a character of the instrument's vocabulary"
+            "a space is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse("cut-off"),
             None,
-            "the instrument separates words with underscores, not hyphens"
+            "a hyphen is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse(&too_long),
             None,
             "a name past the buffer would be truncated into a different word"
         );
+    }
+
+    /// A camelCase name — Grinder's own spelling — parses exactly like a
+    /// snake_case one, and the dynamic `neuralCustomConvWeight{layer}_{idx}`
+    /// family the capacity doc cites round-trips at its longest.
+    ///
+    /// Shape admits both spellings because the carrier does not know which
+    /// vocabulary a name belongs to; it is the instrument's own `set_param`,
+    /// not this parser, that decides whether a camelCase key means anything.
+    #[test]
+    fn a_camel_case_builtin_param_name_parses() {
+        let longest_dynamic = BuiltinParamName::parse("neuralCustomConvWeight3_2")
+            .expect("a well-shaped camelCase name parses");
+        assert_eq!(longest_dynamic.as_str(), "neuralCustomConvWeight3_2");
+
+        let round_tripped =
+            BuiltinParamName::parse("inputGain").expect("a well-shaped camelCase name parses");
+        assert_eq!(round_tripped.as_str(), "inputGain");
     }
 
     #[test]
@@ -3786,9 +3906,50 @@ mod tests {
         graph
     }
 
+    /// A clip long enough to keep sounding while a gate glides, settles, and
+    /// reverses across several whole callbacks, so no assertion reads a clip
+    /// that has run out underneath it.
+    const GATE_PROBE_FRAMES: u64 = 40_960;
+
+    /// A block a gate probe renders, comfortably inside the callback ceiling.
+    const GATE_PROBE_BLOCK: usize = 4_096;
+
+    /// The per-frame coefficient the gate glides by, recomputed from the law
+    /// the web engine's 5 ms `setTargetAtTime` names at 48 kHz — the figure
+    /// [`GATE_SMOOTHING`] spells out, because `exp` is not a `const fn`.
+    fn gate_smoothing() -> f32 {
+        1.0 - (-1.0f32 / (GATE_TIME_CONSTANT_SEC * 48_000.0)).exp()
+    }
+
+    /// The level a gate gliding down from open stands at `frames` frames in,
+    /// the web curve `exp(-t / tau)` sampled per frame.
+    fn gate_closed_after(frames: usize) -> f32 {
+        (1.0 - gate_smoothing()).powi(frames as i32)
+    }
+
+    /// Render `blocks` whole blocks from `block_start`, clearing the master
+    /// buffers between them as the callback would, and leave the last block
+    /// in the buffers.
+    fn render_blocks(
+        graph: &mut TimelineGraph,
+        block_start: u64,
+        block_frames: usize,
+        blocks: usize,
+        left: &mut [f32],
+        right: &mut [f32],
+    ) {
+        let mut start = block_start;
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            graph.render(start, block_frames, true, &mut NoDevices, left, right);
+            start += block_frames as u64;
+        }
+    }
+
     #[test]
     fn the_solo_gate_closes_ahead_of_the_send_taps_and_the_mute_deliberately_does_not() {
-        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
         assert!(graph
             .add_send(1, 50, SendTap::PreFader, 1.0, uncompensated())
@@ -3800,39 +3961,79 @@ mod tests {
         assert_eq!(left, vec![2.0; 4], "the track's output plus its cue send");
 
         // Mute is post-fader by design: the cue send keeps feeding its bus
-        // while the engineer pulls the fader down, which is the whole reason a
-        // pre-fader send exists.
+        // while the engineer pulls the fader down, which is the whole reason
+        // a pre-fader send exists. The mute declicks, so the seam frame
+        // still carries the level the gate stood at and the send keeps its
+        // whole copy of it; what the track owes the master glides away.
         graph.set_track_mute(1, true);
         left.fill(0.0);
         right.fill(0.0);
-        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
-        assert_eq!(left, vec![1.0; 4], "the muted track still feeds its bus");
+        graph.render(4, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left[0], 2.0, "the mute edge must not step");
+        assert!(
+            (left[1] - (1.0 + gate_closed_after(1))).abs() < 1e-6,
+            "the track's own arm glides to silence while the send stays whole"
+        );
+        let mut settled_left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut settled_right = vec![0.0; GATE_PROBE_BLOCK];
+        render_blocks(
+            &mut graph,
+            8,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
+        assert_eq!(
+            settled_left,
+            vec![1.0; GATE_PROBE_BLOCK],
+            "the muted track still feeds its bus"
+        );
 
         // Solo-in-place has to silence the track *and* its sends, so soloing
         // one track does not go on playing every other track's reverb tail.
-        // A gate folded into the mute would leave this at 1.0.
+        // A gate folded into the mute would leave the send standing at 1.0.
         graph.set_track_mute(1, false);
         graph.set_track_solo_gate(1, true);
         assert!(graph.track(1).expect("the track").is_solo_gated());
-        left.fill(0.0);
-        right.fill(0.0);
-        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
-        assert_eq!(left, vec![0.0; 4], "a solo-gated track feeds nothing");
+        render_blocks(
+            &mut graph,
+            8 + 2 * GATE_PROBE_BLOCK as u64,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
+        assert_eq!(
+            settled_left,
+            vec![0.0; GATE_PROBE_BLOCK],
+            "a solo-gated track feeds nothing"
+        );
 
         // The two reasons are independent: releasing solo restores the tap
-        // without clearing a mute the user pressed.
+        // without clearing a mute the user pressed. Both glides settle, so
+        // what is left is exactly the bus the reopened send feeds.
         graph.set_track_mute(1, true);
         graph.set_track_solo_gate(1, false);
-        left.fill(0.0);
-        right.fill(0.0);
-        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
-        assert_eq!(left, vec![1.0; 4]);
+        render_blocks(
+            &mut graph,
+            8 + 4 * GATE_PROBE_BLOCK as u64,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
+        assert_eq!(
+            settled_left,
+            vec![1.0; GATE_PROBE_BLOCK],
+            "the released send feeds its bus and the mute holds the track"
+        );
         assert!(graph.track(1).expect("the track").is_muted());
     }
 
     #[test]
     fn bus_strip_mute_silences_the_sends_that_feed_it() {
-        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
         assert!(graph
             .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
@@ -3847,8 +4048,27 @@ mod tests {
         assert!(graph.bus(50).expect("the bus").is_muted());
         left.fill(0.0);
         right.fill(0.0);
-        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
-        assert_eq!(left, vec![1.0; 4], "the muted bus contributes silence");
+        graph.render(4, 4, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left[0], 2.0, "the mute edge must not step");
+        assert!(
+            (left[1] - (1.0 + gate_closed_after(1))).abs() < 1e-6,
+            "the bus's arm glides to silence while the track stays whole"
+        );
+        let mut settled_left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut settled_right = vec![0.0; GATE_PROBE_BLOCK];
+        render_blocks(
+            &mut graph,
+            8,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
+        assert_eq!(
+            settled_left,
+            vec![1.0; GATE_PROBE_BLOCK],
+            "the muted bus contributes exact silence"
+        );
     }
 
     #[test]
@@ -3898,7 +4118,7 @@ mod tests {
 
     #[test]
     fn bus_strip_solo_gate_silences_like_a_track() {
-        let mut graph = graph_with_constant_clip(1, 1.0, 4);
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
         assert!(graph
             .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
@@ -3909,19 +4129,247 @@ mod tests {
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
         graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
-        assert_eq!(left, vec![1.0; 4], "a solo-gated bus contributes silence");
+        assert_eq!(left[0], 2.0, "the solo edge must not step");
+        assert!(
+            (left[1] - (1.0 + gate_closed_after(1))).abs() < 1e-6,
+            "the bus's arm glides to silence while the track stays whole"
+        );
+        let mut settled_left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut settled_right = vec![0.0; GATE_PROBE_BLOCK];
+        render_blocks(
+            &mut graph,
+            4,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
+        assert_eq!(
+            settled_left,
+            vec![1.0; GATE_PROBE_BLOCK],
+            "a solo-gated bus contributes exact silence"
+        );
 
         graph.set_bus_mute(50, true);
         graph.set_bus_solo_gate(50, false);
-        left.fill(0.0);
-        right.fill(0.0);
-        graph.render(0, 4, true, &mut NoDevices, &mut left, &mut right);
+        // The solo glide reopens while the mute glide closes; settled, what
+        // holds the bus is the mute the user pressed.
+        render_blocks(
+            &mut graph,
+            4 + 2 * GATE_PROBE_BLOCK as u64,
+            GATE_PROBE_BLOCK,
+            2,
+            &mut settled_left,
+            &mut settled_right,
+        );
         assert_eq!(
-            left,
-            vec![1.0; 4],
+            settled_left,
+            vec![1.0; GATE_PROBE_BLOCK],
             "releasing solo leaves a mute the user pressed"
         );
         assert!(graph.bus(50).expect("the bus").is_muted());
+    }
+
+    /// The spelled-out [`GATE_SMOOTHING`] figure stays the per-frame
+    /// coefficient the web engine's `setTargetAtTime(…, 0.005)` recursion runs
+    /// at the engine's 48 kHz block rate, so a native gate and the web gate
+    /// beside it glide on one curve.
+    #[test]
+    fn the_gate_coefficient_is_the_one_pole_the_web_time_constant_names() {
+        let expected = gate_smoothing();
+        assert!(
+            // The runtime figure carries its own `exp` rounding, so the pin
+            // sits an order above an ulp and far below anything audible.
+            (GATE_SMOOTHING - expected).abs() < 1e-7,
+            "GATE_SMOOTHING is {GATE_SMOOTHING}, but the 5 ms one-pole at 48 kHz is {expected}"
+        );
+    }
+
+    /// The mute edge is a glide, not a step: the frame the toggle lands on
+    /// still carries the level the gate stood at, then the descent follows
+    /// the web curve sample for sample, standing at 1/e one 5 ms time
+    /// constant in. A block-boundary fill fails this on its first frame.
+    #[test]
+    fn a_closing_mute_gate_glides_instead_of_stepping() {
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+        graph.render(0, 512, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, vec![1.0; 512], "the open gate is the untouched strip");
+
+        graph.set_track_mute(1, true);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(512, 512, true, &mut NoDevices, &mut left, &mut right);
+
+        assert_eq!(left[0], 1.0, "the mute edge must not step");
+        for (index, sample) in left.iter().enumerate() {
+            let expected = gate_closed_after(index);
+            assert!(
+                (sample - expected).abs() < 1e-4,
+                "frame {index} stands at {sample}, the 5 ms one-pole at {expected}"
+            );
+        }
+        assert!(
+            left.windows(2).all(|pair| pair[0] > pair[1]),
+            "the descent is monotonic"
+        );
+        let tau_frame = (GATE_TIME_CONSTANT_SEC * 48_000.0) as usize;
+        assert!(
+            (left[tau_frame] - 1.0 / std::f32::consts::E).abs() < 1e-3,
+            "one time constant in the gate stands at {}, not 1/e",
+            left[tau_frame]
+        );
+    }
+
+    /// The reopen edge glides back out of silence the same way, and settles
+    /// exactly open again — the untouched path the strip was on before the
+    /// toggle, not one multiplied by an asymptote that never arrived.
+    #[test]
+    fn a_reopening_mute_gate_glides_back_without_a_step() {
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+
+        graph.set_track_mute(1, true);
+        render_blocks(&mut graph, 0, 512, 16, &mut left, &mut right);
+        assert_eq!(left, vec![0.0; 512], "the settled gate is exact silence");
+
+        graph.set_track_mute(1, false);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(8_192, 512, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left[0], 0.0, "the reopen edge must not step out of silence");
+        for (index, sample) in left.iter().enumerate() {
+            let expected = 1.0 - gate_closed_after(index);
+            assert!(
+                (sample - expected).abs() < 1e-4,
+                "frame {index} stands at {sample}, the 5 ms one-pole at {expected}"
+            );
+        }
+
+        render_blocks(&mut graph, 8_704, 512, 16, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![1.0; 512],
+            "the settled-open gate is the untouched path again"
+        );
+    }
+
+    /// The solo gate rides the same curve at its own point on the strip, so
+    /// soloing glides instead of stepping and settles exactly silent.
+    #[test]
+    fn a_closing_solo_gate_glides_like_the_mute() {
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+        graph.render(0, 512, true, &mut NoDevices, &mut left, &mut right);
+
+        graph.set_track_solo_gate(1, true);
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(512, 512, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left[0], 1.0, "the solo edge must not step");
+        for (index, sample) in left.iter().take(8).enumerate() {
+            let expected = gate_closed_after(index);
+            assert!(
+                (sample - expected).abs() < 1e-4,
+                "frame {index} stands at {sample}, the 5 ms one-pole at {expected}"
+            );
+        }
+        render_blocks(&mut graph, 1_024, 512, 16, &mut left, &mut right);
+        assert_eq!(left, vec![0.0; 512], "the settled gate is exact silence");
+    }
+
+    /// A gate left shut holds exact silence — the steady state the block fill
+    /// it replaced guaranteed — rather than an asymptote that never lands.
+    /// The snap is what makes that true, so the assertion reads frames far
+    /// past the ~70 ms the 5 ms time constant needs to get within epsilon.
+    #[test]
+    fn a_settled_shut_gate_holds_exact_silence() {
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+
+        graph.set_track_mute(1, true);
+        graph.set_track_solo_gate(1, true);
+        graph.render(0, 512, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left[0], 1.0, "even two closing gates start from no step");
+        render_blocks(&mut graph, 512, 512, 16, &mut left, &mut right);
+        assert_eq!(left, vec![0.0; 512], "exact silence, no residual");
+        assert_eq!(right, vec![0.0; 512], "exact silence, no residual");
+    }
+
+    /// A strip whose gates are never toggled passes its clip through
+    /// unchanged: the settled-open gate is not a multiply at all, so the
+    /// un-gated path stays bit-identical to the strip without one.
+    #[test]
+    fn an_untouched_gate_leaves_the_strip_bit_identical() {
+        const FRAMES: usize = 64;
+        let content: Vec<f32> = (0..FRAMES)
+            .map(|index| index as f32 * 0.031_25 - 1.0)
+            .collect();
+        let side: Vec<f32> = (0..FRAMES)
+            .map(|index| 1.0 - index as f32 * 0.031_25)
+            .collect();
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        assert!(graph
+            .add_clip(
+                1,
+                TimelineClip::new(
+                    9,
+                    content.clone().into(),
+                    side.clone().into(),
+                    placement(0, 0, FRAMES as u64),
+                    ClipPlayback::at_gain(1.0),
+                )
+            )
+            .is_none());
+
+        let mut left = vec![0.0; FRAMES];
+        let mut right = vec![0.0; FRAMES];
+        graph.render(0, FRAMES, true, &mut NoDevices, &mut left, &mut right);
+        assert_eq!(left, content, "the open gate never touched the samples");
+        assert_eq!(right, side, "the open gate never touched the samples");
+    }
+
+    /// The glide runs on the audio callback, so the block a toggle lands on
+    /// renders under the crate's allocation guard: the ramp is the two levels
+    /// the strip already owns, and nothing along the seam path may grow.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_gate_glide_renders_without_allocating() {
+        use assert_no_alloc::assert_no_alloc;
+
+        let mut graph = graph_with_constant_clip(1, 1.0, GATE_PROBE_FRAMES);
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        // Through the bus, so all four gates sit on the rendered path.
+        graph.set_track_output(1, RouteTarget::Bus(50));
+        let mut left = vec![0.0; 512];
+        let mut right = vec![0.0; 512];
+        graph.render(0, 512, true, &mut NoDevices, &mut left, &mut right);
+
+        graph.set_track_mute(1, true);
+        assert_no_alloc(|| {
+            graph.render(512, 512, true, &mut NoDevices, &mut left, &mut right);
+        });
+        // A reversal mid-glide renders the same way.
+        graph.set_track_mute(1, false);
+        graph.set_track_solo_gate(1, true);
+        assert_no_alloc(|| {
+            graph.render(1_024, 512, true, &mut NoDevices, &mut left, &mut right);
+        });
+        graph.set_track_solo_gate(1, false);
+        graph.set_bus_mute(50, true);
+        assert_no_alloc(|| {
+            graph.render(1_536, 512, true, &mut NoDevices, &mut left, &mut right);
+        });
+        graph.set_bus_mute(50, false);
+        graph.set_bus_solo_gate(50, true);
+        assert_no_alloc(|| {
+            graph.render(2_048, 512, true, &mut NoDevices, &mut left, &mut right);
+        });
     }
 
     #[test]

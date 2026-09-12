@@ -23,10 +23,21 @@ use crate::timeline::{
     TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
+use daw_dsp::bacteria::engine::BacteriaEngine;
+use daw_dsp::crust::engine::CrustEngine;
 use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
+use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
+use daw_dsp::grinder::engine::GrinderEngine;
 use daw_dsp::knead::engine::KneadEngine;
+use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
+use daw_dsp::primitives::sanitize::sanitize_block;
+use daw_dsp::proof::chain::ProofChain;
+use daw_dsp::toaster::ToasterInstance;
+use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::sync::Arc;
 use triple_buffer::{Input, Output};
 
 /// The audio thread's progress echo, for the control-side queue ledger
@@ -282,6 +293,15 @@ pub enum BuiltinEffectType {
     Knead,
     Fermenter,
     GrandBoule,
+    Gluten,
+    Crust,
+    Grinder,
+    Bacteria,
+    Proof,
+    DutchOven,
+    Toaster,
+    Levain,
+    Scoring,
 }
 
 impl BuiltinEffectType {
@@ -293,6 +313,15 @@ impl BuiltinEffectType {
             Self::Knead => "knead",
             Self::Fermenter => "fermenter",
             Self::GrandBoule => "grand-boule",
+            Self::Gluten => "gluten",
+            Self::Crust => "crust",
+            Self::Grinder => "grinder",
+            Self::Bacteria => "bacteria",
+            Self::Proof => "proof",
+            Self::DutchOven => "dutch-oven",
+            Self::Toaster => "toaster",
+            Self::Levain => "levain",
+            Self::Scoring => "native-scoring",
         }
     }
 
@@ -304,6 +333,15 @@ impl BuiltinEffectType {
             "knead" => Some(Self::Knead),
             "fermenter" => Some(Self::Fermenter),
             "grand-boule" => Some(Self::GrandBoule),
+            "gluten" => Some(Self::Gluten),
+            "crust" => Some(Self::Crust),
+            "grinder" => Some(Self::Grinder),
+            "bacteria" => Some(Self::Bacteria),
+            "proof" => Some(Self::Proof),
+            "dutch-oven" => Some(Self::DutchOven),
+            "toaster" => Some(Self::Toaster),
+            "levain" => Some(Self::Levain),
+            "native-scoring" => Some(Self::Scoring),
             _ => None,
         }
     }
@@ -320,6 +358,55 @@ impl BuiltinEffectType {
             Self::Knead => false,
             Self::Fermenter => true,
             Self::GrandBoule => true,
+            Self::Gluten => false,
+            Self::Crust => false,
+            Self::Grinder => false,
+            // A creative multi-effect processes what it is handed; it sounds
+            // nothing of its own.
+            Self::Bacteria => false,
+            // A mastering chain is the last insert over a finished mix; it
+            // sounds nothing of its own either.
+            Self::Proof => false,
+            // A reverb sounds the room around whatever it is handed; the
+            // programme is the caller's.
+            Self::DutchOven => false,
+            // A drum machine sounds its own pads: what reaches it is a note,
+            // what leaves it is the kit, and it processes no input at all.
+            Self::Toaster => true,
+            // A sampler sounds the bank it was loaded with: what reaches it is
+            // a note, what leaves it is the recording, and it processes no
+            // input of its own either.
+            Self::Levain => true,
+            // A tuner listens. It hands the block on unchanged and turns the
+            // pitch it heard into a reading, so it sounds nothing of its own.
+            Self::Scoring => false,
+        }
+    }
+
+    /// The names that must land on this built-in before every other entry
+    /// in a patch, in the order they must land — because writing one of
+    /// them rewrites other names the same patch may also carry, and a
+    /// record off the wire has no order of its own to guarantee that
+    /// happens.
+    ///
+    /// The body is what states this: only it knows which of its own names
+    /// alias others, so [`precedence_first`] never carries that knowledge
+    /// itself and cannot drift from what [`FermenterBody::load_patch`] or
+    /// [`GlutenBody::load_patch`] or [`CrustBody::load_patch`] or
+    /// [`GrinderBody::load_patch`] or [`BacteriaBody::load_patch`] or
+    /// [`ProofBody::load_patch`] actually does.
+    pub fn patch_precedence(self) -> &'static [&'static str] {
+        match self {
+            Self::Fermenter => &[LAYER_ROUTING_KEY],
+            Self::Gluten => GLUTEN_MACRO_KEYS,
+            Self::Crust => CRUST_PATCH_PRECEDENCE,
+            Self::Grinder => GRINDER_PATCH_PRECEDENCE,
+            Self::Bacteria => BACTERIA_PATCH_PRECEDENCE,
+            Self::Proof => PROOF_PATCH_PRECEDENCE,
+            Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
+            Self::Toaster => TOASTER_PATCH_PRECEDENCE,
+            Self::Levain => LEVAIN_PATCH_PRECEDENCE,
+            Self::Knead | Self::GrandBoule | Self::Scoring => &[],
         }
     }
 }
@@ -369,10 +456,14 @@ pub enum GraphCommand {
     /// arrivals are computed from and what the diagnostics report, and the
     /// compensation ceiling is applied where a delay is aimed rather than here.
     /// `dry_delay` is the line that runs in the device's place while it is
-    /// bypassed — `Some` exactly when the device declares latency — built on
-    /// the control thread by [`crate::pdc::CompensationDelay::for_latency`],
-    /// because the audio thread may neither build one nor free one (ADR 0020).
-    /// The line this command replaces leaves over the retirement channel.
+    /// bypassed, built on the control thread because the audio thread may
+    /// neither build one nor free one (ADR 0020). A device whose latency
+    /// stands through its own bypass is shipped one exactly when the figure is
+    /// non-zero ([`crate::pdc::CompensationDelay::for_latency`]); a body whose
+    /// figure follows its own bypass is shipped none at all, because it
+    /// declares 0 on the one pass a dry line is read on and the bypassed pass
+    /// is then already the identity. The line this command replaces leaves
+    /// over the retirement channel.
     SetEffectLatency {
         effect_id: usize,
         latency_frames: usize,
@@ -868,10 +959,14 @@ impl GraphCommand {
     /// at the previous topology, and the mix is early or late until some
     /// unrelated command happens to dirty it.
     ///
-    /// Bypass is deliberately absent. A bypassed device keeps its latency and
-    /// runs its dry line in its place, so the alignment is unchanged — and
-    /// re-aiming every delay on an A/B would put a discontinuity in the mix
-    /// exactly where an engineer is listening for one.
+    /// Bypass is deliberately absent. A hosted plugin and a line-carrying
+    /// built-in keep their latency through bypass and run the dry line in the
+    /// device's place, so the alignment is unchanged — and re-aiming every
+    /// delay on an A/B would put a discontinuity in the mix exactly where an
+    /// engineer is listening for one. A body the engine reads its own figure
+    /// off declares 0 instead ([`ActiveEffect::refresh_declared_latency`]), and
+    /// it is that moved declaration that dirties the pass; the bypass itself
+    /// still does not.
     pub(crate) const fn dirties_compensation(&self) -> bool {
         match self {
             // The declared figure itself, and the chain memberships and routes
@@ -950,6 +1045,15 @@ pub enum PluginCore {
     Knead(KneadEngine),
     Fermenter(Box<FermenterBody>),
     GrandBoule(Box<GrandBouleBody>),
+    Gluten(Box<GlutenBody>),
+    Crust(Box<CrustBody>),
+    Grinder(Box<GrinderBody>),
+    Bacteria(Box<BacteriaBody>),
+    Proof(Box<ProofBody>),
+    DutchOven(Box<DutchOvenBody>),
+    Toaster(Box<ToasterBody>),
+    Levain(Box<LevainBody>),
+    Scoring(Box<ScoringBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -965,6 +1069,30 @@ impl PluginCore {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
             BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Crust => Self::crust_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Grinder => Self::grinder_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
+            BuiltinEffectType::DutchOven => Self::dutch_oven_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Toaster => Self::toaster_with_patch(sample_rate, &[]),
+            // The one arm this constructor cannot finish building. A sampler
+            // sounds the bank loaded into its instance and nothing else, and a
+            // bank is a control-thread load this signature carries no source
+            // for ([`Self::levain_with_patch`]), so the instance built here
+            // holds none and the body renders digital silence
+            // (`tests/levain_unloaded_instance_is_silent.rs`, `daw-dsp`).
+            //
+            // Silence is the honest answer for a producer with no bank to
+            // give: a sampler holding no recordings has nothing to sound, and
+            // standing a tone in for the missing content is exactly what the
+            // instrument's own fallback is disarmed at construction to
+            // prevent. So a name-resolved Levain stays silent until a caller
+            // with a bank uses the door below, rather than singing a sine.
+            BuiltinEffectType::Levain => {
+                Self::levain_with_patch(LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES), &[])
+            }
+            BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
         }
     }
 
@@ -994,6 +1122,200 @@ impl PluginCore {
         Self::GrandBoule(Box::new(body))
     }
 
+    /// Build a Gluten carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a bus compressor's patch is
+    /// some forty-five of the compressor's own parameters per strip and the
+    /// command ring is finite. The ordering law here is
+    /// [`GLUTEN_MACRO_KEYS`]: `topology`, `style` and `amount` each rewrite
+    /// other names the same patch may carry, so [`GlutenBody::load_patch`]
+    /// brings them to the front, in that order, through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
+    pub fn gluten_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GlutenBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Gluten(Box::new(body))
+    }
+
+    /// Build a Crust carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a mastering limiter's patch
+    /// is some thirty of the limiter's own parameters per strip and the
+    /// command ring is finite. The ordering law here is
+    /// [`CRUST_PATCH_PRECEDENCE`], which [`CrustBody::load_patch`] applies
+    /// through [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
+    pub fn crust_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = CrustBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Crust(Box::new(body))
+    }
+
+    /// Build a Grinder carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: an amp's patch is dozens of
+    /// the engine's own parameters per strip and the command ring is finite.
+    /// The ordering law here is [`GRINDER_PATCH_PRECEDENCE`], which
+    /// [`GrinderBody::load_patch`] applies through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`FermenterBody::load_patch`] uses for its own routing key.
+    pub fn grinder_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GrinderBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Grinder(Box::new(body))
+    }
+
+    /// Build a Bacteria carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a multi-effect's patch is its
+    /// globals plus six bands' worth of the engine's own parameters per strip,
+    /// and the command ring is finite. Two of those names allocate when they
+    /// land ([`BACTERIA_CONTROL_THREAD_ONLY`]), which is a second reason this
+    /// is where the record is applied: this is the only thread allowed to run
+    /// them, and [`BacteriaBody::load_patch`] is the only door that does.
+    ///
+    /// The ordering law here is [`BACTERIA_PATCH_PRECEDENCE`], which is empty
+    /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
+    /// so the record build is one code path with the other bodies'.
+    pub fn bacteria_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = BacteriaBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Bacteria(Box::new(body))
+    }
+
+    /// Build a Proof carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a mastering chain's patch is
+    /// eight EQ bands, four dynamics bands, four exciter bands, the imager, the
+    /// limiter, the ditherer and the five keys spelling the module order, and
+    /// the command ring is finite.
+    ///
+    /// The ordering law here is [`PROOF_PATCH_PRECEDENCE`], which is empty —
+    /// applied through [`BuiltinEffectType::patch_precedence`] all the same, so
+    /// the record build is one code path with the other bodies'.
+    pub fn proof_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ProofBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Proof(Box::new(body))
+    }
+
+    /// Build a Dutch Oven carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a reverb's patch is the
+    /// engine selection, the vintage stage, six decay-rate EQ bands and some
+    /// twenty of the selected engine's own parameters per strip, and the
+    /// command ring is finite.
+    ///
+    /// The ordering law here is [`DUTCH_OVEN_PATCH_PRECEDENCE`], which is empty
+    /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
+    /// so the record build is one code path with the other bodies'.
+    pub fn dutch_oven_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = DutchOvenBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::DutchOven(Box::new(body))
+    }
+
+    /// Build a Toaster carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a kit's patch is the
+    /// machine's own globals plus some twenty parameters for each of sixteen
+    /// pads, and the command ring is finite.
+    ///
+    /// The ordering law here is [`TOASTER_PATCH_PRECEDENCE`]: a pad's
+    /// `engine_type` resets that pad's own engine parameters, so the sixteen
+    /// selections are brought to the front through
+    /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
+    /// [`GlutenBody::load_patch`] uses for its macro keys.
+    pub fn toaster_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ToasterBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Toaster(Box::new(body))
+    }
+
+    /// Build a Levain carrying `patch` around an instance the caller has
+    /// already loaded, on the control thread.
+    ///
+    /// The one door here that takes an instance rather than a sample rate,
+    /// because a sampler is its bank: a Levain holding none renders silence
+    /// whatever its patch says, and loading one is `begin_sample_bank`, an
+    /// `add_sample` per recording, an `add_zone` per zone, `build_zone_map`
+    /// and `commit_sample_bank` (`crates/daw-dsp/src/levain/mod.rs`) — every
+    /// one of them an allocation the audio thread may not perform (ADR 0020),
+    /// and the last of them a replacement of the zone map, the sample pool and
+    /// the mic mixer. So the caller loads on this thread and hands the loaded
+    /// instance over, and the body never learns where a bank comes from.
+    ///
+    /// The patch is written into the instance before it crosses the ring for
+    /// the same reason as [`Self::fermenter_with_patch`]: a sampler's patch is
+    /// the master gain, the humanization model, the legato thresholds, the
+    /// expression and vibrato ranges, the performance-intelligence keys, the
+    /// three macro knobs and three names per mic position, and the command
+    /// ring is finite.
+    ///
+    /// The ordering law here is [`LEVAIN_PATCH_PRECEDENCE`], which is empty —
+    /// applied through [`BuiltinEffectType::patch_precedence`] all the same, so
+    /// the record build is one code path with the other bodies'.
+    pub fn levain_with_patch(instance: LevainInstance, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = LevainBody::new(instance);
+        body.load_patch(patch);
+        Self::Levain(Box::new(body))
+    }
+
+    /// Build a Tuner carrying `patch`, on the control thread.
+    ///
+    /// Built here rather than on the audio thread for the reason
+    /// [`ScoringBody::new`] states: the detector's analysis window and its two
+    /// autocorrelation buffers are allocations the callback may not perform
+    /// (ADR 0020).
+    ///
+    /// There is no ordering law over the writes — no name in this vocabulary
+    /// rewrites another, so every entry the body admits addresses the one
+    /// analyser whatever order the record is read in — and the patch is
+    /// applied through [`ScoringBody::load_patch`] all the same, so the record
+    /// build is one code path with the other bodies'. That door drops the two
+    /// [`SCORING_NATIVE_REFUSED`] names, so a record naming the poly tracker
+    /// still builds the monophonic analyser this device is.
+    pub fn scoring_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ScoringBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Scoring(Box::new(body))
+    }
+
+    /// The detection channel of the Tuner this core is, or `None` for every
+    /// other core.
+    ///
+    /// The seam the mapper keeps its own handle through: a core is moved into
+    /// [`GraphCommand::AddDetachedEffect`] and crosses the ring, so the only
+    /// moment control-side code can take the handle is before that move. A
+    /// caller that took none can never reach the body again — the audio thread
+    /// owns it from then on — which is why this is asked at registration and
+    /// not from a later lookup.
+    pub fn scoring_telemetry(&self) -> Option<Arc<ScoringTelemetry>> {
+        match self {
+            Self::Scoring(body) => Some(body.telemetry()),
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::GrandBoule(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Levain(_)
+            | Self::Native(_) => None,
+        }
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1002,6 +1324,15 @@ impl PluginCore {
             Self::Knead(_) => Some(BuiltinEffectType::Knead),
             Self::Fermenter(_) => Some(BuiltinEffectType::Fermenter),
             Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
+            Self::Gluten(_) => Some(BuiltinEffectType::Gluten),
+            Self::Crust(_) => Some(BuiltinEffectType::Crust),
+            Self::Grinder(_) => Some(BuiltinEffectType::Grinder),
+            Self::Bacteria(_) => Some(BuiltinEffectType::Bacteria),
+            Self::Proof(_) => Some(BuiltinEffectType::Proof),
+            Self::DutchOven(_) => Some(BuiltinEffectType::DutchOven),
+            Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
+            Self::Levain(_) => Some(BuiltinEffectType::Levain),
+            Self::Scoring(_) => Some(BuiltinEffectType::Scoring),
             Self::Native(_) => None,
         }
     }
@@ -1017,6 +1348,56 @@ impl PluginCore {
     pub fn sounds_notes(&self) -> bool {
         self.builtin_type()
             .is_some_and(BuiltinEffectType::sounds_notes)
+    }
+
+    /// The latency this body reports for the patch it was built with, or `None`
+    /// for a core that declares none.
+    ///
+    /// The figure the mapper publishes at registration, on the
+    /// [`GraphCommand::SetEffectLatency`] that follows the body across the ring
+    /// (`map_device`, `crates/sourdaw-native/src/commands/graph.rs`). Read here
+    /// rather than at the mapper so the reading is the body's own: only the
+    /// instance knows what its record left the engine reporting.
+    ///
+    /// `None` and `Some(0)` are different answers, which is why this is not a
+    /// bare `usize`. A core that declares nothing gets no
+    /// [`GraphCommand::SetEffectLatency`] at all; a Bacteria whose record
+    /// happens to engage no latent stage still gets the declaration, at zero
+    /// and with no dry line, so that the graph already holds a figure the next
+    /// write to it can move ([`ActiveEffect::refresh_declared_latency`]).
+    ///
+    /// This is also the one arm [`ActiveEffect::refresh_declared_latency`]
+    /// reads, so a body that declares a figure here is a body the audio thread
+    /// keeps current without a second per-body match to keep in step with this
+    /// one.
+    ///
+    /// A hosted plugin answers `None` too. Its figure is the host's to read and
+    /// republish (`host/latency_watcher.rs`), on the same command, and asking
+    /// the instance here would put a second producer on one declaration.
+    pub fn declared_latency_frames(&self) -> Option<usize> {
+        match self {
+            Self::Bacteria(body) => Some(body.latency_samples() as usize),
+            Self::Proof(body) => Some(body.latency_samples() as usize),
+            // Every engine a wire value selects reports 0
+            // (`ProofChamberInstance::get_latency`), so this arm publishes a
+            // zero figure rather than nothing. The two answers differ: `None`
+            // leaves the graph with no figure for this effect at all, while
+            // `Some(0)` is a declaration the next write to the body can move
+            // ([`ActiveEffect::refresh_declared_latency`]) — which is what the
+            // convolution-backed engines would need if a transport for their
+            // impulse responses ever made them reachable.
+            Self::DutchOven(body) => Some(body.latency_samples() as usize),
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::GrandBoule(_)
+            | Self::Toaster(_)
+            | Self::Levain(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Scoring(_)
+            | Self::Native(_) => None,
+        }
     }
 }
 
@@ -1216,7 +1597,11 @@ impl FermenterBody {
     /// another would put patch-time and live-time writes on different
     /// layers with the producer believing both landed together.
     fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
-        for (name, value) in layer_routing_first(patch, BuiltinParamName::as_str) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Fermenter.patch_precedence(),
+        ) {
             self.set_param(name.as_str(), value);
         }
     }
@@ -1231,37 +1616,46 @@ impl FermenterBody {
 /// count is a patch defect that the render leaves inaudible, not something
 /// this ordering can repair.
 ///
-/// Named here because [`layer_routing_first`] is what orders a patch around
-/// it; the instrument's own `set_param` is the only other place the word means
+/// Named here because [`BuiltinEffectType::patch_precedence`] returns it as
+/// the Fermenter's whole precedence law, and [`precedence_first`] is what
+/// orders a patch around whatever a body's `patch_precedence` names; the
+/// instrument's own `set_param` is the only other place the word means
 /// anything.
 const LAYER_ROUTING_KEY: &str = "active_layer";
 
-/// `patch` with its layer-routing entry (if any) brought to the front;
-/// everything else follows in patch order.
+/// `patch` reordered so every entry naming one of `first`'s keys comes
+/// first, in `first`'s own order, and everything else follows in patch
+/// order.
 ///
 /// Public and generic over how an entry spells its name, because the law is
-/// the ordering rather than the shape of one caller's patch. A second caller
-/// sends the same instrument the same writes from an unordered record — the
-/// graph-command mapper's immediate parameter batch — and a copy of this
-/// reordering there would be a second place for the law to drift from
-/// [`FermenterBody::load_patch`]. `name` is a function pointer so both filters
-/// below can hold it.
-pub fn layer_routing_first<T: Copy>(
-    patch: &[(T, f32)],
+/// the ordering rather than the shape of one caller's patch — and generic
+/// over which keys lead and why, because that differs by body:
+/// [`BuiltinEffectType::patch_precedence`] states them, so a Fermenter's
+/// `active_layer` and a Gluten's macro keys share one mechanism rather than
+/// two copies that could drift apart. A record off the wire has no order of
+/// its own, and every caller that builds a patch from one — a body's own
+/// `load_patch`, and the graph mapper's immediate parameter batch — reuses
+/// this rather than reordering it again. `name` is a function pointer so
+/// every filter below can hold it.
+pub fn precedence_first<'a, T: Copy>(
+    patch: &'a [(T, f32)],
     name: fn(&T) -> &str,
-) -> impl Iterator<Item = (T, f32)> + '_ {
-    let routing = patch
+    first: &'static [&'static str],
+) -> impl Iterator<Item = (T, f32)> + 'a {
+    let led = first
         .iter()
-        .filter(move |(entry, _)| name(entry) == LAYER_ROUTING_KEY);
+        .flat_map(move |key| patch.iter().filter(move |(entry, _)| name(entry) == *key));
     let rest = patch
         .iter()
-        .filter(move |(entry, _)| name(entry) != LAYER_ROUTING_KEY);
-    routing.chain(rest).copied()
+        .filter(move |(entry, _)| !first.iter().any(|key| name(entry) == *key));
+    led.chain(rest).copied()
 }
 
-/// The Fermenter member channel a note's `i16` channel names, or `None` for a
-/// channel MIDI itself has no address for — the same addresses
-/// [`NoteAddressSet`] refuses, and the same ones the note store will not take.
+/// The member channel a note's `i16` channel names, or `None` for a channel
+/// MIDI itself has no address for — the same addresses [`NoteAddressSet`]
+/// refuses, and the same ones the note store will not take. Shared by every
+/// body that addresses its instrument per channel, so one reading of an
+/// unaddressable channel serves them all.
 fn member_channel(channel: i16) -> Option<u8> {
     if !(0..MIDI_CHANNELS).contains(&channel) {
         return None;
@@ -1480,6 +1874,2164 @@ impl GrandBouleBody {
     }
 }
 
+/// Frames one run of the Gluten body renders, which is the render quantum
+/// the web runtime hands its own instance (`glutenProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`GlutenEngine::process_block`] keeps block-scoped state — the
+/// gain-reduction history ring it pushes one entry per call, the per-block
+/// meters, and the crest and correlation accumulators it resets per call — so
+/// a callback split into runs this size advances that state exactly as the
+/// worklet does rather than once for a device buffer of whatever length the
+/// driver chose. It also keeps every run inside the engine's 4096-frame
+/// external-sidechain buffers, which `process_block` indexes per frame.
+const GLUTEN_RUN_FRAMES: usize = 128;
+
+/// The Gluten patch keys that rewrite other names when written, in the
+/// order they must land ahead of a patch's remaining entries.
+///
+/// `style` loads a whole style onto its topology (threshold, ratio, attack,
+/// release, knee, range, auto_release, mix, and the active topology
+/// itself); `amount` writes threshold and ratio on every topology;
+/// `topology` selects the active topology and rewrites no other name, but
+/// still leads the other two because that is the order the descriptor
+/// (`GlutenDescriptor.ts`) lists them in, and the web host applies a
+/// device's record in descriptor order
+/// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`).
+/// Matching that order here is what lets the native body build the same
+/// compressor from the same record the worklet would.
+const GLUTEN_MACRO_KEYS: &[&str] = &["topology", "style", "amount"];
+
+/// The Gluten bus compressor, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's four
+/// topologies, its four sidechain chains and its two lookahead delay lines
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`GlutenEngine`] rather than `daw_dsp::gluten::GlutenInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input, output and
+/// sidechain buffers so a worklet can write through them, and a host that is
+/// handed the callback's own pair has nothing to do with any of them.
+pub struct GlutenBody {
+    engine: GlutenEngine,
+}
+
+impl GlutenBody {
+    /// Build the compressor on the control thread — it allocates its
+    /// sidechain buffers and its lookahead lines, neither of which the audio
+    /// thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: GlutenEngine::new(sample_rate),
+        }
+    }
+
+    /// Compress the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the uncompressed programme underneath the compressed one.
+    ///
+    /// The block is split into runs of at most [`GLUTEN_RUN_FRAMES`], each one
+    /// a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as the worklet scrubs its own output buffer
+    /// before returning it. The scrubbed count is dropped here: the web path
+    /// reports it as device health over a port this body does not have, and a
+    /// counter no reader can reach would be state carried for nobody.
+    ///
+    /// The external sidechain is never set. The web runtime leaves
+    /// `GlutenNode`'s second input unconnected, so the worklet hands its
+    /// instance silence there; the engine's own buffers are silent from
+    /// construction and nothing here disturbs them, which is the same
+    /// detector source by a shorter route.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the compressor's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GLUTEN_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the compressor's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the compressor resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`GLUTEN_MACRO_KEYS`] land first, in that order, through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and each of those three keys rewrites
+    /// other names the same record may also carry — applied anywhere else,
+    /// a macro could silently undo a more specific entry the record placed
+    /// ahead of it by nothing more than an accident of draw order.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Gluten.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
+/// Frames one run of the Crust body renders, which is the render quantum the
+/// web runtime hands its own instance (`crustProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`CrustEngine::process_block`] caps a single call at its own `MAX_BLOCK`
+/// of 4096 frames, so a device buffer longer than that would be silently cut
+/// short; and its input and output peak meters are per-call figures decayed
+/// once per block, so a callback split into runs this size advances them as
+/// the worklet does rather than once for a buffer of whatever length the
+/// driver chose. The output samples themselves do not show the split: the
+/// limiting path is per-sample, the gain state carries across calls, and the
+/// look-ahead ring is untouched by a block boundary.
+const CRUST_RUN_FRAMES: usize = 128;
+
+/// The Crust patch keys that must land before every other entry, in the order
+/// they must land.
+///
+/// `style` and `algorithm` are two names for one thing: both arms of
+/// [`CrustEngine::set_param`] write the engine's single `algorithm` field,
+/// `style` through `Algorithm::from_style_index` (the panel's three-way PLAY
+/// control) and `algorithm` through `Algorithm::from_index` (the eight-way
+/// SHAPE list). Leading with `style` leaves the exact pick, `algorithm`, to
+/// land with the rest of the record, so a record carrying both builds the
+/// algorithm it names outright rather than the simplification of it.
+///
+/// This is the body's own law rather than a mirror of the web host's: neither
+/// name is a `CrustDescriptor.ts` parameter id, and the web host applies a
+/// device's record in first-insertion order
+/// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`)
+/// over an open record, so there is no order there to mirror. A PLAY tile
+/// persists `style` and the algorithm it derives, in that order
+/// (`setCrustParamWithAudio.ts`, `createFlushHandlers.ts`); a SHAPE pill
+/// refines `algorithm` alone. `algorithm` is therefore always the engine's
+/// own pick, and this law exists so the exact pick lands last whatever order
+/// a `HashMap` record draws; a record written before this contract (stale
+/// `algorithm` beside a newer `style`) resolves to its exact pick rather than
+/// the simplification of it.
+const CRUST_PATCH_PRECEDENCE: &[&str] = &["style"];
+
+/// Crust, the true-peak mastering limiter, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's five
+/// band limiters, its safety stage, its oversampled saturator and its dry
+/// delay line would set the size of every command the engine sends.
+///
+/// This hosts [`CrustEngine`] rather than `daw_dsp::crust::CrustInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input and output
+/// buffers so a worklet can write through them, and a host that is handed the
+/// callback's own pair has nothing to do with any of them.
+///
+/// ## Why this body declares no latency
+///
+/// Crust's look-ahead is real delay, and it is already compensated — on the
+/// Web Audio side, for the strip the native engine carries. A native-carried
+/// strip's Web Audio chain is built and gated shut rather than torn down
+/// (`startNativeLiveGraphSession.ts`: every carried track is "gated shut at
+/// its Web Audio exits"), so its `CrustNode` goes on receiving
+/// `latency-changed` from the worklet and reporting the figure into
+/// `externalLatencyRegistry` (`wasmDeviceRegistry.ts` calls `reportLatency`
+/// on ready and on every change). `getTrackLatency` and `getCompensationDelay`
+/// turn that into the strip's `compensationDelaySeconds`, which
+/// `projectLiveGraphProgramme.ts` and `projectLiveAutomationWrites.ts` fold
+/// into what the native engine is told to play.
+///
+/// Declaring Crust's figure through [`GraphCommand::SetEffectLatency`] as well
+/// would therefore compensate one delay twice and push every other device on
+/// the strip late by exactly that figure. That command is not reserved for
+/// hosted plugins — [`BacteriaBody`] declares through it too, and the
+/// TypeScript side excludes an engine-hosted body from its own sum for that
+/// body alone — but Crust is not on that footing while its figure still
+/// travels the registry, so this body declares nothing.
+pub struct CrustBody {
+    engine: CrustEngine,
+}
+
+impl CrustBody {
+    /// Build the limiter on the control thread — it allocates its look-ahead
+    /// rings, its dry delay line, its block scratch and its loudness meters,
+    /// none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: CrustEngine::new(sample_rate),
+        }
+    }
+
+    /// Limit the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the unlimited programme underneath the limited one.
+    ///
+    /// The block is split into runs of at most [`CRUST_RUN_FRAMES`], each one
+    /// a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as `CrustInstance::process` scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here: the web path reports it as device health over a port this body
+    /// does not have, and a counter no reader can reach would be state carried
+    /// for nobody.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the limiter's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(CRUST_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the limiter's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the limiter resolves it by comparison,
+    /// allocating nothing. The engine's own `bypass` name is one of those
+    /// parameters and is forwarded like any other; the device's bypass is the
+    /// graph's own [`GraphCommand::SetBypass`], as it is for every other body.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`CRUST_PATCH_PRECEDENCE`] lands first through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and `style` writes the same algorithm
+    /// slot `algorithm` does — applied anywhere else, the simplified
+    /// three-way pick could silently undo the exact one the record also
+    /// carries by nothing more than an accident of draw order.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Crust.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
+/// Frames one run of the Grinder body renders, which is the render quantum
+/// the web runtime hands its own instance (`grinderProcessor.ts`, an
+/// `AudioWorkletProcessor` whose `process` is called with 128 frames).
+///
+/// [`GrinderEngine::process_block`] is a per-sample loop with no internal
+/// block-scoped state — unlike Crust's look-ahead meters, nothing here
+/// advances differently for a callback split into runs versus one call over
+/// the whole buffer — so the split is inaudible in the samples this body
+/// produces. The run exists so the sanitize boundary lands exactly where
+/// `GrinderInstance::process` (`crates/daw-dsp/src/grinder/mod.rs`) puts its
+/// own, rather than for any state the engine itself carries in blocks.
+const GRINDER_RUN_FRAMES: usize = 128;
+
+/// The Grinder patch keys that must land before every other entry, in the
+/// order they must land.
+///
+/// `neuralEnabled` and `engineMode` are two names for one thing: both arms of
+/// [`NeuralCapture::set_param`](daw_dsp::grinder) write the neural stage's
+/// single `engine_mode` field (`neural.rs`), `neuralEnabled` through a
+/// boolean simplification — Hybrid above 0.5, Circuit at or below it — and
+/// `engineMode` through the exact three-way index (Circuit, Capture, Hybrid).
+/// Leading with `neuralEnabled` leaves the exact pick, `engineMode`, to land
+/// with the rest of the record, so a record carrying both builds the mode it
+/// names outright rather than the simplification of it.
+///
+/// This law governs the build from a persisted record: the mapper
+/// (`name_ordered_keys`, `crates/sourdaw-native/src/commands/graph.rs`) sorts
+/// a record's keys by name before applying it, which would put `engineMode`
+/// before `neuralEnabled` and let the simplification win, so `neuralEnabled`
+/// leads and the exact pick lands last.
+///
+/// Live single-key writes reach the body one command at a time in the
+/// bridge's own order and are outside this law — every live door
+/// (`updateDeviceParam`, `sendNativeDeviceParameters`) delivers one key per
+/// command in bridge order, engineMode first, so live writes never meet this
+/// precedence (filed as the live-write defect #4141; not fixed here). The web
+/// host's replay of a record has no ordering law of its own either (filed as
+/// #4135; not fixed here).
+const GRINDER_PATCH_PRECEDENCE: &[&str] = &["neuralEnabled"];
+
+/// Grinder, the guitar-amp modeller, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// preamp, tone stack, power amp, cabinet convolver and neural-capture stage
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`GrinderEngine`] rather than `daw_dsp::grinder::GrinderInstance`,
+/// which is the wasm binding: the instance owns raw-pointer input, output and
+/// automation-SAB buffers so a worklet can write through them, and a host
+/// that is handed the callback's own pair has nothing to do with any of them.
+///
+/// ## Why this body declares no latency
+///
+/// Grinder's engine reports zero latency on both hosts today
+/// (`GrinderEngine::latency_samples` forwards `NeuralCapture::latency_samples`,
+/// which is 0), but even a future non-zero figure would follow Crust's own
+/// reasoning: a native-carried strip's Web Audio chain is built and gated
+/// shut rather than torn down (`startNativeLiveGraphSession.ts`), so its
+/// `GrinderNode` goes on receiving `latency-changed` from the worklet and
+/// reporting the figure into `externalLatencyRegistry`
+/// (`wasmDeviceRegistry.ts` calls `reportLatency` on ready and on every
+/// change). `getTrackLatency` and `getCompensationDelay` turn that into the
+/// strip's `compensationDelaySeconds`, which `projectLiveGraphProgramme.ts`
+/// and `projectLiveAutomationWrites.ts` fold into what the native engine is
+/// told to play.
+///
+/// Declaring a figure through [`GraphCommand::SetEffectLatency`] as well would
+/// therefore compensate one delay twice and push every other device on the
+/// strip late by exactly that figure. That command is not reserved for hosted
+/// plugins — [`BacteriaBody`] declares through it too, paired with the
+/// TypeScript exclusion that keeps its figure out of the registry sum — but
+/// nothing here is on that footing, so this body declares nothing.
+pub struct GrinderBody {
+    engine: GrinderEngine,
+}
+
+impl GrinderBody {
+    /// Build the amp on the control thread — it allocates its cabinet
+    /// convolution rings, its neural-capture buffers and its pedal state,
+    /// none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: GrinderEngine::new(sample_rate),
+        }
+    }
+
+    /// Amplify the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the dry programme underneath the amplified one.
+    ///
+    /// The block is split into runs of at most [`GRINDER_RUN_FRAMES`], each
+    /// one a whole `process_block` call, and each run's output is scrubbed of
+    /// non-finite samples exactly as `GrinderInstance::process` scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here: the web path reports it as device health over a port this body
+    /// does not have, and a counter no reader can reach would be state carried
+    /// for nobody.
+    ///
+    /// Nothing here allocates: the runs are subslices of the callback's own
+    /// pair, and the amp's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GRINDER_RUN_FRAMES);
+            self.engine
+                .process_block(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            sanitize_block(&mut left[rendered..run_end]);
+            sanitize_block(&mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Write one of the amp's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the amp resolves it by comparison,
+    /// allocating nothing. The engine's own `bypass` name is one of those
+    /// parameters and is forwarded like any other; the device's bypass is the
+    /// graph's own [`GraphCommand::SetBypass`], as it is for every other body.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`GRINDER_PATCH_PRECEDENCE`] lands first through
+    /// [`BuiltinEffectType::patch_precedence`] and [`precedence_first`]: a
+    /// patch is an unordered record, and `neuralEnabled` writes the same
+    /// `engine_mode` slot `engineMode` does — applied anywhere else, the
+    /// simplified boolean could silently undo the exact three-way pick the
+    /// record also carries by nothing more than an accident of draw order.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Grinder.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
+/// The Bacteria patch keys that must land before every other entry — none.
+///
+/// Every other body's law exists because one of its names rewrites another
+/// the same record may carry, so a record drawn in the wrong order settles on
+/// the wrong device. Bacteria has no such pair. Its vocabulary is spelled
+/// twice over (`bitDepth` and `sampleRateReduce` each reach the distortion
+/// waveshaper in `distortion.rs` *and* the lo-fi codec in `lofi.rs`, because
+/// the engine broadcasts an unprefixed name to every sub-processor), but those
+/// are two stages reading one written value rather than two names writing one
+/// stage: both landings are wanted, and neither is undone by the other. Every
+/// remaining arm — global, per band, or per step — stores, clamps or rebuilds
+/// exactly one field of one stage. So a record builds the same device whatever
+/// order it is drawn in, and [`precedence_first`] with this empty law is the
+/// identity over it.
+///
+/// Kept as a law rather than special-cased at the call site so the record
+/// build stays one code path with the other bodies': a Bacteria name that does
+/// come to alias another is answered here, where every other body answers it.
+const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// The Bacteria parameter names whose `set_param` arms allocate, and which
+/// [`BacteriaBody::set_param`] therefore refuses on the audio thread.
+///
+/// `convolutionIr` rebuilds the cabinet impulse response:
+/// `ConvolutionProcessor::set_param` calls `load_builtin`, which builds the
+/// response into a fresh `vec!` and hands it to `load_ir`, which `to_vec`s
+/// both channels and replaces both input rings
+/// (`crates/daw-dsp/src/bacteria/convolution.rs`). `phaserStages` calls
+/// `resize_with` on both all-pass chains for a count the parameter admits up
+/// to 12 where the constructor built 6, so any count above 6 reallocates
+/// (`crates/daw-dsp/src/bacteria/chorus.rs`). Every other arm in the engine's
+/// vocabulary is a scalar store, a clamp, a coefficient recompute, or an
+/// allocation-free rebuild over storage the constructor already sized.
+///
+/// Both names reach the engine two ways — bare, because an unmatched name is
+/// broadcast to all six bands, and as `band{digit}_…` for one band — so the
+/// refusal compares [`bare_bacteria_param_name`] rather than the name as
+/// written.
+///
+/// The refusal is the body's own boundary and not the wire's: no producer
+/// emits these names today, but `set-device-parameters` admits any name of
+/// the right shape, so the door a command actually arrives at is the only
+/// place that can hold the line. The control thread is where they are allowed
+/// to land, and [`BacteriaBody::load_patch`] applies them there like any other
+/// name.
+///
+/// A live single-key write of one takes two different routes, neither of
+/// which is "held on the Web Audio fallback" as a whole. An automation write
+/// is kept off the native door entirely: `addressesParameter`
+/// (`src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts`)
+/// refuses the name, and `readLiveAutomationWrites.ts` gates on that answer
+/// before it ever builds a native `SetParam`. A panel write is not gated the
+/// same way — `updateDeviceParam.ts` sends every live write natively through
+/// `nativeBuiltinWriteTarget` without consulting `addressesParameter` at all
+/// — so it does reach this door, and [`BacteriaBody::set_param`] is what
+/// drops it there. Either route leaves the parameter holding whatever value
+/// the record's own patch gave it.
+const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
+
+/// The Tuner parameter names [`ScoringBody`] refuses at both of its doors —
+/// the live [`ScoringBody::set_param`] and the record's
+/// [`ScoringBody::load_patch`].
+///
+/// `instrument` allocates when it lands. Its arm calls
+/// `PolyStringTracker::set_guitar_standard` or `set_bass_4`, and both go
+/// through `set_strings` (`crates/scoring/src/poly.rs`), which builds a fresh
+/// `Vec` of targets, of band-pass filters and of detectors, one analysis
+/// buffer per string, a position table and a scratch window — plus a
+/// `YinDetector` per string, each of which allocates five `Vec`s of its own.
+///
+/// `poly` is a bool store, but what it stores is the enable on the tracker
+/// those strings were built for, and the bass configuration allocates *inside*
+/// `process`: `set_strings` sizes every per-string buffer for the lowest
+/// string's band, so at 88.2 and 96 kHz the A1, D2 and G2 detectors are each
+/// handed a window twice the length their own FFT scratch was built for and
+/// `YinDetector::detect` resizes it on the audio thread
+/// (`crates/scoring/src/yin.rs`, issue #4209). Arming the tracker is therefore
+/// the same hazard one hop later rather than a safe write.
+///
+/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose two names are *allowed* on
+/// the control thread and land through [`BacteriaBody::load_patch`], these two
+/// are refused on BOTH doors. The reason is not which thread may run the
+/// allocation but that neither name belongs to this device: the Tuner's
+/// descriptor (`native-scoring`,
+/// `src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
+/// declares `a4_hz`, `mute` and `tone` and nothing else, no producer spells
+/// either name, and the native Tuner is the monophonic analyser. A record or a
+/// live write carrying one is a producer that lost track of the device, and
+/// admitting it on the record door would arm a tracker the very next callback
+/// allocates for.
+const SCORING_NATIVE_REFUSED: &[&str] = &["poly", "instrument"];
+
+/// `name` with an optional `band{digit}` prefix stripped: the bare name the
+/// engine resolves once it has picked a band.
+///
+/// The same reading `BacteriaEngine::apply_param`
+/// (`crates/daw-dsp/src/bacteria/engine.rs`) performs: four bytes of `band`,
+/// one decimal digit, then one byte the engine skips without reading —
+/// historically the underscore, but nothing in `apply_param` checks that it
+/// is. This helper exists only to decide whether
+/// [`BACTERIA_CONTROL_THREAD_ONLY`] would refuse the name the engine is
+/// about to route, so it has to agree with the engine's reading exactly
+/// rather than a stricter one of its own: a version that required the
+/// underscore would read `band00convolutionIr` and `band0XphaserStages` as
+/// unmatched bare names and let both through, while `apply_param` reads
+/// them as band 0's `convolutionIr` and `phaserStages` all the same — digit
+/// `0`, skipped byte `0` or `X`. Not checking the sixth byte is therefore
+/// not a gap this helper introduces; it is the engine's own gap, and the
+/// only way to close this door on it is to stop pretending the byte is
+/// checked.
+///
+/// Borrowed rather than built: the comparison this feeds runs on the audio
+/// thread, where an owned name would be an allocation.
+fn bare_bacteria_param_name(name: &str) -> &str {
+    let Some(rest) = name.strip_prefix("band") else {
+        return name;
+    };
+    match rest.as_bytes().first() {
+        Some(digit) if digit.is_ascii_digit() && rest.len() > 1 => &rest[2..],
+        _ => name,
+    }
+}
+
+/// Bacteria, the multi-band creative multi-effect, hosted as a built-in
+/// effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's six
+/// band chains — each with its own oversampler, waveshaper, filters, granular
+/// ring, STFT workspaces, Hilbert network, codec frames and convolver — would
+/// set the size of every command the engine sends.
+///
+/// This hosts [`BacteriaEngine`] rather than
+/// `daw_dsp::bacteria::BacteriaInstance`, which is the wasm binding: the
+/// instance owns raw-pointer input, output and meter buffers so a worklet can
+/// write through them, and a host handed the callback's own pair has nothing
+/// to do with any of them. It is the same choice [`GrinderBody`] makes.
+///
+/// ## How this body is compensated
+///
+/// Bacteria is the first built-in whose engine reports a real,
+/// parameter-dependent figure: `BacteriaEngine::latency_samples`
+/// (`crates/daw-dsp/src/bacteria/engine.rs`) answers the oversampler's
+/// 6.5/9.75/11.375 base samples at 2x/4x/8x, Smudge's 2048-sample overlap-add
+/// window divided by the running factor, the lo-fi codec's 256-sample frame
+/// once `codecArtifact` passes 0.01, and the spectral stage's 2048-sample
+/// window while `spectralEnabled` — summed across bands under `Serial` and
+/// maxed under `Parallel`/`MidSide`. So this body is compensated the way an
+/// externally hosted plugin is: inside the engine, by the graph, against the
+/// figure the instance itself reports.
+///
+/// - **The mapper publishes the opening figure.** `map_device`
+///   (`crates/sourdaw-native/src/commands/graph.rs`) reads
+///   [`PluginCore::declared_latency_frames`] off the body it just built from
+///   the persisted record, and sends a [`GraphCommand::SetEffectLatency`]
+///   behind the registration carrying that figure — 0 where the record is
+///   bypassed — and no dry line.
+/// - **This body ships and holds no dry line.** A dry line is read on the
+///   bypassed pass alone (`run_dry_delay`), and that is the pass on which this
+///   body declares 0: the pass hands the block on untouched, which is exactly
+///   the identity a line aimed at 0 would be. So there is no pass on which a
+///   line here could hold anything, and one shipped anyway would be fed on
+///   every block the body ran and read on none of them.
+/// - **The audio thread keeps it current.** Every write that lands on this
+///   body — the `SetParam` drain arm and the automation queue's `Builtin`
+///   apply — is followed by [`ActiveEffect::refresh_declared_latency`], which
+///   re-reads the engine and dirties the compensation pass. `update_graph`
+///   recomputes on the next block, so a mid-roll `oversampling`,
+///   `distortionMode`, `codecArtifact`, `spectralEnabled` or `globalRouting`
+///   change re-aims every route meeting this strip within one block of the
+///   write rather than at the next Stop/Play.
+///
+/// A bypassed Bacteria declares nothing, which is where this body parts from a
+/// hosted plugin: a plugin keeps its latency through bypass so an A/B never
+/// moves the mix, and this one does not. Both carriers have to agree about the
+/// same device, and both read a bypassed one as delaying nothing — the
+/// renderer's own reading drops a bypassed device on every carrier
+/// (`getTrackLatency.ts`), and the web body is a true bypass that hands the
+/// block on without the engine or a delay
+/// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`).
+/// Declaring the figure anyway would hold a natively carried strip back by a
+/// window nothing in it is waiting for, and flam every web strip beside it by
+/// exactly that. So [`ActiveEffect::refresh_declared_latency`] reads the bypass
+/// with the parameters and [`GraphCommand::SetBypass`] re-aims the pass. The
+/// cost is a one-block re-aim of the native mix on an A/B, which is the same
+/// re-aim the web schedule already takes when the same device is bypassed
+/// there.
+///
+/// The figure can outrun the compensation ceiling, and this is the first
+/// built-in for which that is reachable. `BacteriaEngine::latency_samples`
+/// sums its per-band figures under `Serial`, so six bands each running the
+/// spectral stage's 2048-sample window, Smudge's 2048-sample window at 1x and
+/// the codec's 256-sample frame report 26112 frames — past
+/// [`MAX_COMPENSATION_FRAMES`]'s 16384. Every sibling route then clamps at the
+/// ceiling, and the clamp is counted through the `pdc_clamped_routes`
+/// diagnostic rather than silently obeyed or silently dropped, which is the
+/// convention that constant's own documentation states.
+/// The `externalLatencyRegistry` path this replaces had no ceiling at all: it
+/// asked Web Audio for whatever delay was reported, so a patch this deep is
+/// newly a clamped alignment rather than an exact one.
+///
+/// Both hosts run the same `BacteriaEngine` over the same key stream, so the
+/// figure the audio thread reads is the figure the sound has:
+/// `updateDeviceParam` sends every write to both, and the only names one host
+/// admits and the other does not — [`BACTERIA_CONTROL_THREAD_ONLY`] — move no
+/// latency at all, since the impulse response's length is fixed by
+/// `load_builtin` and the phaser is an all-pass network with no group delay
+/// term in the report.
+///
+/// The TypeScript side is what stops this being counted twice. A carried
+/// strip's Web Audio chain is gated shut rather than torn down
+/// (`startNativeLiveGraphSession.ts`), so its `BacteriaNode` goes on posting
+/// `latency-changed` and `wasmDeviceRegistry.ts` goes on filling
+/// `externalLatencyRegistry` for the same device id. `getCompensationDelay`
+/// (`useCases/latencyCompensation/compensation/`) therefore takes the set of
+/// engine-hosted strips and skips a device whose type is
+/// `latencyCompensatedByEngine` on one of them — the same exclusion
+/// `getDeviceLatencyMs` already makes for `external-plugin` — and then
+/// subtracts the deepest such figure once from every native strip's delay,
+/// because `Timeline::compensate` has already brought the whole native mix to
+/// that depth on its own. The web fallback
+/// keeps the worklet's figure: a strip Web Audio is still carrying is not in
+/// that set, and the delay it reports is a delay Web Audio really has.
+pub struct BacteriaBody {
+    engine: BacteriaEngine,
+}
+
+impl BacteriaBody {
+    /// Build the multi-effect on the control thread.
+    ///
+    /// `BacteriaEngine::new` builds all six band chains up front — the
+    /// granular delay rings, the STFT and Smudge analysis workspaces, the
+    /// codec frames, the crossover's full point topology, the per-band and dry
+    /// alignment rings, and the modulation and macro tables at their
+    /// capacities — and nothing on the process path grows any of them
+    /// afterwards. Those are allocations the audio thread may not perform
+    /// (ADR 0020), which is why the constructor runs here and the engine is
+    /// handed across the ring already built.
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: BacteriaEngine::new(sample_rate),
+        }
+    }
+
+    /// Process the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the dry programme underneath the processed one.
+    ///
+    /// Handed the whole callback in one call, unlike [`GrinderBody::process`]
+    /// and the instrument bodies, which split into the worklet's 128-frame
+    /// quantum. `BacteriaEngine::process_block` is a per-sample loop carrying
+    /// no block-scoped state — its one per-block statement is
+    /// `publish_band_levels`, a copy of each band's current meter — so a
+    /// callback rendered in one call and the same callback rendered in runs
+    /// produce identical samples, and a run length here would be a constant
+    /// nothing reads. That equivalence is pinned by
+    /// `a_bacteria_body_renders_the_same_whatever_the_callback_length` rather
+    /// than asserted, because it is what licenses the single call.
+    ///
+    /// Both channels are then scrubbed of non-finite samples exactly as
+    /// `BacteriaInstance::process` (`crates/daw-dsp/src/bacteria/mod.rs`)
+    /// scrubs its own output buffers before handing them back. The scrubbed
+    /// count is dropped here: the web path reports it as device health over a
+    /// port this body does not have, and a counter no reader can reach would
+    /// be state carried for nobody.
+    ///
+    /// Nothing here allocates: the slices are the callback's own pair, and the
+    /// engine's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.engine.process_block(left, right);
+        sanitize_block(left);
+        sanitize_block(right);
+    }
+
+    /// Write one of the multi-effect's own parameters by name, from the audio
+    /// thread.
+    ///
+    /// Real-time safe, and this is the door that makes it so. The name arrives
+    /// inline in the command ([`BuiltinParamName`]) and the engine resolves it
+    /// by comparison, but two of its arms allocate when they land, so a name
+    /// in [`BACTERIA_CONTROL_THREAD_ONLY`] is dropped here rather than
+    /// forwarded — with or without a `band{digit}_` prefix. Dropping it is the
+    /// conservative half of the trade: the parameter keeps the value the patch
+    /// gave it, where forwarding would abort the callback under the allocation
+    /// guard and, in the field, allocate on the audio thread.
+    ///
+    /// Everything else is forwarded unchanged, including the engine's own
+    /// `bypass` name; the device's bypass is the graph's own
+    /// [`GraphCommand::SetBypass`], as it is for every other body. The
+    /// engine's `set_param` re-derives the band alignment and clears the
+    /// inactive bands' meters after every write, both allocation-free passes
+    /// over at most six bands.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if BACTERIA_CONTROL_THREAD_ONLY.contains(&bare_bacteria_param_name(name)) {
+            return;
+        }
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// Every entry lands, including the two [`BACTERIA_CONTROL_THREAD_ONLY`]
+    /// names [`Self::set_param`] refuses: this is the thread their allocating
+    /// arms are allowed to run on, so the engine is written directly rather
+    /// than through that door. A persisted record naming a cabinet impulse
+    /// response or a phaser stage count therefore builds the device it names.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`BACTERIA_PATCH_PRECEDENCE`] is empty and the ordering is
+    /// the identity: one code path, so a future aliasing pair is answered
+    /// where the others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Bacteria.patch_precedence(),
+        ) {
+            self.engine.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay the engine reports for the patch this body carries.
+    ///
+    /// The whole of what this body declares, read twice on two threads: the
+    /// mapper reads it through [`PluginCore::declared_latency_frames`] to
+    /// publish the opening figure, and the audio thread re-reads it through
+    /// [`ActiveEffect::refresh_declared_latency`] after every write. Reading
+    /// the engine rather than tracking a figure of its own is what keeps the
+    /// two agreeing with the sound: the engine derives it from the same
+    /// alignment pass that pads the bands.
+    pub fn latency_samples(&self) -> u32 {
+        self.engine.latency_samples()
+    }
+}
+
+/// The Proof patch keys that must land before every other entry — none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry, so a record drawn in the wrong order settles on the
+/// wrong device. Proof has no such pair. `ProofChain::set_param`
+/// (`crates/daw-dsp/src/proof/chain.rs`) routes on a leading prefix — `eq_`,
+/// `dyneq_`, `match_`, `dyn_`, `img_`, `exc_`, `lim_`, `dither_` — and each
+/// stage's own arm stores, clamps or redesigns exactly one field of one stage,
+/// so no two names in the vocabulary write one slot. The module order is
+/// spelled five keys at a time and every one of them writes its own slot of
+/// [`ProofBody::order`], never another's. So a record builds the same device
+/// whatever order it is drawn in, and [`precedence_first`] with this empty law
+/// is the identity over it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a Proof name that does come to
+/// alias another is answered here, where every other body answers it.
+const PROOF_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// The Proof parameter name the graph owns rather than the chain, and which
+/// [`ProofBody::set_param`] therefore drops on both threads.
+///
+/// `bypass` is the device's bypass, and the device's bypass is
+/// [`GraphCommand::SetBypass`] for every body the engine hosts: the chain skips
+/// a bypassed device rather than handing it a block, and
+/// [`ActiveEffect::refresh_declared_latency`] reads that state to declare 0
+/// while it holds. Forwarding the name would put a second, invisible bypass
+/// inside a device the graph already believes it is running — the block would
+/// come back untouched while the graph went on declaring the chain's figure,
+/// so every route meeting the strip would wait for a delay the signal no longer
+/// takes.
+///
+/// `ab_bypass` is deliberately not here. It is the mastering panel's A/B
+/// compare, which `ProofChain::process` answers by returning the dry signal
+/// scaled by the loudness offset it has been tracking
+/// (`crates/daw-dsp/src/proof/chain.rs`). It is a chain control all the same,
+/// and a compare pressed while the session rolls natively is a gesture on the
+/// carrier that is sounding. Dropping it here would leave the panel's chip
+/// reading "A / dry" over the processed mix. The gain offset the compare is
+/// matched with is the chain's own: it opens at 0 dB and the chain re-derives
+/// it from its meters on every pass it processes, so this body gain-matches
+/// out of the same state the web twin does, whatever reads the meters
+/// afterwards.
+///
+/// The project has not persisted it since 11563e86b (2026-08-16) —
+/// `setProofParam` (`src/modules/Proof/useCases/proofParamBridge`) holds it out
+/// of the saved device row — but a row saved before that commit can still
+/// carry it. [`PROOF_RECORD_REFUSED`] is what refuses that name at the record
+/// door; this constant governs only the live arm.
+///
+/// The name is dropped on the control thread too, unlike
+/// [`BACTERIA_CONTROL_THREAD_ONLY`], because the reason is not which thread may
+/// run the arm: it is that the arm belongs to a carrier this body is not. A
+/// persisted record carrying it leaves the chain exactly where the graph's own
+/// bypass put it.
+const PROOF_GRAPH_OWNED: &[&str] = &["bypass"];
+
+/// The Proof parameter name a persisted patch record must not carry, refused
+/// only at the record door in [`ProofBody::load_patch`]. A live
+/// [`ProofBody::set_param`] still forwards it: the arm it engages there is a
+/// session gesture, not a saved value, and [`PROOF_GRAPH_OWNED`]'s doc is what
+/// explains why that arm is not dropped on the live path.
+///
+/// `ab_bypass` is the mastering panel's A/B compare. Before 11563e86b
+/// (2026-08-16) the panel persisted it into the device row like any other
+/// control; that commit stopped the persistence, but a project saved before it
+/// can still carry `ab_bypass: 1`. Feeding that value through `load_patch`
+/// would engage the compare and map the body dry for the whole session while
+/// the panel chip and the web twin read wet. Refusing the name at the door a
+/// saved record crosses leaves a natively carried body opening on the runtime
+/// default (inactive), exactly like a project that never had the field.
+const PROOF_RECORD_REFUSED: &[&str] = &["ab_bypass"];
+
+/// Modules [`ProofChain`] reorders: Eq, Dynamics, Imager, Exciter, Limiter.
+///
+/// `ProofChain::reorder` takes exactly this many slots and refuses anything
+/// that is not a permutation of `0..5`, so the count is the chain's and is
+/// mirrored here only to size [`ProofBody::order`] and to bound the slot a
+/// `chain_order_{n}` key names.
+const PROOF_MODULES: usize = 5;
+
+/// The order `ProofChain::new` builds: EQ, dynamics, imager, exciter, limiter.
+const PROOF_DEFAULT_ORDER: [u8; PROOF_MODULES] = [0, 1, 2, 3, 4];
+
+/// The persisted spelling of one module-order slot.
+const PROOF_CHAIN_ORDER_PREFIX: &str = "chain_order_";
+
+/// The order slot a `chain_order_{n}` key names, or `None` for any other name.
+///
+/// Read from the name's own bytes rather than parsed into a number: this runs
+/// on the audio thread, where building an owned digit would be an allocation.
+/// One byte follows the prefix, and the subtraction wraps rather than panicking
+/// on a byte below `b'0'`, so every non-digit lands outside `0..PROOF_MODULES`
+/// and reads as "not an order key" — which is also the answer for
+/// `chain_order_5` and above, slots the chain has no module for.
+fn proof_chain_order_slot(name: &str) -> Option<usize> {
+    let rest = name.strip_prefix(PROOF_CHAIN_ORDER_PREFIX)?;
+    let [digit] = rest.as_bytes() else {
+        return None;
+    };
+    let slot = digit.wrapping_sub(b'0') as usize;
+    (slot < PROOF_MODULES).then_some(slot)
+}
+
+/// Proof, the mastering suite, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's eight
+/// EQ bands, linear-phase FIR workspaces, four-band dynamics and exciter
+/// crossovers, look-ahead delay lines and the loudness meters' multi-second ring
+/// buffers would set the size of every command the engine sends.
+///
+/// This hosts [`ProofChain`] rather than `daw_dsp::proof::ProofInstance`, which
+/// is the wasm binding: the instance owns raw-pointer input, output and meter
+/// buffers so a worklet can write through them, and a host handed the callback's
+/// own pair has nothing to do with any of them. It is the same choice
+/// [`GrinderBody`] and [`BacteriaBody`] make.
+///
+/// ## Why this body owns the module order
+///
+/// Proof is the one built-in whose modules can be reordered, and the two
+/// carriers spell that order differently. Project truth persists it as five
+/// keys, `chain_order_0` through `chain_order_4`, each holding the module id
+/// standing in that slot (`getProofPatchParameterValues`,
+/// `src/modules/Proof/services/`). The web twin does not read those keys at all:
+/// `ProofChain::set_param` has no `chain_order_` arm, and the worklet is
+/// reordered by a message of its own instead (`reorderChain.ts` →
+/// `bridge.reorderModules`). So a record's order reaches the chain here or
+/// nowhere, and this body is what translates the five keys into the one
+/// `ProofChain::reorder` call the chain answers.
+///
+/// The translation is per key, because that is the shape a key arrives in: a
+/// patch entry, or a single `SetParam` off the wire. Each write stores its own
+/// slot and re-offers the whole array, and `ProofChain::reorder` refuses
+/// anything that is not a permutation of `0..5` — so an order arriving one key
+/// at a time applies exactly when the five keys form one, and a half-written
+/// array is refused rather than partially installed. A live rewrite that passes
+/// through a transient valid permutation on its way to the intended one applies
+/// that permutation for the blocks until the last key lands: the bounded cost of
+/// a per-key write route, and the same cost the persisted record's own
+/// key-by-key application takes on the control thread before the body ever
+/// crosses the ring.
+///
+/// A value outside `0..5` is stored as written and refused by the chain's own
+/// permutation check, so this body keeps no second range rule that could
+/// disagree with the one the chain enforces.
+///
+/// ## Names the graph owns
+///
+/// [`PROOF_GRAPH_OWNED`] — `bypass` — is dropped here rather than forwarded, for
+/// the reason that constant carries: the device's bypass is
+/// [`GraphCommand::SetBypass`]. `ab_bypass` is not in it, and reaches the chain
+/// like any other control, so the panel's A/B compare is audible on a natively
+/// carried strip.
+///
+/// ## How this body is compensated
+///
+/// `ProofChain::latency_samples` (`crates/daw-dsp/src/proof/chain.rs`) reports
+/// the limiter's look-ahead delay line plus the linear-phase EQ's FIR group
+/// delay. The FIR term is 0 in production — `LinearPhaseEq` is built needing a
+/// rebuild, `eq_linear_phase` only marks it dirty, and nothing outside its own
+/// tests ever designs it, so `is_active` stays false and the stage reports the
+/// nothing it delays — which leaves `lim_lookahead` as the one control that
+/// moves the figure. So this body is compensated the way an externally hosted
+/// plugin is: inside the engine, by the graph, against the figure the instance
+/// itself reports.
+///
+/// - **The mapper publishes the opening figure.** `map_device`
+///   (`crates/sourdaw-native/src/commands/graph.rs`) reads
+///   [`PluginCore::declared_latency_frames`] off the body it just built from the
+///   persisted record, and sends a [`GraphCommand::SetEffectLatency`] behind the
+///   registration carrying that figure — 0 where the record is bypassed — and no
+///   dry line.
+/// - **This body ships and holds no dry line.** A dry line is read on the
+///   bypassed pass alone (`run_dry_delay`), and that is the pass on which this
+///   body declares 0: the pass hands the block on untouched, which is exactly
+///   the identity a line aimed at 0 would be. So there is no pass on which a
+///   line here could hold anything, and one shipped anyway would be fed on every
+///   block the body ran and read on none of them.
+/// - **The audio thread keeps it current.** Every write that lands on this body
+///   is followed by [`ActiveEffect::refresh_declared_latency`], which re-reads
+///   the instance and dirties the compensation pass. `update_graph` recomputes
+///   on the next block, so a mid-roll `lim_lookahead` change re-aims every route
+///   meeting this strip within one block of the write rather than at the next
+///   Stop/Play.
+/// - **A bypassed Proof declares nothing**, on the law
+///   [`ActiveEffect::refresh_declared_latency`] states for every body the engine
+///   reads a figure off: both carriers read a bypassed device as delaying
+///   nothing, so a native declaration standing through bypass would flam every
+///   web strip beside it by the whole figure.
+///
+/// The figure cannot reach the compensation ceiling. `lim_lookahead` is clamped
+/// to 10 ms (`MAX_LOOKAHEAD_MS`, `crates/daw-dsp/src/proof/limiter.rs`), which is
+/// 1920 frames at 192 kHz — the highest rate the product opens a stream at — well
+/// under [`MAX_COMPENSATION_FRAMES`], so unlike a Bacteria this body never puts a
+/// route on the clamp.
+///
+/// Meters stay on the web twin. `ProofChain` carries momentary, short-term and
+/// integrated loudness, true peak, loudness range and six inline taps, and the
+/// mastering panel reads every one of them off the worklet's own instance over a
+/// port this body does not have. So this body exposes none of them: a counter no
+/// reader can reach would be state carried for nobody, exactly as
+/// [`BacteriaBody::process`] drops its scrubbed-sample count.
+pub struct ProofBody {
+    chain: ProofChain,
+    /// The module order the five `chain_order_{n}` keys have written so far, as
+    /// `ProofChain::reorder` takes it. Held here rather than read back off the
+    /// chain because the chain only ever holds a permutation it accepted, and
+    /// the array a partial write is building is not one yet.
+    order: [u8; PROOF_MODULES],
+}
+
+impl ProofBody {
+    /// Build the mastering chain on the control thread.
+    ///
+    /// `ProofChain::new` builds every stage up front — the eight EQ bands'
+    /// smoothed coefficient state, the linear-phase FIR and its overlap-add
+    /// buffers, the dynamics and exciter crossovers, the limiter's look-ahead
+    /// rings sized for the longest look-ahead the control admits, the ditherer,
+    /// six meter taps and the loudness meters' multi-second history — and
+    /// nothing on the process path grows any of them afterwards. Those are
+    /// allocations the audio thread may not perform (ADR 0020), which is why the
+    /// constructor runs here and the chain is handed across the ring already
+    /// built.
+    ///
+    /// The chain is built against the `f64` rate its filter design works in;
+    /// the engine negotiates and carries the rate as `f32`, and one conversion
+    /// at the boundary is what keeps both readings of "the rate this device
+    /// runs at" the same number.
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            chain: ProofChain::new(f64::from(sample_rate)),
+            order: PROOF_DEFAULT_ORDER,
+        }
+    }
+
+    /// Process the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it was
+    /// handed: what it produces stands where its input stood, and summing would
+    /// leave the dry programme underneath the mastered one.
+    ///
+    /// Handed the whole callback in one call: every stage in `ProofChain::process`
+    /// walks the slice it is given sample by sample and carries no block-scoped
+    /// state across the call, so a callback rendered in one call and the same
+    /// callback rendered in runs produce identical samples.
+    ///
+    /// Both channels are then scrubbed of non-finite samples exactly as
+    /// `ProofInstance::process` (`crates/daw-dsp/src/proof/mod.rs`) scrubs its own
+    /// output buffers before handing them back. The scrubbed count is dropped
+    /// here for the reason given on [`BacteriaBody::process`]: the web path
+    /// reports it as device health over a port this body does not have.
+    ///
+    /// Nothing here allocates: the slices are the callback's own pair, and the
+    /// chain's state is all preallocated.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.chain.process(left, right);
+        sanitize_block(left);
+        sanitize_block(right);
+    }
+
+    /// Write one of the mastering chain's own parameters by name, from the audio
+    /// thread.
+    ///
+    /// Real-time safe, and this is the door that makes it so. Three things
+    /// happen here and nothing else does.
+    ///
+    /// A name in [`PROOF_GRAPH_OWNED`] is dropped: the graph owns the device's
+    /// bypass, so it does not belong to the chain this body runs.
+    ///
+    /// A `chain_order_{n}` key writes slot `n` of [`Self::order`] and re-offers
+    /// the whole array to `ProofChain::reorder`, which installs it only if it is
+    /// a permutation — the per-key route the doc on this struct explains. The
+    /// cast to `u8` saturates rather than wrapping (a negative or non-finite
+    /// value lands at 0, one past 255 at 255), and any value outside `0..5` is
+    /// refused by that permutation check rather than by a range rule of this
+    /// body's own.
+    ///
+    /// Everything else is forwarded to `ProofChain::set_param`, whose arms store
+    /// a scalar, clamp one, redesign a biquad in place or resize a look-ahead
+    /// ring inside capacity the constructor already took. None of them allocates
+    /// or locks.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if PROOF_GRAPH_OWNED.contains(&name) {
+            return;
+        }
+        if let Some(slot) = proof_chain_order_slot(name) {
+            self.order[slot] = value as u8;
+            self.chain.reorder(self.order);
+            return;
+        }
+        self.chain.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// A name in [`PROOF_RECORD_REFUSED`] is refused before it reaches
+    /// [`Self::set_param`] at all: a record is allowed to carry a value the
+    /// live arm would still accept, because the record predates the commit
+    /// that stopped saving it. Every other entry lands through
+    /// [`Self::set_param`], the same door a live write arrives at, so the five
+    /// `chain_order_{n}` keys a record carries reach the order the same way
+    /// one written mid-session does — and a record's `bypass` is dropped there
+    /// exactly as a live write of it is. Unlike [`BacteriaBody::load_patch`]
+    /// there is no name this thread may run and the audio thread may not, so
+    /// there is no reason to reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`PROOF_PATCH_PRECEDENCE`] is empty and the ordering is the
+    /// identity: one code path, so a future aliasing pair is answered where the
+    /// others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Proof.patch_precedence(),
+        ) {
+            if PROOF_RECORD_REFUSED.contains(&name.as_str()) {
+                continue;
+            }
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay the chain reports for the patch this body carries.
+    ///
+    /// The whole of what this body declares, read twice on two threads: the
+    /// mapper reads it through [`PluginCore::declared_latency_frames`] to publish
+    /// the opening figure, and the audio thread re-reads it through
+    /// [`ActiveEffect::refresh_declared_latency`] after every write. Reading the
+    /// chain rather than tracking a figure of its own is what keeps the two
+    /// agreeing with the sound: the chain derives it from the very look-ahead
+    /// line the limiter delays through.
+    pub fn latency_samples(&self) -> u32 {
+        self.chain.latency_samples() as u32
+    }
+}
+
+/// The Dutch Oven patch keys that must land before every other entry — none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry, so a record drawn in the wrong order settles on the
+/// wrong device. The reverb has two names that look like that pair and are not.
+///
+/// `algorithm` puts the engine it selects back to its constructor state, which
+/// does discard what an earlier write left on it — and then replays the
+/// instance's own parameter cache into it (`ProofChamberInstance::set_param`,
+/// `replay_cached_parameters`, `crates/proof-chamber/src/lib.rs`). Every
+/// forwarded name is cached at the moment it is written, so a value written
+/// before the selection reaches the selected engine as surely as one written
+/// after it. `fdn_damping_version` acts on the current engine at once
+/// (`apply_fdn_damping_version`) *and* is re-applied on every later selection,
+/// so it is not lost by arriving first either — and the FDN arms it and `decay`
+/// both touch each recompute the whole absorptive filter set from the current
+/// state (`FdnReverb::update_absorptive_filters`, `crates/proof-chamber/src/fdn.rs`)
+/// rather than from the state at their own write time.
+///
+/// So a record builds the same device whatever order it is drawn in, which is
+/// what `a_dutch_oven_patch_renders_the_same_in_either_order` renders both ways
+/// to prove, and [`precedence_first`] with this empty law is the identity over
+/// it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a reverb name that does come to
+/// alias another is answered here, where every other body answers it.
+const DUTCH_OVEN_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// Dutch Oven, the multi-engine reverb, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's five
+/// preallocated engines — a plate, two FDN tanks, a spring and a reverse
+/// buffer, each with its own delay lines, pre-delay buffer and decay-rate EQ —
+/// would set the size of every command the engine sends.
+///
+/// This hosts [`ProofChamberInstance`] rather than `ProofChamber`, the plate
+/// engine underneath it, and that choice is what makes the native render the
+/// web render. The instance owns everything the plate does not: the `algorithm`
+/// selection across five preallocated engines, the `vintage` character stage
+/// that survives a selection, the `fdn_damping_version` curve the two FDN tanks
+/// read, the parameter cache that re-forwards every written value into an
+/// engine a selection has just reset, and the sanitize pass over both output
+/// channels. A body wrapping the bare plate would answer `algorithm` and
+/// `vintage` with silence and would render a project's FDN patch on a plate.
+///
+/// ## Names the graph owns
+///
+/// None. Every name reaches the instance. The device's bypass arrives as the
+/// record's own `bypassed` field and travels as [`GraphCommand::SetBypass`],
+/// never as a parameter — the `dutch-oven` descriptor
+/// (`src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
+/// declares no `bypass` row, and `ProofChamberInstance::set_param` has no arm
+/// for one — so there is no [`PROOF_GRAPH_OWNED`] analogue to withhold. Nor is
+/// there a record-door refusal like [`PROOF_RECORD_REFUSED`]: no wire name
+/// engages a session-only audition here, and the one internal name the record
+/// carries beyond the descriptor's automatable rows,
+/// `fdn_damping_version`, is exactly the one a record *must* carry — `addDevice`
+/// (`src/modules/Arrangement/useCases/device/addDevice.ts`) merges the
+/// descriptor's `internalParameterValues` into `parameterValues` at creation, so
+/// a project that never sees the name in a panel still persists it, and
+/// withholding it would open every saved FDN patch on the legacy damping curve.
+///
+/// ## How this body is compensated
+///
+/// `ProofChamberInstance::get_latency` reports 0 for every engine an
+/// `algorithm` write can select, and 128 for the two convolution-backed engines
+/// no wire value reaches (`select_unexposed_engine` is Rust-only and nothing
+/// ships an impulse response). So in production this body declares 0 — a
+/// declaration all the same, not a refusal to declare
+/// ([`PluginCore::declared_latency_frames`]), which leaves the graph already
+/// holding a figure the next write to the body can move
+/// ([`ActiveEffect::refresh_declared_latency`]) if an IR transport ever makes a
+/// latent engine reachable. [`Self::latency_samples`] reads the instance rather
+/// than returning that 0 as a literal for the same reason: the figure is the
+/// instance's to state.
+///
+/// It ships and holds no dry line, on the law [`ProofBody`] states: a dry line
+/// is read on the bypassed pass alone, and that is the pass on which this body
+/// declares 0.
+pub struct DutchOvenBody {
+    instance: ProofChamberInstance,
+}
+
+impl DutchOvenBody {
+    /// Build the reverb on the control thread.
+    ///
+    /// `ProofChamberInstance::new` builds all five selectable engines up front
+    /// — the plate's diffusion and tank buffers, both FDN tanks' delay lines
+    /// sized for their longest reachable delay, the spring's chirp allpasses,
+    /// the reverse buffer, each engine's decay-rate EQ and output stage, the
+    /// vintage processor and the two 1024-frame output buffers. Those are
+    /// allocations the audio thread may not perform (ADR 0020), which is why
+    /// every engine is built here and a later `algorithm` write selects and
+    /// resets one rather than constructing it.
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: ProofChamberInstance::new(sample_rate),
+        }
+    }
+
+    /// Process the block in place.
+    ///
+    /// Written rather than summed because an effect transforms the signal it
+    /// was handed: what it produces stands where its input stood, and summing
+    /// would leave the dry programme underneath the reverberated one. The
+    /// instance's own `mix` control is what decides how much dry survives.
+    ///
+    /// The block is split into runs of at most [`PROOF_CHAMBER_BLOCK_FRAMES`],
+    /// each one a whole `process` call, and each run is copied back out of the
+    /// instance's buffers before the next call overwrites them. A single call
+    /// for a longer block would render one run's worth and leave the remainder
+    /// of the callback carrying its dry input — the reverb would cut out for
+    /// every frame past the first 1024 of a long callback. The instance carries
+    /// no block-scoped state across a call, so a callback rendered in runs and
+    /// the same callback rendered in one call — where the instance could take
+    /// one — produce identical samples.
+    ///
+    /// Nothing here allocates: the runs render into buffers the instance
+    /// already owns and the copies are between slices that already exist.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(PROOF_CHAMBER_BLOCK_FRAMES);
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Render one run through the instance and copy both channels back.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before, for the
+        // reason given on [`FermenterBody::render_run`]: the render takes a
+        // mutable reborrow of the instance, which under the aliasing model
+        // retires any pointer derived from an earlier shared borrow of it.
+        let rendered_left = self.instance.process(left, right, run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instance's own output buffers. `ProofChamberInstance::new` sizes
+        // both output buffers at `PROOF_CHAMBER_BLOCK_FRAMES` and `process`
+        // clamps to it, so the host's `run` bound and the instance's capacity
+        // are one exported fact; no method resizes the buffers, so each slice
+        // is inside the allocation it names. The two buffers are separate heap
+        // allocations, so the pair of slices aliases nothing, and neither
+        // aliases the callback's own `left`/`right`. Nothing mutates the
+        // instance between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        left.copy_from_slice(rendered_left);
+        right.copy_from_slice(rendered_right);
+    }
+
+    /// Write one of the reverb's own parameters by name, from the audio thread.
+    ///
+    /// Every name is forwarded, because this body withholds none — see the
+    /// struct doc for why the graph owns no name in this vocabulary.
+    ///
+    /// Real-time safe. `ProofChamberInstance::set_param` resolves the name by
+    /// comparison and its three instance-level arms allocate nothing:
+    /// `algorithm` selects one of the engines the constructor already built and
+    /// `reset`s it in place, `vintage` stores a mode on a processor that
+    /// outlives the selection, and `fdn_damping_version` recomputes the two FDN
+    /// tanks' absorptive filters in place. Everything else is recorded into the
+    /// instance's fixed-capacity parameter cache — which evicts rather than
+    /// grows — and forwarded to the selected engine.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`DUTCH_OVEN_PATCH_PRECEDENCE`] is empty and the ordering is
+    /// the identity: one code path, so a future aliasing pair is answered where
+    /// the others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::DutchOven.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay the instance reports for the engine this body currently
+    /// runs.
+    ///
+    /// Read off the instance rather than tracked here, so the figure the mapper
+    /// publishes through [`PluginCore::declared_latency_frames`] and the one the
+    /// audio thread re-reads through [`ActiveEffect::refresh_declared_latency`]
+    /// are both the instance's own answer — 0 for every engine a wire value
+    /// selects, and the convolution head size for the two it does not.
+    pub fn latency_samples(&self) -> u32 {
+        self.instance.get_latency()
+    }
+}
+
+/// Pads one hosted Toaster addresses.
+///
+/// The figure the web host constructs its own worklet instance with
+/// (`TOASTER_PAD_COUNT` in
+/// `src/modules/AudioEngine/services/toasterProcessor.ts`), so a kit that moves
+/// between the two runtimes finds the same grid on both. It is also the size of
+/// the two note banks [`toaster_pad_for_note`] maps and the bound
+/// [`toaster_pad_key`] refuses a pad address past.
+const TOASTER_PAD_COUNT: u32 = 16;
+
+/// Frames one hosted Toaster run renders.
+///
+/// The web runtime's render quantum, on the reason given at
+/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drives the instrument 128 frames at
+/// a time and voices a framed message as soon as the block about to render is
+/// the one holding its frame. The instrument takes no per-hit sample offset, so
+/// the run length *is* the timing resolution, and the host splits a callback
+/// into runs this long to land a hit on the run the worklet lands it on.
+///
+/// Unlike [`GRAND_BOULE_RUN_FRAMES`] this figure cannot be refused against the
+/// instrument's own ceiling at compile time: `ToasterInstance` keeps its
+/// 4096-frame capacity private (`MAX_BLOCK_SIZE`,
+/// `crates/daw-dsp/src/toaster/mod.rs`, neither `pub` nor re-exported). The run
+/// is held well inside that capacity by being this constant rather than bound
+/// to an export, because exporting the capacity would change the daw-dsp
+/// package's hash and rebuild a committed wasm artifact for a number no
+/// renderer reads.
+const TOASTER_RUN_FRAMES: usize = 128;
+
+/// The MIDI note every hosted pad is struck with.
+///
+/// The web transport pins `TOASTER_NEUTRAL_MIDI_NOTE`
+/// (`src/utils/toasterNoteProjection.ts`) for every clip hit, so a clip note
+/// addresses a pad and transposes nothing: the pitch of a hit is the pad's own
+/// `tune`. `DrumVoice::trigger` reads `midi_note - 60`
+/// (`crates/daw-dsp/src/toaster/voice.rs`), so this is the value that leaves a
+/// pad untransposed.
+const TOASTER_NEUTRAL_MIDI_NOTE: u8 = 60;
+
+/// The note the low pad bank starts at — General MIDI's drum octave, so a part
+/// written against any other drum instrument already lands on the grid.
+const TOASTER_LOW_BANK_START: u8 = 36;
+
+/// The note the high pad bank starts at, which is the pad grid's own octave.
+const TOASTER_HIGH_BANK_START: u8 = 60;
+
+/// The prefix a per-pad parameter name carries, which is what tells a pad
+/// address from one of the kit's own names.
+const TOASTER_PAD_PREFIX: &str = "pad";
+
+/// The one name in the Toaster's vocabulary whose unit differs between the
+/// record and the instrument — see [`ToasterBody::set_param`].
+const TOASTER_DELAY_TIME: &str = "delay_time";
+
+/// Milliseconds in one second, the conversion [`ToasterBody::set_param`]
+/// applies to [`TOASTER_DELAY_TIME`].
+const MILLISECONDS_PER_SECOND: f32 = 1000.0;
+
+/// The names that must land on a Toaster before every other entry in its patch:
+/// each pad's engine selection, in pad order.
+///
+/// `Pad::set_param("engine_type")` calls `reset_engine_params`
+/// (`crates/daw-dsp/src/toaster/pad.rs`), which puts `snappy`, `noise_color`,
+/// `base_freq`, `pitch_amount`, `pitch_decay`, `noise_level`, `mod_ratio`,
+/// `mod_amount` and `feedback` back to their construction values. So a patch
+/// carrying both `pad3_engine_type` and `pad3_base_freq` must write the engine
+/// type first, whatever order the record's keys arrive in — a record off the
+/// wire has no order of its own — or the pad opens on the engine the record
+/// names carrying the defaults of the voice it described.
+///
+/// Nothing else in the vocabulary rewrites another name: every other arm of
+/// `Pad::set_param` and of `ToasterEngine::set_param` stores the one field it
+/// names, and `open` — the one pad name that reads like a mode — is not among
+/// the fields the reset touches.
+const TOASTER_PATCH_PRECEDENCE: &[&str] = &[
+    "pad0_engine_type",
+    "pad1_engine_type",
+    "pad2_engine_type",
+    "pad3_engine_type",
+    "pad4_engine_type",
+    "pad5_engine_type",
+    "pad6_engine_type",
+    "pad7_engine_type",
+    "pad8_engine_type",
+    "pad9_engine_type",
+    "pad10_engine_type",
+    "pad11_engine_type",
+    "pad12_engine_type",
+    "pad13_engine_type",
+    "pad14_engine_type",
+    "pad15_engine_type",
+];
+
+/// The pad a `pad<N>_<name>` parameter addresses and the pad-side name it
+/// carries, or `None` for a name that addresses no pad.
+///
+/// The record's own spelling: the web host maps a kit's camelCase pad fields
+/// onto these snake_case names (`PAD_PARAM_MAP`, `toasterProcessor.ts`) and
+/// addresses the pad by index, so the index has to be read back out of the name
+/// on this side.
+///
+/// `None` covers every pad-shaped name that names no pad — no digits, a pad at
+/// or past [`TOASTER_PAD_COUNT`], or an empty pad-side name — and
+/// [`ToasterBody::set_param`] drops those silently, the way the pad engine drops
+/// a name it does not have.
+fn toaster_pad_key(name: &str) -> Option<(u8, &str)> {
+    let addressed = name.strip_prefix(TOASTER_PAD_PREFIX)?;
+    let index_end = addressed
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(addressed.len());
+    let (index, separated) = addressed.split_at(index_end);
+    let pad: u32 = index.parse().ok()?;
+    if pad >= TOASTER_PAD_COUNT {
+        return None;
+    }
+    let pad_key = separated.strip_prefix('_')?;
+    if pad_key.is_empty() {
+        return None;
+    }
+    Some((pad as u8, pad_key))
+}
+
+/// The pad a note addresses, or `None` for a note in neither bank.
+///
+/// A mirror of `resolveToasterPadIndex` (`src/utils/toasterNoteProjection.ts`),
+/// the rule the web transport applies to a clip note before it reaches the
+/// worklet: [`TOASTER_LOW_BANK_START`] is General MIDI's drum octave and
+/// [`TOASTER_HIGH_BANK_START`] the pad grid's own, each sixteen pads wide. A
+/// note in neither bank addresses no pad and sounds nothing, which is what the
+/// web does with it too.
+fn toaster_pad_for_note(note: u8) -> Option<u8> {
+    [TOASTER_LOW_BANK_START, TOASTER_HIGH_BANK_START]
+        .into_iter()
+        .find_map(|bank_start| {
+            let pad = note.checked_sub(bank_start)?;
+            (u32::from(pad) < TOASTER_PAD_COUNT).then_some(pad)
+        })
+}
+
+/// The Toaster drum machine, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// thirty-two voices, sixteen pads, four bus buffers and its
+/// thirty-four-channel output buffer would set the size of every command the
+/// engine sends.
+///
+/// This hosts [`ToasterInstance`], the object the browser worklet drives
+/// (`toasterProcessor.ts`), so a kit sounds the same under both runtimes rather
+/// than one of them re-deriving the machine.
+///
+/// ## What this body reads, and what it does not
+///
+/// The instance renders a per-pad tap pair alongside its parent mix, and this
+/// body reads the parent mix alone. That is the whole of what a strip carrying
+/// one device hears: no pad is dry-routed away from the mix
+/// (`ToasterInstance::set_pad_dry_routed` is never called here, so the routing
+/// mask stays empty and every pad contributes to it), and the native chain has
+/// no per-pad output surface to send the taps to.
+pub struct ToasterBody {
+    instance: ToasterInstance,
+}
+
+impl ToasterBody {
+    /// Build the drum machine on the control thread — it allocates its voice
+    /// pool, its pads, its transient shapers, its four bus buffers and its
+    /// output buffer, none of which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: ToasterInstance::new(sample_rate, TOASTER_PAD_COUNT),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, striking each queued hit in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what it
+    /// produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`TOASTER_RUN_FRAMES`], each one
+    /// a whole `process` call, and every event whose frame falls inside a run is
+    /// delivered before that run renders — the split
+    /// [`GrandBouleBody::process`] takes, for the same reason: the instrument
+    /// has no note API carrying a sample offset, so the run boundary is the
+    /// whole of the timing resolution available, and it is exactly the
+    /// resolution the web runtime has.
+    ///
+    /// This block is one span, and the runs are counted from that span's own
+    /// frame 0 rather than from the timeline's absolute frame 0 the worklet
+    /// grids its own runs from, so parity with the worklet is exact only when
+    /// the span itself starts on the absolute 128-frame grid; a span starting
+    /// off it sounds a hit up to `TOASTER_RUN_FRAMES - 1` frames from where the
+    /// worklet lands it (#3997).
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a hit is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(TOASTER_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Strike or release one pad, at the head of the run about to render.
+    ///
+    /// A note in neither bank sounds nothing: it addresses no pad, and the web
+    /// transport drops it the same way rather than folding it onto a pad it was
+    /// not written for.
+    ///
+    /// The velocity crosses on the MIDI scale because `ToasterEngine::note_on`
+    /// divides by 127 itself (`crates/daw-dsp/src/toaster/engine.rs`); dividing
+    /// here as well would sound every hit at a hundredth of its written
+    /// dynamic.
+    ///
+    /// The channel is ignored. A pad is addressed by note alone and holds no
+    /// channel of its own, so a note-off releases the pad its note names
+    /// whichever channel the part was written on.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let Some(pad) = toaster_pad_for_note(event.note) else {
+            return;
+        };
+        if event.is_note_on {
+            self.instance
+                .note_on(pad, f32::from(event.velocity), TOASTER_NEUTRAL_MIDI_NOTE);
+            return;
+        }
+        self.instance.note_off(pad);
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of the instance and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of it. Derived afterwards, both pointers
+        // stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own output buffer — one allocation `ToasterInstance::new`
+        // sizes at `(2 + 2 * TOASTER_PAD_COUNT)` channels of its private
+        // 4096-frame capacity, which no method resizes. `process` returns that
+        // buffer's base, which is the left channel, and `get_right_ptr` the
+        // offset one capacity past it, so the two slices below start 4096 floats
+        // apart while `run` is at most `TOASTER_RUN_FRAMES`, 128: each lies
+        // inside the allocation, they do not overlap each other, and neither
+        // aliases the callback's own `left`/`right`. `process` clamps its own
+        // argument to that same capacity, so the frames it rendered are the
+        // frames read here. Nothing mutates the instrument between the render
+        // and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the drum machine's own parameters by name.
+    ///
+    /// Two vocabularies meet at this door and they are told apart by shape. A
+    /// `pad<N>_<name>` address is one pad's own parameter and reaches the pad it
+    /// names ([`toaster_pad_key`]); a pad-shaped name that addresses no pad is
+    /// dropped here, as the pad engine drops a name it does not have. Everything
+    /// else is one of the kit's own names and reaches the instrument verbatim.
+    ///
+    /// [`TOASTER_DELAY_TIME`] is the one name whose unit differs between the two
+    /// sides: a kit persists it in milliseconds and `StereoDelay::set_param`
+    /// consumes seconds, so the worklet converts at its own door
+    /// (`toEngineKitParamValue`, `toasterProcessor.ts`) and this body converts
+    /// at this one. Both a patch entry and a live write converge here, so the
+    /// two cannot come to disagree about what a saved 250 means.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]), the pad address is read out of it by slicing, and
+    /// the instrument resolves the rest by comparison, allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if let Some((pad, pad_key)) = toaster_pad_key(name) {
+            self.instance.set_pad_param(pad, pad_key, value);
+            return;
+        }
+        if name.starts_with(TOASTER_PAD_PREFIX) {
+            return;
+        }
+        if name == TOASTER_DELAY_TIME {
+            self.instance
+                .set_param(name, value / MILLISECONDS_PER_SECOND);
+            return;
+        }
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] under
+    /// [`TOASTER_PATCH_PRECEDENCE`], so each pad's engine selection lands ahead
+    /// of the engine parameters that selection would otherwise reset.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Toaster.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay this body reports: none.
+    ///
+    /// The instrument produces its material in the block it was asked for and
+    /// delays nothing on the way out — no stage of `ToasterEngine` holds a head
+    /// of its own — and the worklet declares no latency for its node either
+    /// (`ToasterNode.ts`), so a hosted kit and a worklet kit sit at the same
+    /// place in the arrangement.
+    ///
+    /// Declaring none is not the same as declaring zero, and this body declares
+    /// none: [`PluginCore::declared_latency_frames`] answers `None` for it, on
+    /// Grand Boule's arm, so no [`GraphCommand::SetEffectLatency`] follows its
+    /// registration. There is no figure a later write could move, because
+    /// nothing in the vocabulary reaches a latent stage.
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+}
+
+/// Note-voices one hosted Levain can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`new LevainInstance(sampleRate, 64)`,
+/// `src/modules/AudioEngine/services/levainProcessor.ts`), so a strip that
+/// moves between the two runtimes steals voices at the same point rather than
+/// sounding different under load.
+const LEVAIN_MAX_VOICES: u32 = 64;
+
+/// Frames one hosted Levain run renders.
+///
+/// The web runtime's render quantum, on the reason given at
+/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drains every message stamped inside
+/// the block about to render and then makes one `process` call for that block
+/// (`LevainProcessor.process`, `levainProcessor.ts`), so a scheduled note
+/// sounds from the head of the 128-frame block holding its frame. The
+/// instrument takes no per-note sample offset — `note_on_with_channel` carries
+/// a note, a velocity and a channel and nothing else — so the run length *is*
+/// the timing resolution, and the host splits a callback into runs this long to
+/// land a note on the run the worklet lands it on.
+///
+/// The #3997 caveat on [`GRAND_BOULE_RUN_FRAMES`] applies here for the same
+/// reason: the runs are counted from the span's own frame 0 rather than from
+/// the absolute origin the worklet grids from, so a span starting off that grid
+/// sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the worklet
+/// lands it.
+///
+/// Well inside [`LEVAIN_BLOCK_FRAMES`], the ceiling the instrument's own
+/// channel buffers impose: the run is the finer of the two figures, and the
+/// only one note timing depends on.
+const LEVAIN_RUN_FRAMES: usize = 128;
+
+/// The bound [`LevainBody::render_run`] reads the instrument's channel buffers
+/// under, refused at compile time rather than asserted at render time. A run
+/// longer than the buffers would read past both of them through the raw
+/// pointers `process` returns, so the figure above may never be raised past the
+/// instrument's own ceiling.
+const _: () = assert!(LEVAIN_RUN_FRAMES <= LEVAIN_BLOCK_FRAMES);
+
+/// The names that must land on a Levain before every other entry in its patch:
+/// none.
+///
+/// Every other body's law exists because one of its names rewrites another the
+/// same record may carry. No arm of `LevainEngine::set_param`
+/// (`crates/daw-dsp/src/levain/engine.rs`) does that. Each one stores, clamps
+/// or scales the one field it names: `humanize` writes the humanizer's
+/// `amount` and none of the `humanize_*_max` config fields it scales
+/// (`Humanizer::set_amount`, `levain/humanize.rs`); `attack` and `release`
+/// each write their own half of the envelope scaling and then push the pair
+/// recomposed from both halves rather than from the half just written
+/// (`effective_envelope_scaling`), so neither undoes the other;
+/// `expression_dynamic_crossfade_time` rebuilds the dynamic crossfader but
+/// carries its layer count and curve across, and no other name writes either
+/// of those; and a `mic_<n>_<name>` address reaches one field of one mic
+/// position.
+///
+/// One pair does read across rather than write across: `vibrato_depth` derives
+/// the LFO's depth and rate from the `expression_vibrato_*` config fields three
+/// other names write (`VibratoLfo::set_depth_cc`, `levain/expression.rs`), so a
+/// record carrying both settles on whichever the reader draws first. Both patch
+/// routes already draw it the right way round and neither needs a law for it:
+/// the mapper reads a record's keys in name order (`name_ordered_keys`,
+/// `crates/sourdaw-native/src/commands/graph.rs`), which sorts every
+/// `expression_vibrato_*` name ahead of `vibrato_depth`, and the web host's
+/// patch projection carries those config names and leaves the macro to the
+/// panel (`projectLevainPatchToEngineParameters`,
+/// `src/modules/Levain/useCases/`). So a record builds the same device whatever
+/// order a `HashMap` draws it in, and [`precedence_first`] with this empty law
+/// is the identity over it.
+///
+/// Kept as a law rather than special-cased at the call site so the record build
+/// stays one code path with the other bodies': a Levain name that does come to
+/// alias another is answered here, where every other body answers it.
+const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
+
+/// The Levain sampler, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// sixty-four voices, its zone map, its mic mixer's delay lines and its two
+/// 4096-frame channel buffers would set the size of every command the engine
+/// sends.
+///
+/// This hosts [`LevainInstance`], the object the browser worklet drives
+/// (`levainProcessor.ts`), so an instrument sounds the same under both runtimes
+/// rather than one of them re-deriving the sampler.
+///
+/// ## What this body holds, and what it does not
+///
+/// The bank. A sampler with no bank has nothing to sound, and loading one
+/// allocates, so the instance arrives loaded from the control thread
+/// ([`PluginCore::levain_with_patch`]) and this body neither loads nor names a
+/// bank source. Everything past the bank — the zones, the articulations, the
+/// mic positions, the realism layer the loaded instrument id selects — is the
+/// instance's own state, reached through the two doors below.
+pub struct LevainBody {
+    instance: LevainInstance,
+}
+
+impl LevainBody {
+    /// Take an instance the caller loaded, on the control thread.
+    ///
+    /// Takes it rather than building it because a bank load is a sequence of
+    /// allocations the audio thread may not perform (ADR 0020) and this
+    /// signature carries nothing a bank could be read from; see
+    /// [`PluginCore::levain_with_patch`], the only caller.
+    fn new(instance: LevainInstance) -> Self {
+        Self { instance }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, delivering each queued note in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what it
+    /// produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`LEVAIN_RUN_FRAMES`], each one
+    /// a whole `process` call, and every event whose frame falls inside a run is
+    /// delivered before that run renders — the split [`ToasterBody::process`]
+    /// takes, for the same reason: the instrument has no note API carrying a
+    /// sample offset, so the run boundary is the whole of the timing resolution
+    /// available, and it is exactly the resolution the web runtime has.
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a note is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(LEVAIN_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Sound or release one note, at the head of the run about to render.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same pitch
+    /// on another channel — the engine honours that narrowing
+    /// (`LevainVoicePool::release_note_matching` skips a voice whose channel
+    /// differs, `crates/daw-dsp/src/levain/voice.rs`). A channel MIDI has no
+    /// address for narrows to nothing ([`member_channel`]), and the note-off
+    /// then releases every voice at that pitch: that is the rule
+    /// [`FermenterBody::push_event`] already applies for the same reason, and
+    /// the rule the worklet applies for a message carrying no channel at all
+    /// (`_dispatch`, `levainProcessor.ts`, which calls the unnarrowed
+    /// `note_off` there). A key nothing can ever lift is the one outcome worse
+    /// than releasing more than was asked.
+    ///
+    /// The velocity crosses on the MIDI scale because `LevainEngine::note_on`
+    /// divides by 127 itself (`levain/engine.rs`); dividing here as well would
+    /// sound every note at a hundredth of its written dynamic.
+    ///
+    /// A note-on carrying velocity 0 sounds rather than releasing. The engine
+    /// does not read it as a release and neither does the worklet's `noteOn`
+    /// arm, and `is_note_on` is the whole of what a [`MidiNoteEvent`] means by
+    /// a release everywhere else in this file, so folding the MIDI running-
+    /// status convention in here alone would make the native strip diverge
+    /// from the web strip on the same event.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let channel = member_channel(event.channel);
+        if event.is_note_on {
+            // An unaddressable channel still sounds: the key went down, and the
+            // base member channel is where a note with no channel of its own
+            // belongs.
+            self.instance
+                .note_on_with_channel(event.note, event.velocity, channel.unwrap_or(0));
+            return;
+        }
+        match channel {
+            Some(channel) => self.instance.note_off_on_channel(event.note, channel),
+            None => self.instance.note_off(event.note),
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let run = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through it,
+        // which under the aliasing model retires any pointer derived from an
+        // earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(run as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `LevainInstance::new` sizes
+        // at daw-dsp's own `LEVAIN_BLOCK_FRAMES` (imported above, 4096) and no
+        // method resizes; `run` is bounded by `LEVAIN_RUN_FRAMES`, 128, which
+        // the compile-time assertion above holds inside that capacity, so
+        // `process` renders every frame read here without clamping and each
+        // slice lies inside the allocation it names. The two buffers are
+        // separate heap allocations, so the pair of slices aliases nothing, and
+        // neither aliases the callback's own `left`/`right`. Nothing mutates
+        // the instrument between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, run),
+                std::slice::from_raw_parts(rendered_right, run),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the sampler's own parameters by name.
+    ///
+    /// Every name reaches the instance verbatim: the vocabulary is a flat
+    /// record of the engine's own snake_case names, including the
+    /// `mic_<n>_<name>` addresses the engine parses itself
+    /// (`LevainEngine::handle_mic_param`), so this body owns no spelling and no
+    /// unit of its own to convert.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]), the instrument resolves it by comparison, and
+    /// every arm stores, clamps or recomputes over state the constructor
+    /// already sized — `expression_dynamic_crossfade_time` rebuilds the dynamic
+    /// crossfader, which is a fixed-size struct holding no buffer
+    /// (`DynamicCrossfader`, `crates/daw-dsp/src/levain/expression.rs`).
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses the
+    /// command ring.
+    ///
+    /// Every entry lands through [`Self::set_param`], the same door a live write
+    /// arrives at: there is no name this thread may run and the audio thread may
+    /// not, and none a saved record must be refused, so there is no reason to
+    /// reach past that door.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though [`LEVAIN_PATCH_PRECEDENCE`] is empty and the ordering is the
+    /// identity: one code path, so a future aliasing pair is answered where the
+    /// others are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Levain.patch_precedence(),
+        ) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+
+    /// The group delay this body reports: none.
+    ///
+    /// The instrument produces its material in the block it was asked for and
+    /// delays nothing on the way out. Every stage of `LevainEngine::process_block`
+    /// is a per-sample read of state the block itself advances — the voices, the
+    /// realism layer, the tone macro, the mic mixer — and the one delay line in
+    /// the instrument is the mic mixer's, which is authored per mic position
+    /// (`MicPosition::delay_samples`) and reachable by no name in the
+    /// vocabulary, so nothing a patch or a live write can do makes this figure
+    /// move.
+    ///
+    /// Declaring none is not the same as declaring zero, and this body declares
+    /// none: [`PluginCore::declared_latency_frames`] answers `None` for it, on
+    /// the Toaster's arm, so no [`GraphCommand::SetEffectLatency`] follows its
+    /// registration. There is no figure a later write could move, because the
+    /// instance publishes no latency to re-read at all.
+    pub fn latency_samples(&self) -> u32 {
+        0
+    }
+}
+
+/// One coherent-enough reading of what the Tuner heard, in plain numbers.
+///
+/// `Copy` and field-for-field the atomics below, so a control-thread caller
+/// reads the channel once and then works from a value nothing can move under
+/// it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScoringReading {
+    pub active: bool,
+    pub frequency: f32,
+    pub cents: f32,
+    pub confidence: f32,
+    pub note_index: u32,
+    pub octave: i32,
+    pub midi_note: i32,
+}
+
+/// Where the Tuner publishes what it heard, for a reader on another thread.
+///
+/// This is the real-time-to-control seam for a body whose whole product is a
+/// reading rather than a signal. One writer — [`ScoringBody::process`], on the
+/// audio thread, once per block — and any number of readers on the command
+/// thread ([`GraphRegistry::scoring_readings`],
+/// `crates/sourdaw-native/src/commands/graph.rs`). Atomics only: no lock a
+/// callback could be made to wait on, and no allocation, because a publish
+/// happens inside the render callback (ADR 0020).
+///
+/// A read may tear across fields — a frequency from one block beside a note
+/// index from the next. That is accepted rather than fenced, because this is a
+/// meter and not project truth: the worst a torn read shows is one animation
+/// frame of a needle placed against the previous detection, which the next
+/// frame corrects. Nothing downstream stores it, and nothing decides anything
+/// from it. A seam that had to be coherent would need a sequence counter, and
+/// paying for one here would put a retry loop on the reader to fix a pixel.
+///
+/// The three `f32` fields travel as `f32::to_bits`, because the platform's
+/// atomics are integer-width: there is no `AtomicF32` in `core`, and a
+/// bit-pattern round trip is exact for every finite value and every NaN
+/// payload the detector can produce.
+#[derive(Debug, Default)]
+pub struct ScoringTelemetry {
+    active: AtomicBool,
+    frequency: AtomicU32,
+    cents: AtomicU32,
+    confidence: AtomicU32,
+    note_index: AtomicU32,
+    octave: AtomicI32,
+    midi_note: AtomicI32,
+}
+
+impl ScoringTelemetry {
+    /// Publish what `engine` is currently holding.
+    ///
+    /// `Relaxed` throughout: the fields carry no ordering claim about one
+    /// another (see the struct doc on tearing), and there is no other memory
+    /// whose visibility this publish is meant to release.
+    ///
+    /// Real-time safe — seven integer stores, no allocation, no lock.
+    pub fn publish(&self, engine: &scoring::ScoringEngine) {
+        self.frequency
+            .store(engine.frequency.to_bits(), Ordering::Relaxed);
+        self.cents.store(engine.cents.to_bits(), Ordering::Relaxed);
+        self.confidence
+            .store(engine.confidence.to_bits(), Ordering::Relaxed);
+        self.note_index
+            .store(engine.note_index as u32, Ordering::Relaxed);
+        self.octave.store(engine.octave, Ordering::Relaxed);
+        self.midi_note.store(engine.midi_note, Ordering::Relaxed);
+        self.active.store(engine.active, Ordering::Relaxed);
+    }
+
+    /// Read the channel once, as one value.
+    pub fn snapshot(&self) -> ScoringReading {
+        ScoringReading {
+            active: self.active.load(Ordering::Relaxed),
+            frequency: f32::from_bits(self.frequency.load(Ordering::Relaxed)),
+            cents: f32::from_bits(self.cents.load(Ordering::Relaxed)),
+            confidence: f32::from_bits(self.confidence.load(Ordering::Relaxed)),
+            note_index: self.note_index.load(Ordering::Relaxed),
+            octave: self.octave.load(Ordering::Relaxed),
+            midi_note: self.midi_note.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// The Tuner, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// analysis window, its two autocorrelation buffers and the poly tracker's
+/// per-string state would set the size of every command the engine sends.
+///
+/// This hosts [`scoring::ScoringEngine`] rather than
+/// `scoring::ScoringInstance`, which is the wasm binding: the instance owns its
+/// own pair of output buffers so a worklet can read back through a pointer,
+/// and a host handed the callback's own pair has nothing to do with them.
+///
+/// The audio it is handed leaves unchanged — the analyser is an insert that
+/// listens. What it produces is the reading on [`Self::telemetry`], which
+/// leaves the audio thread through atomics rather than over a port: the native
+/// session has no worklet `MessagePort`, and the renderer already polls the
+/// engine's transport once an animation frame
+/// (`engine_transport_position`, `crates/sourdaw-native/src/commands/engine_transport.rs`),
+/// so the reading rides that poll rather than waking the renderer per block.
+pub struct ScoringBody {
+    engine: scoring::ScoringEngine,
+    telemetry: Arc<ScoringTelemetry>,
+}
+
+impl ScoringBody {
+    /// Build the analyser on the control thread — `ScoringEngine::new`
+    /// allocates the analysis ring, the extraction window, YIN's and MPM's
+    /// autocorrelation buffers and the poly tracker's per-string state, none of
+    /// which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: scoring::ScoringEngine::new(sample_rate),
+            telemetry: Arc::new(ScoringTelemetry::default()),
+        }
+    }
+
+    /// Analyse the block and hand it on.
+    ///
+    /// One `process` call for the whole callback rather than fixed runs, unlike
+    /// every other body here: the analyser's hop is sample-counted inside
+    /// `ScoringEngine::process` (`AnalysisBuffer::push` answers when a hop has
+    /// filled), so the call length does not move an analysis tick and a block
+    /// split into runs would produce the same detections at the same samples.
+    ///
+    /// The samples are then scrubbed of non-finite values exactly as the
+    /// worklet scrubs its own output before returning it
+    /// (`ScoringInstance::process`). The scrubbed count is dropped here for the
+    /// reason [`GlutenBody::process`] gives: the web path reports it as device
+    /// health over a port this body does not have.
+    ///
+    /// The reading is published after the scrub, once per block, so a
+    /// control-side reader taking it between callbacks sees the newest
+    /// detection this body has made.
+    ///
+    /// Nothing here allocates: the engine's state is all preallocated, the
+    /// scrub is in place, and the publish is seven integer stores.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.engine.process(left, right);
+        sanitize_block(left);
+        sanitize_block(right);
+        self.telemetry.publish(&self.engine);
+    }
+
+    /// Write one of the analyser's own parameters by name, from the audio
+    /// thread.
+    ///
+    /// Real-time safe, and the refusal is part of what makes it so. The name
+    /// arrives inline in the command ([`BuiltinParamName`]) and
+    /// `ScoringEngine::set_param` resolves it by comparison, but not every arm
+    /// it resolves to is a field write: the two names in
+    /// [`SCORING_NATIVE_REFUSED`] are dropped here rather than forwarded,
+    /// because `instrument` rebuilds the poly tracker's per-string state as it
+    /// lands and `poly` arms detectors that resize their own scratch inside
+    /// `process`. The comparison is against borrowed `&str`s, so the refusal
+    /// itself owns nothing.
+    ///
+    /// Everything forwarded is a field write or a fixed-size retune of state
+    /// the constructor already built: the concert-A reference, the transpose
+    /// and capo offsets, the tone generator and the output mute.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if SCORING_NATIVE_REFUSED.contains(&name) {
+            return;
+        }
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// The two [`SCORING_NATIVE_REFUSED`] names are dropped here too — this is
+    /// the one body whose refusal is not about which thread may allocate but
+    /// about what the device is, so a persisted record naming the poly tracker
+    /// leaves the native Tuner the monophonic analyser it is rather than
+    /// building strings the next callback would allocate for. Refused on this
+    /// door on its own account, against the engine directly as
+    /// [`BacteriaBody::load_patch`] writes it, so the record door does not
+    /// hold only for as long as the live one happens to.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though this type's law is empty and the ordering is the identity:
+    /// one code path, so a future aliasing pair is answered where the others
+    /// are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Scoring.patch_precedence(),
+        ) {
+            if SCORING_NATIVE_REFUSED.contains(&name.as_str()) {
+                continue;
+            }
+            self.engine.set_param(name.as_str(), value);
+        }
+    }
+
+    /// A second handle on this body's detection channel.
+    ///
+    /// Taken control-side before the body crosses the ring
+    /// ([`PluginCore::scoring_telemetry`]), because afterwards the body belongs
+    /// to the audio thread and nothing on this side can reach it again.
+    fn telemetry(&self) -> Arc<ScoringTelemetry> {
+        Arc::clone(&self.telemetry)
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -1507,6 +4059,42 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Gluten(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Crust(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Grinder(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Bacteria(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::DutchOven(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Toaster(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Levain(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -1615,10 +4203,19 @@ struct ActiveEffect {
     /// This device's own dry delay, run in its place while it is bypassed.
     ///
     /// Bypass keeps latency (Cubase and Reaper both do this), so A/B-ing a
-    /// bypass never shifts the strip's alignment against the rest of the mix.
-    /// `None` for a device declaring no latency, which is every built-in the
-    /// engine owns. Built on the control thread and carried in by
+    /// bypass never shifts the strip's alignment against the rest of the mix,
+    /// and this line is what holds the route at the declared depth while the
+    /// device itself is out of the signal. `None` for a device that has never
+    /// declared a latency — most built-ins, and a hosted plugin before its host
+    /// publishes a figure. Built on the control thread and carried in by
     /// [`GraphCommand::SetEffectLatency`].
+    ///
+    /// `None` for a body the engine reads its own figure off as well, a
+    /// Bacteria included: that figure follows the bypass
+    /// ([`Self::refresh_declared_latency`]), so on the one pass a line is read
+    /// the body declares 0 and the pass hands the block on untouched. There is
+    /// nothing for a line to hold there, and nothing here to re-aim when the
+    /// figure moves.
     dry_delay: Option<Box<CompensationDelay>>,
     /// This device's hold on the depth of its strip's input, run over its
     /// output before that output joins the chain signal.
@@ -2249,9 +4846,12 @@ impl ActiveEffect {
     /// then deepened before its new chain has fed it that far owes the same
     /// silence a still-detached one does.
     ///
-    /// The control thread cannot see which of the two cases it is in, so it
-    /// ships a line whenever the figure is non-zero and the spare leaves over
-    /// the retirement route. Nothing here allocates or frees (ADR 0020), and a
+    /// The control thread cannot see which of the two cases it is in, so for a
+    /// device whose latency stands through its own bypass it ships a line
+    /// whenever the figure is non-zero, and the spare leaves over the
+    /// retirement route. A body whose figure follows its own bypass is shipped
+    /// none at any figure, having no pass on which one could be read
+    /// ([`Self::dry_delay`]). Nothing here allocates or frees (ADR 0020), and a
     /// restart costs the newly declared latency rather than the ring.
     fn aim_dry_line(
         &mut self,
@@ -2269,6 +4869,60 @@ impl ActiveEffect {
             // held leaves rather than being dropped here.
             _ => std::mem::replace(&mut self.dry_delay, shipped),
         }
+    }
+
+    /// Re-read a body that reports its own latency, and answer whether the
+    /// figure moved.
+    ///
+    /// The audio-thread half of the declaration [`Self::aim_dry_line`] opened
+    /// control-side. A Bacteria's figure follows the parameters it is written
+    /// with — the oversampling factor, the distortion mode, the codec's
+    /// threshold, the spectral flag, the routing law — and a Proof's follows its
+    /// limiter's look-ahead, so a write that lands on the callback is the only
+    /// place the change can be seen, and the graph stays aimed at the previous
+    /// figure until something says so. Called after every successful write to a
+    /// built-in body, at both write sites, and after a bypass lands; the caller
+    /// ORs the answer into `pdc_dirty`, so `update_graph` re-aims every route
+    /// meeting this strip on the next block rather than at the next Stop/Play.
+    ///
+    /// Which bodies those are is read off
+    /// [`PluginCore::declared_latency_frames`] rather than matched again here.
+    /// That is the arm the mapper publishes the opening figure from, so one body
+    /// cannot be declared at registration and left unrefreshed afterwards —
+    /// which is exactly a strip aimed for the rest of the session at the figure
+    /// its record opened with.
+    ///
+    /// There is no dry line to re-aim. Such a body is registered holding none
+    /// ([`Self::dry_delay`]), because the one pass a dry line is read on is the
+    /// bypassed pass and that is the pass this body declares 0 on. So this
+    /// writes the declared figure and nothing else, and nothing here allocates
+    /// or frees (ADR 0020), which is what makes it callable from the callback
+    /// at all.
+    ///
+    /// A bypassed body declares nothing. The declared figure is what the
+    /// strip's signal is really delayed by, and a bypassed body delays nothing
+    /// on either carrier: this one runs the bypassed pass, where the chain
+    /// hands the block on rather than through the engine, and its web twin
+    /// (`BacteriaEngine::process_block`, `crates/daw-dsp/src/bacteria/engine.rs`;
+    /// `ProofChain::process`, `crates/daw-dsp/src/proof/chain.rs`) passes a
+    /// bypassed block through untouched too. So bypass is read here as well as
+    /// the parameters, and [`Self::bypassed`] must already hold the state being
+    /// declared for whenever this is called.
+    ///
+    /// Every other core answers `false` without touching anything. A hosted
+    /// plugin's figure is republished by its host over
+    /// [`GraphCommand::SetEffectLatency`], and a built-in that declares nothing
+    /// has nothing to re-read.
+    fn refresh_declared_latency(&mut self) -> bool {
+        let Some(reported) = self.instance.declared_latency_frames() else {
+            return false;
+        };
+        let declared = if self.bypassed { 0 } else { reported };
+        if declared == self.latency_frames {
+            return false;
+        }
+        self.latency_frames = declared;
+        true
     }
 
     /// Take the input hold the splice that placed this device shipped, and
@@ -3089,6 +5743,7 @@ impl AudioScheduler {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
                 GraphCommand::SetParam(id, param, value) => {
+                    let mut moved_latency = false;
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
                             // `SetParam` addresses a built-in body only. A
@@ -3096,22 +5751,35 @@ impl AudioScheduler {
                             // travel on its control path, and a built-in
                             // address aimed at the other built-in is a
                             // producer that lost track of what this id holds.
-                            if !apply_builtin_param(&mut effect.instance, param, value) {
+                            if apply_builtin_param(&mut effect.instance, param, value) {
+                                // A body that reports its own latency may have
+                                // moved it on this very write, and the write is
+                                // the only notice the graph gets.
+                                moved_latency = effect.refresh_declared_latency();
+                            } else {
                                 self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                             }
                         }
                     }
+                    self.pdc_dirty |= moved_latency;
                     None
                 }
-                // Bypass deliberately does not dirty the compensation: a
-                // bypassed device keeps its latency and runs its dry delay in
-                // place of itself, so nothing about the graph's alignment
-                // changes and re-aiming every delay here would glitch the mix
-                // on every A/B.
+                // Bypass itself does not dirty the compensation: a hosted
+                // plugin and every other built-in keep their latency and run
+                // their dry delay in place of themselves, so nothing about the
+                // graph's alignment changes and re-aiming every delay here
+                // would glitch the mix on every A/B.
                 GraphCommand::SetBypass(id, bypassed) => {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         let was_bypassed = self.effects[slot].bypassed;
                         self.effects[slot].bypassed = bypassed;
+                        // A body whose declared figure follows its own bypass
+                        // re-aims the pass here, because this is where that
+                        // figure moves: a bypassed Bacteria delays nothing on
+                        // either carrier, so the routes held back to meet it
+                        // are re-aimed with it.
+                        let moved_latency = self.effects[slot].refresh_declared_latency();
+                        self.pdc_dirty |= moved_latency;
                         // Un-bypassing is where the device starts reading its
                         // queued MIDI again, so it is where the releases it
                         // banked while nothing handed it a block are paid.
@@ -3572,8 +6240,11 @@ impl AudioScheduler {
     ///
     /// The topology walk belongs to the graph while the declared latencies and
     /// the generators' input holds belong to this table, so the graph is handed
-    /// a borrow of the table rather than a copy of it. Bypassed devices count:
-    /// bypass keeps latency, so an A/B never moves the mix.
+    /// a borrow of the table rather than a copy of it. Bypassed devices count
+    /// whatever their slot declares: bypass keeps latency, so an A/B never
+    /// moves the mix — except where the bypass moved the declaration itself
+    /// ([`ActiveEffect::refresh_declared_latency`]), which this pass reads as
+    /// any other moved figure.
     ///
     /// The declared figures are also what says whether the ceiling cut a dry
     /// line short, and the graph never sees them — it sees what a chain sums
@@ -4142,6 +6813,12 @@ impl AudioScheduler {
         let last_frame = block_start + (frames - 1) as u64;
         #[cfg(test)]
         let mut visits = 0;
+        // An automated write moves a self-reporting body's figure exactly as a
+        // written one does. This runs inside `process_block`, past the block's
+        // `update_graph`, so the pass it dirties is the next block's: the graph
+        // stays aimed at the previous figure for one block and then re-aims,
+        // which is the same bound a hosted plugin's republished figure takes.
+        let mut moved_latency = false;
         let mut work_index = 0;
         while work_index < self.parameter_work.slots.len() {
             let slot = self.parameter_work.slots[work_index];
@@ -4155,6 +6832,7 @@ impl AudioScheduler {
             }
             let effect = &mut self.effects[slot];
             let receives_no_block = effect.receives_no_block();
+            let mut wrote_builtin = false;
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
                     // A hosted plugin only ever receives a write through a
@@ -4187,7 +6865,9 @@ impl AudioScheduler {
                         }
                     }
                     (instance, DeviceParamTarget::Builtin(param)) => {
-                        if !apply_builtin_param(instance, param, event.value as f32) {
+                        if apply_builtin_param(instance, param, event.value as f32) {
+                            wrote_builtin = true;
+                        } else {
                             self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                         }
                     }
@@ -4200,12 +6880,16 @@ impl AudioScheduler {
                     }
                 }
             }
+            if wrote_builtin {
+                moved_latency |= effect.refresh_declared_latency();
+            }
             if effect.pending_params.is_empty() {
                 self.parameter_work.remove(slot);
             } else {
                 work_index += 1;
             }
         }
+        self.pdc_dirty |= moved_latency;
         #[cfg(test)]
         {
             self.rt_work.parameter_table_visits += visits;
@@ -4655,6 +7339,42 @@ fn process_device(
         // On the same law as the Fermenter above: always processed, and its
         // MIDI always cleared.
         PluginCore::GrandBoule(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
+            effect.pending_midi.clear();
+        }
+        PluginCore::Gluten(body) => {
+            body.process(left, right);
+        }
+        PluginCore::Crust(body) => {
+            body.process(left, right);
+        }
+        PluginCore::Grinder(body) => {
+            body.process(left, right);
+        }
+        PluginCore::Bacteria(body) => {
+            body.process(left, right);
+        }
+        PluginCore::Proof(body) => {
+            body.process(left, right);
+        }
+        PluginCore::DutchOven(body) => {
+            body.process(left, right);
+        }
+        // An analyser: the block leaves as it arrived, and what the pass
+        // produces is the reading the body publishes for the transport poll to
+        // carry.
+        PluginCore::Scoring(body) => {
+            body.process(left, right);
+        }
+        // On the same law as the two instruments above: always processed, and
+        // its MIDI always cleared.
+        PluginCore::Toaster(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
+            effect.pending_midi.clear();
+        }
+        // On the same law as the three instruments above: always processed, and
+        // its MIDI always cleared.
+        PluginCore::Levain(body) => {
             body.process(left, right, frames, effect.pending_midi.as_slice());
             effect.pending_midi.clear();
         }
@@ -5682,12 +8402,49 @@ mod tests {
 
     /// `from_name` is the inverse of `name`, so the named boundary and the
     /// addressed command cannot drift into meaning different things.
+    ///
+    /// Every variant is pinned rather than one of them, because the pair is a
+    /// per-variant fact: a body whose two arms disagree is one the mapper
+    /// admits by name and the engine then builds as something else.
     #[test]
     fn builtin_effect_type_from_name_is_the_inverse_of_name() {
-        assert_eq!(
-            BuiltinEffectType::from_name(BuiltinEffectType::Knead.name()),
-            Some(BuiltinEffectType::Knead)
-        );
+        for builtin in [
+            BuiltinEffectType::Knead,
+            BuiltinEffectType::Fermenter,
+            BuiltinEffectType::GrandBoule,
+            BuiltinEffectType::Gluten,
+            BuiltinEffectType::Crust,
+            BuiltinEffectType::Grinder,
+            BuiltinEffectType::Bacteria,
+            BuiltinEffectType::Proof,
+            BuiltinEffectType::DutchOven,
+            BuiltinEffectType::Toaster,
+            BuiltinEffectType::Levain,
+            BuiltinEffectType::Scoring,
+        ] {
+            // No wildcard: a variant added to the registry and forgotten in
+            // the list above fails to compile here rather than going unpinned.
+            match builtin {
+                BuiltinEffectType::Knead
+                | BuiltinEffectType::Fermenter
+                | BuiltinEffectType::GrandBoule
+                | BuiltinEffectType::Gluten
+                | BuiltinEffectType::Crust
+                | BuiltinEffectType::Grinder
+                | BuiltinEffectType::Bacteria
+                | BuiltinEffectType::Proof
+                | BuiltinEffectType::DutchOven
+                | BuiltinEffectType::Toaster
+                | BuiltinEffectType::Levain
+                | BuiltinEffectType::Scoring => {}
+            }
+            assert_eq!(
+                BuiltinEffectType::from_name(builtin.name()),
+                Some(builtin),
+                "'{}' does not resolve back to the variant that names it",
+                builtin.name()
+            );
+        }
         assert_eq!(BuiltinEffectType::from_name("not-a-real-effect"), None);
     }
 
@@ -7349,6 +10106,1010 @@ mod tests {
                 "the instrument never sounded, so the guard covered a silent path"
             );
         }
+
+        /// A hosted Gluten compresses a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its sidechain buffers
+        /// and its lookahead lines are legitimately allocated (ADR 0020), and
+        /// it is registered and spliced the way the mapper registers an
+        /// insert — detached with no note store, then placed on the chain — so
+        /// what runs inside the guard is the whole callback path a strip
+        /// carrying the device takes, not the body alone.
+        ///
+        /// The patch drives the compressor into gain reduction and the clip
+        /// gives it material, because `process_block` walks its whole
+        /// per-sample path only while there is signal to compress: a guard
+        /// around a silent render would abort on nothing and prove nothing.
+        #[test]
+        fn a_gluten_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("threshold").expect("a well-shaped name"),
+                    -30.0,
+                ),
+                (
+                    BuiltinParamName::parse("ratio").expect("a well-shaped name"),
+                    8.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::gluten_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no compression"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the compressor never ran"
+            );
+        }
+
+        /// A hosted Crust limits a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its look-ahead rings,
+        /// its dry delay line and its loudness meters are legitimately
+        /// allocated (ADR 0020), and it is registered and spliced the way the
+        /// mapper registers an insert — detached with no note store, then
+        /// placed on the chain — so what runs inside the guard is the whole
+        /// callback path a strip carrying the device takes, not the body
+        /// alone.
+        ///
+        /// The patch drives the limiter into gain reduction and the clip gives
+        /// it material well over the ceiling, because `process_block` walks its
+        /// whole per-sample path only while there is signal to limit: a guard
+        /// around a silent render would abort on nothing and prove nothing.
+        #[test]
+        fn a_crust_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("gain").expect("a well-shaped name"),
+                    18.0,
+                ),
+                (
+                    BuiltinParamName::parse("ceiling").expect("a well-shaped name"),
+                    -12.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::crust_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no limiting"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the limiter never ran"
+            );
+        }
+
+        /// A hosted Grinder amplifies a callback without allocating.
+        ///
+        /// The body is built outside the guard, where its cabinet convolution
+        /// rings, its neural-capture buffers and its pedal state are
+        /// legitimately allocated (ADR 0020), and it is registered and
+        /// spliced the way the mapper registers an insert — detached with no
+        /// note store, then placed on the chain — so what runs inside the
+        /// guard is the whole callback path a strip carrying the device
+        /// takes, not the body alone.
+        ///
+        /// The patch drives the amp's gain well past unity so the ramp comes
+        /// out reshaped rather than merely scaled, because `process_block`
+        /// walks its whole per-sample path only while there is signal to
+        /// amplify: a guard around a silent render would abort on nothing and
+        /// prove nothing.
+        #[test]
+        fn a_grinder_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let ramp: Vec<f32> = (0..FRAMES).map(|frame| frame as f32 + 1.0).collect();
+            let patch = [
+                (
+                    BuiltinParamName::parse("gain").expect("a well-shaped name"),
+                    8.0,
+                ),
+                (
+                    BuiltinParamName::parse("cabEnabled").expect("a well-shaped name"),
+                    1.0,
+                ),
+            ];
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        ramp.into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: FRAMES as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::grinder_with_patch(48_000.0, &patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, FRAMES);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callback rendered silence, so it covered no amplification"
+            );
+            assert!(
+                left.iter()
+                    .zip(0..FRAMES)
+                    .any(|(sample, frame)| *sample != frame as f32 + 1.0),
+                "the guarded callback returned its input, so the amp never ran"
+            );
+        }
+
+        /// The rate every Bacteria guard below builds its body at, and the
+        /// rate the burst material is written against — a multi-effect's
+        /// filters, crossover corners, grain sizes and codec frames are all
+        /// derived from it, so a body and a signal built at different rates
+        /// would not be the pair the guard means to run.
+        const BACTERIA_GUARD_RATE: f32 = 48_000.0;
+
+        /// `DistortionMode::from_index`'s Smudge arm
+        /// (`crates/daw-dsp/src/bacteria/distortion.rs`), the one mode with an
+        /// overlap-add transform behind it — so a guard naming it covers the
+        /// analysis path the other seven modes do not have.
+        const BACTERIA_SMUDGE_MODE: f32 = 7.0;
+
+        /// Engine-spelled Bacteria names in the carrier a patch and a
+        /// `SetParam` both travel in.
+        ///
+        /// Built here, outside every guard, because [`BuiltinParamName::parse`]
+        /// is a copy into a fixed buffer and the `Vec` that holds the results
+        /// is not: a name parsed inside a guard would be the allocation the
+        /// guard exists to catch rather than anything the body did.
+        fn bacteria_guard_writes(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+            entries
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        BuiltinParamName::parse(name)
+                            .expect("the fixture spells a well-shaped parameter name"),
+                        *value,
+                    )
+                })
+                .collect()
+        }
+
+        /// A decaying two-partial burst inside unity, `frames` long.
+        ///
+        /// Bounded on purpose: the patches below drive a waveshaper, a lo-fi
+        /// codec and a convolver, and the bare index ramp the guards above
+        /// feed their amp and limiter would saturate all three into a constant
+        /// where a signal inside unity walks their whole curves.
+        fn bacteria_guard_material(frames: usize) -> Vec<f32> {
+            (0..frames)
+                .map(|frame| {
+                    let t = frame as f32 / BACTERIA_GUARD_RATE;
+                    let decay = (-2.0 * t).exp();
+                    let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                    let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                    decay * (fundamental + partial) / 3.0
+                })
+                .collect()
+        }
+
+        /// Splice a hosted Bacteria carrying `patch` onto a fresh track and
+        /// render `material.len()` frames of it, `FRAMES` at a time, inside
+        /// an allocation guard.
+        ///
+        /// The body is built outside the guard, where its band chains, STFT
+        /// and Smudge workspaces, granular rings, codec frames and the
+        /// convolution response the patch loads are legitimately allocated
+        /// (ADR 0020), and it is registered and spliced the way the mapper
+        /// registers an insert — detached with no note store, then placed on
+        /// the chain — so what runs inside the guard is the whole callback
+        /// path a strip carrying the device takes, not the body alone.
+        ///
+        /// Every callback is inside the guard, the first one included: a
+        /// warm-up run outside it would be exactly where a lazily sized
+        /// buffer grew.
+        fn render_bacteria_patch(patch: &[(BuiltinParamName, f32)], material: &[f32]) -> Vec<f32> {
+            const FRAMES: usize = 512;
+            let frame_total = material.len();
+            assert!(
+                frame_total % FRAMES == 0,
+                "the fixture material must be a whole number of callbacks"
+            );
+            let callbacks = frame_total / FRAMES;
+
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Effect,
+            };
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddClip(
+                    1,
+                    TimelineClip::new(
+                        101,
+                        material.to_vec().into(),
+                        [].into(),
+                        ClipPlacement {
+                            start_frame: 0,
+                            source_offset_frames: 0,
+                            length_frames: frame_total as u64,
+                        },
+                        ClipPlayback::at_gain(1.0),
+                    ),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, patch),
+                    None,
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+            scheduler.update_graph();
+
+            let mut left = [0.0_f32; FRAMES];
+            let mut right = [0.0_f32; FRAMES];
+            // Sized outside the guard: the whole render has to be kept to
+            // assert against, and a `Vec` grown inside would be an allocation
+            // the test performed rather than the callback.
+            let mut rendered = vec![0.0_f32; frame_total];
+            assert_no_alloc(|| {
+                for callback in 0..callbacks {
+                    scheduler.process_block(&mut left, &mut right, FRAMES);
+                    rendered[callback * FRAMES..(callback + 1) * FRAMES].copy_from_slice(&left);
+                }
+            });
+            rendered
+        }
+
+        /// A hosted Bacteria processes a callback without allocating, and the
+        /// change it makes to the signal is provably its own doing.
+        ///
+        /// The patch is chosen for coverage rather than for a sound: the
+        /// oversampled Smudge waveshaper on band 0, its lo-fi codec past the
+        /// `codecArtifact` threshold that engages the framed transform, its
+        /// convolver over a loaded response, and the spectral and granular
+        /// stages on band 1 — the stages that keep buffers of their own, and
+        /// so the ones an allocation could hide in. `band0_convolutionIr` is
+        /// in the patch rather than left out because a convolver with no
+        /// response loaded passes its input through
+        /// (`ConvolutionProcessor::process_stereo` returns early on
+        /// `!ir_loaded`), so the stage would be named and never run; the patch
+        /// is the control-thread route those names are allowed to travel.
+        ///
+        /// Eight 512-frame callbacks, because this patch reports 2048 samples
+        /// of latency (band 1's spectral window is the deepest, and `Parallel`
+        /// pads every band and the dry tap out to the worst case), so a
+        /// single callback would render nothing but the alignment rings
+        /// filling and the assertions below would pass against silence. The
+        /// precondition below checks the 2048 figure directly rather than
+        /// leaving it asserted only in this prose.
+        ///
+        /// The oracle is a second render of the identical graph, built from a
+        /// patch that repeats every name `BacteriaEngine::latency_samples`
+        /// and `realign_bands` read to size a band's delay —
+        /// `bandCount`, `band0_oversampling`, `band0_distortionMode`,
+        /// `band0_codecArtifact`, `band1_spectralEnabled` and
+        /// `band0_convolutionIr` — so both patches drive every band to the
+        /// same reported delay; the precondition below proves that equality
+        /// rather than assuming it. `band1_spectralEnabled` in particular has
+        /// to stay on in both patches, not off: it is the one enable flag
+        /// `spectral_latency_samples` reads directly, so turning it off in a
+        /// second patch (this test's earlier form) drops that band's
+        /// reported delay from 2048 to 0 and reddens the alignment padding
+        /// each render gets from `realign_bands` — the renders then differ
+        /// because they are aligned differently, not because a stage did or
+        /// did not run. The two patches differ only in `band0_drive`,
+        /// `band0_convolutionMix`, `band1_spectralBlur` and `band1_grainMix`
+        /// — controls `DistortionProcessor::process_sample`,
+        /// `ConvolutionProcessor::set_param`, `StftProcessor::process_frame`
+        /// and `GranularProcessor::set_param` read for wet output and that no
+        /// latency method reads at all, confirmed by grepping each arm.
+        /// Every other name, including every other stage's enable flag, is
+        /// identical between the two patches, so this comparison says nothing
+        /// about whether `distortionEnabled`, `lofiEnabled`,
+        /// `convolutionEnabled` or `granularEnabled` themselves gate any
+        /// processing — only allocation coverage for those stages, from the
+        /// guard below, is claimed.
+        ///
+        /// Both renders cross the same track, clip, device-splice machinery
+        /// and now the same per-band delay, so anything that machinery or
+        /// that padding does to the signal lands identically in both and
+        /// cancels out of the comparison; what does not cancel is the four
+        /// wet controls above. Comparing the engaged render against the raw
+        /// input material instead — an even earlier form — does not have
+        /// that property: something in the graph changes samples from frame
+        /// 513 on for reasons of its own, so that comparison stayed green
+        /// with `self.engine.process_block(left, right)` deleted from
+        /// `BacteriaBody::process` entirely. Deleting that call makes both
+        /// patches here render the same pass-through output regardless of
+        /// which wet control they name — the parameter writes still reach
+        /// `self.engine`, but nothing ever reads them back — which is exactly
+        /// what turns this comparison red instead.
+        #[test]
+        fn a_bacteria_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+            const CALLBACKS: usize = 8;
+            const RENDERED: usize = FRAMES * CALLBACKS;
+
+            let material = bacteria_guard_material(RENDERED);
+            let patch_engaged = bacteria_guard_writes(&[
+                ("bandCount", 2.0),
+                ("band0_distortionEnabled", 1.0),
+                ("band0_drive", 8.0),
+                ("band0_oversampling", 4.0),
+                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
+                ("band0_lofiEnabled", 1.0),
+                ("band0_codecArtifact", 0.6),
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionIr", 1.0),
+                ("band0_convolutionMix", 0.5),
+                ("band1_spectralEnabled", 1.0),
+                ("band1_spectralBlur", 0.5),
+                ("band1_granularEnabled", 1.0),
+                ("band1_grainDensity", 40.0),
+                ("band1_grainMix", 1.0),
+            ]);
+            // Repeats every latency-moving name from `patch_engaged` at the
+            // same value — `bandCount`, `band0_oversampling`,
+            // `band0_distortionMode`, `band0_codecArtifact`,
+            // `band1_spectralEnabled`, `band0_convolutionIr` — and every
+            // other stage's enable flag at the same value too, so the only
+            // differences left are the four wet-only controls the doc above
+            // names.
+            let patch_muted = bacteria_guard_writes(&[
+                ("bandCount", 2.0),
+                ("band0_distortionEnabled", 1.0),
+                ("band0_drive", 0.0),
+                ("band0_oversampling", 4.0),
+                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
+                ("band0_lofiEnabled", 1.0),
+                ("band0_codecArtifact", 0.6),
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionIr", 1.0),
+                ("band0_convolutionMix", 0.0),
+                ("band1_spectralEnabled", 1.0),
+                ("band1_spectralBlur", 0.0),
+                ("band1_granularEnabled", 1.0),
+                ("band1_grainDensity", 40.0),
+                ("band1_grainMix", 0.0),
+            ]);
+
+            // The comparison below is only sound if both patches present the
+            // same delay; prove it here instead of assuming the patches above
+            // stayed in sync with `BacteriaEngine::latency_samples` and
+            // `realign_bands`. Built outside the allocation guard along with
+            // the patches: these twins exist only to read back a reported
+            // figure, not to stand in for the guarded renders.
+            let mut engaged_twin = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            engaged_twin.load_patch(&patch_engaged);
+            let mut muted_twin = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            muted_twin.load_patch(&patch_muted);
+            assert_eq!(
+                engaged_twin.latency_samples(),
+                muted_twin.latency_samples(),
+                "the two patches report different delay, so the renders below would differ by alignment padding instead of by the toggled wet controls"
+            );
+            assert_eq!(
+                engaged_twin.latency_samples(),
+                2048,
+                "the eight-callback render length above assumes this patch reports 2048 samples of latency"
+            );
+
+            let rendered_engaged = render_bacteria_patch(&patch_engaged, &material);
+            let rendered_muted = render_bacteria_patch(&patch_muted, &material);
+
+            assert!(
+                rendered_engaged.iter().any(|sample| *sample != 0.0),
+                "the guarded callbacks rendered silence, so they covered no processing"
+            );
+            assert!(
+                rendered_engaged
+                    .iter()
+                    .zip(&rendered_muted)
+                    .any(|(engaged, muted)| engaged != muted),
+                "the engaged and muted renders matched, so drive, convolutionMix, spectralBlur and grainMix never reached the signal"
+            );
+        }
+
+        /// Named writes reach the multi-effect on the audio thread without
+        /// allocating, including the ones that rebuild state.
+        ///
+        /// These are the arms that do more than store a number:
+        /// `band0_oversampling` rebuilds both `OversamplingChain`s inline
+        /// (`crates/daw-dsp/src/primitives/oversample.rs` — every stage and
+        /// the interleave buffer live in the struct), `band0_distortionMode`
+        /// leaves and re-enters Smudge and resets its overlap-add and
+        /// sample-and-hold state, `band1_spectralEnabled` drains the STFT
+        /// buffers on the way down, `bandCount` re-derives the crossover over
+        /// its pre-allocated point topology and re-aims every band's alignment
+        /// ring, the two freezes walk the grain and bin tables, and
+        /// `globalRouting` moves the device between the summing law and the
+        /// chained one — which changes what every band is padded to. Each of
+        /// them also re-runs `realign_bands` and `clear_inactive_band_levels`,
+        /// because the engine runs both after every write.
+        ///
+        /// The guard is the oracle. The two assertions only refuse a vacuous
+        /// pass: a render that came out silent covered no per-sample path, and
+        /// one carrying a non-finite sample would mean the mode churn left
+        /// state the sanitize pass had to scrub rather than state the engine
+        /// kept coherent.
+        ///
+        /// The callback is 4096 frames because the writes leave the spectral
+        /// stage engaged, and its 2048-sample window is what every band and
+        /// the dry tap are then padded out to: a shorter render would be the
+        /// alignment rings filling, and the non-silence assertion would fail
+        /// on a body that behaved perfectly.
+        #[test]
+        fn a_bacteria_body_takes_named_writes_on_the_audio_thread_without_allocating() {
+            const FRAMES: usize = 4096;
+
+            let writes = bacteria_guard_writes(&[
+                ("band0_oversampling", 1.0),
+                ("band0_oversampling", 8.0),
+                ("band0_distortionMode", BACTERIA_SMUDGE_MODE),
+                ("band0_distortionMode", 0.0),
+                ("band1_spectralEnabled", 1.0),
+                ("band1_spectralEnabled", 0.0),
+                ("band1_spectralEnabled", 1.0),
+                ("bandCount", 6.0),
+                ("bandCount", 1.0),
+                ("bandCount", 3.0),
+                ("band0_grainFreeze", 1.0),
+                ("band0_spectralFreeze", 1.0),
+                ("globalRouting", 0.0),
+                ("globalRouting", 2.0),
+            ]);
+            let material = bacteria_guard_material(FRAMES);
+            let mut body = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                for (name, value) in &writes {
+                    body.set_param(name.as_str(), *value);
+                }
+                body.process(&mut left, &mut right);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded render is silent, so it covered no per-sample path"
+            );
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "a write left the engine producing non-finite samples"
+            );
+        }
+
+        /// The whole of what a `SetParam` drain does to a self-reporting body:
+        /// the write, and the latency refresh that follows it. Both run on the
+        /// callback, so neither may allocate.
+        ///
+        /// The pair is guarded rather than the write alone because the refresh
+        /// is what publishes the moved figure to the graph, and a refresh that
+        /// reached for a dry line — building one, freeing one, or swapping a
+        /// fresh ring in for the new figure — would be the very
+        /// allocate-and-free ADR 0020 forbids. This body holds no dry line at
+        /// all, and the assertion below is what says so.
+        ///
+        /// The moved figure is the oracle: a guard around a refresh that
+        /// answered nothing at all would pass on any body, so the write is one
+        /// the engine's reported latency really follows — 2x oversampling to
+        /// 8x, whose delivered delays daw-dsp pins.
+        #[test]
+        fn a_bacteria_latency_refresh_runs_under_the_allocation_guard() {
+            const OPENING: usize = 7;
+            const MOVED: usize = 11;
+
+            let opening_patch = bacteria_guard_writes(&[("band0_oversampling", 2.0)]);
+            let writes = bacteria_guard_writes(&[("band0_oversampling", 8.0)]);
+            let mut effect = ActiveEffect::detached(
+                9,
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opening_patch),
+            );
+            assert_eq!(
+                effect.instance.declared_latency_frames(),
+                Some(OPENING),
+                "the fixture opens at the figure the body really reports"
+            );
+            assert!(
+                effect.aim_dry_line(OPENING, None).is_none(),
+                "a registration ships this body no line, so none can leave the slot"
+            );
+
+            let mut applied = true;
+            let mut moved = false;
+            assert_no_alloc(|| {
+                for (name, value) in &writes {
+                    applied &= apply_builtin_param(
+                        &mut effect.instance,
+                        DeviceParam::BuiltinNamed(*name),
+                        *value,
+                    );
+                }
+                moved = effect.refresh_declared_latency();
+            });
+
+            assert!(applied, "the guarded write never reached the body");
+            assert!(moved, "the refresh did not report the figure moving");
+            assert_eq!(
+                effect.latency_frames, MOVED,
+                "the effect still declares the figure it was registered with"
+            );
+            assert!(
+                effect.dry_delay.is_none(),
+                "the refresh put a dry line on a body that ships and holds none"
+            );
+        }
+
+        /// The two allocating names are dropped when they arrive on the audio
+        /// thread, and the body renders exactly as an untouched twin.
+        ///
+        /// Sample-exact against a twin rather than merely "close": the claim
+        /// is that the write never reached the engine at all, and any figure
+        /// short of equality would admit a write that landed and barely
+        /// moved the sound.
+        ///
+        /// Both bodies carry a patch that makes a landed write audible — the
+        /// phaser engaged at full mix with the six stages its constructor
+        /// builds, and the convolver engaged at full mix over the `wood`
+        /// response — so the refusal is what holds the two renders together.
+        /// That the same writes *do* change the render when they land
+        /// control-side is
+        /// `a_bacteria_patch_applies_the_allocating_names_control_side`; without
+        /// it this spec could pass against a pair of names the engine ignores
+        /// outright.
+        ///
+        /// Both names are sent bare and `band{digit}_`-prefixed, because the
+        /// engine reaches its stages both ways — an unmatched bare name is
+        /// broadcast to all six bands — so a refusal reading only the written
+        /// form would let the other spelling through. `band00convolutionIr`
+        /// and `band0XphaserStages` are in the refused set for the same
+        /// reason `bare_bacteria_param_name`'s doc gives: the engine reads
+        /// the byte after the digit without checking it, so both read as
+        /// band 0's `convolutionIr` and `phaserStages` to `apply_param` even
+        /// though neither spells the historical underscore, and the refusal
+        /// has to catch what the engine actually routes rather than only the
+        /// `_`-separated spelling.
+        ///
+        /// Run inside the guard as well: a refusal that returned early *after*
+        /// touching the engine would abort here rather than only fail the
+        /// comparison.
+        #[test]
+        fn a_bacteria_body_drops_the_allocating_names_on_the_audio_thread() {
+            const FRAMES: usize = 512;
+
+            let patch = bacteria_guard_writes(&[
+                ("band0_phaserEnabled", 1.0),
+                ("band0_phaserMix", 1.0),
+                ("band0_phaserStages", 6.0),
+                ("band0_convolutionEnabled", 1.0),
+                ("band0_convolutionMix", 1.0),
+                ("band0_convolutionIr", 1.0),
+            ]);
+            let refused = bacteria_guard_writes(&[
+                ("band0_phaserStages", 12.0),
+                ("phaserStages", 12.0),
+                ("band0_convolutionIr", 2.0),
+                ("band00convolutionIr", 2.0),
+                ("band0XphaserStages", 12.0),
+            ]);
+            let material = bacteria_guard_material(FRAMES);
+
+            let PluginCore::Bacteria(mut written) =
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch)
+            else {
+                unreachable!("bacteria_with_patch builds the bacteria variant");
+            };
+            let PluginCore::Bacteria(mut untouched) =
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch)
+            else {
+                unreachable!("bacteria_with_patch builds the bacteria variant");
+            };
+
+            let mut written_left = material.clone();
+            let mut written_right = material.clone();
+            let mut untouched_left = material.clone();
+            let mut untouched_right = material.clone();
+
+            assert_no_alloc(|| {
+                for (name, value) in &refused {
+                    written.set_param(name.as_str(), *value);
+                }
+                written.process(&mut written_left, &mut written_right);
+                untouched.process(&mut untouched_left, &mut untouched_right);
+            });
+
+            assert!(
+                untouched_left.iter().any(|sample| *sample != 0.0),
+                "the twin rendered silence, so an equality against it proves nothing"
+            );
+            assert_eq!(
+                written_left, untouched_left,
+                "an allocating name reached the engine from the audio thread and moved the \
+                 left channel"
+            );
+            assert_eq!(
+                written_right, untouched_right,
+                "an allocating name reached the engine from the audio thread and moved the \
+                 right channel"
+            );
+        }
+
+        /// The rate every Proof guard below builds its body at, and the rate
+        /// the burst material is written against — the mastering chain's
+        /// filter designs, crossover corners, look-ahead line and loudness
+        /// windows are all derived from it, so a body and a signal built at
+        /// different rates would not be the pair the guard means to run.
+        const PROOF_GUARD_RATE: f32 = 48_000.0;
+
+        /// `MasteringEq`'s `LowShelf` band type
+        /// (`crates/daw-dsp/src/proof/eq.rs`), the shape whose whole boost
+        /// lands on the burst's fundamental rather than on one partial of it.
+        const PROOF_LOW_SHELF: f32 = 1.0;
+
+        /// Engine-spelled Proof names in the carrier a patch and a `SetParam`
+        /// both travel in.
+        ///
+        /// Built here, outside every guard, for the reason
+        /// [`bacteria_guard_writes`] gives: [`BuiltinParamName::parse`] is a
+        /// copy into a fixed buffer and the `Vec` that holds the results is
+        /// not, so a name parsed inside a guard would be the allocation the
+        /// guard exists to catch rather than anything the body did.
+        fn proof_guard_writes(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+            entries
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        BuiltinParamName::parse(name)
+                            .expect("the fixture spells a well-shaped parameter name"),
+                        *value,
+                    )
+                })
+                .collect()
+        }
+
+        /// A decaying two-partial burst inside unity, `frames` long — the same
+        /// material shape the Bacteria guards use, and bounded for the same
+        /// reason: the patches below drive a shelving EQ, a compressor, a
+        /// saturator and a brickwall limiter, and the bare index ramp the
+        /// earlier guards feed their amp would pin all four at their extremes
+        /// where a signal inside unity walks their whole curves.
+        fn proof_guard_material(frames: usize) -> Vec<f32> {
+            (0..frames)
+                .map(|frame| {
+                    let t = frame as f32 / PROOF_GUARD_RATE;
+                    let decay = (-2.0 * t).exp();
+                    let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                    let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                    decay * (fundamental + partial) / 3.0
+                })
+                .collect()
+        }
+
+        /// A hosted Proof processes a callback without allocating.
+        ///
+        /// The patch is chosen for coverage rather than for a sound: a shelving
+        /// band on the mastering EQ, the multiband compressor's own threshold
+        /// brought down onto the burst, the exciter's saturator engaged on
+        /// band 0, and the limiter given a ceiling the material really reaches
+        /// with a look-ahead line to reach it through — the four stages that
+        /// keep state of their own, and so the ones an allocation could hide
+        /// in. The five `chain_order_{n}` keys are in the patch too, at the
+        /// permutation that puts the limiter first, because installing an
+        /// order is `ProofChain::reorder`'s own copy over the array this body
+        /// holds and that copy runs on this thread as readily as on the
+        /// callback.
+        ///
+        /// Eight 512-frame callbacks: the limiter's 5 ms look-ahead is 240
+        /// frames at this rate, so the first block is mostly the delay line
+        /// filling and a single callback would leave the assertions below
+        /// reading it rather than the chain's output.
+        ///
+        /// The guard is the oracle. The two assertions only refuse a vacuous
+        /// pass: a render that came out silent covered no per-sample path, and
+        /// one carrying a non-finite sample would mean the chain left state the
+        /// sanitize pass had to scrub rather than state it kept coherent.
+        #[test]
+        fn a_proof_body_processes_a_callback_without_allocating() {
+            const FRAMES: usize = 512;
+            const CALLBACKS: usize = 8;
+            const RENDERED: usize = FRAMES * CALLBACKS;
+
+            let patch = proof_guard_writes(&[
+                ("eq_band0_type", PROOF_LOW_SHELF),
+                ("eq_band0_freq", 500.0),
+                ("eq_band0_q", 0.7),
+                ("eq_band0_gain", 12.0),
+                ("eq_band0_enabled", 1.0),
+                ("dyn_band0_threshold", -30.0),
+                ("exc_band0_enabled", 1.0),
+                ("exc_band0_drive", 0.8),
+                ("lim_ceiling", -6.0),
+                ("lim_lookahead", 5.0),
+                ("chain_order_0", 4.0),
+                ("chain_order_1", 0.0),
+                ("chain_order_2", 1.0),
+                ("chain_order_3", 2.0),
+                ("chain_order_4", 3.0),
+            ]);
+            let material = proof_guard_material(RENDERED);
+            // Built and patched outside the guard, where the chain's stages,
+            // FIR workspaces, look-ahead rings and loudness histories are
+            // legitimately allocated (ADR 0020).
+            let mut body = ProofBody::new(PROOF_GUARD_RATE);
+            body.load_patch(&patch);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                for callback in 0..CALLBACKS {
+                    let span = callback * FRAMES..(callback + 1) * FRAMES;
+                    body.process(&mut left[span.clone()], &mut right[span]);
+                }
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded callbacks rendered silence, so they covered no processing"
+            );
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "the guarded callbacks left the chain producing non-finite samples"
+            );
+        }
+
+        /// Named writes reach the mastering chain on the audio thread without
+        /// allocating, including the ones that rebuild state.
+        ///
+        /// These are the arms that do more than store a number: every EQ and
+        /// dynamic-EQ design arm re-derives a biquad and re-aims its ramp, the
+        /// two crossover writes rebuild a four-band splitter's coefficients in
+        /// place, `lim_release` recomputes both release coefficients, and
+        /// `lim_lookahead` resizes both delay lines and rebuilds the monotonic
+        /// peak window over them — inside the capacity `LookaheadLimiter::new`
+        /// took for the longest look-ahead the control admits, which is the
+        /// claim this guard is here to hold. Every prefix family
+        /// `ProofChain::set_param` routes by is named, so a family that grows
+        /// an allocating arm is caught here rather than in the field.
+        ///
+        /// `chain_order_2` is written twice on purpose, because the order key
+        /// has two answers and both run on the callback: the first value
+        /// leaves the array short of a permutation and `ProofChain::reorder`
+        /// returns without touching the chain, and the second restores one it
+        /// installs.
+        ///
+        /// The guard is the oracle. The two assertions only refuse a vacuous
+        /// pass, exactly as in the guard above.
+        ///
+        /// The callback is 4096 frames because the writes leave the limiter at
+        /// its 10 ms look-ahead, which is 480 frames at this rate: a shorter
+        /// render would be the delay line filling, and the non-silence
+        /// assertion would fail on a body that behaved perfectly.
+        #[test]
+        fn a_proof_body_takes_named_writes_on_the_audio_thread_without_allocating() {
+            const FRAMES: usize = 4096;
+
+            let writes = proof_guard_writes(&[
+                ("input_gain", 3.0),
+                ("output_gain", -2.0),
+                ("eq_linear_phase", 1.0),
+                ("eq_band0_type", PROOF_LOW_SHELF),
+                ("eq_band0_freq", 320.0),
+                ("eq_band0_gain", 6.0),
+                ("eq_band0_enabled", 1.0),
+                ("dyneq_band0_enabled", 1.0),
+                ("dyneq_band0_threshold", -24.0),
+                ("dyneq_band0_freq", 3_000.0),
+                ("match_enabled", 1.0),
+                ("match_amount", 0.5),
+                ("dyn_xover0", 180.0),
+                ("dyn_band0_threshold", -30.0),
+                ("img_width1", 1.4),
+                ("img_mono_bass_freq", 120.0),
+                ("exc_band0_enabled", 1.0),
+                ("exc_band0_drive", 0.7),
+                ("lim_ceiling", -3.0),
+                ("lim_release", 250.0),
+                ("dither_bits", 16.0),
+                ("dither_mode", 1.0),
+                ("chain_order_2", 4.0),
+                ("chain_order_2", 2.0),
+                ("lim_lookahead", 1.0),
+                ("lim_lookahead", 10.0),
+            ]);
+            let material = proof_guard_material(FRAMES);
+            let mut body = ProofBody::new(PROOF_GUARD_RATE);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                for (name, value) in &writes {
+                    body.set_param(name.as_str(), *value);
+                }
+                body.process(&mut left, &mut right);
+            });
+
+            assert!(
+                left.iter().any(|sample| *sample != 0.0),
+                "the guarded render is silent, so it covered no per-sample path"
+            );
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "a write left the chain producing non-finite samples"
+            );
+        }
     }
 }
 
@@ -8013,6 +11774,13 @@ mod timeline_tests {
         Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
     }
 
+    /// The frames one callback renders to let a 5 ms mute glide finish. The
+    /// gate covers all but a millionth of the distance in ~3316 frames at
+    /// 48 kHz and then snaps exactly onto its target, so a test that mutes a
+    /// strip to take its direct arm out of the mix renders this much and
+    /// asserts on the settled tail — never on the glide itself.
+    const MUTE_SETTLE_FRAMES: usize = 4_096;
+
     /// The command the control thread builds for a declared latency: the figure
     /// and the dry line that holds a bypassed pass at it travel together, so no
     /// caller can publish one without the other.
@@ -8384,7 +12152,7 @@ mod timeline_tests {
     fn a_pre_fader_send_survives_the_mute_that_silences_the_tracks_own_output() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -8398,8 +12166,10 @@ mod timeline_tests {
         // The mute sits after the fader and before the panner, so the muted
         // track contributes nothing directly while its pre-fader send keeps
         // feeding the bus — the whole reason a cue mix is taken pre-fader.
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![1.0; 4]);
+        // The gate declicks, so the strip's own arm glides away across the
+        // callback; settled, the master reads the send alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
         assert_eq!(
             harness.scheduler.timeline().send_tap(1, 50),
             Some(SendTap::PreFader)
@@ -8410,7 +12180,7 @@ mod timeline_tests {
     fn a_post_fader_send_is_silenced_by_the_same_mute() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -8421,8 +12191,11 @@ mod timeline_tests {
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.0; 4]);
+        // The post-fader tap sits behind the mute gate, so the mute silences
+        // the send exactly as it silences the strip: settled, both arms are
+        // exactly gone. A tap ahead of the gate would leave this at 1.0.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
     }
 
     #[test]
@@ -8501,7 +12274,7 @@ mod timeline_tests {
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
-        track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 2, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::SetTrackMute(2, true));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
@@ -8517,8 +12290,11 @@ mod timeline_tests {
             harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
             Some(RouteTarget::Track(1))
         );
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.5; 4]);
+        // The mute gate declicks, so the read comes from the settled tail:
+        // track 2's own arm is exactly gone and the bus's contribution has
+        // been through track 1's insert alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.5; 96]);
     }
 
     #[test]
@@ -9778,7 +13554,7 @@ mod timeline_tests {
     fn a_removed_send_stops_feeding_its_bus() {
         let mut harness = Harness::new(32);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -9788,19 +13564,20 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the bus hears the send alone and nothing of the track's
-        // own output.
+        // own output. The gate declicks, so both reads come from the settled
+        // tail of their callback.
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (before, _) = harness.render(4);
-        assert_eq!(before, vec![1.0; 4]);
+        let (before, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(before[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
 
         harness.send(GraphCommand::RemoveSend {
             track_id: 1,
             bus_id: 50,
         });
         harness.send(GraphCommand::SeekFrames(0));
-        let (after, _) = harness.render(4);
-        assert_eq!(after, vec![0.0; 4]);
+        let (after, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(after[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
         assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 
@@ -10760,6 +14537,112 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
+    /// Records the block length every pass hands it, so a divergence between
+    /// the ask a callback made and the frames the master chain ran over is
+    /// readable off the device rather than inferred from the mix.
+    struct BlockLengthRecordingPlugin {
+        frames_seen: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for BlockLengthRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.frames_seen.fetch_add(num_samples, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "block-length-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The master insert chain runs on the same clock domain as the strip
+    /// render: an ask past [`MAX_CALLBACK_FRAMES`] renders exactly that many
+    /// frames of timeline, so the master chain over the same callback must run
+    /// over exactly those frames — the unclamped ask would process a tail the
+    /// timeline never wrote.
+    #[test]
+    fn a_master_insert_processes_exactly_the_clamped_frames_when_the_ask_exceeds_the_callback_ceiling(
+    ) {
+        const ASK: usize = MAX_CALLBACK_FRAMES + 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, ASK);
+
+        let frames_seen = Arc::new(AtomicUsize::new(0));
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(BlockLengthRecordingPlugin {
+                frames_seen: Arc::clone(&frames_seen),
+            })),
+            None,
+        ));
+
+        let (left, right) = harness.render(ASK);
+
+        assert_eq!(
+            frames_seen.load(Ordering::Relaxed),
+            MAX_CALLBACK_FRAMES,
+            "the master insert runs over exactly the frames the timeline rendered, \
+             never the unclamped ask"
+        );
+        // Nothing may touch the tail the clamped render never wrote: the
+        // timeline stopped at the ceiling and the master chain followed it.
+        assert_eq!(
+            &left[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+        assert_eq!(
+            &right[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+    }
+
+    /// A bypassed master insert's dry line walks only the frames the buffers
+    /// hold: the ask is a request, and the line indexes the pair it was handed
+    /// by the clamped count rather than past it.
+    #[test]
+    fn a_bypassed_master_inserts_dry_line_walks_only_the_frames_the_buffers_hold() {
+        const LATENCY: usize = 5;
+        const BUFFER: usize = 256;
+        const ASK: usize = 1024;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, BUFFER);
+
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(LATENCY)),
+                LATENT_PLUGIN_CAPACITY,
+            ))),
+            None,
+        ));
+        harness.send(set_latency(900, LATENCY));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        // An ask larger than the pair itself, the shape of a callback whose
+        // sample count outruns the buffers: only the clamped count exists in
+        // them, so a pass indexing the ask would run past the slice.
+        let mut left = vec![0.0; BUFFER];
+        let mut right = vec![0.0; BUFFER];
+        harness.scheduler.process_block(&mut left, &mut right, ASK);
+
+        // Returning is the pin; the content says the line walked exactly the
+        // frames the buffers hold — the constant, delayed by the declared
+        // latency, reading silence ahead of it.
+        let mut expected = vec![0.0; BUFFER];
+        expected[LATENCY..].fill(1.0);
+        assert_eq!(left, expected);
+        assert_eq!(right, expected);
+    }
+
     /// A route line holding nothing is written all the same. Skipped, it
     /// freezes with the audio it held when its hold was dropped, and the next
     /// hold the graph aims it at bursts that era into every sibling route.
@@ -11249,7 +15132,7 @@ mod timeline_tests {
         let mut harness = Harness::new(64);
         harness.playing();
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
-        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        track_with_ramp_clip(&mut harness, 1, 101, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddSend {
             track_id: 1,
             bus_id: 50,
@@ -11258,8 +15141,13 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the master reads the bus alone and every assertion is
-        // about the send's own line rather than the strip's output.
+        // about the send's own line rather than the strip's output. The gate
+        // declicks, so one callback settles it before any window the send
+        // line is read on; every window below is shifted past it, and the
+        // ramp clip is long enough to still be sounding through all of them.
         harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         insert_latent_device(&mut harness, 2, 900, FIRST);
         harness.send(GraphCommand::AddSend {
@@ -11274,7 +15162,7 @@ mod timeline_tests {
         let (held, _) = harness.render(16);
         assert_eq!(
             held,
-            delayed_ramp(0, 16, FIRST),
+            delayed_ramp(MUTE_SETTLE_FRAMES, 16, FIRST),
             "the send off the dry track waits for the send off the latent one"
         );
 
@@ -11282,7 +15170,7 @@ mod timeline_tests {
         let (unheld, _) = harness.render(32);
         assert_eq!(
             unheld,
-            delayed_ramp(16, 32, 0),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 16, 32, 0),
             "with nothing left to wait for the send lands where it is taken"
         );
 
@@ -11299,7 +15187,7 @@ mod timeline_tests {
         let (re_aimed, _) = harness.render(16);
         assert_eq!(
             re_aimed,
-            delayed_ramp(48, 16, SECOND),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 48, 16, SECOND),
             "the re-aimed send line reads on from the passage it was just written with"
         );
 
@@ -11308,7 +15196,7 @@ mod timeline_tests {
         let (deeper, _) = harness.render(16);
         assert_eq!(
             deeper,
-            delayed_ramp(64, 16, THIRD),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 64, 16, THIRD),
             "deepening the hold reads further back into current audio, never into the \
              era the line spent at zero"
         );
@@ -11322,8 +15210,18 @@ mod timeline_tests {
         const LATENCY: usize = 7;
         let mut harness = Harness::new(64);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
-        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        // Muted so the only thing reaching the master is the bus, and the
+        // assertion is about the sends rather than the direct outputs. The
+        // gates declick, so the mutes land before anything is placed on the
+        // bus and one callback settles both strips to exact silence — the
+        // send lines the assertion reads are placed after that, so the
+        // latency hole they pin sits at the head of the asserted window.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         insert_latent_device(&mut harness, 1, 900, LATENCY);
         for track_id in [1, 2] {
@@ -11335,10 +15233,6 @@ mod timeline_tests {
                 delay: uncompensated(),
             });
         }
-        // Muted so the only thing reaching the master is the bus, and the
-        // assertion is about the sends rather than the direct outputs.
-        harness.send(GraphCommand::SetTrackMute(1, true));
-        harness.send(GraphCommand::SetTrackMute(2, true));
 
         let (left, _) = harness.render(16);
         let mut expected = vec![1.0; 16];
@@ -14421,6 +18315,29 @@ mod timeline_tests {
         );
     }
 
+    /// The name a `&str` patch entry carries, for [`precedence_first`]'s own
+    /// unit spec below — a plain function pointer rather than a closure,
+    /// because the signature it takes is `fn(&T) -> &str`.
+    fn plain_str_name<'a>(name: &'a &'a str) -> &'a str {
+        *name
+    }
+
+    /// [`precedence_first`] yields every entry naming a law key, in law
+    /// order, before every entry whose name is not in the law — and a key
+    /// repeated in the patch is not merged, each repeat kept in patch order.
+    #[test]
+    fn precedence_first_yields_the_law_keys_in_law_order_then_the_rest_in_patch_order() {
+        let patch: [(&str, f32); 5] = [("c", 1.0), ("a", 2.0), ("b", 3.0), ("a", 4.0), ("d", 5.0)];
+
+        let ordered: Vec<(&str, f32)> =
+            precedence_first(&patch, plain_str_name, &["b", "a"]).collect();
+
+        assert_eq!(
+            ordered,
+            vec![("b", 3.0), ("a", 2.0), ("a", 4.0), ("c", 1.0), ("d", 5.0)]
+        );
+    }
+
     // ── Grand Boule ────────────────────────────────────────────────────────
 
     /// The rate every Grand Boule spec here renders at, which is the rate
@@ -14857,6 +18774,4386 @@ mod timeline_tests {
              single channel ({}), so it reached at most one of the two voices",
             rms(&both_released[TAIL..]),
             rms(&one_released[TAIL..])
+        );
+    }
+
+    /// The rate every Gluten spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs different ballistics and the parity spec below
+    /// would be comparing two different compressors.
+    const GLUTEN_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, in descriptor order — the
+    /// order [`GLUTEN_MACRO_KEYS`] names and the web host applies a
+    /// device's record in.
+    ///
+    /// The three macros come first, and each names a value that would
+    /// otherwise land nowhere near the explicit entries behind it: `style`
+    /// (Glue) and `amount` (50%) both write `threshold` and `ratio` far
+    /// short of the direct entries' -30 dB / 8:1, so a body that fails to
+    /// bring the macros to the front settles at whichever of the three
+    /// wrote `threshold`/`ratio` last. The direct entries are chosen to work
+    /// the compressor hard on the ramp it is handed: a threshold far under
+    /// the material with a high ratio and a fast attack means the output is
+    /// nowhere near the input, so an equality against the reference is
+    /// earned rather than an agreement between two pass-throughs.
+    ///
+    /// `topology` is 2 (the FET compressor) rather than 0: `style`'s Glue
+    /// preset that follows it sets `active_topology` back to the VCA, so a
+    /// body that applies `style` before `topology` leaves the FET engaged
+    /// and renders a different signal — making the order among the three
+    /// macros audible here, not only in the mapper's own batch spec
+    /// (`set_device_parameters_routes_a_gluten_batch_macros_first`).
+    const GLUTEN_PATCH: [(&str, f32); 8] = [
+        ("topology", 2.0),
+        ("style", 0.0),
+        ("amount", 50.0),
+        ("threshold", -30.0),
+        ("ratio", 8.0),
+        ("attack", 0.1),
+        ("release", 20.0),
+        ("makeup", 0.0),
+    ];
+
+    /// One of the compressor's own parameter names, as the mapper resolves it.
+    fn gluten_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`GLUTEN_PATCH`] in the carrier [`PluginCore::gluten_with_patch`] takes.
+    fn gluten_patch() -> Vec<(BuiltinParamName, f32)> {
+        GLUTEN_PATCH
+            .iter()
+            .map(|(name, value)| (gluten_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a ramp clip through a Gluten insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_gluten(harness: &mut Harness, frames: usize, patch: &[(BuiltinParamName, f32)]) {
+        track_with_ramp_clip(harness, 1, 101, frames);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::gluten_with_patch(GLUTEN_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// The material `track_with_ramp_clip` puts on the strip: the sample at
+    /// frame `t` is `t + 1`, and a mono clip at unity reaches both channels
+    /// unchanged. Named for the clip rather than for one device, because every
+    /// built-in body's specs below render this same strip.
+    fn ramp_clip_material(frames: usize) -> Vec<f32> {
+        (0..frames).map(|frame| frame as f32 + 1.0).collect()
+    }
+
+    /// The largest absolute difference between two renders of the same length.
+    fn max_abs_difference(left: &[f32], right: &[f32]) -> f32 {
+        assert_eq!(left.len(), right.len(), "two renders of different lengths");
+        left.iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max)
+    }
+
+    /// A hosted Gluten renders the samples the worklet's own
+    /// `GlutenInstance` renders for the same material and the same patch —
+    /// sample parity against the reference, not merely that both moved.
+    ///
+    /// [`GLUTEN_PATCH`] crosses to the reference instance in descriptor
+    /// order and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`GlutenBody::load_patch`]
+    /// brings `topology`, `style` and `amount` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law, the
+    /// reversed record would apply `style` after `amount` and after the
+    /// patch's own `threshold`/`ratio` entries, and `style` rewrites both on
+    /// its own topology — the compressor would settle at Glue's -18 dB
+    /// threshold and 4:1 ratio rather than the -30 dB / 8:1 the patch
+    /// actually names. `topology` selects the FET compressor precisely so
+    /// this failure mode is visible: without the law, `style`'s Glue preset
+    /// — applied after `topology` in the reversed record's own order —
+    /// would also return `active_topology` to the VCA, so a body that gets
+    /// the macro order wrong renders a different compressor entirely, not
+    /// merely different ballistics on the same one.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — because
+    /// `GlutenEngine::process_block` keeps block-scoped meter state (the
+    /// gain-reduction history ring, the per-block crest and correlation
+    /// accumulators) that only advances correctly at that granularity. The
+    /// output samples this spec compares cannot show that state, so the run
+    /// split itself is not what this spec pins.
+    #[test]
+    fn a_hosted_gluten_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::gluten::GlutenInstance;
+
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+
+        // The hosted body takes the same entries reversed: parity only
+        // holds if `GlutenBody::load_patch` restores the macros to the
+        // front regardless of where the record put them.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            gluten_patch().into_iter().rev().collect();
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, RENDERED, &reversed_patch);
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        let mut instance = GlutenInstance::new(GLUTEN_RATE);
+        for (name, value) in GLUTEN_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / GLUTEN_RUN_FRAMES {
+            let start = block * GLUTEN_RUN_FRAMES;
+            let run = &ramp[start..start + GLUTEN_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `GlutenInstance::new` sizes every buffer at 4096 frames
+            // and no method resizes one, so a run of GLUTEN_RUN_FRAMES lies
+            // inside the allocation the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, GLUTEN_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, GLUTEN_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(GLUTEN_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are 4096 frames long and
+            // are never resized; nothing mutates the instance between the
+            // render and this copy.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GLUTEN_RUN_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GLUTEN_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            max_abs_difference(&worklet_left, &ramp) > TOLERANCE,
+            "the reference render is its own input, so an equality against it would pass \
+             for a body that compressed nothing"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &ramp) > TOLERANCE,
+            "the hosted render is its own input: the compressor never engaged"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Gluten on the strip, optionally written to after registration, and
+    /// the master it renders beside the diagnostics that count the write.
+    fn render_gluten_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, CALLBACK * CALLBACKS, &[]);
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` carrying one of the compressor's own parameter names
+    /// reaches the body, and is not counted as aimed at the wrong one.
+    ///
+    /// `threshold` is where compression starts, so a write that reached
+    /// nothing renders the samples the unwritten body does.
+    #[test]
+    fn a_gluten_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_gluten_write(None);
+        let (with_threshold, threshold_diagnostics) = render_gluten_write(Some((
+            DeviceParam::BuiltinNamed(gluten_name("threshold")),
+            -40.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_threshold, untouched,
+            "the named write never reached the compressor"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                threshold_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Gluten hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the compressor still ran over, reads as different numbers rather
+    /// than as the same silence.
+    #[test]
+    fn a_bypassed_gluten_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_gluten(&mut harness, RENDERED, &gluten_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed compressor moved the left channel");
+        assert_eq!(right, ramp, "a bypassed compressor moved the right channel");
+    }
+
+    // ── Crust ──────────────────────────────────────────────────────────────
+
+    /// The rate every Crust spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs a different look-ahead window and different attack
+    /// ramps, and the parity spec below would be comparing two different
+    /// limiters.
+    const CRUST_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, with `style` ahead of
+    /// `algorithm` as [`CRUST_PATCH_PRECEDENCE`] requires.
+    ///
+    /// `style` is 2 and `algorithm` is 5, and the two name different
+    /// limiters: `Algorithm::from_style_index(2)` is `Wall` while
+    /// `Algorithm::from_index(5)` is `Bus`
+    /// (`crates/daw-dsp/src/crust/params.rs`). The pair is picked for the one
+    /// quantity the rest of this patch leaves free to separate them.
+    /// `release_auto` is off with `release` named outright, so both algorithms
+    /// release identically; `attack_auto` keeps its default of on, so the
+    /// attack is the algorithm's own — `Wall` attacks in 0 ms and `Bus` in
+    /// 0.6 ms, which at this rate is an instant gain step against a 29-sample
+    /// ramp, well inside the 42-sample budget a 1 ms look-ahead leaves after
+    /// the true-peak group delay. A body that applies `algorithm` before
+    /// `style` therefore steps its gain where the reference ramps, and the two
+    /// renders separate over every one of those ramps.
+    ///
+    /// `release` is 1 ms rather than a musical figure so the gain is back at
+    /// unity before the next burst of [`crust_burst_material`] arrives: a
+    /// release longer than the gap between bursts would hold the gain down
+    /// across the whole render, leaving exactly one attack to separate the two
+    /// algorithms instead of one per burst.
+    ///
+    /// The rest works the limiter hard on [`crust_burst_material`]: 12 dB of
+    /// input gain over a ceiling 12 dB down puts every burst far above the
+    /// ceiling, so an equality against the reference is earned by two limiters
+    /// doing the same work rather than by two pass-throughs agreeing.
+    const CRUST_PATCH: [(&str, f32); 8] = [
+        ("style", 2.0),
+        ("gain", 12.0),
+        ("ceiling", -12.0),
+        ("lookahead", 1.0),
+        ("true_peak", 1.0),
+        ("release", 1.0),
+        ("release_auto", 0.0),
+        ("algorithm", 5.0),
+    ];
+
+    /// A quiet bed under isolated bursts far over the ceiling.
+    ///
+    /// What separates two limiter envelopes is what each does while its gain
+    /// is *moving*, and a signal that is over the ceiling throughout never
+    /// moves one: the look-ahead detector settles on one required gain and
+    /// holds it, so two algorithms render the same samples. Each burst here
+    /// enters the detector's window a look-ahead ahead of leaving the delay
+    /// line, and it is the bed under that window — pulled down instantly by
+    /// one attack and over 29 samples by the other — that carries the
+    /// difference into the output.
+    fn crust_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let phase = 2.0 * std::f32::consts::PI * 220.0 * frame as f32 / CRUST_RATE;
+                let burst = if frame % 160 < 8 { 6.0 } else { 0.0 };
+                0.05 * phase.sin() + burst
+            })
+            .collect()
+    }
+
+    /// A track carrying one mono clip of `material` at unity, so a spec can
+    /// choose what the strip plays rather than take the ramp.
+    fn track_with_material_clip(
+        harness: &mut Harness,
+        track_id: usize,
+        clip_id: usize,
+        material: Vec<f32>,
+    ) {
+        let frames = material.len();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                material.into(),
+                [].into(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// One of the limiter's own parameter names, as the mapper resolves it.
+    fn crust_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`CRUST_PATCH`] in the carrier [`PluginCore::crust_with_patch`] takes.
+    fn crust_patch() -> Vec<(BuiltinParamName, f32)> {
+        CRUST_PATCH
+            .iter()
+            .map(|(name, value)| (crust_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a ramp clip through a Crust insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_crust(
+        harness: &mut Harness,
+        material: Vec<f32>,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        track_with_material_clip(harness, 1, 101, material);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::crust_with_patch(CRUST_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// The loudest absolute sample in a render.
+    fn peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |loudest, sample| loudest.max(sample.abs()))
+    }
+
+    /// A hosted Crust renders the samples the worklet's own `CrustInstance`
+    /// renders for the same material and the same patch — sample parity
+    /// against the reference, not merely that both moved.
+    ///
+    /// [`CRUST_PATCH`] crosses to the reference instance in the order it is
+    /// written and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`CrustBody::load_patch`] brings
+    /// `style` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law the reversed
+    /// record would apply `style` last, and `style` and `algorithm` write the
+    /// engine's one algorithm slot: the hosted body would limit as `Wall`
+    /// where the reference limits as `Bus`.
+    ///
+    /// Both renders carry the same look-ahead delay — the body declares none
+    /// to the graph, so no compensation moves either of them — which is what
+    /// lets this be a sample-for-sample equality rather than a correlation.
+    /// That is also the evidence for the declaration: the hosted output stands
+    /// exactly where the worklet's does.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — which is what
+    /// [`CRUST_RUN_FRAMES`] mirrors. The limiting path is per-sample and its
+    /// state carries across calls, so the output samples this spec compares
+    /// cannot show the split; the run size is pinned for the block-scoped
+    /// meters and the 4096-frame call cap, not for these samples.
+    #[test]
+    fn a_hosted_crust_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::crust::CrustInstance;
+
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+        /// How far under its input a render has to sit before it counts as
+        /// limited. The ceiling is 12 dB down and the bursts reach 6.0, so a
+        /// factor of ten is short of what a working limiter delivers and far
+        /// beyond anything the look-ahead delay alone could produce — which a
+        /// bare "the render is not its input" would have accepted.
+        const LIMITED_BY: f32 = 10.0;
+
+        // The hosted body takes the same entries reversed: parity only holds
+        // if `CrustBody::load_patch` restores `style` to the front regardless
+        // of where the record put it.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            crust_patch().into_iter().rev().collect();
+
+        let mut harness = Harness::new(32);
+        let material = crust_burst_material(RENDERED);
+        track_with_crust(&mut harness, material.clone(), &reversed_patch);
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = CrustInstance::new(CRUST_RATE);
+        for (name, value) in CRUST_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / CRUST_RUN_FRAMES {
+            let start = block * CRUST_RUN_FRAMES;
+            let run = &material[start..start + CRUST_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `CrustInstance::new` sizes every buffer at 4096 frames
+            // and no method resizes one, so a run of CRUST_RUN_FRAMES lies
+            // inside the allocation the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, CRUST_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, CRUST_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(CRUST_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are 4096 frames long and
+            // are never resized; nothing mutates the instance between the
+            // render and this copy.
+            unsafe {
+                worklet_left
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, CRUST_RUN_FRAMES));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    CRUST_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            peak(&worklet_left) * LIMITED_BY < peak(&material),
+            "the reference render is not limited (peak {} against the material's {}), so an \
+             equality against it would pass for a body that limited nothing",
+            peak(&worklet_left),
+            peak(&material)
+        );
+        assert!(
+            peak(&hosted_left) * LIMITED_BY < peak(&material),
+            "the hosted render is not limited (peak {} against the material's {}): the limiter \
+             never engaged",
+            peak(&hosted_left),
+            peak(&material)
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Crust on the strip, optionally written to after registration, and the
+    /// master it renders beside the diagnostics that count the write.
+    fn render_crust_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+
+        let mut harness = Harness::new(32);
+        track_with_crust(
+            &mut harness,
+            crust_burst_material(CALLBACK * CALLBACKS),
+            &[],
+        );
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` carrying one of the limiter's own parameter names reaches
+    /// the body, and is not counted as aimed at the wrong one.
+    ///
+    /// `ceiling` is the level everything is held under, so a write that
+    /// reached nothing renders the samples the unwritten body does.
+    #[test]
+    fn a_crust_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_crust_write(None);
+        let (with_ceiling, ceiling_diagnostics) = render_crust_write(Some((
+            DeviceParam::BuiltinNamed(crust_name("ceiling")),
+            -24.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_ceiling, untouched,
+            "the named write never reached the limiter"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                ceiling_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Crust hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the limiter still ran over, reads as different numbers rather than
+    /// as the same silence. The body declares no latency, so bypass leaves no
+    /// dry line to run in its place and the strip is a pass-through outright.
+    #[test]
+    fn a_bypassed_crust_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_crust(&mut harness, ramp_clip_material(RENDERED), &crust_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed limiter moved the left channel");
+        assert_eq!(right, ramp, "a bypassed limiter moved the right channel");
+    }
+
+    // ── Grinder ────────────────────────────────────────────────────────────
+
+    /// The rate every Grinder spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate runs different filter coefficients throughout the
+    /// chain, and the parity spec below would be comparing two different
+    /// amps.
+    const GRINDER_RATE: f32 = 48_000.0;
+
+    /// The patch the parity spec below carries, with `neuralEnabled` ahead of
+    /// `engineMode` as [`GRINDER_PATCH_PRECEDENCE`] requires.
+    ///
+    /// `neuralEnabled` is 0.0 (Circuit) and `engineMode` is 1.0 (Capture), and
+    /// the two name different signal paths: Capture mode skips the circuit
+    /// preamp and tone stack outright (`engine.rs`), audible on any material,
+    /// unlike the Hybrid/Circuit pair the mode selector can also produce,
+    /// where Hybrid with no model loaded is neural-bypassed and sounds
+    /// identical to Circuit (`neural.rs`) — not a discriminating pair. A body
+    /// that applies `engineMode` before `neuralEnabled` renders through the
+    /// circuit preamp and tone stack where the reference bypasses them
+    /// outright, so the two renders separate on every sample the preamp
+    /// touches.
+    ///
+    /// The rest works the amp: `gain`, `master`, `bass`, `treble` and
+    /// `presence` push the preamp and tone stack away from unity, `cabEnabled`
+    /// engages the cabinet convolver, and `outputGain` is left at 0 dB so the
+    /// comparison below is not just a level match.
+    const GRINDER_PATCH: [(&str, f32); 9] = [
+        ("neuralEnabled", 0.0),
+        ("engineMode", 1.0),
+        ("gain", 8.0),
+        ("master", 6.0),
+        ("bass", 5.0),
+        ("treble", 7.0),
+        ("presence", 6.0),
+        ("cabEnabled", 1.0),
+        ("outputGain", 0.0),
+    ];
+
+    /// A decaying two-partial guitar-like burst that drives the preamp.
+    ///
+    /// A fundamental and its octave partial, enveloped by a decaying
+    /// exponential so the material sweeps a range of levels rather than
+    /// sitting at one — what separates the preamp of two engine modes is how
+    /// each responds across that range, not a single held level. The two
+    /// partials sum to at most 1.5 at the envelope's peak; scaled down by a
+    /// third, the burst itself peaks at 0.5.
+    fn grinder_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / GRINDER_RATE;
+                let decay = (-3.0 * t).exp();
+                let fundamental = (2.0 * std::f32::consts::PI * 110.0 * t).sin();
+                let octave = 0.5 * (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                decay * (fundamental + octave) / 3.0
+            })
+            .collect()
+    }
+
+    /// One of the amp's own parameter names, as the mapper resolves it.
+    fn grinder_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// [`GRINDER_PATCH`] in the carrier [`PluginCore::grinder_with_patch`]
+    /// takes.
+    fn grinder_patch() -> Vec<(BuiltinParamName, f32)> {
+        GRINDER_PATCH
+            .iter()
+            .map(|(name, value)| (grinder_name(name), *value))
+            .collect()
+    }
+
+    /// A track carrying a clip through a Grinder insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_grinder(
+        harness: &mut Harness,
+        material: Vec<f32>,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        track_with_material_clip(harness, 1, 101, material);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::grinder_with_patch(GRINDER_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// A hosted Grinder renders the samples the worklet's own
+    /// `GrinderInstance` renders for the same material and the same patch —
+    /// sample parity against the reference, not merely that both moved.
+    ///
+    /// [`GRINDER_PATCH`] crosses to the reference instance in the order it is
+    /// written and to the hosted body in the reverse of that order, so parity
+    /// here only holds if the hosted body's [`GrinderBody::load_patch`]
+    /// brings `neuralEnabled` back to the front through
+    /// [`BuiltinEffectType::patch_precedence`]. Without that law the reversed
+    /// record would apply `neuralEnabled` last, and `neuralEnabled` and
+    /// `engineMode` write the engine's one `engine_mode` slot: the hosted
+    /// body would run in Circuit where the reference runs in Capture, with
+    /// the circuit preamp and tone stack engaged on one side and skipped on
+    /// the other.
+    ///
+    /// Both renders carry the same (zero) latency — the body declares none to
+    /// the graph, so no compensation moves either of them — which is what
+    /// lets this be a sample-for-sample equality rather than a correlation.
+    ///
+    /// The worklet hands its instance 128 frames at a time — one
+    /// `AudioWorkletProcessor` render quantum — which is what
+    /// [`GRINDER_RUN_FRAMES`] mirrors. `GrinderEngine::process_block` carries
+    /// no block-scoped state, so the output samples this spec compares cannot
+    /// show the split; the run size is pinned to match the sanitize boundary,
+    /// not for these samples.
+    #[test]
+    fn a_hosted_grinder_renders_the_worklet_samples_for_the_same_material() {
+        use daw_dsp::grinder::GrinderInstance;
+
+        const RENDERED: usize = 4096;
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = RENDERED / CALLBACK;
+        /// The tolerance the two renders are held to. They run the same
+        /// arithmetic in the same order, so the figure is headroom against a
+        /// future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-6;
+
+        // The hosted body takes the same entries reversed: parity only holds
+        // if `GrinderBody::load_patch` restores `neuralEnabled` to the front
+        // regardless of where the record put it.
+        let reversed_patch: Vec<(BuiltinParamName, f32)> =
+            grinder_patch().into_iter().rev().collect();
+
+        let mut harness = Harness::new(32);
+        let material = grinder_burst_material(RENDERED);
+        track_with_grinder(&mut harness, material.clone(), &reversed_patch);
+        harness.playing();
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = GrinderInstance::new(GRINDER_RATE);
+        for (name, value) in GRINDER_PATCH {
+            instance.set_param(name, value);
+        }
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / GRINDER_RUN_FRAMES {
+            let start = block * GRINDER_RUN_FRAMES;
+            let run = &material[start..start + GRINDER_RUN_FRAMES];
+            // Each pointer is written through before the next one is taken:
+            // both getters reborrow the instance mutably, so a pointer held
+            // across the second call would have been retired by it.
+            let input_left = instance.get_input_left_ptr();
+            // SAFETY: `GrinderInstance::new` sizes every buffer at
+            // `MAX_GRINDER_BLOCK_SIZE` (2048) frames and no method resizes
+            // one, so a run of GRINDER_RUN_FRAMES lies inside the allocation
+            // the pointer names.
+            unsafe { std::slice::from_raw_parts_mut(input_left, GRINDER_RUN_FRAMES) }
+                .copy_from_slice(run);
+            let input_right = instance.get_input_right_ptr();
+            // SAFETY: as above, for the instance's other input buffer.
+            unsafe { std::slice::from_raw_parts_mut(input_right, GRINDER_RUN_FRAMES) }
+                .copy_from_slice(run);
+
+            let rendered_left = instance.process(GRINDER_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were taken after the render and name the
+            // instance's own output buffers, which are `MAX_GRINDER_BLOCK_SIZE`
+            // frames long and are never resized; nothing mutates the instance
+            // between the render and this copy.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRINDER_RUN_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRINDER_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            !worklet_left
+                .iter()
+                .zip(&material)
+                .all(|(rendered, input)| rendered == input),
+            "the reference render is its own input, so an equality against it would pass for a \
+             body that ran nothing"
+        );
+        assert!(
+            !hosted_left
+                .iter()
+                .zip(&material)
+                .all(|(rendered, input)| rendered == input),
+            "the hosted render is its own input: the amp never ran"
+        );
+        assert!(
+            max_abs_difference(&hosted_left, &worklet_left) <= TOLERANCE,
+            "the hosted body's left channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_left, &worklet_left)
+        );
+        assert!(
+            max_abs_difference(&hosted_right, &worklet_right) <= TOLERANCE,
+            "the hosted body's right channel is not the signal the worklet renders \
+             (largest difference {})",
+            max_abs_difference(&hosted_right, &worklet_right)
+        );
+    }
+
+    /// A Grinder on the strip, optionally written to after registration, and
+    /// the master it renders beside the diagnostics that count the write.
+    fn render_grinder_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = 8;
+
+        let mut harness = Harness::new(32);
+        track_with_grinder(
+            &mut harness,
+            grinder_burst_material(CALLBACK * CALLBACKS),
+            &[],
+        );
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` reaches the amp whether the name resolves through the
+    /// automatable-parameter table or through a literal `set_param` arm, and
+    /// neither write is counted as aimed at the wrong body.
+    ///
+    /// `gain` is one of the eleven names `GrinderEngine::set_param` resolves
+    /// through `set_automatable_param` before the literal match ever runs;
+    /// `cabEnabled` is one of the sixty-seven literal arms reached only once
+    /// that lookup misses. A descriptor write means what the panel promises
+    /// only if both paths actually reach the engine.
+    #[test]
+    fn a_grinder_named_write_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_grinder_write(None);
+        let (with_gain, gain_diagnostics) =
+            render_grinder_write(Some((DeviceParam::BuiltinNamed(grinder_name("gain")), 9.5)));
+        let (with_cab_disabled, cab_diagnostics) = render_grinder_write(Some((
+            DeviceParam::BuiltinNamed(grinder_name("cabEnabled")),
+            0.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_gain, untouched,
+            "the automatable-path write never reached the amp"
+        );
+        assert_ne!(
+            with_cab_disabled, untouched,
+            "the literal-arm write never reached the amp"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                gain_diagnostics.unmapped_set_param_calls,
+                cab_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Grinder hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the amp still ran over, reads as different numbers rather than as
+    /// the same silence. The body declares no latency, so bypass leaves no
+    /// dry line to run in its place and the strip is a pass-through outright.
+    #[test]
+    fn a_bypassed_grinder_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_grinder(&mut harness, ramp_clip_material(RENDERED), &grinder_patch());
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed amp moved the left channel");
+        assert_eq!(right, ramp, "a bypassed amp moved the right channel");
+    }
+
+    // ── Bacteria ───────────────────────────────────────────────────────────
+
+    /// The rate every Bacteria spec here builds its body at, which is the
+    /// rate [`Harness::new`] builds its scheduler at. Every filter
+    /// coefficient, crossover corner, grain length and codec frame in the
+    /// engine is derived from it, so a body built at another rate is a
+    /// different device.
+    const BACTERIA_RATE: f32 = 48_000.0;
+
+    /// One of the multi-effect's own parameter names, as the mapper resolves
+    /// it.
+    fn bacteria_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Bacteria names in the carrier
+    /// [`PluginCore::bacteria_with_patch`] takes.
+    fn bacteria_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (bacteria_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::bacteria_with_patch`] built, unwrapped so a spec
+    /// can render through it directly.
+    fn bacteria_body(patch: &[(BuiltinParamName, f32)]) -> Box<BacteriaBody> {
+        let PluginCore::Bacteria(body) = PluginCore::bacteria_with_patch(BACTERIA_RATE, patch)
+        else {
+            unreachable!("bacteria_with_patch builds the bacteria variant");
+        };
+        body
+    }
+
+    /// A decaying two-partial burst inside unity, `frames` long — the same
+    /// material shape the Grinder specs above use, kept inside unity because
+    /// a multi-effect's waveshaper, codec and convolver all saturate on a
+    /// signal the amp specs' index ramp would hand them.
+    fn bacteria_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / BACTERIA_RATE;
+                let decay = (-2.0 * t).exp();
+                let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                decay * (fundamental + partial) / 3.0
+            })
+            .collect()
+    }
+
+    /// `material` rendered through `body` in one call, both channels fed the
+    /// same signal.
+    fn bacteria_render(body: &mut BacteriaBody, material: &[f32]) -> Vec<f32> {
+        let mut left = material.to_vec();
+        let mut right = material.to_vec();
+        body.process(&mut left, &mut right);
+        left
+    }
+
+    /// A track carrying a clip through a Bacteria insert, placed the way
+    /// `commands/graph.rs` places a built-in effect: registered detached with
+    /// no note store, then spliced at the head of the chain.
+    fn track_with_bacteria(
+        harness: &mut Harness,
+        material: Vec<f32>,
+        patch: &[(BuiltinParamName, f32)],
+    ) {
+        track_with_material_clip(harness, 1, 101, material);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::bacteria_with_patch(BACTERIA_RATE, patch),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+    }
+
+    /// A Bacteria placed the way `commands/graph.rs` places one: registered
+    /// detached, its opening figure declared with no dry line, then spliced at
+    /// the head of a track's chain.
+    ///
+    /// The declared figure is checked against the body's own reading, so a
+    /// spec's pinned literal cannot drift away from what the engine reports
+    /// for the same patch.
+    fn declare_bacteria_on_track(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        let core = PluginCore::bacteria_with_patch(BACTERIA_RATE, &bacteria_patch(patch));
+        assert_eq!(
+            core.declared_latency_frames(),
+            Some(latency_frames),
+            "the fixture declares the figure the body really reports"
+        );
+        harness.send(GraphCommand::AddDetachedEffect(effect_id, core, None));
+        harness.send(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: None,
+        });
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
+    }
+
+    /// A silent strip carrying a declared Bacteria, beside which another
+    /// strip's arrival is readable as exact numbers.
+    ///
+    /// The strip holds no clip, so the mix is whatever the *other* strips
+    /// deliver — which is what a compensation claim is about: the graph holds
+    /// every route meeting this strip back by the figure this device declares.
+    /// A strip rendering the multi-effect's own material could not be read that
+    /// way, and it cannot be bypassed into a plain dry line either, now that a
+    /// bypassed body declares nothing. Bacteria over silence is silence, so the
+    /// insert contributes nothing to the sum on either footing.
+    fn silent_track_declaring_bacteria(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        declare_bacteria_on_track(harness, track_id, effect_id, patch, latency_frames);
+    }
+
+    /// One of the multi-effect's names in the carrier a `SetParam` travels in.
+    fn bacteria_write(name: &str) -> DeviceParam {
+        DeviceParam::BuiltinNamed(bacteria_name(name))
+    }
+
+    /// A Bacteria's group delay follows its parameters, so a write to one is a
+    /// latency declaration as much as a sound change — and the write lands on
+    /// the callback, where nothing else is going to tell the graph. Left
+    /// unread, every route the graph held back to meet this strip stays aimed
+    /// at the figure the record opened with for the rest of the session.
+    ///
+    /// The insert sits on a silent strip so the mix reads as the bare strip's
+    /// hold and nothing else, which is what makes it exact numbers: the claim
+    /// is about the figure every route meeting this strip is held back by, not
+    /// about the multi-effect's own output. 2x oversampling against 8x because
+    /// their delivered delays are pinned in daw-dsp and both fit inside one
+    /// 16-frame block, where the spectral stage's window would not.
+    #[test]
+    fn a_bacteria_write_that_moves_its_latency_realigns_the_mix_within_one_block() {
+        const FIRST: usize = 7;
+        const SECOND: usize = 11;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_bacteria(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+
+        harness.render(16);
+
+        harness.send(GraphCommand::SetParam(
+            7,
+            bacteria_write("band0_oversampling"),
+            8.0,
+        ));
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(16, 16, SECOND),
+            "the bare strip arrives at the multi-effect's new figure from the first block after the write"
+        );
+    }
+
+    /// The same declaration through the automation queue, which is the route a
+    /// written envelope takes.
+    ///
+    /// A stamp lands inside `process_block`, past that block's own
+    /// `update_graph`, so the pass it dirties is the next block's: the graph
+    /// stays aimed at the previous figure for one block and re-aims on the
+    /// one after. The spec renders the block the stamp lands on, then takes
+    /// the callback's `update_graph`, and reads the block after it — the same
+    /// one-block bound a hosted plugin's republished figure takes.
+    #[test]
+    fn a_bacteria_automation_stamp_that_moves_its_latency_dirties_the_pass() {
+        const FIRST: usize = 7;
+        const SECOND: usize = 11;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_bacteria(&mut harness, 1, 7, &[("band0_oversampling", 2.0)], FIRST);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+
+        harness.render(16);
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(bacteria_write("band0_oversampling")),
+            value: 8.0,
+            at_frame: 20,
+        });
+
+        harness.render(16);
+        harness.scheduler.update_graph();
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(32, 16, SECOND),
+            "the stamped write left the mix flammed by the difference between the two figures"
+        );
+    }
+
+    /// A bypassed Bacteria declares nothing, and the routes held back to meet
+    /// it are released with it.
+    ///
+    /// Both carriers read a bypassed device as delaying nothing — the
+    /// renderer's own reading drops one on every carrier and the web body's
+    /// bypass hands the block on untouched — so a native declaration that
+    /// stood through bypass would hold this strip's whole mix back by a window
+    /// no signal in it is waiting for, and flam every web strip beside it by
+    /// exactly that. The bare strip's arrival is what says the pass was
+    /// re-aimed, and the un-bypass is what says the figure came back.
+    ///
+    /// The slot holds no dry line on either footing. A line is read on the
+    /// bypassed pass alone, and this body declares 0 there, so a line would be
+    /// fed on every block the body ran and read on none of them — dead
+    /// audio-thread work, and a hold the strip's signal is not waiting for if
+    /// the figure ever reached it.
+    #[test]
+    fn a_bypassed_bacteria_declares_no_latency_and_releases_the_mix() {
+        const DECLARED: usize = 7;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_bacteria(
+            &mut harness,
+            1,
+            7,
+            &[("band0_oversampling", 2.0)],
+            DECLARED,
+        );
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(0, 16, DECLARED),
+            "the bare strip was not held back to meet the declared figure"
+        );
+        assert!(
+            harness.scheduler.effects[0].dry_delay.is_none(),
+            "the registration left a dry line on a slot no pass of this body reads one from"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, true));
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(16, 16, 0),
+            "the bare strip is still held back by a figure the bypassed insert no longer delays"
+        );
+        let effect = &harness.scheduler.effects[0];
+        assert_eq!(
+            effect.latency_frames, 0,
+            "the bypassed body goes on declaring its window to the graph"
+        );
+        assert!(
+            effect.dry_delay.is_none(),
+            "the bypass left a dry line on the very pass this body hands the block on untouched"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, false));
+
+        let (left, _) = harness.render(16);
+        assert_eq!(
+            left,
+            delayed_ramp(32, 16, DECLARED),
+            "the hold did not come back with the un-bypassed body's figure"
+        );
+        assert_eq!(
+            harness.scheduler.effects[0].latency_frames, DECLARED,
+            "the un-bypassed body did not declare the figure it reports again"
+        );
+    }
+
+    /// The persisted record's route applies the two names
+    /// [`BacteriaBody::set_param`] refuses on the audio thread.
+    ///
+    /// The refusal is only sound if there is a thread where those names *do*
+    /// land: a body that dropped `phaserStages` everywhere would satisfy
+    /// `a_bacteria_body_drops_the_allocating_names_on_the_audio_thread`
+    /// while quietly rendering a saved project's phaser with the wrong stage
+    /// count. So the same name is put through
+    /// [`PluginCore::bacteria_with_patch`] here, where
+    /// [`BacteriaBody::load_patch`] writes the engine directly, and the two
+    /// stage counts have to render differently.
+    ///
+    /// Twelve against six because six is what `Phaser::new` builds
+    /// (`crates/daw-dsp/src/bacteria/chorus.rs`), so twelve is the count whose
+    /// `resize_with` reallocates — the arm the audio-thread door exists to
+    /// keep off the callback. The phaser is engaged at full mix so the
+    /// difference is the whole of the band's output rather than a fraction of
+    /// it.
+    #[test]
+    fn a_bacteria_patch_applies_the_allocating_names_control_side() {
+        const FRAMES: usize = 512;
+
+        let material = bacteria_burst_material(FRAMES);
+        let twelve = bacteria_render(
+            &mut bacteria_body(&bacteria_patch(&[
+                ("band0_phaserEnabled", 1.0),
+                ("band0_phaserMix", 1.0),
+                ("band0_phaserStages", 12.0),
+            ])),
+            &material,
+        );
+        let six = bacteria_render(
+            &mut bacteria_body(&bacteria_patch(&[
+                ("band0_phaserEnabled", 1.0),
+                ("band0_phaserMix", 1.0),
+                ("band0_phaserStages", 6.0),
+            ])),
+            &material,
+        );
+
+        assert!(
+            six.iter().any(|sample| *sample != 0.0),
+            "the six-stage render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            twelve, six,
+            "the patch route never reached the stage-count arm, so a saved project's phaser \
+             renders with the count the constructor built rather than the one it stored"
+        );
+    }
+
+    /// The body renders the same samples whatever length the callback is.
+    ///
+    /// This is what licenses [`BacteriaBody::process`] handing the engine the
+    /// whole callback in one call where the amp and the instrument bodies
+    /// split into the worklet's 128-frame quantum: the engine's
+    /// `process_block` is a per-sample loop whose only per-block statement is
+    /// a copy of the band meters, so the split cannot change a sample. Pinned
+    /// rather than reasoned, because the reasoning is about code in another
+    /// crate that is free to grow block-scoped state.
+    ///
+    /// The patch engages the stages that carry state across samples in
+    /// different ways: the filter with its own envelope follower, the
+    /// granular stage's overlapping grains, the chorus and phaser with their
+    /// internal LFOs, and the spectral stage — the one framed transform in
+    /// the chain, and so the stage a run split could most plausibly disturb,
+    /// because its hop boundaries fall wherever the sample counter says
+    /// rather than wherever a call ends.
+    ///
+    /// Rendered over 4096 frames rather than the 512 an unframed patch would
+    /// need: the spectral stage reports a 2048-sample window, every band and
+    /// the dry tap are padded out to it, and a shorter render would compare
+    /// two buffers of alignment-ring silence.
+    #[test]
+    fn a_bacteria_body_renders_the_same_whatever_the_callback_length() {
+        const RUN: usize = 128;
+        const RUNS: usize = 32;
+        const FRAMES: usize = RUN * RUNS;
+
+        let patch = bacteria_patch(&[
+            ("band0_filterEnabled", 1.0),
+            ("band0_filterCutoff", 1_200.0),
+            ("band0_filterResonance", 0.7),
+            ("band0_filterEnvAmount", 4_000.0),
+            ("band0_chorusEnabled", 1.0),
+            ("band0_phaserEnabled", 1.0),
+            ("band0_granularEnabled", 1.0),
+            ("band0_grainDensity", 40.0),
+            // 10 ms rather than the 100 ms default: a grain reads
+            // `grainPosOffset` behind the write head, and at the default a
+            // 4096-frame render would window nothing but the zeros a fresh
+            // ring was built with.
+            ("band0_grainPosOffset", 10.0),
+            ("band0_grainMix", 1.0),
+            ("band0_spectralEnabled", 1.0),
+            ("band0_spectralBlur", 0.5),
+            ("band0_spectralMix", 1.0),
+        ]);
+        let material = bacteria_burst_material(FRAMES);
+
+        let mut whole = bacteria_body(&patch);
+        let one_call = bacteria_render(&mut whole, &material);
+
+        let mut split = bacteria_body(&patch);
+        let mut split_left = material.clone();
+        let mut split_right = material.clone();
+        for run in 0..RUNS {
+            let span = run * RUN..(run + 1) * RUN;
+            split.process(&mut split_left[span.clone()], &mut split_right[span]);
+        }
+
+        assert!(
+            one_call.iter().any(|sample| *sample != 0.0),
+            "the one-call render is silent, so an equality against it proves nothing"
+        );
+        assert_eq!(
+            one_call, split_left,
+            "the body renders different samples for a callback split into runs, so handing \
+             the engine the whole callback is not the same processing the worklet performs"
+        );
+    }
+
+    /// A body built from the shipped default record reports the engine's own
+    /// figure, and a stage that moves that figure moves it.
+    ///
+    /// Bacteria is the first built-in body whose engine reports a real
+    /// latency, and it is the figure the mapper publishes at registration
+    /// through [`PluginCore::declared_latency_frames`]: every hold the graph
+    /// takes for this device is derived from it, so it is pinned here — 2x
+    /// oversampling costs 6.5 base samples
+    /// (`crates/daw-dsp/src/primitives/oversample.rs`) and the report is
+    /// whole-sample, so a one-band serial default reports 7.
+    ///
+    /// The spectral window is the second assertion because it is the one term
+    /// that follows an enable flag rather than a configured setup value
+    /// (`BandChain::spectral_latency_samples`): switching it on is what makes
+    /// a Bacteria's latency move during a session, which is the case
+    /// [`ActiveEffect::refresh_declared_latency`] exists to answer.
+    #[test]
+    fn a_bacteria_body_built_from_the_default_record_reports_the_engine_latency() {
+        const OVERSAMPLED_2X: u32 = 7;
+        /// `StftProcessor::new(2048)`'s window, which
+        /// `BandChain::spectral_latency_samples` reports whole.
+        const SPECTRAL_WINDOW: u32 = 2048;
+
+        let default_record = bacteria_patch(&[
+            ("band0_oversampling", 2.0),
+            ("globalRouting", 0.0),
+            ("bandCount", 1.0),
+        ]);
+        let with_spectral = bacteria_patch(&[
+            ("band0_oversampling", 2.0),
+            ("globalRouting", 0.0),
+            ("bandCount", 1.0),
+            ("band0_spectralEnabled", 1.0),
+        ]);
+
+        assert_eq!(
+            bacteria_body(&default_record).latency_samples(),
+            OVERSAMPLED_2X,
+            "the shipped default record does not report the oversampler's own delay"
+        );
+        assert_eq!(
+            bacteria_body(&with_spectral).latency_samples(),
+            OVERSAMPLED_2X + SPECTRAL_WINDOW,
+            "engaging the spectral stage did not add its analysis window to the report"
+        );
+    }
+
+    /// A Bacteria on the strip, optionally written to after registration, and
+    /// the master it renders beside the diagnostics that count the write.
+    ///
+    /// The patch engages band 0's filter, so the write below moves a stage
+    /// that is already in the path rather than switching one in.
+    fn render_bacteria_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = 4;
+
+        let mut harness = Harness::new(32);
+        track_with_bacteria(
+            &mut harness,
+            bacteria_burst_material(CALLBACK * CALLBACKS),
+            &bacteria_patch(&[("band0_filterEnabled", 1.0)]),
+        );
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.playing();
+        let (left, _right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
+
+    /// A `SetParam` naming one band's own parameter reaches that band, and is
+    /// not counted as aimed at the wrong body.
+    ///
+    /// `band0_filterCutoff` is a band-prefixed name, which is the spelling
+    /// most of this vocabulary reaches the engine in:
+    /// `BacteriaEngine::apply_param` strips the prefix and routes the write to
+    /// one band's chain before its global match ever runs. A low corner and a
+    /// high one against the same material separate the two renders on every
+    /// sample the low-pass rolls off.
+    #[test]
+    fn a_bacteria_write_by_name_changes_the_render() {
+        let (untouched, untouched_diagnostics) = render_bacteria_write(None);
+        let (low_corner, low_diagnostics) = render_bacteria_write(Some((
+            DeviceParam::BuiltinNamed(bacteria_name("band0_filterCutoff")),
+            200.0,
+        )));
+        let (high_corner, high_diagnostics) = render_bacteria_write(Some((
+            DeviceParam::BuiltinNamed(bacteria_name("band0_filterCutoff")),
+            18_000.0,
+        )));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the unwritten render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            low_corner, untouched,
+            "the band-prefixed write never reached the band's filter"
+        );
+        assert_ne!(
+            low_corner, high_corner,
+            "the two corners render the same samples, so this spec cannot tell a write apart \
+             from no write"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                low_diagnostics.unmapped_set_param_calls,
+                high_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0, 0),
+            "a routed write was counted unrouted"
+        );
+    }
+
+    /// A bypassed Bacteria hands its input on untouched.
+    ///
+    /// The ramp names its own frame, so a pass that replayed a held block, or
+    /// one the multi-effect still ran over, reads as different numbers rather
+    /// than as the same silence. The harness declares nothing for this insert
+    /// and ships it no dry line, so the strip is a pass-through outright — the
+    /// patch reports 2048 samples of engine latency, and what is read here is
+    /// the bypassed pass alone, with no hold of any kind over it.
+    #[test]
+    fn a_bypassed_bacteria_passes_its_input_through_unchanged() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+
+        let mut harness = Harness::new(32);
+        track_with_bacteria(
+            &mut harness,
+            ramp_clip_material(RENDERED),
+            &bacteria_patch(&[("band0_filterEnabled", 1.0), ("band0_spectralEnabled", 1.0)]),
+        );
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.playing();
+        let (left, right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let ramp = ramp_clip_material(RENDERED);
+        assert_eq!(left, ramp, "a bypassed multi-effect moved the left channel");
+        assert_eq!(
+            right, ramp,
+            "a bypassed multi-effect moved the right channel"
+        );
+    }
+
+    // ── Proof ──────────────────────────────────────────────────────────────
+
+    /// The rate every Proof spec here builds its body at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. The limiter's look-ahead line
+    /// is sized in frames from a figure written in milliseconds, and every
+    /// filter design in the chain is derived from the rate too, so a body built
+    /// at another rate is a different device declaring a different figure.
+    const PROOF_RATE: f32 = 48_000.0;
+
+    /// `MasteringEq`'s `LowShelf` band type (`crates/daw-dsp/src/proof/eq.rs`).
+    const PROOF_LOW_SHELF: f32 = 1.0;
+
+    /// Frames the limiter's look-ahead line holds at a look-ahead of `ms`
+    /// milliseconds — `lookahead_samples_for`
+    /// (`crates/daw-dsp/src/proof/limiter.rs`), which truncates rather than
+    /// rounds. Written as the arithmetic rather than as literals so a spec's
+    /// pinned figure cannot drift from the line the limiter really delays
+    /// through.
+    fn proof_lookahead_frames(ms: f32) -> usize {
+        (ms * 0.001 * PROOF_RATE) as usize
+    }
+
+    /// One of the mastering chain's own parameter names, as the mapper resolves
+    /// it.
+    fn proof_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Proof names in the carrier
+    /// [`PluginCore::proof_with_patch`] takes.
+    fn proof_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (proof_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::proof_with_patch`] built, unwrapped so a spec can
+    /// render through it directly.
+    fn proof_body(patch: &[(&str, f32)]) -> Box<ProofBody> {
+        let PluginCore::Proof(body) = PluginCore::proof_with_patch(PROOF_RATE, &proof_patch(patch))
+        else {
+            unreachable!("proof_with_patch builds the proof variant");
+        };
+        body
+    }
+
+    /// A decaying two-partial burst inside unity, `frames` long — the same
+    /// material shape the Bacteria specs above use, kept inside unity because
+    /// a shelving boost of 12 dB over a signal already at full scale would pin
+    /// the limiter at its ceiling from the first sample and say nothing about
+    /// where in the chain the limiter stands.
+    fn proof_burst_material(frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / PROOF_RATE;
+                let decay = (-2.0 * t).exp();
+                let fundamental = (2.0 * std::f32::consts::PI * 220.0 * t).sin();
+                let partial = 0.5 * (2.0 * std::f32::consts::PI * 1_100.0 * t).sin();
+                decay * (fundamental + partial) / 3.0
+            })
+            .collect()
+    }
+
+    /// `material` rendered through `body` in one call, both channels fed the
+    /// same signal.
+    fn proof_render(body: &mut ProofBody, material: &[f32]) -> Vec<f32> {
+        let mut left = material.to_vec();
+        let mut right = material.to_vec();
+        body.process(&mut left, &mut right);
+        left
+    }
+
+    /// What the A/B compare returns dry: `material` held back by `body`'s own
+    /// [`ProofBody::latency_samples`] — a zero prefix of that length, then
+    /// `material`, truncated back to `material`'s length.
+    ///
+    /// `2016c9002` moved the compare from returning the undelayed input to
+    /// returning it at the delay the chain reports, so a forwarded compare no
+    /// longer equals the raw input either — comparing against this delayed
+    /// line rather than `material` is what still tells a forwarded compare
+    /// from a refused one. `PROOF_SHELF_INTO_CEILING` engages the limiter, so
+    /// a body built from it always reports a nonzero delay; the assertion
+    /// below is what stops a regression to zero delay quietly turning this
+    /// helper back into the identity and the equalities that use it
+    /// degenerate to comparing against the raw input.
+    fn delayed_dry(body: &ProofBody, material: &[f32]) -> Vec<f32> {
+        let delay = body.latency_samples() as usize;
+        assert_ne!(
+            delay, 0,
+            "PROOF_SHELF_INTO_CEILING engages the limiter, so the chain reports a nonzero delay"
+        );
+        let mut delayed = vec![0.0; delay];
+        delayed.extend_from_slice(material);
+        delayed.truncate(material.len());
+        delayed
+    }
+
+    /// The largest absolute sample in a render.
+    fn proof_peak(rendered: &[f32]) -> f32 {
+        rendered
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// One of the mastering chain's names in the carrier a `SetParam` travels
+    /// in.
+    fn proof_write(name: &str) -> DeviceParam {
+        DeviceParam::BuiltinNamed(proof_name(name))
+    }
+
+    /// A Proof placed the way `commands/graph.rs` places one: registered
+    /// detached, its opening figure declared with no dry line, then spliced at
+    /// the head of a track's chain.
+    ///
+    /// The declared figure is checked against the body's own reading, so a
+    /// spec's pinned literal cannot drift away from what the chain reports for
+    /// the same patch.
+    fn declare_proof_on_track(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        let core = PluginCore::proof_with_patch(PROOF_RATE, &proof_patch(patch));
+        assert_eq!(
+            core.declared_latency_frames(),
+            Some(latency_frames),
+            "the fixture declares the figure the body really reports"
+        );
+        harness.send(GraphCommand::AddDetachedEffect(effect_id, core, None));
+        harness.send(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: None,
+        });
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
+    }
+
+    /// A silent strip carrying a declared Proof, beside which another strip's
+    /// arrival is readable as exact numbers.
+    ///
+    /// The strip holds no clip, so the mix is whatever the *other* strips
+    /// deliver — which is what a compensation claim is about: the graph holds
+    /// every route meeting this strip back by the figure this device declares.
+    /// A strip rendering the chain's own output could not be read that way.
+    /// Every stage of the chain is multiplicative or a filter over the block it
+    /// is handed and the ditherer is off by default, so a Proof over silence is
+    /// silence and the insert contributes nothing to the sum.
+    fn silent_track_declaring_proof(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(&str, f32)],
+        latency_frames: usize,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        declare_proof_on_track(harness, track_id, effect_id, patch, latency_frames);
+    }
+
+    /// The two stages the reorder swaps, engaged, with everything standing
+    /// between them held out of the path.
+    ///
+    /// A +12 dB low shelf at 500 Hz sits the whole boost on the burst's 220 Hz
+    /// fundamental, and a −6 dB ceiling is a brickwall the boosted signal
+    /// really reaches. The dynamics, imager and exciter are bypassed by name
+    /// so the only two things that touch the signal are the two whose relative
+    /// order is under test: with the default dynamics left in, its own
+    /// 2:1 compression and +5 dB auto-makeup would sit between them and the
+    /// peak difference below would be partly its doing.
+    const PROOF_SHELF_INTO_CEILING: &[(&str, f32)] = &[
+        ("dyn_bypass", 1.0),
+        ("img_bypass", 1.0),
+        ("exc_bypass", 1.0),
+        ("eq_band0_type", PROOF_LOW_SHELF),
+        ("eq_band0_freq", 500.0),
+        ("eq_band0_q", 0.7),
+        ("eq_band0_gain", 12.0),
+        ("eq_band0_enabled", 1.0),
+        ("lim_ceiling", -6.0),
+    ];
+
+    /// The order that puts the limiter first and the EQ behind it, spelled the
+    /// way project truth persists it: one key per slot, holding the module id
+    /// that stands there.
+    const PROOF_LIMITER_FIRST: &[(&str, f32)] = &[
+        ("chain_order_0", 4.0),
+        ("chain_order_1", 0.0),
+        ("chain_order_2", 1.0),
+        ("chain_order_3", 2.0),
+        ("chain_order_4", 3.0),
+    ];
+
+    /// The persisted module order really moves the limiter across the EQ,
+    /// which is the whole of what this body adds over a chain the web twin
+    /// already reorders through a message of its own.
+    ///
+    /// A differential: two bodies carrying the identical patch, one at the
+    /// default order and one at `[4, 0, 1, 2, 3]`. At the default the shelf
+    /// boosts and the limiter then holds the result at its ceiling; reordered,
+    /// the limiter holds the raw burst first and the shelf lifts what comes out
+    /// of it clear of the ceiling. So the reordered render peaks *above* the
+    /// one whose limiter runs last, and by about the shelf's own boost.
+    ///
+    /// The latency is held equal as a precondition rather than assumed. Both
+    /// bodies run the same limiter at the same look-ahead, so the peaks are
+    /// measured over renders delayed by the same number of frames and the
+    /// comparison is about level rather than about alignment — and a future
+    /// order key that did move the figure would fail here rather than quietly
+    /// turn this into a comparison of two differently delayed signals.
+    ///
+    /// 3 dB is the threshold rather than the ~12 dB the shelf is worth: the
+    /// claim is that the limiter moved across the EQ at all, and pinning the
+    /// exact figure would weld this spec to the shelf's design and the burst's
+    /// spectrum rather than to the reorder.
+    #[test]
+    fn a_proof_chain_order_write_moves_the_limiter_across_the_eq() {
+        const FRAMES: usize = 4096;
+        const MINIMUM_LIFT_DB: f32 = 3.0;
+
+        let reordered_patch: Vec<(&str, f32)> = PROOF_SHELF_INTO_CEILING
+            .iter()
+            .chain(PROOF_LIMITER_FIRST.iter())
+            .copied()
+            .collect();
+
+        let material = proof_burst_material(FRAMES);
+        let mut default_order = proof_body(PROOF_SHELF_INTO_CEILING);
+        let mut limiter_first = proof_body(&reordered_patch);
+
+        assert_eq!(
+            default_order.latency_samples(),
+            limiter_first.latency_samples(),
+            "the two orders report different delay, so the peaks below would be measured over \
+             renders aligned differently instead of over the same signal"
+        );
+
+        let held = proof_render(&mut default_order, &material);
+        let lifted = proof_render(&mut limiter_first, &material);
+        let held_peak = proof_peak(&held);
+        let lifted_peak = proof_peak(&lifted);
+
+        assert!(
+            held_peak > 0.0 && held_peak.is_finite(),
+            "the default-order render peaks at {held_peak}, so a ratio against it proves nothing"
+        );
+        assert!(
+            lifted_peak > 0.0 && lifted_peak.is_finite(),
+            "the reordered render peaks at {lifted_peak}, so a ratio against it proves nothing"
+        );
+
+        let lift_db = 20.0 * (lifted_peak / held_peak).log10();
+        assert!(
+            lift_db >= MINIMUM_LIFT_DB,
+            "the reordered render peaks {lift_db} dB above the default one, so the persisted \
+             order never moved the limiter across the EQ (held {held_peak}, lifted {lifted_peak})"
+        );
+    }
+
+    /// A Proof's group delay follows its look-ahead, so a write to it is a
+    /// latency declaration as much as a sound change — and the write lands on
+    /// the callback, where nothing else is going to tell the graph. Left
+    /// unread, every route the graph held back to meet this strip stays aimed
+    /// at the figure the record opened with for the rest of the session.
+    ///
+    /// The insert sits on a silent strip so the mix reads as the bare strip's
+    /// hold and nothing else, which is what makes it exact numbers: the claim
+    /// is about the figure every route meeting this strip is held back by, not
+    /// about the chain's own output. 1 ms against 10 ms because they are the
+    /// ends of the control's own declared range
+    /// (`crates/daw-dsp/src/proof/limiter.rs`), and 512-frame blocks because
+    /// the wider of the two figures is 480 frames and a block shorter than the
+    /// hold would read as silence either way.
+    #[test]
+    fn a_proof_lookahead_write_that_moves_its_latency_realigns_the_mix_within_one_block() {
+        const BLOCK: usize = 512;
+        let first = proof_lookahead_frames(1.0);
+        let second = proof_lookahead_frames(10.0);
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_proof(&mut harness, 1, 7, &[("lim_lookahead", 1.0)], first);
+        track_with_ramp_clip(&mut harness, 2, 102, 2_048);
+
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SetParam(
+            7,
+            proof_write("lim_lookahead"),
+            10.0,
+        ));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(BLOCK, BLOCK, second),
+            "the bare strip arrives at the mastering chain's new figure from the first block \
+             after the write"
+        );
+    }
+
+    /// A bypassed Proof declares nothing, and the routes held back to meet it
+    /// are released with it.
+    ///
+    /// The law [`ActiveEffect::refresh_declared_latency`] states for every body
+    /// the engine reads a figure off: both carriers read a bypassed device as
+    /// delaying nothing, so a native declaration standing through bypass would
+    /// hold this strip's whole mix back by a look-ahead no signal in it is
+    /// waiting for, and flam every web strip beside it by exactly that. The
+    /// bare strip's arrival is what says the pass was re-aimed, and the
+    /// un-bypass is what says the figure came back.
+    ///
+    /// The slot holds no dry line on either footing. A line is read on the
+    /// bypassed pass alone, and this body declares 0 there, so a line would be
+    /// fed on every block the body ran and read on none of them.
+    #[test]
+    fn a_bypassed_proof_declares_no_latency() {
+        const BLOCK: usize = 512;
+        let declared = proof_lookahead_frames(5.0);
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        silent_track_declaring_proof(&mut harness, 1, 7, &[("lim_lookahead", 5.0)], declared);
+        track_with_ramp_clip(&mut harness, 2, 102, 2_048);
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(0, BLOCK, declared),
+            "the bare strip was not held back to meet the declared figure"
+        );
+        assert!(
+            harness.scheduler.effects[0].dry_delay.is_none(),
+            "the registration left a dry line on a slot no pass of this body reads one from"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, true));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(BLOCK, BLOCK, 0),
+            "the bare strip is still held back by a figure the bypassed insert no longer delays"
+        );
+        let effect = &harness.scheduler.effects[0];
+        assert_eq!(
+            effect.latency_frames, 0,
+            "the bypassed body goes on declaring its look-ahead to the graph"
+        );
+        assert!(
+            effect.dry_delay.is_none(),
+            "the bypass left a dry line on the very pass this body hands the block on untouched"
+        );
+
+        harness.send(GraphCommand::SetBypass(7, false));
+
+        let (left, _) = harness.render(BLOCK);
+        assert_eq!(
+            left,
+            delayed_ramp(2 * BLOCK, BLOCK, declared),
+            "the hold did not come back with the un-bypassed body's figure"
+        );
+        assert_eq!(
+            harness.scheduler.effects[0].latency_frames, declared,
+            "the un-bypassed body did not declare the figure it reports again"
+        );
+    }
+
+    /// The name the graph owns never reaches the chain, whichever door it
+    /// arrives at, and the A/B compare beside it does.
+    ///
+    /// Sample-exact against a twin rather than merely "close": the claim is
+    /// that the `bypass` write never reached the chain at all, and any figure
+    /// short of equality would admit a write that landed and barely moved the
+    /// sound. It landing would be plainly audible — the chain returns the block
+    /// untouched — so the equality is what says it did not.
+    ///
+    /// `ab_bypass` is the opposite claim on the same door. Engaged, the chain
+    /// returns the dry input at the delay the chain reports, scaled by the
+    /// A/B gain offset — which opens at 0 dB and is re-derived only on a pass
+    /// the chain processes, so a body that has never processed a block
+    /// returns the delayed input at unity gain. Comparing against
+    /// [`delayed_dry`] rather than the raw input is what still tells a
+    /// forwarded compare from a refused one, because a forwarded compare no
+    /// longer equals the raw input either. Released, it processes again.
+    /// Both directions are asserted because a body that dropped the name
+    /// would satisfy neither.
+    ///
+    /// The pass-through assertion is what stops the equalities passing
+    /// vacuously: the patch has to make the chain change the signal, or a body
+    /// that was already a pass-through would satisfy an equality against a
+    /// bypassed twin without the refusal doing anything.
+    #[test]
+    fn a_proof_body_drops_the_name_the_graph_owns_and_takes_the_ab_compare() {
+        const FRAMES: usize = 4096;
+
+        let material = proof_burst_material(FRAMES);
+        let mut written = proof_body(PROOF_SHELF_INTO_CEILING);
+        let mut untouched = proof_body(PROOF_SHELF_INTO_CEILING);
+
+        written.set_param("bypass", 1.0);
+
+        let written_render = proof_render(&mut written, &material);
+        let untouched_render = proof_render(&mut untouched, &material);
+
+        assert!(
+            untouched_render.iter().any(|sample| *sample != 0.0),
+            "the twin rendered silence, so an equality against it proves nothing"
+        );
+        assert_ne!(
+            untouched_render, material,
+            "the patch leaves the chain a pass-through, so an equality against a bypassed twin \
+             would hold whether or not the refusal did anything"
+        );
+        assert_eq!(
+            written_render, untouched_render,
+            "the name the graph owns reached the chain and moved the render"
+        );
+
+        let mut compared = proof_body(PROOF_SHELF_INTO_CEILING);
+        compared.set_param("ab_bypass", 1.0);
+        let dry_render = proof_render(&mut compared, &material);
+        let delayed = delayed_dry(&compared, &material);
+
+        assert_eq!(
+            dry_render, delayed,
+            "the A/B compare never reached the chain, so the body went on processing while the \
+             panel's chip read dry"
+        );
+
+        compared.set_param("ab_bypass", 0.0);
+        let wet_render = proof_render(&mut compared, &material);
+
+        assert_ne!(
+            wet_render, material,
+            "releasing the A/B compare left the body still returning its input"
+        );
+        assert_ne!(
+            wet_render, delayed,
+            "releasing the A/B compare left the body still returning the delayed dry line"
+        );
+    }
+
+    /// [`PROOF_RECORD_REFUSED`] refuses `ab_bypass` only at the record door
+    /// [`ProofBody::load_patch`] crosses; a live [`ProofBody::set_param`]
+    /// still takes the same name.
+    ///
+    /// The engaged fixture is what makes a refused load distinguishable from
+    /// a forwarded one: if `load_patch` had not refused the name, `loaded`'s
+    /// first render would return the dry input at the delay the chain
+    /// reports (the A/B compare answers before any module runs, so a body
+    /// that has never processed a block returns its input delayed but at
+    /// unity gain), and the first assertion below would fail. That delayed
+    /// line, not the raw input, is what the assertion compares against —
+    /// `2016c9002` moved the compare onto it, so a forwarded compare no
+    /// longer equals the raw input either and only [`delayed_dry`] still
+    /// discriminates a refused load from a forwarded one.
+    ///
+    /// The live write is proven on a second body built the same way — through
+    /// `proof_body`, which is `load_patch` again — rather than by reusing
+    /// `loaded` after its first render: `ProofChain::process` re-derives the
+    /// A/B gain offset from `input_lufs`/`output_lufs` on every processed
+    /// pass, and those momentary meters have no warm-up gate the way the
+    /// integrated reading does, so `loaded`'s offset is no longer the 0 dB it
+    /// opens at once it has rendered a real block. `live` never processes
+    /// before the compare engages, so its render is the dry input at the
+    /// delay the chain reports, rather than that same delayed line scaled by
+    /// whatever offset a prior pass left.
+    #[test]
+    fn a_proof_body_refuses_a_persisted_ab_bypass_but_a_live_write_still_engages_it() {
+        const FRAMES: usize = 4096;
+
+        let material = proof_burst_material(FRAMES);
+        let record: Vec<(&str, f32)> = PROOF_SHELF_INTO_CEILING
+            .iter()
+            .copied()
+            .chain(std::iter::once(("ab_bypass", 1.0)))
+            .collect();
+
+        let mut loaded = proof_body(&record);
+        let loaded_render = proof_render(&mut loaded, &material);
+        let loaded_delayed = delayed_dry(&loaded, &material);
+
+        assert_ne!(
+            loaded_render, loaded_delayed,
+            "a persisted ab_bypass reached the chain through load_patch, mapping the body dry"
+        );
+
+        let mut live = proof_body(PROOF_SHELF_INTO_CEILING);
+        live.set_param("ab_bypass", 1.0);
+        let live_render = proof_render(&mut live, &material);
+        let live_delayed = delayed_dry(&live, &material);
+
+        assert_eq!(
+            live_render, live_delayed,
+            "a live set_param on a load_patch-built body did not engage the A/B compare"
+        );
+    }
+
+    /// A callback whose input carries non-finite samples comes back finite.
+    ///
+    /// `ProofChain` has no scrub of its own — `ProofInstance::process`
+    /// (`crates/daw-dsp/src/proof/mod.rs`) is where the web path scrubs, and
+    /// this body is not on that path — so the sanitize pass in
+    /// [`ProofBody::process`] is the whole of what stands between a poisoned
+    /// input block and every route downstream of this strip. A NaN reaching the
+    /// device summing bus is not one bad sample: it silences the mix from there
+    /// on, and the limiter's own look-ahead ring would carry it for the length
+    /// of the line.
+    ///
+    /// Both channels are poisoned and both are read, because the pass runs
+    /// twice and one call going missing would leave one channel unscrubbed.
+    ///
+    /// The finiteness assertion is the oracle. The two beside it are what stop
+    /// it passing vacuously, because an all-zero block is finite: the clean twin
+    /// says the fixture sounds at all, and the difference between the two says
+    /// the poison really reached this block's output rather than sitting in the
+    /// limiter's look-ahead line where no scrub would have been needed.
+    #[test]
+    fn a_proof_body_returns_finite_samples_from_a_poisoned_block() {
+        const FRAMES: usize = 1024;
+
+        let material = proof_burst_material(FRAMES);
+        let mut clean = proof_body(PROOF_SHELF_INTO_CEILING);
+        let clean_render = proof_render(&mut clean, &material);
+
+        let mut left = material.clone();
+        left[8] = f32::NAN;
+        left[FRAMES / 2] = f32::INFINITY;
+        let mut right = material.clone();
+        right[9] = f32::NEG_INFINITY;
+        right[FRAMES - 1] = f32::NAN;
+
+        let mut poisoned = proof_body(PROOF_SHELF_INTO_CEILING);
+        poisoned.process(&mut left, &mut right);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            clean_render.iter().any(|sample| *sample != 0.0),
+            "the clean twin rendered silence, so the finiteness above says nothing"
+        );
+        assert_ne!(
+            left, clean_render,
+            "the poisoned block rendered exactly as the clean one did, so the non-finite input \
+             never reached the output and the scrub had nothing to catch"
+        );
+    }
+
+    // ── Dutch Oven ─────────────────────────────────────────────────────────
+
+    /// The rate every Dutch Oven spec here builds its body at, which is the
+    /// rate [`Harness::new`] builds its scheduler at. Every delay length,
+    /// pre-delay buffer, modulation rate and decay-rate EQ corner in the reverb
+    /// is derived from it, so a body built at another rate is a different room.
+    const DUTCH_OVEN_RATE: f32 = 48_000.0;
+
+    /// `ProofChamberInstance::set_param`'s `algorithm` wire value for the FDN-8
+    /// tank (`crates/proof-chamber/src/lib.rs`) — an engine whose damping curve
+    /// `fdn_damping_version` really moves, unlike the default plate.
+    const DUTCH_OVEN_FDN8: f32 = 1.0;
+
+    /// One of the reverb's own parameter names, as the mapper resolves it.
+    fn dutch_oven_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Dutch Oven names in the carrier
+    /// [`PluginCore::dutch_oven_with_patch`] takes.
+    fn dutch_oven_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (dutch_oven_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::dutch_oven_with_patch`] built, unwrapped so a spec
+    /// can render through it directly.
+    fn dutch_oven_body(patch: &[(&str, f32)]) -> Box<DutchOvenBody> {
+        let PluginCore::DutchOven(body) =
+            PluginCore::dutch_oven_with_patch(DUTCH_OVEN_RATE, &dutch_oven_patch(patch))
+        else {
+            unreachable!("dutch_oven_with_patch builds the dutch oven variant");
+        };
+        body
+    }
+
+    /// A decaying two-partial burst inside unity, `frames` long, built on
+    /// `fundamental`.
+    ///
+    /// The two channels of every Dutch Oven fixture below are built on
+    /// different fundamentals, so a body that rendered one channel into both —
+    /// or that returned a channel untouched — produces a render no assertion
+    /// here can mistake for the right one.
+    fn dutch_oven_material(frames: usize, fundamental: f32) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let t = frame as f32 / DUTCH_OVEN_RATE;
+                let decay = (-2.0 * t).exp();
+                let first = (2.0 * std::f32::consts::PI * fundamental * t).sin();
+                let second = 0.5 * (2.0 * std::f32::consts::PI * fundamental * 5.0 * t).sin();
+                decay * (first + second) / 3.0
+            })
+            .collect()
+    }
+
+    /// The left and right material every Dutch Oven spec feeds, `frames` long.
+    fn dutch_oven_stereo_material(frames: usize) -> (Vec<f32>, Vec<f32>) {
+        (
+            dutch_oven_material(frames, 220.0),
+            dutch_oven_material(frames, 330.0),
+        )
+    }
+
+    /// `left`/`right` rendered through `body` in one call.
+    fn dutch_oven_render(
+        body: &mut DutchOvenBody,
+        left: &[f32],
+        right: &[f32],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut rendered_left = left.to_vec();
+        let mut rendered_right = right.to_vec();
+        body.process(&mut rendered_left, &mut rendered_right);
+        (rendered_left, rendered_right)
+    }
+
+    /// `left`/`right` rendered through a bare [`ProofChamberInstance`] in runs
+    /// of at most `run_frames`, the way the instance itself takes a block.
+    ///
+    /// The reference side of
+    /// [`a_dutch_oven_body_renders_what_the_instance_renders_run_by_run`]: the
+    /// instance is driven directly here, so what that spec compares is the
+    /// body's splitting and copying against the instance's own output rather
+    /// than one body against another.
+    fn dutch_oven_instance_render(
+        instance: &mut ProofChamberInstance,
+        left: &[f32],
+        right: &[f32],
+        run_frames: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let frames = left.len();
+        let mut out_left = Vec::with_capacity(frames);
+        let mut out_right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        while rendered < frames {
+            let run = (frames - rendered).min(run_frames);
+            let run_end = rendered + run;
+            let run_left = instance.process(
+                &left[rendered..run_end],
+                &right[rendered..run_end],
+                run as u32,
+            );
+            let run_right = instance.get_right_ptr();
+            // SAFETY: both pointers name the instance's own output buffers,
+            // which its constructor sizes at 1024 frames and no method resizes;
+            // `run` is bounded by `run_frames`, which every caller here passes
+            // at or below that length. Nothing mutates the instance between the
+            // render and these reads.
+            unsafe {
+                out_left.extend_from_slice(std::slice::from_raw_parts(run_left, run));
+                out_right.extend_from_slice(std::slice::from_raw_parts(run_right, run));
+            }
+            rendered = run_end;
+        }
+        (out_left, out_right)
+    }
+
+    /// A patch that engages the reverb on both channels: fully wet, a long
+    /// decay and a large room, so the output is the tail rather than the input.
+    const DUTCH_OVEN_WET_ROOM: &[(&str, f32)] = &[("mix", 1.0), ("decay", 0.8), ("size", 0.7)];
+
+    /// The body renders exactly what the instance it wraps renders, run by run.
+    ///
+    /// This is the whole claim of the body's process path. The instance clamps
+    /// its `frames` argument to its own 1024-frame output buffers without
+    /// saying so, so a host that handed it a longer callback would get one
+    /// run's worth of reverb and leave the rest of the block dry. 3000 frames
+    /// is chosen to land off that boundary: the body must split it 1024 /
+    /// 1024 / 952, which is exactly how the reference below is driven.
+    ///
+    /// The oracle is sample identity against a bare instance carrying the same
+    /// patch, on both channels — the left one says the split lines up, the
+    /// right one says the second channel is read back at all, and the two
+    /// materials are built on different fundamentals so a body that copied one
+    /// into both would fail rather than pass.
+    ///
+    /// The two assertions beside it refuse a vacuous pass: a render that came
+    /// out silent, or one that came back as its own input, would be
+    /// sample-identical to a reference that did the same nothing.
+    #[test]
+    fn a_dutch_oven_body_renders_what_the_instance_renders_run_by_run() {
+        const FRAMES: usize = 3000;
+
+        let (left, right) = dutch_oven_stereo_material(FRAMES);
+        let mut body = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        let (body_left, body_right) = dutch_oven_render(&mut body, &left, &right);
+
+        let mut instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        for (name, value) in DUTCH_OVEN_WET_ROOM {
+            instance.set_param(name, *value);
+        }
+        let (instance_left, instance_right) =
+            dutch_oven_instance_render(&mut instance, &left, &right, PROOF_CHAMBER_BLOCK_FRAMES);
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instance renders for the same patch"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instance renders for the same patch"
+        );
+        assert!(
+            body_left.iter().chain(body_right.iter()).any(|s| *s != 0.0),
+            "the body rendered silence, so the identity above says nothing"
+        );
+        assert_ne!(
+            (body_left.as_slice(), body_right.as_slice()),
+            (left.as_slice(), right.as_slice()),
+            "the body handed its input back unchanged, so the identity above compares two \
+             pass-throughs"
+        );
+    }
+
+    /// The reverse engine renders finite samples at 192 kHz with no `size` key.
+    ///
+    /// Before the reverse engine's buffers were sized by rate, a record naming
+    /// algorithm 6 without a size key indexed past its capture buffer on the
+    /// first block above 96 kHz and aborted the desktop process; this spec
+    /// holds the body at the highest common device rate.
+    #[test]
+    fn a_dutch_oven_body_renders_the_reverse_engine_finite_at_192_khz() {
+        const RATE: f32 = 192_000.0;
+        const BLOCKS: usize = 4;
+
+        let PluginCore::DutchOven(mut body) = PluginCore::dutch_oven_with_patch(
+            RATE,
+            &dutch_oven_patch(&[("algorithm", 6.0), ("mix", 1.0)]),
+        ) else {
+            unreachable!("dutch_oven_with_patch builds the dutch oven variant");
+        };
+
+        let (left, right) = dutch_oven_stereo_material(BLOCKS * PROOF_CHAMBER_BLOCK_FRAMES);
+        let (rendered_left, rendered_right) = dutch_oven_render(&mut body, &left, &right);
+
+        assert!(
+            rendered_left
+                .iter()
+                .chain(rendered_right.iter())
+                .all(|sample| sample.is_finite()),
+            "the reverse engine produced a non-finite sample at 192 kHz"
+        );
+    }
+
+    /// The order the four keys of an engine-switching patch are drawn in does
+    /// not change the device the record builds.
+    ///
+    /// This is what [`DUTCH_OVEN_PATCH_PRECEDENCE`] being empty asserts, and the
+    /// patch is chosen to be the hardest case for it: `algorithm` resets the
+    /// engine it selects, `fdn_damping_version` moves the damping curve that
+    /// engine reads, and `decay` and `mix` are ordinary forwarded values. Drawn
+    /// forwards, the two ordinary values land on a live FDN-8 with the version
+    /// written between them; drawn backwards, they land on the plate first and
+    /// reach the FDN-8 only through the instance's parameter cache, after the
+    /// selection has applied the version.
+    ///
+    /// The oracle is sample identity between the two renders on both channels.
+    /// The non-silence assertion refuses a vacuous pass: two silent renders are
+    /// identical.
+    #[test]
+    fn a_dutch_oven_patch_renders_the_same_in_either_order() {
+        const FRAMES: usize = 3000;
+        const AUTHORED: &[(&str, f32)] = &[
+            ("algorithm", DUTCH_OVEN_FDN8),
+            ("decay", 0.8),
+            ("fdn_damping_version", 2.0),
+            ("mix", 1.0),
+        ];
+
+        let reversed: Vec<(&str, f32)> = AUTHORED.iter().rev().copied().collect();
+        let (left, right) = dutch_oven_stereo_material(FRAMES);
+
+        let mut authored = dutch_oven_body(AUTHORED);
+        let (authored_left, authored_right) = dutch_oven_render(&mut authored, &left, &right);
+        let mut drawn_backwards = dutch_oven_body(&reversed);
+        let (backwards_left, backwards_right) =
+            dutch_oven_render(&mut drawn_backwards, &left, &right);
+
+        assert_eq!(
+            authored_left, backwards_left,
+            "the record's order changed the left channel, so the patch has an ordering law this \
+             body does not state"
+        );
+        assert_eq!(
+            authored_right, backwards_right,
+            "the record's order changed the right channel, so the patch has an ordering law this \
+             body does not state"
+        );
+        assert!(
+            authored_left
+                .iter()
+                .chain(authored_right.iter())
+                .any(|s| *s != 0.0),
+            "both renders are silent, so the identity above says nothing"
+        );
+
+        // And the version key really moves this fixture, so the identity above
+        // is order-independence over a key that matters rather than over one
+        // the render cannot hear.
+        let legacy_curve: Vec<(&str, f32)> = AUTHORED
+            .iter()
+            .map(|(name, value)| {
+                if *name == "fdn_damping_version" {
+                    (*name, 1.0)
+                } else {
+                    (*name, *value)
+                }
+            })
+            .collect();
+        let mut legacy = dutch_oven_body(&legacy_curve);
+        let (legacy_left, _) = dutch_oven_render(&mut legacy, &left, &right);
+        assert_ne!(
+            authored_left, legacy_left,
+            "the damping version never reached the tank, so this patch would render the same \
+             whatever order it carried that key in"
+        );
+    }
+
+    /// The body declares the figure its own instance reports, for every engine
+    /// a wire value selects.
+    ///
+    /// Production reports 0 throughout — the five selectable engines are
+    /// algorithmic and delay nothing — but that leaves the loop below unable
+    /// to tell a reading from a literal: a `latency_samples` that always
+    /// returned `0` would pass it exactly as this one does. The probe after
+    /// it is what a body returning a constant cannot survive. It selects the
+    /// convolution engine directly (`select_unexposed_engine` — nothing on the
+    /// wire reaches it, which is exactly why it is the one figure the crate
+    /// reports nonzero) on both the body's own instance and a bare instance
+    /// built the same way, and the oracle is equality between the two, at 128.
+    #[test]
+    fn a_dutch_oven_body_reports_the_latency_its_instance_reports() {
+        let default_body = dutch_oven_body(&[]);
+        let default_instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        assert_eq!(
+            default_body.latency_samples(),
+            default_instance.get_latency(),
+            "the body's opening figure is not the one its instance reports"
+        );
+
+        for algorithm in 1..=4 {
+            let body = dutch_oven_body(&[("algorithm", algorithm as f32)]);
+            let mut instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+            instance.set_param("algorithm", algorithm as f32);
+            assert_eq!(
+                body.latency_samples(),
+                instance.get_latency(),
+                "the body's figure for algorithm {algorithm} is not the one its instance reports"
+            );
+        }
+
+        let mut probe = dutch_oven_body(&[]);
+        probe
+            .instance
+            .select_unexposed_engine(proof_chamber::UnexposedEngine::Convolution);
+        let mut probe_instance = ProofChamberInstance::new(DUTCH_OVEN_RATE);
+        probe_instance.select_unexposed_engine(proof_chamber::UnexposedEngine::Convolution);
+        assert_eq!(
+            probe.latency_samples(),
+            probe_instance.get_latency(),
+            "the body's figure for the convolution engine is not the one its instance reports"
+        );
+    }
+
+    /// A poisoned block leaves this body finite.
+    ///
+    /// `ProofChamberInstance::process` scrubs both output buffers before it
+    /// hands their pointers back, and this body copies out of those buffers, so
+    /// the scrub is inherited rather than repeated — which is exactly why it
+    /// needs a spec: a body that read the engines' own state instead, or that
+    /// re-derived an output past the scrub, would carry the poison out. A NaN
+    /// reaching the device summing bus is not one bad sample: it silences the
+    /// mix from there on, and the reverb's own tank would recirculate it for
+    /// the length of the decay.
+    ///
+    /// Both channels are poisoned and both are read, because the scrub runs
+    /// twice and one call going missing would leave one channel unscrubbed.
+    ///
+    /// The finiteness assertion is the oracle. The two beside it are what stop
+    /// it passing vacuously, because an all-zero block is finite: the clean twin
+    /// says the fixture sounds at all, and the difference between the two says
+    /// the poison really reached this block's output rather than sitting in the
+    /// tank where no scrub would have been needed.
+    #[test]
+    fn a_dutch_oven_body_returns_finite_samples_from_a_poisoned_block() {
+        const FRAMES: usize = 3000;
+
+        let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
+        let mut clean = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        let (clean_left, _) = dutch_oven_render(&mut clean, &material_left, &material_right);
+
+        let mut left = material_left.clone();
+        left[8] = f32::NAN;
+        left[FRAMES / 2] = f32::INFINITY;
+        let mut right = material_right.clone();
+        right[9] = f32::NEG_INFINITY;
+        right[FRAMES - 1] = f32::NAN;
+
+        let mut poisoned = dutch_oven_body(DUTCH_OVEN_WET_ROOM);
+        poisoned.process(&mut left, &mut right);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            clean_left.iter().any(|sample| *sample != 0.0),
+            "the clean twin rendered silence, so the finiteness above says nothing"
+        );
+        assert_ne!(
+            left, clean_left,
+            "the poisoned block rendered exactly as the clean one did, so the non-finite input \
+             never reached the output and the scrub had nothing to catch"
+        );
+    }
+
+    /// The body renders and switches engines without allocating.
+    ///
+    /// The guard is the oracle, and it covers the two paths the callback takes:
+    /// the render, and the writes. `algorithm` is the write that used to
+    /// construct the engine it selected (#3307) and now selects one of the five
+    /// the constructor already built; `freeze` and `shimmer` engage stages that
+    /// keep state of their own; and every forwarded name is also recorded into
+    /// the instance's parameter cache, whose backing store is taken at
+    /// construction and which evicts rather than growing.
+    ///
+    /// The value parameters — `mix`, `decay`, `size`, `damping`, `shimmer`,
+    /// `freeze` and `fdn_damping_version` — are written and rendered once to
+    /// warm *outside* the guard, the same discipline the reverb's own guards
+    /// use before opening theirs (`guarded_run_after`,
+    /// `crates/proof-chamber/tests/reverb_process_rt.rs`, eight blocks before
+    /// the guarded loop): the constructor legitimately allocates every engine
+    /// (ADR 0020), and building the writes' `Vec` allocates too, so both stay
+    /// outside. This populates the parameter cache before the guard opens,
+    /// which is what makes the switches inside it exercise
+    /// `replay_cached_parameters` over a real cache rather than an empty one.
+    ///
+    /// Inside the guard, the body renders once on its warmed engine, then
+    /// walks `algorithm` through every value a wire can legally select —
+    /// 0, 1, 2, 3, 6 — rendering a block after each switch, so every one of
+    /// the five selectable engines' `process` runs under the guard and each
+    /// switch's `replay_cached_parameters` runs over the populated cache.
+    /// `algorithm` 4 and 5 are excluded because `ProofChamberInstance::set_param`
+    /// folds them to Plate — they are reserved for the two unexposed engines,
+    /// see [`DutchOvenBody`]'s struct doc — and the walk ends on 6 so the
+    /// render the two assertions below inspect is the reverse engine's.
+    ///
+    /// `mix` is written at 0.5 rather than fully wet for that same last
+    /// render's sake: `ReverseReverb::reset` clears both of its capture
+    /// buffers, so the read side plays back silence for its whole
+    /// `reverse_len` (over a second at this rate) after every switch onto it,
+    /// far longer than the one block rendered here. A fully wet mix would
+    /// make that render's non-silence assertion depend on a buffer this test
+    /// never fills; the dry half that 0.5 leaves in the mix is what the
+    /// assertion actually observes.
+    ///
+    /// The two assertions beside the guard refuse a vacuous pass: a render that
+    /// came out silent covered no per-sample path, and one carrying a
+    /// non-finite sample would mean a write left the reverb producing state the
+    /// scrub had to catch rather than state it kept coherent.
+    #[test]
+    fn a_dutch_oven_body_does_not_allocate_while_rendering_and_switching_engines() {
+        const FRAMES: usize = 2048;
+
+        let value_writes = dutch_oven_patch(&[
+            ("mix", 0.5),
+            ("decay", 0.8),
+            ("size", 0.7),
+            ("damping", 0.3),
+            ("shimmer", 1.0),
+            ("freeze", 1.0),
+            ("fdn_damping_version", 2.0),
+        ]);
+        let (material_left, material_right) = dutch_oven_stereo_material(FRAMES);
+        let mut body = DutchOvenBody::new(DUTCH_OVEN_RATE);
+        for (name, value) in &value_writes {
+            body.set_param(name.as_str(), *value);
+        }
+        let mut left = material_left.clone();
+        let mut right = material_right.clone();
+        body.process(&mut left, &mut right);
+
+        left.copy_from_slice(&material_left);
+        right.copy_from_slice(&material_right);
+        assert_no_alloc::assert_no_alloc(|| {
+            body.process(&mut left, &mut right);
+            for algorithm in [0.0, 1.0, 2.0, 3.0, 6.0] {
+                body.set_param("algorithm", algorithm);
+                body.process(&mut left, &mut right);
+            }
+        });
+
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the guarded render is silent, so it covered no per-sample path"
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a write left the reverb producing non-finite samples"
+        );
+    }
+
+    // ── Toaster ────────────────────────────────────────────────────────────
+
+    /// The rate every Toaster spec here builds its body at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. Every envelope coefficient,
+    /// oscillator frequency and delay length in the machine is derived from it,
+    /// so a reference instance built at another rate is a different kit.
+    const TOASTER_RATE: f32 = 48_000.0;
+
+    /// The MIDI velocity every Toaster fixture stamps a hit with, and — because
+    /// the body passes velocity on the MIDI scale — the figure the reference
+    /// instance below is struck with too.
+    const TOASTER_VELOCITY: u8 = 100;
+
+    /// The `midi_note` a reference strike carries, spelled independently of
+    /// [`TOASTER_NEUTRAL_MIDI_NOTE`] rather than reusing it: reusing the
+    /// production constant would make the oracle agree with the body by
+    /// construction and pass even if the body started transposing its pads.
+    const TOASTER_REFERENCE_MIDI_NOTE: u8 = 60;
+
+    /// One of the machine's own parameter names, as the mapper resolves it.
+    fn toaster_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// Engine-spelled Toaster names in the carrier
+    /// [`PluginCore::toaster_with_patch`] takes.
+    fn toaster_patch(entries: &[(&str, f32)]) -> Vec<(BuiltinParamName, f32)> {
+        entries
+            .iter()
+            .map(|(name, value)| (toaster_name(name), *value))
+            .collect()
+    }
+
+    /// The body [`PluginCore::toaster_with_patch`] built, unwrapped so a spec
+    /// can render through it directly.
+    fn toaster_body(patch: &[(&str, f32)]) -> Box<ToasterBody> {
+        let PluginCore::Toaster(body) =
+            PluginCore::toaster_with_patch(TOASTER_RATE, &toaster_patch(patch))
+        else {
+            unreachable!("toaster_with_patch builds the toaster variant");
+        };
+        body
+    }
+
+    /// A hit on `note`, stamped for `frame`.
+    fn toaster_hit(note: u8, frame: u32) -> MidiNoteEvent {
+        let mut event = note_on(note);
+        event.velocity = TOASTER_VELOCITY;
+        event.frame_offset = frame;
+        event
+    }
+
+    /// The release of `note`, stamped for `frame`.
+    fn toaster_release(note: u8, frame: u32) -> MidiNoteEvent {
+        let mut event = toaster_hit(note, frame);
+        event.is_note_on = false;
+        event
+    }
+
+    /// `frames` rendered through `body` into silence, which is what a strip
+    /// carrying this generator and nothing else hands it.
+    fn toaster_render(
+        body: &mut ToasterBody,
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0_f32; frames];
+        let mut right = vec![0.0_f32; frames];
+        body.process(&mut left, &mut right, frames, events);
+        (left, right)
+    }
+
+    /// `frames` rendered by a bare [`ToasterInstance`], driven the way the
+    /// worklet drives it: [`TOASTER_RUN_FRAMES`] at a time, with `deliver`
+    /// called with the run index before each run renders.
+    ///
+    /// The reference side of the specs below — the instrument is driven
+    /// directly here, so what they compare is the body's splitting, addressing
+    /// and summing against the instrument's own output rather than one body
+    /// against another.
+    fn render_toaster_reference(
+        frames: usize,
+        mut deliver: impl FnMut(usize, &mut ToasterInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = ToasterInstance::new(TOASTER_RATE, TOASTER_PAD_COUNT);
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        let mut run = 0;
+        while rendered < frames {
+            let run_frames = (frames - rendered).min(TOASTER_RUN_FRAMES);
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers name the instrument's own output buffer,
+            // whose constructor sizes every channel at 4096 frames and which no
+            // method resizes; `run_frames` is bounded by `TOASTER_RUN_FRAMES`,
+            // well inside that, and the right channel starts one such channel
+            // past the left. Nothing mutates the instrument between the render
+            // and these reads.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+            rendered += run_frames;
+            run += 1;
+        }
+        (left, right)
+    }
+
+    /// A kit patch that reaches all three doors the body has: the machine's own
+    /// `master_gain`, one pad's `tune`, and one pad panned hard enough off
+    /// centre that the two channels of the render differ.
+    const TOASTER_KIT: &[(&str, f32)] =
+        &[("master_gain", 0.9), ("pad0_tune", 3.0), ("pad5_pan", -0.8)];
+
+    /// The frames the two parity specs below render. 3000 lands off the run
+    /// boundary, so the body must split it into twenty-three whole runs and a
+    /// 56-frame tail, which is exactly how the reference is driven.
+    const TOASTER_PARITY_FRAMES: usize = 3000;
+
+    /// Pad 0 in the low bank, the fixture's first hit.
+    const TOASTER_PARITY_KICK_NOTE: u8 = 36;
+
+    /// Pad 5 in the low bank, the fixture's panned second hit.
+    const TOASTER_PARITY_RIM_NOTE: u8 = 41;
+
+    /// The run holding frame 700, which is `700 / TOASTER_RUN_FRAMES`.
+    const TOASTER_PARITY_RIM_RUN: usize = 5;
+
+    /// The kit and the two hits of [`TOASTER_KIT`]'s fixture, driven the way
+    /// the worklet drives the instrument — the pad index and the pad-side name
+    /// apart, never as one `pad5_pan` string — so the body's own reading of
+    /// those names is what an equality against this reference tests.
+    fn drive_toaster_parity_reference(run: usize, instance: &mut ToasterInstance) {
+        if run == 0 {
+            instance.set_param("master_gain", 0.9);
+            instance.set_pad_param(0, "tune", 3.0);
+            instance.set_pad_param(5, "pan", -0.8);
+            instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+        if run == TOASTER_PARITY_RIM_RUN {
+            instance.note_on(5, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+        }
+    }
+
+    /// The body renders exactly what the instrument it wraps renders, run by
+    /// run, for the same kit, the same hits and the same release.
+    ///
+    /// This is the whole claim of the body's process path: the split into runs,
+    /// the pad a note addresses, the velocity scale the strike carries, the
+    /// neutral `midi_note` that leaves the pad untransposed, the pad-side
+    /// spelling of `pad0_tune` and `pad5_pan`, the release reaching
+    /// `note_off(pad)`, and the sum into the pair.
+    ///
+    /// The second hit is stamped at frame 700, inside run 5, so a body that
+    /// delivered every event at the head of the callback would sound it
+    /// nineteen runs early and fail rather than pass.
+    ///
+    /// The kick's release is stamped at frame 1500, inside run 11, and the
+    /// reference lifts pad 0 at the head of that same run. This is what keeps
+    /// the note-off arm of [`ToasterBody::deliver`] observed: a body that
+    /// dropped it would leave the kick ringing through the 1500 frames the
+    /// reference spends choking it (`DrumVoice::release`,
+    /// `crates/daw-dsp/src/toaster/voice.rs`). The engine's own stop
+    /// synthesises exactly this event per held pad
+    /// ([`ActiveEffect::release_sounding_notes`]), which is why the body must
+    /// keep taking it even though the live note producer withholds a *clip's*
+    /// release from a drum machine.
+    ///
+    /// The three assertions beside the equality refuse a vacuous pass: a silent
+    /// render matches a silent reference, and a render whose channels are equal
+    /// would match a reference that had copied one channel into both.
+    #[test]
+    fn a_toaster_body_renders_what_the_instance_renders_run_by_run() {
+        /// The frame the kick is released at.
+        const RELEASE_FRAME: u32 = 1500;
+        /// The run holding it, which is `1500 / TOASTER_RUN_FRAMES`.
+        const RELEASE_RUN: usize = 11;
+
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+            toaster_release(TOASTER_PARITY_KICK_NOTE, RELEASE_FRAME),
+        ];
+        let mut body = toaster_body(TOASTER_KIT);
+        let (body_left, body_right) = toaster_render(&mut body, TOASTER_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, |run, instance| {
+                drive_toaster_parity_reference(run, instance);
+                if run == RELEASE_RUN {
+                    instance.note_off(0);
+                }
+            });
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instrument renders for the same kit, hits \
+             and release"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instrument renders for the same kit, hits \
+             and release"
+        );
+        assert!(
+            body_left
+                .iter()
+                .chain(body_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the body rendered silence, so the equality above says nothing"
+        );
+        assert_ne!(
+            body_left, body_right,
+            "the two channels are identical, so the fixture's panned pad never moved and a body \
+             that read one channel twice would pass"
+        );
+    }
+
+    /// The body joins what it renders to whatever already stands in the pair.
+    ///
+    /// An instrument is a generator, and the buffers it is handed carry the
+    /// chain's material up to its place in it — a second generator on the same
+    /// strip, or a device the splice placed ahead of it. Every other fixture
+    /// here renders into silence, where `*out = *sample` and `*out += *sample`
+    /// are the same write, so this is the one spec that can tell them apart:
+    /// the pair opens on a non-zero constant and each output sample must be
+    /// that constant plus the reference instrument's own sample, exactly.
+    ///
+    /// The non-silence assertion is what stops the equality passing vacuously.
+    /// A reference that rendered nothing would make the sum and the overwrite
+    /// agree again.
+    #[test]
+    fn a_toaster_body_sums_into_what_already_stands_in_the_pair() {
+        /// What the chain has already written where this body renders. Chosen
+        /// well clear of zero so an overwrite cannot round its way to a pass.
+        const STANDING: f32 = 0.25;
+
+        let events = [
+            toaster_hit(TOASTER_PARITY_KICK_NOTE, 0),
+            toaster_hit(TOASTER_PARITY_RIM_NOTE, 700),
+        ];
+        let mut body = toaster_body(TOASTER_KIT);
+        let mut left = vec![STANDING; TOASTER_PARITY_FRAMES];
+        let mut right = vec![STANDING; TOASTER_PARITY_FRAMES];
+        body.process(&mut left, &mut right, TOASTER_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_toaster_reference(TOASTER_PARITY_FRAMES, drive_toaster_parity_reference);
+        let summed_left: Vec<f32> = instance_left
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+        let summed_right: Vec<f32> = instance_right
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+
+        assert_eq!(
+            left, summed_left,
+            "the body's left channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert_eq!(
+            right, summed_right,
+            "the body's right channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert!(
+            instance_left
+                .iter()
+                .chain(instance_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the reference rendered silence, so summing and overwriting agree and the equalities \
+             above say nothing"
+        );
+    }
+
+    /// The `engine_type` wire value for the generic kick engine (`Pad::set_param`,
+    /// `crates/daw-dsp/src/toaster/pad.rs`), which is the engine whose own
+    /// `set_param` reads `base_freq` (`crates/daw-dsp/src/toaster/engines/kick.rs`).
+    const TOASTER_KICK_ENGINE: f32 = 0.0;
+
+    /// A base frequency well away from that engine's own 50 Hz default
+    /// (`DEFAULT_BASE_FREQ`) and inside the 30..200 Hz band it clamps to. Above
+    /// 1.0 as well, because the pad reads a value at or below 1.0 as "no base
+    /// frequency of my own" and stores the default instead — the same value the
+    /// reset stores, which would make a lost write indistinguishable from a
+    /// kept one.
+    const TOASTER_KICK_BASE_FREQ: f32 = 120.0;
+
+    /// A patch's `pad<N>_engine_type` lands before that pad's engine parameters,
+    /// whichever order the record is drawn in.
+    ///
+    /// This is what [`TOASTER_PATCH_PRECEDENCE`] is for. `Pad::set_param`'s
+    /// `engine_type` arm calls `reset_engine_params`, which puts `base_freq`
+    /// back to "none of my own", so a record drawn in name order — `base_freq`
+    /// before `engine_type`, which is how `immediate_device_parameters`
+    /// (`crates/sourdaw-native/src/commands/graph.rs`) orders everything outside
+    /// the law — would write the frequency and then throw it away.
+    ///
+    /// The oracle is sample identity between the two draws on both channels. The
+    /// third render is what makes that identity mean something: a pad carrying
+    /// only the engine selection sounds the engine's own default frequency, so
+    /// a body that lost the `base_freq` write in either draw renders *that*
+    /// instead and fails here.
+    #[test]
+    fn a_toaster_patch_writes_the_engine_type_before_the_engine_parameters() {
+        const FRAMES: usize = 3000;
+        /// Pad 2 in the low bank.
+        const PAD_2_NOTE: u8 = 38;
+
+        const AUTHORED: &[(&str, f32)] = &[
+            ("pad2_base_freq", TOASTER_KICK_BASE_FREQ),
+            ("pad2_engine_type", TOASTER_KICK_ENGINE),
+        ];
+        let reversed: Vec<(&str, f32)> = AUTHORED.iter().rev().copied().collect();
+        let events = [toaster_hit(PAD_2_NOTE, 0)];
+
+        let (authored_left, authored_right) =
+            toaster_render(&mut toaster_body(AUTHORED), FRAMES, &events);
+        let (reversed_left, reversed_right) =
+            toaster_render(&mut toaster_body(&reversed), FRAMES, &events);
+
+        assert_eq!(
+            authored_left, reversed_left,
+            "the record's order changed the left channel, so the engine selection did not lead \
+             the patch"
+        );
+        assert_eq!(
+            authored_right, reversed_right,
+            "the record's order changed the right channel, so the engine selection did not lead \
+             the patch"
+        );
+        assert!(
+            authored_left
+                .iter()
+                .chain(authored_right.iter())
+                .any(|sample| *sample != 0.0),
+            "both draws are silent, so the identity above says nothing"
+        );
+
+        let (selection_only_left, _) = toaster_render(
+            &mut toaster_body(&[("pad2_engine_type", TOASTER_KICK_ENGINE)]),
+            FRAMES,
+            &events,
+        );
+        assert_ne!(
+            authored_left, selection_only_left,
+            "the base frequency never reached the pad, so this patch would render the same \
+             whatever order it carried its two keys in"
+        );
+    }
+
+    /// A `pad<N>_<name>` address names the pad it spells and nothing else.
+    ///
+    /// The table is [`toaster_pad_key`]'s whole contract, including the four
+    /// shapes that address no pad: a name with no index, one whose index is past
+    /// the grid, one with an empty pad-side name, and one whose index is not
+    /// digits at all. Each of those would otherwise be handed to the pad engine
+    /// as some other pad's parameter, or to the kit's own `set_param` as a name
+    /// it would silently ignore.
+    ///
+    /// The render below is what says the address is used rather than merely
+    /// parsed: `muted` is a pad's own name, so a patch that reached pad 4 leaves
+    /// a hit on pad 4 silent while its neighbour, carrying the same patch, still
+    /// sounds.
+    #[test]
+    fn a_toaster_pad_key_addresses_the_pad_it_names() {
+        const CASES: &[(&str, Option<(u8, &str)>)] = &[
+            ("pad0_volume", Some((0, "volume"))),
+            ("pad15_send_reverb", Some((15, "send_reverb"))),
+            ("pad16_volume", None),
+            ("pad_volume", None),
+            ("pad3_", None),
+            ("padx_volume", None),
+            ("master_gain", None),
+        ];
+
+        for (name, expected) in CASES {
+            assert_eq!(
+                toaster_pad_key(name),
+                *expected,
+                "'{name}' does not address the pad it names"
+            );
+        }
+
+        const FRAMES: usize = 3000;
+        /// Pad 4 in the low bank, the pad the patch mutes.
+        const MUTED_NOTE: u8 = 40;
+        /// Pad 5 in the low bank, which the same patch leaves alone.
+        const SOUNDING_NOTE: u8 = 41;
+        const MUTE_PAD_4: &[(&str, f32)] = &[("pad4_muted", 1.0)];
+
+        let (muted_left, muted_right) = toaster_render(
+            &mut toaster_body(MUTE_PAD_4),
+            FRAMES,
+            &[toaster_hit(MUTED_NOTE, 0)],
+        );
+        let (sounding_left, sounding_right) = toaster_render(
+            &mut toaster_body(MUTE_PAD_4),
+            FRAMES,
+            &[toaster_hit(SOUNDING_NOTE, 0)],
+        );
+
+        assert!(
+            muted_left
+                .iter()
+                .chain(muted_right.iter())
+                .all(|sample| *sample == 0.0),
+            "the mute never reached pad 4, so a hit on it still sounds"
+        );
+        assert!(
+            sounding_left
+                .iter()
+                .chain(sounding_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the same patch silenced pad 5 as well, so the mute landed on the wrong pad or on \
+             every pad"
+        );
+    }
+
+    /// A note reaches the pad its bank names, and a note in neither bank sounds
+    /// nothing.
+    ///
+    /// The table is [`toaster_pad_for_note`]'s whole contract: both banks'
+    /// first and last notes, and the note one below and one above each of them.
+    /// The two banks overlap in pad index and not in note, so an off-by-one at
+    /// either end silently re-addresses sixteen pads.
+    ///
+    /// The render below is what says the mapping is used. The two banks name
+    /// the same pad, so a hit written in either octave must render the same
+    /// sound; a note between the banks names no pad, and the body sounds
+    /// nothing for it rather than folding it onto pad 0.
+    #[test]
+    fn a_toaster_note_reaches_the_pad_its_bank_names() {
+        const CASES: &[(u8, Option<u8>)] = &[
+            (35, None),
+            (36, Some(0)),
+            (51, Some(15)),
+            (52, None),
+            (59, None),
+            (60, Some(0)),
+            (75, Some(15)),
+            (76, None),
+        ];
+
+        for (note, expected) in CASES {
+            assert_eq!(
+                toaster_pad_for_note(*note),
+                *expected,
+                "note {note} does not reach the pad its bank names"
+            );
+        }
+
+        const FRAMES: usize = 3000;
+        /// Pad 0 in the low bank.
+        const LOW_BANK_NOTE: u8 = 36;
+        /// The same pad, in the high bank.
+        const HIGH_BANK_NOTE: u8 = 60;
+        /// One note past the low bank, and one short of the high one.
+        const UNBANKED_NOTE: u8 = 52;
+
+        let (low_left, low_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(LOW_BANK_NOTE, 0)],
+        );
+        let (high_left, high_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(HIGH_BANK_NOTE, 0)],
+        );
+        let (unbanked_left, unbanked_right) = toaster_render(
+            &mut toaster_body(&[]),
+            FRAMES,
+            &[toaster_hit(UNBANKED_NOTE, 0)],
+        );
+
+        assert!(
+            low_left
+                .iter()
+                .chain(low_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the low bank's own hit is silent, so the equality below says nothing"
+        );
+        assert_eq!(
+            (low_left, low_right),
+            (high_left, high_right),
+            "the two banks' first notes render differently, so they do not name one pad"
+        );
+        assert!(
+            unbanked_left
+                .iter()
+                .chain(unbanked_right.iter())
+                .all(|sample| *sample == 0.0),
+            "a note in neither bank sounded, so it was folded onto a pad it was not written for"
+        );
+    }
+
+    /// A record's `delay_time` is read as milliseconds, the unit a kit persists
+    /// it in.
+    ///
+    /// `StereoDelay::set_param` consumes seconds and multiplies by the sample
+    /// rate, while `ToasterKit` persists milliseconds and the worklet converts
+    /// at its own door (`toEngineKitParamValue`, `toasterProcessor.ts`). A body
+    /// that forwarded the figure verbatim would set a 250-*second* delay, which
+    /// the two-second line clamps to its own ceiling: the same saved kit would
+    /// echo on the beat under the worklet and not at all under the engine.
+    ///
+    /// The oracle is sample identity against a bare instrument given the
+    /// converted figure, and the render is long enough to carry the 250 ms tap.
+    /// The inequality beside it is what a missing conversion cannot survive: the
+    /// clamped line has not repeated once inside this window, so its render is
+    /// the hit alone.
+    #[test]
+    fn a_toaster_delay_time_arrives_in_milliseconds() {
+        /// Past the 12 000-frame tap at this rate, and far short of the 96 000
+        /// frames the line's own two-second ceiling would delay by.
+        const FRAMES: usize = 14_000;
+        const DELAY_MILLISECONDS: f32 = 250.0;
+        const DELAY_SECONDS: f32 = 0.25;
+        /// Pad 0 in the low bank.
+        const KICK_NOTE: u8 = 36;
+
+        let events = [toaster_hit(KICK_NOTE, 0)];
+        let mut body = toaster_body(&[
+            ("pad0_send_delay", 1.0),
+            ("delay_mix", 1.0),
+            ("delay_time", DELAY_MILLISECONDS),
+        ]);
+        let (body_left, body_right) = toaster_render(&mut body, FRAMES, &events);
+
+        let (converted_left, converted_right) =
+            render_toaster_reference(FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.set_pad_param(0, "send_delay", 1.0);
+                    instance.set_param("delay_mix", 1.0);
+                    instance.set_param("delay_time", DELAY_SECONDS);
+                    instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+                }
+            });
+        let (unconverted_left, _) = render_toaster_reference(FRAMES, |run, instance| {
+            if run == 0 {
+                instance.set_pad_param(0, "send_delay", 1.0);
+                instance.set_param("delay_mix", 1.0);
+                instance.set_param("delay_time", DELAY_MILLISECONDS);
+                instance.note_on(0, 100.0, TOASTER_REFERENCE_MIDI_NOTE);
+            }
+        });
+
+        assert_eq!(
+            body_left, converted_left,
+            "the body's left channel is not what the instrument renders for a quarter-second delay"
+        );
+        assert_eq!(
+            body_right, converted_right,
+            "the body's right channel is not what the instrument renders for a quarter-second \
+             delay"
+        );
+        assert!(
+            body_left
+                .iter()
+                .chain(body_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the body rendered silence, so the equality above says nothing"
+        );
+        assert_ne!(
+            body_left, unconverted_left,
+            "the unconverted figure renders the same block, so this window cannot tell a delay \
+             in seconds from one in milliseconds"
+        );
+    }
+
+    /// The body declares no latency, and reports none.
+    ///
+    /// The machine produces its material in the block it was asked for, and the
+    /// worklet declares nothing for its own node, so a hosted kit sits where a
+    /// worklet kit sits. The two readings are the same fact from the two sides
+    /// the graph uses: [`ToasterBody::latency_samples`] is what the body reports,
+    /// and [`PluginCore::declared_latency_frames`] is what the mapper publishes
+    /// at registration — `None`, so no `SetEffectLatency` follows the body
+    /// across the ring at all.
+    #[test]
+    fn a_toaster_body_reports_no_latency() {
+        assert_eq!(
+            toaster_body(&[]).latency_samples(),
+            0,
+            "the body reports a group delay the drum machine does not have"
+        );
+        assert_eq!(
+            PluginCore::toaster_with_patch(TOASTER_RATE, &toaster_patch(TOASTER_KIT))
+                .declared_latency_frames(),
+            None,
+            "the record path declares a figure for a body that has none, so the graph holds every \
+             route meeting this strip back by it"
+        );
+    }
+
+    /// The body renders, strikes, releases and takes writes without allocating.
+    ///
+    /// The guard is the oracle, and it covers all three paths the callback
+    /// takes: the render, the note delivery, and the parameter writes. The
+    /// writes are chosen for the arms that do the most work — `pad0_engine_type`
+    /// re-selects a pad's voice and resets its engine parameters,
+    /// `delay_time` re-derives the line's read position, and `reverb_mix`
+    /// reaches the plate — because an arm that merely stored a float could not
+    /// allocate whatever the body did around it.
+    ///
+    /// The construction, the warming render and the event slices stay outside
+    /// the guard: the constructor legitimately allocates the whole machine
+    /// (ADR 0020), and building a `Vec` of events allocates too.
+    ///
+    /// The two assertions beside the guard refuse a vacuous pass: a render that
+    /// came out silent covered no per-sample path, and one carrying a non-finite
+    /// sample would mean a write left the machine producing state the guard was
+    /// never the point of.
+    #[test]
+    fn a_toaster_body_does_not_allocate_while_rendering_notes_and_writes() {
+        const FRAMES: usize = 512;
+        /// Pad 0 in the low bank.
+        const KICK_NOTE: u8 = 36;
+        /// Pad 5 in the low bank.
+        const RIM_NOTE: u8 = 41;
+
+        let mut body = toaster_body(&[("pad0_send_reverb", 0.5), ("reverb_mix", 0.5)]);
+        let warming = [toaster_hit(KICK_NOTE, 0)];
+        let guarded = [
+            toaster_hit(KICK_NOTE, 0),
+            toaster_hit(RIM_NOTE, 200),
+            toaster_release(KICK_NOTE, 400),
+        ];
+        let quiet: [MidiNoteEvent; 0] = [];
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        body.process(&mut left, &mut right, FRAMES, &warming);
+
+        left.fill(0.0);
+        right.fill(0.0);
+        assert_no_alloc::assert_no_alloc(|| {
+            body.process(&mut left, &mut right, FRAMES, &guarded);
+            body.set_param("master_gain", 0.7);
+            body.set_param("pad0_engine_type", 14.0);
+            body.set_param("pad0_tune", -5.0);
+            body.set_param("delay_time", 250.0);
+            body.set_param("reverb_mix", 0.8);
+            body.process(&mut left, &mut right, FRAMES, &quiet);
+        });
+
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the guarded render is silent, so it covered no per-sample path"
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a write left the drum machine producing non-finite samples"
+        );
+    }
+
+    /// Every pad struck at once leaves the body finite.
+    ///
+    /// The default kit assigns a different engine to most of the sixteen pads,
+    /// so one block struck across the whole grid at full velocity runs every
+    /// family's per-sample path at once — with the voice pool half spent and the
+    /// sends, buses and master gain summing all of them. A non-finite sample
+    /// reaching the device summing bus is not one bad sample: it silences the
+    /// mix from there on.
+    ///
+    /// The non-silence assertion is what stops the finiteness passing
+    /// vacuously, because an all-zero block is finite.
+    #[test]
+    fn a_toaster_body_returns_finite_samples() {
+        const FRAMES: usize = 512;
+        const FULL_SCALE_VELOCITY: u8 = 127;
+
+        let events: Vec<MidiNoteEvent> = (0..TOASTER_PAD_COUNT)
+            .map(|pad| {
+                let mut event = toaster_hit(TOASTER_LOW_BANK_START + pad as u8, 0);
+                event.velocity = FULL_SCALE_VELOCITY;
+                event
+            })
+            .collect();
+        let (left, right) = toaster_render(&mut toaster_body(&[]), FRAMES, &events);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a non-finite sample left the callback, so every route downstream of this strip is \
+             poisoned from here on"
+        );
+        assert!(
+            left.iter().chain(right.iter()).any(|sample| *sample != 0.0),
+            "the whole grid rendered silence, so the finiteness above says nothing"
+        );
+    }
+
+    // ── Levain ─────────────────────────────────────────────────────────────
+
+    /// The rate every Levain spec here builds its instance at, which is the
+    /// rate the fixture's sample is authored at. The sampler derives its
+    /// playback ratio from the two, so a reference instance built at another
+    /// rate plays the same sample at another pitch.
+    const LEVAIN_RATE: f32 = 48_000.0;
+
+    /// The voice ceiling the fixture's instances are built with, spelled
+    /// independently of [`LEVAIN_MAX_VOICES`] rather than reusing it: reusing
+    /// the production constant would make the reference agree with the body by
+    /// construction even if the body started building instances of its own.
+    const LEVAIN_SPEC_VOICES: u32 = 64;
+
+    /// The MIDI velocity every Levain fixture strikes with, and — because the
+    /// body passes velocity on the MIDI scale — the figure the reference
+    /// instance is struck with too.
+    const LEVAIN_SPEC_VELOCITY: u8 = 100;
+
+    /// The note the fixture's one zone is rooted at, and the note every spec
+    /// here plays: rooted and played at the same pitch, the sample comes back
+    /// at its authored rate, so a body that sounded the right zone at the wrong
+    /// ratio has nothing to hide behind.
+    const LEVAIN_SPEC_NOTE: u8 = 69;
+
+    /// Frames in the fixture's sample: one second at [`LEVAIN_RATE`], so it
+    /// outlasts every render below and no spec's tail is the sample running
+    /// out.
+    const LEVAIN_SPEC_SAMPLE_FRAMES: usize = 48_000;
+
+    /// The frames the parity specs render: twenty-four whole runs, so the tail
+    /// window below is a whole run of the render rather than a fragment.
+    const LEVAIN_PARITY_FRAMES: usize = LEVAIN_RUN_FRAMES * 24;
+
+    /// The frame the fixture's note is released at.
+    const LEVAIN_RELEASE_FRAME: u32 = 1500;
+
+    /// The run holding it, which is `1500 / LEVAIN_RUN_FRAMES`.
+    const LEVAIN_RELEASE_RUN: usize = 11;
+
+    /// The pan the fixture's one mic position is set to, hard enough off centre
+    /// that the two channels of a mono sample's render differ — which is what
+    /// lets an equality below refuse a body that read one channel twice.
+    const LEVAIN_SPEC_PAN: f32 = -0.8;
+
+    /// One second of 440 Hz at [`LEVAIN_RATE`], with a 5 ms linear fade at each
+    /// end.
+    ///
+    /// The fades are what make the sample a usable oracle: a raw sine starting
+    /// at full amplitude clicks on every strike, and a click is broadband
+    /// enough to survive any filtering a stage might apply, so a comparison
+    /// against it would hold even for a body that lost the tone entirely.
+    fn levain_spec_sample() -> Vec<f32> {
+        /// 5 ms at [`LEVAIN_RATE`].
+        const FADE_FRAMES: f32 = 240.0;
+        /// The pitch the sample is authored at, and — rooted at
+        /// [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
+        const HERTZ: f32 = 440.0;
+
+        (0..LEVAIN_SPEC_SAMPLE_FRAMES)
+            .map(|frame| {
+                let phase = std::f32::consts::TAU * HERTZ * frame as f32 / LEVAIN_RATE;
+                let fade_in = (frame as f32 / FADE_FRAMES).min(1.0);
+                let remaining = (LEVAIN_SPEC_SAMPLE_FRAMES - frame) as f32;
+                let fade_out = (remaining / FADE_FRAMES).min(1.0);
+                phase.sin() * fade_in * fade_out
+            })
+            .collect()
+    }
+
+    /// A sampler holding one committed bank: one mono zone covering the whole
+    /// keyboard and the whole velocity range, through one mic position panned
+    /// off centre.
+    ///
+    /// Two calls build two independent instances that render identically. The
+    /// bank is loaded into this instance alone — nothing here publishes or
+    /// attaches a shared bank — and every seeded stage of the engine draws
+    /// from a constant in its own config (`Rng::new(config.seed)`,
+    /// `crates/daw-dsp/src/levain/humanize.rs`), so the reference side of a
+    /// spec below is the body's instance built twice rather than an
+    /// approximation of it.
+    fn levain_instance() -> LevainInstance {
+        let mut instance = LevainInstance::new(LEVAIN_RATE, LEVAIN_SPEC_VOICES);
+        instance.begin_sample_bank("spec");
+        let sample = instance
+            .add_sample(
+                levain_spec_sample(),
+                LEVAIN_SPEC_SAMPLE_FRAMES as u32,
+                1,
+                LEVAIN_RATE,
+            )
+            .expect("the staged bank takes the fixture's one sample");
+        instance.add_zone(
+            0,
+            sample,
+            0,
+            LEVAIN_SPEC_NOTE,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.05,
+        );
+        assert!(
+            instance.build_zone_map(1, 1),
+            "the fixture's one zone does not build a zone map, so nothing below would sound"
+        );
+        assert!(
+            instance.commit_sample_bank(),
+            "the fixture's staged bank does not commit, so nothing below would sound"
+        );
+        // After the commit, which rebuilds the mic mixer at the bank's own mic
+        // count and would otherwise drop this.
+        instance.set_param("mic_0_pan", LEVAIN_SPEC_PAN);
+        instance
+    }
+
+    /// One of the sampler's own parameter names, as the mapper resolves it.
+    fn levain_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// The body [`PluginCore::levain_with_patch`] built around a loaded
+    /// instance, unwrapped so a spec can render through it directly.
+    fn levain_body(patch: &[(BuiltinParamName, f32)]) -> Box<LevainBody> {
+        let PluginCore::Levain(body) = PluginCore::levain_with_patch(levain_instance(), patch)
+        else {
+            unreachable!("levain_with_patch builds the levain variant");
+        };
+        body
+    }
+
+    /// A strike of `note` on `channel`, stamped for `frame`.
+    fn levain_hit(note: u8, channel: i16, frame: u32) -> MidiNoteEvent {
+        let mut event = note_on(note);
+        event.velocity = LEVAIN_SPEC_VELOCITY;
+        event.channel = channel;
+        event.frame_offset = frame;
+        event
+    }
+
+    /// The release of `note` on `channel`, stamped for `frame`.
+    fn levain_release(note: u8, channel: i16, frame: u32) -> MidiNoteEvent {
+        let mut event = levain_hit(note, channel, frame);
+        event.is_note_on = false;
+        event
+    }
+
+    /// `frames` rendered through `body` into silence, which is what a strip
+    /// carrying this generator and nothing else hands it.
+    fn levain_render(
+        body: &mut LevainBody,
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0_f32; frames];
+        let mut right = vec![0.0_f32; frames];
+        body.process(&mut left, &mut right, frames, events);
+        (left, right)
+    }
+
+    /// `frames` rendered by a bare [`LevainInstance`], driven the way the
+    /// worklet drives it: [`LEVAIN_RUN_FRAMES`] at a time, with `deliver`
+    /// called with the run index before each run renders.
+    ///
+    /// The reference side of the specs below — the instrument is driven
+    /// directly here, so what they compare is the body's splitting, addressing
+    /// and summing against the instrument's own output rather than one body
+    /// against another.
+    fn render_levain_reference(
+        frames: usize,
+        mut deliver: impl FnMut(usize, &mut LevainInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = levain_instance();
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+        let mut rendered = 0;
+        let mut run = 0;
+        while rendered < frames {
+            let run_frames = (frames - rendered).min(LEVAIN_RUN_FRAMES);
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: both pointers were derived after the render and name the
+            // instrument's own channel buffers, which its constructor sizes at
+            // `LEVAIN_BLOCK_FRAMES` and no method resizes; `run_frames` is
+            // bounded by `LEVAIN_RUN_FRAMES`, well inside that. The two
+            // buffers are separate allocations, so the reads alias nothing.
+            // Nothing mutates the instrument between the render and these
+            // reads.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                right.extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+            rendered += run_frames;
+            run += 1;
+        }
+        (left, right)
+    }
+
+    /// The loudest absolute sample in `samples`.
+    fn levain_peak(samples: &[f32]) -> f32 {
+        samples
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// The body renders exactly what the instrument it wraps renders, run by
+    /// run, for the same strike and the same release.
+    ///
+    /// This is the whole claim of the body's process path: the split into runs,
+    /// the note and channel a strike addresses, the velocity scale it carries
+    /// on, the release reaching `note_off_on_channel`, and the sum into the
+    /// pair.
+    ///
+    /// The release is stamped at frame 1500, inside run 11, and the reference
+    /// lifts the key at the head of that same run. A body that delivered every
+    /// event at the head of the callback would release at run 0 and render a
+    /// note that barely sounded, so the run split is observed rather than
+    /// assumed.
+    ///
+    /// The two assertions beside the equalities refuse a vacuous pass: a silent
+    /// render matches a silent reference, and a render whose channels are equal
+    /// would match a reference that had copied one channel into both — which is
+    /// the live hazard here, because the instrument publishes its two channels
+    /// through two pointers and a body reading the left one twice would
+    /// otherwise pass.
+    #[test]
+    fn a_levain_body_renders_what_the_instance_renders_run_by_run() {
+        /// The floor the reference's peak must clear. A sample played at unity
+        /// through a velocity of 100 stands far above this, so a fixture that
+        /// silently failed to load its bank is caught here rather than passing
+        /// an equality of two silences.
+        const AUDIBLE: f32 = 0.05;
+
+        let events = [
+            levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            levain_release(LEVAIN_SPEC_NOTE, 0, LEVAIN_RELEASE_FRAME),
+        ];
+        let mut body = levain_body(&[]);
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+                }
+            });
+
+        assert_eq!(
+            body_left, instance_left,
+            "the body's left channel is not what the instrument renders for the same strike and \
+             release"
+        );
+        assert_eq!(
+            body_right, instance_right,
+            "the body's right channel is not what the instrument renders for the same strike and \
+             release"
+        );
+        assert!(
+            levain_peak(&instance_left).max(levain_peak(&instance_right)) > AUDIBLE,
+            "the reference rendered near silence, so the equalities above say nothing"
+        );
+        assert_ne!(
+            body_left, body_right,
+            "the two channels are identical, so the fixture's panned mic never moved and a body \
+             that read one channel twice would pass"
+        );
+    }
+
+    /// The body joins what it renders to whatever already stands in the pair.
+    ///
+    /// An instrument is a generator, and the buffers it is handed carry the
+    /// chain's material up to its place in it — a second generator on the same
+    /// strip, or a device the splice placed ahead of it. Every other fixture
+    /// here renders into silence, where `*out = *sample` and `*out += *sample`
+    /// are the same write, so this is the one spec that can tell them apart:
+    /// the pair opens on a non-zero constant and each output sample must be
+    /// that constant plus the reference instrument's own sample, exactly.
+    ///
+    /// The non-silence assertion is what stops the equality passing vacuously.
+    /// A reference that rendered nothing would make the sum and the overwrite
+    /// agree again.
+    #[test]
+    fn a_levain_body_sums_into_what_already_stands_in_the_pair() {
+        /// What the chain has already written where this body renders. Chosen
+        /// well clear of zero so an overwrite cannot round its way to a pass.
+        const STANDING: f32 = 0.25;
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+        let mut body = levain_body(&[]);
+        let mut left = vec![STANDING; LEVAIN_PARITY_FRAMES];
+        let mut right = vec![STANDING; LEVAIN_PARITY_FRAMES];
+        body.process(&mut left, &mut right, LEVAIN_PARITY_FRAMES, &events);
+
+        let (instance_left, instance_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+            });
+        let summed_left: Vec<f32> = instance_left
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+        let summed_right: Vec<f32> = instance_right
+            .iter()
+            .map(|sample| STANDING + *sample)
+            .collect();
+
+        assert_eq!(
+            left, summed_left,
+            "the body's left channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert_eq!(
+            right, summed_right,
+            "the body's right channel is not what already stood there plus what the instrument \
+             rendered, so it overwrote the chain instead of joining it"
+        );
+        assert!(
+            instance_left
+                .iter()
+                .chain(instance_right.iter())
+                .any(|sample| *sample != 0.0),
+            "the reference rendered silence, so the sums above are the prefill compared with \
+             itself"
+        );
+    }
+
+    /// A release narrows to the channel its strike sounded on.
+    ///
+    /// Two keys can hold the same pitch on two member channels, and lifting one
+    /// of them must leave the other sounding. The engine narrows on the channel
+    /// it is given (`LevainVoicePool::release_note_matching`,
+    /// `crates/daw-dsp/src/levain/voice.rs`), so what this pins is that the
+    /// body passes the event's own channel through rather than a constant: a
+    /// body that sent every release on channel 0 would silence the note struck
+    /// on channel 3, and one that sent every release on the strike's channel by
+    /// accident of ordering would fail the mismatched case.
+    ///
+    /// Each case is held to the instrument's own output first, so the claim is
+    /// parity rather than a hand-picked envelope. The tails then separate the
+    /// two: the fixture's zone releases over 0.05 s scaled by the family model
+    /// the unknown instrument id falls through to (`Percussion`, ×4.6 —
+    /// `InstrumentFamily::release_scale`, `crates/daw-dsp/src/levain/types.rs`),
+    /// so 11040 frames, and the last run of the render stands 1500 frames past
+    /// the release at `exp(-1500 / 11040)`, about 0.87 of the held level. The
+    /// bound below leaves that figure room while still refusing a body whose
+    /// two cases decayed identically.
+    #[test]
+    fn a_levain_body_releases_on_the_channel_the_note_came_on() {
+        /// The channel the note is struck on, and the one a narrowed release
+        /// must name to lift it.
+        const STRUCK_ON: i16 = 3;
+        /// The share of the held tail the released tail must fall below. The
+        /// release curve puts it near 0.87, so this refuses two identical
+        /// decays without asserting the curve's exact shape.
+        const RELEASED_SHARE: f32 = 0.95;
+        /// The floor the still-held tail must clear, so "quieter" is a reading
+        /// of two audible tails rather than of two silences.
+        const AUDIBLE_TAIL: f32 = 0.01;
+
+        let tail = LEVAIN_PARITY_FRAMES - LEVAIN_RUN_FRAMES;
+        let mut held_body = levain_body(&[]);
+        let (held_left, held_right) = levain_render(
+            &mut held_body,
+            LEVAIN_PARITY_FRAMES,
+            &[
+                levain_hit(LEVAIN_SPEC_NOTE, STRUCK_ON, 0),
+                levain_release(LEVAIN_SPEC_NOTE, 0, LEVAIN_RELEASE_FRAME),
+            ],
+        );
+        let mut released_body = levain_body(&[]);
+        let (released_left, released_right) = levain_render(
+            &mut released_body,
+            LEVAIN_PARITY_FRAMES,
+            &[
+                levain_hit(LEVAIN_SPEC_NOTE, STRUCK_ON, 0),
+                levain_release(LEVAIN_SPEC_NOTE, STRUCK_ON, LEVAIN_RELEASE_FRAME),
+            ],
+        );
+
+        let reference = |release_channel: u8| {
+            render_levain_reference(LEVAIN_PARITY_FRAMES, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        STRUCK_ON as u8,
+                    );
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    instance.note_off_on_channel(LEVAIN_SPEC_NOTE, release_channel);
+                }
+            })
+        };
+        let (held_reference, _) = reference(0);
+        let (released_reference, _) = reference(STRUCK_ON as u8);
+
+        assert_eq!(
+            held_left, held_reference,
+            "a release addressed to another channel does not render what the instrument renders \
+             for that release, so the body is not passing the event's channel through"
+        );
+        assert_eq!(
+            released_left, released_reference,
+            "a release addressed to the struck channel does not render what the instrument \
+             renders for it"
+        );
+
+        let held_tail = levain_peak(&held_left[tail..]).max(levain_peak(&held_right[tail..]));
+        let released_tail =
+            levain_peak(&released_left[tail..]).max(levain_peak(&released_right[tail..]));
+        assert!(
+            held_tail > AUDIBLE_TAIL,
+            "the note struck on channel {STRUCK_ON} is not sounding at the end of the render, so \
+             a release addressed elsewhere silenced it"
+        );
+        assert!(
+            released_tail < held_tail * RELEASED_SHARE,
+            "the release addressed to channel {STRUCK_ON} left the note as loud as the release \
+             addressed elsewhere, so nothing distinguishes the two channels"
+        );
+    }
+
+    /// A release MIDI has no channel address for lifts every voice at its
+    /// pitch.
+    ///
+    /// The key is down whether or not its channel was addressable, and a key
+    /// nothing can ever lift is worse than releasing more than was asked
+    /// (`crates/daw-engine/AGENTS.md`). So an unaddressable channel reaches the
+    /// instrument's unnarrowed `note_off`, which is also what the worklet sends
+    /// for a message carrying no channel at all (`_dispatch`,
+    /// `src/modules/AudioEngine/services/levainProcessor.ts`).
+    ///
+    /// Two notes of one pitch are struck on two channels so the two answers
+    /// differ: the narrowed release leaves one of them sounding, the broad one
+    /// leaves neither. Both are held to the instrument's own output, and the
+    /// inequality between them is what refuses a body that quietly narrowed the
+    /// unaddressable channel to 0.
+    #[test]
+    fn a_levain_body_releases_every_voice_at_a_pitch_for_an_unaddressable_channel() {
+        /// A channel outside `0..16`, which is what a negative or oversized
+        /// wire value reaches the body as.
+        const UNADDRESSABLE: i16 = -1;
+        /// The second channel the pitch is struck on.
+        const OTHER: i16 = 3;
+
+        let strikes = [
+            levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            levain_hit(LEVAIN_SPEC_NOTE, OTHER, 0),
+        ];
+        let events = |channel: i16| {
+            [
+                strikes[0],
+                strikes[1],
+                levain_release(LEVAIN_SPEC_NOTE, channel, LEVAIN_RELEASE_FRAME),
+            ]
+        };
+        let (broad_left, _) = levain_render(
+            &mut levain_body(&[]),
+            LEVAIN_PARITY_FRAMES,
+            &events(UNADDRESSABLE),
+        );
+        let (narrow_left, _) =
+            levain_render(&mut levain_body(&[]), LEVAIN_PARITY_FRAMES, &events(0));
+
+        let reference = |release: fn(&mut LevainInstance)| {
+            render_levain_reference(LEVAIN_PARITY_FRAMES, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                    instance.note_on_with_channel(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        OTHER as u8,
+                    );
+                }
+                if run == LEVAIN_RELEASE_RUN {
+                    release(instance);
+                }
+            })
+        };
+        let (broad_reference, _) = reference(|instance| instance.note_off(LEVAIN_SPEC_NOTE));
+        let (narrow_reference, _) =
+            reference(|instance| instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0));
+
+        assert_eq!(
+            broad_left, broad_reference,
+            "a release on an unaddressable channel does not render what the instrument's \
+             unnarrowed note_off renders, so some voice was left holding a key nothing can lift"
+        );
+        assert_eq!(
+            narrow_left, narrow_reference,
+            "a release on channel 0 does not render what the instrument's narrowed note_off \
+             renders"
+        );
+        assert_ne!(
+            broad_left, narrow_left,
+            "the broad release and the channel-0 release render the same block, so this fixture \
+             cannot tell an unnarrowed note_off from one narrowed to channel 0"
+        );
+    }
+
+    /// A sampler the name path built holds no bank, and renders silence.
+    ///
+    /// [`PluginCore::builtin`] carries no bank source, so the instance it
+    /// builds has no recordings to sound and the honest answer is nothing at
+    /// all: the instrument's own fallback tone is constructed disarmed
+    /// (`crates/daw-dsp/src/levain/fallback.rs`) precisely so a bankless
+    /// sampler does not stand a sine in for missing content, and
+    /// `levain_unloaded_instance_is_silent` in `daw-dsp` pins that for the
+    /// instance. What this adds is the body's side of it: the pair it was
+    /// handed comes back carrying exactly what stood in it, so a bankless
+    /// Levain on a strip neither sings nor erases the chain it sits in.
+    #[test]
+    fn a_bankless_levain_body_renders_silence() {
+        /// What the chain has already written where this body renders.
+        const STANDING: f32 = 0.25;
+        /// Runs rendered, enough that a voice with any attack at all would
+        /// have opened by the end of them.
+        const RUNS: usize = 8;
+
+        let PluginCore::Levain(mut body) =
+            PluginCore::builtin(BuiltinEffectType::Levain, LEVAIN_RATE)
+        else {
+            unreachable!("the name path builds the levain variant");
+        };
+        let frames = LEVAIN_RUN_FRAMES * RUNS;
+        let mut left = vec![STANDING; frames];
+        let mut right = vec![STANDING; frames];
+        body.process(
+            &mut left,
+            &mut right,
+            frames,
+            &[levain_hit(LEVAIN_SPEC_NOTE, 0, 0)],
+        );
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| *sample == STANDING),
+            "a sampler with no bank moved the chain's own material, so it either sounded content \
+             it does not have or overwrote what stood where it renders"
+        );
+    }
+
+    /// The sampler answers the wire name the mapper resolves it by, says it
+    /// sounds notes, and declares no latency.
+    ///
+    /// The wire name is the whole of the contract between a saved device and
+    /// this body: a project naming `levain` must reach the Levain variant, and
+    /// the mapper reads the name off the device rather than off an index, so
+    /// the round trip is what a renamed variant would break.
+    ///
+    /// `sounds_notes` is what puts the device on the note-carrying side of the
+    /// chain, so a strip's MIDI reaches it at all.
+    ///
+    /// The latency is two readings of one fact from the two sides the graph
+    /// uses: [`LevainBody::latency_samples`] is what the body reports, and
+    /// [`PluginCore::declared_latency_frames`] is what the mapper publishes at
+    /// registration — `None`, because the instrument publishes no latency to
+    /// read, so no `SetEffectLatency` follows the body across the ring at all.
+    #[test]
+    fn levain_answers_its_wire_name_and_declares_no_latency() {
+        assert_eq!(
+            BuiltinEffectType::from_name("levain"),
+            Some(BuiltinEffectType::Levain),
+            "the wire name a saved Levain device carries does not resolve to this variant"
+        );
+        assert_eq!(
+            BuiltinEffectType::Levain.name(),
+            "levain",
+            "the variant spells a name the mapper cannot resolve it back from"
+        );
+        assert!(
+            BuiltinEffectType::Levain.sounds_notes(),
+            "a sampler that does not sound notes is handed no MIDI, so nothing would ever play it"
+        );
+        assert_eq!(
+            levain_body(&[]).latency_samples(),
+            0,
+            "the body reports a group delay the sampler does not have"
+        );
+        assert_eq!(
+            PluginCore::levain_with_patch(levain_instance(), &[]).declared_latency_frames(),
+            None,
+            "the record path declares a figure for a body whose instance publishes none, so the \
+             graph holds every route meeting this strip back by it"
+        );
+    }
+
+    /// Levain's two longest parameter names fit the carrier.
+    ///
+    /// `legato_portamento_velocity_threshold` (36 bytes) and
+    /// `expression_dynamic_crossfade_time` (33 bytes) are `LevainEngine::set_param`'s
+    /// own widest names (`crates/daw-dsp/src/levain/engine.rs`), and the web
+    /// patch projection emits both
+    /// (`projectLevainPatchToEngineParameters.ts`). [`BuiltinParamName::parse`]
+    /// refusing either would silently drop the entry the mapper builds for it —
+    /// a name shaped exactly like the instrument's own that this carrier
+    /// cannot hold.
+    ///
+    /// This is the whole of what this spec observes: the carrier admits both
+    /// names. It does not observe that a patch carrying either name reaches
+    /// the instrument — `legato_portamento_velocity_threshold` is read only
+    /// inside a legato transition with a held note
+    /// (`crates/daw-dsp/src/levain/legato.rs`), a state the one-note fixture
+    /// below never enters, so a render comparison here would pass whether or
+    /// not the patch landed. Patch delivery in general is
+    /// `a_levain_patch_lands_on_the_instance_before_it_sounds`'s claim, not
+    /// this one's.
+    #[test]
+    fn levain_longest_parameter_names_fit_the_carrier() {
+        assert!(
+            BuiltinParamName::parse("legato_portamento_velocity_threshold").is_some(),
+            "the carrier refuses Levain's own 36-byte parameter name"
+        );
+        assert!(
+            BuiltinParamName::parse("expression_dynamic_crossfade_time").is_some(),
+            "the carrier refuses Levain's own 33-byte parameter name"
+        );
+    }
+
+    /// A Levain patch lands on the instance before the body ever renders, not
+    /// after.
+    ///
+    /// [`PluginCore::levain_with_patch`] writes the patch into the instance
+    /// before wrapping it into a body, so every entry must already be applied
+    /// by the time the body's first `process` call reaches it. A patch
+    /// dropped at that boundary would sound the fixture's untouched defaults
+    /// while every other spec in this file still reported success, because
+    /// they all render through [`levain_body`]`(&[])` alone.
+    ///
+    /// `master_gain` and `mic_0_pan` are applied in that order because that is
+    /// the record's own field order, and there is no precedence law
+    /// (`LEVAIN_PATCH_PRECEDENCE` is empty) to reorder them.
+    #[test]
+    fn a_levain_patch_lands_on_the_instance_before_it_sounds() {
+        const FRAMES: usize = LEVAIN_RUN_FRAMES * 8;
+
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+
+        let mut patched_body = levain_body(&[
+            (levain_name("master_gain"), 0.25),
+            (levain_name("mic_0_pan"), 0.6),
+        ]);
+        let (patched_left, patched_right) = levain_render(&mut patched_body, FRAMES, &events);
+
+        let mut reference = levain_instance();
+        reference.set_param("master_gain", 0.25);
+        reference.set_param("mic_0_pan", 0.6);
+        let mut reference_body = LevainBody::new(reference);
+        let (reference_left, reference_right) = levain_render(&mut reference_body, FRAMES, &events);
+
+        assert_eq!(
+            patched_left, reference_left,
+            "the patched body's left channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+        assert_eq!(
+            patched_right, reference_right,
+            "the patched body's right channel differs from a bare instance carrying the same \
+             writes in the same order"
+        );
+
+        let mut unpatched_body = levain_body(&[]);
+        let (unpatched_left, unpatched_right) = levain_render(&mut unpatched_body, FRAMES, &events);
+        let difference = patched_left
+            .iter()
+            .zip(&unpatched_left)
+            .chain(patched_right.iter().zip(&unpatched_right))
+            .fold(0.0_f32, |peak, (a, b)| peak.max((a - b).abs()));
+
+        assert!(
+            difference > 0.001,
+            "the patched render does not differ from an unpatched body's render by more than \
+             0.001, so the equalities above hold on two identical-by-default buffers rather than \
+             because the patch landed"
+        );
+    }
+
+    // ── Scoring ────────────────────────────────────────────────────────────
+
+    /// The rate every Tuner spec here builds at. The analyser derives its
+    /// analysis hop, its bandpass and its detector search range from the rate,
+    /// so a reference instance built at any other one runs a different detector
+    /// and the parity spec below would be comparing two of them.
+    const SCORING_RATE: f32 = 48_000.0;
+
+    /// The pitch every Tuner spec here feeds in, and the pitch concert A names:
+    /// the note the detector must come back with is A4, MIDI 69.
+    const SCORING_TONE_HZ: f32 = 440.0;
+
+    /// The amplitude that tone is fed at — well above the analyser's own noise
+    /// gate (`GATE_THRESHOLD`, `crates/scoring/src/lib.rs`), so every spec here
+    /// observes the detecting path rather than the release path.
+    const SCORING_TONE_AMPLITUDE: f32 = 0.5;
+
+    /// Frames each spec feeds: a second at [`SCORING_RATE`], which is some
+    /// thirty analysis hops — enough for the temporal stabilizer to settle on a
+    /// pitch rather than still be filling its history.
+    const SCORING_FRAMES: usize = 48_000;
+
+    /// The callback length the hosted body is driven at. Deliberately not the
+    /// worklet's 128-frame quantum the reference below uses: the analyser's hop
+    /// is sample-counted, so the two must reach the same detection from
+    /// different call lengths or [`ScoringBody::process`]'s single whole-block
+    /// call is wrong.
+    const SCORING_CALLBACK: usize = 256;
+
+    /// The rate the two refusal specs below build at, and the reason they do:
+    /// the poly tracker's bass configuration sizes every per-string buffer for
+    /// the lowest string's band, and only at 88.2 and 96 kHz does that window
+    /// outgrow the FFT scratch its own detectors were built for, so three of
+    /// the four resize inside `process` (issue #4209). A spec at
+    /// [`SCORING_RATE`] would observe the `instrument` allocation alone and say
+    /// nothing about the tracker `poly` arms.
+    const SCORING_HIGH_RATE: f32 = 96_000.0;
+
+    /// Frames the refusal specs feed at [`SCORING_HIGH_RATE`]: one second,
+    /// which is thirty mono analysis hops (hop = rate / 30) and sixty poly
+    /// hops for a four-string bass (hop = rate / (15 * strings) = 1 600), so
+    /// every string's first detector tick falls inside it many times over.
+    const SCORING_HIGH_RATE_FRAMES: usize = 96_000;
+
+    /// One of the analyser's own parameter names, as the mapper resolves it.
+    fn scoring_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// `frames` of an `hz` sine at `sample_rate`, at the amplitude every spec
+    /// here feeds. The phase runs from frame zero across the whole slice, so a
+    /// spec that splits one call of this into a warm-up and a guarded pass
+    /// hands the analyser an unbroken tone across the join.
+    fn scoring_tone_at(frames: usize, hz: f32, sample_rate: f32) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let phase = std::f32::consts::TAU * hz * frame as f32 / sample_rate;
+                phase.sin() * SCORING_TONE_AMPLITUDE
+            })
+            .collect()
+    }
+
+    /// `frames` of the test tone.
+    fn scoring_tone(frames: usize) -> Vec<f32> {
+        scoring_tone_at(frames, SCORING_TONE_HZ, SCORING_RATE)
+    }
+
+    /// A Tuner core carrying `patch` at `sample_rate`, built through the door
+    /// the mapper uses ([`PluginCore::scoring_with_patch`]) together with the
+    /// telemetry handle that core hands back — the pair the mapper itself
+    /// keeps.
+    fn scoring_core_at(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> (PluginCore, Arc<ScoringTelemetry>) {
+        let core = PluginCore::scoring_with_patch(sample_rate, patch);
+        let telemetry = core
+            .scoring_telemetry()
+            .expect("a scoring core publishes a telemetry channel");
+        (core, telemetry)
+    }
+
+    /// A Tuner core carrying `patch` at [`SCORING_RATE`].
+    fn scoring_core(patch: &[(BuiltinParamName, f32)]) -> (PluginCore, Arc<ScoringTelemetry>) {
+        scoring_core_at(SCORING_RATE, patch)
+    }
+
+    /// The body inside a core built above.
+    fn scoring_body(core: &mut PluginCore) -> &mut ScoringBody {
+        let PluginCore::Scoring(body) = core else {
+            panic!("scoring_with_patch built something other than a Tuner");
+        };
+        body
+    }
+
+    /// Drive buffers the caller already owns through `body` in
+    /// [`SCORING_CALLBACK`]-frame callbacks, in place.
+    ///
+    /// Separate from [`scoring_render`] because it allocates nothing: the
+    /// allocation specs below need the cutting inside their guard and the
+    /// copies outside it.
+    fn scoring_drive(body: &mut ScoringBody, left: &mut [f32], right: &mut [f32]) {
+        let mut rendered = 0;
+        while rendered < left.len() {
+            let end = (rendered + SCORING_CALLBACK).min(left.len());
+            body.process(&mut left[rendered..end], &mut right[rendered..end]);
+            rendered = end;
+        }
+    }
+
+    /// Drive `material` through `body` in [`SCORING_CALLBACK`]-frame callbacks,
+    /// answering what the body left in the buffers.
+    fn scoring_render(body: &mut ScoringBody, material: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let mut left = material.to_vec();
+        let mut right = material.to_vec();
+        scoring_drive(body, &mut left, &mut right);
+        (left, right)
+    }
+
+    /// The same material through the worklet's own binding, in the 128-frame
+    /// quanta an `AudioWorkletProcessor` hands it, answering the instance so a
+    /// spec can read its detection accessors.
+    ///
+    /// The instance's output pointers are deliberately never read: this
+    /// reference exists for the *detection* those accessors report, which is
+    /// the whole of what a Tuner produces.
+    fn scoring_reference(material: &[f32], writes: &[(&str, f32)]) -> scoring::ScoringInstance {
+        /// The worklet's own render quantum.
+        const QUANTUM: usize = 128;
+
+        let mut instance = scoring::ScoringInstance::new(SCORING_RATE);
+        for (name, value) in writes {
+            instance.set_param(name, *value);
+        }
+        for block in 0..material.len() / QUANTUM {
+            let run = &material[block * QUANTUM..(block + 1) * QUANTUM];
+            let _ = instance.process(run, run, QUANTUM as u32);
+        }
+        instance
+    }
+
+    /// The analyser is an insert that listens: with its tone generator off and
+    /// its output unmuted, every sample it was handed leaves bit-equal.
+    ///
+    /// Bit equality rather than a tolerance, because there is no arithmetic on
+    /// the signal path to drift: `ScoringEngine::process` preprocesses a *copy*
+    /// of the mono sum for the detector and adds only the tone generator's
+    /// output to the block, which is exactly `0.0` while the generator is off
+    /// (`ToneGenerator::tick`, `crates/scoring/src/tone.rs`). A body that
+    /// filtered, gated or gain-staged the programme would fail here rather than
+    /// leave a musician's insert quietly coloured.
+    #[test]
+    fn a_scoring_body_passes_its_input_through_unchanged() {
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, _telemetry) =
+            scoring_core(&[(scoring_name("tone"), 0.0), (scoring_name("mute"), 0.0)]);
+        let (left, right) = scoring_render(scoring_body(&mut core), &material);
+
+        assert_eq!(
+            left, material,
+            "the left channel is not the signal the body was handed"
+        );
+        assert_eq!(
+            right, material,
+            "the right channel is not the signal the body was handed"
+        );
+        assert!(
+            material.iter().any(|sample| *sample != 0.0),
+            "the material is silent, so the equalities above hold on two empty buffers"
+        );
+    }
+
+    /// A hosted Tuner reads the pitch the worklet's own `ScoringInstance`
+    /// reads for the same tone — the detection, not merely that both moved.
+    ///
+    /// The two are driven at different call lengths on purpose: the body takes
+    /// one whole 256-frame callback per call and the reference takes the
+    /// worklet's 128-frame quanta. The analyser's hop is counted in samples
+    /// inside `ScoringEngine::process`, so the same samples produce the same
+    /// analysis ticks at the same offsets whichever way the calls are cut, and a
+    /// body that re-cut the block into runs of its own — or reset anything per
+    /// call — would separate here.
+    ///
+    /// The absolute assertions beside the parity refuse a vacuous pass: two
+    /// analysers that both heard nothing would agree on zero, and `active` and
+    /// the 440 Hz bound are what say a detection happened at all.
+    #[test]
+    fn a_hosted_scoring_reads_the_worklet_pitch_for_the_same_tone() {
+        /// The tolerance the two readings are held to. They run the same
+        /// arithmetic over the same samples, so the figure is headroom against
+        /// a future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-3;
+        /// How far from concert A the reading may sit and still be A4. A pure
+        /// sine is the easiest material a pitch detector ever sees; a whole
+        /// hertz is orders looser than the interpolator's own resolution.
+        const PITCH_BOUND: f32 = 1.0;
+        /// A4 on the MIDI scale.
+        const A4_MIDI: i32 = 69;
+
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, telemetry) = scoring_core(&[]);
+        scoring_render(scoring_body(&mut core), &material);
+        let reading = telemetry.snapshot();
+        let reference = scoring_reference(&material, &[]);
+
+        assert!(
+            reading.active,
+            "the hosted body heard nothing, so the comparisons below prove nothing"
+        );
+        assert_eq!(
+            reading.active,
+            reference.is_active(),
+            "the hosted body and the worklet's instance disagree about whether a note sounds"
+        );
+        assert!(
+            (reading.frequency - SCORING_TONE_HZ).abs() < PITCH_BOUND,
+            "the hosted body read {} Hz for a {SCORING_TONE_HZ} Hz tone",
+            reading.frequency
+        );
+        assert!(
+            (reading.frequency - reference.get_frequency()).abs() < TOLERANCE,
+            "the hosted body read {} Hz where the worklet's instance read {} Hz",
+            reading.frequency,
+            reference.get_frequency()
+        );
+        assert!(
+            (reading.cents - reference.get_cents()).abs() < TOLERANCE,
+            "the hosted body read {} cents where the worklet's instance read {} cents",
+            reading.cents,
+            reference.get_cents()
+        );
+        assert_eq!(
+            reading.midi_note, A4_MIDI,
+            "a {SCORING_TONE_HZ} Hz tone is A4, and the body named MIDI {}",
+            reading.midi_note
+        );
+    }
+
+    /// A patch lands on the analyser before it hears anything, and the one name
+    /// that moves what a pitch *means* is what proves it.
+    ///
+    /// `a4_hz` retunes the concert-A reference the detected frequency is
+    /// measured against, so the same tone read against A4 = 445 Hz is flat by
+    /// `1200 * log2(440 / 445)` cents — about -19.56, where an unpatched body
+    /// reads it as very nearly in tune. The decisive expectation is the
+    /// *difference* between those two readings over the same samples: both
+    /// bodies detect the identical frequency, so the reference is the only term
+    /// that differs and the gap is the retune's own arithmetic. The absolute
+    /// figure is held too, at the detector's own pitch resolution rather than at
+    /// the ideal arithmetic — this analyser settles a little over a cent sharp
+    /// of a pure 440 Hz sine, which is a property of the detector and not of the
+    /// patch.
+    #[test]
+    fn a_scoring_patch_moves_the_reference_pitch_before_it_analyses() {
+        /// The reference the patch moves concert A to.
+        const RETUNED_A4: f32 = 445.0;
+        /// How far the reading may sit from the arithmetic the retune implies.
+        /// The detector's own estimate of a pure 440 Hz sine settles a little
+        /// over a cent sharp, and that error carries into the cents figure
+        /// whatever the reference is, so the bound admits it while staying an
+        /// order below the ~19.6 cents separating this answer from an unpatched
+        /// body's.
+        const CENTS_BOUND: f32 = 2.0;
+        /// How far the gap between the patched and unpatched readings may sit
+        /// from the retune's arithmetic. Both bodies analyse the same samples
+        /// and detect the same frequency, so the detector's own error cancels
+        /// out of the gap and only the moved reference is left in it.
+        const RETUNE_BOUND: f32 = 1e-2;
+        /// The tolerance against the reference instance, as in the parity spec
+        /// above: the same arithmetic over the same samples.
+        const TOLERANCE: f32 = 1e-3;
+
+        let expected_cents = 1200.0 * (SCORING_TONE_HZ / RETUNED_A4).log2();
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, telemetry) = scoring_core(&[(scoring_name("a4_hz"), RETUNED_A4)]);
+        scoring_render(scoring_body(&mut core), &material);
+        let reading = telemetry.snapshot();
+        let reference = scoring_reference(&material, &[("a4_hz", RETUNED_A4)]);
+        let (mut untouched, untouched_telemetry) = scoring_core(&[]);
+        scoring_render(scoring_body(&mut untouched), &material);
+        let unpatched = untouched_telemetry.snapshot();
+
+        assert!(
+            reading.active,
+            "the patched body heard nothing, so its cents reading says nothing"
+        );
+        assert!(
+            unpatched.active,
+            "the unpatched body heard nothing, so there is no gap to measure"
+        );
+        assert!(
+            (unpatched.cents - reading.cents + expected_cents).abs() < RETUNE_BOUND,
+            "moving concert A to {RETUNED_A4} Hz flattens the same tone by \
+             {} cents, and the two bodies read {} and {} cents",
+            -expected_cents,
+            unpatched.cents,
+            reading.cents
+        );
+        assert!(
+            (reading.cents - expected_cents).abs() < CENTS_BOUND,
+            "a {SCORING_TONE_HZ} Hz tone against A4 = {RETUNED_A4} Hz is {expected_cents} cents, \
+             and the body read {}",
+            reading.cents
+        );
+        assert!(
+            (reading.cents - reference.get_cents()).abs() < TOLERANCE,
+            "the patched body read {} cents where an instance given the same write read {}",
+            reading.cents,
+            reference.get_cents()
+        );
+    }
+
+    /// The one name that does change the signal: `mute` replaces the programme
+    /// with the reference tone, which is digital silence while the tone
+    /// generator is off.
+    ///
+    /// This is the tuner's own monitoring gesture — a player checking pitch
+    /// against the generator alone — and it has to be audible on the carrier
+    /// that is sounding, or a muted tuner on a natively carried strip keeps
+    /// passing the programme through.
+    #[test]
+    fn a_muted_scoring_body_renders_silence() {
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, _telemetry) =
+            scoring_core(&[(scoring_name("tone"), 0.0), (scoring_name("mute"), 1.0)]);
+        let (left, right) = scoring_render(scoring_body(&mut core), &material);
+
+        assert!(
+            left.iter().chain(right.iter()).all(|sample| *sample == 0.0),
+            "a muted tuner passed its programme through"
+        );
+    }
+
+    /// The body allocates nothing while analysing, which is the whole of what
+    /// makes it legal on the render callback (ADR 0020).
+    ///
+    /// The construction and the material stay outside the guard: the constructor
+    /// legitimately allocates the analysis ring, the extraction window and both
+    /// detectors' buffers, and building the tone's `Vec` allocates too. A
+    /// warming second runs first so the guarded pass falls on an analyser that
+    /// has already detected — the extraction, YIN, MPM, the stabilizer, the
+    /// vibrato detector and the publish have all run before the guard opens, and
+    /// the guarded pass runs them again over the state that second populated
+    /// rather than over empty buffers.
+    ///
+    /// What the guard covers is fifteen analysis hops, not one callback: the
+    /// hop is `sample_rate / 30` = 1 600 frames and [`SCORING_FRAMES`] is
+    /// exactly thirty of them, so a warm-up of that length leaves the counter
+    /// at a hop boundary and a single 256-frame guarded call never crosses the
+    /// next one — no extraction, no YIN, no MPM, no stabilizer and no vibrato
+    /// would run under the guard at all, and the `active` reading beside it
+    /// would be the warm-up's last publish rather than anything the guard saw.
+    ///
+    /// The guarded tone is a fourth below the warm-up's for the same reason:
+    /// the reading can only move from A4 to E4 if the analysis that names a
+    /// note ran inside the guard, so the note read before and after the guard
+    /// is what makes a vacuous pass impossible. The finiteness assertion stays
+    /// beside it — a guarded pass that left a non-finite sample would mean it
+    /// produced state the scrub had to catch rather than state it kept
+    /// coherent.
+    #[test]
+    fn a_scoring_body_does_not_allocate_while_analysing() {
+        /// The pitch the guarded pass feeds: E4, a fourth below the warm-up's
+        /// concert A and far enough from it that no detector error could
+        /// confuse the two.
+        const GUARDED_TONE_HZ: f32 = 329.63;
+        /// E4 on the MIDI scale.
+        const GUARDED_TONE_MIDI: i32 = 64;
+        /// A4 on the MIDI scale — the warm-up's own note.
+        const WARM_UP_MIDI: i32 = 69;
+
+        let warm_up = scoring_tone(SCORING_FRAMES);
+        let guarded = scoring_tone_at(SCORING_FRAMES / 2, GUARDED_TONE_HZ, SCORING_RATE);
+        let (mut core, telemetry) = scoring_core(&[]);
+        let body = scoring_body(&mut core);
+        scoring_render(body, &warm_up);
+
+        let warmed = telemetry.snapshot();
+        assert!(
+            warmed.active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+        assert_eq!(
+            warmed.midi_note, WARM_UP_MIDI,
+            "the warm-up fed a {SCORING_TONE_HZ} Hz tone and the analyser named MIDI {}, so the \
+             reading the guarded pass has to move is not the one this spec expects",
+            warmed.midi_note
+        );
+
+        let mut left = guarded.clone();
+        let mut right = guarded;
+        assert_no_alloc::assert_no_alloc(|| {
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        let reading = telemetry.snapshot();
+        assert!(
+            reading.active,
+            "the guarded pass left the analyser hearing nothing, so it covered no detection path"
+        );
+        assert_eq!(
+            reading.midi_note, GUARDED_TONE_MIDI,
+            "the guarded pass fed a {GUARDED_TONE_HZ} Hz tone and the analyser still names MIDI \
+             {}, so no analysis ran inside the guard",
+            reading.midi_note
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "the guarded pass left the analyser producing non-finite samples"
+        );
+    }
+
+    /// The live door refuses the two [`SCORING_NATIVE_REFUSED`] names, on the
+    /// audio thread, where forwarding either allocates.
+    ///
+    /// Both writes are made inside the guard in the order a panel would make
+    /// them — pick the instrument, then arm the tracker — because that is the
+    /// route a live write actually takes: `updateDeviceParam.ts` sends every
+    /// panel write natively without consulting `addressesParameter`, so
+    /// [`GraphCommand::SetParam`] reaches this door inside the render callback
+    /// through `apply_builtin_param`.
+    ///
+    /// Built at [`SCORING_HIGH_RATE`] so both halves of the hazard are in
+    /// range: the `instrument` arm rebuilds the tracker's per-string state as
+    /// it lands, and the bass strings it would build carry three detectors
+    /// that resize their own FFT scratch on their first tick at this rate. The
+    /// guarded pass is four poly hops long, so on revert the abort comes from
+    /// the `instrument` write itself and, failing that, from the first of those
+    /// ticks.
+    ///
+    /// The reading is asserted after the guard so the pass is not vacuous: a
+    /// guarded pass the analyser heard nothing in would have exercised no
+    /// analysis path for the refusal to sit beside.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_live_door() {
+        /// Frames driven under the guard: four poly hops at
+        /// [`SCORING_HIGH_RATE`], which is one tick per string of the bass a
+        /// forwarded `instrument` write would have built.
+        const GUARDED_FRAMES: usize = 4 * 1_600;
+
+        let tone = scoring_tone_at(
+            SCORING_HIGH_RATE_FRAMES + GUARDED_FRAMES,
+            SCORING_TONE_HZ,
+            SCORING_HIGH_RATE,
+        );
+        let (warm_up, guarded) = tone.split_at(SCORING_HIGH_RATE_FRAMES);
+        let (mut core, telemetry) = scoring_core_at(SCORING_HIGH_RATE, &[]);
+        let body = scoring_body(&mut core);
+        scoring_render(body, warm_up);
+
+        assert!(
+            telemetry.snapshot().active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+
+        let mut left = guarded.to_vec();
+        let mut right = guarded.to_vec();
+        assert_no_alloc::assert_no_alloc(|| {
+            body.set_param("instrument", 1.0);
+            body.set_param("poly", 1.0);
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
+        );
+    }
+
+    /// The record door refuses the same two names, so a persisted patch naming
+    /// the poly tracker builds the monophonic analyser the native Tuner is.
+    ///
+    /// The whole drive is inside the guard, with no warm-up, and that is the
+    /// point: the allocation a reverted refusal performs here is a *first*-tick
+    /// resize. `set_strings` sizes every per-string buffer for the lowest
+    /// string's band, so the A1, D2 and G2 detectors are each handed a window
+    /// twice the length their own FFT scratch was built for and
+    /// `YinDetector::detect` grows it once, on that string's first tick. A
+    /// warming second would spend all three of those growths outside the guard
+    /// — sixty poly hops at [`SCORING_HIGH_RATE`] is fifteen round trips over
+    /// four strings — and the guarded pass would then be allocation-free with
+    /// the refusal reverted, which is a spec that proves nothing. The guard
+    /// therefore opens before the tracker's first tick.
+    ///
+    /// A second of material covers thirty mono analysis hops and sixty poly
+    /// hops, so the reading asserted afterwards is a detection the guard itself
+    /// produced, and the pass is not vacuous for want of a warm-up.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_patch_door() {
+        let tone = scoring_tone_at(SCORING_HIGH_RATE_FRAMES, SCORING_TONE_HZ, SCORING_HIGH_RATE);
+        let (mut core, telemetry) = scoring_core_at(
+            SCORING_HIGH_RATE,
+            &[
+                (scoring_name("poly"), 1.0),
+                (scoring_name("instrument"), 1.0),
+            ],
+        );
+        let body = scoring_body(&mut core);
+
+        let mut left = tone.clone();
+        let mut right = tone;
+        assert_no_alloc::assert_no_alloc(|| {
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
         );
     }
 }

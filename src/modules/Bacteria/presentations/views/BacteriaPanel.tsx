@@ -17,6 +17,8 @@ import {
     setBacteriaActiveModule,
     setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
+import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/applyBacteriaMorph';
+import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
@@ -392,7 +394,7 @@ const PresetRail = ({
                     </span>
                     <span className="text-micro text-muted-foreground/45">{state.patch.name}</span>
                 </Row>
-                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2">
+                <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2 [&>*]:shrink-0">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => {
                             const active = preset.patch.name === state.patch.name;
@@ -450,20 +452,26 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 <XYMorphPad
                     x={state.patch.morphX}
                     y={state.patch.morphY}
-                    onChangeX={(value) => setGlobalParam(deviceId, 'morphX', value)}
-                    onChangeY={(value) => setGlobalParam(deviceId, 'morphY', value)}
+                    onChange={(x, y) => applyBacteriaMorphWithAudio(deviceId, x, y)}
                     snapshots={state.patch.snapshots}
                     width={264}
                     height={212}
                 />
             </Stack>
             <Grid cols={4} gap={2}>
-                {state.patch.snapshots.slice(0, 4).map((snapshot) => (
+                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => (
                     <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
                         <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                             Snap {snapshot.id}
                         </span>
                         <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                        <BChip
+                            active={Object.keys(snapshot.paramValues).length > 0}
+                            aria-label={`Capture snapshot ${snapshot.id}`}
+                            onClick={() => captureBacteriaSnapshot(deviceId, index)}
+                        >
+                            Capture
+                        </BChip>
                     </Stack>
                 ))}
             </Grid>
@@ -582,26 +590,34 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 description="Fine-tune the resting position without dragging the pad."
             />
             <Row wrap gap={4}>
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphX}
-                    k="morphX"
-                    label="X"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphY}
-                    k="morphY"
-                    label="Y"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphX}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, value, state.patch.morphY)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph X"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">X</span>
+                </Stack>
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphY}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, state.patch.morphX, value)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph Y"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">Y</span>
+                </Stack>
             </Row>
         </Stack>
     </Stack>
@@ -835,7 +851,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     };
 
     return (
-        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5">
+        <Stack gap={2} className="h-full min-h-0 gap-2.5 overflow-y-auto p-2.5 [&>*]:shrink-0">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Modules"
@@ -1435,7 +1451,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
 }
 
 const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Split"
@@ -1494,7 +1510,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
 );
 
 const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
-    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5">
+    <Stack gap={2.5} className="h-full min-h-0 overflow-y-auto p-2.5 [&>*]:shrink-0">
         <Stack gap={3} className="bacteria-window p-3">
             <SectionHeader
                 eyebrow="Global"

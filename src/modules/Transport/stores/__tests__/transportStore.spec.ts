@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { defaultTransportState, transportStore, type TransportState } from '../transportStore';
 
@@ -37,6 +40,7 @@ type InvalidPayloadCase = {
 
 const fake_doc: TestDoc = {};
 let mutation_count = 0;
+let after_publication: (() => void) | undefined;
 
 function clear_fake_doc(): void {
     for (const key of Object.keys(fake_doc)) {
@@ -52,6 +56,9 @@ function configure_fake_crdt_port(): void {
         mutateDoc: ({ changeFn }) => {
             mutation_count += 1;
             changeFn(fake_doc);
+            const listener = after_publication;
+            after_publication = undefined;
+            listener?.();
         },
     };
 
@@ -71,6 +78,7 @@ async function reset_store_and_doc(): Promise<void> {
     await flush_pending_frame();
     clear_fake_doc();
     mutation_count = 0;
+    after_publication = undefined;
 }
 
 describe('transportStore', () => {
@@ -86,6 +94,67 @@ describe('transportStore', () => {
 
     it('should have the default transport state', () => {
         expect(transportStore.value).toEqual(defaultTransportState);
+    });
+
+    it('preserves current runtime transport fields when its durable commit is projected', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            transportStore.set({
+                ...defaultTransportState,
+                tempo: 137,
+                isPlaying: true,
+                isRecording: true,
+                overdubEnabled: true,
+                playheadPosition: 24,
+                scheduleGrainMs: 31,
+            });
+        });
+
+        transaction.commit();
+
+        expect(transportStore.value).toMatchObject({
+            tempo: 137,
+            isPlaying: true,
+            isRecording: true,
+            overdubEnabled: true,
+            playheadPosition: 24,
+            scheduleGrainMs: 31,
+        });
+    });
+
+    it('projects a newer listener commit while preserving its current runtime transport fields', () => {
+        const outer = runWithAutomergeStorageTransaction(undefined, () => {
+            transportStore.set({ ...defaultTransportState, tempo: 130 });
+        });
+        after_publication = () => {
+            const nested = runWithAutomergeStorageTransaction(undefined, () => {
+                transportStore.set({
+                    ...defaultTransportState,
+                    tempo: 140,
+                    isPlaying: true,
+                    playheadPosition: 18,
+                });
+            });
+            nested.commit();
+        };
+
+        outer.commit();
+
+        expect(transportStore.value).toMatchObject({ tempo: 140, isPlaying: true, playheadPosition: 18 });
+        expect(fake_doc.transport).toMatchObject({ tempo: 140 });
+        expect(mutation_count).toBe(2);
+    });
+
+    it('does not revive runtime transport fields reset by hydration during an open commit', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            transportStore.set({ ...defaultTransportState, tempo: 130, isPlaying: true, playheadPosition: 12 });
+        });
+        fake_doc.transport = { tempo: 135 };
+        transportStore.hydrate();
+        expect(transportStore.value?.isPlaying).toBe(false);
+
+        transaction.commit();
+
+        expect(transportStore.value).toMatchObject({ tempo: 135, isPlaying: false, playheadPosition: 0 });
     });
 
     it('should sanitize invalid top-level CRDT hydration to default transport state without throwing', () => {

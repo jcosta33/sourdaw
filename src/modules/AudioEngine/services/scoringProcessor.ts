@@ -27,12 +27,32 @@ type ScoringMsg =
     | { type: 'import-scala'; id: string; text: string }
     | { type: 'import-tun'; id: string; text: string };
 
+/**
+ * Per-string triplets the slot publishes past the scalar header. Matches
+ * engine/telemetryAllocator.ts's SCORING_IDX.polyCount / polyBase and
+ * SCORING_POLY_STRING_COUNT (this file hardcodes its slot indices — the
+ * allocator owns the paired layout table).
+ */
+const POLY_STRING_COUNT = 6;
+const POLY_COUNT_IDX = 7;
+const POLY_BASE_IDX = 8;
+
 class ScoringProcessor extends AudioWorkletProcessor {
     _instance: ScoringInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _bypassed = false;
+    /**
+     * Whether the polyphonic string tracker is enabled (the `poly` param).
+     *
+     * The instance gives no "is poly on" accessor, and a disabled tracker stops
+     * updating but keeps its last results — so this side record is what gates
+     * publication: without it the slot would either publish stale strings after
+     * Poly mode is switched off or spend per-string wasm calls every tick for
+     * readouts nothing consumes.
+     */
+    _polyEnabled = false;
     /**
      * Whether the telemetry slot still holds a reading taken while running.
      *
@@ -73,8 +93,16 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
-                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
-                    this._instance.set_param(msg.name, msg.value);
+                } else if (msg.type === 'param') {
+                    // The poly gate is recorded even when it arrives before the
+                    // instance exists — a param sent pre-init must still shape
+                    // what gets published once telemetry starts.
+                    if (msg.name === 'poly') {
+                        this._polyEnabled = msg.value > 0.5;
+                    }
+                    if (this._instance !== null && !this._faulted) {
+                        this._instance.set_param(msg.name, msg.value);
+                    }
                 } else if (msg.type === 'import-scala' || msg.type === 'import-tun') {
                     if (!this._instance || this._faulted) {
                         this.port.postMessage({ type: 'scale-import-result', id: msg.id, ok: false });
@@ -146,6 +174,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
             if (this._telemetryStale && this._sabView && this._sabSeqView) {
                 beginTelemetryPublish(this._sabSeqView);
                 this._sabView[0] = 0;
+                // The poly string count joins the mono flag: a bypassed tuner
+                // must not keep advertising the strings it saw before bypass.
+                this._sabView[POLY_COUNT_IDX] = 0;
                 endTelemetryPublish(this._sabSeqView);
                 this._telemetryStale = false;
             }
@@ -195,7 +226,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     // pitch fields must be consumed as one snapshot, or a poll can
                     // read active=1 next to a frequency/note from the previous
                     // detection. The bracket spans both branches so the flag flip
-                    // is published under the same cycle.
+                    // is published under the same cycle — and the poly string
+                    // block rides inside it too, so a poll never pairs a fresh
+                    // mono read with the previous one's strings.
                     beginTelemetryPublish(this._sabSeqView);
                     if (active) {
                         this._sabView[0] = 1;
@@ -207,6 +240,29 @@ class ScoringProcessor extends AudioWorkletProcessor {
                         this._sabView[6] = inst.get_midi_note();
                     } else {
                         this._sabView[0] = 0;
+                    }
+                    if (this._polyEnabled) {
+                        // The poly tracker runs on its own schedule inside the
+                        // instance and keeps reporting while the mono readout
+                        // sits idle, so its block publishes in both mono
+                        // branches. Slots past the tracker's configured string
+                        // count are zeroed rather than left stale.
+                        const strings = Math.min(inst.get_poly_string_count(), POLY_STRING_COUNT);
+                        this._sabView[POLY_COUNT_IDX] = strings;
+                        for (let i = 0; i < POLY_STRING_COUNT; i++) {
+                            const base = POLY_BASE_IDX + i * 3;
+                            if (i < strings) {
+                                this._sabView[base] = inst.is_poly_string_active(i) ? 1 : 0;
+                                this._sabView[base + 1] = inst.get_poly_string_cents(i);
+                                this._sabView[base + 2] = inst.get_poly_string_confidence(i);
+                            } else {
+                                this._sabView[base] = 0;
+                                this._sabView[base + 1] = 0;
+                                this._sabView[base + 2] = 0;
+                            }
+                        }
+                    } else {
+                        this._sabView[POLY_COUNT_IDX] = 0;
                     }
                     endTelemetryPublish(this._sabSeqView);
                 }

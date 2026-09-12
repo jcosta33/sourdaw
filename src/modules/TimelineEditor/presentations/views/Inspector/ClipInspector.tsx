@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -20,7 +21,7 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
-import { type Clip, type FollowAction } from '../../../models/TrackViewTypes';
+import { type Clip, type FollowAction, type StretchMode } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
@@ -384,12 +385,83 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             </option>
                         </DawCompactSelect>
                     </Row>
-                    {clip.type === 'audio' ? (
-                        <DawReadoutRow
-                            label="Audio Source"
-                            value={clip.audioBufferId ? `${clip.audioBufferId.slice(0, 16)}…` : 'none'}
-                            valueClassName="max-w-24 truncate text-foreground"
+                    <Row justify="between">
+                        <label className="text-[10px] text-muted-foreground" htmlFor="clip-muted-checkbox">
+                            Muted
+                        </label>
+                        <DawCompactCheckbox
+                            id="clip-muted-checkbox"
+                            checked={clip.muted ?? false}
+                            onChange={(event) => {
+                                void executeUserAppAction({
+                                    type: 'muteClip',
+                                    payload: {
+                                        clipId: clip.id,
+                                        muted: event.target.checked,
+                                    },
+                                });
+                            }}
+                            aria-label="Mute clip"
                         />
+                    </Row>
+                    <Row justify="between">
+                        <label className="text-[10px] text-muted-foreground" htmlFor="clip-locked-checkbox">
+                            Locked
+                        </label>
+                        <DawCompactCheckbox
+                            id="clip-locked-checkbox"
+                            checked={clip.locked ?? false}
+                            onChange={(event) => {
+                                void executeUserAppAction({
+                                    type: 'lockClip',
+                                    payload: {
+                                        clipId: clip.id,
+                                        locked: event.target.checked,
+                                    },
+                                });
+                            }}
+                            aria-label="Lock clip"
+                        />
+                    </Row>
+                    {clip.type === 'audio' ? (
+                        <>
+                            <DawReadoutRow
+                                label="Audio Source"
+                                value={clip.audioBufferId ? `${clip.audioBufferId.slice(0, 16)}…` : 'none'}
+                                valueClassName="max-w-24 truncate text-foreground"
+                            />
+                            <Row justify="between">
+                                <label className="text-[10px] text-muted-foreground" htmlFor="stretch-mode-select">
+                                    Time Stretch
+                                </label>
+                                <DawCompactSelect
+                                    id="stretch-mode-select"
+                                    size="micro"
+                                    align="right"
+                                    className="border-border-hairline py-0.5 text-[10px]"
+                                    value={clip.stretchMode ?? 'off'}
+                                    onChange={(event) => {
+                                        void executeUserAppAction({
+                                            type: 'setClipStretchMode',
+                                            payload: {
+                                                clipId: clip.id,
+                                                mode: event.target.value as StretchMode,
+                                            },
+                                        });
+                                    }}
+                                >
+                                    <option className="bg-bg-overlay" value="off">
+                                        Off
+                                    </option>
+                                    <option className="bg-bg-overlay" value="repitch">
+                                        Repitch
+                                    </option>
+                                    <option className="bg-bg-overlay" value="timestretch">
+                                        Timestretch
+                                    </option>
+                                </DawCompactSelect>
+                            </Row>
+                        </>
                     ) : null}
                 </InsetPanel>
             </section>

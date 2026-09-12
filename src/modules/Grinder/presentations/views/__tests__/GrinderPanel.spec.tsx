@@ -421,4 +421,10 @@ describe('GrinderPanel', () => {
         expect(faceplate).toHaveClass('min-h-[460px]');
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
+
+    it('keeps preset drawer scroll container from collapsing sections with [&>*]:shrink-0', () => {
+        render(<GrinderPanel deviceId={device_id} />);
+        const aside = screen.getByRole('complementary');
+        expect(aside).toHaveClass('[&>*]:shrink-0');
+    });
 });

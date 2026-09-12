@@ -4,10 +4,13 @@ import { createStore } from '../../createStore';
 import {
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
+    captureAutomergeStorageTransactionScope,
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
     getCurrentAutomergeStorageMutationOwner,
+    resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
@@ -16,6 +19,7 @@ type TestDoc = {
 };
 
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
+type TestTransactionScope = Parameters<Parameters<typeof runWithAutomergeStorageTransaction>[1]>[0];
 
 type MutationRecord = {
     docId: string;
@@ -28,6 +32,19 @@ type CreateTestPortInput = {
     hasDoc?: boolean;
     getSemanticMessage?: () => string | undefined;
 };
+
+function readCount(value: unknown): number | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const count = Object.entries(value).find(([key]) => key === 'count')?.[1];
+    return typeof count === 'number' ? count : undefined;
+}
+
+function sanitizeCount(value: unknown): { count: number } | null {
+    const count = readCount(value);
+    return count === undefined ? null : { count };
+}
 
 const createTestPort = (
     input: CreateTestPortInput = {}
@@ -468,6 +485,378 @@ describe('createAutomergeStorage', () => {
         });
     });
 
+    it.each(['supplied', 'captured'] as const)(
+        'refuses a %s transaction scope that a publication listener re-enters during commit',
+        (scopeKind) => {
+            const documents = new Map<string, TestDoc>([
+                ['document-a', { state: { count: 0 } }],
+                ['document-b', { state: { count: 0 } }],
+            ]);
+            const mutationCalls: string[] = [];
+            const listenerFailures: unknown[] = [];
+            let listenerCallbackEntries = 0;
+            let publicationListener: (() => void) | undefined;
+            const port: TestPort = {
+                getDoc: (docId) => documents.get(docId),
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => documents.has(docId),
+                mutateDoc: ({ docId, changeFn }) => {
+                    const current = documents.get(docId);
+                    if (!current) {
+                        throw new Error(`Document not found: ${docId}`);
+                    }
+                    const candidate = structuredClone(current);
+                    changeFn(candidate);
+                    documents.set(docId, candidate);
+                    mutationCalls.push(docId);
+                    if (docId === 'document-a' && publicationListener) {
+                        const listener = publicationListener;
+                        publicationListener = undefined;
+                        try {
+                            listener();
+                        } catch (error) {
+                            // The production repository catches listener failures
+                            // after publishing the changed document.
+                            listenerFailures.push(error);
+                        }
+                    }
+                },
+            };
+            configureAutomergeStoragePort(port);
+            const storageA = createAutomergeStorage<{ count: number }>('document-a', 'state');
+            const storageB = createAutomergeStorage<{ count: number }>('document-b', 'state');
+            expect(storageA.hydrate?.()).toBe(true);
+            expect(storageB.hydrate?.()).toBe(true);
+
+            let suppliedScope: TestTransactionScope | undefined;
+            let capturedScope: TestTransactionScope | undefined;
+            const transaction = runWithAutomergeStorageTransaction(undefined, (scope) => {
+                suppliedScope = scope;
+                capturedScope = captureAutomergeStorageTransactionScope();
+                storageA.set({ count: 1 });
+            });
+            const selectedScope = scopeKind === 'supplied' ? suppliedScope : capturedScope;
+            if (!selectedScope) {
+                throw new Error(`${scopeKind} transaction scope was not captured`);
+            }
+            publicationListener = () =>
+                selectedScope(() => {
+                    listenerCallbackEntries += 1;
+                    storageB.set({ count: 1 });
+                });
+
+            transaction.commit();
+
+            expect(listenerFailures).toHaveLength(1);
+            expect(listenerCallbackEntries).toBe(0);
+            expect(listenerFailures[0]).toBeInstanceOf(Error);
+            expect(storageA.get()).toEqual({ count: 1 });
+            expect(storageB.get()).toEqual({ count: 0 });
+            expect(documents.get('document-a')).toEqual({ state: { count: 1 } });
+            expect(documents.get('document-b')).toEqual({ state: { count: 0 } });
+            expect(mutationCalls).toEqual(['document-a']);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+
+            flushAutomergeStorageWrites();
+
+            expect(documents.get('document-b')).toEqual({ state: { count: 0 } });
+            expect(mutationCalls).toEqual(['document-a']);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
+
+    it.each([
+        { operation: 'set', settlement: 'commit' },
+        { operation: 'clear', settlement: 'commit' },
+        { operation: 'set', settlement: 'abort' },
+        { operation: 'clear', settlement: 'abort' },
+    ] as const)('refuses $operation from an already-entered scope after $settlement', ({ operation, settlement }) => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => undefined);
+
+        expect(() =>
+            transaction.scope(() => {
+                transaction[settlement]();
+                if (operation === 'set') {
+                    storage.set({ count: 1 });
+                } else {
+                    storage.clear();
+                }
+            })
+        ).toThrow(Error);
+
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc).toEqual({ state: { count: 0 } });
+        expect(mutations).toEqual([]);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc).toEqual({ state: { count: 0 } });
+        expect(mutations).toEqual([]);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it.each([
+        'supplied scope',
+        'captured scope',
+        'set',
+        'clear',
+        'commit',
+        'abort',
+        'commit validator registration',
+        'document validator registration',
+    ] as const)('freezes same-owner %s before commit validators run', (attempt) => {
+        const { doc, mutations, port } = createTestPort({
+            initialDoc: { primary: { count: 0 }, secondary: { count: 0 } },
+        });
+        configureAutomergeStoragePort(port);
+        const primaryStorage = createAutomergeStorage<{ count: number }>('root', 'primary');
+        const secondaryStorage = createAutomergeStorage<{ count: number }>('root', 'secondary');
+        expect(primaryStorage.hydrate?.()).toBe(true);
+        expect(secondaryStorage.hydrate?.()).toBe(true);
+
+        let suppliedScope: TestTransactionScope | undefined;
+        let capturedScope: TestTransactionScope | undefined;
+        let validatorCallbackEntries = 0;
+        const transaction = runWithAutomergeStorageTransaction(undefined, (scope) => {
+            suppliedScope = scope;
+            capturedScope = captureAutomergeStorageTransactionScope();
+            primaryStorage.set({ count: 1 });
+        });
+        const validatedSuppliedScope = suppliedScope;
+        const validatedCapturedScope = capturedScope;
+        if (!validatedSuppliedScope || !validatedCapturedScope) {
+            throw new Error('transaction scopes were not captured');
+        }
+        transaction.validateCommit(() => {
+            switch (attempt) {
+                case 'supplied scope':
+                    validatedSuppliedScope(() => {
+                        validatorCallbackEntries += 1;
+                        secondaryStorage.set({ count: 1 });
+                    });
+                    break;
+                case 'captured scope':
+                    validatedCapturedScope(() => {
+                        validatorCallbackEntries += 1;
+                        secondaryStorage.set({ count: 1 });
+                    });
+                    break;
+                case 'set':
+                    secondaryStorage.set({ count: 1 });
+                    break;
+                case 'clear':
+                    secondaryStorage.clear();
+                    break;
+                case 'commit':
+                    transaction.commit();
+                    break;
+                case 'abort':
+                    transaction.abort();
+                    break;
+                case 'commit validator registration':
+                    transaction.validateCommit(() => null);
+                    break;
+                case 'document validator registration':
+                    transaction.validateDocument('root', () => null);
+                    break;
+            }
+            return null;
+        });
+
+        expect(() => transaction.scope(() => transaction.commit())).toThrow(/committing/);
+        expect(validatorCallbackEntries).toBe(0);
+        expect(mutations).toEqual([]);
+        expect(doc).toEqual({ primary: { count: 0 }, secondary: { count: 0 } });
+
+        transaction.scope(() => primaryStorage.set({ count: 0 }));
+        transaction.abort();
+
+        expect(primaryStorage.get()).toEqual({ count: 0 });
+        expect(secondaryStorage.get()).toEqual({ count: 0 });
+        expect(doc).toEqual({ primary: { count: 0 }, secondary: { count: 0 } });
+        expect(mutations).toEqual([]);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('restores an uncommitted transaction to open after its document mutation refuses', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        const commitFailure = new Error('CRDT commit refused before publication');
+        let mutationAttempts = 0;
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: () => {
+                mutationAttempts += 1;
+                throw commitFailure;
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+
+        expect(() => transaction.commit()).toThrow(commitFailure);
+        expect(storage.get()).toEqual({ count: 1 });
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
+
+        transaction.scope(() => storage.set({ count: 0 }));
+        transaction.abort();
+
+        expect(mutationAttempts).toBe(1);
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc).toEqual({ state: { count: 0 } });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('keeps a partially published transaction closed to every same-owner scope', () => {
+        const documents = new Map<string, TestDoc>([
+            ['document-a', { state: { count: 0 } }],
+            ['document-b', { state: { count: 0 } }],
+        ]);
+        const mutationCalls: string[] = [];
+        const port: TestPort = {
+            getDoc: (docId) => documents.get(docId),
+            getSemanticMessage: () => undefined,
+            hasDoc: (docId) => documents.has(docId),
+            mutateDoc: ({ docId, changeFn }) => {
+                mutationCalls.push(docId);
+                if (docId === 'document-b') {
+                    throw new Error('second document refused');
+                }
+                const candidate = structuredClone(documents.get(docId) ?? {});
+                changeFn(candidate);
+                documents.set(docId, candidate);
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storageA = createAutomergeStorage<{ count: number }>('document-a', 'state');
+        const storageB = createAutomergeStorage<{ count: number }>('document-b', 'state');
+        expect(storageA.hydrate?.()).toBe(true);
+        expect(storageB.hydrate?.()).toBe(true);
+        let suppliedScope: TestTransactionScope | undefined;
+        let capturedScope: TestTransactionScope | undefined;
+        const transaction = runWithAutomergeStorageTransaction(undefined, (scope) => {
+            suppliedScope = scope;
+            capturedScope = captureAutomergeStorageTransactionScope();
+            storageA.set({ count: 1 });
+            storageB.set({ count: 1 });
+        });
+        const validatedSuppliedScope = suppliedScope;
+        const validatedCapturedScope = capturedScope;
+        if (!validatedSuppliedScope || !validatedCapturedScope) {
+            throw new Error('transaction scopes were not captured');
+        }
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+        let callbackEntries = 0;
+        expect(() =>
+            validatedSuppliedScope(() => {
+                callbackEntries += 1;
+            })
+        ).toThrow(Error);
+        expect(() =>
+            validatedCapturedScope(() => {
+                callbackEntries += 1;
+            })
+        ).toThrow(Error);
+        transaction.abort();
+
+        expect(callbackEntries).toBe(0);
+        expect(storageA.get()).toEqual({ count: 1 });
+        expect(storageB.get()).toEqual({ count: 0 });
+        expect(documents.get('document-a')).toEqual({ state: { count: 1 } });
+        expect(documents.get('document-b')).toEqual({ state: { count: 0 } });
+        expect(mutationCalls).toEqual(['document-a', 'document-b']);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('allows a distinct transaction owner to commit from a publication listener', () => {
+        const documents = new Map<string, TestDoc>([
+            ['document-a', { state: { count: 0 } }],
+            ['document-b', { state: { count: 0 } }],
+        ]);
+        const mutationCalls: string[] = [];
+        let publicationListener: (() => void) | undefined;
+        const port: TestPort = {
+            getDoc: (docId) => documents.get(docId),
+            getSemanticMessage: () => undefined,
+            hasDoc: (docId) => documents.has(docId),
+            mutateDoc: ({ docId, changeFn }) => {
+                const candidate = structuredClone(documents.get(docId) ?? {});
+                changeFn(candidate);
+                documents.set(docId, candidate);
+                mutationCalls.push(docId);
+                if (docId === 'document-a' && publicationListener) {
+                    const listener = publicationListener;
+                    publicationListener = undefined;
+                    listener();
+                }
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storageA = createAutomergeStorage<{ count: number }>('document-a', 'state');
+        const storageB = createAutomergeStorage<{ count: number }>('document-b', 'state');
+        expect(storageA.hydrate?.()).toBe(true);
+        expect(storageB.hydrate?.()).toBe(true);
+        const outerTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storageA.set({ count: 1 });
+        });
+        publicationListener = () => {
+            const nestedTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storageB.set({ count: 1 });
+            });
+            nestedTransaction.commit();
+        };
+
+        outerTransaction.commit();
+
+        expect(storageA.get()).toEqual({ count: 1 });
+        expect(storageB.get()).toEqual({ count: 1 });
+        expect(documents.get('document-a')).toEqual({ state: { count: 1 } });
+        expect(documents.get('document-b')).toEqual({ state: { count: 1 } });
+        expect(mutationCalls).toEqual(['document-a', 'document-b']);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('keeps both supplied and captured scopes writable before commit starts', () => {
+        const { doc, mutations, port } = createTestPort({
+            initialDoc: { first: { count: 0 }, second: { count: 0 } },
+        });
+        configureAutomergeStoragePort(port);
+        const firstStorage = createAutomergeStorage<{ count: number }>('root', 'first');
+        const secondStorage = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(firstStorage.hydrate?.()).toBe(true);
+        expect(secondStorage.hydrate?.()).toBe(true);
+        let suppliedScope: TestTransactionScope | undefined;
+        let capturedScope: TestTransactionScope | undefined;
+        const transaction = runWithAutomergeStorageTransaction(undefined, (scope) => {
+            suppliedScope = scope;
+            capturedScope = captureAutomergeStorageTransactionScope();
+        });
+        if (!suppliedScope || !capturedScope) {
+            throw new Error('transaction scopes were not captured');
+        }
+
+        suppliedScope(() => firstStorage.set({ count: 1 }));
+        capturedScope(() => secondStorage.set({ count: 1 }));
+        transaction.commit();
+
+        expect(firstStorage.get()).toEqual({ count: 1 });
+        expect(secondStorage.get()).toEqual({ count: 1 });
+        expect(doc).toEqual({ first: { count: 1 }, second: { count: 1 } });
+        expect(mutations).toHaveLength(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
     it('validates the staged document inside the mutation and rolls it back on rejection', () => {
         const doc: TestDoc = { state: { count: 0 } };
         configureAutomergeStoragePort({
@@ -847,5 +1236,449 @@ describe('createAutomergeStorage', () => {
             tracks: { imported: true },
             midi: { imported: true },
         });
+    });
+
+    it('freezes every selected write before an earlier preparation authors its successor', () => {
+        const { doc, mutations, port } = createTestPort({
+            initialDoc: { first: { count: 0 }, second: { count: 0 } },
+        });
+        configureAutomergeStoragePort(port);
+        let secondStorage: ReturnType<typeof createAutomergeStorage<{ count: number }>>;
+        let authorSuccessor = false;
+        const firstStorage = createAutomergeStorage<{ count: number }>('root', 'first', {
+            toCrdt: (value) => {
+                if (authorSuccessor) {
+                    authorSuccessor = false;
+                    secondStorage.set({ count: 2 });
+                }
+                return value;
+            },
+        });
+        secondStorage = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(firstStorage.hydrate?.()).toBe(true);
+        expect(secondStorage.hydrate?.()).toBe(true);
+        firstStorage.set({ count: 1 });
+        secondStorage.set({ count: 1 });
+        authorSuccessor = true;
+
+        flushAutomergeStorageWrites();
+
+        expect(doc).toEqual({ first: { count: 1 }, second: { count: 1 } });
+        expect(secondStorage.get()).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
+        expect(mutations).toHaveLength(2);
+
+        flushAutomergeStorageWrites();
+        expect(doc.second).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it.each([false, true])(
+        'keeps an unscoped successor authored during preparation separate (nested flush: %s)',
+        (nestedFlush) => {
+            const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+            configureAutomergeStoragePort(port);
+            let authorSuccessor = false;
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+                toCrdt: (value) => {
+                    if (authorSuccessor) {
+                        authorSuccessor = false;
+                        storage.set({ count: 2 });
+                        if (nestedFlush) {
+                            flushAutomergeStorageWrites();
+                        }
+                    }
+                    return value;
+                },
+            });
+            expect(storage.hydrate?.()).toBe(true);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+            authorSuccessor = true;
+
+            transaction.commit();
+
+            expect(doc.state).toEqual({ count: 1 });
+            expect(storage.get()).toEqual({ count: nestedFlush ? 1 : 2 });
+            expect(mutations).toHaveLength(nestedFlush ? 2 : 1);
+            expect(countPendingAutomergeStorageWrites()).toBe(nestedFlush ? 0 : 1);
+
+            flushAutomergeStorageWrites();
+            expect(doc.state).toEqual({ count: nestedFlush ? 1 : 2 });
+            expect(storage.get()).toEqual({ count: nestedFlush ? 1 : 2 });
+            expect(mutations).toHaveLength(2);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        }
+    );
+
+    it('freezes a later selected mutation before an earlier preparation changes its visible projection', () => {
+        const { doc, port } = createTestPort({
+            initialDoc: { first: { count: 0 }, second: { count: 0 } },
+        });
+        configureAutomergeStoragePort(port);
+        let secondStorage: ReturnType<typeof createAutomergeStorage<{ count: number }>>;
+        let projectDuringPreparation = false;
+        const firstStorage = createAutomergeStorage<{ count: number }>('root', 'first', {
+            toCrdt: (value) => {
+                if (projectDuringPreparation) {
+                    projectDuringPreparation = false;
+                    secondStorage.setProjected?.({ count: 2 });
+                }
+                return value;
+            },
+        });
+        secondStorage = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(firstStorage.hydrate?.()).toBe(true);
+        expect(secondStorage.hydrate?.()).toBe(true);
+        firstStorage.set({ count: 1 });
+        secondStorage.set({ count: 1 });
+        projectDuringPreparation = true;
+
+        flushAutomergeStorageWrites();
+
+        expect(doc).toEqual({ first: { count: 1 }, second: { count: 1 } });
+        expect(secondStorage.get()).toEqual({ count: 1 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('invalidates a selected execution when projection authority resets during preparation', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let resetDuringPreparation = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+            toCrdt: (value) => {
+                if (resetDuringPreparation) {
+                    resetDuringPreparation = false;
+                    resetAutomergeStorageProjections('root');
+                }
+                return value;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        resetDuringPreparation = true;
+
+        transaction.commit();
+
+        expect(doc.state).toEqual({ count: 0 });
+        expect(storage.get()).toEqual({ count: -1 });
+        expect(mutations).toEqual([]);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it.each(['getDoc', 'validator'] as const)(
+        'reports a trailing %s failure as committed after an earlier document publishes',
+        (failureSource) => {
+            const documents = new Map<string, TestDoc>([
+                ['document-a', { state: { count: 0 } }],
+                ['document-b', { state: { count: 0 } }],
+            ]);
+            let mutationCount = 0;
+            configureAutomergeStoragePort({
+                getDoc: (docId) => {
+                    if (docId === 'document-b' && failureSource === 'getDoc') {
+                        throw new Error('trailing getDoc failed');
+                    }
+                    return documents.get(docId);
+                },
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => documents.has(docId),
+                mutateDoc: ({ docId, changeFn }) => {
+                    const candidate = structuredClone(documents.get(docId) ?? {});
+                    changeFn(candidate);
+                    documents.set(docId, candidate);
+                    mutationCount += 1;
+                },
+            });
+            const storage = createAutomergeStorage<{ count: number }>('document-a', 'state');
+            expect(storage.hydrate?.()).toBe(true);
+            const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+                storage.set({ count: 1 });
+            });
+            transaction.validateDocument('document-b', () => {
+                if (failureSource === 'validator') {
+                    throw new Error('trailing validator failed');
+                }
+                return null;
+            });
+
+            expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+            expect(documents.get('document-a')).toEqual({ state: { count: 1 } });
+            expect(storage.get()).toEqual({ count: 1 });
+            expect(mutationCount).toBe(1);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+            expect(() => transaction.scope(() => storage.set({ count: 2 }))).toThrow(/committed/);
+        }
+    );
+
+    it('reads the document again before each terminal when the first projection commits a newer second slot', () => {
+        const { doc, mutations, port } = createTestPort({
+            initialDoc: { first: { count: 0 }, second: { count: 0 } },
+        });
+        configureAutomergeStoragePort(port);
+        const firstStorage = createAutomergeStorage<{ count: number }>('root', 'first');
+        const secondStorage = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(firstStorage.hydrate?.()).toBe(true);
+        expect(secondStorage.hydrate?.()).toBe(true);
+        let publishNewerSecond = false;
+        createStore({
+            storage: firstStorage,
+            sanitize: (value) => {
+                if (publishNewerSecond && readCount(value) === 1) {
+                    publishNewerSecond = false;
+                    const nested = runWithAutomergeStorageTransaction(undefined, () => {
+                        secondStorage.set({ count: 2 });
+                    });
+                    nested.commit();
+                }
+                return sanitizeCount(value);
+            },
+        });
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            firstStorage.set({ count: 1 });
+            secondStorage.set({ count: 1 });
+        });
+        publishNewerSecond = true;
+
+        transaction.commit();
+
+        expect(doc).toEqual({ first: { count: 1 }, second: { count: 2 } });
+        expect(secondStorage.get()).toEqual({ count: 2 });
+        expect(mutations).toHaveLength(2);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('lets projection reset invalidate a committed execution before its terminal can reinstall stale cache', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        let resetDuringProjection = false;
+        createStore({
+            storage,
+            sanitize: (value) => {
+                if (resetDuringProjection && readCount(value) === 1) {
+                    resetDuringProjection = false;
+                    resetAutomergeStorageProjections('root');
+                }
+                return sanitizeCount(value);
+            },
+        });
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        resetDuringProjection = true;
+
+        transaction.commit();
+
+        expect(doc.state).toEqual({ count: 1 });
+        expect(storage.get()).toEqual({ count: -1 });
+        expect(mutations).toHaveLength(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('settles a published write and reports committed when its terminal local projection throws', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const projectionFailure = new Error('terminal projection failed');
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            projectCommittedLocalState: () => {
+                throw projectionFailure;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+        expect(doc.state).toEqual({ count: 1 });
+        expect(mutations).toHaveLength(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        flushAutomergeStorageWrites();
+        expect(mutations).toHaveLength(1);
+        expect(() => transaction.scope(() => storage.set({ count: 2 }))).toThrow(/committed/);
+    });
+
+    it('continues remaining committed terminals when one fresh document read throws', () => {
+        const doc: TestDoc = { first: { count: 0 }, second: { count: 0 } };
+        let failNextRead = false;
+        let mutationCount = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => {
+                if (failNextRead) {
+                    failNextRead = false;
+                    throw new Error('terminal document read failed');
+                }
+                return doc;
+            },
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutationCount += 1;
+                failNextRead = true;
+            },
+        });
+        const firstStorage = createAutomergeStorage<{ count: number }>('root', 'first');
+        const secondStorage = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(firstStorage.hydrate?.()).toBe(true);
+        expect(secondStorage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            firstStorage.set({ count: 1 });
+            secondStorage.set({ count: 1 });
+        });
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+        expect(doc).toEqual({ first: { count: 1 }, second: { count: 1 } });
+        expect(firstStorage.get()).toEqual({ count: 0 });
+        expect(secondStorage.get()).toEqual({ count: 1 });
+        expect(mutationCount).toBe(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        flushAutomergeStorageWrites();
+        expect(mutationCount).toBe(1);
+    });
+
+    it('preserves same-slot authority committed by a terminal local-state callback', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let publishNested = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            projectCommittedLocalState: ({ authorityValue }) => {
+                if (publishNested) {
+                    publishNested = false;
+                    const nested = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+                    nested.commit();
+                }
+                return authorityValue;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const outer = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        publishNested = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 2 });
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(mutations).toHaveLength(2);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('does not stamp stale hydrate metadata after pending rebase resets projection authority', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let resetDuringRebase = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+            rebasePending: ({ pendingValue }) => {
+                if (resetDuringRebase) {
+                    resetDuringRebase = false;
+                    resetAutomergeStorageProjections('root');
+                }
+                return pendingValue;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        doc.state = { count: 2 };
+        resetDuringRebase = true;
+
+        expect(storage.hydrate?.()).toBe(false);
+        expect(storage.get()).toEqual({ count: -1 });
+
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(doc.state).toEqual({ count: 2 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        transaction.abort();
+    });
+
+    it('projects current document authority after publication throws', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        let mutationCount = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutationCount += 1;
+                doc.state = { count: 2 };
+                throw new Error('publication receipt failed');
+            },
+        });
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+
+        const freshStorage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(freshStorage.hydrate?.()).toBe(true);
+        expect(doc.state).toEqual({ count: 2 });
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(freshStorage.get()).toEqual({ count: 2 });
+        expect(mutationCount).toBe(1);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+        flushAutomergeStorageWrites();
+        expect(mutationCount).toBe(1);
+    });
+
+    it('keeps a clear committed by a listener after the outer publication', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        let afterPublication: (() => void) | undefined;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                const listener = afterPublication;
+                afterPublication = undefined;
+                listener?.();
+            },
+        });
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const outer = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        afterPublication = () => {
+            const clearing = runWithAutomergeStorageTransaction(undefined, () => storage.clear());
+            clearing.commit();
+        };
+
+        outer.commit();
+
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(storage.get()).toBeNull();
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('keeps the outer value when a nested clear lands during its preparation', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        let clearDuringPreparation = false;
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: -1 }),
+            toCrdt: (value) => {
+                if (clearDuringPreparation) {
+                    clearDuringPreparation = false;
+                    const clearing = runWithAutomergeStorageTransaction(undefined, () => storage.clear());
+                    clearing.commit();
+                }
+                return value;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const outer = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        clearDuringPreparation = true;
+
+        outer.commit();
+
+        expect(doc.state).toEqual({ count: 1 });
+        expect(storage.get()).toEqual({ count: 1 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
 });

@@ -84,6 +84,29 @@ type UndoOutcome =
     /** The write landed but its bookkeeping failed; the stack must advance. */
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
+/**
+ * Replays one group's inverses as ONE atomic batch, newest-first (#3814
+ * contract). The batch preflight therefore validates each inverse against the
+ * state its predecessor inverses produce — the same order the batch executes —
+ * never against the live pre-batch state alone.
+ *
+ * Sequential singles sharing one `groupId` form heterogeneous groups
+ * legitimately (a clip re-homing beside a clip-destroying track removal), and
+ * a member whose predecessors restore its preconditions MUST pass preflight:
+ * the batch's sequential execution gives member k the writes of members
+ * 0..k-1, so a live-only preflight is strictly stricter than execution. A
+ * preflight failure writes nothing and retains the group on `past`, and the
+ * identical preflight fails identically on every retry — the group would be
+ * permanently un-undoable. The inverse handlers close that gap by projecting
+ * prior siblings (`projectClipThroughPriorBatchActions`,
+ * `projectMidiNotesByClipIdThroughRestores`,
+ * `projectTrackThroughPriorBatchActions`), mirroring the batch-aware
+ * validation forward atomic batches already use.
+ *
+ * Honest refusal is untouched: state an external edit could have changed since
+ * the group committed still fails the guards, the batch preflights `conflicted`
+ * before any write, and the whole group stays on `past` retryable.
+ */
 async function executeActionGroupUndo(entries: readonly UndoEntry[]): Promise<UndoOutcome> {
     if (!entries.every(isActionEntry) || entries.some((entry) => entry.inverseAction === null)) {
         return { status: 'inert' };

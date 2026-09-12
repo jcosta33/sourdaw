@@ -9,6 +9,9 @@ const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+const start_faust_note = vi.hoisted(() => vi.fn<(...args: unknown[]) => () => void>());
+/** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
+const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -36,6 +39,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: (type: string) => type === 'fermenter',
+    startFaustNote: start_faust_note,
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    registerFaustDSP: vi.fn(),
+    isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
@@ -81,8 +90,10 @@ describe('handleWebMidiNoteOn', () => {
         channelToNote.clear();
         ensure_track_strip.mockReset();
         get_track_strip.mockReset();
+        start_faust_note.mockReset();
         target_track_id.value = 'track-1';
         mpe_enabled.value = false;
+        faust_instrument_types.value = new Set();
         audio_clock.currentTime = 2;
     });
 
@@ -595,6 +606,83 @@ describe('handleWebMidiNoteOn', () => {
         expect(second_frame! - first_frame!).toBe(480);
 
         performance_now.mockRestore();
+    });
+
+    describe('Faust pro-synth instrument', () => {
+        it('routes a hardware note-on/off pair to the Faust instrument and never to the builtin synth', async () => {
+            faust_instrument_types.value = new Set(['faust-rhodes']);
+            const release = vi.fn();
+            start_faust_note.mockReturnValue(release);
+            const schedule_note = vi.fn(() => null);
+            const getTrackStoreState = () => ({
+                tracks: [{ id: 'track-1', devices: [{ id: 'faust-1', type: 'faust-rhodes' }] }],
+                selectedTrackId: 'track-1',
+            });
+            const noteOff = handleWebMidiNoteOff._factory({
+                getCompensationDelay: () => 0,
+                getTrackStoreState,
+                getTransportStoreValue: () => ({ isRecording: false }),
+                playheadPositionRef: { current: 0 },
+                createMidiNote: () => ({ id: 'unused', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }),
+                appendRecordedMidiNote: () => {},
+                getSynthParamsForTrack: () => ({ release: 0.3 }),
+                processRealtimeMidiInput: async () => [],
+                stepRecordNoteOff: () => {},
+                eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
+            });
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({ getTrackStoreState, scheduleNote: schedule_note, handleWebMidiNoteOff: noteOff })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+            get_track_strip.mockReturnValue({ deviceNodes: [] });
+
+            await fn(0, 64, 100);
+
+            // The live control surface the piano-roll audition drives Faust
+            // instruments with: pitch/velocity gate the device on. The channel
+            // is not part of that surface — freq/gain/gate address the voice.
+            expect(start_faust_note).toHaveBeenCalledWith('track-1', 'faust-1', 64, 100, LIVE_DISPATCH_FRAME / 48_000);
+            expect(activeNotes.get(createWebMidiNoteKey(0, 64))?.faustRelease).toBe(release);
+            // The timbre oracle: the note must not fall through to the default
+            // builtin synth voice.
+            expect(schedule_note).not.toHaveBeenCalled();
+
+            await noteOff(0, 64);
+
+            expect(release).toHaveBeenCalledTimes(1);
+            expect(activeNotes.has(createWebMidiNoteKey(0, 64))).toBe(false);
+        });
+
+        it('keeps a builtin synth device ahead of a Faust instrument on the same track', async () => {
+            faust_instrument_types.value = new Set(['faust-rhodes']);
+            const oscillator = { _env: { gain: {} } };
+            const schedule_note = vi.fn(() => oscillator);
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                devices: [
+                                    { id: 'syn-1', type: 'builtin-synth-analog' },
+                                    { id: 'faust-1', type: 'faust-rhodes' },
+                                ],
+                            },
+                        ],
+                        selectedTrackId: 'track-1',
+                    }),
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(0, 60, 100);
+
+            expect(schedule_note).toHaveBeenCalledTimes(1);
+            expect(start_faust_note).not.toHaveBeenCalled();
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.osc).toBe(oscillator);
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.faustRelease).toBeUndefined();
+        });
     });
 
     describe('native-carried instrument', () => {

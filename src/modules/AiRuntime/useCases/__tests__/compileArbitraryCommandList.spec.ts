@@ -21,6 +21,7 @@ import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { planAgentRun } from '../planAgentRun';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
+import type { CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import type { ProjectContext } from '../../models/ProjectContext';
 
 const context = {
@@ -134,6 +135,23 @@ const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     alternatives: [],
     validationStrategy: [],
     stoppingConditions: [],
+});
+
+const buildCreativeAuthority = (revision: string): CreativeRequestAuthority => ({
+    schemaVersion: 1,
+    authorityId: 'creative-authority-mute-kick',
+    catalogId: 'creative-catalog-mute-kick',
+    requestDigest: 'digest-mute-kick',
+    revision,
+    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
+    mode: 'edit',
+    targets: [
+        { provenance: 'explicit-reference', objectType: 'track', objectIds: ['track-kick'], parentTrackId: null },
+    ],
+    editDimensions: ['processing'],
+    prohibitions: [],
+    creationSlots: [],
+    uncertainty: 'none',
 });
 
 const supportedSidechainDevice = {
@@ -698,6 +716,7 @@ describe('compileArbitraryCommandList', () => {
         expect(compiled.compilerEvidence.providerKnownTargetIds).toEqual(['clip-empty-midi']);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: compiled.compilerEvidence,
                 calls: compiled.compilerEvidence.commands,
                 context: emptyMidiClipContext,
@@ -785,6 +804,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: compiled.compilerEvidence,
                 calls: compiled.compilerEvidence.commands,
                 context: frozenMidiClipContext,
@@ -882,6 +902,7 @@ describe('compileArbitraryCommandList', () => {
         expect(result.compilerEvidence.providerKnownTargetIds).toEqual(['track-mix-bus', 'track-kick']);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: routingContext,
@@ -911,6 +932,7 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     items: result.compilerEvidence.items.map((item) => ({ ...item, directTargets: undefined })),
@@ -1074,6 +1096,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: sendContext,
@@ -2120,6 +2143,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -2311,6 +2335,7 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -2331,6 +2356,7 @@ describe('compileArbitraryCommandList', () => {
         ];
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedEvidence,
                 calls: tamperedEvidence.commands,
                 context,
@@ -2468,6 +2494,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence!,
                 calls: result.compilerEvidence!.commands,
                 context: clipContext,
@@ -3422,6 +3449,7 @@ describe('compileArbitraryCommandList', () => {
         }
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -3430,6 +3458,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('accepted');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context,
@@ -3438,6 +3467,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: {
@@ -3451,6 +3481,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     commands: [
@@ -3465,6 +3496,7 @@ describe('compileArbitraryCommandList', () => {
         ).toBe('rejected');
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: {
                     ...result.compilerEvidence,
                     providerKnownTargetIds: ['track-hat'],
@@ -3474,6 +3506,82 @@ describe('compileArbitraryCommandList', () => {
                 revision: 'revision-1',
             }).status
         ).toBe('rejected');
+    });
+
+    it('compiles a proposal admitted under a creative authority captured against the compile revision', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'rev-a',
+            creativeAuthority: buildCreativeAuthority('rev-a'),
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result.status).toBe('accepted');
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.snapshotRevision).toBe('rev-a');
+        expect(result.compilerEvidence.creativeAuthorityId).toBe('creative-authority-mute-kick');
+    });
+
+    it('refuses a creative authority captured against a different project snapshot than the compile revision', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'rev-b',
+            creativeAuthority: buildCreativeAuthority('rev-a'),
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan(['track-kick']),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'mute-kick',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Kick' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list creative authority was admitted against a different project snapshot.',
+        });
     });
 
     it('rejects an unbounded selector before it can enter the command bridge', () => {
@@ -3595,6 +3703,7 @@ describe('compileArbitraryCommandList', () => {
             'enable-metronome',
         ]);
         const validation = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -3969,6 +4078,7 @@ describe('compileArbitraryCommandList', () => {
             providerKnownTargetIds: [],
             selectors: [],
             commands: [createBusCommand, addNotesCommand],
+            creativeAuthorityId: null,
             expandedMidiTransforms: [],
             items: [
                 {
@@ -4006,6 +4116,7 @@ describe('compileArbitraryCommandList', () => {
 
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence,
                 calls: evidence.commands,
                 context,
@@ -4480,6 +4591,7 @@ describe('compileArbitraryCommandList', () => {
             },
         ]);
         const validation = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -4597,6 +4709,7 @@ describe('compileArbitraryCommandList', () => {
         expect(result.compilerEvidence.selectors[0]?.protectedExclusions).toEqual([]);
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: result.compilerEvidence,
                 calls: result.compilerEvidence.commands,
                 context: {
@@ -4785,6 +4898,7 @@ describe('compileArbitraryCommandList', () => {
         ]);
 
         const replayed = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context,
@@ -4800,28 +4914,25 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    const filterDeviceType = {
+        id: 'builtin-filter',
+        name: 'Filter',
+        parameters: [
+            {
+                id: 'filter-type',
+                name: 'Type',
+                type: 'choice' as const,
+                value: 0,
+                minValue: 0,
+                maxValue: 3,
+                unit: '',
+                choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+            },
+        ],
+    };
+
     it('accepts a newly created bound device as a setDeviceParameter target', () => {
-        const deviceContext: ProjectContext = {
-            ...context,
-            availableDeviceTypes: [
-                {
-                    id: 'builtin-filter',
-                    name: 'Filter',
-                    parameters: [
-                        {
-                            id: 'filter-type',
-                            name: 'Type',
-                            type: 'choice',
-                            value: 0,
-                            minValue: 0,
-                            maxValue: 3,
-                            unit: '',
-                            choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
-                        },
-                    ],
-                },
-            ],
-        };
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
         const result = compileArbitraryCommandList({
             context: deviceContext,
             revision: 'revision-created-device-parameter',
@@ -4849,6 +4960,7 @@ describe('compileArbitraryCommandList', () => {
             throw new Error('Expected compiler evidence for a created device parameter chain');
         }
         const replayed = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence: result.compilerEvidence,
             calls: result.compilerEvidence.commands,
             context: deviceContext,
@@ -4876,6 +4988,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedParameter,
                 calls: tamperedParameter.commands,
                 context: deviceContext,
@@ -4904,6 +5017,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: unsupportedParameter,
                 calls: unsupportedParameter.commands,
                 context: deviceContext,
@@ -4922,6 +5036,7 @@ describe('compileArbitraryCommandList', () => {
         tamperedDependency.items[2] = { ...parameterItem, dependsOn: [] };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedDependency,
                 calls: tamperedDependency.commands,
                 context: deviceContext,
@@ -4940,6 +5055,7 @@ describe('compileArbitraryCommandList', () => {
         };
         expect(
             validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
                 evidence: tamperedProducer,
                 calls: tamperedProducer.commands,
                 context: deviceContext,
@@ -4974,6 +5090,60 @@ describe('compileArbitraryCommandList', () => {
         });
         expect(unknownParameter).toMatchObject({ status: 'rejected' });
         expect(JSON.stringify(unknownParameter)).not.toMatch(/(?:track|device)-ai-/u);
+    });
+
+    const selectorBoundDeviceItems = (exactly: number, where: Record<string, string>) => [
+        {
+            id: 'add-radio',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-filter', binding: 'radio' },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where,
+                quantity: { unit: 'targets', exactly },
+            },
+        },
+        {
+            id: 'set-radio-type',
+            name: 'setDeviceParameter',
+            arguments: { deviceId: '$radio', paramId: 'filter-type', value: 1 },
+            dependsOn: ['add-radio'],
+        },
+    ];
+
+    it('binds a device a selector places on one existing track and configures it from that binding', () => {
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
+
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-selector-bound-device',
+            calls: [creationProposal(selectorBoundDeviceItems(1, { name: 'Kick' }), ['track-kick'])],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted') {
+            return;
+        }
+        expect(result.calls[0]?.arguments.commands).toEqual([
+            { name: 'addDevice', arguments: { deviceType: 'builtin-filter', binding: 'radio', trackId: 'track-kick' } },
+            { name: 'setDeviceParameter', arguments: { deviceId: '$radio', paramId: 'filter-type', value: 1 } },
+        ]);
+    });
+
+    it('refuses a bound device whose selector covers more than one existing track', () => {
+        const deviceContext: ProjectContext = { ...context, availableDeviceTypes: [filterDeviceType] };
+
+        expect(
+            compileArbitraryCommandList({
+                context: deviceContext,
+                revision: 'revision-selector-bound-device',
+                calls: [creationProposal(selectorBoundDeviceItems(2, { kind: 'audio' }), ['track-kick', 'track-hat'])],
+            })
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Batch-local binding producer is not one bounded creation item.',
+        });
     });
 
     it.each([

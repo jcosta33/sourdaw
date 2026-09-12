@@ -3,6 +3,7 @@ import { type RuntimeAction, type RuntimeActionType } from '../../models/Runtime
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
+import { findTrack, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const coreAutomationActionNames = [
@@ -45,15 +46,6 @@ const automationLaneDisplayNameByParameterId = {
 type ExecutableAutomationParameterId = keyof typeof automationLaneDisplayNameByParameterId;
 type ProviderAutomationMode = NonNullable<ProjectContext['tracks'][number]['automationMode']>;
 
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    return actualKeys.length === expectedKeys.length && expectedKeys.every((key) => Object.hasOwn(value, key));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function isExecutableAutomationParameterId(value: unknown): value is ExecutableAutomationParameterId {
     return typeof value === 'string' && Object.hasOwn(automationLaneDisplayNameByParameterId, value);
 }
@@ -91,17 +83,6 @@ function isProviderAutomationCurve(
 
 function isProviderAutomationMode(value: unknown): value is ProviderAutomationMode {
     return value === 'read' || value === 'write' || value === 'touch' || value === 'latch' || value === 'off';
-}
-
-function findTrack(context: ProjectContext, trackId: unknown) {
-    if (typeof trackId !== 'string') {
-        return undefined;
-    }
-    return context.tracks.find((track) => track.id === trackId);
-}
-
-function rejection(index: number, name: string, reason: string): LlmActionRejection {
-    return { index, name, reason };
 }
 
 const coreAutomationStrategyDefinitions = [

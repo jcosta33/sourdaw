@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import {
     type GrooveSubdivision,
     type GrooveTemplate,
@@ -31,7 +33,7 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): CreateGr
     const template = prepareGrooveTemplateCreation(input);
     const existing = state.templates.find((candidate) => candidate.id === template.id);
     if (existing) {
-        if (JSON.stringify(existing) !== JSON.stringify(template)) {
+        if (!valuesEqual(existing, template)) {
             throw new Error(`Groove template identity conflict: ${template.id}`);
         }
         return { status: 'no-write', template: existing };

@@ -125,6 +125,18 @@ export class BacteriaInstance {
         return ret >>> 0;
     }
     /**
+     * Drop every stage's in-flight audio and restart the modulation clocks.
+     *
+     * For the engine-level events that must leave the device silent whatever
+     * it was doing — the engine being re-initialized, or a program change
+     * handing the bands to a different patch. A transport stop deliberately
+     * does not belong here: effect tails are supposed to survive it, and the
+     * worklet therefore never sends this on stop.
+     */
+    reset() {
+        wasm.bacteriainstance_reset(this.__wbg_ptr);
+    }
+    /**
      * Set a parameter by name.
      * @param {string} name
      * @param {number} value

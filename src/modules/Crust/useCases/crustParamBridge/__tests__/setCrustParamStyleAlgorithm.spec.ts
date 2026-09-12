@@ -71,27 +71,40 @@ describe('setCrustParamWithAudio style → algorithm store sync', () => {
     }
 
     it.each([
-        ['transparent', 'transparent'],
-        ['punchy', 'punchy'],
-        ['loud', 'wall'],
-    ] as const)('should map style %s to store algorithm %s without a second engine flush', (style, algorithm) => {
-        setCrustParam('algorithm', 'aggressive');
-        expect(crustStore.value?.patch.algorithm).toBe('aggressive');
+        ['transparent', 'transparent', 0, 0],
+        ['punchy', 'punchy', 1, 1],
+        ['loud', 'wall', 2, 7],
+    ] as const)(
+        'should map style %s to store algorithm %s and persist style then algorithm from one flush',
+        (style, algorithm, styleIndex, algorithmIndex) => {
+            setCrustParam('algorithm', 'aggressive');
+            expect(crustStore.value?.patch.algorithm).toBe('aggressive');
 
-        setCrustParamWithAudio(DEVICE_ID, 'style', style);
+            setCrustParamWithAudio(DEVICE_ID, 'style', style);
 
-        expect(crustStore.value?.patch.style).toBe(style);
-        expect(crustStore.value?.patch.algorithm).toBe(algorithm);
-        expect(paramBatcher.pendingSize).toBe(1);
+            expect(crustStore.value?.patch.style).toBe(style);
+            expect(crustStore.value?.patch.algorithm).toBe(algorithm);
+            expect(paramBatcher.pendingSize).toBe(1);
 
-        runPendingRaf();
+            // nothing is persisted before the flush, so the record's first insertion is decided by the flush order, not by a synchronous write.
+            expect(mocks.persistDeviceParam).not.toHaveBeenCalled();
 
-        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'style', expect.any(Number));
-        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'algorithm', expect.any(Number));
-        expect(mocks.persistDeviceParam).toHaveBeenCalledTimes(1);
-        expect(mocks.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'style', expect.any(Number));
-    });
+            runPendingRaf();
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'style', styleIndex);
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith(
+                TRACK_ID,
+                DEVICE_ID,
+                'algorithm',
+                expect.any(Number)
+            );
+            expect(mocks.persistDeviceParam.mock.calls).toEqual([
+                [DEVICE_ID, 'style', styleIndex],
+                [DEVICE_ID, 'algorithm', algorithmIndex],
+            ]);
+        }
+    );
 
     it('should skip both store writes for an unknown style', () => {
         const corruptStyle = 'brutal' as CrustPatch['style'];

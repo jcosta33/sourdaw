@@ -37,7 +37,9 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // stubbed AudioContext cannot build. The subject here is what project truth holds after
 // undo, so the engine seam is stubbed rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     analyzePitchForClip: vi.fn(),
@@ -443,8 +445,8 @@ describe('track-state guarded undo integration', () => {
         it('flatten: gives back the device chain, the track kind and the frozen take', async () => {
             const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
             const devices = [
-                { id: 'device-1', type: 'instrument', name: 'Synth', params: {}, bypassed: false },
-                { id: 'device-2', type: 'effect', name: 'Reverb', params: {}, bypassed: false },
+                { id: 'device-1', type: 'instrument', name: 'Synth', parameterValues: {}, bypassed: false },
+                { id: 'device-2', type: 'effect', name: 'Reverb', parameterValues: {}, bypassed: false },
             ];
             const freezeState = { status: 'frozen' as const, freezeId: 'freeze-1', frozenBufferId: 'buffer-1' };
             divergeTrack('track-1', {

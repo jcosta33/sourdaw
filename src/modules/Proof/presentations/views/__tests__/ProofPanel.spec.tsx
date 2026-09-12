@@ -2,6 +2,7 @@ import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
 import { persistDeviceParam } from '#/modules/Arrangement/stores';
+import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 import { getProofPatchSnapshot, type ProofTarget } from '../../../models/ProofPatch';
 import {
@@ -18,7 +19,7 @@ import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
 // Mock it so the latency readout assertion can pin a known, non-44100 rate.
-// getAudioSampleRate, getMasterAnalyser, and isEngineAudioAvailable are wired
+// getAudioSampleRate, getDeviceOutputNode, and isEngineAudioAvailable are wired
 // spies; the other AudioEngine keys listed in the mock are unread graph-coverage
 // stubs (`vi.fn()` and `audioEngine: {}`).
 const sampleRateMock = vi.fn<() => number>(() => 48_000);
@@ -35,12 +36,14 @@ const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     getAudioSampleRate: () => sampleRateMock(),
-    getMasterAnalyser: () => null,
+    getDeviceOutputNode: () => null,
     isEngineAudioAvailable: () => true,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -86,6 +89,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     unwireSidechainRoute: vi.fn(),
     updateDeviceBypass: vi.fn(),
     updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
@@ -269,10 +273,25 @@ type MockedProofBridge = {
 
 function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn<ProofAudioBridge['setParam']>(),
         reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
         resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
+}
+
+/**
+ * The `[name, value]` pairs this device took through `updateDeviceParam`, in
+ * order.
+ *
+ * That is the door every live Proof write reaches the DSP through, and the only
+ * one a natively carried body is behind, so a panel gesture is read off it
+ * rather than off the worklet bridge. Filtering by device id is what lets the
+ * two-device tests below read each panel's own writes.
+ */
+function deviceWrites(deviceId: string): Array<[string, number]> {
+    return vi
+        .mocked(updateDeviceParam)
+        .mock.calls.filter(([, writtenDeviceId]) => writtenDeviceId === deviceId)
+        .map(([, , name, value]): [string, number] => [name, value]);
 }
 
 function seedState(overrides: Partial<ProofState> = {}): void {
@@ -434,7 +453,7 @@ describe('ProofPanel', () => {
             target_mode: 3,
             target_lufs: -23,
         });
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(deviceWrites(DEVICE_ID)).toEqual([]);
     });
 
     it('keeps preset identity and persistence quiet when selecting the active target', () => {
@@ -448,7 +467,7 @@ describe('ProofPanel', () => {
 
         expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(deviceWrites(DEVICE_ID)).toEqual([]);
     });
 
     it('finalizes a rotary preview before persisting an interrupted target selection', () => {
@@ -576,7 +595,7 @@ describe('ProofPanel', () => {
 
         const previewPatch = getProofState(DEVICE_ID).patch;
         expect(previewPatch.inputGain).not.toBe(initialGain);
-        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(1);
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
         act(() => {
@@ -598,8 +617,8 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
         expect(persistedProjectPatches.has(DEVICE_ID)).toBe(false);
         expect(persistedProjectPatches.has(OTHER_DEVICE_ID)).toBe(false);
-        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
-        expect(bridgeB.setParam).not.toHaveBeenCalled();
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(1);
+        expect(deviceWrites(OTHER_DEVICE_ID)).toEqual([]);
 
         const freshKnob = screen.getByRole('slider', { name: 'Input gain' });
         const initialDeviceBGain = getProofState(OTHER_DEVICE_ID).patch.inputGain;
@@ -613,9 +632,9 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenCalledWith(OTHER_DEVICE_ID, {
             input_gain: finalDeviceBGain,
         });
-        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
-        expect(bridgeB.setParam).toHaveBeenCalledOnce();
-        expect(bridgeB.setParam).toHaveBeenCalledWith('input_gain', finalDeviceBGain);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(1);
+        expect(deviceWrites(OTHER_DEVICE_ID)).toHaveLength(1);
+        expect(deviceWrites(OTHER_DEVICE_ID)).toContainEqual(['input_gain', finalDeviceBGain]);
         expect(persistedProjectPatches.get(OTHER_DEVICE_ID)).toEqual({
             input_gain: finalDeviceBGain,
         });
@@ -647,16 +666,16 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
             eq_bypass: 1,
         });
-        expect(bridge.setParam).toHaveBeenCalledTimes(2);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', previewCeiling);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(2, 'eq_bypass', 1);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(2);
+        expect(deviceWrites(DEVICE_ID)[0]).toEqual(['lim_ceiling', previewCeiling]);
+        expect(deviceWrites(DEVICE_ID)[1]).toEqual(['eq_bypass', 1]);
         expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(previewCeiling);
         expect(getProofState(DEVICE_ID).patch.eqBypassed).toBe(true);
 
         fireEvent.pointerUp(knob, { pointerId: 63 });
 
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
-        expect(bridge.setParam).toHaveBeenCalledTimes(2);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(2);
         expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(previewCeiling);
         expect(getProofState(DEVICE_ID).patch.eqBypassed).toBe(true);
         expect(persistedProjectPatches.get(DEVICE_ID)).toMatchObject({
@@ -717,10 +736,10 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
             eq_bypass: 1,
         });
-        expect(bridge.setParam).toHaveBeenCalledTimes(3);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(1, 'eq_band2_freq', previewBand?.freq);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(2, 'eq_band2_gain', previewBand?.gain);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(3, 'eq_bypass', 1);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(3);
+        expect(deviceWrites(DEVICE_ID)[0]).toEqual(['eq_band2_freq', previewBand?.freq]);
+        expect(deviceWrites(DEVICE_ID)[1]).toEqual(['eq_band2_gain', previewBand?.gain]);
+        expect(deviceWrites(DEVICE_ID)[2]).toEqual(['eq_bypass', 1]);
         expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
             freq: previewBand?.freq,
             gain: previewBand?.gain,
@@ -735,7 +754,7 @@ describe('ProofPanel', () => {
         fireEvent.pointerUp(canvas, { pointerId: 64 });
 
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
-        expect(bridge.setParam).toHaveBeenCalledTimes(3);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(3);
         expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
             freq: previewBand?.freq,
             gain: previewBand?.gain,
@@ -774,8 +793,8 @@ describe('ProofPanel', () => {
             chain_order_3: 3,
             chain_order_4: 4,
         });
-        expect(bridge.setParam).toHaveBeenCalledTimes(1);
-        expect(bridge.setParam).toHaveBeenCalledWith('input_gain', previewGain);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(1);
+        expect(deviceWrites(DEVICE_ID)).toContainEqual(['input_gain', previewGain]);
         expect(bridge.reorderModules).toHaveBeenCalledTimes(1);
         expect(bridge.reorderModules).toHaveBeenCalledWith(expectedOrder);
         expect(getProofState(DEVICE_ID).patch.inputGain).toBe(previewGain);
@@ -784,7 +803,7 @@ describe('ProofPanel', () => {
         fireEvent.pointerUp(knob, { pointerId: 65 });
 
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
-        expect(bridge.setParam).toHaveBeenCalledTimes(1);
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(1);
         expect(bridge.reorderModules).toHaveBeenCalledTimes(1);
         expect(getProofState(DEVICE_ID).patch.inputGain).toBe(previewGain);
         expect(getProofState(DEVICE_ID).patch.chainOrder).toEqual(expectedOrder);
@@ -810,14 +829,14 @@ describe('ProofPanel', () => {
 
         fireEvent.pointerDown(exciterKnob, { button: 0, pointerId: 7, clientY: 100 });
         fireEvent.pointerMove(exciterKnob, { pointerId: 7, clientY: 90 });
-        bridge.setParam.mockClear();
+        vi.mocked(updateDeviceParam).mockClear();
         fireEvent.pointerMove(exciterKnob, { pointerId: 7, clientY: 60 });
 
-        expect(bridge.setParam).toHaveBeenCalledTimes(4);
-        expect(bridge.setParam).toHaveBeenNthCalledWith(1, 'exc_band0_drive', expect.any(Number));
-        expect(bridge.setParam).toHaveBeenNthCalledWith(2, 'exc_band1_drive', expect.any(Number));
-        expect(bridge.setParam).toHaveBeenNthCalledWith(3, 'exc_band2_drive', expect.any(Number));
-        expect(bridge.setParam).toHaveBeenNthCalledWith(4, 'exc_band3_drive', expect.any(Number));
+        expect(deviceWrites(DEVICE_ID)).toHaveLength(4);
+        expect(deviceWrites(DEVICE_ID)[0]).toEqual(['exc_band0_drive', expect.any(Number)]);
+        expect(deviceWrites(DEVICE_ID)[1]).toEqual(['exc_band1_drive', expect.any(Number)]);
+        expect(deviceWrites(DEVICE_ID)[2]).toEqual(['exc_band2_drive', expect.any(Number)]);
+        expect(deviceWrites(DEVICE_ID)[3]).toEqual(['exc_band3_drive', expect.any(Number)]);
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
         fireEvent.pointerUp(exciterKnob, { pointerId: 7 });
@@ -1166,7 +1185,7 @@ describe('ProofPanel', () => {
                 throw new Error('Expected the winning EQ band 2 edit');
             }
             expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
-            const transientEngineWriteCount = bridge.setParam.mock.calls.length;
+            const transientEngineWriteCount = deviceWrites(DEVICE_ID).length;
             if (winner === 'curve') {
                 fireEvent.pointerMove(loser, { pointerId: loserPointerId, clientY: 40 });
             } else {
@@ -1182,7 +1201,7 @@ describe('ProofPanel', () => {
                 freq: expectedBand.freq,
                 gain: expectedBand.gain,
             });
-            expect(bridge.setParam).toHaveBeenCalledTimes(transientEngineWriteCount);
+            expect(deviceWrites(DEVICE_ID)).toHaveLength(transientEngineWriteCount);
 
             endGesture(loser, loserPointerId, unmount);
 
@@ -1202,7 +1221,7 @@ describe('ProofPanel', () => {
                     eq_band2_gain: expectedBand.gain,
                 })
             );
-            expect(bridge.setParam).toHaveBeenCalledTimes(transientEngineWriteCount);
+            expect(deviceWrites(DEVICE_ID)).toHaveLength(transientEngineWriteCount);
 
             if (_end !== 'unmount') {
                 unmount();
@@ -1314,7 +1333,7 @@ describe('ProofPanel', () => {
         // inline from view code.
         fireEvent.click(screen.getByText('B / wet'));
 
-        expect(bridge.setParam).toHaveBeenCalledWith('ab_bypass', 1);
+        expect(deviceWrites(DEVICE_ID)).toContainEqual(['ab_bypass', 1]);
         expect(getProofState(DEVICE_ID).abBypass).toBe(true);
     });
 
@@ -1459,7 +1478,7 @@ describe('ProofPanel', () => {
 
         // `ab_bypass` is runtime state: a persisted 1 replays as a fully
         // bypassed Proof chain on the next project load.
-        expect(bridge.setParam).toHaveBeenCalledWith('ab_bypass', 1);
+        expect(deviceWrites(DEVICE_ID)).toContainEqual(['ab_bypass', 1]);
         expect(getProofState(DEVICE_ID).abBypass).toBe(true);
         expect(vi.mocked(persistDeviceParam)).not.toHaveBeenCalled();
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
@@ -1587,7 +1606,7 @@ describe('ProofPanel', () => {
 
         expect(getProofState(DEVICE_ID).patch.limBypassed).toBe(true);
         expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, { lim_bypass: 1 });
-        expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
+        expect(deviceWrites(DEVICE_ID)).toContainEqual(['lim_bypass', 1]);
     });
 
     const minHeightClasses = (element: HTMLElement | null | undefined): string[] =>

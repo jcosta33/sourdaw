@@ -154,17 +154,37 @@ export async function generateMidiVariations(
 
     const projectRevision = captureProjectRevision();
 
+    // Source notes live in material coordinates (playback position is
+    // clip.startBeat + note.startBeat - clip.midiOffsetBeats) while the model
+    // works in clip-visible coordinates: it must return notes inside
+    // 0..duration, and the variation drafts play them from their own origin.
+    // A loop plays the material region starting at the trim offset with the
+    // configured loop length; without a loop the visible extent sounds. Only
+    // the notes the listener actually hears drive the variation (#3764).
+    const sourceOffsetBeats = targetClip.midiOffsetBeats ?? 0;
+    const audibleLengthBeats =
+        targetClip.loopEnabled && targetClip.loopLength !== undefined && targetClip.loopLength > 0
+            ? targetClip.loopLength
+            : duration;
+    const audibleNotes = notes.filter((note) => {
+        const visibleStart = note.startBeat - sourceOffsetBeats;
+        return visibleStart >= 0 && visibleStart < audibleLengthBeats;
+    });
+    if (audibleNotes.length === 0) {
+        throw createAiGenerationError('MIDI clip has no audible notes to vary.');
+    }
+
     // Cap the note list so a long clip can't blow the LLM context window. We
     // describe the variation goal, not reproduce every note, so a representative
     // prefix plus a count of the remainder is enough for the model.
     const MAX_PROMPT_NOTES = 200;
-    const promptNotes = notes.slice(0, MAX_PROMPT_NOTES);
+    const promptNotes = audibleNotes.slice(0, MAX_PROMPT_NOTES);
 
     // Build a compact note representation relative to clip start for the LLM prompt
     const noteStrings = promptNotes
         .map(
             (node) =>
-                `[pitch=${node.pitch}, start=${node.startBeat.toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
+                `[pitch=${node.pitch}, start=${(node.startBeat - sourceOffsetBeats).toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
         )
         .join(', ');
 
@@ -262,7 +282,11 @@ ONLY output raw JSON, no markdown blocks.`;
                     endBeat: variationStartBeat + duration,
                     name: `${targetClip.name} (Var ${String(index + 1)})`,
                     type: 'midi',
-                    midiOffsetBeats: targetClip.midiOffsetBeats,
+                    // A variation is a fresh draft in its own coordinate
+                    // origin: the generated notes span 0..duration of the
+                    // draft, so copying the source's trim offset or loop
+                    // geometry would make the projection shift or drop them
+                    // (#3764).
                     fadeInBeats: targetClip.fadeInBeats,
                     fadeOutBeats: targetClip.fadeOutBeats,
                     gain: targetClip.gain,
@@ -273,8 +297,6 @@ ONLY output raw JSON, no markdown blocks.`;
                     muted: true,
                     stretchMode: targetClip.stretchMode,
                     stretchRatio: targetClip.stretchRatio,
-                    loopEnabled: targetClip.loopEnabled,
-                    loopLength: targetClip.loopLength,
                     followAction: targetClip.followAction,
                     isGhost: targetClip.isGhost,
                 },

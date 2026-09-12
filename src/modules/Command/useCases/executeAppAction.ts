@@ -102,6 +102,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         actionIndex: 0,
                         signal: options?.signal,
                         onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
+                        workOwner: options?.workOwner,
                     });
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
@@ -194,6 +195,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     actionIndex: 0,
                     signal: options?.signal,
                     onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
+                    workOwner: options?.workOwner,
                 })
             );
             if (storage_transaction.status === 'threw') {

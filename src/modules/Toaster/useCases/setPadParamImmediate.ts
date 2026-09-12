@@ -5,7 +5,9 @@ import { toPadStoreUpdate } from '../models/PadStoreUpdate';
 import { type PadState } from '../models/ToasterKit';
 import { updatePad } from '../stores/toasterStore';
 
+import { toasterPadEngineParamName } from './toasterPadEngineParamName';
 import { findReadyToasterControlsOnStrip } from './toasterParamBridge/findReadyToasterControlsOnStrip';
+import { writeToasterParamsNatively } from './writeToasterParamsNatively';
 
 /**
  * Send a pad param straight to the worklet, bypassing the rAF coalescing in
@@ -40,4 +42,9 @@ export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
     }
     const toasterControls = findReadyToasterControlsOnStrip({ strip, deviceId });
     toasterControls?.setPadParam(padIndex, key, value);
+    writeToasterParamsNatively({
+        trackId: target.trackId,
+        deviceId,
+        messages: [{ type: 'padParam', pad: padIndex, name: toasterPadEngineParamName(key), value }],
+    });
 }

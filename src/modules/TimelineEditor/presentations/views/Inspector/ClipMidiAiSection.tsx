@@ -430,10 +430,15 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             notifyUser('Download the voice model first', 'error');
             return;
         }
-        const tempoState = tempoMapStore.value;
-        const bpm = tempoState?.changes[0]?.tempo ?? 120;
-        const beatsPerSecond = bpm / 60;
-        const targetDurationSec = (clip.endBeat - clip.startBeat) / beatsPerSecond;
+        // Kokoro resamples its final PCM to fit this target, so it must be the same
+        // integrated span the scheduler would play (issue #3767) — not the first tempo
+        // change's flat rate. Same contract as the DDSP render above.
+        const targetDurationSec = secondsBetweenBeats(
+            tempoMapState.changes,
+            clip.startBeat,
+            clip.endBeat,
+            transportState.tempo
+        );
 
         const baseSpeed = parseFloat(ttsSpeed);
         if (!isFinite(baseSpeed) || baseSpeed <= 0) {

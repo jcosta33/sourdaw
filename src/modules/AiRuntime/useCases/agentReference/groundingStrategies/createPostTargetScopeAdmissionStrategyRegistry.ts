@@ -1,5 +1,12 @@
 import { type ProjectContext } from '../../../models/ProjectContext';
 
+import {
+    createGroundingAdmissionStrategyRegistry,
+    type GroundingAdmissionResult,
+    type GroundingAdmissionStrategy,
+    type GroundingAdmissionStrategyDefinition,
+} from './createGroundingAdmissionStrategyRegistry';
+
 export const postTargetScopeActionNames = [
     'removeTrack',
     'removeClip',
@@ -32,41 +39,26 @@ export type PostTargetScopeAdmissionInput = {
     prompt: string;
 };
 
-export type PostTargetScopeAdmissionResult = string | null;
+export type PostTargetScopeAdmissionResult = GroundingAdmissionResult;
 
-export type PostTargetScopeAdmissionStrategy = (
-    input: Omit<PostTargetScopeAdmissionInput, 'actionName'>
-) => PostTargetScopeAdmissionResult;
+export type PostTargetScopeAdmissionStrategy = GroundingAdmissionStrategy<
+    Omit<PostTargetScopeAdmissionInput, 'actionName'>
+>;
 
-export type PostTargetScopeAdmissionStrategyDefinition<Name extends PostTargetScopeActionName> = {
-    [StrategyName in Name]: {
-        name: StrategyName;
-        transform: PostTargetScopeAdmissionStrategy;
-    };
-}[Name];
+export type PostTargetScopeAdmissionStrategyDefinition<Name extends PostTargetScopeActionName> =
+    GroundingAdmissionStrategyDefinition<Name, Omit<PostTargetScopeAdmissionInput, 'actionName'>>;
+
+export const postTargetScopeAdmissionLabel = 'post-target scope admission';
 
 export function createPostTargetScopeAdmissionStrategyRegistry<Name extends PostTargetScopeActionName>(
     definitions: readonly PostTargetScopeAdmissionStrategyDefinition<Name>[],
     catalog: readonly { actionType: string }[],
     expectedActionNames: readonly Name[]
 ): ReadonlyMap<Name, PostTargetScopeAdmissionStrategy> {
-    const registry = new Map<Name, PostTargetScopeAdmissionStrategy>();
-    const catalogActionNames = new Set(catalog.map((entry) => entry.actionType));
-    for (const definition of definitions) {
-        if (registry.has(definition.name)) {
-            throw new Error(`Duplicate post-target scope admission strategy: ${definition.name}`);
-        }
-        if (!catalogActionNames.has(definition.name)) {
-            throw new Error(
-                `Post-target scope admission strategy is not a canonical executable action: ${definition.name}`
-            );
-        }
-        registry.set(definition.name, definition.transform);
-    }
-    for (const actionName of expectedActionNames) {
-        if (!registry.has(actionName)) {
-            throw new Error(`Missing post-target scope admission strategy: ${actionName}`);
-        }
-    }
-    return registry;
+    return createGroundingAdmissionStrategyRegistry<Name, Omit<PostTargetScopeAdmissionInput, 'actionName'>>(
+        postTargetScopeAdmissionLabel,
+        definitions,
+        catalog,
+        expectedActionNames
+    );
 }

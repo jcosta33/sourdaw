@@ -1,6 +1,7 @@
 import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 
 import { type ActionCommandGraph } from '../models/ActionCommandGraph';
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
@@ -158,6 +159,8 @@ export function validateArbitraryCommandListEvidence(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string | undefined;
+    /** The authority this batch must have been compiled under; `undefined` when none was minted. */
+    creativeAuthority: CreativeRequestAuthority | undefined;
 }):
     | {
           status: 'accepted';
@@ -168,6 +171,18 @@ export function validateArbitraryCommandListEvidence(input: {
     const { evidence } = input;
     if (evidence.schemaVersion !== 1 || input.revision !== evidence.snapshotRevision || input.revision === undefined) {
         return { status: 'rejected', reason: 'Structured command compiler evidence is stale.' };
+    }
+    // Evidence names the authority it was compiled under, and the authority names the revision it was
+    // minted against. Checking both here stops a batch compiled under one interpretation from being
+    // replayed at the bridge under another, or under none.
+    if (
+        (evidence.creativeAuthorityId ?? null) !== (input.creativeAuthority?.authorityId ?? null) ||
+        (input.creativeAuthority !== undefined && input.creativeAuthority.revision !== evidence.snapshotRevision)
+    ) {
+        return {
+            status: 'rejected',
+            reason: 'Structured command compiler evidence does not match the admitted creative authority.',
+        };
     }
     if (
         !sameToolCalls(evidence.commands, input.calls) ||

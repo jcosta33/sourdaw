@@ -3,6 +3,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 import { type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 
 import { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
+import { type CommandRecovery, classifyCommandRecovery } from './classifyCommandRecovery';
 import { commandBatchPreviewPort } from './commandBatchPreviewPort';
 import { commandProjectDivergencePort } from './commandProjectDivergencePort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
@@ -48,7 +49,7 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         command: VersionedCommandBatchEnvelope['commands'][number];
         handler: PreviewActionHandler;
         label: string;
-        recovery: 'inverse' | 'compensable' | 'irreversible';
+        recovery: CommandRecovery;
     }>;
     for (const [actionIndex, action] of actions.entries()) {
         const handler = getCommandHandler(action);
@@ -80,18 +81,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
                 actions: [] as [],
             };
         }
-        let recovery: 'inverse' | 'compensable' | 'irreversible' = 'irreversible';
-        if (description.inverseAction && handler.undoable) {
-            recovery = 'inverse';
-        } else if (description.inverseAction || handler.prepareAbort) {
-            recovery = 'compensable';
-        }
         preparedActions.push({
             action,
             command: envelope.commands[actionIndex]!,
             handler,
             label: description.label,
-            recovery,
+            recovery: classifyCommandRecovery(handler, description),
         });
     }
 

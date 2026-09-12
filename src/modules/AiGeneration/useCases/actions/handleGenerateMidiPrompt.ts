@@ -6,7 +6,7 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getAiSnapshot } from '../../stores/aiStore';
+import { type AiMidiGenerationTaskData, getAiSnapshot } from '../../stores/aiStore';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 import { addTask } from './addTask';
@@ -154,7 +154,9 @@ export async function handleGenerateMidiPrompt(
                 data: {
                     noteCount: finalNotes.length,
                     warning,
-                },
+                    clipId,
+                    trackId: targetTrackId,
+                } satisfies AiMidiGenerationTaskData,
                 durationMs: Math.round(performance.now() - start),
             });
             return;

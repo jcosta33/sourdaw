@@ -26,6 +26,7 @@ describe('levainParamBridge', () => {
             persistDeviceParam,
             autoLoadLevainSamples,
             resolveEligibleDeviceWriteTarget,
+            writeNativeBuiltinParameters: vi.fn(),
         });
 
         const mockDevice = { setParam: vi.fn(), handleCc: vi.fn() };

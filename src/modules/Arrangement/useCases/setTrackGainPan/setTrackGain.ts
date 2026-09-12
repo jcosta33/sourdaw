@@ -6,7 +6,7 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 
 import { clampTrackGain } from './clampTrackGain';
-import { maybeRecordAutomation } from './maybeRecordAutomation';
+import { type AutomationRecordingOptions, maybeRecordAutomation } from './maybeRecordAutomation';
 
 /**
  * `isTransient` splits *persistence* from the gesture, not the gesture from the
@@ -30,8 +30,17 @@ import { maybeRecordAutomation } from './maybeRecordAutomation';
  * — because the pad output feeds this strip (`createWebAudioEngine` connects
  * it into the child track's `gainNode`), so the two are gain stages in series
  * and any mirror between them applies every move twice.
+ *
+ * `options.automationRecordingPolicy` is the separate question of whether this
+ * write is a gesture at all; `'suppressed'` reaches the engine and the store
+ * exactly as before and never touches a recording pass.
  */
-export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
+export function setTrackGain(
+    trackId: string,
+    gain: number,
+    isTransient = false,
+    options: AutomationRecordingOptions = {}
+): void {
     const clamped = clampTrackGain(gain);
     engineSetTrackGain(trackId, clamped);
 
@@ -43,6 +52,7 @@ export function setTrackGain(trackId: string, gain: number, isTransient = false)
         { getTransportValue: () => transportStore.value, getTrackById, recordAutomationValue },
         trackId,
         'gain',
-        clamped
+        clamped,
+        options
     );
 }

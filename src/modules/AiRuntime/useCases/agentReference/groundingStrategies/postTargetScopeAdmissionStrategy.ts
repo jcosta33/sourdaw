@@ -14,21 +14,12 @@ import {
     type PostTargetScopeAdmissionStrategy,
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
+import { escapeRegExp } from './escapeRegExp';
 import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
 import { hasTrackControlRestriction } from './hasTrackControlRestriction';
+import { normalizePromptText } from './normalizePromptText';
 
 type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
-
-function normalizePromptText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-
-function escapeRegExp(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-}
 
 function isExplicitTrackDeletionScope({
     context,

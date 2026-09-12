@@ -232,8 +232,14 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),
+    // Present only because the barrel-mock census requires every export of
+    // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
+    // so `false` is the value with no behaviour behind it.
+    nativeLiveGraphSessionOffered: vi.fn(() => false),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
     holdWebFallbackDeviceParam: vi.fn(),

@@ -75,6 +75,41 @@ old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
 
+## Lesson from PR #4111 and PR #2169 snapshot-guard escapes
+
+PR #4111 introduced Yeast processor undo guards without exercising the codec's distinction between an empty persisted `params` map and its omitted store projection. PR #2169 introduced strip-silence's serialized restore guard and a replacement clone that materialized absent optional clip fields. A later conditional clone repair preserved optional-field presence but reinserted populated fields in a different key order. These shape changes made otherwise unchanged durable projections fail the guards during undo or redo.
+
+Review every serialized inverse guard through its real prepare, write, fresh durable projection, undo, and redo route. Reorder nested object keys and pass absent, explicitly undefined, empty, and populated optional fields through their owning codec. Unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
+
+## Lesson from the PR #806 transaction-scope escape
+
+PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until
+after commit flushing. A repository publication listener could re-enter it after the flush had snapshotted pending
+writes, update another adapter's cache, and leave that document write to land after `commit()` returned.
+
+Treat transaction lifecycle as one owner-wide authority. Use an atomic test port that publishes document A and then
+synchronously invokes a listener: both supplied and captured scopes must refuse before entering their callbacks while
+A commits, and document B, its cache, and the pending-write count must remain unchanged after a later flush. Also enter
+a scope before calling commit or abort, then attempt both `set` and `clear`; neither may mutate cache or durable truth.
+
+## Lesson from the PR #576 storage-terminal escape
+
+PR #576 (`ecd24df665`) settled a deferred write by copying its pending value into the cache after publication. A
+publication listener could hydrate newer document truth, and a nested public flush could execute the same pending a
+second time, yet the outer terminal still installed the older value or replayed it over the listener's change.
+
+Treat one flush as a claimed immutable execution and treat the current document as terminal authority. From a real
+publish-then-notify port, re-enter hydrate with and without a nested public flush; require one original-owner mutation
+and identical raw, cache, and fresh-decoder results. Also reset projection during preparation and terminal projection,
+and throw from trailing document reads and validators after one document publishes. The old identity must stay inert,
+claims must release, and the error must retain committed classification without replay.
+
+Every callback in the terminal read path can itself accept newer same-slot authority. Fence the whole read, decode,
+guard, and local-field projection sequence with a document-authority epoch, including nested commits authored before
+the outer write. A stale continuation settles its published claim against the retained newer baseline; author revision
+order cannot replace actual publication order. Treat `null` from an inbound projector as an accepted value, not as a
+missing callback result, and keep ambiguous publish-then-throw outcomes on the committed terminal path.
+
 ## Lesson from the comp-interval escape
 
 A comp selection over `[start, end)` edits only that musical interval. Removing every intersecting

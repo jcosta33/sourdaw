@@ -186,6 +186,29 @@ describe('setTrackGain', () => {
         expect(updater({ gain: 0.8 })).toEqual({ gain: 1.5 });
     });
 
+    it('writes engine and store but records nothing when the edit suppresses the recording policy', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackGain('t1', 0.8, false, { automationRecordingPolicy: 'suppressed' });
+
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
+        const updater = mocks.updateTrack.mock.calls[0]![1] as (t: { gain: number }) => { gain: number };
+        expect(updater({ gain: 1 })).toEqual({ gain: 0.8 });
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+    });
+
+    it('records nothing from a suppressed transient change while playing in write mode', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackGain('t1', 0.8, true, { automationRecordingPolicy: 'suppressed' });
+
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+    });
+
     it('records nothing from a transient change while the transport is stopped', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: false };

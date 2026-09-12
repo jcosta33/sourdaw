@@ -53,6 +53,10 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
         findDeviceNode(strip, noteData.levainDeviceId)?.levainControls?.noteOff(noteData.note);
     }
 
+    if (noteData.faustRelease) {
+        noteData.faustRelease();
+    }
+
     if (noteData.nativeDeviceId) {
         input.releaseNativeNote({
             trackId: noteData.instrumentTrackId,

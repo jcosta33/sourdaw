@@ -340,9 +340,15 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  * change fail here instead of at a musician's first invoke.
  */
 const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['agent_asset_cleanup', ['saga_id', 'owner']],
+    ['agent_asset_finalize_export', ['saga_id', 'owner', 'authorization']],
+    ['agent_asset_import', ['handle_id', 'owner', 'declared']],
+    ['agent_asset_register_handle', ['path', 'mode', 'owner']],
+    ['agent_asset_stage_export', ['destination_handle_id', 'owner', 'expected_sha256', 'data']],
     ['analyze_pitch', ['analysis_id', 'audio_path']],
     ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
+    ['begin_levain_bank', ['bank_key', 'instrument_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
@@ -354,6 +360,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['collab_load_bundle', ['path']],
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
+    ['commit_levain_bank', ['bank_key', 'layout']],
     ['commit_pitch_edit', ['request']],
     ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
@@ -385,7 +392,9 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_levain_sample', ['bank_key', 'sample_id', 'sample_rate', 'channels', 'pcm']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['retire_native_engine', []],
     ['scan_plugins', ['paths', 'retry_quarantined']],

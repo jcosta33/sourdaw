@@ -13,7 +13,12 @@ export { configureCommandBatchIdempotency } from './configureCommandBatchIdempot
 export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
+export { classifyCommandRecovery } from './classifyCommandRecovery';
+export { describeCommandBatchRecovery } from './describeCommandBatchRecovery';
+export { commandBatchGroupId } from './commandBatchGroupId';
+export { getCommandBatchGroupDependencies } from './getCommandBatchGroupDependencies';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
+export { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { captureCommandTargetFingerprints } from './captureCommandTargetFingerprints';
@@ -43,6 +48,7 @@ export { getExecutableAppActionProviderSchema } from './getExecutableAppActionPr
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
+export { getExecutableAppActionEffect } from './executableAppActionEffects';
 export { isExecutableAppActionType } from './executableAppActionRegistry';
 export { registerProductionCommandHandlers } from './registerProductionCommandHandlers';
 export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';

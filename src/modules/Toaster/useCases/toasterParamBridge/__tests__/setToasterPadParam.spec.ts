@@ -25,6 +25,9 @@ const mockResolveDeviceTarget = vi.hoisted(() =>
 );
 const mockGetTrackStrip = vi.hoisted(() => vi.fn<(trackId: string) => TrackStrip | undefined>());
 const mockUpdatePad = vi.hoisted(() => vi.fn<(deviceId: string, padIndex: number, updates: unknown) => void>());
+const mockWriteNativeBuiltinParameters = vi.hoisted(() =>
+    vi.fn<(trackId: string, deviceId: string, values: Readonly<Record<string, number>>) => void>()
+);
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
@@ -34,6 +37,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getTrackStrip: mockGetTrackStrip,
+    writeNativeBuiltinParameters: mockWriteNativeBuiltinParameters,
 }));
 
 vi.mock('../../../stores/toasterStore', async (importOriginal) => ({
@@ -131,6 +135,39 @@ describe('setToasterPadParam', () => {
         flushFrame();
 
         expect(setPadParam).toHaveBeenCalledWith(2, 'tune', 7);
+    });
+
+    /**
+     * A pad edit never reaches `updateDeviceParam` — Toaster's pads are not
+     * `parameterValues` entries — so without this send a natively carried
+     * Toaster held the kit its topology splice shipped and ignored the knob.
+     *
+     * The worklet write is asserted beside it because the native send is
+     * additive: the web node is the strip's fallback carrier and has to hold
+     * the current value for the moment the session's gate reopens at Stop.
+     */
+    it('should also send the pad write to the native session, with the index folded into the name', () => {
+        setToasterPadParam('dev-1', 3, 'tune', 2);
+        flushFrame();
+
+        expect(mockWriteNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', 'dev-1', { pad3_tune: 2 });
+        expect(setPadParam).toHaveBeenCalledWith(3, 'tune', 2);
+    });
+
+    /**
+     * The worklet translates a camelCase pad field at its own message door
+     * (`PAD_PARAM_MAP`, `AudioEngine/services/toasterProcessor.ts`); the native
+     * body has none, and `Pad::set_param` silently drops a name it has no arm
+     * for. A send that forwarded `sendReverb` verbatim would therefore look
+     * delivered and change nothing about the sound.
+     */
+    it('should spell a camelCase pad field the way the engine spells it', () => {
+        setToasterPadParam('dev-1', 7, 'sendReverb', 0.75);
+        flushFrame();
+
+        expect(mockWriteNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', 'dev-1', {
+            pad7_send_reverb: 0.75,
+        });
     });
 
     /**

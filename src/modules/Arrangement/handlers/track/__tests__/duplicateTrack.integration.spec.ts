@@ -10,7 +10,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     addMidiFxToStrip: vi.fn(),

@@ -14,8 +14,8 @@ import { getState } from './getState';
 import { subscribe } from './subscribe';
 
 // Seed the store with the repository's current internal state (support
-// detection + persisted input id computed in state.ts), then keep it in sync
-// with every subsequent internal state change.
+// detection; the input id is resolved per identity scheme at init time), then
+// keep it in sync with every subsequent internal state change.
 webMidiStore.set(getState());
 
 subscribe(() => {

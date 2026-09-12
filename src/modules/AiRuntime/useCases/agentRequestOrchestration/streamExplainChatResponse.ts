@@ -80,6 +80,22 @@ function readProviderTokenCount(value: unknown): number | null {
     return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
+function readHostedProviderFinish(
+    outcome: Extract<CloudChatCompletionOutcome, { status: 'incomplete' }>
+): ModelProviderFinish {
+    if (outcome.finishReason === 'length') {
+        return { reason: 'length' };
+    }
+    return {
+        reason: outcome.finishReason === 'refusal' ? 'refusal' : 'error',
+        failure: {
+            code: outcome.finishReason === 'refusal' ? 'provider-refusal' : 'incomplete-output',
+            retryable: outcome.finishReason !== 'refusal',
+            safeMessage: outcome.safeMessage,
+        },
+    };
+}
+
 function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
     try {
         agentRunLifecycle.recordError(input);
@@ -396,17 +412,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
         }
         let providerFinish: ModelProviderFinish = { reason: 'stop' };
         if (cloudOutcome?.status === 'incomplete') {
-            providerFinish =
-                cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
-                    ? { reason: 'length' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'incomplete-output',
-                              retryable: true,
-                              safeMessage: 'The hosted provider returned an incomplete response.',
-                          },
-                      };
+            providerFinish = readHostedProviderFinish(cloudOutcome);
         } else if (webLlmIncompleteReason !== null) {
             providerFinish =
                 webLlmIncompleteReason === 'length'

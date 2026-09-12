@@ -18,13 +18,20 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
+import { getLevainEngineParameterName, projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
+import { CRUST_DSP_PARAM_NAMES } from '../../../models/CrustDspParamNames';
+import { GLUTEN_DSP_PARAM_NAMES } from '../../../models/GlutenDspParamNames';
 import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamNames';
-import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
+import { TOASTER_KIT_PARAM_NAMES } from '../../../models/ToasterKitParamNames';
+import { isLatencyCompensatedByEngine } from '../isLatencyCompensatedByEngine';
+import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
 
@@ -91,6 +98,73 @@ function readKneadEngineArmsFromRust(): readonly string[] {
     return [...body.matchAll(arm)].map((match) => match[1]!);
 }
 
+/**
+ * Every string-literal match arm inside `ScoringEngine::set_param`
+ * (`crates/scoring/src/lib.rs`) — the closed set of names the Tuner's body
+ * resolves. Read from the Rust source for the same reason Knead's set is: the
+ * Tuner's descriptor declares no parameters either, so this table is the only
+ * thing standing between a lane and any id it can spell, and a hand-copied
+ * list would drift from the engine without either side noticing.
+ *
+ * Anchored on the `impl ScoringEngine` block rather than on the first
+ * `fn set_param` in the file: `ScoringInstance` — the worklet's binding —
+ * declares one too, which merely forwards to this one.
+ */
+function readScoringEngineArmsFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/scoring/src/lib.rs'), 'utf8'));
+    const implIndex = source.search(/\bimpl\s+ScoringEngine\b/);
+    if (implIndex < 0) {
+        throw new Error("could not find 'impl ScoringEngine' in crates/scoring/src/lib.rs");
+    }
+    const signature = /\bfn\s+set_param\s*\(/g;
+    signature.lastIndex = implIndex;
+    const signatureMatch = signature.exec(source);
+    if (signatureMatch === null) {
+        throw new Error("could not find 'fn set_param' in impl ScoringEngine");
+    }
+    const openIndex = source.indexOf('{', signatureMatch.index + signatureMatch[0].length);
+    const body = readBalancedBlock(source, openIndex).replaceAll(/\s+/g, ' ');
+    const arm = /"([\w-]+)"(?=(?: \| "[\w-]+")* =>)/g;
+    return [...body.matchAll(arm)].map((match) => match[1]!);
+}
+
+/**
+ * The two names `ScoringBody` refuses at both its doors
+ * (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`), read from
+ * the Rust source for the same reason the arms are: the renderer's set is the
+ * arms *less* these, and a name added to or removed from the refusal has to
+ * move this side without an edit here.
+ */
+function readScoringNativeRefusedFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/daw-engine/src/scheduler.rs'), 'utf8'));
+    const declaration = /\bconst\s+SCORING_NATIVE_REFUSED\s*:[^=]*=\s*&\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'const SCORING_NATIVE_REFUSED' in crates/daw-engine/src/scheduler.rs");
+    }
+    return [...declaration[1]!.matchAll(/"([\w-]+)"/g)].map((match) => match[1]!);
+}
+
+/**
+ * The string literals of `SCORING_ENGINE_PARAM_NAMES` in
+ * `nativeBuiltinBodies.ts`, read from the module's own source.
+ *
+ * The registry's two Tuner closures ask the set `has`, so they answer for the
+ * names a test thinks to probe and say nothing about the ones it does not: an
+ * extra literal in the initializer is invisible to any assertion written over
+ * a sample. Reading the initializer is what turns "exactly these names" into a
+ * claim about the whole set rather than about the probes.
+ */
+function readScoringRendererNamesFromTs(): readonly string[] {
+    const source = stripComments(
+        readFileSync(resolve(REPO_ROOT, 'src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts'), 'utf8')
+    );
+    const declaration = /\bSCORING_ENGINE_PARAM_NAMES\b[^=]*=\s*new Set\(\[([^\]]*)]/.exec(source);
+    if (declaration === null) {
+        throw new Error("could not find 'SCORING_ENGINE_PARAM_NAMES' initializer in nativeBuiltinBodies.ts");
+    }
+    return [...declaration[1]!.matchAll(/'([\w-]+)'/g)].map((match) => match[1]!);
+}
+
 /** The registry entry under test, with the `null` case already refused. */
 function bodyOf(deviceType: string): NativeBuiltinBody {
     const body = nativeBuiltinBody(deviceType);
@@ -100,15 +174,6 @@ function bodyOf(deviceType: string): NativeBuiltinBody {
     return body;
 }
 
-/**
- * `BuiltinParamName::parse` in `crates/daw-engine/src/timeline.rs`: one to
- * `BUILTIN_PARAM_NAME_CAPACITY` bytes of lowercase ASCII letters, digits and
- * underscores. A name outside it is refused by shape, taking its batch with it.
- * The carrier is body-neutral, so it is the shape every named built-in's
- * vocabulary has to satisfy — the Fermenter's and Grand Boule's alike.
- */
-const BUILTIN_PARAM_NAME = /^[a-z0-9_]{1,32}$/;
-
 /** `FermenterPatch['macros']` (`#/modules/Fermenter/models`) is an 8-slot tuple. */
 const FERMENTER_MACRO_COUNT = 8;
 
@@ -117,6 +182,15 @@ describe('nativeBuiltinBody', () => {
         expect(nativeBuiltinBody('knead')).not.toBeNull();
         expect(nativeBuiltinBody('fermenter')).not.toBeNull();
         expect(nativeBuiltinBody('grand-boule')).not.toBeNull();
+        expect(nativeBuiltinBody('gluten')).not.toBeNull();
+        expect(nativeBuiltinBody('crust')).not.toBeNull();
+        expect(nativeBuiltinBody('grinder')).not.toBeNull();
+        expect(nativeBuiltinBody('bacteria')).not.toBeNull();
+        expect(nativeBuiltinBody('proof')).not.toBeNull();
+        expect(nativeBuiltinBody('dutch-oven')).not.toBeNull();
+        expect(nativeBuiltinBody('toaster')).not.toBeNull();
+        expect(nativeBuiltinBody('levain')).not.toBeNull();
+        expect(nativeBuiltinBody('native-scoring')).not.toBeNull();
         expect(nativeBuiltinBody('builtin-eq')).toBeNull();
         expect(nativeBuiltinBody('external-plugin')).toBeNull();
     });
@@ -125,6 +199,8 @@ describe('nativeBuiltinBody', () => {
     // body is spelled as a display name as often as a key on the web side.
     it('resolves a type spelled as a display name, the way the mapper folds it', () => {
         expect(nativeBuiltinBody('Fermenter')).toBe(nativeBuiltinBody('fermenter'));
+        expect(nativeBuiltinBody('Bacteria')).toBe(nativeBuiltinBody('bacteria'));
+        expect(nativeBuiltinBody('Dutch-Oven')).toBe(nativeBuiltinBody('dutch-oven'));
     });
 
     // Mirrors `BuiltinEffectType::sounds_notes`, which is what decides whether
@@ -133,6 +209,84 @@ describe('nativeBuiltinBody', () => {
         expect(bodyOf('fermenter').soundsNotes).toBe(true);
         expect(bodyOf('grand-boule').soundsNotes).toBe(true);
         expect(bodyOf('knead').soundsNotes).toBe(false);
+        expect(bodyOf('gluten').soundsNotes).toBe(false);
+        expect(bodyOf('crust').soundsNotes).toBe(false);
+        expect(bodyOf('grinder').soundsNotes).toBe(false);
+        expect(bodyOf('bacteria').soundsNotes).toBe(false);
+        expect(bodyOf('proof').soundsNotes).toBe(false);
+        expect(bodyOf('dutch-oven').soundsNotes).toBe(false);
+        expect(bodyOf('toaster').soundsNotes).toBe(true);
+        expect(bodyOf('levain').soundsNotes).toBe(true);
+        // A tuner listens: it hands the block on and turns what it heard into
+        // a reading, so it sounds nothing of its own.
+        expect(bodyOf('native-scoring').soundsNotes).toBe(false);
+    });
+
+    // What `projectLiveMidiProgramme` reads before it writes a clip's release.
+    // Toaster is the exception the web carrier already makes
+    // (`scheduleTrackClips.ts` withholds the release for it), because a pad
+    // decays on its own envelope and a release chokes it. Every other entry
+    // answers `true`: a keyboard body's clip note holds its key, and a body
+    // that sounds no notes never receives a clip release to withhold.
+    it('states which bodies take a clip note’s release', () => {
+        expect(bodyOf('toaster').takesClipNoteReleases).toBe(false);
+        expect(bodyOf('grand-boule').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('fermenter').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('knead').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('gluten').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('crust').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('grinder').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('bacteria').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('proof').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('dutch-oven').takesClipNoteReleases).toBe(true);
+        // A sampled orchestral note holds its key, and its release is what
+        // triggers the bank's release zones.
+        expect(bodyOf('levain').takesClipNoteReleases).toBe(true);
+        expect(bodyOf('native-scoring').takesClipNoteReleases).toBe(true);
+    });
+
+    // Mirrors `PluginCore::declared_latency_frames`, which is what decides
+    // whether the mapper publishes a latency for the body at registration.
+    // Every entry answers, because a body that declares a figure and is left
+    // counted on this side too is compensated twice.
+    it('states which bodies the engine compensates for itself', () => {
+        expect(bodyOf('bacteria').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('proof').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('dutch-oven').latencyCompensatedByEngine).toBe(true);
+        expect(bodyOf('knead').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('fermenter').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('grand-boule').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('gluten').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('crust').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('grinder').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('toaster').latencyCompensatedByEngine).toBe(false);
+        expect(bodyOf('levain').latencyCompensatedByEngine).toBe(false);
+        // A pass-through analyser declares no figure, so nothing is held for
+        // it on either side.
+        expect(bodyOf('native-scoring').latencyCompensatedByEngine).toBe(false);
+    });
+
+    // A device type with no native body is nothing the engine could be
+    // compensating, and the predicate is read on project device types — which
+    // include `external-plugin` and every Web Audio-only built-in.
+    it('answers the compensation question for a type with no native body', () => {
+        expect(isLatencyCompensatedByEngine('bacteria')).toBe(true);
+        expect(isLatencyCompensatedByEngine('Bacteria')).toBe(true);
+        expect(isLatencyCompensatedByEngine('external-plugin')).toBe(false);
+        expect(isLatencyCompensatedByEngine('builtin-eq')).toBe(false);
+    });
+});
+
+// Pins the carrier's own byte boundary, not any one body's vocabulary:
+// `BUILTIN_PARAM_NAME_CAPACITY` (`crates/daw-engine/src/timeline.rs`) is 40
+// because Levain's longest name, `legato_portamento_velocity_threshold`, is
+// 36 bytes — a narrower carrier would drop it from a projected patch before
+// the wire.
+describe('BUILTIN_PARAM_NAME_SHAPE', () => {
+    it('admits Levain’s longest name and the carrier’s full 40-byte capacity, and refuses one byte more', () => {
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('legato_portamento_velocity_threshold')).toBe(true);
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('a'.repeat(40))).toBe(true);
+        expect(BUILTIN_PARAM_NAME_SHAPE.test('a'.repeat(41))).toBe(false);
     });
 });
 
@@ -161,7 +315,7 @@ describe('the fermenter body', () => {
     it('spells every id the projection can emit as a name the engine can parse', () => {
         const macroIds = Array.from({ length: FERMENTER_MACRO_COUNT }, (_, index) => `macro${index}`);
         for (const paramId of [...FERMENTER_PARAMS.map((param) => param.id), ...macroIds]) {
-            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
     });
 
@@ -223,7 +377,7 @@ describe('the grand boule body', () => {
         expect(paramIds.length).toBeGreaterThan(0);
         for (const paramId of paramIds) {
             expect(bodyOf('grand-boule').parameterName(paramId)).toBe(GRAND_BOULE_DSP_PARAM_NAMES[paramId]);
-            expect(bodyOf('grand-boule').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME);
+            expect(bodyOf('grand-boule').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
         }
         expect(new Set(paramIds).size).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
     });
@@ -239,6 +393,611 @@ describe('the grand boule body', () => {
         expect(bodyOf('grand-boule').addressesParameter('master_gain')).toBe(false);
         expect(bodyOf('grand-boule').addressesParameter('filterCutoff')).toBe(false);
         expect(bodyOf('grand-boule').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Gluten's vocabulary is welded in a chain, the way Grand Boule's is.
+ * `descriptorEngineParamWeld.spec.ts` holds every `GLUTEN_DESCRIPTOR` parameter
+ * id to an entry in `GLUTEN_DSP_PARAM_NAMES`, and
+ * `models/__tests__/glutenDspParamNames.spec.ts` holds that table to the shape
+ * the engine's parameter carrier admits. What is left for this file is the last
+ * link: that the registry entry actually answers through that table, rather
+ * than through identity or a private copy of it.
+ */
+describe('the gluten body', () => {
+    it('spells a project id in the engine vocabulary the compressor matches on', () => {
+        expect(bodyOf('gluten').parameterName('autoMakeup')).toBe('auto_makeup');
+        expect(bodyOf('gluten').projectPatch({ autoMakeup: 1, scHpfFreq: 80 })).toEqual({
+            auto_makeup: 1,
+            sc_hpf_freq: 80,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the table does not address or the wire cannot send', () => {
+        expect(bodyOf('gluten').projectPatch({ mix: 0.5, presetName: 'Glue', sidechainVisible: true })).toEqual({
+            mix: 0.5,
+        });
+    });
+
+    // The compressor is addressed in camelCase and answers in snake_case, so
+    // the engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        const paramIds = Object.keys(GLUTEN_DSP_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('gluten').addressesParameter(paramId)).toBe(true);
+            expect(bodyOf('gluten').parameterName(paramId)).toBe(GLUTEN_DSP_PARAM_NAMES[paramId]);
+            expect(bodyOf('gluten').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+        }
+        expect(bodyOf('gluten').addressesParameter('auto_makeup')).toBe(false);
+        expect(bodyOf('gluten').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Crust's vocabulary is welded in the same chain Gluten's is.
+ * `descriptorEngineParamWeld.spec.ts` holds every `CRUST_DESCRIPTOR` parameter
+ * id to an entry in `CRUST_DSP_PARAM_NAMES`, and
+ * `models/__tests__/crustDspParamNames.spec.ts` holds that table to the shape
+ * the engine's parameter carrier admits. What is left for this file is the last
+ * link: that the registry entry actually answers through that table, rather
+ * than through identity or a private copy of it.
+ */
+describe('the crust body', () => {
+    it('spells a project id in the engine vocabulary the limiter matches on', () => {
+        expect(bodyOf('crust').parameterName('attackAuto')).toBe('attack_auto');
+        expect(bodyOf('crust').projectPatch({ attackAuto: 1, scHpfFreq: 80 })).toEqual({
+            attack_auto: 1,
+            sc_hpf_freq: 80,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the table does not address or the wire cannot send', () => {
+        expect(bodyOf('crust').projectPatch({ ceiling: -0.3, presetName: 'Master', meterVisible: true })).toEqual({
+            ceiling: -0.3,
+        });
+    });
+
+    // The limiter is addressed in camelCase and answers in snake_case, so the
+    // engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        const paramIds = Object.keys(CRUST_DSP_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('crust').addressesParameter(paramId)).toBe(true);
+            expect(bodyOf('crust').parameterName(paramId)).toBe(CRUST_DSP_PARAM_NAMES[paramId]);
+            expect(bodyOf('crust').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+        }
+        expect(bodyOf('crust').addressesParameter('attack_auto')).toBe(false);
+        expect(bodyOf('crust').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Grinder carries no translation table: its engine spells its own parameters
+ * in camelCase (`crates/daw-dsp/src/grinder/engine.rs`), and project truth
+ * authors the same camelCase ids for them, so a project id already is the
+ * engine's own name. What this body resolves is therefore a question of wire
+ * shape alone, the same `BUILTIN_PARAM_NAME_SHAPE` every other body's
+ * translated output is held to above — never a closed list, because the
+ * engine's own vocabulary already reaches past a fixed set into the
+ * dynamically named `neuralCustomConvWeight{layer}_{idx}` family
+ * (`crates/daw-dsp/src/grinder/neural.rs`).
+ */
+describe('the grinder body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('grinder').parameterName('inputGain')).toBe('inputGain');
+        expect(bodyOf('grinder').projectPatch({ inputGain: 3, gain: 8 })).toEqual({
+            inputGain: 3,
+            gain: 8,
+        });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                inputGain: 3,
+                presetName: 'Bright Lead',
+                'not-a-name': 1,
+            })
+        ).toEqual({ inputGain: 3 });
+    });
+
+    // The engine's own vocabulary reaches past the fixed automatable slots
+    // into a dynamically named family the renderer cannot enumerate, so
+    // admission is the shape check alone — never a closed list the way the
+    // other bodies' translation tables are.
+    it('admits a well-shaped id whether it is a fixed slot or a dynamically named one', () => {
+        expect(bodyOf('grinder').addressesParameter('inputGain')).toBe(true);
+        expect(bodyOf('grinder').addressesParameter('neuralCustomConvWeight3_2')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('grinder').addressesParameter('auto-makeup')).toBe(false);
+        expect(bodyOf('grinder').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('grinder').addressesParameter('')).toBe(false);
+    });
+
+    // Persistence only adds keys and never removes one, so a record that once
+    // selected a factory voice can still carry an imported profile's
+    // `neuralCustom*` keys beside `neuralModelSlot`. `neuralModelMode` says
+    // which source is live, and the projection has to drop the other source's
+    // keys rather than forward both — the native engine rewrites every layer
+    // and scalar from `neuralModelSlot` whatever order it lands in, so a
+    // stale slot next to an imported profile would render the factory voice.
+    it("keeps only the imported profile's keys when neuralModelMode selects the imported source", () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 1,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralCustomTier: 1,
+            neuralCustomConvWeight0_0: 0.1,
+            neuralModelMode: 1,
+        });
+    });
+
+    // The mirror case: a built-in voice record with stale `neuralCustom*`
+    // keys from a profile that was once imported. Harmless only because the
+    // engine happens to apply the slot last — a fixed apply order cannot
+    // serve both records, so the projection drops the custom keys instead.
+    it('keeps only the built-in slot when neuralModelMode selects the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                gain: 5,
+                neuralModelSlot: 1,
+                neuralCustomTier: 1,
+                neuralCustomConvWeight0_0: 0.1,
+                neuralModelMode: 0,
+            })
+        ).toEqual({
+            gain: 5,
+            neuralModelSlot: 1,
+            neuralModelMode: 0,
+        });
+    });
+
+    // A record from before `neuralModelMode` existed has no mode key at all;
+    // missing means built-in, the same as an explicit 0.
+    it('treats a missing neuralModelMode as the built-in source', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelSlot: 2,
+                neuralCustomInputDrive: 1.2,
+            })
+        ).toEqual({ neuralModelSlot: 2 });
+    });
+
+    // The live `updateDevicePatch` door sends the worklet's structured patch,
+    // which has no numeric keys at all, so it still projects to nothing.
+    it('still projects a structured patch to nothing', () => {
+        expect(
+            bodyOf('grinder').projectPatch({
+                neuralModelMode: 'imported',
+                profile: { inputDrive: 1 },
+            })
+        ).toEqual({});
+    });
+});
+
+/**
+ * Bacteria's vocabulary is welded by shape rather than by a table, like
+ * Grinder's above: project truth authors the engine's own camelCase ids, and
+ * the engine's two addressing families — a `band{N}_` prefix aiming a name at
+ * one band, and `stepSeqVal_{n}` indexing a sequencer step — live inside the
+ * shape rule rather than beside it, so there is no closed list to hold the
+ * translation to.
+ *
+ * What is its own is the refusal: two of the engine's arms allocate, so the
+ * native audio-thread door drops those names
+ * (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`). This
+ * is what `addressesParameter` answers, which is what gates an *automation*
+ * write off the native route entirely (`readLiveAutomationWrites.ts`); a
+ * panel write does not consult this answer and reaches the native door
+ * regardless, where the same refusal drops it on the Rust side instead.
+ */
+describe('the bacteria body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('bacteria').parameterName('band3_filterCutoff')).toBe('band3_filterCutoff');
+        expect(
+            bodyOf('bacteria').projectPatch({
+                band3_filterCutoff: 1200,
+                crossoverFreq2: 800,
+                stepSeqVal_31: 0.25,
+                macro8: 0.5,
+            })
+        ).toEqual({
+            band3_filterCutoff: 1200,
+            crossoverFreq2: 800,
+            stepSeqVal_31: 0.25,
+            macro8: 0.5,
+        });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('bacteria').projectPatch({
+                band0_drive: 8,
+                presetName: 'Rot',
+                'not-a-name': 1,
+            })
+        ).toEqual({ band0_drive: 8 });
+    });
+
+    // The engine's vocabulary reaches past the fixed automatable slots into
+    // two dynamically named families the renderer cannot enumerate, so
+    // admission is the shape check — with the allocating pair taken back out.
+    it('admits a well-shaped id, band-prefixed or not', () => {
+        expect(bodyOf('bacteria').addressesParameter('band0_convolutionSeparation')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('stepSeqVal_31')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
+    });
+
+    // A live single-key write of either allocating name is refused by this
+    // gate, because the native door drops it: reporting it as carried would
+    // leave the write nowhere at all. Both spellings the engine reaches the
+    // stage by are refused — a bare name is broadcast to all six bands, and a
+    // `band{N}_` prefix aims it at one.
+    it('refuses the two names whose engine arms allocate, bare or band-prefixed', () => {
+        expect(bodyOf('bacteria').addressesParameter('phaserStages')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserStages')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('convolutionIr')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band5_convolutionIr')).toBe(false);
+        // Any digit, not only the six bands that exist: the engine strips the
+        // prefix first and bounds-checks the band afterwards, and the Rust
+        // door reads it the same way.
+        expect(bodyOf('bacteria').addressesParameter('band9_phaserStages')).toBe(false);
+        // The sixth character is never read by the engine, only skipped, so a
+        // refusal that required the historical `_` there would miss these:
+        // `apply_param` reads both as band 0's `convolutionIr` and
+        // `phaserStages` all the same.
+        expect(bodyOf('bacteria').addressesParameter('band00convolutionIr')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('band0XphaserStages')).toBe(false);
+    });
+
+    // A near-miss of the refusal, so the prefix strip is pinned as the engine's
+    // own reading rather than as a substring match: `phaserStagesTrim` is not
+    // the refused name, and `band9_` is not a band the engine addresses.
+    // `bandCount` and `band0_phaserStagesTrim` stay admitted too — neither is
+    // a `band{digit}` prefix followed by one of the two allocating names, so
+    // reading the prefix as loosely as the engine does must not sweep them in.
+    it('refuses only the allocating names themselves', () => {
+        expect(bodyOf('bacteria').addressesParameter('phaserStagesTrim')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserRate')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('bandCount')).toBe(true);
+        expect(bodyOf('bacteria').addressesParameter('band0_phaserStagesTrim')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('bacteria').addressesParameter('crossover-slope')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('bacteria').addressesParameter('')).toBe(false);
+    });
+});
+
+describe('the proof body', () => {
+    // The chain spells its own parameters in snake_case and project truth
+    // authors the same ids, so there is no table to consult — the id a panel
+    // writes already is the name `ProofChain::set_param` takes.
+    it('keeps the names the project already stores, because the chain answers to those names', () => {
+        expect(bodyOf('proof').parameterName('lim_ceiling')).toBe('lim_ceiling');
+        expect(bodyOf('proof').projectPatch({ lim_ceiling: -0.3 })).toEqual({ lim_ceiling: -0.3 });
+    });
+
+    // The five order keys are what no `SetParam` behind the record could stand
+    // in for: `ProofChain` has no arm for them at all, and `ProofBody` is what
+    // turns them into the chain's own `reorder`. A record that dropped them
+    // would open every saved project at the factory module order.
+    it('carries the module order the record spells', () => {
+        expect(
+            bodyOf('proof').projectPatch({
+                chain_order_0: 4,
+                chain_order_1: 0,
+                chain_order_2: 1,
+                chain_order_3: 2,
+                chain_order_4: 3,
+            })
+        ).toEqual({ chain_order_0: 4, chain_order_1: 0, chain_order_2: 1, chain_order_3: 2, chain_order_4: 3 });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('proof').projectPatch({
+                lim_ceiling: -0.3,
+                presetName: 'Loud',
+                'not-a-name': 1,
+            })
+        ).toEqual({ lim_ceiling: -0.3 });
+    });
+
+    // The record is the mapper's, and the mapper reads a device's bypass from
+    // the record's own `bypassed` field. The graph-owned name travels with it
+    // all the same rather than being filtered here: `ProofBody::load_patch`
+    // routes the record through the same door the audio thread uses, which is
+    // where it is dropped, so no second rule is needed on this side.
+    it('leaves the graph-owned name in the record for the body to drop', () => {
+        expect(bodyOf('proof').projectPatch({ bypass: 1, ab_bypass: 1, lim_ceiling: -0.3 })).toEqual({
+            bypass: 1,
+            ab_bypass: 1,
+            lim_ceiling: -0.3,
+        });
+    });
+
+    // The chain's vocabulary is eight EQ bands, four dynamics bands, four
+    // exciter bands, the imager, the limiter and the ditherer, each addressed
+    // by a stage prefix the chain decodes itself, so admission is the shape
+    // check — with the one name the graph owns taken back out.
+    it('admits a well-shaped id, whichever stage it is prefixed for', () => {
+        expect(bodyOf('proof').addressesParameter('eq_band0_gain')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dyn_band2_ratio')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('img_width1')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('lim_lookahead')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dither_bits')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('chain_order_3')).toBe(true);
+    });
+
+    // A live single-key write of the graph-owned name is refused by this gate,
+    // because the native door drops it: reporting it as carried would leave the
+    // write nowhere at all. The device's bypass is the graph's own command.
+    it('refuses the one name the graph owns', () => {
+        expect(bodyOf('proof').addressesParameter('bypass')).toBe(false);
+    });
+
+    // The panel's A/B compare returns the gain-matched dry signal from the head
+    // of the chain, and the native body runs that arm, so a compare pressed
+    // while the session rolls natively has to reach the carrier that is
+    // sounding. Runtime-only in the project is about persistence, not about
+    // which carrier hears it.
+    it('addresses the A/B compare so a natively carried chain hears it', () => {
+        expect(bodyOf('proof').addressesParameter('ab_bypass')).toBe(true);
+    });
+
+    // A near-miss of the refusal, so the name is pinned as itself rather than
+    // as a substring match: it is neither a prefix nor a suffix of a chain name
+    // the body must keep addressing.
+    it('refuses only the graph-owned name itself', () => {
+        expect(bodyOf('proof').addressesParameter('bypassed')).toBe(true);
+        expect(bodyOf('proof').addressesParameter('dyn_bypass')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape,
+    // exactly as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('proof').addressesParameter('chain-order-0')).toBe(false);
+        expect(bodyOf('proof').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('proof').addressesParameter('')).toBe(false);
+    });
+});
+
+describe('the dutch oven body', () => {
+    // The reverb spells its own parameters in snake_case and project truth
+    // authors the same ids, so there is no table to consult — the id a panel
+    // writes already is the name `ProofChamberInstance::set_param` takes.
+    it('keeps the names the project already stores, because the reverb answers to those names', () => {
+        expect(bodyOf('dutch-oven').parameterName('decay')).toBe('decay');
+        expect(bodyOf('dutch-oven').projectPatch({ decay: 0.8 })).toEqual({ decay: 0.8 });
+    });
+
+    // `fdn_damping_version` is the one name the record carries that no panel
+    // shows: `addDevice` merges the descriptor's `internalParameterValues` into
+    // `parameterValues` at creation. Dropping it here would open every saved
+    // FDN patch on the legacy damping curve. `algorithm` decides which of the
+    // five engines renders at all, and `decay_eq_3` is one of the six
+    // decay-rate EQ bands — all three travel in the record like any other name.
+    it('carries the engine selection, the decay-rate EQ and the internal damping version', () => {
+        expect(
+            bodyOf('dutch-oven').projectPatch({
+                algorithm: 1,
+                fdn_damping_version: 2,
+                decay_eq_3: 2,
+            })
+        ).toEqual({ algorithm: 1, fdn_damping_version: 2, decay_eq_3: 2 });
+    });
+
+    // The wire narrows every value to an `f32`, and shape is the whole of what
+    // the carrier refuses by: a non-number has no value to send, and a key a
+    // hyphen or a space breaks the shape would refuse the whole batch if it
+    // reached the wire, so both are dropped here first.
+    it('drops an entry the wire has no number to send, or a key shaped unlike any built-in name', () => {
+        expect(
+            bodyOf('dutch-oven').projectPatch({
+                decay: 0.8,
+                presetName: 'Cathedral',
+                'not-a-name': 1,
+            })
+        ).toEqual({ decay: 0.8 });
+    });
+
+    // Admission is the shape check and nothing narrower: the vocabulary is a
+    // union across the engines an `algorithm` write selects between, and a name
+    // the selected engine has no arm for is dropped by that engine exactly as
+    // it is under the worklet. No name is withheld — the device's bypass is not
+    // a parameter here, it is the record's own `bypassed` field.
+    it('admits a well-shaped id, whichever engine answers it', () => {
+        expect(bodyOf('dutch-oven').addressesParameter('mix')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('decay_eq_5')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('algorithm')).toBe(true);
+        expect(bodyOf('dutch-oven').addressesParameter('vintage')).toBe(true);
+    });
+
+    // A key no built-in's vocabulary could ever spell refuses by shape, exactly
+    // as `BuiltinParamName::parse` refuses it on the Rust side.
+    it('refuses a key shaped unlike any built-in name', () => {
+        expect(bodyOf('dutch-oven').addressesParameter('decay-eq-5')).toBe(false);
+        expect(bodyOf('dutch-oven').addressesParameter('not a name')).toBe(false);
+        expect(bodyOf('dutch-oven').addressesParameter('')).toBe(false);
+    });
+});
+
+/**
+ * Toaster's vocabulary is welded in a chain rather than restated here, the way
+ * Grand Boule's is. `descriptorEngineParamWeld.spec.ts` holds every
+ * `TOASTER_DESCRIPTOR` parameter id to an entry in `TOASTER_KIT_PARAM_NAMES`
+ * (with `swing` exempted there, host-side by design). What is left for this
+ * file is the last link: that the registry entry actually answers through that
+ * table, rather than through identity or a private copy of it.
+ *
+ * The kit itself — everything `deviceState` carries — is deliberately outside
+ * this body's vocabulary: `parameterValues` never holds it, so `projectPatch`
+ * has nothing to translate for it, and `projectDeviceForNativeBody` is where
+ * it actually reaches the record.
+ */
+describe('the toaster body', () => {
+    it('spells a project id in the instrument vocabulary the engine matches on', () => {
+        expect(bodyOf('toaster').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('toaster').projectPatch({ masterGain: 0.8, swing: 0.25 })).toEqual({
+            master_gain: 0.8,
+            swing: 0.25,
+        });
+    });
+
+    // Project truth's `parameterValues` is an open record — a preset name, a
+    // panel's own view state, whatever has been persisted there — and a key the
+    // engine cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the instrument does not address or the wire cannot send', () => {
+        expect(bodyOf('toaster').projectPatch({ masterGain: 0.8, presetName: 'Plain Bread', kitLocked: true })).toEqual(
+            { master_gain: 0.8 }
+        );
+    });
+
+    it('spells every id in the table as a name the engine parameter carrier admits', () => {
+        const paramIds = Object.keys(TOASTER_KIT_PARAM_NAMES);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('toaster').parameterName(paramId)).toBe(TOASTER_KIT_PARAM_NAMES[paramId]);
+            expect(bodyOf('toaster').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+        }
+    });
+
+    // The engine is addressed in camelCase and answers in snake_case, so the
+    // engine's own spelling of a parameter is not a project id and must not
+    // resolve — admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the table this whole chain is welded to.
+    it('resolves every id in the table, and refuses the engine spelling or an unknown id', () => {
+        for (const paramId of Object.keys(TOASTER_KIT_PARAM_NAMES)) {
+            expect(bodyOf('toaster').addressesParameter(paramId)).toBe(true);
+        }
+        expect(bodyOf('toaster').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('toaster').addressesParameter('bogus')).toBe(false);
+    });
+});
+
+/**
+ * Levain's own vocabulary, read through the module's published translation
+ * rather than restated here.
+ *
+ * The sampler is the one body built from staged material rather than from its
+ * record: the bank key reaches the wire through `projectDeviceForNativeBody`,
+ * and the articulation choice through the same merge. What this table owes is
+ * the *rest* — the patch fields and the wider ensemble surface a lane can
+ * author — spelled as names the engine can parse.
+ */
+describe('the levain body', () => {
+    // The one vocabulary this table does not hold itself: Levain delivers its
+    // panel writes into AudioEngine, so its map arrives through the runtime
+    // sink the composition root registers (`nativeBuiltinParameterNames.ts`)
+    // rather than through an import that would close a cycle. The map itself is
+    // still the module's own, read through its published translation.
+    beforeEach(() => {
+        setAudioDeviceRuntimeSink({
+            nativeBuiltinParameterName: ({ deviceType, paramId }) =>
+                deviceType === 'levain' ? getLevainEngineParameterName({ paramId }) : null,
+        });
+    });
+
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+    });
+
+    it('spells a project id in the engine vocabulary the sampler matches on', () => {
+        expect(bodyOf('levain').parameterName('masterGain')).toBe('master_gain');
+        expect(bodyOf('levain').projectPatch({ masterGain: 0.8, autoDivisiSize: 4 })).toEqual({
+            master_gain: 0.8,
+            auto_divisi_size: 4,
+        });
+    });
+
+    it('spells the project id whose engine name differs from it', () => {
+        expect(bodyOf('levain').parameterName('humanize')).toBe('humanize_amount');
+        expect(bodyOf('levain').projectPatch({ humanize: 0.4 })).toEqual({ humanize_amount: 0.4 });
+    });
+
+    // Project truth's `parameterValues` is an open record, and a key the engine
+    // cannot parse fails the whole chain mapping, not just its own write.
+    it('drops an entry the sampler does not address or the wire cannot send', () => {
+        expect(
+            bodyOf('levain').projectPatch({ masterGain: 0.8, presetName: 'Lush Strings', filterCutoff: 0.5 })
+        ).toEqual({ master_gain: 0.8 });
+    });
+
+    it('spells every automatable id the descriptor publishes as a name the carrier admits', () => {
+        const paramIds = (getPluginById('levain')?.parameters ?? [])
+            .filter((parameter) => parameter.automatable)
+            .map((parameter) => parameter.id);
+
+        expect(paramIds.length).toBeGreaterThan(0);
+        for (const paramId of paramIds) {
+            expect(bodyOf('levain').parameterName(paramId)).toBe(getLevainEngineParameterName({ paramId }));
+            expect(bodyOf('levain').parameterName(paramId)).toMatch(BUILTIN_PARAM_NAME_SHAPE);
+            expect(bodyOf('levain').addressesParameter(paramId)).toBe(true);
+        }
+    });
+
+    // The engine's own snake_case spelling is not a project id and must not
+    // resolve: admitting it would let a lane author a name the body then hands
+    // through unchanged, bypassing the translation this chain is welded to.
+    it('refuses the engine spelling and an unknown id', () => {
+        expect(bodyOf('levain').addressesParameter('master_gain')).toBe(false);
+        expect(bodyOf('levain').addressesParameter('bogus')).toBe(false);
+    });
+
+    // The articulation is a string in project truth, so `parameterValues`
+    // never holds it and this table has nothing to translate — it reaches the
+    // record through `projectDeviceForNativeBody`'s device-state merge. What
+    // must agree is the *name* the two routes use, or the merge would write a
+    // key the body already spells differently.
+    it('spells the articulation under the name the device-state projection emits', () => {
+        const projected = projectLevainDeviceStateToNativePatch({
+            deviceState: { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } },
+        });
+
+        expect(Object.keys(projected ?? {})).toEqual([bodyOf('levain').parameterName('currentArticulation')]);
+        expect(bodyOf('levain').projectPatch({})).toEqual({});
     });
 });
 
@@ -290,5 +1049,66 @@ describe('the knead body', () => {
         const admitted = [...candidateUniverse].filter((name) => bodyOf('knead').addressesParameter(name));
 
         expect(new Set(admitted)).toEqual(new Set(engineArms));
+    });
+});
+
+describe('the scoring body', () => {
+    it('keeps the names the project already stores, because the engine answers to those names', () => {
+        expect(bodyOf('native-scoring').parameterName('a4_hz')).toBe('a4_hz');
+        expect(bodyOf('native-scoring').projectPatch({ a4_hz: 442 })).toEqual({ a4_hz: 442 });
+    });
+
+    it('drops an entry the wire has no number to send, and one the body has no arm for', () => {
+        expect(bodyOf('native-scoring').projectPatch({ a4_hz: 442, tone: 'on', windowSize: 2048 })).toEqual({
+            a4_hz: 442,
+        });
+    });
+
+    // `ScoringEngine::set_param` (`crates/scoring/src/lib.rs`) is the closed
+    // set this mirrors, less the two names `ScoringBody` refuses at both its
+    // doors (`SCORING_NATIVE_REFUSED`, `crates/daw-engine/src/scheduler.rs`).
+    // Welded against the Rust sources themselves the same way Knead's is: the
+    // Tuner's descriptor declares no parameters, so nothing else stops a
+    // lane's id from reaching a door the engine would drop it at.
+    //
+    // The set equality is read from the module's own initializer rather than
+    // probed name by name. A loop over a sample of names cannot see a literal
+    // the sample does not mention, so an id added to the renderer's set — one
+    // the engine has no arm for, or one it refuses — would keep a probing
+    // version of this case green.
+    it('resolves exactly the arms ScoringEngine::set_param matches less the refused ones', () => {
+        const engineArms = readScoringEngineArmsFromRust();
+        const refused = readScoringNativeRefusedFromRust();
+        const rendererNames = readScoringRendererNamesFromTs();
+        // Presence pins: a broken extraction would yield an empty set and
+        // every assertion below would pass vacuously against it.
+        expect(engineArms.length).toBeGreaterThan(0);
+        expect(refused.length).toBeGreaterThan(0);
+        expect(rendererNames.length).toBeGreaterThan(0);
+
+        const admitted = engineArms.filter((name) => !refused.includes(name));
+        expect(new Set(rendererNames)).toEqual(new Set(admitted));
+
+        for (const name of admitted) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(true);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({ [name]: 1 });
+        }
+
+        // The refused names have arms on the Rust side and are still not
+        // addressable: a command spent on one is dropped at the body's door,
+        // and a record carrying one must not be mapped into a patch.
+        for (const name of refused) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
+        }
+
+        // Names outside the arms, including the camelCase spelling of a real
+        // one: the wire is a snake_case vocabulary and the body must not fold
+        // case to admit an id.
+        const probeNames = ['a4Hz', 'pitch', 'mix', 'bypass', 'noteIndex'];
+        for (const name of probeNames) {
+            expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
+            expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
+        }
     });
 });

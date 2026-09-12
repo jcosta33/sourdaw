@@ -8,6 +8,20 @@ import { fail } from './prContract.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
+export const ORCHESTRATOR_USER_NODE_ID = 'MDQ6VXNlcjg5NzgyNzA=';
+
+export function isOrchestratorUserNodeId(nodeId: string | undefined | null): boolean {
+    return nodeId === ORCHESTRATOR_USER_NODE_ID;
+}
+
+export function isHistoricalMergerActor(
+    nodeId: string | undefined | null,
+    actorType: string | undefined | null
+): boolean {
+    return (
+        (actorType === 'Bot' && isAuthorBotNodeId(nodeId)) || (actorType === 'User' && isOrchestratorUserNodeId(nodeId))
+    );
+}
 
 export function isReviewerBotNodeId(nodeId: string | undefined | null): boolean {
     return nodeId === REVIEWER_BOT_NODE_ID;
@@ -477,6 +491,47 @@ export function createGhSession(token: string, parent: NodeJS.ProcessEnv = proce
             rmSync(configDir, { recursive: true, force: true });
         },
     };
+}
+
+export async function authenticateOrchestrator(
+    input: {
+        env?: NodeJS.ProcessEnv;
+        capture?: (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => string;
+    } = {}
+): Promise<{ minted: { actorNodeId: string }; session: GhSession }> {
+    const env = githubAuthorizationGitEnv(input.env ?? process.env);
+    const capture = input.capture ?? spawnCapture;
+    let token: string;
+    try {
+        // The login selects a stored credential; only the immutable API identity grants authority.
+        token = capture('gh', ['auth', 'token', '--hostname', 'github.com', '--user', 'jcosta33'], { env }).trim();
+        if (token === '') {
+            fail('stored orchestrator authentication is empty');
+        }
+    } catch {
+        return fail('cannot read stored orchestrator authentication');
+    }
+    const session = createGhSession(token, env);
+    try {
+        const actor: unknown = JSON.parse(
+            capture('gh', ['api', '--hostname', 'github.com', 'user'], { env: session.env })
+        );
+        if (
+            typeof actor !== 'object' ||
+            actor === null ||
+            !('type' in actor) ||
+            actor.type !== 'User' ||
+            !('node_id' in actor) ||
+            typeof actor.node_id !== 'string' ||
+            !isOrchestratorUserNodeId(actor.node_id)
+        ) {
+            fail('invalid orchestrator identity');
+        }
+        return { minted: { actorNodeId: actor.node_id }, session };
+    } catch {
+        session.dispose();
+        return fail('cannot verify orchestrator authentication');
+    }
 }
 
 export function githubChildEnv(

@@ -197,6 +197,7 @@ describe('sidechain device ownership', () => {
         };
 
         const validation = validateArbitraryCommandListEvidence({
+            creativeAuthority: undefined,
             evidence,
             calls: commands,
             context,

@@ -77,7 +77,14 @@ fn peak(samples: &[f32]) -> f32 {
 /// (#3307, guarded by `algorithm_switch_does_not_allocate` and
 /// `the_algorithm_arm_selects_rather_than_constructs`).
 fn configured(algorithm: f32) -> ProofChamberInstance {
-    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    configured_at(SAMPLE_RATE, algorithm)
+}
+
+/// Same, at a caller-chosen device rate. Engines size their delay lines and
+/// capture buffers from the rate, so a guard that only ever ran at 48 kHz can
+/// only ever prove the 48 kHz allocation.
+fn configured_at(sample_rate: f32, algorithm: f32) -> ProofChamberInstance {
+    let mut instance = ProofChamberInstance::new(sample_rate);
     instance.set_param("algorithm", algorithm);
     instance.set_param("mix", 0.5);
     instance.set_param("decay", 0.7);
@@ -189,6 +196,23 @@ fn reverse_process_does_not_allocate() {
     instance.set_param("size", 0.0);
     let out = guarded_run_after(&mut instance, 200);
     assert_audible(&out, "reverse");
+}
+
+/// The same guard at the highest rate the product can meet. Reverse is the one
+/// algorithm whose capture buffers are sized from the sample rate, so it is the
+/// one whose allocation a 48 kHz-only guard cannot speak for.
+///
+/// The warm-up is longer for the same reason the twin above needs one at all:
+/// the first buffer swap is `reverse_len` frames in, and at 0.5 s that is
+/// 96 000 frames here rather than 24 000, so the guarded blocks are only
+/// replaying once the warm-up has carried the instance past it.
+#[test]
+fn reverse_process_does_not_allocate_at_192_khz() {
+    let mut instance = configured_at(192_000.0, ALGORITHM_REVERSE);
+    instance.set_param("mix", 1.0);
+    instance.set_param("size", 0.0);
+    let out = guarded_run_after(&mut instance, 800);
+    assert_audible(&out, "reverse at 192 kHz");
 }
 
 /// Hybrid defaults to `HybridMode::Off`, which routes the algorithmic engine

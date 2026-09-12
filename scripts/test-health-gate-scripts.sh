@@ -22,6 +22,7 @@ mkdir -p \
     "$temp_root/scan-target/.git" \
     "$temp_root/workflow-runner"
 cp "$repo_root/scripts/health-gates-server.sh" "$temp_root/scripts/health-gates-server.sh"
+cp "$repo_root/scripts/health-gates-rust.sh" "$temp_root/scripts/health-gates-rust.sh"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/scripts/run-gitleaks-history-scan.sh"
 cp "$repo_root/scripts/assert-deployment-isolation.sh" "$temp_root/scripts/assert-deployment-isolation.sh"
 cp "$repo_root/.gitleaks.toml" "$temp_root/.gitleaks.toml"
@@ -185,6 +186,7 @@ const {
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
+    CONDITIONAL_STEP_ALLOWLIST,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
@@ -958,7 +960,15 @@ expect(
 // proved, and one on any step reports that step green whatever it ran. The
 // pins above each cover one named job or step; this sweep covers every job in
 // every file, because a softened leg reports a failing proof as a passing
-// summary wherever it lands.
+// summary wherever it lands. The single exception is the first changed-paths
+// filter attempt: its softening only hands the question to its retry step and
+// to the Resolve scope verdict guard, which fail the job when neither attempt
+// produced verdicts.
+expect(
+    stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
+    'the first changed-paths filter attempt must continue on error so its retry can absorb a transient API failure'
+);
+const continueOnErrorStepPins = new Set(['validation.ymldecideFilter changed paths']);
 for (const [file, parsed] of [
     ['health-gates.yml', workflow],
     ['validation.yml', validationWorkflow],
@@ -973,8 +983,11 @@ for (const [file, parsed] of [
             `${file} job ${id} must not continue on error, which would conclude the leg success whatever it proved`
         );
         for (const step of job?.steps ?? []) {
+            if (step?.['continue-on-error'] === undefined) {
+                continue;
+            }
             expect(
-                step?.['continue-on-error'] === undefined,
+                step?.['continue-on-error'] === true && continueOnErrorStepPins.has(`${file}${id}${step?.name}`),
                 `${file} job ${id} step ${step?.name ?? '<unnamed>'} must not continue on error, which would report the step green whatever it ran`
             );
         }
@@ -1418,66 +1431,6 @@ expect(
 // shard-failure reporters and blob uploads above, and the deploy legs pinned
 // beside their job. An `if` anywhere else retires a proof by flipping the
 // condition while every other pin stays green.
-const allowedStepConditions = [
-    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map((step) => ['wasm-artifacts.yml', 'build-artifacts', step, "steps.plan.outputs.selected == 'true'"]),
-    ['validation.yml', 'unit', 'Report shard failure', shardFailureCondition],
-    ['heavy-gates.yml', 'e2e', 'Report shard failure', shardFailureCondition],
-    ['heavy-gates.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
-    ['nightly.yml', 'unit', 'Report shard failure', shardFailureCondition],
-    ['nightly.yml', 'e2e', 'Report shard failure', shardFailureCondition],
-    ['nightly.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
-    ['nightly.yml', 'deploy-web', 'Report the missing deployment credential', "env.DEPLOY_CREDENTIAL_PRESENT != 'true'"],
-    ['nightly.yml', 'deploy-web', 'Checkout the validated revision', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Enable Corepack', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Set up pnpm', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Set up Node', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Resolve the current production revision', credentialCondition],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Report why nothing was deployed',
-        `${credentialCondition} && steps.production.outputs.deploy != 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Install dependencies',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Link the Vercel CLI to the production project',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Build the validated revision',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Deploy the prebuilt revision',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Assert cross-origin isolation on the deployment',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Resolve the aliases of the deployment',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    // The measurement record is the diagnostic for a failed latency run, so it
-    // uploads even when the measurement itself failed.
-    ['nightly.yml', 'desktop-measure', 'Upload the measurement record', 'always()'],
-];
 const seenAllowedSteps = new Set();
 for (const [file, parsed] of [
     ['health-gates.yml', workflow],
@@ -1493,12 +1446,12 @@ for (const [file, parsed] of [
                 continue;
             }
             const label = `${file} job ${id} step ${step?.name ?? '<unnamed>'}`;
-            const pin = allowedStepConditions.find(
-                ([pinFile, pinJob, pinStep]) => pinFile === file && pinJob === id && pinStep === step?.name
+            const pin = CONDITIONAL_STEP_ALLOWLIST.find(
+                (entry) => entry.workflow === file && entry.job === id && entry.step === step?.name
             );
             expect(pin !== undefined, `${label} must stay unconditional`);
             if (pin !== undefined) {
-                expect(step?.if === pin[3], `${label} must retain its pinned condition`);
+                expect(step?.if === pin.condition, `${label} must retain its pinned condition`);
                 seenAllowedSteps.add(`${file}${id}${step?.name}`);
             }
         }
@@ -1506,10 +1459,10 @@ for (const [file, parsed] of [
 }
 // An allowlist entry that matches no live step is a condition nobody pins any
 // more, so the sweep refuses the orphan rather than letting the list rot.
-for (const [pinFile, pinJob, pinStep] of allowedStepConditions) {
+for (const entry of CONDITIONAL_STEP_ALLOWLIST) {
     expect(
-        seenAllowedSteps.has(`${pinFile}${pinJob}${pinStep}`),
-        `${pinFile} job ${pinJob} step ${pinStep} must carry its pinned condition`
+        seenAllowedSteps.has(`${entry.workflow}${entry.job}${entry.step}`),
+        `${entry.workflow} job ${entry.job} step ${entry.step} must carry its pinned condition`
     );
 }
 for (const precondition of [
@@ -1813,15 +1766,18 @@ set -e
 test "$isolation_unset_status" -ne 0
 grep -qF 'ALIASES must be set to the public production aliases to grade' "$temp_root/isolation-unset.out"
 
-# A PATH that has the fake npm but no cargo at all, used to prove the missing
+# A PATH that has no cargo at all, used to prove the Rust gate's missing
 # toolchain precondition. `sh` and `dirname` are the only external commands
 # needed to reach the precondition, so they are the only ones linked in.
 no_cargo_bin="$temp_root/bin-no-cargo"
 mkdir -p "$no_cargo_bin"
-cp "$fake_bin/npm" "$no_cargo_bin/npm"
 ln -s "$(command -v sh)" "$no_cargo_bin/sh"
 ln -s "$(command -v dirname)" "$no_cargo_bin/dirname"
 
+# The collaboration server gate, swept since #3516 split it out of the shared
+# script: the dependency precondition fires before any build, the success path
+# runs exactly the server test and build, and a server test failure propagates
+# npm's own exit code.
 set +e
 server_output=$(PATH="$fake_bin:$PATH" \
     COMMAND_LOG="$temp_root/server-missing.log" \
@@ -1846,9 +1802,6 @@ printf '%s\n' \
     'npm --prefix server ls --depth=0 --silent --include=dev' \
     'npm test' \
     'npm run build' \
-    'cargo fmt --all --check' \
-    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
-    'cargo test --workspace --exclude sourdaw-native --all-features' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
 
@@ -1866,12 +1819,14 @@ printf '%s\n' \
     > "$temp_root/expected-server-test-failure.log"
 diff -u "$temp_root/expected-server-test-failure.log" "$temp_root/server-test-failure.log"
 
-# A missing Rust toolchain must be reported before any build runs, not
-# discovered after the collaboration server has already been built.
+# The Rust workspace gate carries the toolchain precondition the split moved
+# out of the server script. The no-cargo PATH proves it fails in seconds, and
+# the still-empty command log proves no build command ran before it.
+: > "$temp_root/no-cargo.log"
 set +e
 no_cargo_output=$(PATH="$no_cargo_bin" \
     COMMAND_LOG="$temp_root/no-cargo.log" \
-    sh "$temp_root/scripts/health-gates-server.sh" 2>&1)
+    sh "$temp_root/scripts/health-gates-rust.sh" 2>&1)
 no_cargo_status=$?
 set -e
 test "$no_cargo_status" -eq 1
@@ -1879,44 +1834,58 @@ case "$no_cargo_output" in
     *'error: cargo is not on PATH'*) ;;
     *) exit 1 ;;
 esac
-printf '%s\n' 'npm --prefix server ls --depth=0 --silent --include=dev' > "$temp_root/expected-no-cargo.log"
+: > "$temp_root/expected-no-cargo.log"
 diff -u "$temp_root/expected-no-cargo.log" "$temp_root/no-cargo.log"
+
+PATH="$fake_bin:$PATH" \
+    COMMAND_LOG="$temp_root/rust-success.log" \
+    sh "$temp_root/scripts/health-gates-rust.sh" >/dev/null
+printf '%s\n' \
+    'cargo fmt --all --check' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'cargo test --workspace --exclude sourdaw-native --all-features' \
+    > "$temp_root/expected-rust-success.log"
+diff -u "$temp_root/expected-rust-success.log" "$temp_root/rust-success.log"
 
 # A failing Rust workspace must fail the gate with cargo's own exit code, and
 # must stop before the remaining legs run.
 set +e
 PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/cargo-clippy-failure.log" \
+    COMMAND_LOG="$temp_root/rust-clippy-failure.log" \
     FAKE_CARGO_CLIPPY_STATUS=101 \
-    sh "$temp_root/scripts/health-gates-server.sh" >/dev/null 2>&1
-cargo_clippy_status=$?
+    sh "$temp_root/scripts/health-gates-rust.sh" >/dev/null 2>&1
+rust_clippy_status=$?
 set -e
-test "$cargo_clippy_status" -eq 101
+test "$rust_clippy_status" -eq 101
 printf '%s\n' \
-    'npm --prefix server ls --depth=0 --silent --include=dev' \
-    'npm test' \
-    'npm run build' \
     'cargo fmt --all --check' \
     'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
-    > "$temp_root/expected-cargo-clippy-failure.log"
-diff -u "$temp_root/expected-cargo-clippy-failure.log" "$temp_root/cargo-clippy-failure.log"
+    > "$temp_root/expected-rust-clippy-failure.log"
+diff -u "$temp_root/expected-rust-clippy-failure.log" "$temp_root/rust-clippy-failure.log"
 
 set +e
 PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/cargo-test-failure.log" \
+    COMMAND_LOG="$temp_root/rust-test-failure.log" \
     FAKE_CARGO_TEST_STATUS=134 \
-    sh "$temp_root/scripts/health-gates-server.sh" >/dev/null 2>&1
-cargo_test_status=$?
+    sh "$temp_root/scripts/health-gates-rust.sh" >/dev/null 2>&1
+rust_test_status=$?
 set -e
-test "$cargo_test_status" -eq 134
+test "$rust_test_status" -eq 134
+printf '%s\n' \
+    'cargo fmt --all --check' \
+    'cargo clippy --workspace --exclude sourdaw-native --all-targets --all-features' \
+    'cargo test --workspace --exclude sourdaw-native --all-features' \
+    > "$temp_root/expected-rust-test-failure.log"
+diff -u "$temp_root/expected-rust-test-failure.log" "$temp_root/rust-test-failure.log"
 
 printf '%s\n' \
     "missing server dependencies exit: $server_status" \
-    'server remediation and production build dependency sequence: PASS' \
+    'collaboration server dependency check and build sequence: PASS' \
     "server test failure exit: $server_test_status" \
     "missing cargo exit: $no_cargo_status" \
-    "cargo clippy failure exit: $cargo_clippy_status" \
-    "cargo test failure exit (SIGABRT): $cargo_test_status" \
+    'rust workspace fmt, clippy and test sequence: PASS' \
+    "cargo clippy failure exit: $rust_clippy_status" \
+    "cargo test failure exit (SIGABRT): $rust_test_status" \
     'gitleaks helper scan argv: PASS' \
     "gitleaks helper bad checksum exit: $bad_checksum_status" \
     'gitleaks helper bad checksum stops before extract/scan: PASS' \

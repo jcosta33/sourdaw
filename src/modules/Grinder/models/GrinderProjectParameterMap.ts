@@ -1,8 +1,14 @@
 import {
+    derivedGrinderNeuralModelId,
+    grinderNeuralProfileFromParamValues,
+    grinderNeuralProfilesEqual,
+} from './GrinderNeuralProfileParams';
+import {
     DEFAULT_PATCH,
     GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
+    type GrinderImportedNeuralModel,
     type GrinderMic,
     type GrinderPatch,
     type GrinderPedal,
@@ -20,13 +26,22 @@ const INDEXED_VALUES: Partial<Record<keyof GrinderPatch, readonly string[]>> = {
     neuralTier: ['standard', 'lite', 'nano', 'recurrent'],
     routingMode: ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'],
 };
-export const GRINDER_PROJECT_PARAM_KEYS = (Object.keys(DEFAULT_PATCH) as Array<keyof GrinderPatch>).filter((key) => {
+const rawKeys = (Object.keys(DEFAULT_PATCH) as Array<keyof GrinderPatch>).filter((key) => {
     const value = DEFAULT_PATCH[key];
     return (
         !['neuralWarmupProgress', 'activeSnapshot'].includes(key) &&
         (typeof value === 'number' || typeof value === 'boolean' || INDEXED_VALUES[key] !== undefined)
     );
 });
+// neuralEnabled must precede engineMode so the exact engineMode pick lands last
+// and overwrites the coarse boolean on both audio sync and persisted record replay.
+const neuralIdx = rawKeys.indexOf('neuralEnabled');
+const engineIdx = rawKeys.indexOf('engineMode');
+if (neuralIdx >= 0 && engineIdx >= 0 && engineIdx < neuralIdx) {
+    rawKeys.splice(neuralIdx, 1);
+    rawKeys.splice(engineIdx, 0, 'neuralEnabled');
+}
+export const GRINDER_PROJECT_PARAM_KEYS = rawKeys;
 const MIC_TYPES: readonly GrinderMic['type'][] = ['dynamic', 'ribbon', 'condenser', 'room'];
 const PEDAL_DEFAULTS = {
     compressor: { id: 'comp1', params: { threshold: -24, ratio: 3, attack: 16, release: 220 } },
@@ -118,7 +133,8 @@ function projectPedals(
 }
 export function applyGrinderProjectParameters(
     patch: GrinderPatch,
-    parameterValues: Readonly<Record<string, unknown>>
+    parameterValues: Readonly<Record<string, unknown>>,
+    libraryEntries: readonly GrinderImportedNeuralModel[] = []
 ): GrinderPatch {
     const cabSlot = Math.round(readNumber(parameterValues, 'cabIrSlot', 0));
     const neuralSlot = Math.round(readNumber(parameterValues, 'neuralModelSlot', -1));
@@ -146,6 +162,27 @@ export function applyGrinderProjectParameters(
             value = decodeProjectValue(key, raw);
         }
         Object.assign(next, { [key]: value });
+    }
+    if (importedModel) {
+        // The record's `neuralCustom*` keys are the only carrier of an
+        // imported capture across a project reload; without this
+        // reconstruction the rebuilt patch kept `builtin` with a null profile
+        // and the neural stage silently fell back (issue #4146). A library
+        // entry with the same audible identity restores the capture's full
+        // profile and name; otherwise the patch carries the record's own
+        // profile under a stable derived id, which the panel renders as the
+        // 'Selected in this patch' card.
+        const profile = grinderNeuralProfileFromParamValues(parameterValues);
+        if (profile) {
+            const match = libraryEntries.find((entry) => grinderNeuralProfilesEqual(entry.profile, profile));
+            Object.assign(next, {
+                neuralModelSource: 'imported',
+                neuralModelProfile: match?.profile ?? profile,
+                neuralModelId: match?.id ?? derivedGrinderNeuralModelId(profile),
+                neuralModelName: match?.name ?? 'Selected in this patch',
+                neuralModelFamily: match?.family ?? DEFAULT_PATCH.neuralModelFamily,
+            });
+        }
     }
     return next;
 }

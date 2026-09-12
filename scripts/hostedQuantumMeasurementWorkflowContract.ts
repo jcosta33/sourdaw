@@ -73,7 +73,13 @@ const EXPECTED_STEP_NAMES = [
 const COMMAND_DIGESTS = {
     sourceAdmission: '3c0c24939d839589f5baa9e4bf4a01c99d8d633b9d9d23f4f711b786cd76ba49',
     measurement: '913b063f795ccfafb4da32276097196fbc169c26ad71c712fd41e37efaf4fe92',
-    admission: '2e5c672578933c10c3d17bf53c89bc33eb59d2a19726e9d0208812c240d532c2',
+    // The admission step carries the Grand Boule gate only. The whole-engine
+    // capability gate stays on the recorded reference-machine table, enforced
+    // by `pnpm test:release-inventory` inside required Gate (ADR 0038); this
+    // workflow measures on a shared hosted runner whose fresh numbers cannot
+    // host that comparison (issue #4076: ~250% of budget on every run since
+    // 2026-09-09 versus 84-88% recorded).
+    admission: 'b6189f2f045378331c3308a39441cf0bc3f1d7cadf01d82b8b1a101a222dac89',
     assembly: '5bded47b1e78876ed27bd63d81a47a8a6576ca5f4658ef6ef82d32c069343ea3',
 } as const;
 
@@ -178,7 +184,7 @@ function assertMeasurement(named: (name: string) => UnknownRecord): void {
     requireRunDigest(
         named('Verify measurement admission'),
         COMMAND_DIGESTS.admission,
-        'both exported measurement acceptance gates'
+        'the Grand Boule measurement admission gate'
     );
 }
 

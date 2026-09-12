@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
 import { armNativeLiveAutomationWriter } from '../armNativeLiveAutomationWriter';
 import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
@@ -18,6 +19,8 @@ import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutoma
 import { requestNativeLiveAutomationWriterRearm } from '../requestNativeLiveAutomationWriterRearm';
 import { startNativeEnginePlayheadFeed } from '../startNativeEnginePlayheadFeed';
 import { stopNativeEnginePlayheadFeed } from '../stopNativeEnginePlayheadFeed';
+
+import type { NativeTunerReading } from '../../../models/EngineTransportPosition';
 
 vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () => ({
     getEngineTransportPosition: vi.fn(),
@@ -44,7 +47,31 @@ const rollingAt = (positionSeconds: number) => ({
     timeSigDenom: 4,
     masterPeak: 0.5,
     stripPeaks: {},
+    tunerTelemetry: {},
 });
+
+/** An A4 heard two cents flat, as the poll's payload carries it. */
+const TUNER_READING: NativeTunerReading = {
+    active: true,
+    frequency: 439.5,
+    cents: -2,
+    confidence: 0.9,
+    noteIndex: 9,
+    octave: 4,
+    midiNote: 69,
+};
+
+const updateNativeTunerTelemetry = vi.fn();
+
+function sessionCarries(input: {
+    audible: boolean;
+    carried: readonly string[];
+    chains: Record<string, readonly string[]>;
+}): void {
+    nativeLiveGraphSession.audibleCarrier = input.audible;
+    nativeLiveGraphSession.carriedStripIds = new Set(input.carried);
+    nativeLiveGraphSession.nativeChainByStripId = new Map(Object.entries(input.chains));
+}
 
 describe('the native engine playhead feed', () => {
     beforeEach(() => {
@@ -60,6 +87,14 @@ describe('the native engine playhead feed', () => {
         nativeLiveAutomationWriter.pass = null;
         nativeLiveGraphSession.loopRegion = null;
         nativeLiveGraphSession.loopEnabled = false;
+        updateNativeTunerTelemetry.mockReset();
+        setAudioDeviceRuntimeSink({ updateNativeTunerTelemetry });
+        sessionCarries({ audible: true, carried: [], chains: {} });
+    });
+
+    afterEach(() => {
+        setAudioDeviceRuntimeSink({});
+        sessionCarries({ audible: false, carried: [], chains: {} });
     });
 
     /** The arm a stop-and-play or a locate takes, with nothing to project. */
@@ -327,5 +362,83 @@ describe('the native engine playhead feed', () => {
 
         expect(animationScheduler.unregister).toHaveBeenCalledWith(NATIVE_ENGINE_PLAYHEAD_FEED_ID);
         expect(readNativeEnginePlayheadSeconds()).toBeNull();
+    });
+
+    // The reading the panel's needle is painted from rides this poll: a native
+    // body has no port to post a detection over, so the frame that reads the
+    // playhead is the frame that reads what the tuner heard.
+    it('publishes the tuner reading of a device on a carried strip, projected with its note name', async () => {
+        sessionCarries({ audible: true, carried: ['track-1'], chains: { 'track-1': ['d-tuner'] } });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingAt(3.25),
+            tunerTelemetry: { 'd-tuner': TUNER_READING },
+        });
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(updateNativeTunerTelemetry).toHaveBeenCalled());
+
+        expect(updateNativeTunerTelemetry).toHaveBeenCalledWith('d-tuner', {
+            active: true,
+            frequency: 439.5,
+            cents: -2,
+            confidence: 0.9,
+            noteIndex: 9,
+            octave: 4,
+            midiNote: 69,
+            noteName: 'A',
+            polyStrings: [],
+        });
+    });
+
+    // The payload is keyed for every scoring device the engine holds, carried
+    // or not, exactly as the strip peaks are; the poll is where that map is
+    // narrowed to what this session is the analyser of.
+    it('publishes no tuner reading for a device no carried chain reports', async () => {
+        sessionCarries({ audible: true, carried: ['track-1'], chains: { 'track-1': ['d-eq'] } });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingAt(3.25),
+            tunerTelemetry: { 'd-tuner': TUNER_READING },
+        });
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
+
+        expect(updateNativeTunerTelemetry).not.toHaveBeenCalled();
+    });
+
+    it('publishes no tuner reading while the session is shadowed', async () => {
+        sessionCarries({ audible: false, carried: ['track-1'], chains: { 'track-1': ['d-tuner'] } });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingAt(3.25),
+            tunerTelemetry: { 'd-tuner': TUNER_READING },
+        });
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
+
+        expect(updateNativeTunerTelemetry).not.toHaveBeenCalled();
+    });
+
+    // A tuner goes on analysing with the transport parked — a player checking
+    // a string against the generator is doing exactly that — so the publish
+    // sits ahead of the poll's stopped-transport return. Behind it, the needle
+    // would freeze on the last rolling frame.
+    it('publishes the tuner reading of a parked engine, which the rest of the poll returns before', async () => {
+        sessionCarries({ audible: true, carried: ['track-1'], chains: { 'track-1': ['d-tuner'] } });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingAt(3.25),
+            playing: false,
+            tunerTelemetry: { 'd-tuner': TUNER_READING },
+        });
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(updateNativeTunerTelemetry).toHaveBeenCalled());
+
+        expect(updateNativeTunerTelemetry).toHaveBeenCalledWith('d-tuner', expect.objectContaining({ active: true }));
+        expect(vi.mocked(pumpNativeLiveAutomationWriter)).not.toHaveBeenCalled();
     });
 });

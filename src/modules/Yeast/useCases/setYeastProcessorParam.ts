@@ -9,6 +9,15 @@ import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
 import { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
 
+/**
+ * The one groove-processor parameter that is NOT a plain param write: it is the
+ * groove assignment's amount and belongs to `assignGrooveTemplate` (already
+ * undoable). `setYeastProcessorParam`'s committed path routes it to
+ * `setYeastGrooveTemplate`, and the `setYeastProcessorParam` action handler
+ * refuses it so a gesture can never record twice.
+ */
+export const GROOVE_AMOUNT_PARAM = 'amount';
+
 function createPreviewYeastProcessorProjection(id: string, name: string, value: number) {
     const state = yeastStore.value;
     if (!state) {
@@ -22,7 +31,7 @@ function createPreviewYeastProcessorProjection(id: string, name: string, value: 
         return { ...entry, params: { ...entry.params, [name]: value } };
     });
     const projection = createYeastRuntimeProjection(processors);
-    if (name !== 'amount') {
+    if (name !== GROOVE_AMOUNT_PARAM) {
         return projection;
     }
 
@@ -64,7 +73,7 @@ export async function setYeastProcessorParam(
         publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
         return;
     }
-    if (processor.type === 'groove' && name === 'amount') {
+    if (processor.type === 'groove' && name === GROOVE_AMOUNT_PARAM) {
         const assignment = getYeastGrooveAssignment(id);
         const clampedAmount = Math.max(0, Math.min(1, value));
         const revisionDetails = { processorId: id, parameterName: name, transient: false };

@@ -30,6 +30,7 @@ import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers } from '#/modules/Setlist/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/WorkspaceShell/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata: () => boolean }) {
     return [
@@ -68,5 +69,6 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getWebMidiInputHandlers(),
         getRaveHandlers(),
         getControlRoomHandlers(),
+        getYeastHandlers(),
     ] as const;
 }

@@ -144,6 +144,22 @@ export type AudioGraphStripState = Readonly<{
 }>;
 
 /**
+ * A device as it travels a graph command, carrying the native sample bank key
+ * beside project truth.
+ *
+ * Not project truth and never read off a saved device: the bank store keys it,
+ * and `projectDeviceForNativeBody` sets it for the one device type whose
+ * native body is built from a staged bank rather than from `parameterValues`.
+ *
+ * It lives on the command device rather than the project view because the
+ * Arrangement device is assigned to the project view at injected call sites
+ * such as `buildDeviceChain`, and an optional property the Arrangement device
+ * lacks makes the type-aware lint resolve those calls to the injectable's
+ * `any` signature.
+ */
+export type AudioGraphDevice = Device & { sampleBankKey?: string };
+
+/**
  * A device chain, in project order, as one splice.
  *
  * Ordering is the whole content of a chain command: the device *identities* and
@@ -153,7 +169,7 @@ export type AudioGraphStripState = Readonly<{
  * the fan-in the web `rebuildChain` permits and a strictly serial chain cannot
  * express.
  */
-export type AudioGraphDeviceChain = readonly Device[];
+export type AudioGraphDeviceChain = readonly AudioGraphDevice[];
 
 /**
  * A parameter a backend can be told to write.
@@ -434,7 +450,7 @@ export type AudioGraphRemoveSendCommand = Readonly<{
 export type AudioGraphInsertDeviceCommand = Readonly<{
     kind: 'insert-device';
     trackId: AudioGraphStripId;
-    device: Device;
+    device: AudioGraphDevice;
     index: number;
 }>;
 
@@ -510,6 +526,26 @@ export type AudioGraphSetDeviceParametersCommand = Readonly<{
  * through the same projection the wire uses and reads the key count.
  */
 export const MAX_IMMEDIATE_DEVICE_PARAMETERS = 128;
+
+/**
+ * Set a device's bypass on the engine's own chain, at the next audio callback.
+ *
+ * The live counterpart of the `bypassed` field a device's topology carries: the
+ * engine learns a mid-roll toggle when the toggle happens, rather than at the
+ * next strip rebuild that re-sends the whole topology. Addresses the chain slot
+ * the device is spliced into — the same address
+ * {@link AudioGraphSetDeviceParametersCommand} writes values through — so the
+ * carrier skips the device's pass and runs its dry line in place of it.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's bypass
+ * is owned by the plugin host's own control path, which the plugin's device node
+ * writes directly; a second live writer would race that ordered path.
+ */
+export type AudioGraphSetDeviceBypassCommand = Readonly<{
+    kind: 'set-device-bypass';
+    target: AudioGraphDeviceTarget;
+    bypassed: boolean;
+}>;
 
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
@@ -708,6 +744,7 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetDeviceBypassCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand

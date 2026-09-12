@@ -7,7 +7,12 @@ import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { ensureAdapterCapabilities } from '../ensureAdapterCapabilities';
 import { openProviderGatewaySession } from '../openProviderGatewaySession';
 import { probeProviderGatewaySession } from '../probeProviderGatewaySession';
-import { compileProviderAdapterInstallation } from '../providerAdapterRegistry';
+import {
+    compileProviderAdapterInstallation,
+    type CompiledProviderAdapter,
+    OPENAI_CHAT_COMPLETIONS_ADAPTER_ID,
+    OPENAI_RESPONSES_ADAPTER_ID,
+} from '../providerAdapterRegistry';
 
 import { cloudSession, type CloudProviderRuntime } from './cloudSession';
 import { inFlightCloudConnect } from './inFlightCloudConnect';
@@ -62,12 +67,56 @@ async function verifyOpenedProviderSession(runtime: CloudProviderRuntime, connec
     }
 }
 
+/**
+ * First-party OpenAI speaks the Responses protocol; every other OpenAI-compatible
+ * endpoint speaks chat completions. A plain HTTP base URL compiles no adapter and
+ * stays on the renderer development path.
+ */
+function compileHostedOpenAiAdapter(
+    configuration: HostedLlmConfiguration,
+    parsedBaseUrl: URL
+): CompiledProviderAdapter | null {
+    if (parsedBaseUrl.protocol !== 'https:') {
+        return null;
+    }
+    if (parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
+        throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
+    }
+    const contract =
+        configuration.provider === 'openai'
+            ? { adapterId: OPENAI_RESPONSES_ADAPTER_ID, protocolFamily: 'openai-responses' as const }
+            : { adapterId: OPENAI_CHAT_COMPLETIONS_ADAPTER_ID, protocolFamily: 'openai-chat-completions' as const };
+    return compileProviderAdapterInstallation({
+        ...contract,
+        providerId: configuration.provider,
+        modelId: configuration.model,
+        origin: parsedBaseUrl.origin,
+    });
+}
+
 async function discardSupersededCandidate(runtime: CloudProviderRuntime): Promise<never> {
     const sessionId = runtime.session_id;
     if (sessionId !== null) {
         await closeProviderGatewaySession(sessionId);
     }
     throw new Error(inFlightCloudConnect.supersededMessage);
+}
+
+/**
+ * Parses the configured OpenAI-compatible base URL. A URL like
+ * `https://user:secret@host/v1` embeds the secret in userinfo, which this runtime
+ * can never honor: the compiled adapter installs only `parsedBaseUrl.origin` and
+ * `fetch` refuses credential URLs on the loopback path. Writing it anyway would
+ * park the secret in the `cloudSession` runtime and the
+ * `hostedLlmProviderStatusStore` badge data, so refuse before any store or
+ * gateway write.
+ */
+function parseCompatibleBaseUrl(baseUrl: string): URL {
+    const parsedBaseUrl = new URL(baseUrl);
+    if (parsedBaseUrl.username !== '' || parsedBaseUrl.password !== '') {
+        throw new Error('OpenAI-compatible provider base URL cannot include embedded credentials');
+    }
+    return parsedBaseUrl;
 }
 
 export const setCloudProviderConfig = inject({ logger })(
@@ -100,41 +149,51 @@ export const setCloudProviderConfig = inject({ logger })(
                     if (!configuration.baseUrl) {
                         throw new Error('OpenAI-compatible provider requires a base URL');
                     }
-                    const parsedBaseUrl = new URL(configuration.baseUrl);
-                    const usesPrivilegedAdapter = parsedBaseUrl.protocol === 'https:';
-                    if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
-                        throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
-                    }
-                    const adapter = usesPrivilegedAdapter
-                        ? compileProviderAdapterInstallation({
-                              adapterId: 'builtin.openai-compatible.chat-completions.v1',
-                              providerId: configuration.provider,
-                              modelId: configuration.model,
-                              protocolFamily: 'openai-chat-completions',
-                              origin: parsedBaseUrl.origin,
-                          })
-                        : null;
-                    if (adapter === null && (configuration.authentication !== 'none' || configuration.apiKey !== '')) {
-                        throw new Error('Authenticated OpenAI-compatible providers require HTTPS');
-                    }
-                    if (adapter !== null && !isDesktopRuntime()) {
-                        throw new Error('Hosted providers are available in desktop builds only');
-                    }
-                    runtime = {
-                        provider: configuration.provider,
-                        model: configuration.model,
-                        base_url: configuration.baseUrl,
-                        authentication: configuration.authentication,
-                        adapter,
-                        session_id:
-                            adapter === null
-                                ? null
-                                : await openProviderGatewaySession(
+                    const baseUrl = configuration.baseUrl;
+                    const adapter = compileHostedOpenAiAdapter(configuration, parseCompatibleBaseUrl(baseUrl));
+                    if (adapter === null) {
+                        if (configuration.provider === 'openai') {
+                            throw new Error('First-party OpenAI requires its compiled HTTPS origin');
+                        }
+                        if (configuration.authentication !== 'none' || configuration.apiKey !== '') {
+                            throw new Error('Authenticated OpenAI-compatible providers require HTTPS');
+                        }
+                        runtime = {
+                            provider: 'openai-compatible',
+                            model: configuration.model,
+                            base_url: baseUrl,
+                            authentication: configuration.authentication,
+                            adapter: null,
+                            session_id: null,
+                        };
+                    } else {
+                        if (!isDesktopRuntime()) {
+                            throw new Error('Hosted providers are available in desktop builds only');
+                        }
+                        const sessionId = await openProviderGatewaySession(
+                            adapter,
+                            configuration.provider,
+                            configuration.apiKey
+                        );
+                        runtime =
+                            configuration.provider === 'openai'
+                                ? {
+                                      provider: 'openai',
+                                      model: configuration.model,
+                                      base_url: baseUrl,
+                                      authentication: configuration.authentication,
                                       adapter,
-                                      configuration.provider,
-                                      configuration.apiKey
-                                  ),
-                    };
+                                      session_id: sessionId,
+                                  }
+                                : {
+                                      provider: 'openai-compatible',
+                                      model: configuration.model,
+                                      base_url: baseUrl,
+                                      authentication: configuration.authentication,
+                                      adapter,
+                                      session_id: sessionId,
+                                  };
+                    }
                 }
 
                 await verifyOpenedProviderSession(runtime, connectAbort.signal);

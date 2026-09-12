@@ -1,5 +1,9 @@
+export { acquireLevainNativeBank } from './acquireLevainNativeBank';
 export { getDecodedBankDiagnostics } from './getDecodedBankDiagnostics';
 export { getLevainArticulationId } from './getLevainArticulationId';
+export { getLevainEngineParameterName } from './getLevainEngineParameterName';
+export { nativeBankKeyForLevainDeviceState } from './levainNativeBankKey';
+export { projectLevainDeviceStateToNativePatch } from './projectLevainDeviceStateToNativePatch';
 export { commitLevainDeviceState } from './commitLevainDeviceState';
 export { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
 export { initLevainDeviceStatePersistence } from './initLevainDeviceStatePersistence';

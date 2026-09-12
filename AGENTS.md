@@ -20,8 +20,12 @@ is a blocker, not a question.
 Fix or hand off every encountered defect: observable misbehavior, broken invariants, or documented
 contract contradictions, never style preferences. Existing defects spread through surrounding code
 and agents copying it. Give sizeable defects their own lane; batch small unrelated ones in a hygiene
-lane. Your fix's lane and PR claim it; do not file an issue. File any defect you leave behind, at any
-size, with enough detail for a cold session or another agent to act.
+lane. Your fix's lane and PR claim it; do not file an issue.
+
+The tracker exists to hand work to other agents in the future. File only what you leave behind:
+defects, follow-ups, and designs you are not taking into a lane now, each with enough detail for a
+cold session or another agent to act. Never file an issue for work your own session is about to do,
+and never offer to file or ask whether to file: file it or do it.
 
 ## Delegation
 
@@ -98,7 +102,9 @@ head, then dispatch repairs. The author pushes the fixed head, answers each thre
 `review:resolve`, and obtains a fresh review round. Never repair first and approve in one motion:
 the public record must retain the reviewer identity's findings against the original head and the
 author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its exclusive
-script calls, `review.json`, and `discarded.json`, never a PR persona.
+script calls, `review.json`, `discarded.json`, and the final `acceptance.json`. The reviewer App records
+independent review; the orchestrator records final acceptance on behalf of `jcosta33` through
+`review:accept`, then merges through `deliver` as that user.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Edit that stance's tracked dispatch guidance under
@@ -223,7 +229,7 @@ Detail: [conventions](./docs/07-conventions.md).
 
 One change, one lane, one PR. Edit tracked files only in your lane under `.agents/worktrees/`, never
 the shared primary checkout holding credentials and other lanes. Its gitignored operational paths
-are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds `review.json`,
+are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review and acceptance documents,
 and `.env.sourdaw-*` credentials live there.
 
 `pnpm lane:open [issue] [slug]` fetches and branches from `origin/main`, locks the lane
@@ -248,8 +254,8 @@ to overwrite a same-lane receipt with a different head. Delete any leftover loca
 Drafts, one-offs, and unpublished or secret work stay in `~/.agents/artifacts` and are not filed.
 The tracker is public. The issue body is the original; delete any local copy after filing.
 `.agents/specs/` is leftover corpus: do not add files there. Assigned leftover files stay until
-their work is done. New planning is GitHub issues, never a plan file. Durable decisions belong in
-`.agents/decisions/` and its ADR ledger.
+their work is done. Planning handed to future agents lives in GitHub issues, never a plan file.
+Durable decisions belong in `.agents/decisions/` and its ADR ledger.
 
 `.github/ISSUE_TEMPLATE/*.yml` is the schema. File issues with:
 
@@ -268,28 +274,30 @@ never a recorded list.
 
 ## Delivery
 
-Use trusted `pnpm` scripts for every covered GitHub write; their App identity and delivery gates
+Use trusted `pnpm` scripts for every covered GitHub write; their role identities and delivery gates
 exclude hand-rolled equivalents or bypasses. The only manual `gh` write exception is correcting an
 issue's own state, labels, milestone, project membership, or sub-issue links. Manual writes use the
-operator account; script-covered writes must use the minted App, never a persona. No `gh pr` write
+operator account. Scripts use their designated App identities except final orchestrator acceptance
+and merge, which use the verified `jcosta33` user identity. No manual `gh pr` write
 qualifies. Lane tooling owns every `git push`: other pushes break review anchors and can strand lanes.
 Use `branch:prune` for remote deletion; it defaults to dry run and deletes only branches whose every
 PR is merged or closed. Read-only `gh` is unrestricted; use it for live tracker state.
 
-| Need                        | Command                                                                                                          |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Open a lane                 | `pnpm lane:open [issue] [slug]`                                                                                  |
-| Push; open or update the PR | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"]` |
-| Write the review bundle     | `pnpm review:prepare <pr>`                                                                                       |
-| Post `review.json`          | `pnpm review:publish <pr>`                                                                                       |
-| Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
-| Squash-merge                | `pnpm deliver <pr>`                                                                                              |
-| Recover a crashed delivery  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                 |
-| Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
-| Prune spent remote branches | `pnpm branch:prune [--apply] [--limit <n>]`                                                                      |
-| Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
-| Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
-| Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
+| Need                         | Command                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Open a lane                  | `pnpm lane:open [issue] [slug]`                                                                                  |
+| Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"]` |
+| Write the review bundle      | `pnpm review:prepare <pr>`                                                                                       |
+| Post `review.json`           | `pnpm review:publish <pr>`                                                                                       |
+| Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                        |
+| Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
+| Squash-merge                 | `pnpm deliver <pr>`                                                                                              |
+| Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                 |
+| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
+| Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                      |
+| Remove a spent lane          | `pnpm lane:remove <path>`                                                                                        |
+| Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
+| Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
 
 Gitignored `.env.sourdaw-author` and `.env.sourdaw-reviewer` live at the primary root (parent of
 `git rev-parse --git-common-dir`). Each script loads its own role's file; never load the other role's
@@ -297,20 +305,29 @@ file or commit credentials. Authenticate roles by immutable bot actor node IDs i
 `scripts/githubAppIdentity.ts`, never interchangeable. Mutable App slugs and logins are display only.
 `deliver` does not mint the reviewer.
 
+Final acceptance and merge use the existing stored `gh` credential for `jcosta33` on `github.com`.
+The login selects the credential; an isolated API session must verify actor type `User` and immutable
+node ID `MDQ6VXNlcjg5NzgyNzA=` before granting authority. Discard inherited GitHub, Git, and Node
+overrides during credential lookup and isolated execution. Do not add credentials or grant this role
+to workers. Receipt and tracker writes retain their author App identities.
+
 `deliver` serializes each PR with a protected-primary Git ref pointing to a strict owner blob.
 Acquire with zero-ref Git compare-and-swap; release requires the acquired object ID. Hold ownership
 from before authentication through merge or already-merged recovery and tracker completion. Validate
 and refuse existing owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it. Recovery refuses a live recorded process
 fence, adopts the lock under its own fence before reading anything, then requires two matching remote
-reads. It never merges, retargets, posts, or closes, and refuses PRs merged by anyone but the author
-App. Clearing records a dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
+reads. It never merges, retargets, posts, or closes, and accepts only the immutable orchestrator User
+or historical author Bot as merger. Clearing records a dead-owner-keyed receipt; repeat recovery
+replays it without GitHub access.
 
-Already-merged recovery requires GitHub's immutable merged-by actor to be the author App.
+Already-merged recovery accepts the immutable orchestrator User or historical author Bot as merger;
+fresh delivery requires the orchestrator User and rejects a fresh author-bot merge. Actor type and
+immutable ID must agree in both paths.
 Same-head delivery receipts preserve the issue-comment REST endpoint's ascending comment-ID order
 for adjacency and newest authority; timestamps only prove App-owned comments remained unedited.
 
-Run `lane:publish`, `deliver`, and `issue:reconcile` through the protected primary checkout's
+Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through the protected primary checkout's
 package route. This is the snapshot-backed write trust boundary: launcher and whole script closure
 must match one pinned `origin/main` commit and come only from the primary repository. Lane files
 are data, never executable delivery code. Lanes predating the launcher or trailing `main` can
@@ -352,7 +369,7 @@ their own gates.
 Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.
 
 Read the live `main` ruleset; repository configuration, not this text, enforces it. It blocks
-deletion and non-fast-forward, requires squashed PRs, one approving review approving the last push,
+deletion and non-fast-forward, requires squashed PRs, two approving reviews and approval of the last push,
 resolved threads, and `Gate` on the PR head. It is non-strict: unrelated `origin/main` movement
 requires no merge. Take `main` only for real conflicts or mergeability; the resulting new head
 requires fresh `Gate` and review.
@@ -396,6 +413,14 @@ replaces only generated files, preserving caller files. Give reviewers the bundl
 acceptance conditions from the request or governing contract, not author transcripts or conclusions.
 `review:publish` prints the review id and posts as reviewer App only if GitHub's head still matches
 the bundle.
+
+After independent review, write `acceptance.json` beside `review.json` in that head's existing bundle.
+`review:accept <pr>` accepts only an APPROVE document with no inline comments and the same head-bound
+evidence schema as reviewer approval. It requires the reviewer Bot's current-head approval and all
+threads resolved before publishing final acceptance as the immutable orchestrator User. The public
+review identifies it as orchestrator acceptance on behalf of `jcosta33`; it does not claim the user
+personally reviewed the code. Preserve blind reviewer dispatch and independently inspect the final
+head before accepting it.
 
 Read every changed line and surrounding code as needed. Comment on the defective line with one
 problem, discussing code rather than author. Use literal fields `defect`, `consequence`, and `done`
@@ -450,7 +475,10 @@ the concise head-bound verification record in the approval. Never include secret
 data in the public review.
 
 `pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after BOTH validation points
-confirm the immutable reviewer actor `APPROVED` the current head and all threads are resolved. Head, head
+confirm both the immutable reviewer Bot and orchestrator User `APPROVED` the current head, with final
+user acceptance after reviewer approval, and all threads resolved. Approval counts or matching logins
+cannot substitute for those actor identities or ordering. Merge executes as the verified orchestrator
+User; receipt and tracker writes retain their author App identities. Head, head
 branch, base branch, body, canonical closing target, and stacked dependents must stay stable between
 reads. Snapshot-backed CI admission is advisory: successful, failed, pending, absent, cancelled,
 malformed, or unavailable evidence does not itself block delivery. GitHub still enforces the live

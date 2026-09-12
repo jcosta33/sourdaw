@@ -78,6 +78,13 @@ impl SamplerEngine {
         self.active = true;
     }
 
+    /// Retune the playback rate while sounding. `trigger` only seeds the rate;
+    /// the voice refreshes it every sample so the computed pitch — coarse and
+    /// fine offsets, MPE bend, glide, pitch modulation — reaches the engine.
+    pub fn set_rate(&mut self, rate: f32) {
+        self.rate = rate;
+    }
+
     pub fn stop(&mut self) {
         self.active = false;
     }
@@ -139,12 +146,24 @@ impl SamplerEngine {
             }
         }
 
+        // De-click the one-shot endpoint: the cursor stops dead at
+        // `end_sample`, so the last `crossfade` samples approaching it fade
+        // the output towards zero. Without this, stopping on a non-zero
+        // source frame is a hard cut — the same click the loop crossfade
+        // above exists to remove. Same knob, same bounded cost — RT-safe.
+        if self.mode == PlaybackMode::OneShot && self.crossfade > 0 {
+            let dist_to_end = end_sample - pos_f;
+            if dist_to_end < self.crossfade as f32 {
+                sample *= (dist_to_end / self.crossfade as f32).max(0.0);
+            }
+        }
+
         // Advance position
         self.position += self.rate * self.direction;
 
         match self.mode {
             PlaybackMode::OneShot => {
-                if self.position >= buf_len as f32 {
+                if self.position >= end_sample {
                     self.active = false;
                 }
             }
@@ -270,5 +289,106 @@ mod tests {
         );
         // Sanity: that first read was indeed outside the fade region.
         assert!(end - 0.0 >= xf as f32);
+    }
+
+    /// Regression (one-shot ignored the End control): a one-shot with
+    /// End = 0.25 must terminate at the selected endpoint — 11,025 source
+    /// frames of the 1-second buffer — not run to the buffer end. Everything
+    /// past the endpoint carries a sentinel amplitude, so any source content
+    /// read beyond it is loud and obvious.
+    #[test]
+    fn one_shot_terminates_at_the_end_point_and_emits_nothing_past_it() {
+        let mut s = SamplerEngine::new();
+        let n = s.buffer.len();
+        let end_frame = n / 4; // 0.25 × 44_100 = 11_025
+        for (i, v) in s.buffer.iter_mut().enumerate() {
+            *v = if i < end_frame { 1.0 } else { 7.0 };
+        }
+        s.set_mode(0); // OneShot
+        s.set_loop_points(0.0, 0.25);
+        s.trigger(1.0);
+
+        let mut outputs = Vec::new();
+        while s.is_active() {
+            outputs.push(s.tick(44_100.0));
+        }
+        assert_eq!(
+            outputs.len(),
+            end_frame,
+            "one-shot with End=0.25 must emit one frame per source frame up to the endpoint"
+        );
+        let loudest = outputs.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(
+            loudest <= 1.0 + 1e-4,
+            "source content past the endpoint leaked: max |sample| {loudest} against a 7.0 sentinel"
+        );
+        for _ in 0..16 {
+            assert_eq!(
+                s.tick(44_100.0),
+                0.0,
+                "one-shot kept sounding after the endpoint"
+            );
+        }
+    }
+
+    /// The stop at the endpoint must be de-clicked: on a constant full-scale
+    /// source the final samples fade to zero instead of jumping from the
+    /// endpoint amplitude straight to silence.
+    #[test]
+    fn one_shot_declicks_at_the_end_point() {
+        let mut s = SamplerEngine::new();
+        for v in s.buffer.iter_mut() {
+            *v = 1.0;
+        }
+        s.set_mode(0); // OneShot
+        s.set_loop_points(0.0, 0.25);
+        s.trigger(1.0);
+
+        let mut outputs = Vec::new();
+        while s.is_active() {
+            outputs.push(s.tick(44_100.0));
+        }
+        let worst_jump = outputs
+            .windows(2)
+            .map(|w| (w[0] - w[1]).abs())
+            .fold(0.0f32, f32::max);
+        let final_sample = outputs[outputs.len() - 1].abs();
+        assert!(
+            worst_jump < 0.05 && final_sample < 0.05,
+            "one-shot stopped with a discontinuity: largest in-stream jump \
+             {worst_jump}, final sample {final_sample} against a full-scale source"
+        );
+    }
+
+    /// Loop modes keep their existing endpoint semantics: Loop still wraps at
+    /// the loop end and PingPong still bounces, and neither stops there — the
+    /// one-shot endpoint fix must not leak into them.
+    #[test]
+    fn loop_modes_keep_playing_at_the_loop_end() {
+        let region_ticks = 2 * SAMPLE_BUFFER_SIZE;
+
+        let mut looper = stepped_sampler(1.0, -1.0, 0);
+        looper.set_loop_points(0.0, 0.5);
+        looper.trigger(1.0);
+        let loop_end = 0.5 * looper.buffer.len() as f32;
+        let mut furthest = 0.0f32;
+        for _ in 0..region_ticks {
+            looper.tick(44_100.0);
+            furthest = furthest.max(looper.position);
+        }
+        assert!(looper.is_active(), "loop mode stopped at the loop end");
+        assert!(
+            furthest < loop_end + 1.0,
+            "loop cursor escaped the loop region: {furthest} past {loop_end}"
+        );
+
+        let mut pinger = stepped_sampler(1.0, -1.0, 0);
+        pinger.set_mode(2); // PingPong
+        pinger.set_loop_points(0.0, 0.5);
+        pinger.trigger(1.0);
+        for _ in 0..region_ticks {
+            pinger.tick(44_100.0);
+        }
+        assert!(pinger.is_active(), "ping-pong stopped at a region bound");
     }
 }

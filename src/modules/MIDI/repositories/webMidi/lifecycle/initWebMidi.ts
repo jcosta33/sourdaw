@@ -1,10 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isDesktopRuntime } from '#/utils/desktopBridge';
+import { desktopListen, isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type MidiInputInfo, type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
+import { persistInputId } from '../persistInputId';
 import { readPersistedInputId } from '../readPersistedInputId';
+import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../selectedInputIdStorageKeys';
 import { setMidiAccess } from '../setMidiAccess';
 import { setNativeMode } from '../setNativeMode';
 import { setState } from '../setState';
@@ -14,9 +16,17 @@ import { webMidiRuntime } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
+import { type NativeMidiPort } from './listNativeMidiInputs';
 import { listNativeMidiInputs } from './listNativeMidiInputs';
 import { resolveNativeMidiPort } from './resolveNativeMidiPort';
 import { selectMidiInputNative } from './selectMidiInputNative';
+
+/**
+ * Mirrors `MIDI_PORTS_CHANGED_EVENT` in
+ * `crates/sourdaw-native/src/commands/midi_watcher.rs`. The event name is a
+ * wire contract — never rename one side alone.
+ */
+const MIDI_PORTS_CHANGED_EVENT = 'midi-ports-changed';
 
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
@@ -54,7 +64,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
     const inputs = enumerateInputs();
     const state = getState();
     const currentAccess = getMidiAccess();
-    const preferredId = readPersistedInputId();
+    const preferredId = readPersistedInputId(WEB_MIDI_IDENTITY_SCHEME);
 
     // The saved device came back (replug, hub power cycle). Restore it rather
     // than leaving the session stuck on whatever stood in for it.
@@ -63,7 +73,10 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
         if (preferredInput && inputs.some((entry) => entry.id === preferredId)) {
             detachActiveInput();
             attachInput({ input: preferredInput, onMidiMessage });
-            setState({ inputs, selectedInputId: preferredId, enumerationError: null });
+            setState(
+                { inputs, selectedInputId: preferredId, enumerationError: null },
+                { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME }
+            );
             return;
         }
     }
@@ -94,6 +107,167 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
         },
         { persistSelection: false }
     );
+}
+
+// ── Native branch: stable ids, legacy cleanup, replug watching ────────────────
+
+/**
+ * Generation token and listener slot for the native replug watcher, guarded
+ * like `selectionGeneration` in `selectMidiInputNative`: registration writes
+ * several awaits after the read, so overlapping inits must not stack
+ * listeners on the shared `midi-ports-changed` channel.
+ */
+let portsListenerGeneration = 0;
+let portsChangedUnlisten: (() => void) | null = null;
+
+function toInputInfos(ports: readonly NativeMidiPort[]): MidiInputInfo[] {
+    return ports.map((port) => ({
+        id: port.id,
+        name: port.name,
+        manufacturer: 'System',
+    }));
+}
+
+function isLegacyAllDigitsId(id: string): boolean {
+    return /^\d+$/u.test(id);
+}
+
+/**
+ * One-time settle of a persisted id written before ports had stable identity
+ * (#2016). An all-digits value was an enumeration *index* then, so it names a
+ * different device after every replug; when it resolves to nothing it is
+ * dead, and the documented exception to "never persist from init" fires once:
+ * overwrite it with the fallback target this init resolved to, in exactly one
+ * write. The dead value was itself written by an old init that persisted from
+ * init — leaving it in place would re-resolve to nothing on every launch.
+ *
+ * The rule is strictly "all digits AND resolves to nothing". On macOS the new
+ * stable ids are CoreMIDI unique ids — also all digits — so a legacy "2" that
+ * exactly matches a real port id binds to that real port and is left alone;
+ * so is any id that resolves, including a name id whose device is merely
+ * unplugged, which is the case "never persist from init" exists to protect.
+ *
+ * Only the persisted value is settled: a session `selectedInputId` dies with
+ * the session that held it.
+ */
+function settleLegacyPersistedId(
+    savedId: string | null,
+    ports: readonly NativeMidiPort[],
+    fallbackPort: NativeMidiPort
+): void {
+    if (savedId === null || !isLegacyAllDigitsId(savedId)) {
+        return;
+    }
+    if (resolveNativeMidiPort(ports, savedId) !== undefined) {
+        return;
+    }
+    persistInputId(fallbackPort.id, NATIVE_IDENTITY_SCHEME);
+}
+
+type PortsChangedTickInput = {
+    generation: number;
+    onMidiMessage: WebMidiMessageCallback;
+};
+
+/**
+ * One `midi-ports-changed` tick. The event carries no payload — it is a tick,
+ * so this re-enumerates rather than trusting anything pushed with it.
+ */
+async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTickInput): Promise<void> {
+    const ports = await listNativeMidiInputs();
+    if (generation !== portsListenerGeneration) {
+        // A newer init owns the port surface now.
+        return;
+    }
+
+    const state = getState();
+    const preferredId = readPersistedInputId(NATIVE_IDENTITY_SCHEME);
+
+    // The saved device came back (replug, hub power cycle). Re-open it through
+    // the same sequence an explicit selection takes, rather than leaving the
+    // session stuck on whatever stood in for it.
+    if (preferredId !== null && preferredId !== state.selectedInputId) {
+        const preferredPort = resolveNativeMidiPort(ports, preferredId);
+        if (preferredPort) {
+            setState({ inputs: toInputInfos(ports), enumerationError: null });
+            try {
+                await selectMidiInputNative({
+                    portIndex: preferredPort.portIndex,
+                    portName: preferredPort.name,
+                    onMidiMessage,
+                });
+                setState(
+                    { selectedInputId: preferredPort.id },
+                    { persistSelection: true, identityScheme: NATIVE_IDENTITY_SCHEME }
+                );
+            } catch (error) {
+                logger.warn('[MIDI] Failed to restore replugged MIDI input:', error);
+            }
+            return;
+        }
+    }
+
+    const selectedStillExists = ports.some((port) => port.id === state.selectedInputId);
+    if (selectedStillExists) {
+        setState({ inputs: toInputInfos(ports), enumerationError: null });
+        return;
+    }
+
+    detachActiveInput();
+
+    const standIn = ports[0];
+    if (!standIn) {
+        setState({ inputs: [], selectedInputId: null, enumerationError: null }, { persistSelection: false });
+        return;
+    }
+
+    try {
+        await selectMidiInputNative({
+            portIndex: standIn.portIndex,
+            portName: standIn.name,
+            onMidiMessage,
+        });
+        // Session-only stand-in: the user still prefers the device that was
+        // unplugged, so leave the persisted preference alone.
+        setState(
+            { inputs: toInputInfos(ports), selectedInputId: standIn.id, enumerationError: null },
+            { persistSelection: false }
+        );
+    } catch (error) {
+        // The fresh enumeration is still news the picker must show even when
+        // the stand-in refused to open.
+        setState({ inputs: toInputInfos(ports), enumerationError: null });
+        logger.warn('[MIDI] Failed to open stand-in MIDI input:', error);
+    }
+}
+
+/**
+ * Register the native replug listener for this init, superseding any listener
+ * an earlier init left behind. A registration failure must not take MIDI init
+ * down with it — the replug restore is a recovery path, not the device path.
+ */
+async function registerPortsChangedListener(onMidiMessage: WebMidiMessageCallback): Promise<void> {
+    portsChangedUnlisten?.();
+    portsChangedUnlisten = null;
+    portsListenerGeneration += 1;
+    const generation = portsListenerGeneration;
+
+    try {
+        const unlisten = await desktopListen(MIDI_PORTS_CHANGED_EVENT, () => {
+            if (generation !== portsListenerGeneration) {
+                return;
+            }
+            void onPortsChangedTick({ generation, onMidiMessage });
+        });
+        if (generation !== portsListenerGeneration) {
+            // A newer init registered its own listener while this one opened.
+            unlisten();
+            return;
+        }
+        portsChangedUnlisten = unlisten;
+    } catch (error) {
+        logger.warn('[MIDI] MIDI replug watching is unavailable:', error);
+    }
 }
 
 type InitWebMidiInput = {
@@ -133,7 +307,8 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 // while the preferred device was unplugged, and resolving from
                 // it would adopt the stand-in as the target on every init after
                 // the first.
-                const targetId = readPersistedInputId() ?? state.selectedInputId ?? inputs[0]!.id;
+                const targetId =
+                    readPersistedInputId(WEB_MIDI_IDENTITY_SCHEME) ?? state.selectedInputId ?? inputs[0]!.id;
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
                     attachInput({ input, onMidiMessage });
@@ -158,12 +333,8 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             if (!isCurrentInit(initGeneration)) {
                 return false;
             }
-            const inputs: MidiInputInfo[] = ports.map((port) => ({
-                id: port.id,
-                name: port.name,
-                manufacturer: 'System',
-            }));
-            setState({ inputs, isSupported: true, enumerationError: null });
+            setState({ inputs: toInputInfos(ports), isSupported: true, enumerationError: null });
+            void registerPortsChangedListener(onMidiMessage);
 
             if (ports.length > 0) {
                 // Always (re-)open: covers first load AND re-init after app
@@ -172,12 +343,15 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 //
                 // Saved preference first, for the same reason as the Web MIDI
                 // branch: live state can hold an earlier init's stand-in.
-                const targetId = readPersistedInputId() ?? state.selectedInputId ?? ports[0]!.id;
+                const fallbackPort = ports[0]!;
+                const savedId = readPersistedInputId(NATIVE_IDENTITY_SCHEME);
                 // A saved id matching no present port is absent, whether the
                 // device is unplugged or the id predates stable identity and is
                 // still a bare enumeration index. Either way it resolves to
                 // nothing rather than to whoever holds that slot now.
-                const targetPort = resolveNativeMidiPort(ports, targetId) ?? ports[0]!;
+                const targetId = savedId ?? state.selectedInputId ?? fallbackPort.id;
+                const targetPort = resolveNativeMidiPort(ports, targetId) ?? fallbackPort;
+                settleLegacyPersistedId(savedId, ports, fallbackPort);
                 try {
                     await selectMidiInputNative({
                         portIndex: targetPort.portIndex,
@@ -188,6 +362,10 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                         return true;
                     }
                     // Never persist from init — same rule as the Web MIDI path.
+                    // The one exception is `settleLegacyPersistedId` above: a
+                    // dead all-digits value was written by an old init that
+                    // persisted from init, and only settling it stops it from
+                    // re-resolving to nothing on every launch after this one.
                     setState({ selectedInputId: targetPort.id }, { persistSelection: false });
                 } catch (error) {
                     // The enumeration succeeded and is already published; one

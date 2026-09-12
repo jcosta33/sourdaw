@@ -292,6 +292,36 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening as `set-device-parameters`, and a boolean that must
+     * travel as itself: a serializer that coerced the bypass to a presence
+     * flag would make "un-bypass" indistinguishable from "no write at all".
+     */
+    it('flattens a device bypass batch onto the graph.rs set-device-bypass spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: true,
+                },
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: false,
+                },
+            ],
+        });
+
+        expect(wire.commands).toEqual([
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: true },
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: false },
+        ]);
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(wire.commands[0] ?? {})).toEqual(['kind', 'trackId', 'deviceId', 'bypassed']);
+    });
+
+    /**
      * The same flattening for a live note, and one more thing the mapper turns
      * on: a note carries no timeline position, so every field it does carry is
      * the whole of what the engine has to place it by.
@@ -457,6 +487,73 @@ describe('serializeAudioGraphCommandBatch', () => {
                 fade: { fadeOut: {}, microFadeSeconds: 0 },
             },
         });
+    });
+
+    /**
+     * The bank key is the one device field that is neither project truth nor a
+     * parameter: `map_device` looks the staged material up under it, and
+     * `DevicePayload` reads it by this exact spelling.
+     */
+    it('carries a device bank key onto the graph.rs sampleBankKey spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-levain',
+                        name: 'Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: { master_gain: 0.8 },
+                        sampleBankKey: 'levain:violin-1',
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        expect(inserted.device).toEqual({
+            id: 'dev-levain',
+            name: 'Levain',
+            type: 'levain',
+            bypassed: false,
+            parameterValues: { master_gain: 0.8 },
+            sampleBankKey: 'levain:violin-1',
+        });
+    });
+
+    it('omits the bank key for a device built from its own record', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-knead',
+                        name: 'Knead',
+                        type: 'knead',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        // Omitted, not `undefined`: the payload stays exactly what the engine
+        // took before banks existed.
+        expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
     });
 });
 

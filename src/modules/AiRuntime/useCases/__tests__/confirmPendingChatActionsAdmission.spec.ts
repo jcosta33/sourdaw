@@ -32,6 +32,8 @@ const confirmation = {
     executedActions: [],
     status: 'executed',
     error: 'Renderer unavailable.',
+    supersedes: null,
+    supersededBy: null,
     followUpProjectRevision: 'revision-source',
     followUpStatus: 'retryable',
     createdAt: 1,

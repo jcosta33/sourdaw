@@ -298,6 +298,93 @@ describe('useTimelineFileDrop', () => {
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
 
+    it('resolves an imported sample clip from the buffer cache using audioBufferId and scales duration to project tempo', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 4.0 });
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Four seconds',
+                              id: 'user-audio-1',
+                              duration: '4.0s',
+                              audioBufferId: 'audio-1',
+                              durationSeconds: 4.0,
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    trackId: 'new-track-id',
+                    name: 'Four seconds',
+                    type: 'audio',
+                    audioBufferId: 'audio-1',
+                    startBeat: 10,
+                    endBeat: 18,
+                })
+            );
+        });
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'audio-1' });
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('notifies user with error and creates no clip when dropped sample has no cached buffer and missing file path', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Missing Buffer',
+                              id: 'user-audio-missing',
+                              duration: '4.0s',
+                              audioBufferId: 'audio-missing',
+                              durationSeconds: 4.0,
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Could not access "Missing Buffer" — audio buffer is not available.',
+                'error'
+            );
+        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
     it('reads a native-root sample through the SampleLibrary resolver before decoding', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });

@@ -181,19 +181,22 @@ describe('pasteNotes', () => {
         if (!splitNote) {
             throw new Error('Expected a split right-half note');
         }
-        // The split writes every optional field onto the right half, so a plain
-        // note carries them as own keys holding `undefined`.
-        expect(Object.hasOwn(splitNote, 'pressure')).toBe(true);
-        expect(Object.hasOwn(splitNote, 'slide')).toBe(true);
-        expect(Object.hasOwn(splitNote, 'pitchBend')).toBe(true);
-        expect(Object.hasOwn(splitNote, 'pitchBendRangeSemitones')).toBe(true);
-        expect(Object.hasOwn(splitNote, 'articulation')).toBe(true);
+        for (const optionalKey of [
+            'pressure',
+            'slide',
+            'pitchBend',
+            'pitchBendRangeSemitones',
+            'channel',
+            'articulation',
+        ]) {
+            expect(Object.hasOwn(splitNote, optionalKey)).toBe(false);
+        }
 
         copySelectedNotes('split-right', [splitNote.id]);
 
         expect(() => pasteNotes('destination', 8)).not.toThrow();
         expect(mocks.appendMidiNotes).toHaveBeenCalledTimes(1);
-        expect(midiStore.value?.notesByClipId.destination).toEqual([
+        expect(midiStore.value?.notesByClipId.destination).toStrictEqual([
             {
                 // The full UUID, not the 32-bit truncation: repeated pastes into
                 // one clip were birthday-bound on the short form.
@@ -203,11 +206,6 @@ describe('pasteNotes', () => {
                 duration: 2,
                 velocity: 100,
                 probability: 100,
-                // `pasteNotes` strips only the keys it re-adds conditionally, so
-                // these two ride along undefined — the shape `midiStore` and
-                // `appendMidiNotes` both read as absent.
-                pitchBendRangeSemitones: undefined,
-                articulation: undefined,
             },
         ]);
     });

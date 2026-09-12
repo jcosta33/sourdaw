@@ -1146,6 +1146,11 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     controller: {
                         setParam: result.setParam,
                         setBypass: result.setBypass,
+                        // Reached through the engine's generic controller sweep
+                        // (`stopAllScheduled`), like Grinder's: an engine-level
+                        // re-init or program change must leave the bands silent
+                        // whatever tails they held.
+                        reset: result.reset,
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
@@ -1486,7 +1491,6 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     runtimeSink.registerProofDevice({
                         deviceId,
                         bridge: {
-                            setParam: result.setParam,
                             reorderModules: result.reorderModules,
                             resetIntegrated: result.resetIntegrated,
                         },
@@ -1571,6 +1575,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                         midiNote: data.midiNote,
                         noteName: data.noteName,
                         active: data.active,
+                        polyStrings: data.polyStrings,
                     });
                 });
                 onLoaded({

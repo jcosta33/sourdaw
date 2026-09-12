@@ -59,6 +59,8 @@ export type BacteriaNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
+    /** Drop the engine's in-flight audio (engine re-init / program change), via the worklet. */
+    reset: () => void;
     onMeterData: (cb: (data: BacteriaMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
@@ -236,6 +238,12 @@ export async function createBacteriaNode(
         },
         setBypass(state: boolean) {
             postFallbackControl('bypass', state ? 1 : 0);
+        },
+        reset() {
+            if (destroyed) {
+                return;
+            }
+            node.port.postMessage({ type: 'reset' });
         },
         onMeterData(cb: (data: BacteriaMeterData) => void) {
             if (meterRafId !== null) {

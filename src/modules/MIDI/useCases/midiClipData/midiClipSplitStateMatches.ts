@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
@@ -22,7 +24,7 @@ export type MidiClipSplitStateMatchInput = {
 };
 
 function snapshotsEqual(left: MidiClipDataActionSnapshot, right: MidiClipDataActionSnapshot): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return valuesEqual(left, right);
 }
 
 function snapshotIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {

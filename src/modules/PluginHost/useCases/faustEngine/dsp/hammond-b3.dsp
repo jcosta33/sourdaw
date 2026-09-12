@@ -29,6 +29,6 @@ click = no.noise : fi.resonbp(3000, 2, 1) * en.ar(0.001, 0.004, gate) * click_le
 perc = os.osc(freq * perc_harm) * en.ar(0.001, 0.15, gate) * perc_level;
 // Leslie: L/R phase offset for stereo rotation
 leslie_l = (tonewheel + click + perc) * (1.0 + leslie_depth * os.osc(leslie_speed));
-leslie_r = (tonewheel + click + perc) * (1.0 + leslie_depth * os.osc(leslie_speed + 1.5708));
+leslie_r = (tonewheel + click + perc) * (1.0 + leslie_depth * os.oscp(leslie_speed, ma.PI * 0.5));
 env = en.adsr(0.005, 0.0, 1.0, 0.03, gate);
 process = leslie_l * env * gain, leslie_r * env * gain;

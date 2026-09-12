@@ -363,7 +363,7 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
                 onblocked: null as (() => void) | null,
                 onerror: null as (() => void) | null,
                 onsuccess: null as (() => void) | null,
-                onupgradeneeded: null as (() => void) | null,
+                onupgradeneeded: null as ((event: IDBVersionChangeEvent) => void) | null,
                 result: connection,
                 transaction: {
                     objectStore: (storeName: string) => upgradeObjectStore(database, storeName),
@@ -384,7 +384,10 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
                         )
                     );
                     try {
-                        request.onupgradeneeded?.();
+                        request.onupgradeneeded?.({
+                            oldVersion: previousVersion,
+                            newVersion: version,
+                        } as IDBVersionChangeEvent);
                     } catch (error) {
                         database.stores = previousStores;
                         database.indexesByStore = previousIndexes;

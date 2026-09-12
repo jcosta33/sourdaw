@@ -25,7 +25,8 @@ describe('modulationFactories', () => {
 
     it('should create a phaser device', () => {
         const device = createPhaser(ctx as any);
-        expect(ctx.createBiquadFilter).toHaveBeenCalledTimes(4);
+        // The full stage pool the `phaser-stages` knob can activate (2..12).
+        expect(ctx.createBiquadFilter).toHaveBeenCalledTimes(12);
         expect(ctx.createOscillator).toHaveBeenCalled();
         expect(device.namedNodes).toHaveProperty('lfo');
     });

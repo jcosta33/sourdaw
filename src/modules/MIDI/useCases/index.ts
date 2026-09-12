@@ -167,6 +167,7 @@ export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { getMidiInputTrackOwnerId } from './webMidiInput/getMidiInputTrackOwnerId';
 export { getMidiInputTrackRevision } from './webMidiInput/getMidiInputTrackRevision';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
+export { destroyWebMidi } from './webMidiInput/destroyWebMidi';
 export { resetMidiState } from './webMidiInput/resetMidiState';
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';

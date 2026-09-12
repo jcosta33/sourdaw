@@ -4,6 +4,7 @@ import {
     type persistDeviceParam,
     type resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
+import { type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
@@ -39,7 +40,22 @@ export type LevainBridgeDeps = {
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
+    /**
+     * The native session's door for values already spelled in the engine's own
+     * vocabulary, which is exactly what this bridge holds.
+     */
+    writeNativeBuiltinParameters: typeof writeNativeBuiltinParameters;
 };
+
+/**
+ * The strip and device one write addresses.
+ *
+ * The track id is not decoration: the native door is addressed by strip, and
+ * `resolveEligibleDeviceWriteTarget` is already the one place that answers
+ * which strip owns a device — so a write carries the resolution it was
+ * admitted by rather than resolving the owner a second time.
+ */
+type LevainWriteTarget = { trackId: string; deviceId: string };
 
 export function createLevainBridge(deps: LevainBridgeDeps) {
     const activeDevices = new Map<string, LevainDevice>();
@@ -59,8 +75,21 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // key set, so we mirror it here; entries are dropped on flush and on cancel.
     const pendingKeysByDevice = new Map<string, Set<string>>();
 
-    function setRuntimeParam(deviceId: string, rustKey: string, value: number): void {
-        activeDevices.get(deviceId)?.setParam(rustKey, value);
+    /**
+     * One engine-spelled write to both carriers of the strip.
+     *
+     * The worklet write is unchanged; the native send is additive, and silent
+     * when the live session is not carrying this device. Both are needed at
+     * once because a natively carried strip still keeps its Web Audio node as
+     * the fallback carrier — the node has to hold the current value for the
+     * moment the session's gate reopens at Stop.
+     *
+     * Every engine-spelled write in this bridge goes through here, so there is
+     * one place that knows a Levain device has two carriers.
+     */
+    function setRuntimeParam(target: LevainWriteTarget, rustKey: string, value: number): void {
+        activeDevices.get(target.deviceId)?.setParam(rustKey, value);
+        deps.writeNativeBuiltinParameters(target.trackId, target.deviceId, { [rustKey]: value });
     }
 
     function flushParam(compositeKey: string, value: number): void {
@@ -76,7 +105,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
 
         const rustKey = parts.slice(1).join(':');
-        setRuntimeParam(deviceId, rustKey, value);
+        setRuntimeParam(target, rustKey, value);
         deps.persistDeviceParam(deviceId, getLevainProjectParameterId(rustKey), value);
     }
 
@@ -182,7 +211,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             }
 
             for (const parameter of projectLevainPatchToEngineParameters(state.patch)) {
-                setRuntimeParam(deviceId, parameter.name, parameter.value);
+                setRuntimeParam(target, parameter.name, parameter.value);
             }
             contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
         }
@@ -233,7 +262,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             // `currentArticulationDisplay` from the patch entry, which is what the
             // panel's "Artic" readout renders.
             setCurrentArticulation(deviceId, value);
-            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
+            setRuntimeParam(target, 'current_articulation', getArticulationId(value));
             return;
         }
 
@@ -265,7 +294,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // written by `setMacro` below and rendered by the panel's macro strip). The
     // per-engine effects a macro fans out to (CC gestures via `handleCc`; the
     // 'humanize'/'mic_*_volume'/'tone'/'attack'/'release' slots via
-    // `device.setParam`) are deliberately NOT mirrored back into the individual
+    // `setRuntimeParam`) are deliberately NOT mirrored back into the individual
     // `patch.micPositions` / `patch.humanize` store fields, and are not routed
     // through `persistDeviceParam`: a macro is a many-to-one control whose
     // inverse onto discrete patch fields is not well-defined (e.g. Space drives
@@ -281,11 +310,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         setMacro(deviceId, index, value);
 
-        const device = getDevice(deviceId);
-        if (!device) {
-            return;
-        }
-
         const state = levainStore.value?.[deviceId];
         if (!state) {
             return;
@@ -293,33 +317,37 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         const label = state.patch.macroLabels[index];
         switch (label) {
+            // The three CC gestures stay web-only: a continuous controller is
+            // not a device parameter, and the native session has no door that
+            // takes one. A natively carried strip therefore hears the macro
+            // slots below and not these three until a CC route exists.
             case 'Dynamics':
-                device.handleCc(1, Math.round(value * 127));
+                getDevice(deviceId)?.handleCc(1, Math.round(value * 127));
                 break;
             case 'Expression':
-                device.handleCc(11, Math.round(value * 127));
+                getDevice(deviceId)?.handleCc(11, Math.round(value * 127));
                 break;
             case 'Vibrato':
-                device.handleCc(2, Math.round(value * 127));
+                getDevice(deviceId)?.handleCc(2, Math.round(value * 127));
                 break;
             case 'Tightness':
-                device.setParam('humanize', 1.0 - value);
+                setRuntimeParam(target, 'humanize', 1.0 - value);
                 break;
             case 'Space':
                 // The room mic is the 'room'-type position (index 2 in the default
                 // patch). The compact MicBlendSlider drives the same mic, so both
                 // controls must target the same index or they fight over 'room'.
-                device.setParam('mic_0_volume', 1.0 - value * 0.5);
-                device.setParam('mic_2_volume', value);
+                setRuntimeParam(target, 'mic_0_volume', 1.0 - value * 0.5);
+                setRuntimeParam(target, 'mic_2_volume', value);
                 break;
             case 'Tone':
-                device.setParam('tone', value);
+                setRuntimeParam(target, 'tone', value);
                 break;
             case 'Attack':
-                device.setParam('attack', value);
+                setRuntimeParam(target, 'attack', value);
                 break;
             case 'Release':
-                device.setParam('release', value);
+                setRuntimeParam(target, 'release', value);
                 break;
             case undefined:
             default:
@@ -350,7 +378,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         for (const { name, value } of projectLevainPatchToEngineParameters(patch)) {
             if (name === 'current_articulation') {
-                setRuntimeParam(deviceId, name, value);
+                setRuntimeParam(target, name, value);
                 continue;
             }
             queueParam(deviceId, name, value);

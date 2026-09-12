@@ -17,6 +17,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
@@ -86,6 +87,7 @@ function hydrateProductionContracts(): void {
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
         getTransportHandlers(),
+        getYeastHandlers(),
     ]);
 }
 

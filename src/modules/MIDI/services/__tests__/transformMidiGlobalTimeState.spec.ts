@@ -95,7 +95,7 @@ describe('transformMidiGlobalTimeState', () => {
         expect(result.status).toBe('ready');
         expect(result.state.notesByClipId.source?.[0]).toMatchObject({ id: 'straddler', duration: 2, channel: 9 });
         expect(result.state.notesByClipId.right?.[0]?.id).toBe('existing-right');
-        expect(result.state.notesByClipId.right?.[1]).toEqual({
+        expect(result.state.notesByClipId.right?.[1]).toStrictEqual({
             id: 'note-replay',
             pitch: 67,
             startBeat: 0,
@@ -103,10 +103,6 @@ describe('transformMidiGlobalTimeState', () => {
             velocity: 88,
             probability: 100,
             pressure: 0.4,
-            slide: undefined,
-            pitchBend: undefined,
-            // The right half is rebuilt field by field, so every per-note
-            // expression field has to be named explicitly or it is lost.
             channel: 9,
         });
         expect(result.state.notesByClipId).not.toHaveProperty('remove');
@@ -148,6 +144,73 @@ describe('transformMidiGlobalTimeState', () => {
             pitchBendRangeSemitones: 48,
             articulation: 'legato',
         });
+    });
+
+    it('omits absent split-right optionals and preserves every defined zero value', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [
+                    { id: 'ordinary', pitch: 60, startBeat: 0, duration: 4, velocity: 80 },
+                    {
+                        id: 'expressive',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 4,
+                        velocity: 81,
+                        probability: 0,
+                        pressure: 0,
+                        slide: 0,
+                        pitchBend: 0,
+                        pitchBendRangeSemitones: 0,
+                        channel: 0,
+                        articulation: 'legato',
+                    },
+                ],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 2 }],
+            targetNoteIds: ['ordinary-right', 'expressive-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.notesByClipId.right).toStrictEqual([
+            {
+                id: 'ordinary-right',
+                pitch: 60,
+                startBeat: 0,
+                duration: 2,
+                velocity: 80,
+                probability: 100,
+            },
+            {
+                id: 'expressive-right',
+                pitch: 64,
+                startBeat: 0,
+                duration: 3,
+                velocity: 81,
+                probability: 0,
+                pressure: 0,
+                slide: 0,
+                pitchBend: 0,
+                pitchBendRangeSemitones: 0,
+                channel: 0,
+                articulation: 'legato',
+            },
+        ]);
+        const ordinaryRight = result.state.notesByClipId.right?.[0];
+        for (const key of [
+            'pressure',
+            'slide',
+            'pitchBend',
+            'pitchBendRangeSemitones',
+            'channel',
+            'articulation',
+        ] as const) {
+            expect(Object.hasOwn(ordinaryRight ?? {}, key)).toBe(false);
+        }
     });
 
     it('duplicates notes after the insert shift without copying CC or pitch bend', () => {
@@ -525,7 +588,7 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
         expect(result.status).toBe('ready');
         expect(result.state.notesByClipId.source?.map((n) => n.id)).toEqual(['before', 'straddle']);
         expect(result.state.notesByClipId.source?.[1]?.duration).toBe(2);
-        expect(result.state.notesByClipId.right).toEqual([
+        expect(result.state.notesByClipId.right).toStrictEqual([
             {
                 id: 'straddle-right',
                 pitch: 62,
@@ -533,9 +596,6 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
                 duration: 2,
                 velocity: 90,
                 probability: 100,
-                pressure: undefined,
-                slide: undefined,
-                pitchBend: undefined,
             },
             { id: 'after', pitch: 64, startBeat: 3, duration: 1, velocity: 90 },
         ]);

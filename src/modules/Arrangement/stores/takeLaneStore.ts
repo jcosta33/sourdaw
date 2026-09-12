@@ -15,6 +15,7 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
+const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 
 type HasExactKeysInput = {
@@ -70,16 +71,21 @@ function is_valid_take(value: unknown): value is Take {
         is_finite_non_negative_number(value.endBeat) &&
         value.endBeat >= value.startBeat &&
         'selected' in value &&
-        typeof value.selected === 'boolean'
+        typeof value.selected === 'boolean' &&
+        // A take without the field reads at its clip's origin; a take with a
+        // malformed one is dropped whole, like any other malformed take field.
+        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats))
     );
 }
 
 function is_exact_take(value: unknown): value is Take {
-    return is_valid_take(value) && has_exact_keys({ value, required_keys: TAKE_KEYS });
+    return (
+        is_valid_take(value) && has_exact_keys({ value, required_keys: TAKE_KEYS, optional_keys: TAKE_OPTIONAL_KEYS })
+    );
 }
 
 function normalize_take(take: Take): Take {
-    return {
+    const sanitized: Take = {
         id: take.id,
         clipId: take.clipId,
         name: take.name,
@@ -87,6 +93,10 @@ function normalize_take(take: Take): Take {
         endBeat: take.endBeat,
         selected: take.selected,
     };
+    if (take.sourceOffsetBeats !== undefined) {
+        sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
+    }
+    return sanitized;
 }
 
 function is_valid_comp_region(value: unknown): value is CompRegion {

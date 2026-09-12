@@ -169,6 +169,12 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        if (noteData.faustRelease) {
+            // The closure is bound to the Faust device instance its note-on
+            // started on, so the gate-off cannot drift to another device.
+            noteData.faustRelease();
+        }
+
         if (noteData.osc) {
             const now = dispatchFrame / audioEngine.context.sampleRate;
             const synthParams = deps.getSynthParamsForTrack(targetTrackId);

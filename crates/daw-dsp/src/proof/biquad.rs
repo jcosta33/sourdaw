@@ -162,7 +162,11 @@ pub struct SmoothedBiquadCoeffs {
 
 /// Coefficient ramp time. Long enough to bury a zipper edge below audibility,
 /// short enough that an automated sweep still tracks the written curve.
-const COEFF_SMOOTHING_SECONDS: f64 = 0.005;
+///
+/// `pub(crate)` so the imager's mono-bass side factor shares one engine-wide
+/// notion of "a param transition takes this long" instead of growing a second
+/// number that drifts.
+pub(crate) const COEFF_SMOOTHING_SECONDS: f64 = 0.005;
 
 #[inline]
 fn lerp_coeffs(from: &BiquadCoeffs, to: &BiquadCoeffs, t: f64) -> BiquadCoeffs {

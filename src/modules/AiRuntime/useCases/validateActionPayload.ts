@@ -122,6 +122,70 @@ function isUniqueNonEmptyStringArray(value: unknown): value is string[] {
     return new Set(value).size === value.length;
 }
 
+const YEAST_PROCESSOR_TYPES = new Set([
+    'arpeggiator',
+    'chord',
+    'chordMemory',
+    'scale',
+    'harmonizer',
+    'repeater',
+    'velocity',
+    'humanizer',
+    'filter',
+    'transposer',
+    'groove',
+    'ccGenerator',
+    'euclidean',
+    'markov',
+    'mutation',
+]);
+
+const YEAST_STEP_TYPES = new Set(['note', 'rest', 'tie', 'chord', 'random']);
+const YEAST_NOTE_SELECTOR_TYPES = new Set(['next', 'previous', 'index', 'random', 'lowest', 'highest']);
+
+function isYeastNoteSelector(value: unknown): boolean {
+    return (
+        isObj(value) &&
+        hasOnlyKeys(value, ['type', 'index']) &&
+        isString(value.type) &&
+        YEAST_NOTE_SELECTOR_TYPES.has(value.type) &&
+        (value.type !== 'index' || (isNonNegativeNumber(value.index) && Number.isInteger(value.index)))
+    );
+}
+
+function isYeastArpStep(value: unknown): boolean {
+    return (
+        isObj(value) &&
+        hasExactKeys(value, [
+            'active',
+            'stepType',
+            'noteSelector',
+            'velocity',
+            'velocityOverride',
+            'gateMul',
+            'octaveOffset',
+            'semitoneOffset',
+            'probability',
+            'ratchet',
+        ]) &&
+        typeof value.active === 'boolean' &&
+        isString(value.stepType) &&
+        YEAST_STEP_TYPES.has(value.stepType) &&
+        isYeastNoteSelector(value.noteSelector) &&
+        isInRange(value.velocity, 1, 127) &&
+        Number.isInteger(value.velocity) &&
+        typeof value.velocityOverride === 'boolean' &&
+        isInRange(value.gateMul, 0.1, 2) &&
+        isInRange(value.octaveOffset, -3, 3) &&
+        Number.isInteger(value.octaveOffset) &&
+        isInRange(value.semitoneOffset, -12, 12) &&
+        Number.isInteger(value.semitoneOffset) &&
+        isInRange(value.probability, 0, 1) &&
+        isInRange(value.ratchet, 1, 4) &&
+        Number.isInteger(value.ratchet)
+    );
+}
+
 function hasValidPunchInBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
     return (
         isObj(param) &&
@@ -613,6 +677,12 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloed']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloed === 'boolean',
+    // `expectedSelectedTakeId` is internal replay metadata, not a provider argument.
+    selectTake: (param): param is PayloadOf<'selectTake'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'takeId']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.takeId),
     setSoloSafe: (param): param is PayloadOf<'setSoloSafe'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'soloSafe']) &&
@@ -663,6 +733,44 @@ const validators = {
     ungroupTracks: 'unchecked',
     removeAllTracks: 'unchecked',
     clearSolos: hasNoPayload,
+
+    // Yeast rack — the `expected*` payload fields are internal replay guards,
+    // not provider arguments, so the exact-keys checks reject them
+    // (same treatment as selectTake's expectedSelectedTakeId).
+    setYeastProcessorParam: (param): param is PayloadOf<'setYeastProcessorParam'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['processorId', 'paramId', 'value']) &&
+        isNonEmptyString(param.processorId) &&
+        isNonEmptyString(param.paramId) &&
+        isNumber(param.value),
+    setYeastArpPattern: (param): param is PayloadOf<'setYeastArpPattern'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['processorId', 'steps']) &&
+        isNonEmptyString(param.processorId) &&
+        Array.isArray(param.steps) &&
+        param.steps.length > 0 &&
+        param.steps.length <= 32 &&
+        param.steps.every(isYeastArpStep),
+    setYeastProcessorBypass: (param): param is PayloadOf<'setYeastProcessorBypass'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['processorId', 'bypassed']) &&
+        isNonEmptyString(param.processorId) &&
+        typeof param.bypassed === 'boolean',
+    addYeastProcessor: (param): param is PayloadOf<'addYeastProcessor'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['processorId', 'type', 'name']) &&
+        isNonEmptyString(param.processorId) &&
+        isString(param.type) &&
+        YEAST_PROCESSOR_TYPES.has(param.type) &&
+        isNonEmptyString(param.name),
+    removeYeastProcessor: (param): param is PayloadOf<'removeYeastProcessor'> =>
+        isObj(param) && hasExactKeys(param, ['processorId']) && isNonEmptyString(param.processorId),
+    reorderYeastProcessor: (param): param is PayloadOf<'reorderYeastProcessor'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['processorId', 'toIndex']) &&
+        isNonEmptyString(param.processorId) &&
+        isNonNegativeNumber(param.toIndex) &&
+        Number.isInteger(param.toIndex),
 
     // Clip state
     bypassDevice: (param): param is PayloadOf<'bypassDevice'> =>

@@ -38,6 +38,7 @@ import {
 } from './agentRequestOrchestration/claimAgentRunWorkLease';
 import { recoverInterruptedAgentRunState as recoverInterruptedRunState } from './agentRequestOrchestration/recoverInterruptedAgentRunState';
 import { reduceAgentRunTransition } from './agentRequestOrchestration/reduceAgentRunTransition';
+import { retainedRenderReceipts } from './agentRequestOrchestration/retainedRenderReceipts';
 import {
     type RetryAgentRunWorkLeaseResult as RetryWorkLeaseResult,
     retryAgentRunWorkLease as retryWorkLease,
@@ -69,6 +70,14 @@ const DEFAULT_GRANTS: AgentRunGrants = {
 };
 
 const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
+
+/**
+ * Agent media listening and generated media are deferred capabilities (AC-047), so no run records
+ * either grant as held whatever the caller proposed. Every grant a run stores passes through here.
+ */
+function refuseDeferredMediaGrants(grants: AgentRunGrants): AgentRunGrants {
+    return { ...grants, audioUpload: false, remoteGeneration: false };
+}
 
 function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): AgentRunBudgets {
     const limits = { ...current.limits };
@@ -104,6 +113,14 @@ function assertNonEmpty(value: string, field: string): void {
     }
 }
 
+// A run that has reached a terminal phase proposes no further mutation, so the rendered receipts its
+// flights retained describe audio nothing can consume; the run's retention map goes with it.
+function releaseRetainedRenderReceiptsOnTerminalPhase(current: AgentRun, next: AgentRun): void {
+    if (!TERMINAL_PHASES.has(current.phase) && TERMINAL_PHASES.has(next.phase)) {
+        retainedRenderReceipts.releaseRun(next.runId);
+    }
+}
+
 function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun) => AgentRun): AgentRun {
     const state = readAgentRunState();
     const index = state.runs.findIndex((run) => run.runId === runId);
@@ -115,6 +132,7 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
+    releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
 
@@ -133,6 +151,7 @@ function updateAgentRunIfPresent(
     const runs = [...state.runs];
     runs[index] = next;
     persistAgentRunState({ ...state, runs });
+    releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
 
@@ -304,7 +323,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
             committed: null,
         },
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
-        grants: structuredClone(input.grants ?? DEFAULT_GRANTS),
+        grants: structuredClone(refuseDeferredMediaGrants(input.grants ?? DEFAULT_GRANTS)),
         budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
         budgetAttempts: [],
         plan: null,
@@ -399,7 +418,7 @@ function recordAgentRunPlan(input: {
             phase: reduceAgentRunTransition(run.phase, { type: 'plan-recorded' }),
             revisions: { ...run.revisions, planned: input.revision },
             scope: structuredClone(input.scope),
-            grants: structuredClone(input.grants),
+            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan: structuredClone(
                 input.plan ??
@@ -455,7 +474,7 @@ function recordAgentRunApplicationToolEvidence(input: {
             ...run,
             revisions: { ...run.revisions, planned: run.revisions.planned ?? input.revision },
             scope: structuredClone(input.scope),
-            grants: structuredClone(input.grants),
+            grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan,
         };
@@ -658,19 +677,29 @@ function reconcileAgentRunBudgetAttempt(input: {
     });
 }
 
+/**
+ * One artifact identity holds one entry. A render reports progress through several receipts, so a
+ * later report of the same `artifactId` supersedes the earlier one in place rather than adding a
+ * second entry that would count one artifact twice and leave its stale status readable.
+ */
 function recordAgentRunArtifact(input: {
     runId: string;
     kind: 'render' | 'analysis';
     artifact: AgentRunArtifact;
     recordedAt?: number;
 }): AgentRun {
-    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => ({
-        ...run,
-        [input.kind === 'render' ? 'renders' : 'analyses']: [
-            ...(input.kind === 'render' ? run.renders : run.analyses),
-            structuredClone(input.artifact),
-        ],
-    }));
+    return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
+        const key = input.kind === 'render' ? 'renders' : 'analyses';
+        const current = run[key];
+        const artifact = structuredClone(input.artifact);
+        const existingIndex = current.findIndex((candidate) => candidate.artifactId === artifact.artifactId);
+        if (existingIndex < 0) {
+            return { ...run, [key]: [...current, artifact] };
+        }
+        const artifacts = [...current];
+        artifacts[existingIndex] = artifact;
+        return { ...run, [key]: artifacts };
+    });
 }
 
 function recordAgentRunError(input: {

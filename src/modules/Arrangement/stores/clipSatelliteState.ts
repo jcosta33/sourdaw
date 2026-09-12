@@ -129,6 +129,27 @@ export function serializeClipSatelliteEntries(clipIds: readonly string[]): strin
     return JSON.stringify(clipIds.map((clipId) => readClipSatelliteEntry(clipId)));
 }
 
+/**
+ * `serializeClipSatelliteEntries` built from snapshot entries instead of the
+ * live stores — the projected form a batch-aware guard compares against
+ * (#3814). Entries are normalized exactly as `writeClipSatelliteEntry` writes
+ * them, and a clip id the snapshot does not carry reads as no satellite, so the
+ * serialization equals what the stores hold after the sibling's `restoreTrack`
+ * has written its entries.
+ */
+export function serializeProjectedClipSatelliteEntries(
+    entries: readonly ClipSatelliteEntrySnapshot[],
+    clipIds: readonly string[]
+): string {
+    const entryByClipId = new Map(entries.map((entry) => [entry.clipId, entry]));
+    return JSON.stringify(
+        clipIds.map((clipId) => {
+            const entry = entryByClipId.get(clipId);
+            return entry ? normalizeEntry(entry) : { clipId, gainEnvelope: null, warpState: null };
+        })
+    );
+}
+
 function normalizeEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
     return {
         clipId: entry.clipId,

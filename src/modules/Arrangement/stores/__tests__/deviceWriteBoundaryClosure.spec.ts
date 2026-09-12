@@ -183,6 +183,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Automation/useCases/modulation/modulationDependencies.ts': 1,
         'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts': 1,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts': 4,
+        // Count provenance: measured 2 — the `updateDeviceParam` and
+        // `persistDeviceParam` bridges the morph flush shares with the other
+        // panel param paths. Each interpolated scalar is one ordinary
+        // device-param write through the shared rAF batcher; the morph never
+        // touches a store directly.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 4,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
@@ -203,7 +209,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // a sink in this family at all — the reason a census that counts sinks
         // could not see the defect.
         // 'src/modules/Crumbs/useCases/voiceStacking.ts': removed (0),
-        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
+        // Count provenance: measured 5, was 4. The fifth is the flush-side
+        // persist of the algorithm a `style` write derives, written after
+        // `style` so the record's insertion order matches `CRUST_PATCH_PRECEDENCE`,
+        // with no engine push for it.
+        'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 5,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
         // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
         // import and its single call site. The panel's true-peak reset has to
@@ -272,7 +282,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // committing call in `flushParam`.
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 4,
         'src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts': 2,
+        // Count provenance: measured 2 in code — the `updateDeviceParam` import
+        // and its single call in `sendProofParam`, the door every live Proof
+        // parameter write now reaches the DSP through instead of the worklet
+        // bridge directly, so a natively carried Proof hears the same write.
+        'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 2,
+        // Count provenance: new file entry, measured 2 — the `updateDevicePatch`
+        // import and its single call sending the five `chain_order_{n}` keys as
+        // one patch, so a natively carried Proof's module order matches a panel
+        // drag instead of hearing only the worklet-bridge reorder message.
+        'src/modules/Proof/useCases/proofParamBridge/sendProofChainOrder.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
         'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
@@ -321,6 +341,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and carries the same `resolveEligibleDeviceWriteTarget` ownership gate
         // as every other device bridge.
         'src/modules/Tuner/useCases/setA4Reference.ts': 2,
+        // Poly-mode selection drives the scoring engine's instrument/poly
+        // params through the same eligible-target write (#2383): two writes
+        // entering Poly, one leaving it.
+        'src/modules/Tuner/useCases/setDisplayMode.ts': 3,
     },
     'strip-add': {
         // Count provenance: measured 4 — the identifier now lives only as the
@@ -376,12 +400,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleStretchAmount.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
-        // Count provenance: measured 8 in code. Registration no longer routes
-        // patch initialization through the rAF write batcher: it applies the
-        // complete runtime patch synchronously before sample loading and performs
-        // no project persistence. The retired match was that registration-time
-        // `queueParam` path; explicit user edits remain the only persisted sinks.
-        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 8,
+        // Count provenance: measured 2 in code, was 8 — the `LevainDevice`
+        // handle's own `setParam` field and the one call through it. The six
+        // retired matches were the macro fan-out's direct `device.setParam`
+        // calls; every engine-spelled write in the bridge now funnels through
+        // `setRuntimeParam`, which writes the worklet *and* the native session,
+        // so a natively carried Levain hears a macro move.
+        'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `setParam`. The file reads the persisted chain order off the project
         // and posts one `reorder` message to the offline worklet port; the
@@ -389,14 +414,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // param replay does *not* deliver order (the worklet's `set_param`
         // matches no `chain_order_` prefix and drops all five values).
         // 'src/modules/Proof/useCases/prepareOfflineProof.ts': removed (0),
-        'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 1,
-        'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 1,
-        'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 2,
-        'src/modules/Proof/useCases/proofParamBridge/syncDynBands.ts': 9,
-        'src/modules/Proof/useCases/proofParamBridge/syncEqBands.ts': 6,
-        'src/modules/Proof/useCases/proofParamBridge/syncExciter.ts': 4,
-        'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': 13,
-        'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
+        // Count provenance: measured 0 across all eight rows below, was 1/1/2/9/
+        // 6/4/13/3 — live Proof writes now route through the device door:
+        // `sendProofParam`/`sendProofChainOrder` in `helpers.ts`/
+        // `sendProofChainOrder.ts` call `updateDeviceParam`/`updateDevicePatch`
+        // (censused in 'persistence-runtime' above) instead of the worklet
+        // bridge's `setParam`, so a natively carried Proof hears the same
+        // write. None of these files still names `setParam` or `setPadParam`;
+        // all eight rows retire in one motion.
+        // 'src/modules/Proof/useCases/proofParamBridge/helpers.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncDynBands.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncEqBands.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncExciter.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': removed (0),
+        // 'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': removed (0),
         // Count provenance: measured 0 with `grep -o`, was 2 — row removed
         // rather than zeroed, since this census only records files that match.
         // Both hits were the `setPadParam`/`setParam` fields of a hand-written
@@ -482,6 +515,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
+        // Count provenance: new file entry, measured 8 — four
+        // `compileAgentRiskApproval` (import, return-type projection, local
+        // annotation, call), two `compilePartialCommandBatchAcceptance` (import
+        // and call) and two `compileSelectedSubset` (declaration and call). The
+        // ninth lexical match, `compilePendingActionCommandEnvelopes`, is a
+        // comment recording why an original command's position is its action's.
+        // Re-proposal compiles command batches only; it reaches no device sink.
+        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 8,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         // Count provenance: 0 in code, was 2 — pure receipt projection moved to
         // projectAgentRunReceiptSaga (#3052), taking every
@@ -631,7 +672,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // AiRuntime: compileRequest / command-envelope compilers (not device
         // hydration). sendChatMessage 3→5 is the same family, documented above.
         'src/modules/AiRuntime/models/ModelProviderProtocol.ts': 1,
-        'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 2,
+        // Count provenance: measured 4 — one import and one call of the provider
+        // adapter registry compiler plus the declaration and one call of the
+        // hosted OpenAI adapter selector; the file compiles provider transport
+        // adapters and holds no device or AudioEngine write.
+        'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 4,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
         // Count provenance: new file entry, measured 1 — the module path in a

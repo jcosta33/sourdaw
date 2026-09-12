@@ -817,6 +817,8 @@ fn bandlimited_tap_count(speed: f64) -> usize {
 /// boundary is a band rather than a point. Read the boundaries off the two
 /// thresholds below rather than restating them here, and pin any ratio whose
 /// tier is load-bearing with a measurement that fails when the tier moves.
+/// `kaiser_beta_tiers_hold_on_both_sides_of_every_documented_boundary` pins
+/// those bands in ratio terms.
 fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
     let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
     if budget >= 10.0 {
@@ -979,7 +981,9 @@ enum MappedTap {
     Frame(usize),
     /// Below the region: mirror `2 * region_start - index` about `region_start`.
     MirrorBelow { mirror: i64, edge: usize },
-    /// Above a no-loop region: mirror about its last frame.
+    /// Above a no-loop region: mirror about its last frame, as the tail of
+    /// every one-shot read past the region does — pinned through the voice
+    /// path by `one_shot_tail_resolves_past_the_region_through_the_upper_mirror`.
     MirrorAbove { mirror: i64, edge: usize },
     /// A degenerate region; the tap contributes nothing.
     Nothing,
@@ -1249,6 +1253,116 @@ mod tests {
                 "{loop_mode:?} mixed adjacent-region audio: clean {clean:?}, poisoned {poisoned:?}"
             );
         }
+    }
+
+    /// The upper-edge mirror, pinned through the one-shot path. A read
+    /// centred on a region's last frame runs half the kernel past it, and
+    /// under `LoopMode::Off` those taps resolve through `MirrorAbove`'s odd
+    /// mirror about the last frame — `2 * x[last] - x[mirror]` — not clamped
+    /// to the edge frame and not dropped. The kernel the voice actually runs
+    /// comes from the impulse probe, so the expected tail is the shipped
+    /// weights applied to the hand-written mirror extension; the clamped
+    /// reading is asserted far away, so a kernel too short to reach past the
+    /// region cannot pass vacuously.
+    #[test]
+    fn one_shot_tail_resolves_past_the_region_through_the_upper_mirror() {
+        let frames = 256;
+        let left: Vec<f32> = (0..frames)
+            .map(|i| (((i * 7) % 23) as f32 - 11.0) * 0.125)
+            .collect();
+        let right: Vec<f32> = (0..frames)
+            .map(|i| (((i * 5) % 19) as f32 - 9.0) * 0.125)
+            .collect();
+        let sample = SampleData::from_stereo(left.clone(), right.clone(), SAMPLE_RATE as u32);
+
+        // Exactly 2x: the 49-tap beta-9 kernel. The one-shot's final sample
+        // sits at frame 254, four frames short of the region's end, with 23
+        // of the kernel's taps reading past it. The probe extracts that
+        // kernel pure — every tap in range.
+        let weights = bandlimited_kernel_weights(24, 9.0, 0.5, 0.0);
+
+        // The region is the whole sample: taps below frame 0 mirror about
+        // it, taps above frame 255 mirror about it.
+        let mapped = |values: &[f32], raw: i64, mirror: bool| -> f32 {
+            let last = values.len() as i64 - 1;
+            if raw > last {
+                if mirror {
+                    2.0 * values[last as usize] - values[(2 * last - raw) as usize]
+                } else {
+                    values[last as usize]
+                }
+            } else if raw < 0 {
+                if mirror {
+                    2.0 * values[0] - values[(-raw) as usize]
+                } else {
+                    values[0]
+                }
+            } else {
+                values[raw as usize]
+            }
+        };
+        let expected = |values: &[f32], frame: usize, mirror: bool| -> f32 {
+            let mut sum = 0.0_f64;
+            let mut weight_sum = 0.0_f64;
+            for (tap, &weight) in weights.iter().enumerate() {
+                let raw = frame as i64 + tap as i64 - 24;
+                sum += f64::from(mapped(values, raw, mirror)) * f64::from(weight);
+                weight_sum += f64::from(weight);
+            }
+            (sum / weight_sum) as f32
+        };
+
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&VoiceTriggerParams {
+            note: 72,
+            root_note: 60,
+            playback_mode: PlaybackMode::OneShot,
+            loop_mode: LoopMode::Off,
+            // Flat envelope and gain from the first sample: one constant
+            // scalar over the whole one-shot, so an in-range render measures
+            // it and the tail is compared kernel-to-kernel.
+            attack: 0.0,
+            ..VoiceTriggerParams::default()
+        });
+
+        // Output n reads frame 2n. Output 64 (frame 128) sits wholly inside
+        // the region; output 127 is the tail, at frame 254.
+        let mut rendered = Vec::new();
+        for _ in 0..128 {
+            let mut out_left = 0.0;
+            let mut out_right = 0.0;
+            voice.render_sample(&sample, &mut out_left, &mut out_right);
+            rendered.push((out_left, out_right));
+        }
+        assert!(
+            !voice.active,
+            "the one-shot must spend its whole tail inside the one pass"
+        );
+
+        let (ref_left, ref_right) = rendered[64];
+        let scale_left = ref_left / expected(&left, 128, true);
+        let scale_right = ref_right / expected(&right, 128, true);
+        assert!(scale_left > 0.05 && scale_right > 0.05);
+
+        let (tail_left, tail_right) = rendered[127];
+        let mirror_left = scale_left * expected(&left, 254, true);
+        let mirror_right = scale_right * expected(&right, 254, true);
+        assert!(
+            (tail_left - mirror_left).abs() < 1.0e-4 && (tail_right - mirror_right).abs() < 1.0e-4,
+            "the one-shot tail must read the odd mirror about the last frame: got \
+             ({tail_left}, {tail_right}), expected ({mirror_left}, {mirror_right})"
+        );
+
+        // The mirror is what the tail reads, not anything shape-compatible:
+        // clamped to the edge frame, the same kernel produces a materially
+        // different sample.
+        let clamp_left = scale_left * expected(&left, 254, false);
+        let clamp_right = scale_right * expected(&right, 254, false);
+        assert!(
+            (tail_left - clamp_left).abs() > 0.05 && (tail_right - clamp_right).abs() > 0.05,
+            "probe collapsed: mirror and clamp expectations agree, so this \
+             observes nothing"
+        );
     }
 
     #[test]
@@ -1700,6 +1814,60 @@ mod tests {
             "foldback floor broke at {worst_semitones:.1} semitones: {worst_db:.1} dB, \
              the tier contract is 53 dB across every reachable ratio"
         );
+    }
+
+    /// The tier bands in the terms the kernel rules are tuned in — playback
+    /// ratio — produced by assertions at the shipped arithmetic: each row
+    /// feeds `kaiser_beta` the same `(taps, cutoff)` pair
+    /// `set_playback_speed` derives at that ratio. Edges are pinned on both
+    /// sides rather than at the exact crossing, because a boundary is a
+    /// band, not a point: inside one radius step the budget falls with
+    /// speed, then jumps at the next — which is the 5→7 re-entry near
+    /// 6.75–6.85x after beta 7 first loses at ~6.69x. The figures a retired
+    /// 6.0 budget once documented are gone from this range: at exactly 8.5x
+    /// the growth rule yields radius 50 (101 taps, budget 5.94), beta 5.
+    #[test]
+    fn kaiser_beta_tiers_hold_on_both_sides_of_every_documented_boundary() {
+        let tier_at = |speed: f64| {
+            let taps = bandlimited_tap_count(speed);
+            let cutoff = (1.0 / speed).min(1.0) as f32;
+            kaiser_beta(taps, cutoff)
+        };
+
+        for (speed, beta) in [
+            (1.5, 9.0),
+            (2.0, 9.0),
+            (2.8, 9.0), // beta 9 holds to the ~2.85x edge
+            (2.9, 7.0),
+            (4.0, 7.0),
+            (6.6, 7.0),
+            (6.7, 5.0),  // beta 7's first loss, ~6.69x
+            (6.76, 7.0), // the radius step hands the tier back
+            (6.85, 5.0), // beta 5 holds from here to the speed cap
+            (8.4167, 5.0),
+            (8.5, 5.0),
+            (8.58, 5.0),
+            (16.0, 5.0),
+        ] {
+            assert_eq!(tier_at(speed), beta, "tier at {speed}x");
+        }
+
+        // The same tiers through a real trigger, at the integer notes that
+        // reach them: the window key records (taps, beta·10).
+        for (note, taps, beta_key) in [(72u8, 49usize, 90u16), (84, 65, 70), (96, 97, 50)] {
+            let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+            voice.trigger(&VoiceTriggerParams {
+                note,
+                root_note: 60,
+                playback_mode: PlaybackMode::OneShot,
+                ..VoiceTriggerParams::default()
+            });
+            assert_eq!(
+                voice.anti_alias_window_key,
+                (taps as u16, beta_key),
+                "kernel at note {note}"
+            );
+        }
     }
 
     #[test]

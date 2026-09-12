@@ -1,3 +1,5 @@
+import { type BuiltinLufsMeterReader } from './BuiltinLufsMeterReader';
+
 /** Shared type used by all device node factories. */
 export type OfflineDeviceNode = {
     inputNode: AudioNode;
@@ -10,6 +12,8 @@ export type OfflineDeviceNode = {
     namedNodes?: Record<string, AudioNode>;
     /** Stop sources and release non-node resources; the owning graph disconnects every node. */
     dispose?: () => void;
+    /** Loudness read surface, present on analyzer devices that expose one. */
+    lufsMeter?: BuiltinLufsMeterReader;
     wamControls?: {
         setParam: (name: string, value: number) => void;
         scheduleParam: (name: string, value: number, time: number) => void;

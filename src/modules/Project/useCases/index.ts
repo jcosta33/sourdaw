@@ -51,3 +51,5 @@ export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)
+
+export { agentAssetFileBoundary } from './agentAssetFileBoundary';

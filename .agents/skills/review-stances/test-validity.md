@@ -25,6 +25,11 @@ dispatch.
 - When a spec pins a rule about repeated or overlapping events on one key, name the mutation that
   inverts the rule (last occurrence decides instead of first, a note-on covers instead of a note-off)
   and require the fixture to place the decisive event in the position that mutation would get wrong.
+- A regression suite for a detector that asserts an invariant over a registered population must
+  cover the invariant per adapter class, not replay the incident's fixture: enumerate the classes
+  the population actually has — an ordering normalizer, an encoding change, a dropped field — and
+  require a case in each that reverting the detector's invariant check fails. A suite green on the
+  incident fixture alone does not discharge the detector's global claim.
 
 ## Lessons from escapes
 
@@ -114,6 +119,28 @@ plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
 any hit in the same change.
 
+### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
+
+The helper fixture always ended the AudioWorkletNode handler after its outer callback. Its separate
+equal-endpoint case exercised only the author/outer relationship, so reverting the handler/outer
+equality rule still left every test green.
+
+Probe that would have caught it: for every nesting comparison the parser validates independently,
+add one case with equal end timestamps and one with the enclosure ending a single timestamp unit
+early. The first must admit only a unique enclosure; the second and the existing overlap fixtures
+must refuse.
+
+### 2026-09-09 — transaction tests skipped the committing window (escaped via PR #806)
+
+The captured-scope test entered only after settlement. It never exercised the separately supplied scope while commit
+was publishing, nor a scope entered before commit whose callback continued with a later write, so one guard could mask
+the absence of the other.
+
+Probe that would have caught it: publish document A through the real atomic port shape and synchronously re-enter each
+scope from its listener. Assert callback entry count is zero separately from cache, document, and pending-write state.
+Then enter a scope before commit or abort and attempt `set` and `clear` afterward; reverting only the write-context guard
+must fail that case while reverting only a scope-entry guard must fail its callback-entry assertion.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
@@ -162,3 +189,84 @@ modules the diff never named. Nothing in the changed lines points at them.
 Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
 reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
 dispatch carries the same command whenever the change adds a barrel export or a barrel import.
+
+### 2026-09-09 — storage tests observed one terminal but not reentrant execution (escaped via PR #576)
+
+The adapter tests exercised an ordinary pending write and its final cache value. They never invoked a synchronous
+publication listener that called the public flush again, never changed a later selected write during an earlier
+preparation callback, and never compared terminal cache against a fresh decode of the actual published document.
+
+Probe that would have caught it: use an atomic publish-then-notify port and assert mutation owner/count, raw document,
+adapter cache, fresh decoder, pending count, and later flush. Delete the whole-snapshot claims, restore terminal pending
+copying, capture a later write only when its preparation starts, remove callback identity checks, and remove the
+post-publication error catch one at a time; each owning case must fail on behavior rather than error wording.
+
+The same probe must publish newer same-slot authority from inside each independently guarded terminal/hydrate callback
+and cover both later- and earlier-authored nested scopes. Bypass the authority-epoch check and the ambiguous terminal
+call separately; each must leave raw and cache divergent and fail. Include projectors that return `null` and throw with
+no configured initial value so nullish fallback cannot silently reinstate rejected document content.
+
+### 2026-09-10 — catalog cases asserted presence, never selectability (escaped via PR #4128)
+
+The catalog spec checked that the creation slots for a track target existed by object type and the
+admission spec selected targets and dimensions, but no case selected a clip, notes, or device slot by
+its published id and observed the minted authority carrying it. A duplicate-id defect that made
+three slots unselectable therefore left every case green.
+
+Mechanical probe: for each published id family (targets, dimensions, constraints, creation slots),
+one case must select the LAST published member by id through the real admission and assert it on
+the result; then mutate the id minting to collide and confirm that case goes red.
+
+### 2026-09-10 — no fixture ever tied an interval START to the outer callback (introduced in 4266e649b, repeated at 0a4efc74f)
+
+4266e649b's fixtures placed every handler and author start strictly inside or before the
+outer callback; 0a4efc74f added the handler/outer equal-END fixture and repeated the
+pattern, so both strict START comparisons were never exercised at equality. The first
+nightly trace refused 2256 of 24001 callbacks tied on handler start.
+
+Blind spot: the 2026-09-09 probe was phrased for one boundary only, and fixtures followed it
+literally without covering both boundaries (start and end) of the nesting pairs.
+
+Probe that would have caught it: for every nesting comparison independently validated, add one
+case with equal start timestamps and one with equal end timestamps; for each pair, add a third
+with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
+the narrower and existing overlap fixtures must refuse.
+
+### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
+
+PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
+guard in `c166247ea4`. They compared `JSON.stringify` output, so a fresh Automerge projection with
+the same template or assignment fields in a different object-key order was rejected as changed.
+
+Blind spot: the fixtures reused author-constructed objects and never crossed a fresh document
+projection, while their retry assertions used the same insertion order as the producer.
+
+Probe that would have caught it: cross a fresh document projection for creation idempotence and
+guarded inverse checks, construct equal typed values with different top-level and nested key order,
+and assert their JSON strings differ. Unchanged values must admit the no-write or inverse path,
+while changed timing, dynamics, identity, and array order must still refuse.
+
+### 2026-09-12 — MIDI split fixtures equated absent keys with undefined (escaped via PRs #638 and #1874)
+
+PR #638 rebuilt split-right notes with absent optional fields materialized as own keys whose values
+were `undefined`; PR #1874 repeated the shape while adding two expression fields. Automerge's JSON
+boundary removed those keys, so the prepared undo guard could never match committed project truth.
+
+Blind spot: the producer specs used `toEqual` with explicit `undefined` properties, an oracle that
+also passes when those properties are absent.
+
+Probe that would have caught it: compare generated optional-field objects with `toStrictEqual` or
+explicit `Object.hasOwn` assertions before a serialized undo round trip. Require absent optionals to
+stay absent, defined zero values to survive, and changed values and array order to remain distinct.
+
+### 2026-09-12 — Replacement clones materialized absent clip fields (escaped via PR #2169)
+
+PR #2169 introduced the shared replacement-clip clone with unconditional `overrides` and
+`kneadState` properties. Inserting a captured clip that omitted those optionals therefore produced
+own keys set to `undefined`; the strict glue freshness guard then rejected the live replacement even
+though its serialized values were unchanged.
+
+Probe that would have caught it: clone snapshots with each optional absent, explicitly present as
+`undefined`, and populated. Use `toStrictEqual` plus `Object.hasOwn` to verify exact property presence,
+mutate every populated nested container to prove source isolation, then run the connected glue
+apply/undo/redo path and retain a changed-value conflict case.

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveClipsWithComping, getGainAtBeat } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
+    ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
     getCachedAudioBuffer,
@@ -302,14 +303,145 @@ describe('scheduleAudioClips', () => {
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = {
             tracks: [
-                { id: 'midi-track', kind: 'midi', muted: false, clips: [], freezeState: { status: 'active' } },
-                { id: 'muted-audio', kind: 'audio', muted: true, clips: [], freezeState: { status: 'active' } },
+                {
+                    id: 'midi-track',
+                    kind: 'midi',
+                    muted: false,
+                    sends: [],
+                    clips: [],
+                    freezeState: { status: 'active' },
+                },
+                {
+                    id: 'muted-audio',
+                    kind: 'audio',
+                    muted: true,
+                    sends: [],
+                    clips: [],
+                    freezeState: { status: 'active' },
+                },
             ],
         };
 
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
+    });
+
+    // ── Muted tracks with pre-fader sends (#3651) ───────────────────────────
+    //
+    // The cold-start scheduler used to skip every muted track, so its
+    // pre-fader (cue) sends had no source: the bus was silent live while the
+    // export — which schedules these tracks (FX-8, renderOffline.spec.ts) —
+    // played them. The live strip's mute node (`postFaderGain`) sits
+    // downstream of the pre-fader tap (`TrackNode.setMute`), so scheduling the
+    // source is what restores live/offline agreement: the direct path stays
+    // muted by the strip, not by the scheduler. Each case here observes the
+    // scheduled source itself, because a source that never starts puts no
+    // signal on the send whatever the node properties say. The mute/solo send
+    // topology those sources feed is pinned at signal level in
+    // liveOfflineNullTest.spec.ts (MUTED_SOURCE / SOLO_GATED_SOURCE fixtures).
+    describe('muted tracks with pre-fader sends (#3651)', () => {
+        const busTrack = {
+            id: 'reverb-bus',
+            kind: 'bus',
+            muted: false,
+            sends: [],
+            clips: [],
+            freezeState: { status: 'active' },
+        };
+
+        const mutedCueSource = (sends: unknown[]): unknown => ({
+            ...(makeAudioTrack([]) as Record<string, unknown>),
+            muted: true,
+            sends,
+        });
+
+        function scheduleCueFixture(): { fakeSource: ReturnType<typeof makeFakeSource> } {
+            const fakeSource = makeFakeSource();
+            mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+            mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+            // Only the cue source carries the clip, so every source this
+            // fixture starts belongs to the muted track.
+            mockResolveClips.mockImplementation(((trackId: string) =>
+                trackId === 'track-1' ? [makeAudioClip()] : []) as never);
+            return { fakeSource };
+        }
+
+        it('schedules the source of a muted track whose pre-fader send feeds an existing bus', () => {
+            const { fakeSource } = scheduleCueFixture();
+            trackStoreState.value = {
+                tracks: [busTrack, mutedCueSource([{ busId: 'reverb-bus', level: 0.7, preFader: true }])],
+            };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            // The source exists and sounds — the only thing that can put
+            // signal on the bus.
+            expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
+            expect(fakeSource.start).toHaveBeenCalledTimes(1);
+            // And it is wired into the muted track's own strip input, whose
+            // pre-fader tap feeds the send while the strip's mute node holds
+            // the direct path silent.
+            const strip = vi.mocked(ensureTrackStrip).mock.results[0]!.value as { gainNode: unknown };
+            const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+            const fadeGain = ctx.createGain.mock.results[0]!.value;
+            expect(fadeGain.connect).toHaveBeenCalledWith(strip.gainNode);
+        });
+
+        it('keeps a muted track whose only send is post-fader silent, because the mute node already kills it', () => {
+            const { fakeSource } = scheduleCueFixture();
+            trackStoreState.value = {
+                tracks: [busTrack, mutedCueSource([{ busId: 'reverb-bus', level: 0.7, preFader: false }])],
+            };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            expect(mockCreateBufferSource).not.toHaveBeenCalled();
+            expect(fakeSource.start).not.toHaveBeenCalled();
+        });
+
+        it('keeps a muted track whose pre-fader send targets a bus that no longer exists silent', () => {
+            const { fakeSource } = scheduleCueFixture();
+            trackStoreState.value = {
+                tracks: [mutedCueSource([{ busId: 'deleted-bus', level: 0.7, preFader: true }])],
+            };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            expect(mockCreateBufferSource).not.toHaveBeenCalled();
+            expect(fakeSource.start).not.toHaveBeenCalled();
+        });
+
+        // Solo keeps its stronger exclusion law in the engine: `setSoloGate`
+        // closes `preFaderTap` itself, upstream of every send tap, so a
+        // soloed-elsewhere track feeds nothing even though its sources run
+        // (signal-level pin: liveOfflineNullTest.spec.ts's SOLO_GATED_SOURCE).
+        // The scheduler never expresses solo on top of that — a second,
+        // scheduler-level exclusion would double up the gates the way FX-8's
+        // double mute did to the export.
+        it('stays solo-blind: a muted cue feeder is still scheduled while another track is soloed', () => {
+            const { fakeSource } = scheduleCueFixture();
+            trackStoreState.value = {
+                tracks: [
+                    busTrack,
+                    {
+                        id: 'lead',
+                        kind: 'audio',
+                        muted: false,
+                        soloed: true,
+                        sends: [],
+                        clips: [],
+                        freezeState: { status: 'active' },
+                    },
+                    mutedCueSource([{ busId: 'reverb-bus', level: 0.7, preFader: true }]),
+                ],
+            };
+
+            scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+            expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
+            expect(fakeSource.start).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('skips clips whose beat range falls entirely outside the scheduling window', () => {

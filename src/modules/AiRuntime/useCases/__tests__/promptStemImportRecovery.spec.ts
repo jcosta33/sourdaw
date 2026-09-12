@@ -71,6 +71,7 @@ vi.mock('#/modules/Command/useCases', async () => {
         compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
         configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
         executeAppAction: original.executeAppAction,
+        pushUndoEntry: original.pushUndoEntry,
         executeUserAppAction: vi.fn(),
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
@@ -144,7 +145,9 @@ vi.mock('#/modules/Command/useCases', async () => {
 });
 // discardPreparedStemImportResources imports releasePreviewAudioBuffer.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     audioEngine: vi.fn(),

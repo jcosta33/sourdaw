@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { beginConfirmedCommandExecution } from '../beginConfirmedCommandExecution';
+import { retainedRenderReceipts } from '../retainedRenderReceipts';
 
 import type { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
+import type { AgentRenderReceipt } from '#/utils/agentRenderReceipt';
 import type { AgentRunWorkLease } from '../../../models/AgentRun';
 import type { PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 
 type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
+type AdmitAgentRenderReceipt = typeof import('#/modules/Arrangement/useCases').admitAgentRenderReceipt;
+type AgentSectionRenderArtifact = ReturnType<
+    typeof import('#/modules/AudioRendering/useCases').getAgentSectionRenderArtifacts
+>[number];
 type FailApprovalPreflight =
     typeof import('../confirmationTerminalSettlement').confirmationTerminalSettlement.failApprovalPreflight;
 type InvalidateForProjectChange =
@@ -16,10 +22,12 @@ type GetPlannedActionAffectedIds = typeof import('../../getPlannedActionAffected
 type PendingProtectedTarget = PendingAppActionConfirmation['protectedUnchanged'][number];
 
 const mocks = vi.hoisted(() => ({
+    admitReceipt: vi.fn<AdmitAgentRenderReceipt>(),
     captureRevision: vi.fn(() => 'revision-1'),
     claimLease: vi.fn(),
     failPreflight: vi.fn<FailApprovalPreflight>(),
     getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
+    getArtifacts: vi.fn<() => Pick<AgentSectionRenderArtifact, 'jobId'>[]>(),
     getRun: vi.fn(),
     invalidate: vi.fn<InvalidateForProjectChange>(),
     parseBatch: vi.fn(),
@@ -36,6 +44,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeUserAppAction: vi.fn(),
     parseVersionedCommandBatchEnvelope: mocks.parseBatch,
 }));
+vi.mock('#/modules/Arrangement/useCases', () => ({ admitAgentRenderReceipt: mocks.admitReceipt }));
+vi.mock('#/modules/AudioRendering/useCases', () => ({ getAgentSectionRenderArtifacts: mocks.getArtifacts }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
@@ -102,6 +112,8 @@ const confirmation = {
     executedActions: [],
     status: 'proposed',
     error: null,
+    supersedes: null,
+    supersededBy: null,
     followUpProjectRevision: null,
     followUpStatus: null,
     createdAt: 0,
@@ -173,6 +185,36 @@ const protectedAction = {
 } satisfies PendingAppActionConfirmation['actions'][number];
 
 const protectedTarget = { id: 'track-protected', name: 'Protected track' } satisfies PendingProtectedTarget;
+
+const RENDER_PROVENANCE = {
+    jobId: 'job-verse',
+    sectionId: 'section-verse',
+    sectionName: 'Verse',
+    startBeat: 8,
+    endBeat: 16,
+    sampleRate: 44_100,
+    tailSeconds: 0,
+    sourceRevision: 'revision-1',
+};
+
+const gatedAction = {
+    type: 'bounceSelection',
+    payload: {
+        trackId: 'track-verse',
+        startBeat: RENDER_PROVENANCE.startBeat,
+        endBeat: RENDER_PROVENANCE.endBeat,
+    },
+} satisfies PendingAppActionConfirmation['actions'][number];
+
+const renderedReceipt = {
+    phase: 'rendered',
+    owner: { runId: 'run-1', workId: 'render-work', leaseId: 'render-lease', cancellationGeneration: 0 },
+    provenance: RENDER_PROVENANCE,
+    contentAddress: 'content-address-1',
+    frameCount: 4,
+    channelCount: 2,
+    renderedAt: 10,
+} satisfies AgentRenderReceipt;
 
 function execute(options: { priorVerifiedBatchReceipt?: CommandVerifiedBatchReceipt | null } = {}) {
     return beginConfirmedCommandExecution({
@@ -263,7 +305,9 @@ async function createVerifiedRecoveryReceipt(): Promise<CommandVerifiedBatchRece
 
 beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getRun.mockReturnValue({ runId: confirmation.runId });
+    mocks.admitReceipt.mockReturnValue({ status: 'admitted', action: gatedAction });
+    mocks.getArtifacts.mockReturnValue([{ jobId: RENDER_PROVENANCE.jobId }]);
+    mocks.getRun.mockReturnValue({ runId: confirmation.runId, cancellation: { generation: 0 } });
     mocks.parseBatch.mockReturnValue(parsedBatch);
     mocks.revisionMatches.mockImplementation((revision) => revision === 'revision-1');
     mocks.reserveBudget.mockReturnValue({ status: 'reserved', estimates: [{ category: 'maxCommands', amount: 1 }] });
@@ -637,5 +681,76 @@ describe('beginConfirmedCommandExecution', () => {
             pendingActionConfirmationStatus: 'accepted',
             content: 'Confirming:\n\n- Add an effect',
         });
+    });
+});
+
+describe('render receipt admission', () => {
+    const rejectionPrefix = `Rendered section ${RENDER_PROVENANCE.jobId} no longer admits bounceSelection`;
+
+    const gatedConfirmation = {
+        ...confirmation,
+        actions: [gatedAction],
+        approvalSnapshot: { ...confirmation.approvalSnapshot, actions: [gatedAction] },
+    } satisfies PendingAppActionConfirmation;
+
+    function beginGatedExecution(priorVerifiedBatchReceipt: CommandVerifiedBatchReceipt | null = null) {
+        return beginConfirmedCommandExecution({
+            confirmation: gatedConfirmation,
+            priorVerifiedBatchReceipt,
+            recoveringPendingEffects: false,
+        });
+    }
+
+    afterEach(() => {
+        retainedRenderReceipts.releaseRun(gatedConfirmation.runId);
+    });
+
+    it('settles a retained receipt the live revision has moved past as invalidated, keeping the adapter reason as detail', async () => {
+        retainedRenderReceipts.retain(gatedConfirmation.runId, renderedReceipt);
+        mocks.admitReceipt.mockReturnValue({ status: 'rejected', reason: 'stale-revision' });
+
+        const result = beginGatedExecution();
+
+        expect(result.status).toBe('settled');
+        if (result.status !== 'settled') {
+            throw new Error('Expected the stale render receipt to settle.');
+        }
+        await result.result;
+        expect(mocks.invalidate).toHaveBeenCalledWith(gatedConfirmation, `${rejectionPrefix} (stale-revision)`);
+        expect(mocks.failPreflight).not.toHaveBeenCalled();
+        expect(mocks.reserveBudget).not.toHaveBeenCalled();
+        expect(mocks.claimLease).not.toHaveBeenCalled();
+    });
+
+    it('settles a retained receipt whose artifact shape differs as an authorization preflight failure', async () => {
+        retainedRenderReceipts.retain(gatedConfirmation.runId, renderedReceipt);
+        mocks.admitReceipt.mockReturnValue({ status: 'rejected', reason: 'artifact-shape-mismatch' });
+
+        await expectAuthorizationPreflightFailure(gatedConfirmation, `${rejectionPrefix} (artifact-shape-mismatch)`);
+
+        expect(mocks.invalidate).not.toHaveBeenCalled();
+    });
+
+    it('releases a retained receipt whose rendered artifact is gone and leaves the mutation ordinary', () => {
+        retainedRenderReceipts.retain(gatedConfirmation.runId, renderedReceipt);
+        mocks.getArtifacts.mockReturnValue([]);
+
+        const result = beginGatedExecution();
+
+        expect(result).toMatchObject({ status: 'ready' });
+        expect(retainedRenderReceipts.getRetained(gatedConfirmation.runId)).toEqual([]);
+        expect(mocks.admitReceipt).not.toHaveBeenCalled();
+    });
+
+    it('never consults the adapter when a prior verified batch receipt already carries this work', async () => {
+        retainedRenderReceipts.retain(gatedConfirmation.runId, renderedReceipt);
+        mocks.admitReceipt.mockReturnValue({ status: 'rejected', reason: 'stale-revision' });
+
+        const result = beginGatedExecution(await createVerifiedRecoveryReceipt());
+
+        expect(result).toMatchObject({ status: 'ready' });
+        expect(mocks.admitReceipt).not.toHaveBeenCalled();
+        expect(mocks.invalidate).not.toHaveBeenCalled();
+        expect(mocks.failPreflight).not.toHaveBeenCalled();
     });
 });
