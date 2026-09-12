@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_837563b2c921d3::t_71c2d2e5e8f2ac 305-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7e11611d391db6e83793d7147e4f3a67ce328730",
+  "prompts": {},
+  "sessions": {
+    "s_837563b2c921d3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0954c-854d-7882-9e43-601f8adb9f7c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
