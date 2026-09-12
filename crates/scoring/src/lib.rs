@@ -1315,4 +1315,36 @@ mod no_alloc_tests {
             }
         });
     }
+
+    #[test]
+    fn process_does_not_allocate_in_steady_state_bass_96khz() {
+        let mut engine = ScoringEngine::new(96000.0);
+        engine.set_param("instrument", 1.0); // bass 4-string
+        engine.set_param("poly", 1.0);
+
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        let mut n = 0usize;
+        for _ in 0..1500 {
+            for i in 0..128 {
+                let s = (TAU * 41.20 * n as f32 / 96000.0).sin() * 0.8;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            engine.process(&mut left, &mut right);
+        }
+
+        assert_no_alloc(|| {
+            for _ in 0..64 {
+                for i in 0..128 {
+                    let s = (TAU * 41.20 * n as f32 / 96000.0).sin() * 0.8;
+                    left[i] = s;
+                    right[i] = s;
+                    n += 1;
+                }
+                engine.process(&mut left, &mut right);
+            }
+        });
+    }
 }
