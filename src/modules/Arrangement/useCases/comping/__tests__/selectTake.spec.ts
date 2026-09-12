@@ -14,6 +14,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -71,6 +72,14 @@ function getLane(trackId: string): TakeLane {
 
 function selectedTakeIdOf(trackId: string): string | null {
     return getLane(trackId).takes.find((take) => take.selected)?.id ?? null;
+}
+
+function rawTakeLanes(): { lanes: TakeLane[] } {
+    const value = getCrdtDoc<{ takeLanes?: { lanes: TakeLane[] } }>('root')?.takeLanes;
+    if (!value) {
+        throw new Error('Expected raw take-lane authority');
+    }
+    return value;
 }
 
 function take0IdOf(lane: TakeLane): string {
@@ -138,6 +147,9 @@ describe('selectTake undo preservation (#4072)', () => {
         await selectTake('track-1', takeB);
         expect(selectedTakeIdOf('track-1')).toBe(takeB);
         expect(selectedTakeIdOf('track-2')).toBeNull();
+        expect(rawTakeLanes().lanes.find((lane) => lane.trackId === 'track-1')?.takes).toEqual(
+            getLane('track-1').takes
+        );
 
         editOtherLane(other);
 
@@ -152,6 +164,7 @@ describe('selectTake undo preservation (#4072)', () => {
         expect(selectedTakeIdOf('track-1')).toBe(takeB);
         expect(getLane('track-2').takes[0]!.name).toBe('Renamed after selection');
         expect(getLane('track-2').activeCompRegions).toHaveLength(1);
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
     });
 
     it('records one undo entry labeled Select take with a self-inverse', async () => {

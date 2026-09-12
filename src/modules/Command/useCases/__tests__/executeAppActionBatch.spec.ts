@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -1124,6 +1125,33 @@ describe('executeAppActionBatch', () => {
         expect(execute).toHaveBeenCalledOnce();
     });
 
+    it.each([
+        [
+            'synchronous',
+            () => {
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+        [
+            'awaited',
+            async () => {
+                await Promise.resolve();
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+    ] as const)('classifies a %s storage conflict as conflicted without history', async (_kind, execute) => {
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute, requiresAbortCompensation: false }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toEqual({ status: 'conflicted', reason: 'storage conflict', actions: [] });
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+    });
+
     it('reports compensation failure when an inverse action produces no write', async () => {
         const runtimeEffects = { editingTool: 'select' };
         registerHandlerMap({
@@ -1199,6 +1227,49 @@ describe('executeAppActionBatch', () => {
         expect(result).toEqual({
             status: 'failed',
             reason: 'Action conflicts with current project state: setSnapValue; runtime compensation failed: Runtime compensation did not apply for setEditingTool',
+            actions: [],
+        });
+        expect(runtimeEffects.editingTool).toBe('marquee');
+    });
+
+    it('reports failed rather than conflicted when a storage-conflict compensation does not restore runtime', async () => {
+        const runtimeEffects = { editingTool: 'select' };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    if (action.payload.tool === 'select') {
+                        return { status: 'no-write' };
+                    }
+                    runtimeEffects.editingTool = action.payload.tool;
+                    return undefined;
+                },
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: async (action) => {
+                    if (action.payload.value === 0.5) {
+                        await Promise.resolve();
+                        throw new AutomergeStorageWriteConflictError('storage conflict');
+                    }
+                },
+                describe: () => ({
+                    label: 'Set snap value',
+                    inverseAction: { type: 'setSnapValue', payload: { value: 1 } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            { type: 'setSnapValue', payload: { value: 0.5 } },
+        ]);
+
+        expect(result).toEqual({
+            status: 'failed',
+            reason: 'storage conflict; runtime compensation failed: Runtime compensation did not apply for setEditingTool',
             actions: [],
         });
         expect(runtimeEffects.editingTool).toBe('marquee');

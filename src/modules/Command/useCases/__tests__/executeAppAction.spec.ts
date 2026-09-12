@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vite
 
 import { type Logger } from '#/infra/logger/types';
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -199,6 +200,30 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'synchronous',
+            () => {
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+        [
+            'awaited',
+            async () => {
+                await Promise.resolve();
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+    ] as const)('classifies a %s handler storage conflict without recording history', async (_kind, execute) => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({ [action.type]: create_mock_handler<SetEditingToolAction>({ execute }) });
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
     });
 
     it('captures and rechecks the handler-materialized single-action production-lock footprint', async () => {

@@ -209,6 +209,29 @@ describe('setCompRegion command integration', () => {
         expect(takeLaneStore.value?.lanes[1]).toEqual(otherLane);
     });
 
+    it('settles an immediately added take before applying its comp region command', async () => {
+        addTake('track-1', 'clip-new', 'New take', 0, 8);
+        const newTake = takeLaneStore.value?.lanes[0]?.takes.find((take) => take.clipId === 'clip-new');
+        if (!newTake) {
+            throw new Error('Expected the newly added take');
+        }
+        clearUndoHistory();
+
+        setCompRegion('track-1', { startBeat: 2, endBeat: 4, takeId: newTake.id });
+
+        await vi.waitFor(() => {
+            expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+        });
+        const rawLanes = getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes;
+        expect(rawLanes?.[0]?.takes.some((take) => take.id === newTake.id)).toBe(true);
+        expect(rawLanes?.[0]?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: newTake.id },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ]);
+        expect(activeRegions()).toEqual(rawLanes?.[0]?.activeCompRegions);
+    });
+
     it('does not write or create history when the requested selection is already exact', async () => {
         takeLaneStore.set({
             lanes: [

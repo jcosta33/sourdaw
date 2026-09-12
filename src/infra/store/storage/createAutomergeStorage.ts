@@ -61,6 +61,8 @@ type AutomergeStoragePort = {
      * `JSON.stringify` compare entirely (audit CC-1).
      */
     getDocHeads?(docId: AutomergeStorageDocId): readonly string[] | undefined;
+    /** Whether the repository's active snapshot fence refuses this exact mutation identity. */
+    isMutationBlockedBySnapshotTransaction?(docId: AutomergeStorageDocId, snapshotTransaction?: object): boolean;
     /**
      * Apply `changeFn` to the document at `docId`.
      *
@@ -326,6 +328,13 @@ export class AutomergeStorageWriteConflictError extends AutomergeStorageTransact
     constructor(message: string) {
         super(message);
         this.name = 'AutomergeStorageWriteConflictError';
+    }
+}
+
+export class AutomergeStorageSnapshotTransactionBlockedError extends AutomergeStorageWriteConflictError {
+    constructor(docId: AutomergeStorageDocId) {
+        super(`Automerge storage write to ${docId} is blocked by the active snapshot transaction`);
+        this.name = 'AutomergeStorageSnapshotTransactionBlockedError';
     }
 }
 
@@ -879,13 +888,17 @@ function flushMatchingAutomergeStorageWrites(
     const groups = new Map<string, Map<object, ClaimedAutomergeStorageWrite[]>>();
     const claims: ClaimedAutomergeStorageWrite[] = [];
 
-    for (const pending of [...pendingAutomergeStorageWrites]) {
-        if (!matches(pending)) {
-            continue;
+    const selectedWrites = [...pendingAutomergeStorageWrites].filter(
+        (pending) => matches(pending) && !openAutomergeStorageCommitOwners.has(pending.commitOwner)
+    );
+    const port = getAutomergeStoragePort();
+    for (const pending of selectedWrites) {
+        if (port?.isMutationBlockedBySnapshotTransaction?.(pending.docId, pending.snapshotTransaction)) {
+            throw new AutomergeStorageSnapshotTransactionBlockedError(pending.docId);
         }
-        if (openAutomergeStorageCommitOwners.has(pending.commitOwner)) {
-            continue;
-        }
+    }
+
+    for (const pending of selectedWrites) {
         const claim = pending.claim();
         if (!claim) {
             continue;
@@ -1170,6 +1183,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         rafId: number | null;
         revision: number;
         scoped: boolean;
+        snapshotWaitToken: object | null;
         value: TData | null;
         write: PendingAutomergeStorageWrite;
         claimedExecution: ClaimedAutomergeStorageWrite | null;
@@ -1522,7 +1536,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         // Scoped pendings are exempt: transaction commit order is deliberate
         // terminal order (compensating transactions legitimately commit older
         // values last).
-        if (!pending.scoped && frozen.revision < committedSetRevision) {
+        if (!pending.scoped && !writeMetadata && frozen.revision < committedSetRevision) {
             return { status: 'abandon' };
         }
 
@@ -1573,6 +1587,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         pendingAutomergeStorageWrites.delete(pending.write);
         pendingWritesByOwner.delete(pending.write.commitOwner);
         pending.claimedExecution = null;
+        pending.snapshotWaitToken = null;
         if (unscopedCommitOwner === pending.write.commitOwner) {
             unscopedCommitOwner = undefined;
         }
@@ -1899,21 +1914,117 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             rafId: null,
             revision: cachedRevision,
             scoped: context.scoped,
+            snapshotWaitToken: null,
             value: cachedValue,
             write,
             claimedExecution: null,
         };
         pendingWritesByOwner.set(context.commitOwner, pending);
         pendingAutomergeStorageWrites.add(write);
+        schedulePendingWrite(pending);
+        return pending;
+    };
+
+    const waitForSnapshotAndRetry = (pending: AdapterPendingWrite): void => {
+        if (pending.snapshotWaitToken !== null) {
+            return;
+        }
+        const token = Object.freeze({});
+        const generation = projectionGeneration;
+        pending.snapshotWaitToken = token;
+        void waitForAutomergeSnapshotTransaction()
+            .then(() => {
+                if (
+                    projectionGeneration !== generation ||
+                    pending.snapshotWaitToken !== token ||
+                    pendingWritesByOwner.get(pending.write.commitOwner) !== pending
+                ) {
+                    return;
+                }
+                pending.snapshotWaitToken = null;
+                schedulePendingWrite(pending);
+            })
+            .catch((error: unknown) => {
+                if (pending.snapshotWaitToken === token) {
+                    pending.snapshotWaitToken = null;
+                }
+                logger.warn('[AutomergeStorage] Snapshot wait failed; deferred write remains pending:', error);
+            });
+    };
+
+    const schedulePendingWrite = (pending: AdapterPendingWrite): void => {
+        if (
+            pending.rafId !== null ||
+            pending.snapshotWaitToken !== null ||
+            pendingWritesByOwner.get(pending.write.commitOwner) !== pending
+        ) {
+            return;
+        }
         pending.rafId = requestAnimationFrame(() => {
             pending.rafId = null;
             try {
-                flushAutomergeStorageWriteOwner(write);
+                flushAutomergeStorageWriteOwner(pending.write);
             } catch (error) {
+                if (error instanceof AutomergeStorageSnapshotTransactionBlockedError) {
+                    waitForSnapshotAndRetry(pending);
+                    return;
+                }
                 logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
             }
         });
-        return pending;
+    };
+
+    const settleMetadataPredecessor = (): void => {
+        const commitOwner = unscopedCommitOwner;
+        if (!commitOwner) {
+            return;
+        }
+        const pending = pendingWritesByOwner.get(commitOwner);
+        if (!pending) {
+            return;
+        }
+        try {
+            flushAutomergeStorageWriteOwner(pending.write);
+        } catch (error) {
+            if (
+                error instanceof AutomergeStorageFlushError &&
+                error.failure instanceof AutomergeStorageWriteConflictError
+            ) {
+                throw error.failure;
+            }
+            throw error;
+        }
+    };
+
+    const prepareScopedValueAfterPredecessor = (
+        context: AutomergeStorageWriteContext,
+        intendedValue: TData | null,
+        intentBase: TData | null,
+        metadata: TWriteMetadata | null
+    ): TData | null => {
+        if (!context.scoped || !writeMetadata || !rebasePending) {
+            return intendedValue;
+        }
+        if (pendingWritesByOwner.has(context.commitOwner)) {
+            return intendedValue;
+        }
+        const predecessorOwner = unscopedCommitOwner;
+        if (!predecessorOwner || !pendingWritesByOwner.has(predecessorOwner)) {
+            return intendedValue;
+        }
+        settleMetadataPredecessor();
+        if (cachedValue === null) {
+            return intendedValue;
+        }
+        return guardInboundValue(
+            rebasePending({
+                baseValue: intentBase,
+                pendingValue: intendedValue,
+                hydratedValue: cachedValue,
+                metadata,
+            }),
+            'visible'
+        );
     };
 
     /**
@@ -2006,16 +2117,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 setPreviewValue(activeAutomergeStoragePreview, value);
                 return;
             }
-            const capturedMetadata = captureWriteMetadata(cachedValue, value, 'set');
             const context = getWriteContext();
+            const intentBase = cachedValue;
+            const capturedMetadata = captureWriteMetadata(intentBase, value, 'set');
+            const scopedValue = prepareScopedValueAfterPredecessor(context, value, intentBase, capturedMetadata);
             const existingPending = pendingWritesByOwner.get(context.commitOwner);
             const pending = existingPending ?? createPendingWrite(context, capturedMetadata);
             if (existingPending) {
                 appendWriteMetadata(pending, capturedMetadata);
             }
-            cachedValue = value;
+            cachedValue = scopedValue;
             cachedRevision = ++nextRevision;
-            pending.value = value;
+            pending.value = scopedValue;
             pending.revision = cachedRevision;
         },
 
@@ -2024,16 +2137,18 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 setPreviewValue(activeAutomergeStoragePreview, null);
                 return;
             }
-            const capturedMetadata = captureWriteMetadata(cachedValue, null, 'clear');
             const context = getWriteContext();
+            const intentBase = cachedValue;
+            const capturedMetadata = captureWriteMetadata(intentBase, null, 'clear');
+            const scopedValue = prepareScopedValueAfterPredecessor(context, null, intentBase, capturedMetadata);
             const existingPending = pendingWritesByOwner.get(context.commitOwner);
             const pending = existingPending ?? createPendingWrite(context, capturedMetadata);
             if (existingPending) {
                 appendWriteMetadata(pending, capturedMetadata);
             }
-            cachedValue = null;
+            cachedValue = scopedValue;
             cachedRevision = ++nextRevision;
-            pending.value = null;
+            pending.value = scopedValue;
             pending.revision = cachedRevision;
         },
 

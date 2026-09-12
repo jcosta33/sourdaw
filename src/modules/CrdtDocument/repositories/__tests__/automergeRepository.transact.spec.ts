@@ -8,7 +8,13 @@ import { init, change, load, save, merge, getChanges, getHeads, view } from '@au
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import {
+    AutomergeStorageSnapshotTransactionBlockedError,
+    configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+    createAutomergeStorage,
+    flushAutomergeStorageWrites,
     getCurrentAutomergeStorageMutationOwner,
+    resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
@@ -145,6 +151,9 @@ describe('transactSnapshot - explicit mutation ownership', () => {
         });
         await started;
 
+        expect(automergeRepository.isMutationBlockedBySnapshotTransaction('root')).toBe(true);
+        expect(automergeRepository.isMutationBlockedBySnapshotTransaction('branch_feature')).toBe(false);
+
         expect(() =>
             automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
                 document.overlap = true;
@@ -158,6 +167,160 @@ describe('transactSnapshot - explicit mutation ownership', () => {
 
         releaseTransaction();
         await pending;
+        expect(automergeRepository.isMutationBlockedBySnapshotTransaction('root')).toBe(false);
+    });
+
+    it.each(['reserved', 'dirtied'] as const)(
+        'refuses an independently owned pending write while the document is %s and excludes it from restoration',
+        async (fenceKind) => {
+            automergeRepository.createProject('p');
+            automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+                document.state = { count: 0 };
+            });
+            const frames: FrameRequestCallback[] = [];
+            vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+                frames.push(callback);
+                return frames.length;
+            });
+            vi.stubGlobal('cancelAnimationFrame', vi.fn());
+            configureAutomergeStoragePort({
+                getDoc: (docId) => automergeRepository.getDoc<Record<string, unknown>>(docId),
+                getDocHeads: (docId) => automergeRepository.getHeads(docId),
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => automergeRepository.hasDoc(docId),
+                isMutationBlockedBySnapshotTransaction: (docId, snapshotTransaction) =>
+                    automergeRepository.isMutationBlockedBySnapshotTransaction(docId, snapshotTransaction),
+                mutateDoc: ({ docId, changeFn, message, snapshotTransaction }) => {
+                    automergeRepository.changeDoc(docId, changeFn, message, snapshotTransaction);
+                },
+                waitForSnapshotTransaction: (snapshotTransaction) =>
+                    automergeRepository.waitForSnapshotTransaction(snapshotTransaction),
+            });
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+            expect(storage.hydrate?.()).toBe(true);
+            storage.set({ count: 1 });
+            let markStarted!: () => void;
+            let releaseSnapshot!: () => void;
+            const started = new Promise<void>((resolve) => {
+                markStarted = resolve;
+            });
+            const release = new Promise<void>((resolve) => {
+                releaseSnapshot = resolve;
+            });
+            const mutationEpochBeforeSnapshot = automergeRepository.getMutationEpoch();
+            const snapshot = automergeRepository.transactSnapshot(async (snapshotTransaction) => {
+                if (fenceKind === 'reserved') {
+                    automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, ['root']);
+                } else {
+                    automergeRepository.changeDoc(
+                        'root',
+                        (document: Record<string, unknown>) => {
+                            document.snapshotOwned = true;
+                        },
+                        undefined,
+                        snapshotTransaction
+                    );
+                }
+                markStarted();
+                await release;
+            });
+            await started;
+
+            expect(() => storage.flushPendingUnscopedWrite()).toThrow(AutomergeStorageSnapshotTransactionBlockedError);
+            expect(storage.get()).toEqual({ count: 1 });
+            expect(countPendingAutomergeStorageWrites()).toBe(1);
+            expect(automergeRepository.getMutationEpoch()).toBe(
+                mutationEpochBeforeSnapshot + (fenceKind === 'dirtied' ? 1 : 0)
+            );
+
+            releaseSnapshot();
+            const snapshots = await snapshot;
+            storage.flushPendingUnscopedWrite();
+            expect(automergeRepository.getDoc<Record<string, { count: number }>>('root')?.state).toEqual({ count: 1 });
+
+            if (fenceKind === 'reserved') {
+                expect(snapshots.before.size).toBe(0);
+                expect(snapshots.after.size).toBe(0);
+            } else {
+                const expectedSnapshotState = { count: 0 };
+                expect(loadPresentSnapshot(snapshots.before, 'root').state).toEqual(expectedSnapshotState);
+                expect(loadPresentSnapshot(snapshots.after, 'root').state).toEqual(expectedSnapshotState);
+                automergeRepository.restoreSnapshot(snapshots.before);
+                expect(automergeRepository.getDoc<Record<string, { count: number }>>('root')?.state).toEqual(
+                    expectedSnapshotState
+                );
+                automergeRepository.restoreSnapshot(snapshots.after);
+                expect(automergeRepository.getDoc<Record<string, { count: number }>>('root')?.state).toEqual(
+                    expectedSnapshotState
+                );
+            }
+
+            resetAutomergeStorageProjections('root');
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+            vi.unstubAllGlobals();
+        }
+    );
+
+    it('captures a scoped write after independently settling its predecessor outside the snapshot', async () => {
+        automergeRepository.createProject('p');
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.state = { count: 0 };
+        });
+        const mutations: Array<{ owner: object | undefined; snapshotTransaction: object | undefined }> = [];
+        configureAutomergeStoragePort({
+            getDoc: (docId) => automergeRepository.getDoc<Record<string, unknown>>(docId),
+            getDocHeads: (docId) => automergeRepository.getHeads(docId),
+            getSemanticMessage: () => undefined,
+            hasDoc: (docId) => automergeRepository.hasDoc(docId),
+            isMutationBlockedBySnapshotTransaction: (docId, snapshotTransaction) =>
+                automergeRepository.isMutationBlockedBySnapshotTransaction(docId, snapshotTransaction),
+            mutateDoc: ({ docId, changeFn, message, snapshotTransaction }) => {
+                mutations.push({ owner: getCurrentAutomergeStorageMutationOwner(), snapshotTransaction });
+                automergeRepository.changeDoc(docId, changeFn, message, snapshotTransaction);
+            },
+            waitForSnapshotTransaction: (snapshotTransaction) =>
+                automergeRepository.waitForSnapshotTransaction(snapshotTransaction),
+        });
+        const storage = createAutomergeStorage<{ count: number }, number>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue, nextValue }) =>
+                    beforeValue && nextValue ? nextValue.count - beforeValue.count : null,
+                reduce: ({ current, captured }) => (current ?? 0) + captured,
+            },
+            rebasePending: ({ hydratedValue, metadata }) => ({ count: hydratedValue.count + (metadata ?? 0) }),
+            mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile, value }) => {
+                reconcile(
+                    authorityValue && metadata !== null ? { count: authorityValue.count + metadata } : value,
+                    authorityValue
+                );
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        storage.set({ count: 1 });
+        let snapshotHandle: object | undefined;
+
+        const snapshots = await automergeRepository.transactSnapshot((transaction) => {
+            snapshotHandle = transaction;
+            const scoped = runWithAutomergeStorageTransaction(transaction, () => storage.set({ count: 2 }));
+            scoped.commit();
+            return Promise.resolve();
+        });
+
+        expect(mutations).toEqual([
+            { owner: undefined, snapshotTransaction: undefined },
+            { owner: expect.any(Object), snapshotTransaction: snapshotHandle },
+        ]);
+        expect(loadPresentSnapshot(snapshots.before, 'root').state).toEqual({ count: 1 });
+        expect(loadPresentSnapshot(snapshots.after, 'root').state).toEqual({ count: 2 });
+        automergeRepository.restoreSnapshot(snapshots.before);
+        expect(automergeRepository.getDoc<Record<string, { count: number }>>('root')?.state).toEqual({ count: 1 });
+        automergeRepository.restoreSnapshot(snapshots.after);
+        expect(automergeRepository.getDoc<Record<string, { count: number }>>('root')?.state).toEqual({ count: 2 });
+
+        resetAutomergeStorageProjections('root');
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
     });
 
     it('excludes an unrelated mutation while an owned transaction is paused', async () => {

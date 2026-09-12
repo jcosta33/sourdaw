@@ -212,6 +212,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                if (error instanceof AutomergeStorageWriteConflictError) {
+                    throw new AppActionConflictError(action.type);
+                }
                 throw error;
             }
             storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
@@ -236,6 +239,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                if (error instanceof AutomergeStorageWriteConflictError) {
+                    throw new AppActionConflictError(action.type);
+                }
                 throw error;
             }
 

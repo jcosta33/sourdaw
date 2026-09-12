@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
+    AutomergeStorageWriteConflictError,
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
     runWithAutomergeStorageTransaction,
@@ -949,6 +950,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         cause: storageTransaction.error,
                     })
                 );
+                if (storageTransaction.error instanceof AutomergeStorageWriteConflictError) {
+                    return { status: 'conflicted', reason, actions: [] };
+                }
                 return { status: 'failed', reason, actions: [] };
             }
 
@@ -966,7 +970,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (error instanceof AppActionBatchCancelledError && !compensationFailure && !rollbackFailure) {
                     return { status: 'cancelled', reason: error.message, actions: [] };
                 }
-                if (error instanceof AppActionConflictError && !compensationFailure && !rollbackFailure) {
+                if (
+                    (error instanceof AppActionConflictError || error instanceof AutomergeStorageWriteConflictError) &&
+                    !compensationFailure &&
+                    !rollbackFailure
+                ) {
                     return { status: 'conflicted', reason, actions: [] };
                 }
                 if (error instanceof AppActionBatchApprovalError && !compensationFailure && !rollbackFailure) {
