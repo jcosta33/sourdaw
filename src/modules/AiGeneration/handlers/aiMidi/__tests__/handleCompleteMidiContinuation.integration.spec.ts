@@ -147,7 +147,7 @@ describe('forward MIDI completion extends the playable phrase (#3763)', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
-        setTrackStoreState({ ...defaultTrackState });
+        setTrackStoreState(structuredClone(defaultTrackState));
         markerStore.set({ markers: [], sections: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         unsubscribeFromNotifications();
@@ -158,18 +158,18 @@ describe('forward MIDI completion extends the playable phrase (#3763)', () => {
     });
 
     async function createSourceClip(clip: Partial<Clip> & { id: string; endBeat: number }): Promise<Clip> {
-        await executeAppAction({
-            type: 'addClip',
-            payload: {
-                id: clip.id,
-                trackId: 't1',
-                startBeat: clip.startBeat ?? 0,
-                endBeat: clip.endBeat,
-                name: clip.name ?? 'Lead',
-                type: 'midi',
-                ...(clip.midiOffsetBeats !== undefined ? { midiOffsetBeats: clip.midiOffsetBeats } : {}),
-            },
-        });
+        const payload = {
+            id: clip.id,
+            trackId: 't1',
+            startBeat: clip.startBeat ?? 0,
+            endBeat: clip.endBeat,
+            name: clip.name ?? 'Lead',
+            type: 'midi' as const,
+        };
+        if (clip.midiOffsetBeats !== undefined) {
+            payload.midiOffsetBeats = clip.midiOffsetBeats;
+        }
+        await executeAppAction({ type: 'addClip', payload });
         const source = clipByName(clip.name ?? 'Lead');
         if (!source) {
             throw new Error('Expected the source clip to exist');

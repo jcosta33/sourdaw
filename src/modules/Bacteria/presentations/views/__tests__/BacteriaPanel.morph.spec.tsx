@@ -46,7 +46,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 function makeState(): BacteriaState {
-    const patch: BacteriaPatch = { ...DEFAULT_PATCH, bands: DEFAULT_PATCH.bands.map((band) => ({ ...band })) };
+    const patch: BacteriaPatch = { ...DEFAULT_PATCH, bands: structuredClone(DEFAULT_PATCH.bands) };
     return {
         patch,
         inputDb: -100,

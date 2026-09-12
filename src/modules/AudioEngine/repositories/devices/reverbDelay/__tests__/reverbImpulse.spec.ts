@@ -98,11 +98,17 @@ function shortBurst(): Float32Array {
 function deviceWithShape(shape: Partial<ReverbImpulseShape>): ReturnType<typeof createReverb> {
     const ctx = makeContext();
     const dn = createReverb(asBaseAudioContext(ctx));
-    applyReverbParams(dn, {
-        ...(shape.size !== undefined ? { 'rev-size': shape.size } : {}),
-        ...(shape.decay !== undefined ? { 'rev-decay': shape.decay } : {}),
-        ...(shape.damping !== undefined ? { 'rev-damping': shape.damping } : {}),
-    });
+    const params: Record<string, number> = {};
+    if (shape.size !== undefined) {
+        params['rev-size'] = shape.size;
+    }
+    if (shape.decay !== undefined) {
+        params['rev-decay'] = shape.decay;
+    }
+    if (shape.damping !== undefined) {
+        params['rev-damping'] = shape.damping;
+    }
+    applyReverbParams(dn, params);
     return dn;
 }
 

@@ -18,7 +18,6 @@ const { creators } = vi.hoisted(() => {
             Promise.resolve(nodeMock)
         ),
         createGlutenNode: vi.fn(() => Promise.resolve(nodeMock)),
-        createCrustNode: vi.fn(() => Promise.resolve(nodeMock)),
         createBacteriaNode: vi.fn(() => Promise.resolve(nodeMock)),
         createGrinderNode: vi.fn(() => Promise.resolve(nodeMock)),
         createProofNode: vi.fn(() => Promise.resolve(nodeMock)),

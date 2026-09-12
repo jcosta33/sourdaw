@@ -91,7 +91,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),
     activateExternalPlugin: mocks.activateExternalPlugin,
-    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: () => [],

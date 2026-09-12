@@ -122,20 +122,24 @@ function projectedEvents(clip: Clip): { startBeat: number; duration: number; pit
 }
 
 async function createSourceClip(clip: Partial<Clip> & { id: string; endBeat: number; name: string }): Promise<void> {
-    await executeAppAction({
-        type: 'addClip',
-        payload: {
-            id: clip.id,
-            trackId: 't1',
-            startBeat: clip.startBeat ?? 0,
-            endBeat: clip.endBeat,
-            name: clip.name,
-            type: 'midi',
-            ...(clip.midiOffsetBeats !== undefined ? { midiOffsetBeats: clip.midiOffsetBeats } : {}),
-            ...(clip.loopEnabled !== undefined ? { loopEnabled: clip.loopEnabled } : {}),
-            ...(clip.loopLength !== undefined ? { loopLength: clip.loopLength } : {}),
-        },
-    });
+    const payload = {
+        id: clip.id,
+        trackId: 't1',
+        startBeat: clip.startBeat ?? 0,
+        endBeat: clip.endBeat,
+        name: clip.name,
+        type: 'midi' as const,
+    };
+    if (clip.midiOffsetBeats !== undefined) {
+        payload.midiOffsetBeats = clip.midiOffsetBeats;
+    }
+    if (clip.loopEnabled !== undefined) {
+        payload.loopEnabled = clip.loopEnabled;
+    }
+    if (clip.loopLength !== undefined) {
+        payload.loopLength = clip.loopLength;
+    }
+    await executeAppAction({ type: 'addClip', payload });
 }
 
 async function addSourceNotes(clipId: string, notes: ReadonlyArray<PromptNote>): Promise<void> {
@@ -192,7 +196,7 @@ describe('generateMidiVariations rebases drafts to their own origin (#3764)', ()
     afterEach(() => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
-        setTrackStoreState({ ...defaultTrackState });
+        setTrackStoreState(structuredClone(defaultTrackState));
         markerStore.set({ markers: [], sections: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         unsubscribeFromNotifications();

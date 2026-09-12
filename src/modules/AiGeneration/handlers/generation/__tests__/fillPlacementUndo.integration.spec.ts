@@ -108,7 +108,7 @@ describe('fill generation placement, undo and redo (#3765)', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
-        setTrackStoreState({ ...defaultTrackState });
+        setTrackStoreState(structuredClone(defaultTrackState));
         markerStore.set({ markers: [], sections: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         unsubscribeFromNotifications();

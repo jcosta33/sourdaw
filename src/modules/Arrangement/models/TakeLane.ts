@@ -37,17 +37,20 @@ export function createTake(
     endBeat: number,
     sourceOffsetBeats?: number
 ): Take {
-    return {
+    const take: Take = {
         id: `take-${crypto.randomUUID()}`,
         clipId,
         name,
         startBeat,
         endBeat,
         selected: false,
-        // Kept off the object when absent so the sanitized store shape stays
-        // exactly what older projects persisted.
-        ...(sourceOffsetBeats === undefined ? {} : { sourceOffsetBeats }),
     };
+    // Kept off the object when absent so the sanitized store shape stays
+    // exactly what older projects persisted.
+    if (sourceOffsetBeats !== undefined) {
+        take.sourceOffsetBeats = sourceOffsetBeats;
+    }
+    return take;
 }
 
 export function createTakeLane(trackId: string): TakeLane {

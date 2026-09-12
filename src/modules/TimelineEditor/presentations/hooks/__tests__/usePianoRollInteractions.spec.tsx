@@ -869,13 +869,13 @@ describe('usePianoRollInteractions', () => {
              * the id and a right half starting at the beat.
              */
             const installNoteStore = (clipId: string, notes: Note[]): { current: Note[] } => {
-                const store: { current: Note[] } = { current: notes.map((note) => ({ ...note })) };
+                const store: { current: Note[] } = { current: structuredClone(notes) };
                 mocks.getNotesForClip.mockImplementation((queried: string) =>
-                    queried === clipId ? store.current.map((note) => ({ ...note })) : []
+                    queried === clipId ? structuredClone(store.current) : []
                 );
                 mocks.setNotesForClip.mockImplementation((queried: string, next: Note[]) => {
                     if (queried === clipId) {
-                        store.current = next.map((note) => ({ ...note }));
+                        store.current = structuredClone(next);
                     }
                 });
                 mocks.splitNoteAtBeat.mockImplementation((queried: string, ids: string[], beat: number) => {

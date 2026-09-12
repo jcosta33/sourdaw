@@ -85,15 +85,18 @@ function is_exact_take(value: unknown): value is Take {
 }
 
 function normalize_take(take: Take): Take {
-    return {
+    const sanitized: Take = {
         id: take.id,
         clipId: take.clipId,
         name: take.name,
         startBeat: take.startBeat,
         endBeat: take.endBeat,
         selected: take.selected,
-        ...(take.sourceOffsetBeats === undefined ? {} : { sourceOffsetBeats: take.sourceOffsetBeats }),
     };
+    if (take.sourceOffsetBeats !== undefined) {
+        sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
+    }
+    return sanitized;
 }
 
 function is_valid_comp_region(value: unknown): value is CompRegion {

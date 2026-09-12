@@ -30,12 +30,10 @@ function buildTransitionsPlan(): FillPlacementPlan | FillPlacementRefusal {
     );
 
     if (placeable.length === 0) {
-        return boundaryCount === 0
-            ? { message: 'No section boundaries found — add sections first', level: 'warning' }
-            : {
-                  message: 'Section boundaries fall before the project start — no fills were placed',
-                  level: 'warning',
-              };
+        if (boundaryCount === 0) {
+            return { message: 'No section boundaries found — add sections first', level: 'warning' };
+        }
+        return { message: 'Section boundaries fall before the project start — no fills were placed', level: 'warning' };
     }
 
     return {

@@ -314,15 +314,13 @@ describe('CCGenerator', () => {
         ): MidiEvent[] {
             const allOutput: MidiEvent[] = [];
             for (let start = 0; start < totalSamples; start += blockSizeSamples) {
-                const input: MidiEvent[] =
-                    noteOnAtSample !== null && noteOnAtSample >= start && noteOnAtSample < start + blockSizeSamples
-                        ? [
-                              {
-                                  timeSamples: noteOnAtSample,
-                                  kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
-                              },
-                          ]
-                        : [];
+                const input: MidiEvent[] = [];
+                if (noteOnAtSample !== null && noteOnAtSample >= start && noteOnAtSample < start + blockSizeSamples) {
+                    input.push({
+                        timeSamples: noteOnAtSample,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    });
+                }
                 gen.processMidi(input, allOutput, {
                     ...transport48k,
                     blockStartSamples: start,
@@ -335,14 +333,12 @@ describe('CCGenerator', () => {
         function ccEvents(output: readonly MidiEvent[]): Array<{ timeSamples: number; value: number }> {
             return output
                 .filter((event) => event.kind.type === 'cc')
-                .map((event) =>
-                    event.kind.type === 'cc'
-                        ? { timeSamples: event.timeSamples, value: event.kind.value }
-                        : {
-                              timeSamples: -1,
-                              value: -1,
-                          }
-                );
+                .map((event) => {
+                    if (event.kind.type === 'cc') {
+                        return { timeSamples: event.timeSamples, value: event.kind.value };
+                    }
+                    return { timeSamples: -1, value: -1 };
+                });
         }
 
         // The generator seeds its LCG with 0xdead (matching Arpeggiator), so its

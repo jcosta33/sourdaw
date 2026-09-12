@@ -165,7 +165,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     findSupportedPlugin: vi.fn(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
-    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },

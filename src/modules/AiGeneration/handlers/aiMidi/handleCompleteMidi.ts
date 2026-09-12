@@ -68,24 +68,31 @@ function createCompleteMidiRedoAction(input: {
                 kind: 'create-clip',
                 source: { trackId: input.source.trackId, clip: sourceClip, notes: input.sourceNotes },
                 targetTrackId: input.source.trackId,
-                clip: {
-                    id: input.generatedClipId,
-                    trackId: input.source.trackId,
-                    name:
-                        direction === 'backward'
-                            ? `${input.source.clip.name} (intro)`
-                            : `${input.source.clip.name} (continuation)`,
-                    startBeat:
-                        direction === 'backward'
-                            ? Math.max(0, input.source.clip.startBeat - bars * 4)
-                            : input.source.clip.endBeat,
-                    endBeat:
-                        direction === 'backward' ? input.source.clip.startBeat : input.source.clip.endBeat + bars * 4,
-                    type: 'midi',
-                },
+                clip: continuationClip(input, direction, bars),
                 notes: input.resultNotes,
             },
         },
+    };
+}
+
+// Where the continuation clip sits: backward completion extends before the
+// source (clamped at the project origin), forward completion extends after it.
+function continuationClip(
+    input: Parameters<typeof createCompleteMidiRedoAction>[0],
+    direction: 'backward' | 'forward',
+    bars: number
+): { id: string; trackId: string; name: string; startBeat: number; endBeat: number; type: 'midi' } {
+    const backward = direction === 'backward';
+    const name = backward ? `${input.source.clip.name} (intro)` : `${input.source.clip.name} (continuation)`;
+    const startBeat = backward ? Math.max(0, input.source.clip.startBeat - bars * 4) : input.source.clip.endBeat;
+    const endBeat = backward ? input.source.clip.startBeat : input.source.clip.endBeat + bars * 4;
+    return {
+        id: input.generatedClipId,
+        trackId: input.source.trackId,
+        name,
+        startBeat,
+        endBeat,
+        type: 'midi',
     };
 }
 

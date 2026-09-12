@@ -43,7 +43,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));

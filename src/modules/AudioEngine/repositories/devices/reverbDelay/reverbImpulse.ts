@@ -141,7 +141,7 @@ export function applyReverbImpulseShape(
     if (!context) {
         throw new Error('reverb convolver has no owning context; pass it from the factory');
     }
-    const current = reverbShapes.get(convolver) ?? { ...DEFAULT_REVERB_SHAPE };
+    const current = reverbShapes.get(convolver) ?? DEFAULT_REVERB_SHAPE;
     const merged: ReverbImpulseShape = {
         size: shape.size !== undefined ? clamp(shape.size, REVERB_SIZE_RANGE) : current.size,
         decay: shape.decay !== undefined ? clamp(shape.decay, REVERB_DECAY_RANGE) : current.decay,

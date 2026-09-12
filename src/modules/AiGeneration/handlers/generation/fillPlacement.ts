@@ -93,17 +93,19 @@ function ensureFillPlacementState(action: object, plan: FillPlacementPlan): Fill
     const startBeat = Math.min(...plan.absoluteNotes.map((note) => note.startBeat));
     const endBeat = Math.max(...plan.absoluteNotes.map((note) => note.startBeat + note.duration));
     const trackId = plan.targetTrack?.id ?? `track-ai-${crypto.randomUUID()}`;
+    let trackCreationInput: FillPlacementState['trackCreationInput'] = null;
+    if (!plan.targetTrack) {
+        trackCreationInput = {
+            id: trackId,
+            name: 'Drums',
+            kind: 'midi',
+            initialAlternativeId: `alt-${crypto.randomUUID()}`,
+            initialDeviceId: `dev-synth-${crypto.randomUUID()}`,
+        };
+    }
     const state: FillPlacementState = {
         trackId,
-        trackCreationInput: plan.targetTrack
-            ? null
-            : {
-                  id: trackId,
-                  name: 'Drums',
-                  kind: 'midi',
-                  initialAlternativeId: `alt-${crypto.randomUUID()}`,
-                  initialDeviceId: `dev-synth-${crypto.randomUUID()}`,
-              },
+        trackCreationInput,
         clip: { id: `clip-ai-${crypto.randomUUID()}`, name: plan.clipName, startBeat, endBeat, type: 'midi' },
         notes: plan.absoluteNotes.map((note) => ({
             pitch: note.pitch,
@@ -139,16 +141,10 @@ function writePlacementNotes(clipId: string, state: FillPlacementState): void {
     if (state.materialized) {
         // A re-placement after undo must write the exact cached notes (same
         // ids) so the captured guard keeps matching on the next undo.
-        setNotesForClip(
-            clipId,
-            state.resultNotes.map((note) => ({ ...note }))
-        );
+        setNotesForClip(clipId, structuredClone(state.resultNotes));
         return;
     }
-    const writtenNotes = batchAddMidiNotes(
-        clipId,
-        state.notes.map((note) => ({ ...note }))
-    );
+    const writtenNotes = batchAddMidiNotes(clipId, structuredClone(state.notes));
     state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes);
 }
 
@@ -162,12 +158,13 @@ export function describeFillPlacement(input: {
         return { label: input.label, inverseAction: null };
     }
     const state = ensureFillPlacementState(input.action, plan);
-    return {
-        label: input.label,
-        inverseAction: state.trackCreationInput
-            ? { type: 'discardCreatedTrack', payload: state.trackInverse }
-            : { type: 'discardDuplicatedClip', payload: state.clipInverse },
-    };
+    let inverseAction: HandlerDescribeResult['inverseAction'];
+    if (state.trackCreationInput) {
+        inverseAction = { type: 'discardCreatedTrack', payload: state.trackInverse };
+    } else {
+        inverseAction = { type: 'discardDuplicatedClip', payload: state.clipInverse };
+    }
+    return { label: input.label, inverseAction };
 }
 
 export function executeFillPlacement(input: {
