@@ -1,0 +1,33 @@
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_87ab0a2f60ccf8::t_648e42d296ea9f 129,699,1558
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_8c4a20fd524f16 629-636,2204-2220
+.github/workflows/nightly.yml
+  s_159146fff2d53c::t_cf52008da2acc2 584-593
+.github/workflows/validation.yml
+  s_87ab0a2f60ccf8::t_0f764f96001a37 506-515
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "29b9f9c4db1ccec6f9b4460452c06fa233d89335",
+  "prompts": {},
+  "sessions": {
+    "s_159146fff2d53c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09556-856b-7a21-8f3b-9e9449e8195d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
