@@ -1654,17 +1654,73 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
     };
 
-    const recordWriteConflictAuthority = (pending: AdapterPendingWrite): void => {
+    const rebasePendingWritesAfterConflict = (
+        refusedPending: AdapterPendingWrite,
+        claimRevision: number,
+        authorityValue: TData | null,
+        isCurrentAuthority: () => boolean
+    ): void => {
+        let projectedValue = authorityValue;
+        const successors = [...pendingWritesByOwner.values()]
+            .filter((candidate) => candidate !== refusedPending && candidate.revision > claimRevision)
+            .sort((left, right) => left.revision - right.revision);
+        for (const successor of successors) {
+            const successorRevision = successor.revision;
+            const isCurrentSuccessor = (): boolean =>
+                isCurrentAuthority() &&
+                pendingWritesByOwner.get(successor.write.commitOwner) === successor &&
+                successor.revision === successorRevision;
+            if (!isCurrentSuccessor()) {
+                continue;
+            }
+
+            let rebasedValue = successor.value;
+            if (rebasePending && projectedValue !== null) {
+                rebasedValue = rebasePending({
+                    baseValue: successor.baseValue,
+                    pendingValue: successor.value,
+                    hydratedValue: projectedValue,
+                    metadata: successor.metadata === null ? null : freezeMetadata(successor.metadata),
+                });
+            } else if (
+                toCrdt &&
+                successor.value !== null &&
+                typeof successor.value === 'object' &&
+                typeof projectedValue === 'object' &&
+                projectedValue !== null
+            ) {
+                rebasedValue = { ...successor.value, ...projectedValue };
+            }
+            if (!isCurrentSuccessor()) {
+                continue;
+            }
+            const acceptedValue = guardInboundValue(rebasedValue, 'visible');
+            if (!isCurrentSuccessor()) {
+                continue;
+            }
+            if (rebasePending) {
+                successor.baseValue = projectedValue;
+            }
+            successor.value = acceptedValue;
+            projectedValue = acceptedValue;
+        }
+    };
+
+    const recordWriteConflictAuthority = (pending: AdapterPendingWrite, claimRevision: number): void => {
         const execution = pending.claimedExecution;
         if (!execution?.isCurrent()) {
             return;
         }
+        const generation = projectionGeneration;
+        const projectionEpoch = acceptedAuthorityEpoch;
+        const isCurrentProjection = (): boolean =>
+            execution.isCurrent() && projectionGeneration === generation && acceptedAuthorityEpoch === projectionEpoch;
         const document = getAutomergeStoragePort()?.getDoc(docId);
-        if (!document || !execution.isCurrent()) {
+        if (!document || !isCurrentProjection()) {
             return;
         }
         const decoded = decodeDocumentValue(document);
-        if (!execution.isCurrent()) {
+        if (!isCurrentProjection()) {
             return;
         }
         let projected: TData | null;
@@ -1676,17 +1732,29 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         } else {
             projected = guardInboundValue(mergePartialAuthority(cachedValue, decoded), 'baseline');
         }
-        if (!execution.isCurrent()) {
+        if (!isCurrentProjection()) {
             return;
         }
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
-        committedCacheRevision = ++nextRevision;
-        committedSetRevision = committedCacheRevision;
+        // The claim was refused, so it advances the visible authority baseline
+        // only through the value it had captured. It did not publish a local
+        // set and therefore cannot supersede owners authored after that set.
+        committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
         if (decoded !== undefined) {
             absencePresentation = 'default';
         }
         acceptedAuthorityEpoch += 1;
+        const conflictAuthorityEpoch = acceptedAuthorityEpoch;
+        rebasePendingWritesAfterConflict(
+            pending,
+            claimRevision,
+            decoded ?? projected,
+            () =>
+                execution.isCurrent() &&
+                projectionGeneration === generation &&
+                acceptedAuthorityEpoch === conflictAuthorityEpoch
+        );
     };
 
     const recordCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
@@ -1803,7 +1871,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     abort: () => abortPendingWrite(current),
                     commitOwner: context.commitOwner,
                     didCommit: () => recordCommittedWrite(current, frozen.revision),
-                    didConflict: () => recordWriteConflictAuthority(current),
+                    didConflict: () => recordWriteConflictAuthority(current, frozen.revision),
                     didDefer: () => deferPendingWrite(current),
                     docId,
                     isCurrent: () =>

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
@@ -55,6 +56,7 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { addTake } from '../../../useCases/comping/addTake';
+import { compRegionInterval } from '../../../useCases/comping/compRegionInterval';
 import { removeCompRegion } from '../../../useCases/comping/removeCompRegion';
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -763,6 +765,16 @@ describe('setCompRegion command integration', () => {
                 payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
             })
         ).resolves.toBeUndefined();
+        const recoveredRegions = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(recoveredRegions);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(recoveredRegions);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 
@@ -1291,6 +1303,135 @@ describe('setCompRegion command integration', () => {
         expect(projectedAfterSuccessor?.takes).toContainEqual(expect.objectContaining({ name: 'Recovered take' }));
     });
 
+    it('preserves an already-pending take when a scoped comp write is refused', () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn((callback: FrameRequestCallback) => {
+                frames.push(callback);
+                return frames.length;
+            })
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const patch = compRegionInterval.capturePatch({
+            trackId: 'track-1',
+            startBeat: 2,
+            endBeat: 4,
+            takeId: 'take-b',
+        });
+        expect(patch).not.toBeNull();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            expect(compRegionInterval.applyPatch(patch!)).toBe('written');
+        });
+        expect(transaction.status).toBe('returned');
+        addTake('track-1', 'clip-successor', 'Successor take', 0, 8);
+        const successorFrame = frames[1];
+        const peerRegions = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(peerRegions);
+            },
+        });
+
+        let refusal: unknown;
+        try {
+            transaction.commit();
+        } catch (error) {
+            refusal = error;
+        } finally {
+            transaction.abort();
+        }
+        const pendingAfterRefusal = countPendingAutomergeStorageWrites();
+        const projectedAfterRefusal = structuredClone(takeLaneStore.value?.lanes[0]);
+        successorFrame?.(0);
+        const rawAfterSuccessor = structuredClone(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]
+        );
+        const projectedAfterSuccessor = structuredClone(takeLaneStore.value?.lanes[0]);
+        const pendingAfterSuccessor = countPendingAutomergeStorageWrites();
+        if (pendingAfterRefusal !== 1 || pendingAfterSuccessor !== 0 || !successorFrame) {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
+
+        expect(refusal).toBeInstanceOf(AutomergeStorageWriteConflictError);
+        expect(successorFrame).toBeTypeOf('function');
+        expect(pendingAfterRefusal).toBe(1);
+        expect(projectedAfterRefusal?.activeCompRegions).toEqual(peerRegions);
+        expect(projectedAfterRefusal?.takes).toContainEqual(expect.objectContaining({ name: 'Successor take' }));
+        expect(pendingAfterSuccessor).toBe(0);
+        expect(rawAfterSuccessor?.activeCompRegions).toEqual(peerRegions);
+        expect(rawAfterSuccessor?.takes).toContainEqual(expect.objectContaining({ name: 'Successor take' }));
+        expect(projectedAfterSuccessor).toEqual(rawAfterSuccessor);
+    });
+
+    it('refuses a conflicting already-pending comp write against peer authority', () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn((callback: FrameRequestCallback) => {
+                frames.push(callback);
+                return frames.length;
+            })
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const scopedPatch = compRegionInterval.capturePatch({
+            trackId: 'track-1',
+            startBeat: 2,
+            endBeat: 4,
+            takeId: 'take-b',
+        });
+        expect(scopedPatch).not.toBeNull();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            expect(compRegionInterval.applyPatch(scopedPatch!)).toBe('written');
+        });
+        expect(transaction.status).toBe('returned');
+        const successorPatch = compRegionInterval.capturePatch({
+            trackId: 'track-1',
+            startBeat: 3,
+            endBeat: 5,
+            takeId: 'take-c',
+        });
+        expect(successorPatch).not.toBeNull();
+        expect(compRegionInterval.applyPatch(successorPatch!)).toBe('written');
+        const successorFrame = frames[1];
+        const peerRegions = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(peerRegions);
+            },
+        });
+
+        expect(() => transaction.commit()).toThrow(AutomergeStorageWriteConflictError);
+        transaction.abort();
+        const projectedAfterRefusal = structuredClone(activeRegions());
+        successorFrame?.(0);
+        const rawAfterSuccessor = structuredClone(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        );
+        const pendingAfterSuccessor = countPendingAutomergeStorageWrites();
+        if (pendingAfterSuccessor !== 0 || !successorFrame) {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
+
+        expect(successorFrame).toBeTypeOf('function');
+        expect(projectedAfterRefusal).toEqual(peerRegions);
+        expect(pendingAfterSuccessor).toBe(0);
+        expect(rawAfterSuccessor).toEqual(peerRegions);
+        expect(activeRegions()).toEqual(peerRegions);
+    });
+
     it('discards prepared recovery and permits an exact envelope retry after a commit-window conflict', async () => {
         vi.stubGlobal('navigator', {
             ...navigator,
@@ -1423,11 +1564,16 @@ describe('setCompRegion command integration', () => {
         });
 
         expect(retry).toMatchObject({ status: 'committed' });
-        expect(activeRegions()).toEqual([
+        const recoveredRegions = [
             { startBeat: 0, endBeat: 2, takeId: 'take-a' },
             { startBeat: 2, endBeat: 4, takeId: 'take-b' },
             { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-        ]);
+        ];
+        expect(activeRegions()).toEqual(recoveredRegions);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(recoveredRegions);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 });

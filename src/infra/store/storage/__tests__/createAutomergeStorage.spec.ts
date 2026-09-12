@@ -1218,6 +1218,84 @@ describe('createAutomergeStorage', () => {
         }
     });
 
+    it('rebases a newer pending owner over authority that refused an older owner', () => {
+        type State = { left: number; right: number };
+        type Operation = { field: keyof State; expected: number; replacement: number };
+        const refusal = new AutomergeStorageWriteConflictError('state changed');
+        const { doc, port } = createTestPort({ initialDoc: { state: { left: 0, right: 0 } } });
+        configureAutomergeStoragePort(port);
+        const replay = (authority: State, operations: readonly Operation[]): State | null => {
+            const result = { ...authority };
+            for (const operation of operations) {
+                if (result[operation.field] !== operation.expected) {
+                    return null;
+                }
+                result[operation.field] = operation.replacement;
+            }
+            return result;
+        };
+        const storage = createAutomergeStorage<State, readonly Operation[]>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue, nextValue }) => {
+                    if (!beforeValue || !nextValue) {
+                        return null;
+                    }
+                    return (Object.keys(nextValue) as (keyof State)[])
+                        .filter((field) => beforeValue[field] !== nextValue[field])
+                        .map((field) => ({
+                            field,
+                            expected: beforeValue[field],
+                            replacement: nextValue[field],
+                        }));
+                },
+                reduce: ({ current, captured }) => (current ? [...current, ...captured] : [...captured]),
+            },
+            rebasePending: ({ hydratedValue, metadata, pendingValue }) => {
+                if (!metadata) {
+                    return pendingValue;
+                }
+                return replay(hydratedValue, metadata) ?? hydratedValue;
+            },
+            mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile, value }) => {
+                if (!authorityValue || !metadata) {
+                    reconcile(value, authorityValue);
+                    return;
+                }
+                const replayed = replay(authorityValue, metadata);
+                if (!replayed) {
+                    throw refusal;
+                }
+                reconcile(replayed, authorityValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ left: 1, right: 0 });
+        });
+        storage.set({ left: 1, right: 1 });
+        const successorFrame = requestAnimationFrameMock.mock.calls[1]?.[0];
+        doc.state = { left: 2, right: 0 };
+
+        expect(() => transaction.commit()).toThrow(refusal);
+        transaction.abort();
+        const visibleAfterRefusal = structuredClone(storage.get());
+        const pendingAfterRefusal = countPendingAutomergeStorageWrites();
+        successorFrame?.(0);
+        const persisted = structuredClone(doc.state);
+        const pendingAfterSuccessor = countPendingAutomergeStorageWrites();
+        if (pendingAfterRefusal !== 1 || pendingAfterSuccessor !== 0 || !successorFrame) {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
+
+        expect(successorFrame).toBeTypeOf('function');
+        expect(pendingAfterRefusal).toBe(1);
+        expect(visibleAfterRefusal).toEqual({ left: 2, right: 1 });
+        expect(pendingAfterSuccessor).toBe(0);
+        expect(persisted).toEqual({ left: 2, right: 1 });
+        expect(storage.get()).toEqual({ left: 2, right: 1 });
+    });
+
     it('preserves semantic messages across ordinary action scopes', () => {
         let semanticMessage: string | undefined = 'First action';
         const { doc, mutations, port } = createTestPort({
