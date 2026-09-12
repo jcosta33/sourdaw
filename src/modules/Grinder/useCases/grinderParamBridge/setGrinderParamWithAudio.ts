@@ -104,28 +104,40 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
             coupled = { key: 'engineMode', value: ENGINE_MODES.indexOf(engineMode) };
         }
 
-        // Both names write NeuralCapture's single engine_mode field, so the
-        // order the batcher flushes them in decides what the engine runs
-        // (GRINDER_PATCH_PRECEDENCE, crates/daw-engine/src/scheduler.rs):
-        // `engineMode` — the exact three-way pick — must land last, and the
-        // `neuralEnabled` simplification first. Writing engineMode used to
-        // schedule its coupled boolean second, so selecting Capture ran
-        // Hybrid (issue #4141).
-        const writes: Array<{ key: keyof GrinderPatch; value: number }> = [{ key, value }];
-        if (coupled) {
-            if (key === 'engineMode') {
-                writes.unshift(coupled);
-            } else {
-                writes.push(coupled);
-            }
-        }
+        const compositeKey = `${deviceId}:${key}`;
 
-        for (const write of writes) {
+        // Ordering law: neuralEnabled and engineMode both write NeuralCapture::engine_mode
+        // in DSP (crates/daw-dsp/src/grinder/neural.rs: engineMode -> EngineMode::from_index,
+        // neuralEnabled -> Hybrid when > 0.5 else Circuit).
+        // Because neuralEnabled > 0.5 unconditionally sets Hybrid, neuralEnabled must ALWAYS
+        // be scheduled before engineMode so that the coarse boolean lands first on the audio
+        // engine and the exact engineMode pick lands second. This ensures specific modes like
+        // 'capture' are not overwritten with 'hybrid'.
+        // When key === 'engineMode', schedule coupled (neuralEnabled) first, engineMode second.
+        // When key === 'neuralEnabled', schedule neuralEnabled first, coupled (engineMode) second.
+        if (key === 'engineMode' && coupled) {
             paramBatcher.schedule(
-                `${deviceId}:${write.key}`,
-                { deviceId: target.deviceId, key: write.key, value: write.value },
+                `${deviceId}:${coupled.key}`,
+                { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
                 flushParam
             );
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+        } else if (key === 'neuralEnabled' && coupled) {
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+            paramBatcher.schedule(
+                `${deviceId}:${coupled.key}`,
+                { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
+                flushParam
+            );
+        } else {
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+            if (coupled) {
+                paramBatcher.schedule(
+                    `${deviceId}:${coupled.key}`,
+                    { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
+                    flushParam
+                );
+            }
         }
     };
 });

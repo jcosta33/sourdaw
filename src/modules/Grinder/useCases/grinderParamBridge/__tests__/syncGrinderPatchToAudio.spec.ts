@@ -237,20 +237,28 @@ describe('syncGrinderPatchToAudio', () => {
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'neuralModelMode', 0);
     });
 
-    it('should emit neuralEnabled before engineMode to the device and into the persisted record', () => {
-        // Both names write NeuralCapture's single engine_mode field; the
-        // engineMode-first order let the boolean simplification overwrite the
-        // exact pick (GRINDER_PATCH_PRECEDENCE, issue #4141). The persist
-        // order is the persisted record's first-insertion order, so the
-        // replay path meets the pair in the same order.
-        run(migrateGrinderPatch({ ...DEFAULT_PATCH, neuralEnabled: true, engineMode: 'capture' }));
+    it('emits neuralEnabled before engineMode so exact engine mode pick lands last on the engine', () => {
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                engineMode: 'capture',
+                neuralEnabled: true,
+            })
+        );
 
-        const update_keys = update_device_param.mock.calls.map(([, , key]) => key as string);
-        expect(update_keys.indexOf('neuralEnabled')).toBeGreaterThan(-1);
-        expect(update_keys.indexOf('engineMode')).toBeGreaterThan(update_keys.indexOf('neuralEnabled'));
+        const updateKeys = update_device_param.mock.calls.map((c) => c[2]);
+        const persistKeys = persist_device_param.mock.calls.map((c) => c[1]);
 
-        const persist_keys = persist_device_param.mock.calls.map(([, key]) => key as string);
-        expect(persist_keys.indexOf('neuralEnabled')).toBeGreaterThan(-1);
-        expect(persist_keys.indexOf('engineMode')).toBeGreaterThan(persist_keys.indexOf('neuralEnabled'));
+        const updateNeuralIdx = updateKeys.indexOf('neuralEnabled');
+        const updateEngineIdx = updateKeys.indexOf('engineMode');
+        expect(updateNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(updateEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(updateNeuralIdx).toBeLessThan(updateEngineIdx);
+
+        const persistNeuralIdx = persistKeys.indexOf('neuralEnabled');
+        const persistEngineIdx = persistKeys.indexOf('engineMode');
+        expect(persistNeuralIdx).toBeGreaterThanOrEqual(0);
+        expect(persistEngineIdx).toBeGreaterThanOrEqual(0);
+        expect(persistNeuralIdx).toBeLessThan(persistEngineIdx);
     });
 });

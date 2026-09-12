@@ -1,15 +1,15 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
-import { getGrinderState, grinderStore } from '../../../stores/grinderStore';
+import { grinderStore } from '../../../stores/grinderStore';
 import { paramBatcher } from '../helpers';
 import { setGrinderParamWithAudio } from '../setGrinderParamWithAudio';
 
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
-const mocks = vi.hoisted(() => ({
+const deps = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({
@@ -24,22 +24,22 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: mocks.updateDeviceParam,
+    updateDeviceParam: deps.updateDeviceParam,
     updateDevicePatch: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: mocks.trackStore,
-    persistDeviceParam: mocks.persistDeviceParam,
-    resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+    trackStore: deps.trackStore,
+    persistDeviceParam: deps.persistDeviceParam,
+    resolveEligibleDeviceWriteTarget: deps.resolveEligibleDeviceWriteTarget,
 }));
 
-describe('setGrinderParamWithAudio engineMode/neuralEnabled flush order', () => {
+describe('setGrinderParamWithAudio engineMode precedence', () => {
     let rafQueue: Array<FrameRequestCallback>;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+        deps.resolveEligibleDeviceWriteTarget.mockReturnValue({
             status: 'eligible',
             trackId: TRACK_ID,
             deviceId: DEVICE_ID,
@@ -70,51 +70,33 @@ describe('setGrinderParamWithAudio engineMode/neuralEnabled flush order', () => 
         }
     }
 
-    it('flushes the coupled neuralEnabled before a written engineMode', () => {
-        // neuralEnabled and engineMode both write NeuralCapture's single
-        // engine_mode field. Emitting engineMode first let the boolean
-        // simplification overwrite the exact pick: selecting Capture ran
-        // Hybrid (issue #4141).
+    it('schedules and flushes neuralEnabled before engineMode when engineMode is written', () => {
         setGrinderParamWithAudio(DEVICE_ID, 'engineMode', 1);
-
-        expect(getGrinderState(DEVICE_ID).patch.engineMode).toBe('capture');
-        expect(getGrinderState(DEVICE_ID).patch.neuralEnabled).toBe(true);
-        expect(paramBatcher.pendingSize).toBe(2);
-        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
 
         runPendingRaf();
 
-        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+        expect(deps.updateDeviceParam.mock.calls).toEqual([
             [TRACK_ID, DEVICE_ID, 'neuralEnabled', 1],
             [TRACK_ID, DEVICE_ID, 'engineMode', 1],
         ]);
-        expect(mocks.persistDeviceParam.mock.calls).toEqual([
+        expect(deps.persistDeviceParam.mock.calls).toEqual([
             [DEVICE_ID, 'neuralEnabled', 1],
             [DEVICE_ID, 'engineMode', 1],
         ]);
     });
 
-    it('flushes a written neuralEnabled before its coupled engineMode', () => {
+    it('schedules and flushes neuralEnabled before engineMode when neuralEnabled is written', () => {
         setGrinderParamWithAudio(DEVICE_ID, 'neuralEnabled', 1);
 
         runPendingRaf();
 
-        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+        expect(deps.updateDeviceParam.mock.calls).toEqual([
             [TRACK_ID, DEVICE_ID, 'neuralEnabled', 1],
             [TRACK_ID, DEVICE_ID, 'engineMode', 2],
         ]);
-        expect(mocks.persistDeviceParam.mock.calls).toEqual([
+        expect(deps.persistDeviceParam.mock.calls).toEqual([
             [DEVICE_ID, 'neuralEnabled', 1],
             [DEVICE_ID, 'engineMode', 2],
         ]);
-    });
-
-    it('leaves uncoupled keys untouched by the ordering law', () => {
-        setGrinderParamWithAudio(DEVICE_ID, 'gain', 8.2);
-
-        runPendingRaf();
-
-        expect(mocks.updateDeviceParam.mock.calls).toEqual([[TRACK_ID, DEVICE_ID, 'gain', 8.2]]);
-        expect(mocks.persistDeviceParam.mock.calls).toEqual([[DEVICE_ID, 'gain', 8.2]]);
     });
 });

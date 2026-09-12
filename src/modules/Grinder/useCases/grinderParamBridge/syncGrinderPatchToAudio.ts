@@ -3,7 +3,6 @@ import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
 import { grinderNeuralProfileParams } from '../../models/GrinderNeuralProfileParams';
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
-import { GRINDER_PROJECT_PARAM_EMIT_ORDER } from '../../models/GrinderProjectParameterMap';
 
 import { getCabIrSlot } from './getCabIrSlot';
 import { getNeuralModelSlot } from './getNeuralModelSlot';
@@ -143,14 +142,7 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
         sendNumericParamToDevice(input, 'cabIrSlot', cab_ir_slot);
     }
 
-    // Emit in precedence order (`GRINDER_PROJECT_PARAM_EMIT_ORDER`, mirroring
-    // the engine's GRINDER_PATCH_PRECEDENCE): `neuralEnabled` and `engineMode`
-    // both write NeuralCapture's single engine_mode field, so emitting
-    // `engineMode` first let the boolean simplification overwrite the exact
-    // pick — select Capture and the engine ran Hybrid. This order is also
-    // what the persisted record's first insertion follows, so a project
-    // reload replays the pair the same way.
-    for (const key of GRINDER_PROJECT_PARAM_EMIT_ORDER) {
+    for (const key of GRINDER_PROJECT_PARAM_KEYS) {
         const value = toAudioValue(key, patch[key]);
         if (value === null) {
             continue;
