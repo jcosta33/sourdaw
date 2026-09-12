@@ -120,7 +120,12 @@ function makeDeadlineEvidence(
 ): ReturnType<typeof collectAudioDeadlineEvidence> {
     return {
         version: 1,
-        workload: { sampleRate: 48_000, outputBufferFrames: 256, trackCount: 0, transport: 'stopped' },
+        workload: {
+            webEngine: { sampleRate: 48_000 },
+            nativeEngine: { sampleRate: 48_000, outputBufferFrames: 256 },
+            trackCount: 0,
+            transport: 'stopped',
+        },
         engineUnderruns: { coverage: 'observed', events: 0 },
         nativeStreamFaults: { coverage: 'observed', events: 0 },
         mainThreadLongTasks: { coverage: 'observed', events: 0 },

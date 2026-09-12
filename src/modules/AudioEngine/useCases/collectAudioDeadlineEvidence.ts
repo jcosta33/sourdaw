@@ -1,13 +1,17 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { dropoutCounters } from '../engine/dropoutCounter';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../services/mainThreadLongTaskLatch';
 import { engineRtDiagnosticsStore } from '../stores/engineRtDiagnosticsStore';
 
-import { getEngineHealth } from './engineAccess/getEngineHealth';
 import { getEngineState } from './engineAccess/getEngineState';
 
-import type { AudioDeadlineEvidence, DeadlineCategoryReading } from '../models/AudioDeadlineEvidence';
+import type {
+    AudioDeadlineEvidence,
+    AudioDeadlineWorkload,
+    DeadlineCategoryReading,
+} from '../models/AudioDeadlineEvidence';
 
 /**
  * No external loopback signal is captured anywhere in the product. The desktop
@@ -22,15 +26,21 @@ const LOOPBACK_UNCOVERED: DeadlineCategoryReading = {
     reason: 'no external loopback signal is captured, so this platform has no discontinuity coverage rather than zero discontinuities',
 };
 
+/**
+ * The counter itself decides both coverage and count. Whether the context is
+ * running says nothing about whether anything is tallying: with no shared
+ * buffer wired the counter answers zero from memory no worklet writes to, and a
+ * suspended context does not undo an underrun already counted.
+ */
 function readEngineUnderruns(): DeadlineCategoryReading {
-    if (getEngineState().state !== 'running') {
+    if (!dropoutCounters.hasCoverage()) {
         return {
             coverage: 'unavailable',
-            reason: 'no live web audio engine is running, so no render quantum has been observed',
+            reason: 'no dropout-counting processor is wired, either because the project hosts no device that counts them or because the page is not cross-origin isolated and there is no shared buffer to count into',
         };
     }
 
-    return { coverage: 'observed', events: getEngineHealth().dropouts.detectedUnderrunBlocks };
+    return { coverage: 'observed', events: dropoutCounters.read().detectedUnderrunBlocks };
 }
 
 function readNativeStreamFaults(): DeadlineCategoryReading {
@@ -61,31 +71,33 @@ function readMainThreadLongTaskCoverage(): DeadlineCategoryReading {
     return { coverage: 'observed', events: reading };
 }
 
-/**
- * The rate the reading was taken at. The native engine's figure is the rate its
- * output stream actually opened at, so it answers while that engine runs; the
- * web engine's own context rate answers otherwise.
- */
-function readSampleRate(): number {
-    const diagnostics = engineRtDiagnosticsStore.value?.latest;
+/** The web carrier's own context rate, which is what `engineUnderruns` counted quanta at. */
+function readWebEngine(): AudioDeadlineWorkload['webEngine'] {
+    const engine = getEngineState();
 
-    if (diagnostics?.running === true) {
-        return diagnostics.sampleRate;
+    if (engine.state !== 'running') {
+        return null;
     }
 
-    return getEngineState().sampleRate;
+    return { sampleRate: engine.sampleRate };
 }
 
 /**
- * Frames the native output device's most recent callback asked for; there is no
- * web-side equivalent to fall back to. Zero means no figure, not no buffer, the
- * same reading rule `EngineRtDiagnostics.outputBufferFrames` is read under.
+ * The rate the native output stream actually opened at and the frames its most
+ * recent callback asked for — both figures `nativeStreamFaults` was counted
+ * against, and neither one describing the web carrier beside it.
  */
-function readOutputBufferFrames(): number {
-    return engineRtDiagnosticsStore.value?.latest?.outputBufferFrames ?? 0;
+function readNativeEngine(): AudioDeadlineWorkload['nativeEngine'] {
+    const diagnostics = engineRtDiagnosticsStore.value?.latest;
+
+    if (diagnostics?.running !== true) {
+        return null;
+    }
+
+    return { sampleRate: diagnostics.sampleRate, outputBufferFrames: diagnostics.outputBufferFrames };
 }
 
-function readTransport(): AudioDeadlineEvidence['workload']['transport'] {
+function readTransport(): AudioDeadlineWorkload['transport'] {
     const transport = transportStore.value ?? defaultTransportState;
 
     if (transport.isRecording) {
@@ -105,13 +117,17 @@ function readTransport(): AudioDeadlineEvidence['workload']['transport'] {
  * Reads only: each source is asked for what it already holds, and no store is
  * written. A category whose observer this platform does not have comes back
  * `unavailable` with the reason, never as a count of zero.
+ *
+ * The workload entries pair each count with the carrier that produced it:
+ * `engineUnderruns` belongs to `webEngine`, `nativeStreamFaults` belongs to
+ * `nativeEngine`.
  */
 export function collectAudioDeadlineEvidence(): AudioDeadlineEvidence {
     return {
         version: 1,
         workload: {
-            sampleRate: readSampleRate(),
-            outputBufferFrames: readOutputBufferFrames(),
+            webEngine: readWebEngine(),
+            nativeEngine: readNativeEngine(),
             trackCount: trackStore.value?.tracks.length ?? 0,
             transport: readTransport(),
         },

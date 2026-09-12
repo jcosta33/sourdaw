@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { DROPOUT_IDX, dropoutCounters } from '../dropoutCounter';
 
@@ -24,6 +24,20 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
             silentFrames: 0,
             lastUnderrunAtFrame: 0,
         });
+    });
+
+    it('separates having no counter from counting zero', async () => {
+        // A fresh module instance: the singleton under test has already been
+        // handed its buffer by the cases around this one.
+        vi.resetModules();
+        const { dropoutCounters: unwired } = await import('../dropoutCounter');
+
+        expect(unwired.hasCoverage()).toBe(false);
+        expect(unwired.read().detectedUnderrunBlocks).toBe(0);
+
+        unwired.getSab();
+
+        expect(unwired.hasCoverage()).toBe(true);
     });
 
     it('surfaces block count, silent frames and the render frame a writer records', () => {

@@ -11,19 +11,27 @@
 export type DeadlineCategoryReading =
     { coverage: 'observed'; events: number } | { coverage: 'unavailable'; reason: string };
 
+/**
+ * The load the reading was taken under. A dropout count means nothing on its
+ * own: the same figure is healthy at 2048 frames on four tracks and a failure
+ * at 64 frames on the same four.
+ *
+ * The two carriers run together and open their outputs at their own rates, so
+ * each keeps its own entry rather than sharing one flattened figure that would
+ * pair one engine's rate with the other's counts. A null entry means that
+ * carrier is not running, the same reading rule `unavailable` carries: never a
+ * zero standing in for a figure nobody produced.
+ */
+export type AudioDeadlineWorkload = {
+    webEngine: { sampleRate: number } | null;
+    nativeEngine: { sampleRate: number; outputBufferFrames: number } | null;
+    trackCount: number;
+    transport: 'stopped' | 'playing' | 'recording';
+};
+
 export type AudioDeadlineEvidence = {
     version: 1;
-    /**
-     * The load the reading was taken under. A dropout count means nothing on
-     * its own: the same figure is healthy at 2048 frames on four tracks and a
-     * failure at 64 frames on the same four.
-     */
-    workload: {
-        sampleRate: number;
-        outputBufferFrames: number;
-        trackCount: number;
-        transport: 'stopped' | 'playing' | 'recording';
-    };
+    workload: AudioDeadlineWorkload;
     engineUnderruns: DeadlineCategoryReading;
     nativeStreamFaults: DeadlineCategoryReading;
     mainThreadLongTasks: DeadlineCategoryReading;

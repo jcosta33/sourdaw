@@ -3,17 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { dropoutCounters } from '../../engine/dropoutCounter';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../../services/mainThreadLongTaskLatch';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
 import { collectAudioDeadlineEvidence } from '../collectAudioDeadlineEvidence';
-import { getEngineHealth } from '../engineAccess/getEngineHealth';
 import { getEngineState } from '../engineAccess/getEngineState';
 
-import type { AudioEngineHealth, AudioEngineState } from '../../models/AudioEngineState';
+import type { AudioEngineState } from '../../models/AudioEngineState';
 import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
 
 vi.mock('../engineAccess/getEngineState', () => ({ getEngineState: vi.fn() }));
-vi.mock('../engineAccess/getEngineHealth', () => ({ getEngineHealth: vi.fn() }));
+vi.mock('../../engine/dropoutCounter', () => ({
+    dropoutCounters: { hasCoverage: vi.fn(), read: vi.fn() },
+}));
 vi.mock('../../services/mainThreadLongTaskLatch', () => ({
     LONG_TASK_OBSERVATION_UNSUPPORTED: 'unsupported',
     readMainThreadLongTasks: vi.fn(),
@@ -29,13 +31,15 @@ const runningEngineState: AudioEngineState = {
     outputLatency: 0.01,
 };
 
-function engineHealthWithUnderruns(detectedUnderrunBlocks: number): AudioEngineHealth {
-    return {
-        workletReady: true,
-        lastInitError: null,
-        lastResumeError: null,
-        dropouts: { detectedUnderrunBlocks, silentFrames: 0, lastUnderrunAtFrame: 0 },
-    };
+/** Stands in for the counter's own tally; `detectedUnderrunBlocks` is the figure the collector reads. */
+function dropoutTally(detectedUnderrunBlocks: number) {
+    return { detectedUnderrunBlocks, silentFrames: detectedUnderrunBlocks * 128, lastUnderrunAtFrame: 0 };
+}
+
+/** Coverage and count come from the same object, so a case states both together. */
+function wireDropoutCounter(coverage: boolean, detectedUnderrunBlocks = 0): void {
+    vi.mocked(dropoutCounters.hasCoverage).mockReturnValue(coverage);
+    vi.mocked(dropoutCounters.read).mockReturnValue(dropoutTally(detectedUnderrunBlocks));
 }
 
 const runningNativeDiagnostics: EngineRtDiagnostics = {
@@ -64,7 +68,7 @@ describe('collectAudioDeadlineEvidence', () => {
         transportStore.set(defaultTransportState);
 
         vi.mocked(getEngineState).mockReturnValue(runningEngineState);
-        vi.mocked(getEngineHealth).mockReturnValue(engineHealthWithUnderruns(0));
+        wireDropoutCounter(true);
         vi.mocked(readMainThreadLongTasks).mockReturnValue(LONG_TASK_OBSERVATION_UNSUPPORTED);
     });
 
@@ -80,7 +84,7 @@ describe('collectAudioDeadlineEvidence', () => {
     });
 
     it('carries no events field on any category it has no observer for', () => {
-        vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, state: 'suspended' });
+        wireDropoutCounter(false);
 
         const evidence = collectAudioDeadlineEvidence();
 
@@ -98,17 +102,33 @@ describe('collectAudioDeadlineEvidence', () => {
         }
     });
 
-    it('reports engine underruns only while the web engine is running', () => {
-        vi.mocked(getEngineHealth).mockReturnValue(engineHealthWithUnderruns(7));
+    it('reports engine underruns only while a dropout counter is wired', () => {
+        wireDropoutCounter(true, 7);
 
         expect(collectAudioDeadlineEvidence().engineUnderruns).toEqual({ coverage: 'observed', events: 7 });
 
-        vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, state: 'closed', isReady: false });
+        wireDropoutCounter(false);
 
-        const stopped = collectAudioDeadlineEvidence().engineUnderruns;
+        const uncounted = collectAudioDeadlineEvidence().engineUnderruns;
 
-        expect(stopped.coverage).toBe('unavailable');
-        expect('events' in stopped).toBe(false);
+        expect(uncounted.coverage).toBe('unavailable');
+        expect('events' in uncounted).toBe(false);
+    });
+
+    it('reports no underrun coverage while the web engine runs with nothing counting dropouts', () => {
+        vi.mocked(getEngineState).mockReturnValue(runningEngineState);
+        // The counter answers zero from a buffer no worklet writes to; that is no
+        // observation, not a clean run.
+        wireDropoutCounter(false, 0);
+
+        const reading = collectAudioDeadlineEvidence().engineUnderruns;
+
+        expect(reading).toEqual({
+            coverage: 'unavailable',
+            reason: expect.stringContaining('cross-origin isolated'),
+        });
+        expect('events' in reading).toBe(false);
+        expect(Reflect.get(reading, 'events')).toBeUndefined();
     });
 
     it('counts the accumulated stream-error events while the native engine runs', () => {
@@ -148,6 +168,21 @@ describe('collectAudioDeadlineEvidence', () => {
         expect('events' in uncovered).toBe(false);
     });
 
+    it('keeps each carrier rate with its own engine while both carriers run at different rates', () => {
+        // The live pairing: the web context is pinned to 48 kHz while the native
+        // output opened at the device's 44.1 kHz default.
+        vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, sampleRate: 48_000 });
+        engineRtDiagnosticsStore.set({
+            latest: { ...runningNativeDiagnostics, sampleRate: 44_100, outputBufferFrames: 512 },
+            events: [],
+        });
+
+        const workload = collectAudioDeadlineEvidence().workload;
+
+        expect(workload.webEngine).toEqual({ sampleRate: 48_000 });
+        expect(workload.nativeEngine).toEqual({ sampleRate: 44_100, outputBufferFrames: 512 });
+    });
+
     it('correlates the reading to the workload it was taken under', () => {
         engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, events: [] });
         trackStore.set({
@@ -165,21 +200,28 @@ describe('collectAudioDeadlineEvidence', () => {
 
         expect(evidence.version).toBe(1);
         expect(evidence.workload).toEqual({
-            sampleRate: 48_000,
-            outputBufferFrames: 256,
+            webEngine: { sampleRate: 48_000 },
+            nativeEngine: { sampleRate: 48_000, outputBufferFrames: 256 },
             trackCount: 3,
             transport: 'recording',
         });
     });
 
-    it('carries the web engine sample rate alongside its underrun count when no native diagnostics exist', () => {
+    it('leaves a carrier entry null while that carrier is not running', () => {
+        vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, state: 'closed', isReady: false });
+
+        const stopped = collectAudioDeadlineEvidence().workload;
+
+        expect(stopped.webEngine).toBeNull();
+        expect(stopped.nativeEngine).toBeNull();
+
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, sampleRate: 44_100 });
-        vi.mocked(getEngineHealth).mockReturnValue(engineHealthWithUnderruns(5));
+        engineRtDiagnosticsStore.set({ latest: { ...runningNativeDiagnostics, running: false }, events: [] });
 
-        const evidence = collectAudioDeadlineEvidence();
+        const webOnly = collectAudioDeadlineEvidence().workload;
 
-        expect(evidence.engineUnderruns).toEqual({ coverage: 'observed', events: 5 });
-        expect(evidence.workload.sampleRate).toBe(44_100);
+        expect(webOnly.webEngine).toEqual({ sampleRate: 44_100 });
+        expect(webOnly.nativeEngine).toBeNull();
     });
 
     it('reads the transport state a reading was taken under', () => {

@@ -89,6 +89,16 @@ class DropoutCounters {
         return this.sab;
     }
 
+    /**
+     * Whether a worklet has been handed the shared buffer these counts live in.
+     * Until then `read()` answers all-zero from a buffer nothing writes to, and
+     * a reader that cannot tell the two apart reports "no dropouts" for a graph
+     * with no dropout counter in it at all.
+     */
+    hasCoverage(): boolean {
+        return this.view !== null;
+    }
+
     /** Current tally. All-zero before any worklet has been wired. */
     read(): AudioEngineDropoutStats {
         const view = this.view;
