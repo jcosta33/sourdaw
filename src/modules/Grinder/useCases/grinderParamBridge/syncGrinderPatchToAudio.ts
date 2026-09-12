@@ -2,6 +2,7 @@ import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/sto
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
 import { grinderNeuralProfileParams } from '../../models/GrinderNeuralProfileParams';
+import { GRINDER_PROJECT_PARAM_KEYS } from '../../models/GrinderProjectParameterMap';
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 
 import { getCabIrSlot } from './getCabIrSlot';
