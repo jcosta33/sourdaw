@@ -75,14 +75,11 @@ export type StrippedEnv = { env: NodeJS.ProcessEnv; dropped: string[] };
  * without touching the real process environment.
  */
 export function stripPayloadOverrides(env: NodeJS.ProcessEnv): StrippedEnv {
-    const stripped = { ...env };
-    const dropped: string[] = [];
-    for (const key of PAYLOAD_OVERRIDE_ENV_KEYS) {
-        if (stripped[key] !== undefined) {
-            dropped.push(key);
-            delete stripped[key];
-        }
-    }
+    const dropped: string[] = PAYLOAD_OVERRIDE_ENV_KEYS.filter((key) => env[key] !== undefined);
+    const droppedKeys = new Set<string>(dropped);
+    const stripped: NodeJS.ProcessEnv = Object.fromEntries(
+        Object.entries(env).filter(([key]) => !droppedKeys.has(key))
+    );
     return { env: stripped, dropped };
 }
 
