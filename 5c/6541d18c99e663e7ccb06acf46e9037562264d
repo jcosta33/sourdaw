@@ -1,0 +1,20 @@
+crates/sourdaw-native/src/commands/provider_gateway.rs
+  h_1228e573df1f42 21,190-193,202-207,597-603,1120-1186
+electron/__tests__/events.spec.ts
+  h_1228e573df1f42 201
+electron/events.ts
+  h_1228e573df1f42 168
+src/modules/AiRuntime/repositories/providerGateway.ts
+  h_1228e573df1f42 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c6541d18c99e663e7ccb06acf46e9037562264d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
