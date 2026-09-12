@@ -13,7 +13,12 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
 import { getTransportHandlers } from '../../../useCases/getTransportHandlers';
@@ -23,6 +28,12 @@ import { setLoopRegion } from '../../../useCases/transportControls/setLoopRegion
 type RootDocument = {
     transport?: { loopStart: number; loopEnd: number; isLooping: boolean };
     tracks?: { tracks: Array<{ clips: Array<{ endBeat: number }> }> };
+};
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
 };
 
 function loopTriple() {
@@ -42,7 +53,7 @@ describe('loop command undo and redo', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getTransportHandlers());
-        setNotificationEventBus(createEventBus());
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         clearUndoHistory();
         transportStore.set({ ...defaultTransportState, loopStart: 0, loopEnd: 0, isLooping: false });
     });
