@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useRef } from 'react';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import {
+    collectAudioDeadlineEvidence,
     getEngineDiagnostics,
     getEngineHealth,
     getEngineState,
@@ -66,6 +67,44 @@ function describeDropouts({ playback, health }: DescribeDropoutsInput): string {
         ` · missed render deadlines: ${String(playback.underrunEvents)} (${underrunMs} ms)` +
         ` · engine-detected dropouts: ${String(health.dropouts.detectedUnderrunBlocks)}`
     );
+}
+
+type DeadlineEvidence = ReturnType<typeof collectAudioDeadlineEvidence>;
+
+/**
+ * Readable labels for the four deadline-evidence categories, in the order
+ * `AudioDeadlineEvidence` declares them.
+ */
+const DEADLINE_CATEGORY_LABELS: Array<{
+    key: 'engineUnderruns' | 'nativeStreamFaults' | 'mainThreadLongTasks' | 'loopbackDiscontinuities';
+    label: string;
+}> = [
+    { key: 'engineUnderruns', label: 'engine underruns' },
+    { key: 'nativeStreamFaults', label: 'native stream faults' },
+    { key: 'mainThreadLongTasks', label: 'main-thread long tasks' },
+    { key: 'loopbackDiscontinuities', label: 'external loopback' },
+];
+
+/**
+ * How many of the four deadline-evidence categories actually have a live
+ * observer behind them right now, appended after the dropout counters.
+ *
+ * `collectAudioDeadlineEvidence()` reports each category as `unavailable`
+ * rather than a synthetic zero when its platform has no observer for it —
+ * a missing observer and a clean bill of health are different facts, and
+ * folding the former into a count would erase that difference. This segment
+ * preserves it: it names how much of the evidence is real coverage, and
+ * lists which categories are not, instead of collapsing everything into one
+ * number that would read as fully healthy either way.
+ */
+function describeDeadlineCoverage(evidence: DeadlineEvidence): string {
+    const uncovered = DEADLINE_CATEGORY_LABELS.filter(({ key }) => evidence[key].coverage === 'unavailable');
+    const observedCount = DEADLINE_CATEGORY_LABELS.length - uncovered.length;
+    const summary = ` · deadline coverage: ${String(observedCount)}/${String(DEADLINE_CATEGORY_LABELS.length)} observed`;
+    if (uncovered.length === 0) {
+        return summary;
+    }
+    return `${summary}, uncovered: ${uncovered.map(({ label }) => label).join(', ')}`;
 }
 
 type DescribeOutputLatencyInput = {
@@ -178,6 +217,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 const diagnostics = getEngineDiagnostics();
                 const health = getEngineHealth();
                 const dropoutSummary = describeDropouts({ playback: diagnostics.playback, health });
+                const deadlineCoverageSummary = describeDeadlineCoverage(collectAudioDeadlineEvidence());
                 const deviceTypes = Object.entries(diagnostics.graph.deviceInstancesByType)
                     .map(([type, count]) => `${type}: ${String(count)}`)
                     .join(', ');
@@ -194,7 +234,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                     ` · strip meter worklets: ${String(diagnostics.graph.stripMeterWorklets)}` +
                     ` · master meter worklets: ${String(diagnostics.graph.masterMeterWorklets)}` +
                     ` · adjustment-layer buses: ${String(diagnostics.graph.adjustmentLayerBuses)}` +
-                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}${dropoutSummary}`;
+                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}${dropoutSummary}${deadlineCoverageSummary}`;
                 lastDiagnosticsAtRef.current = now;
             }
 

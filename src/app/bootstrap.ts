@@ -55,6 +55,7 @@ import {
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
+    startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -546,6 +547,9 @@ composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 
+// Registered for the life of the process, so deadline-evidence reading has
+// main-thread long-task coverage from startup regardless of what is mounted.
+startMainThreadLongTaskObservation();
 initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
 // Edits made inside a hosted plugin's own editor never pass through this app,

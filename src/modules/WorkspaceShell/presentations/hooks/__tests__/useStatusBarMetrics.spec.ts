@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import {
+    collectAudioDeadlineEvidence,
     getEngineDiagnostics,
     getEngineHealth,
     getEngineState,
@@ -19,6 +20,7 @@ import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMe
 type TickFn = () => void;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    collectAudioDeadlineEvidence: vi.fn(),
     getEngineDiagnostics: vi.fn(),
     getEngineHealth: vi.fn(),
     getEngineState: vi.fn(),
@@ -113,6 +115,25 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
     };
 }
 
+function makeDeadlineEvidence(
+    overrides: Partial<ReturnType<typeof collectAudioDeadlineEvidence>> = {}
+): ReturnType<typeof collectAudioDeadlineEvidence> {
+    return {
+        version: 1,
+        workload: {
+            webEngine: { sampleRate: 48_000 },
+            nativeEngine: { sampleRate: 48_000, outputBufferFrames: 256 },
+            trackCount: 0,
+            transport: 'stopped',
+        },
+        engineUnderruns: { coverage: 'observed', events: 0 },
+        nativeStreamFaults: { coverage: 'observed', events: 0 },
+        mainThreadLongTasks: { coverage: 'observed', events: 0 },
+        loopbackDiscontinuities: { coverage: 'observed', events: 0 },
+        ...overrides,
+    };
+}
+
 function makeEngineHealth(detectedUnderrunBlocks = 0): ReturnType<typeof getEngineHealth> {
     return {
         workletReady: true,
@@ -141,6 +162,7 @@ describe('useStatusBarMetrics', () => {
         capturedId = null;
         vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics());
         vi.mocked(getEngineHealth).mockReturnValue(makeEngineHealth());
+        vi.mocked(collectAudioDeadlineEvidence).mockReturnValue(makeDeadlineEvidence());
     });
 
     afterEach(() => {
@@ -552,7 +574,7 @@ describe('useStatusBarMetrics', () => {
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
         expect(refs.engineState.current!.title).toBe(
-            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
+            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0 · deadline coverage: 4/4 observed'
         );
     });
 
@@ -576,7 +598,7 @@ describe('useStatusBarMetrics', () => {
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
         expect(refs.engineState.current!.title).toBe(
-            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
+            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0 · deadline coverage: 4/4 observed'
         );
     });
 
@@ -660,6 +682,66 @@ describe('useStatusBarMetrics', () => {
         const title = refs.engineState.current!.title;
         expect(title).toContain('missed render deadlines: unavailable');
         expect(title).toContain('engine-detected dropouts: 3');
+    });
+
+    /**
+     * The deadline-evidence coverage segment, appended after the dropout
+     * counters via `describeDeadlineCoverage` in `useStatusBarMetrics.ts`.
+     *
+     * What reds this: making the uncovered list always empty so the title
+     * always claims 4/4 regardless of what `collectAudioDeadlineEvidence()`
+     * actually reports.
+     */
+    it('names every uncovered deadline-evidence category when a category has no observer', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48_000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(collectAudioDeadlineEvidence).mockReturnValue(
+            makeDeadlineEvidence({
+                nativeStreamFaults: { coverage: 'unavailable', reason: 'the native engine is not running' },
+                loopbackDiscontinuities: { coverage: 'unavailable', reason: 'no external loopback signal is captured' },
+            })
+        );
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        const title = refs.engineState.current!.title;
+        expect(title).toContain(
+            ' · deadline coverage: 2/4 observed, uncovered: native stream faults, external loopback'
+        );
+    });
+
+    it('reports full coverage with no uncovered clause when every deadline-evidence category is observed', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48_000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(collectAudioDeadlineEvidence).mockReturnValue(makeDeadlineEvidence());
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        const title = refs.engineState.current!.title;
+        expect(title).toContain(' · deadline coverage: 4/4 observed');
+        expect(title).not.toContain('uncovered');
     });
 
     it('samples graph diagnostics at most once per second', () => {

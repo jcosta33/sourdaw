@@ -78,6 +78,8 @@ export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { getEngineHealth } from './engineAccess/getEngineHealth';
+export { collectAudioDeadlineEvidence } from './collectAudioDeadlineEvidence';
+export { startMainThreadLongTaskObservation } from './startMainThreadLongTaskObservation';
 export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
 export { readNativeOutputLatency } from './engineAccess/readNativeOutputLatency';
