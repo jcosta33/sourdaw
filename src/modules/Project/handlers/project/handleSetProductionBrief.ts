@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
 import {
@@ -8,7 +9,7 @@ import {
 import { projectStore } from '../../stores/projectStore';
 
 function isSameIntent(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return jsonValuesEqual(left, right);
 }
 
 function preservesDecisionHistory(

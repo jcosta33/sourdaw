@@ -1,3 +1,4 @@
+import { change, from } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -9,7 +10,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { createGrooveTemplate, getMidiGrooveHandlers } from '#/modules/MIDI/useCases';
 
-import { yeastStore, type YeastState } from '../../stores/yeastStore';
+import { setActiveYeastDevice, yeastStore, type YeastState } from '../../stores/yeastStore';
 import { setYeastGrooveTemplate } from '../setYeastGrooveTemplate';
 
 const mocks = vi.hoisted(() => ({
@@ -30,13 +31,13 @@ const initialYeastState: YeastState = {
 };
 
 describe('setYeastGrooveTemplate', () => {
-    let document: Record<string, unknown>;
+    let document = from<Record<string, unknown>>({});
     let commandGate: Promise<void>;
     let releaseCommand: () => void;
 
     beforeEach(() => {
         vi.clearAllMocks();
-        document = {};
+        document = from<Record<string, unknown>>({});
         commandGate = Promise.resolve();
         releaseCommand = () => undefined;
         mocks.waitForSnapshotTransaction.mockImplementation(() => commandGate);
@@ -46,10 +47,11 @@ describe('setYeastGrooveTemplate', () => {
             hasDoc: () => true,
             mutateDoc: (input) => {
                 mocks.mutateDoc(input);
-                input.changeFn(document);
+                document = change(document, (draft) => input.changeFn(draft));
             },
             waitForSnapshotTransaction: mocks.waitForSnapshotTransaction,
         });
+        setActiveYeastDevice('test-device');
         clearHandlerRegistry();
         registerHandlerMap(getMidiGrooveHandlers());
         clearUndoHistory();
@@ -73,6 +75,7 @@ describe('setYeastGrooveTemplate', () => {
         configureAutomergeStoragePort(null);
         clearUndoHistory();
         clearHandlerRegistry();
+        setActiveYeastDevice(null);
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
         yeastStore.set({ processors: [], uiLevel: 1 });
     });

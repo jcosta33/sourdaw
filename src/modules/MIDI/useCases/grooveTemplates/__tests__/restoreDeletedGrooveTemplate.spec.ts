@@ -44,7 +44,9 @@ vi.mock('../resolveGrooveTemplateName', () => ({ resolveGrooveTemplateName: mock
 import { type DeletedGrooveTemplateSnapshot } from '../deleteGrooveTemplate';
 import { restoreDeletedGrooveTemplate } from '../restoreDeletedGrooveTemplate';
 
-const validTemplate = {
+import type { GrooveTemplate, GrooveTemplateProvenance } from '../../../models/GrooveTemplate';
+
+const validTemplate: GrooveTemplate = {
     id: 'groove-custom-1',
     name: 'My Groove',
     schemaVersion: 1 as const,
@@ -52,6 +54,31 @@ const validTemplate = {
     slots: [{ index: 1, timingOffset: 0.12, dynamicsOffset: -0.3 }],
     provenance: { type: 'user' as const, sourceId: 'clip-1' },
 };
+
+function reorderTemplate(template: GrooveTemplate): GrooveTemplate {
+    let provenance: GrooveTemplateProvenance;
+    if (template.provenance.type === 'midi-clip') {
+        provenance = {
+            analyzerVersion: template.provenance.analyzerVersion,
+            sourceId: template.provenance.sourceId,
+            type: template.provenance.type,
+        };
+    } else {
+        provenance = { sourceId: template.provenance.sourceId, type: template.provenance.type };
+    }
+    return {
+        provenance,
+        slots: template.slots.map((slot) => ({
+            dynamicsOffset: slot.dynamicsOffset,
+            timingOffset: slot.timingOffset,
+            index: slot.index,
+        })),
+        subdivision: template.subdivision,
+        schemaVersion: template.schemaVersion,
+        name: template.name,
+        id: template.id,
+    };
+}
 
 function resetStore(): void {
     mockStore.value = {
@@ -120,6 +147,33 @@ describe('restoreDeletedGrooveTemplate', () => {
         expect(mockStore.value.templates).toHaveLength(originalCount + 1);
         expect(mockStore.value.templates.some((t) => t.id === 'groove-custom-1')).toBe(true);
         expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an identical recreated template whose object keys were reordered', () => {
+        const reordered = reorderTemplate(validTemplate);
+        mockStore.value.templates.push(reordered);
+        const originalCount = mockStore.value.templates.length;
+
+        expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(validTemplate));
+        restoreDeletedGrooveTemplate({ template: validTemplate, templateIndex: 1, assignments: [] });
+
+        expect(mockStore.set).toHaveBeenCalledTimes(1);
+        expect(mockStore.value.templates).toHaveLength(originalCount);
+        expect(mockStore.value.templates.filter((template) => template.id === validTemplate.id)).toHaveLength(1);
+        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a recreated identity with changed musical content without writing', () => {
+        mockStore.value.templates.push({
+            ...validTemplate,
+            slots: validTemplate.slots.map((slot) => ({ ...slot, timingOffset: slot.timingOffset + 0.01 })),
+        });
+
+        expect(() =>
+            restoreDeletedGrooveTemplate({ template: validTemplate, templateIndex: 1, assignments: [] })
+        ).toThrow('identity was recreated with different content');
+        expect(mockStore.set).not.toHaveBeenCalled();
+        expect(mockMarkWrite).not.toHaveBeenCalled();
     });
 
     it('restores assignments that were pointing to straight groove back to the deleted template', () => {

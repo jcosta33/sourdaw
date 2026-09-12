@@ -878,8 +878,27 @@ function installSharedVocalFxFixture(): {
         ghostClips: [],
     });
     flushFixtureStorageOwner('tracks');
-    ensureRealTrackStrips([lead, leadDouble, backing, backingLow, drums, parallel].map((track) => track.id));
-    return { lead, leadDouble, backing, backingLow, drums, parallel };
+    const committedTracks = trackStore.value?.tracks ?? [];
+    const committedById = new Map(committedTracks.map((track) => [track.id, track]));
+    const committed = (trackId: string): Track => {
+        const track = committedById.get(trackId);
+        if (!track) {
+            throw new Error(`Expected committed fixture track ${trackId}`);
+        }
+        return track;
+    };
+    const committedFixture = {
+        lead: committed(lead.id),
+        leadDouble: committed(leadDouble.id),
+        backing: committed(backing.id),
+        backingLow: committed(backingLow.id),
+        drums: committed(drums.id),
+        parallel: committed(parallel.id),
+    };
+    ensureRealTrackStrips(Object.values(committedFixture).map((track) => track.id));
+    return {
+        ...committedFixture,
+    };
 }
 
 function getConfirmationId(): string {

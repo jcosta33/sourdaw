@@ -1,3 +1,4 @@
+import { change, init } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -104,20 +105,18 @@ const kneadClipState: KneadClipState = {
 };
 
 describe('projection write freedom (audit CC-2 class guard)', () => {
-    const doc: TestDoc = {};
+    let doc = init<TestDoc>();
     let writtenSlots: string[] = [];
 
     beforeEach(() => {
-        for (const key of Object.keys(doc)) {
-            delete doc[key];
-        }
+        doc = init<TestDoc>();
         writtenSlots = [];
         const port: TestPort = {
             getDoc: () => doc,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
             mutateDoc: ({ changedKeys, changeFn }) => {
-                changeFn(doc);
+                doc = change(doc, (draft) => changeFn(draft));
                 writtenSlots.push(...changedKeys);
             },
         };
@@ -149,23 +148,25 @@ describe('projection write freedom (audit CC-2 class guard)', () => {
      * that path, and the stall ships green.
      */
     function seedLegacyGainLane(): void {
-        doc.automation = {
-            lanes: [
-                {
-                    id: 'legacy-gain',
-                    trackId: 'track-knead',
-                    parameterId: 'gain',
-                    parameterName: 'Gain',
-                    points: [],
-                    objects: [],
-                    visible: true,
-                    enabled: true,
-                    collapsed: false,
-                    minValue: 0,
-                    maxValue: 1,
-                },
-            ],
-        };
+        doc = change(doc, (draft) => {
+            draft.automation = {
+                lanes: [
+                    {
+                        id: 'legacy-gain',
+                        trackId: 'track-knead',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            };
+        });
     }
 
     /**

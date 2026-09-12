@@ -1,4 +1,5 @@
 import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
@@ -42,9 +43,7 @@ export function midiClipGlueStateMatches(
         state !== undefined &&
         new Set(expectedIds).size === expectedIds.length &&
         JSON.stringify(expectedIds) === JSON.stringify(replacementIds) &&
-        expected.clips.every(
-            (clip) => JSON.stringify(snapshotClipData(state, clip.clipId)) === JSON.stringify(clip.data)
-        ) &&
+        expected.clips.every((clip) => valuesEqual(snapshotClipData(state, clip.clipId), clip.data)) &&
         JSON.stringify(expected.migratedAbsoluteNoteClipIds.value.filter((clipId) => expectedIds.includes(clipId))) ===
             JSON.stringify((state.migratedAbsoluteNoteClipIds ?? []).filter((clipId) => expectedIds.includes(clipId)))
     );

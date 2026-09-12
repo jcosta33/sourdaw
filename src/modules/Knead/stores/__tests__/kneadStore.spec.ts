@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 // A single fake CRDT document the mocked primitives read and mutate, so the
 // real `createAutomergeStorage` adapter configured by `kneadStore` exercises
@@ -53,6 +56,32 @@ describe('kneadStore persistence of transient analysis flags', () => {
         // Durable fields are still persisted.
         expect(persisted).toHaveProperty('clips');
         expect(persisted).toHaveProperty('contours');
+    });
+
+    it('preserves current analysis progress when its durable state commit is projected', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            kneadStore.set({ ...defaultKneadState, activeClipId: 'clip-1', isAnalyzing: true, analysisProgress: 0.6 });
+        });
+
+        transaction.commit();
+
+        expect(kneadStore.value?.activeClipId).toBe('clip-1');
+        expect(kneadStore.value?.isAnalyzing).toBe(true);
+        expect(kneadStore.value?.analysisProgress).toBe(0.6);
+    });
+
+    it('does not revive analysis progress reset by hydration during an open commit', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            kneadStore.set({ ...defaultKneadState, isAnalyzing: true, analysisProgress: 0.6 });
+        });
+        fakeDoc.knead = { activeClipId: null, clips: {}, contours: {} };
+        kneadStore.hydrate();
+        expect(kneadStore.value?.isAnalyzing).toBe(false);
+
+        transaction.commit();
+
+        expect(kneadStore.value?.isAnalyzing).toBe(false);
+        expect(kneadStore.value?.analysisProgress).toBe(0);
     });
 
     it('resets a stale isAnalyzing flag from an older document on hydrate', () => {

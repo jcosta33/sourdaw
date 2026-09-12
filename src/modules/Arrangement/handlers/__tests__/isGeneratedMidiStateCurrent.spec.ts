@@ -46,6 +46,52 @@ const generatedClip = {
     muted: false,
 };
 
+const exactMidiState = {
+    'generated-clip': {
+        notes: {
+            present: true,
+            value: [
+                { id: 'note-1', pitch: 36, startBeat: 0, duration: 1, velocity: 0.8, channel: 1 },
+                { id: 'note-2', pitch: 43, startBeat: 1.5, duration: 0.5, velocity: 0.65, probability: 0.9 },
+            ],
+        },
+        cc: {
+            present: true,
+            value: [{ id: 'cc-1', controller: 1, value: 64, beat: 0.5, channel: 1 }],
+        },
+        pitchBends: {
+            present: true,
+            value: [{ id: 'pitch-bend-1', value: 128, beat: 1, channel: 1 }],
+        },
+        migrated: false,
+    },
+};
+const exactMidiJson = JSON.stringify(exactMidiState);
+const editedMidiJson = JSON.stringify({
+    ...exactMidiState,
+    'generated-clip': {
+        ...exactMidiState['generated-clip'],
+        notes: {
+            ...exactMidiState['generated-clip'].notes,
+            value: exactMidiState['generated-clip'].notes.value.map((note, index) =>
+                index === 0 ? { ...note, pitch: note.pitch + 1 } : note
+            ),
+        },
+    },
+});
+const reversedMidiJson = JSON.stringify({
+    ...exactMidiState,
+    'generated-clip': {
+        ...exactMidiState['generated-clip'],
+        notes: {
+            ...exactMidiState['generated-clip'].notes,
+            value: [...exactMidiState['generated-clip'].notes.value].reverse(),
+        },
+    },
+});
+const capturedLanesJson = '[{"id":"lane-copy","points":[]}]';
+const editedLanesJson = '[{"id":"lane-copy","points":[{"value":1}]}]';
+
 function reorderObjectKeys(value: unknown): unknown {
     if (Array.isArray(value)) {
         return value.map(reorderObjectKeys);
@@ -66,7 +112,7 @@ describe('isGeneratedMidiStateCurrent', () => {
         mocks.getAllSidechainRoutes.mockReturnValue([]);
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.getEnvelope.mockReturnValue(undefined);
-        mocks.serializeMidiStateForClips.mockReturnValue('exact-midi');
+        mocks.serializeMidiStateForClips.mockReturnValue(exactMidiJson);
         mocks.hasNonDefaultWarpState.mockReturnValue(false);
         mocks.modulationStore.value = { modulators: [] };
         mocks.takeLaneStore.value = { lanes: [] };
@@ -85,7 +131,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'track',
                 guard: {
                     entityJson: JSON.stringify(generatedTrack),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(true);
@@ -105,10 +151,73 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'track',
                 guard: {
                     entityJson: JSON.stringify(reorderObjectKeys(generatedTrack)),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(true);
+    });
+
+    it('accepts recursively reordered captured MIDI object keys', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        const reorderedMidiJson = JSON.stringify(reorderObjectKeys(JSON.parse(exactMidiJson)));
+
+        expect(reorderedMidiJson).not.toBe(exactMidiJson);
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedTrack.id,
+                entityType: 'track',
+                guard: {
+                    entityJson: JSON.stringify(generatedTrack),
+                    midiByClipIdJson: reorderedMidiJson,
+                },
+            })
+        ).toBe(true);
+    });
+
+    it.each([
+        ['a changed pitch', editedMidiJson],
+        ['a reversed note array', reversedMidiJson],
+    ])('rejects %s in the captured MIDI state', (_case, midiByClipIdJson) => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedTrack.id,
+                entityType: 'track',
+                guard: {
+                    entityJson: JSON.stringify(generatedTrack),
+                    midiByClipIdJson,
+                },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects malformed captured MIDI JSON', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedTrack.id,
+                entityType: 'track',
+                guard: {
+                    entityJson: JSON.stringify(generatedTrack),
+                    midiByClipIdJson: '{',
+                },
+            })
+        ).toBe(false);
     });
 
     it.each([
@@ -157,7 +266,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'track',
                 guard: {
                     entityJson: typeof captured === 'string' ? captured : JSON.stringify(captured),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(false);
@@ -173,7 +282,7 @@ describe('isGeneratedMidiStateCurrent', () => {
             outputId: generatedTrack.id,
         };
         mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack, routedTrack] });
-        mocks.serializeMidiStateForClips.mockReturnValue('edited-midi');
+        mocks.serializeMidiStateForClips.mockReturnValue(editedMidiJson);
 
         expect(
             isGeneratedMidiStateCurrent({
@@ -181,19 +290,19 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'track',
                 guard: {
                     entityJson: JSON.stringify(generatedTrack),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(false);
 
-        mocks.serializeMidiStateForClips.mockReturnValue('exact-midi');
+        mocks.serializeMidiStateForClips.mockReturnValue(exactMidiJson);
         expect(
             isGeneratedMidiStateCurrent({
                 entityId: generatedTrack.id,
                 entityType: 'track',
                 guard: {
                     entityJson: JSON.stringify(generatedTrack),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(false);
@@ -213,7 +322,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'clip',
                 guard: {
                     entityJson: JSON.stringify(generatedClip),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(false);
@@ -231,7 +340,7 @@ describe('isGeneratedMidiStateCurrent', () => {
         mocks.serializeClipSatelliteEntries.mockReturnValue('captured-satellites');
         const guard = {
             entityJson: JSON.stringify(generatedClip),
-            midiByClipIdJson: 'exact-midi',
+            midiByClipIdJson: exactMidiJson,
             clipSatellitesJson: 'captured-satellites',
         };
 
@@ -258,7 +367,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'clip',
                 guard: {
                     entityJson: JSON.stringify(generatedClip),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                     clipSatellitesJson: 'captured-satellites',
                 },
             })
@@ -281,7 +390,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 entityType: 'clip',
                 guard: {
                     entityJson: JSON.stringify(generatedClip),
-                    midiByClipIdJson: 'exact-midi',
+                    midiByClipIdJson: exactMidiJson,
                 },
             })
         ).toBe(false);
@@ -297,20 +406,67 @@ describe('isGeneratedMidiStateCurrent', () => {
         // must not conflict.
         mocks.getAutomationLanes.mockReturnValue([{ id: 'lane-copy', clipId: 'generated-clip' }]);
         mocks.serializeClipSatelliteEntries.mockReturnValue('captured-satellites');
-        mocks.serializeClipScopedAutomationLanes.mockReturnValue('captured-lanes');
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue(capturedLanesJson);
         const guard = {
             entityJson: JSON.stringify(generatedClip),
-            midiByClipIdJson: 'exact-midi',
+            midiByClipIdJson: exactMidiJson,
             clipSatellitesJson: 'captured-satellites',
-            clipAutomationLanesJson: 'captured-lanes',
+            clipAutomationLanesJson: JSON.stringify(reorderObjectKeys(JSON.parse(capturedLanesJson))),
         };
 
         expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(true);
         expect(mocks.serializeClipScopedAutomationLanes).toHaveBeenCalledWith(['generated-clip']);
 
         // The user edited the copy's lane after the duplicate: undo must refuse.
-        mocks.serializeClipScopedAutomationLanes.mockReturnValue('edited-lanes');
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue(editedLanesJson);
         expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(false);
+    });
+
+    it('accepts recursively reordered projected automation keys and rejects a malformed capture', () => {
+        const generatedTrack = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        const projectedLane = {
+            id: 'lane-copy',
+            trackId: 'generated-track',
+            clipId: 'generated-clip',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [{ id: 'point-1', beat: 0, value: 0.5, curve: 'linear' as const, tension: 0 }],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            minValue: 0,
+            maxValue: 1,
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        const projectedClipState = {
+            locatedClip: { owningTrackId: generatedTrack.id, clip: generatedClip },
+            clipScopedLanes: [projectedLane],
+            restoredSatelliteEntry: null,
+            touchedByPriorSibling: true,
+        };
+        const guard = {
+            entityJson: JSON.stringify(generatedClip),
+            midiByClipIdJson: exactMidiJson,
+            clipAutomationLanesJson: JSON.stringify(reorderObjectKeys([projectedLane])),
+        };
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedClip.id,
+                entityType: 'clip',
+                guard,
+                projectedClipState,
+            })
+        ).toBe(true);
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedClip.id,
+                entityType: 'clip',
+                guard: { ...guard, clipAutomationLanesJson: '{' },
+                projectedClipState,
+            })
+        ).toBe(false);
     });
 
     it('accepts a generated track carrying its captured clip-scoped lanes, and still refuses a track-scoped lane on it', () => {
@@ -324,11 +480,11 @@ describe('isGeneratedMidiStateCurrent', () => {
         // presence alone must not conflict when the capture still matches.
         const clonedLane = { id: 'lane-copy', trackId: 'generated-track', clipId: 'generated-clip' };
         mocks.getAutomationLanes.mockReturnValue([clonedLane]);
-        mocks.serializeClipScopedAutomationLanes.mockReturnValue('captured-lanes');
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue(capturedLanesJson);
         const guard = {
             entityJson: JSON.stringify(generatedTrack),
-            midiByClipIdJson: 'exact-midi',
-            clipAutomationLanesJson: 'captured-lanes',
+            midiByClipIdJson: exactMidiJson,
+            clipAutomationLanesJson: capturedLanesJson,
         };
 
         expect(isGeneratedMidiStateCurrent({ entityId: generatedTrack.id, entityType: 'track', guard })).toBe(true);
@@ -341,7 +497,7 @@ describe('isGeneratedMidiStateCurrent', () => {
 
         // And a clip-scoped lane the user moved after the capture refuses too.
         mocks.getAutomationLanes.mockReturnValue([clonedLane]);
-        mocks.serializeClipScopedAutomationLanes.mockReturnValue('edited-lanes');
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue(editedLanesJson);
         expect(isGeneratedMidiStateCurrent({ entityId: generatedTrack.id, entityType: 'track', guard })).toBe(false);
     });
 });

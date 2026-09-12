@@ -1,6 +1,10 @@
+import { change, from, toJS, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -419,5 +423,105 @@ describe('adjustmentLayerFreezeStaleness', () => {
 
         unsubscribeLayer();
         unsubscribeTrack();
+    });
+
+    it('preserves an unrelated frozen layer scope through decoded command undo and redo', async () => {
+        let document: Doc<Record<string, unknown>> = from({});
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
+        });
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+
+        const layerA = createLayer({
+            id: 'layer-a',
+            affectedTrackIds: ['track-a'],
+            parameters: [
+                { name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' },
+                { name: 'Trim', value: -3, min: -12, max: 12, unit: 'dB' },
+            ],
+        });
+        const layerB = createLayer({
+            id: 'layer-b',
+            name: 'Track B layer',
+            affectedTrackIds: ['track-b'],
+            parameters: [
+                { name: 'Drive', value: 2, min: 0, max: 12, unit: 'dB' },
+                { name: 'Tone', value: 0.25, min: 0, max: 1, unit: '' },
+            ],
+        });
+        trackStore.set({
+            tracks: [createFrozenTrack('track-a'), createFrozenTrack('track-b')],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        adjustmentLayerStore.set({ layers: [layerA, layerB] });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+
+        const decodedBaseline = getLayerState();
+        const drive = decodedBaseline.layers[1]!.parameters[0]!;
+        const reorderedDrive = {
+            unit: drive.unit,
+            max: drive.max,
+            min: drive.min,
+            value: drive.value,
+            name: drive.name,
+        };
+        const capturedParameterKeyOrder = Object.keys(reorderedDrive);
+        adjustmentLayerStore.set({
+            layers: [
+                decodedBaseline.layers[0]!,
+                {
+                    ...decodedBaseline.layers[1]!,
+                    parameters: [reorderedDrive, ...decodedBaseline.layers[1]!.parameters.slice(1)],
+                },
+            ],
+        });
+        expect(capturedParameterKeyOrder).toEqual(['unit', 'max', 'min', 'value', 'name']);
+
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-a', mix: 0.75 } });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(toJS(document)).toMatchObject({
+            adjustmentLayers: {
+                layers: [
+                    { id: 'layer-a', parameters: [{ name: 'Gain' }, { name: 'Trim' }] },
+                    { id: 'layer-b', parameters: [{ name: 'Drive' }, { name: 'Tone' }] },
+                ],
+            },
+        });
+        expect(Object.keys(getLayerState().layers[1]!.parameters[0]!)).not.toEqual(capturedParameterKeyOrder);
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[1]).toEqual(layerB);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(getTrack('track-a').freezeState.status).toBe('frozen');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[0]!.parameters.map((parameter) => parameter.name)).toEqual(['Gain', 'Trim']);
+        expect(getLayerState().layers[1]).toEqual(layerB);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[0]!.parameters.map((parameter) => parameter.name)).toEqual(['Gain', 'Trim']);
+        expect(getLayerState().layers[1]).toEqual(layerB);
     });
 });

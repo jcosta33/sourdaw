@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type ChordTrackActionSnapshot, type HandlerDescribeResult } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
 import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
@@ -71,7 +72,7 @@ export function describeChordTrackMutation(action: ChordMutationAction, label: s
 
 export function isChordTrackMutationNoop(action: ChordMutationAction): boolean {
     const state = chordTrackStore.value;
-    return !state || JSON.stringify(state) === JSON.stringify(projectState(state, action));
+    return !state || jsonValuesEqual(state, projectState(state, action));
 }
 
 export const handleMoveChordEvent = createHandler<'moveChordEvent'>({
@@ -91,7 +92,7 @@ export const handleUpdateChordEvent = createHandler<'updateChordEvent'>({
 export const handleRestoreChordTrackState = createHandler<'restoreChordTrackState'>({
     execute: (action) => {
         const current = chordTrackStore.value;
-        const matchesExpected = current && JSON.stringify(current) === JSON.stringify(action.payload.expected);
+        const matchesExpected = current && jsonValuesEqual(current, action.payload.expected);
         if (!matchesExpected) {
             return { status: 'conflict' };
         }

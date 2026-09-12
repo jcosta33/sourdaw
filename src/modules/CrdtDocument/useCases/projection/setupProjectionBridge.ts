@@ -21,12 +21,10 @@ import { projectCrdtToStores } from './projectProjection';
  * full re-projection, because the changed key set is not knowable from a merged
  * document.
  *
- * Trade-off taken deliberately: for the few slots whose adapter normalizes on
- * the way into the document (`mutateCrdt` / `toCrdt` on chordTrack,
- * grooveTemplates, yeast), that normalization no longer bounces straight back
- * into the store on the writer's own change — it lands on the next
- * document-origin projection. The value the writer set stays the value the
- * writer sees, which is what a local edit means.
+ * The writing adapter projects its own slot from fresh document authority at
+ * commit settlement, after `mutateCrdt` / `toCrdt` normalization. The bridge
+ * still skips that slot to avoid a second projection during publication while
+ * sibling-derived projections continue through this route.
  */
 export function setupProjectionBridge(): () => void {
     return automergeRepository.onChange((docId?: string, hint?: { readonly localSlots: readonly string[] }) => {

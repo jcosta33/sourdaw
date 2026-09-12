@@ -445,8 +445,8 @@ describe('track-state guarded undo integration', () => {
         it('flatten: gives back the device chain, the track kind and the frozen take', async () => {
             const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
             const devices = [
-                { id: 'device-1', type: 'instrument', name: 'Synth', params: {}, bypassed: false },
-                { id: 'device-2', type: 'effect', name: 'Reverb', params: {}, bypassed: false },
+                { id: 'device-1', type: 'instrument', name: 'Synth', parameterValues: {}, bypassed: false },
+                { id: 'device-2', type: 'effect', name: 'Reverb', parameterValues: {}, bypassed: false },
             ];
             const freezeState = { status: 'frozen' as const, freezeId: 'freeze-1', frozenBufferId: 'buffer-1' };
             divergeTrack('track-1', {

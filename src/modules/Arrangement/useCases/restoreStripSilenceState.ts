@@ -1,4 +1,5 @@
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
@@ -76,9 +77,7 @@ export function restoreStripSilenceState({ expected, replacement }: RestoreStrip
     }
 
     const expectedIndexes = expected.clips.map((clip) =>
-        track.clips.findIndex(
-            (candidate) => candidate.id === clip.id && JSON.stringify(candidate) === JSON.stringify(clip)
-        )
+        track.clips.findIndex((candidate) => candidate.id === clip.id && jsonValuesEqual(candidate, clip))
     );
     const expectedIdSet = new Set(expectedClipIds);
     const hasUnexpectedAffectedClip = track.clips.some(
