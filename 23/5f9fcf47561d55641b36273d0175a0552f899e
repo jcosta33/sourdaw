@@ -1,0 +1,21 @@
+scripts/packagedAppSession.ts
+  s_06adf2b091dc62::t_a15381cff831c3 78-82
+scripts/proveDesktopAgentWorkspace.ts
+  s_06adf2b091dc62::t_9b4ac2bdccd779 146-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "235f9fcf47561d55641b36273d0175a0552f899e",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
