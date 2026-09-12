@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackNotesSection.tsx
+  s_159146fff2d53c::t_ef4d6ae937cf5d 4,53-56
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackNotesSection.spec.tsx
+  s_159146fff2d53c::t_542bc58db7d168 4-5,10-13,136-139,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92b126af616ee2216bc4ff64ffa977858f712985",
+  "prompts": {},
+  "sessions": {
+    "s_159146fff2d53c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09556-856b-7a21-8f3b-9e9449e8195d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
