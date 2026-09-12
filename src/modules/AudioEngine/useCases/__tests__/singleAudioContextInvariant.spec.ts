@@ -147,23 +147,33 @@ describe('single AudioContext invariant census', () => {
         // createWebAudioEngine.ts's fallback-mode `createNoopAudioContext` builds
         // a throwaway 1-frame OfflineAudioContext as a structurally-checked
         // AudioContext shim; it never carries live playback and does not
-        // compete with the one live context asserted above.
+        // compete with the one live context asserted above. The permitted
+        // count bounds the exemption to that one shim: the same path
+        // constructing a second, unrelated OfflineAudioContext is still an
+        // offender.
         const permittedRepositoryOffenders = [
             {
                 path: LIVE_CONTEXT_OWNER,
+                count: 1,
                 reason: 'createNoopAudioContext builds a 1-frame OfflineAudioContext-based fallback shim, not a live context',
             },
         ];
-        const permittedPaths = new Set(permittedRepositoryOffenders.map((entry) => entry.path));
+        const permittedCountByPath = new Map(permittedRepositoryOffenders.map((entry) => [entry.path, entry.count]));
 
-        const offenders = Array.from(offlineByFile.keys())
-            .filter((path) => path.startsWith(REPOSITORIES_DIR_PREFIX))
-            .filter((path) => !permittedPaths.has(path));
+        const repositoryEntries = Array.from(offlineByFile.entries()).filter(([path]) =>
+            path.startsWith(REPOSITORIES_DIR_PREFIX)
+        );
+        const repositoryCounts = repositoryEntries.map(([path, count]) => ({
+            path,
+            count,
+            permittedCount: permittedCountByPath.get(path),
+        }));
+        const offenders = repositoryCounts.filter((entry) => entry.permittedCount !== entry.count);
 
         expect(
             offenders,
             `these files under ${REPOSITORIES_DIR_PREFIX} construct an OfflineAudioContext outside the named ` +
-                `capability probe exception: ${offenders.join(', ')}`
+                `capability probe exception, or at a count other than its permitted count: ${JSON.stringify(offenders)}`
         ).toEqual([]);
     });
 });

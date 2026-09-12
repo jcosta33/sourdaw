@@ -330,24 +330,43 @@ function totalNodeCreationCalls(mockCtx: MockAudioContext, workletNodeCallCount:
     );
 }
 
-/** Connect calls summed across every node any factory in
- *  `CONTEXT_NODE_FACTORY_NAMES` has produced on this mock context, read from
- *  each factory's `mock.results` rather than a fixed set of nodes a test
- *  happens to hold a reference to. The master gain and its three analysers
- *  are themselves products of `createGain`/`createAnalyser`, so this census
- *  already counts them; nothing sums them a second time. It does not cover a
- *  worklet device's own outgoing connects: a worklet node comes from
+/** Every node any factory in `CONTEXT_NODE_FACTORY_NAMES` has produced on this
+ *  mock context, read from each factory's `mock.results` rather than a fixed
+ *  set of nodes a test happens to hold a reference to. The master gain and
+ *  its three analysers are themselves products of `createGain`/`createAnalyser`,
+ *  so this walk already includes them; nothing sums them a second time. It
+ *  does not cover a worklet device's own node: a worklet node comes from
  *  `new AudioWorkletNode(...)`, never a context factory, so it never appears
  *  in a factory's `mock.results` — the `AudioWorkletNode` construction spy
- *  above covers that route instead. */
-function totalConnectCallsAcrossMockContextNodes(mockCtx: MockAudioContext): number {
-    return CONTEXT_NODE_FACTORY_NAMES.reduce((total, name) => {
-        const factory = mockCtx[name] as unknown as Mock<(...args: unknown[]) => { connect: Mock }>;
+ *  above covers that route instead. Shared by the connect and disconnect
+ *  censuses below so both count edges over the identical node set. */
+function mockContextNodesFromFactories(mockCtx: MockAudioContext): Array<{ connect: Mock; disconnect: Mock }> {
+    return CONTEXT_NODE_FACTORY_NAMES.reduce<Array<{ connect: Mock; disconnect: Mock }>>((nodes, name) => {
+        const factory = mockCtx[name] as unknown as Mock<(...args: unknown[]) => { connect: Mock; disconnect: Mock }>;
         const returnedNodes = factory.mock.results
-            .filter((result): result is { type: 'return'; value: { connect: Mock } } => result.type === 'return')
+            .filter(
+                (result): result is { type: 'return'; value: { connect: Mock; disconnect: Mock } } =>
+                    result.type === 'return'
+            )
             .map((result) => result.value);
-        return total + returnedNodes.reduce((sum, node) => sum + node.connect.mock.calls.length, 0);
-    }, 0);
+        return nodes.concat(returnedNodes);
+    }, []);
+}
+
+/** Connect calls summed across every node the walk above finds. */
+function totalConnectCallsAcrossMockContextNodes(mockCtx: MockAudioContext): number {
+    return mockContextNodesFromFactories(mockCtx).reduce((total, node) => total + node.connect.mock.calls.length, 0);
+}
+
+/** Disconnect calls summed across the same node set the connect census
+ *  walks — this is what proves a rejection removed no edge, not just added
+ *  none. Unlike the connect census, this carries no greater-than-zero
+ *  vacuity guard at construction: a freshly built engine graph legitimately
+ *  disconnects nothing before any mutation runs, so a zero baseline is a
+ *  true reading rather than a broken walk. The connect census's own guard
+ *  already proves this walk sees the node set at all. */
+function totalDisconnectCallsAcrossMockContextNodes(mockCtx: MockAudioContext): number {
+    return mockContextNodesFromFactories(mockCtx).reduce((total, node) => total + node.disconnect.mock.calls.length, 0);
 }
 
 const INVALID_DELTA_INPUT = { schemaVersion: 1, command: 'not-a-real-command' };
@@ -389,6 +408,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         const revisionBefore = engine.getRuntimeGraphRevision();
         const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
         const connectCallsBefore = totalConnectCallsAcrossMockContextNodes(mockCtx);
+        const disconnectCallsBefore = totalDisconnectCallsAcrossMockContextNodes(mockCtx);
         // Vacuity guard: a census that saw nothing would pass the unchanged
         // assertion below no matter what the rejected input did.
         expect(connectCallsBefore).toBeGreaterThan(0);
@@ -405,6 +425,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
         expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
         expect(totalConnectCallsAcrossMockContextNodes(mockCtx)).toBe(connectCallsBefore);
+        expect(totalDisconnectCallsAcrossMockContextNodes(mockCtx)).toBe(disconnectCallsBefore);
     });
 
     it('leaves the live graph unchanged when initializeTrackStripFromSnapshot rejects an invalid snapshot', () => {
@@ -412,6 +433,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         const revisionBefore = engine.getRuntimeGraphRevision();
         const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
         const connectCallsBefore = totalConnectCallsAcrossMockContextNodes(mockCtx);
+        const disconnectCallsBefore = totalDisconnectCallsAcrossMockContextNodes(mockCtx);
         // Vacuity guard: a census that saw nothing would pass the unchanged
         // assertion below no matter what the rejected input did.
         expect(connectCallsBefore).toBeGreaterThan(0);
@@ -426,6 +448,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
         expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
         expect(totalConnectCallsAcrossMockContextNodes(mockCtx)).toBe(connectCallsBefore);
+        expect(totalDisconnectCallsAcrossMockContextNodes(mockCtx)).toBe(disconnectCallsBefore);
     });
 });
 
