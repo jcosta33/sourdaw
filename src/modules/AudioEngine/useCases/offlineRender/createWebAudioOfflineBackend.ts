@@ -357,9 +357,10 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // engine instrument — so a producer never aims one here.
                 return null;
             case 'send-midi-note':
-                // An offline render has no live keys: there is no player, and a
-                // note with no timeline position has no frame this carrier
-                // could place it on.
+            case 'send-midi-control':
+                // An offline render has no player: no live keys, and no foot on
+                // a pedal. A message with no timeline position has no frame
+                // this carrier could place it on.
                 return null;
             case 'insert-device':
             case 'remove-device':

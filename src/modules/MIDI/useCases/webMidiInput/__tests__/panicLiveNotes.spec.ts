@@ -16,6 +16,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         context: { currentTime: 7 },
         getTrackStrip: get_track_strip,
     },
+    sendNativeLiveMidiControl: vi.fn(async () => true),
     sendNativeLiveMidiNote: send_native_live_midi_note,
 }));
 

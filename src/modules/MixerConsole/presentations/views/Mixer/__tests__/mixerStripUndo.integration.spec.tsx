@@ -333,6 +333,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(),
     waitForDevices: vi.fn(),
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({

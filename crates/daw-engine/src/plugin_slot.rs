@@ -27,6 +27,21 @@ pub struct MidiNoteEvent {
     pub absolute_occurrence_index: u64,
 }
 
+/// A live MIDI controller message to send to a plugin.
+///
+/// No frame, deliberately: a controller is a state write rather than a sounded
+/// event, and it lands at the head of the block that drains it — the same law a
+/// live note is held to ([`MidiNoteEvent::frame_offset`] of zero), because a
+/// pedal pressed under the player's foot has no timeline position to stamp it
+/// against either. Nothing stamps a controller for a later frame, so it applies
+/// before that block's notes render.
+#[derive(Clone, Copy)]
+pub struct MidiControlEvent {
+    pub controller: u8,
+    pub value: u8,
+    pub channel: i16,
+}
+
 /// Transport state for plugins that need tempo/position info.
 ///
 /// Ownership is split by field, not by writer: tempo and time signature are

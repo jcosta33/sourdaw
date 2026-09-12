@@ -11,6 +11,7 @@ vi.mock('../../../repositories/webMidi/lifecycle/resetMidiState', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: { context: { currentTime: 0 }, getTrackStrip: () => undefined },
+    sendNativeLiveMidiControl: vi.fn(async () => true),
     sendNativeLiveMidiNote: send_native_live_midi_note,
 }));
 

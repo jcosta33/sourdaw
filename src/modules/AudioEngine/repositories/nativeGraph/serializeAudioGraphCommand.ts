@@ -46,6 +46,8 @@ import {
     type AudioGraphMidiNoteEvent,
     type AudioGraphParameterWrite,
     type AudioGraphRouteTarget,
+    type AudioGraphSendMidiControlCommand,
+    type AudioGraphSendMidiNoteCommand,
     type AudioGraphSendTap,
     type AudioGraphStepWrite,
     type AudioGraphStripParameterTarget,
@@ -151,6 +153,14 @@ export type NativeGraphWireCommand =
           channel: number;
           isNoteOn: boolean;
       }>
+    | Readonly<{
+          kind: 'send-midi-control';
+          trackId: string;
+          deviceId: string;
+          controller: number;
+          value: number;
+          channel: number;
+      }>
     | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
     | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
@@ -222,6 +232,37 @@ function serializeMidiNote(note: AudioGraphMidiNoteEvent): NativeGraphWireMidiNo
     };
 }
 
+/**
+ * The two live messages, which the mirror reads on the same terms: a device
+ * named by strip and id, and nothing placing the message on the timeline.
+ *
+ * Split out of the switch below because they are the one pair of commands that
+ * share a shape rather than a field list, so stating the shared half once is
+ * what keeps a note and a controller addressing the same device.
+ */
+function serializeLiveMidi(
+    command: AudioGraphSendMidiNoteCommand | AudioGraphSendMidiControlCommand
+): NativeGraphWireCommand {
+    const target = { trackId: command.target.trackId, deviceId: command.target.deviceId };
+    if (command.kind === 'send-midi-note') {
+        return {
+            kind: 'send-midi-note',
+            ...target,
+            note: command.note,
+            velocity: command.velocity,
+            channel: command.channel,
+            isNoteOn: command.isNoteOn,
+        };
+    }
+    return {
+        kind: 'send-midi-control',
+        ...target,
+        controller: command.controller,
+        value: command.value,
+        channel: command.channel,
+    };
+}
+
 export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGraphWireCommand {
     switch (command.kind) {
         case 'create-track-strip':
@@ -289,15 +330,8 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
                 notes: command.notes.map(serializeMidiNote),
             };
         case 'send-midi-note':
-            return {
-                kind: 'send-midi-note',
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                note: command.note,
-                velocity: command.velocity,
-                channel: command.channel,
-                isNoteOn: command.isNoteOn,
-            };
+        case 'send-midi-control':
+            return serializeLiveMidi(command);
         case 'clear-midi':
             return {
                 kind: 'clear-midi',

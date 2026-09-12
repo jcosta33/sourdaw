@@ -30,6 +30,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
 }));
 
@@ -46,6 +47,15 @@ type HandleWebMidiCCDependencies = Parameters<typeof handleWebMidiCC._factory>[0
  */
 const LIVE_DISPATCH_FRAME = 96_128;
 
+/** The native pedal route, recorded so a carried Grand Boule can be observed. */
+const send_native_live_midi_control = vi.fn(async () => true);
+
+/** One Grand Boule on the selected track, which is what the pedal specs need. */
+const grand_boule_track_state = () => ({
+    tracks: [{ id: 'track-1', devices: [{ id: 'gb-1', type: 'grand-boule' }] }],
+    selectedTrackId: 'track-1',
+});
+
 function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {}): HandleWebMidiCCDependencies {
     return {
         getMidiLearnState: () => ({
@@ -59,6 +69,8 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         panicLiveNotes: () => {},
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiControl: send_native_live_midi_control,
         ...overrides,
     };
 }
@@ -74,6 +86,7 @@ describe('handleWebMidiCC', () => {
         set_track_gain.mockReset();
         set_track_pan.mockReset();
         get_track_strip.mockReset();
+        send_native_live_midi_control.mockClear();
     });
 
     it('should complete MIDI learn and skip ordinary mapping while learning', () => {
@@ -239,6 +252,9 @@ describe('handleWebMidiCC', () => {
             type: 'midi.pedalCc',
             payload: { deviceId: 'gb-1', cc: 64, value: 1 },
         });
+        // A device no native session carries is voiced on Web Audio and
+        // nowhere else.
+        expect(send_native_live_midi_control).not.toHaveBeenCalled();
     });
 
     it('treats sostenuto CC 66 as a switch (on only at value >= 64)', () => {
@@ -297,6 +313,101 @@ describe('handleWebMidiCC', () => {
 
         fn(0, 67, 127);
         expect(set_una_corda).toHaveBeenLastCalledWith(true);
+    });
+
+    it('sends a carried Grand Boule its pedals natively, with the raw 7-bit value', () => {
+        target_track_id.value = 'track-1';
+        const set_sustain = vi.fn<(value: number) => void>();
+        const set_sostenuto = vi.fn<(on: boolean) => void>();
+        const set_una_corda = vi.fn<(on: boolean) => void>();
+        const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: grand_boule_track_state,
+                isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                    trackId === 'track-1' && deviceId === 'gb-1',
+                eventBus: {
+                    emit: (type: string, payload: Record<string, unknown>) => {
+                        emitted.push({ type, payload });
+                        return Promise.resolve();
+                    },
+                    on: () => () => {},
+                },
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                {
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: {
+                        ready: true,
+                        setSustain: set_sustain,
+                        setSostenuto: set_sostenuto,
+                        setUnaCorda: set_una_corda,
+                    },
+                },
+            ],
+        });
+
+        fn(3, 64, 96);
+        fn(3, 66, 127);
+        fn(3, 67, 0);
+
+        // The raw byte on every one, never the normalized fraction: the
+        // engine's body divides CC 64 by full scale itself and reads 66 and 67
+        // against its own switch threshold.
+        expect(send_native_live_midi_control).toHaveBeenCalledTimes(3);
+        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(1, {
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: 64,
+            value: 96,
+            channel: 3,
+        });
+        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(2, {
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: 66,
+            value: 127,
+            channel: 3,
+        });
+        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(3, {
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: 67,
+            value: 0,
+            channel: 3,
+        });
+
+        // The Web Audio node is gated silent while the engine carries the
+        // device, so pressing the pedal there would hold notes nobody hears.
+        expect(set_sustain).not.toHaveBeenCalled();
+        expect(set_sostenuto).not.toHaveBeenCalled();
+        expect(set_una_corda).not.toHaveBeenCalled();
+
+        // The panel reads its pedal indicators off this event whichever
+        // carrier sounds the instrument.
+        expect(emitted).toEqual([
+            { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 64, value: 96 / 127 } },
+            { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 66, value: true } },
+            { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 67, value: false } },
+        ]);
+    });
+
+    it('sends a carried Grand Boule nothing for a controller that is not a pedal', () => {
+        target_track_id.value = 'track-1';
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: grand_boule_track_state,
+                isDeviceCarriedByNativeSession: () => true,
+            })
+        );
+        get_track_strip.mockReturnValue({ deviceNodes: [] });
+
+        fn(0, 74, 40);
+
+        expect(send_native_live_midi_control).not.toHaveBeenCalled();
     });
 
     it('does not engage Grand Boule pedals when the device node is not ready', () => {
