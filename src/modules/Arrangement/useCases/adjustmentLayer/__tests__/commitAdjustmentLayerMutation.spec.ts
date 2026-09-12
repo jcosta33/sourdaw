@@ -52,7 +52,7 @@ function makeFrozenTrack(id: string): Track {
                 muted: false,
             },
         ],
-        devices: [{ id: 'd1', type: 'gain', parameterValues: { gain: 1 }, bypassed: false }],
+        devices: [{ id: 'd1', type: 'gain', name: 'Gain', parameterValues: { gain: 1 }, bypassed: false }],
         frozen: true,
         freezeState: { status: 'frozen' },
     };
