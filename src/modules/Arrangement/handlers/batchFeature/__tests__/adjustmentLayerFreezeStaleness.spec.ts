@@ -1,6 +1,10 @@
+import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -419,5 +423,75 @@ describe('adjustmentLayerFreezeStaleness', () => {
 
         unsubscribeLayer();
         unsubscribeTrack();
+    });
+
+    it('preserves an unrelated frozen layer scope through decoded command undo and redo', async () => {
+        let document: Doc<Record<string, unknown>> = from({});
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
+        });
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+
+        const layerA = createLayer({
+            id: 'layer-a',
+            affectedTrackIds: ['track-a'],
+            parameters: [
+                { name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' },
+                { name: 'Trim', value: -3, min: -12, max: 12, unit: 'dB' },
+            ],
+        });
+        const layerB = createLayer({
+            id: 'layer-b',
+            name: 'Track B layer',
+            affectedTrackIds: ['track-b'],
+            parameters: [
+                { name: 'Drive', value: 2, min: 0, max: 12, unit: 'dB' },
+                { name: 'Tone', value: 0.25, min: 0, max: 1, unit: '' },
+            ],
+        });
+        trackStore.set({
+            tracks: [createFrozenTrack('track-a'), createFrozenTrack('track-b')],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        adjustmentLayerStore.set({ layers: [layerA, layerB] });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-a', mix: 0.75 } });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[1]!.parameters.map((parameter) => parameter.name)).toEqual(['Drive', 'Tone']);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(getTrack('track-a').freezeState.status).toBe('frozen');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[0]!.parameters.map((parameter) => parameter.name)).toEqual(['Gain', 'Trim']);
+        expect(getLayerState().layers[1]!.parameters.map((parameter) => parameter.name)).toEqual(['Drive', 'Tone']);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        adjustmentLayerStore.hydrate();
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
+        expect(getLayerState().layers[0]!.parameters.map((parameter) => parameter.name)).toEqual(['Gain', 'Trim']);
+        expect(getLayerState().layers[1]!.parameters.map((parameter) => parameter.name)).toEqual(['Drive', 'Tone']);
     });
 });

@@ -31,7 +31,7 @@ const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const DEVICE_ID = 'device-groove-undo';
 const TEMPLATE_ID = 'swing-undo';
 
-type RootDocument = Record<string, unknown> & { yeast?: unknown };
+type RootDocument = Record<string, unknown> & { grooveTemplates?: unknown; yeast?: unknown };
 type NotificationEvents = {
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
@@ -156,15 +156,70 @@ describe('Yeast processor removal undo restores groove assignments (#4124)', () 
             type: 'addYeastProcessor',
             payload: { processorId: 'added-1', type: 'groove', name: 'Added groove' },
         });
-        expect(yeastStore.value?.processors.some((processor) => processor.id === 'added-1')).toBe(true);
-        expect(toJS(document).yeast).toBeDefined();
+        flushAutomergeStorageWrites();
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'added-1')).toEqual({
+            id: 'added-1',
+            type: 'groove',
+            name: 'Added groove',
+            bypassed: false,
+        });
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
+        expect(toJS(document)).toMatchObject({
+            yeast: {
+                racks: {
+                    [DEVICE_ID]: {
+                        processors: {
+                            'added-1': {
+                                deleted: false,
+                                value: {
+                                    id: 'added-1',
+                                    type: 'groove',
+                                    name: 'Added groove',
+                                    bypassed: false,
+                                    params: {},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            grooveTemplates: { assignments: {} },
+        });
 
         const undone = await undo();
+        flushAutomergeStorageWrites();
         expect(undone.headConsumed).toBe(true);
         expect(yeastStore.value?.processors.some((processor) => processor.id === 'added-1')).toBe(false);
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
+        expect(toJS(document)).toMatchObject({
+            yeast: { racks: { [DEVICE_ID]: { processors: { 'added-1': { deleted: true } } } } },
+            grooveTemplates: { assignments: {} },
+        });
 
         await redo();
-        expect(yeastStore.value?.processors.some((processor) => processor.id === 'added-1')).toBe(true);
+        flushAutomergeStorageWrites();
+        expect(yeastStore.value?.processors.find((processor) => processor.id === 'added-1')).toEqual({
+            id: 'added-1',
+            type: 'groove',
+            name: 'Added groove',
+            bypassed: false,
+        });
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
+        expect(toJS(document)).toMatchObject({
+            yeast: {
+                racks: {
+                    [DEVICE_ID]: {
+                        processors: {
+                            'added-1': {
+                                deleted: false,
+                                value: { id: 'added-1', params: {} },
+                            },
+                        },
+                    },
+                },
+            },
+            grooveTemplates: { assignments: {} },
+        });
         expect(notifications).toEqual([]);
     });
 
@@ -181,13 +236,27 @@ describe('Yeast processor removal undo restores groove assignments (#4124)', () 
                 processor.id === 'groove-1' ? { ...processor, params: { amount: 0.5 } } : processor
             ),
         });
+        flushAutomergeStorageWrites();
+        expect(toJS(document)).toMatchObject({
+            yeast: {
+                racks: {
+                    [DEVICE_ID]: {
+                        processors: { 'groove-1': { deleted: false, value: { params: { amount: 0.5 } } } },
+                    },
+                },
+            },
+        });
 
         await redo();
 
         expect(yeastStore.value?.processors.find((processor) => processor.id === 'groove-1')?.params).toEqual({
             amount: 0.5,
         });
-        expect(undoHistoryStore.value.future).toHaveLength(1);
+        const history = undoHistoryStore.value;
+        if (!history) {
+            throw new Error('Expected undo history');
+        }
+        expect(history.future).toHaveLength(1);
         expect(notifications).toEqual([
             { level: 'warning', message: 'Cannot redo "Remove Yeast processor": project state has changed' },
         ]);

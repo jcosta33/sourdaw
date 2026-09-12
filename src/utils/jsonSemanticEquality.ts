@@ -19,15 +19,6 @@ function parseJson(serialized: string): { valid: true; value: unknown } | { vali
     }
 }
 
-export function jsonNormalizedValue(value: unknown): unknown {
-    const serialized = serializeJson(value);
-    if (serialized.status !== 'serialized') {
-        return undefined;
-    }
-    const parsed = parseJson(serialized.value);
-    return parsed.valid ? parsed.value : undefined;
-}
-
 /**
  * Compares values as JSON snapshots. Object key order and omitted object
  * properties follow JSON serialization semantics; array order remains strict.

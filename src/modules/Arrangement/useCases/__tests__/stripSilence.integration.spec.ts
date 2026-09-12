@@ -1,10 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { setActionHistoryMetadataPort } from '#/modules/Command/useCases/actionHistoryMetadataPort';
+import { clearUndoHistory } from '#/modules/Command/useCases/clearUndoHistory';
+import { executeAppAction } from '#/modules/Command/useCases/executeAppAction';
+import { redo } from '#/modules/Command/useCases/redo';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases/resetActionReplayAuthority';
+import { undo } from '#/modules/Command/useCases/undo';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
+import { handleRestoreStripSilenceState } from '../../handlers/clip/handleRestoreStripSilenceState';
+import { handleStripSilence } from '../../handlers/clip/handleStripSilence';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { trackStore } from '../../stores/trackStore';
 import { setWarpState, warpStates } from '../../stores/warpStates';
@@ -16,7 +43,8 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
@@ -47,6 +75,18 @@ const FIXTURE_TEMPO = 600;
 const SAMPLES_PER_BEAT = 10;
 const CLIP_START_BEAT = 16;
 const CLIP_AUDIO_OFFSET_BEATS = 3;
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 /**
  * Sound at buffer beats [0,2), [4,6) and [10,13). The first block is BEFORE
@@ -88,6 +128,22 @@ function setClipAutomationLane(laneId: string, points: AutomationLanePoints): vo
 describe('stripSilence satellite migration (ledger #2108)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Container.clear();
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('strip silence integration');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap({
+            stripSilence: handleStripSilence,
+            restoreStripSilenceState: handleRestoreStripSilenceState,
+        });
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setNotificationEventBus(createEventBus<NotificationEvents>());
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
         transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
         const source = ClipDummy.create({
             id: 'clip-1',
@@ -108,11 +164,18 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
     });
 
     afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         __resetGainEnvelopesForTest();
         warpStates.clear();
         transportStore.set(defaultTransportState);
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
     });
 
     it('places every segment on the audio it already played (regression #2108)', () => {
@@ -143,6 +206,41 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         expect(restoreStripSilenceState({ expected: plan!.next, replacement: plan!.previous })).toBe(true);
         expect(trackStore.value!.tracks[0]!.clips).toHaveLength(1);
         expect(restoreStripSilenceState({ expected: plan!.previous, replacement: plan!.next })).toBe(true);
+    });
+
+    it('round-trips decoded replacement clips through command undo and redo and refuses changed content', async () => {
+        await executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-1' } });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+
+        const segments = structuredClone(trackStore.value!.tracks[0]!.clips);
+        expect(segments).toHaveLength(2);
+        expect(segments.every((clip) => !Object.hasOwn(clip, 'kneadState'))).toBe(true);
+        expect(segments.map((clip) => clip.overrides)).toEqual([{ gain: true }, { gain: true }]);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([
+            { id: 'clip-1', audioOffsetBeats: CLIP_AUDIO_OFFSET_BEATS, overrides: { gain: true } },
+        ]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(segments);
+
+        const changedState = structuredClone(trackStore.value!);
+        changedState.tracks[0]!.clips[0]!.overrides = { gain: false };
+        trackStore.set(changedState);
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        const beforeRefusedUndo = structuredClone(trackStore.value);
+
+        expect(await undo()).toEqual({ headConsumed: false });
+        expect(trackStore.value).toEqual(beforeRefusedUndo);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 
     it('refuses a changed segment value without moving the prepared transition', () => {

@@ -1,6 +1,7 @@
+import { from, toJS } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createTrack } from '../../models/Track';
+import { createTrack, type Track } from '../../models/Track';
 import { restoreTrackAtIndexWithDeferredAddedEvent } from '../restoreTrackAtIndexWithDeferredAddedEvent';
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,12 @@ vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: mocks.
 vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../getTrackById', () => ({ getTrackById: mocks.getTrackById }));
 vi.mock('../publishTrackAdded', () => ({ publishTrackAdded: mocks.publishTrackAdded }));
+
+function decodeTrack(track: Track): Track {
+    const serializedTrack = JSON.stringify(track);
+    const jsonTrack = JSON.parse(serializedTrack) as Track;
+    return toJS(from({ track: jsonTrack })).track;
+}
 
 describe('restoreTrackAtIndexWithDeferredAddedEvent', () => {
     beforeEach(() => {
@@ -85,18 +92,39 @@ describe('restoreTrackAtIndexWithDeferredAddedEvent', () => {
 
     it('publishes after an ambiguous commit when durable track keys were decoded in a different order', async () => {
         const track = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        track.devices[0]!.parameterValues = { threshold: -12, ratio: 4 };
         const trackJson = JSON.stringify(track);
         mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
         const result = restoreTrackAtIndexWithDeferredAddedEvent({ trackJson, trackIndex: 0 });
         if (!result) {
             throw new Error('Expected restoration');
         }
-        const { id, ...trackWithoutId } = track;
-        mocks.getTrackById.mockReturnValue({ ...trackWithoutId, id });
+        mocks.getTrackById.mockReturnValue(decodeTrack(track));
 
         await result.afterAmbiguousCommit();
 
         expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not publish after an ambiguous commit when the durable track is absent or changed', async () => {
+        const track = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        track.devices[0]!.parameterValues = { threshold: -12, ratio: 4 };
+        const trackJson = JSON.stringify(track);
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        const result = restoreTrackAtIndexWithDeferredAddedEvent({ trackJson, trackIndex: 0 });
+        if (!result) {
+            throw new Error('Expected restoration');
+        }
+
+        mocks.getTrackById.mockReturnValue(undefined);
+        await result.afterAmbiguousCommit();
+        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
+
+        const changedTrack = decodeTrack(track);
+        changedTrack.devices[0]!.parameterValues.threshold = -6;
+        mocks.getTrackById.mockReturnValue(changedTrack);
+        await result.afterAmbiguousCommit();
+        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
     });
 
     it('rejects device and ghost-clip identity collisions before writing', () => {

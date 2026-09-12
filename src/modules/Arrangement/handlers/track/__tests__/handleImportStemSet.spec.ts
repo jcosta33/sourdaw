@@ -1,3 +1,4 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,9 +7,10 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore, type AutomationStoreState } from '#/modules/Automation/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -28,6 +30,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { createImportedStemTracks } from '../../../useCases/stemImport/createImportedStemTracks';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
 
 const mocks = vi.hoisted(() => ({
@@ -129,6 +132,7 @@ function createStemImportAction(): ImportStemSetAction {
             projectTempo: 120,
             folderId: 'folder-starter-stems',
             folderColor: '#445566',
+            folderAlternativeId: 'alternative-folder-starter-stems',
             stems: [
                 {
                     stemId: 'stem-kick-source',
@@ -146,6 +150,7 @@ function createStemImportAction(): ImportStemSetAction {
                     trackGain: 0.85,
                     trackPan: 0,
                     trackColor: '#ff3355',
+                    trackAlternativeId: 'alternative-track-kick',
                     clipId: 'clip-kick',
                 },
                 {
@@ -164,6 +169,7 @@ function createStemImportAction(): ImportStemSetAction {
                     trackGain: 0.75,
                     trackPan: -0.1,
                     trackColor: '#33aaff',
+                    trackAlternativeId: 'alternative-track-vocal',
                     clipId: 'clip-vocal',
                 },
             ],
@@ -392,6 +398,66 @@ describe('handleImportStemSet', () => {
         expect(automationStore.value).toEqual(preImportTruth.automation);
         expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(2);
         expect(mocks.publishTrackRemoved).toHaveBeenCalledTimes(3);
+    });
+
+    it('treats an identical decoded stem import retry as already applied without repeating effects', async () => {
+        seedUnrelatedProjectTruth();
+        const action = createStemImportAction();
+
+        const first = await executeAppActionBatch([action], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+        expect(first).toMatchObject({ status: 'committed' });
+        flushAutomergeStorageWrites();
+        trackStore.hydrate();
+        midiStore.hydrate();
+        automationStore.hydrate();
+
+        const durableDocument = getCrdtDoc<Record<string, unknown>>('root');
+        if (!durableDocument) {
+            throw new Error('Expected root CRDT document');
+        }
+        const beforeRetry = {
+            heads: getHeads(durableDocument),
+            document: JSON.stringify(durableDocument),
+            history: structuredClone(undoHistoryStore.value),
+            tracks: structuredClone(requireTrackState()),
+            promotions: mocks.promoteDurableStagedAsset.mock.calls.length,
+            projections: mocks.initializeTrackStripFromSnapshot.mock.calls.length,
+            events: mocks.publishTrackAdded.mock.calls.length,
+        };
+
+        const { folder, importedTracks } = createImportedStemTracks(action);
+        expect(JSON.parse(JSON.stringify(requireTrackState().tracks.slice(1)))).toEqual(
+            JSON.parse(JSON.stringify([folder, ...importedTracks]))
+        );
+        expect(handleImportStemSet.isNoop?.(action)).toBe(true);
+        await executeAppAction(action, { source: 'prompt' });
+        flushAutomergeStorageWrites();
+
+        const afterRetryDocument = getCrdtDoc<Record<string, unknown>>('root');
+        if (!afterRetryDocument) {
+            throw new Error('Expected root CRDT document after retry');
+        }
+        expect(getHeads(afterRetryDocument)).toEqual(beforeRetry.heads);
+        expect(JSON.stringify(afterRetryDocument)).toBe(beforeRetry.document);
+        expect(undoHistoryStore.value).toEqual(beforeRetry.history);
+        expect(requireTrackState()).toEqual(beforeRetry.tracks);
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(beforeRetry.promotions);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(beforeRetry.projections);
+        expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(beforeRetry.events);
+
+        const changedContent = structuredClone(action);
+        changedContent.payload.stems[0]!.trackGain = 0.5;
+        expect(handleImportStemSet.isNoop?.(changedContent)).toBe(false);
+
+        const state = requireTrackState();
+        trackStore.set({
+            ...state,
+            tracks: [state.tracks[0]!, state.tracks[2]!, state.tracks[1]!, state.tracks[3]!],
+        });
+        expect(handleImportStemSet.isNoop?.(action)).toBe(false);
     });
 
     it('retries an incomplete hash-bound durable promotion', async () => {

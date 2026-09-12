@@ -161,4 +161,24 @@ describe('createEffectiveAdjustmentLayerSignature', () => {
             })
         );
     });
+
+    it('throws when effective layer data is not JSON serializable', () => {
+        expect(() =>
+            createEffectiveAdjustmentLayerSignature({
+                layers: [layer({ affectedTrackIds: ['t1'], parameters: [BigInt(1)] })],
+                orderedTrackIds,
+                trackId: 't1',
+            })
+        ).toThrow();
+
+        const cyclic: { self?: unknown } = {};
+        cyclic.self = cyclic;
+        expect(() =>
+            createEffectiveAdjustmentLayerSignature({
+                layers: [layer({ affectedTrackIds: ['t1'], parameters: [cyclic] })],
+                orderedTrackIds,
+                trackId: 't1',
+            })
+        ).toThrow();
+    });
 });

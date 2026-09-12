@@ -77,9 +77,9 @@ The collector protection test must also include finalized recovery storage durin
 
 ## Lesson from PR #4111 and PR #2169 snapshot-guard escapes
 
-PR #4111 made Yeast processor undo guards compare captured snapshots after the CRDT codec had normalized an empty `params` map to an omitted field. PR #2169 made strip-silence restore guards compare prepared clip snapshots after replacement cloning changed object key insertion order. Both guards rejected an otherwise unchanged project during undo or redo.
+PR #4111 introduced Yeast processor undo guards without exercising the codec's distinction between an empty persisted `params` map and its omitted store projection. PR #2169 introduced strip-silence's serialized restore guard and a replacement clone that materialized absent optional clip fields. A later conditional clone repair preserved optional-field presence but reinserted populated fields in a different key order. These shape changes made otherwise unchanged durable projections fail the guards during undo or redo.
 
-Review every serialized inverse guard through its real prepare, write, projected-store, undo, and redo route. Reorder nested object keys and pass optional fields through their owning codec; unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
+Review every serialized inverse guard through its real prepare, write, fresh durable projection, undo, and redo route. Reorder nested object keys and pass absent, explicitly undefined, empty, and populated optional fields through their owning codec. Unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
 
 ## Lesson from the PR #806 transaction-scope escape
 
