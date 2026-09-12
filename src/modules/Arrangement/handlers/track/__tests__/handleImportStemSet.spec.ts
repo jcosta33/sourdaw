@@ -448,8 +448,13 @@ describe('handleImportStemSet', () => {
         expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledTimes(beforeRetry.projections);
         expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(beforeRetry.events);
 
-        const changedContent = structuredClone(action);
-        changedContent.payload.stems[0]!.trackGain = 0.5;
+        const changedContent = {
+            ...action,
+            payload: {
+                ...action.payload,
+                stems: action.payload.stems.map((stem, index) => (index === 0 ? { ...stem, trackGain: 0.5 } : stem)),
+            },
+        };
         expect(handleImportStemSet.isNoop?.(changedContent)).toBe(false);
 
         const state = requireTrackState();
