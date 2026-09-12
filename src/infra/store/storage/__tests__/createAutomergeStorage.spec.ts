@@ -4,6 +4,7 @@ import { createStore } from '../../createStore';
 import {
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
+    AutomergeStorageWriteConflictError,
     captureAutomergeStorageTransactionScope,
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
@@ -1111,6 +1112,110 @@ describe('createAutomergeStorage', () => {
         expect(mutateCrdt).not.toHaveBeenCalled();
         expect(Object.hasOwn(doc, 'state')).toBe(false);
         expect(storage.get()).toBeNull();
+    });
+
+    it('preserves a write authored by a conflict-cleanup notification under its own owner', () => {
+        const refusal = new AutomergeStorageWriteConflictError('state changed');
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }, { expected: number }>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue }) => ({ expected: beforeValue?.count ?? -1 }),
+                reduce: ({ captured }) => captured,
+            },
+            mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile, value }) => {
+                if (metadata?.expected !== authorityValue?.count) {
+                    throw refusal;
+                }
+                reconcile(value, authorityValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        let authoredDuringCleanup = false;
+        storage.subscribe?.(() => {
+            if (authoredDuringCleanup) {
+                return;
+            }
+            authoredDuringCleanup = true;
+            storage.set({ count: 3 });
+        });
+        storage.set({ count: 1 });
+        const refusedFrame = requestAnimationFrameMock.mock.calls[0]?.[0];
+        doc.state = { count: 2 };
+
+        refusedFrame?.(0);
+        const authored = authoredDuringCleanup;
+        const visible = storage.get();
+        const pending = countPendingAutomergeStorageWrites();
+        const successorFrame = requestAnimationFrameMock.mock.calls[1]?.[0];
+        successorFrame?.(0);
+        const persisted = structuredClone(doc.state);
+        if (!authored || !successorFrame) {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
+
+        expect(authored).toBe(true);
+        expect(visible).toEqual({ count: 3 });
+        expect(pending).toBe(1);
+        expect(successorFrame).toBeTypeOf('function');
+        expect(persisted).toEqual({ count: 3 });
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('retires every refused slot even when one authority refresh throws', () => {
+        const refusal = new AutomergeStorageWriteConflictError('group changed');
+        const refreshFailure = new Error('second authority refresh failed');
+        const doc: TestDoc = { first: { count: 0 }, second: { count: 0 } };
+        let authorityReadCount = 0;
+        let failAuthorityRefresh = false;
+        configureAutomergeStoragePort({
+            getDoc: () => {
+                authorityReadCount += 1;
+                if (failAuthorityRefresh && authorityReadCount === 2) {
+                    throw refreshFailure;
+                }
+                return doc;
+            },
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const candidate = structuredClone(doc);
+                changeFn(candidate);
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+            },
+        });
+        const first = createAutomergeStorage<{ count: number }>('root', 'first', {
+            mutateCrdt: () => {
+                throw refusal;
+            },
+        });
+        const second = createAutomergeStorage<{ count: number }>('root', 'second');
+        expect(first.hydrate?.()).toBe(true);
+        expect(second.hydrate?.()).toBe(true);
+        authorityReadCount = 0;
+        failAuthorityRefresh = true;
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            first.set({ count: 1 });
+            second.set({ count: 1 });
+        });
+
+        try {
+            let observed: unknown;
+            try {
+                transaction.commit();
+            } catch (error) {
+                observed = error;
+            }
+            expect(observed).toBe(refusal);
+            expect(authorityReadCount).toBe(2);
+            expect(countPendingAutomergeStorageWrites()).toBe(0);
+        } finally {
+            transaction.abort();
+        }
     });
 
     it('preserves semantic messages across ordinary action scopes', () => {

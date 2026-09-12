@@ -1002,6 +1002,13 @@ function flushMatchingAutomergeStorageWrites(
                                 firstError ??= error;
                             }
                         }
+                        for (const write of writes) {
+                            try {
+                                write.abort();
+                            } catch (error) {
+                                firstError ??= error;
+                            }
+                        }
                     }
                     continue;
                 }

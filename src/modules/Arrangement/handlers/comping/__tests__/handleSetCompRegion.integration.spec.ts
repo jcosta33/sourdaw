@@ -4,6 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -53,6 +54,8 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { addTake } from '../../../useCases/comping/addTake';
+import { removeCompRegion } from '../../../useCases/comping/removeCompRegion';
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -1245,6 +1248,47 @@ describe('setCompRegion command integration', () => {
         expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toEqual({
             lanes: [otherLane],
         });
+    });
+
+    it('persists the next real edit after an unscoped take-lane conflict is refused', () => {
+        const frames: FrameRequestCallback[] = [];
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn((callback: FrameRequestCallback) => {
+                frames.push(callback);
+                return frames.length;
+            })
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        removeCompRegion('track-1', 0);
+        expect(frames).toHaveLength(1);
+        mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes.lanes[0]!.activeCompRegions = [{ startBeat: 0, endBeat: 8, takeId: 'take-b' }];
+            },
+        });
+
+        frames[0]?.(0);
+        const pendingAfterRefusal = countPendingAutomergeStorageWrites();
+        const visibleAfterRefusal = structuredClone(activeRegions());
+        addTake('track-1', 'clip-recovered', 'Recovered take', 0, 8);
+        const successorFrame = frames[1];
+        successorFrame?.(0);
+        const rawAfterSuccessor = structuredClone(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]
+        );
+        const projectedAfterSuccessor = structuredClone(takeLaneStore.value?.lanes[0]);
+        if (pendingAfterRefusal !== 0 || !successorFrame) {
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
+        }
+
+        expect(pendingAfterRefusal).toBe(0);
+        expect(visibleAfterRefusal).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'take-b' }]);
+        expect(successorFrame).toBeTypeOf('function');
+        expect(rawAfterSuccessor?.takes).toContainEqual(expect.objectContaining({ name: 'Recovered take' }));
+        expect(projectedAfterSuccessor?.takes).toContainEqual(expect.objectContaining({ name: 'Recovered take' }));
     });
 
     it('discards prepared recovery and permits an exact envelope retry after a commit-window conflict', async () => {
