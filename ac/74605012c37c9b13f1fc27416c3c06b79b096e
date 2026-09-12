@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_87ab0a2f60ccf8::t_b0d5d974fcd298 387-438
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_be749b7e386a2b::t_6fd97000fcd08d 267-293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac74605012c37c9b13f1fc27416c3c06b79b096e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_be749b7e386a2b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0966f-eeed-73d0-9c26-ea310ceee187",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
