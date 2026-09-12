@@ -9,6 +9,7 @@ import { createModelProviderFailureError, isModelProviderFailureError } from '..
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
+import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../models/HostedToolPlanLimits';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -46,6 +47,10 @@ import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
+
+// The mandatory planning contract (workflow selector, six application tools, the workflow action
+// tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
+export const WEBLLM_TOOL_BUDGET = 31;
 
 function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
@@ -337,7 +342,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME ||
                             tool.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME ||
                             tool.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME ||
-                            tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
+                            tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
+                            tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
                     );
                     const actionTools = toolSchemas.filter(
                         (tool) =>
@@ -346,7 +352,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
                             tool.function.name !== COMMAND_BATCH_DECLINE_TOOL_NAME &&
                             tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
-                            tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME
+                            tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
+                            tool.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -367,7 +374,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
                         ...mandatoryTools,
-                        ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
+                        ...promptActionTools.slice(0, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length)),
                     ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`

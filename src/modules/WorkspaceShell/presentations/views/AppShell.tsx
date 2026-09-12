@@ -104,6 +104,7 @@ import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
+import { AgentWorkspace } from './AgentWorkspace';
 import { LaunchScreen } from './LaunchScreen';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
@@ -175,7 +176,8 @@ type BottomTabValue =
     | 'setlist'
     | 'loopStation'
     | 'modulation'
-    | 'elastic';
+    | 'elastic'
+    | 'agent';
 
 type BottomTabState = {
     value: BottomTabValue;
@@ -628,6 +630,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 return <ModulationMatrix />;
             case 'elastic':
                 return <ElasticEditorPanel />;
+            case 'agent':
+                return <AgentWorkspace />;
             default:
                 return <RoutingMatrix />;
         }
@@ -944,6 +948,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                                 'text-[var(--color-accent-cyan)]',
                                                 { 'data-onboarding': 'modulation-tab' }
                                             )}
+                                            {renderBottomTab('agent', 'Agent', 'text-[var(--color-accent-mint)]', {
+                                                'data-testid': 'agent-tab-button',
+                                            })}
                                             {isAudioClipSelected
                                                 ? renderBottomTab(
                                                       'elastic',

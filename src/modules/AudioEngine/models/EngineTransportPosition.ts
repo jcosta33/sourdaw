@@ -70,7 +70,39 @@ export type EngineTransportPosition = {
      * business trusting the number it finds under its id.
      */
     stripPeaks: Readonly<Record<string, number>>;
+    /**
+     * What every native Tuner body last detected, keyed by the device id the
+     * project knows it by.
+     *
+     * Keyed by every scoring device the native graph holds, on whatever strip
+     * and whether or not this session is the carrier sounding it — the same
+     * law {@link EngineTransportPosition.stripPeaks} states. A reader that has
+     * not confirmed the device sits on this session's carried, audible strip
+     * has no business trusting the reading it finds under that id: the Web
+     * Audio twin is what the musician hears then, and its own reading is the
+     * true one.
+     */
+    tunerTelemetry: Readonly<Record<string, NativeTunerReading>>;
 };
+
+/**
+ * One Tuner body's detection, as the native payload carries it.
+ *
+ * `active` is what says whether the rest means anything: a tuner hearing
+ * nothing publishes `false` with the numbers it last held, and a panel that
+ * ignored the flag would leave the needle parked on a pitch nobody is playing.
+ * The reading carries no note name — that projection belongs to the renderer,
+ * which spells one name for both carriers.
+ */
+export type NativeTunerReading = Readonly<{
+    active: boolean;
+    frequency: number;
+    cents: number;
+    confidence: number;
+    noteIndex: number;
+    octave: number;
+    midiNote: number;
+}>;
 
 /** The shape a stopped engine reports, and the shape the browser build reports. */
 export const stoppedEngineTransportPosition: EngineTransportPosition = {
@@ -85,6 +117,7 @@ export const stoppedEngineTransportPosition: EngineTransportPosition = {
     timeSigDenom: 0,
     masterPeak: 0,
     stripPeaks: {},
+    tunerTelemetry: {},
 };
 
 /**

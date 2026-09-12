@@ -1,9 +1,9 @@
 import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
-import { sendNativeDeviceParameters } from '../livePlayback/sendNativeDeviceParameters';
 
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
+import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
 
 /**
  * The single door every device-parameter write reaches the DSP through.
@@ -25,13 +25,16 @@ import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
  * and it has to already hold the current value for the moment that gate
  * reopens at Stop. The native send in {@link nativeBuiltinWriteTarget} is
  * additive on top of that, in the engine's own name for the parameter, for
- * whichever built-in the native session is carrying right now.
+ * whichever built-in the native session is carrying right now. It leaves
+ * through {@link writeNativeBuiltinParameters}, so this door and the
+ * engine-named door of a built-in whose controls are not `parameterValues`
+ * entries share one send path.
  */
 export function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
     const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
     audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
-        void sendNativeDeviceParameters({ trackId, deviceId, values: { [body.parameterName(paramId)]: clamped } });
+        writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });
     }
 }

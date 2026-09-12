@@ -58,6 +58,7 @@ import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
@@ -201,6 +202,11 @@ export async function renderOfflineWithNativeEngine(
 
     const busIds = new Set(renderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackIds = new Set(renderableTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
+    // This engine hosts every strip in the render — buses among them, since a
+    // bus deepens every route through it — so every strip's own
+    // engine-compensated devices are the engine's to hold back rather than
+    // this projection's to count.
+    const engineHostedStripIds: ReadonlySet<string> = new Set(renderableTracks.map((track) => track.id));
 
     // ── Strips, exactly as the web path seeds them ─────────────────────────
     const stripCommands = renderableTracks.map((track): AudioGraphCommand => {
@@ -250,7 +256,7 @@ export async function renderOfflineWithNativeEngine(
     // ── Programme: automation writes and clip playbacks per scheduled track ─
     function buildTrackProgramme(track: Track): ProgrammeConversion {
         const commands: AudioGraphCommand[] = [];
-        const compensationDelay = getCompensationDelay(track.id);
+        const compensationDelay = getCompensationDelay(track.id, undefined, engineHostedStripIds);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
 
         // The same lane set, gate and grain the web scheduler reads
@@ -367,7 +373,14 @@ export async function renderOfflineWithNativeEngine(
     }
 
     // ── Apply and render ───────────────────────────────────────────────────
-    const backend = createNativeOfflineGraphBackend({ sampleRate, transport });
+    const backend = createNativeOfflineGraphBackend({
+        sampleRate,
+        transport,
+        // The bounce stages the same banks the live session does, through the
+        // same sink: an export of a carried Levain strip must sound the
+        // instrument the musician heard, not a strip the mapper refused.
+        acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
+    });
     try {
         const batches: { commands: readonly AudioGraphCommand[]; attempt: string }[] = [
             { commands: stripCommands, attempt: 'build the strips' },

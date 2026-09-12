@@ -16,6 +16,11 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 - Where the change models another component's state — a mirror, a shadow copy, a re-derivation —
   enumerate the owning component's contract clauses from its source and check the model against
   every clause, including the ones today's tests do not exercise.
+- When a change introduces or repairs a detector that asserts a global invariant over a registered
+  population — sanitizers, storage adapters, encoders, any registry of interchangeable components —
+  enumerate every registered adapter at head and verify the invariant against each, never only the
+  adapters the incident or the diff names. The population, not the incident report, bounds the
+  sweep; an unverified member of the same class is the finding.
 - Probe every boundary the change establishes or relies on one quantum to each side: the value the
   bug report named, and the adjacent value the report did not name.
 - A green gate is not evidence: name what would have to break for the existing checks to fail, and
@@ -189,3 +194,73 @@ the callback.
 Probe that would have caught it: exercise every independently validated nesting edge at an equal end
 timestamp and again with the enclosure ending one timestamp unit early. Admit the equality only when
 the pairing remains unique, and preserve refusal of the actual overrun and ambiguous overlap cases.
+
+### 2026-09-10 — a status footer relayout moved a readout the nightly harness reads by label (escaped via 06c5f6dc9)
+
+06c5f6dc9 gave `StatusBar.tsx` a compact layout below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) that
+moves the "Out" master-level cluster, and its neighbouring UI CPU / MEM / AI Model readouts, into a
+Radix Popover behind `button[aria-label="More application status"]`, whose content portals outside
+`footer[aria-label="Application status"]`. The nightly Desktop latency harness's `readStatusBar` in
+`scripts/desktopLatencyConnect.ts` walks that footer for a row of exactly two sibling spans labelled
+"Out", with no notion of the popover; the runner's screen clamped Electron's requested 1440×900
+window narrower than 1200 px, dropped the app into the compact layout, and the first nightly run
+after the merge failed at "wait for the engine to report a running meter" with `the status bar has
+no readout labelled "Out"`. The PR's own responsive e2e coverage exercised the product's compact
+layout directly and never ran, or was asked about, any standing consumer that reads the footer by
+label or selector outside the product's own tests.
+
+Blind spot: no stance grepped the harness and E2E trees for existing readers of the labels and
+selectors the diff touches, so a relayout that is entirely correct for the product it renders can
+still break a consumer the diff never looked at.
+
+Probe that would have caught it: for any change to `StatusBar.tsx`, or to a `src/components/daw/Daw*`
+primitive it renders, grep `scripts/desktopLatency*.ts` and `tests/e2e/**` for the labels and
+selectors the diff adds, moves, or removes; name every hit and run its spec (the harness reader spec
+where one exists) against the changed head before approving.
+
+### 2026-09-10 — a published catalog whose ids were minted from the length of the array being pushed (escaped via PR #4128; fixed in the 3b-B slice)
+
+`collectCreationSlots` in `prepareCreativeInterpretationCatalog.ts` derived each slot's `candidateId`
+from `slots.length` through a `nextId()` closure and then pushed three slots in a single
+`slots.push(a, b, c)` call. All three arguments were evaluated before the push, so every slot after
+the first carried the same id and the provider-facing enum offered `slot-2` three times. The device
+slot, which a processing request needs, was unselectable, and the first end-to-end case that tried to
+add a device under an admitted authority failed.
+
+Probe that would have caught it: for every published candidate list the provider selects from by id,
+assert the ids are pairwise distinct and that each object type or dimension the design says is
+selectable is reachable through the admission path, not merely present in the catalog. Read every
+id-minting closure against the statement that consumes it; a counter read inside a variadic call
+observes the pre-call length for every argument.
+
+### 2026-09-10 — strict start comparisons on a microsecond clock survived one fix and one review (introduced in 4266e649b, missed again at 0a4efc74f)
+
+4266e649b introduced the trace binder with both START comparisons strict and the author/outer
+END already admitting equality. 0a4efc74f admitted the handler/outer END equality and stated
+that strict starts were retained; its review accepted that statement unprobed. The first nightly
+trace then refused 2256 of 24001 callbacks whose enclosing handler started in the callback's own
+microsecond. Start and end live on the same quantized clock.
+
+Blind spot: the stance accepted "retains strict start" as reassurance rather than asking why one
+boundary of a quantized clock differs from the other.
+
+Probe that would have caught it: for any comparison against a quantized clock, list every strict
+inequality in the function on that clock (start and end of every nesting relation) and require
+the author to justify each remaining strict one from uniqueness, not caution; a fix that admits
+equality at one boundary and keeps another strict without such justification is the finding.
+
+### 2026-09-10 — a new provider tool appended to the schema list that the in-browser backend truncates (escaped via PR #4128; fixed in the P4a slice of #3276)
+
+`parsePromptToActions.ts` appended the creative interpretation tool schema last in `providerToolSchemas`
+and told the model to call it, but `inference.ts` classified only the fixed application tools as
+mandatory and trimmed the remaining action tools to the WebLLM cap. Being last, the new tool was the
+first cut, and a provider that obeyed the system prompt was refused with "Provider requested a tool
+that was not advertised for this request." The cloud branch advertises every schema, so every planning
+spec, which mocked `generateToolPlanningOutcome` above the truncation, stayed green while the in-browser
+path could never admit an interpretation.
+
+Probe that would have caught it: for every schema a change adds to a provider request, trace it through
+each backend's advertisement path to the request body actually sent, and read the names out of that
+body under the backend's cap with more action tools than the cap admits. A tool the system prompt
+demands must be in the mandatory set of every backend, and the first end-to-end case must run below
+the mock that hides the backend.

@@ -6,6 +6,8 @@ import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import {
@@ -28,6 +30,7 @@ describe('command registry completeness', () => {
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
             getTransportHandlers(),
+            getYeastHandlers(),
         ]);
     });
 
@@ -145,11 +148,14 @@ describe('command registry completeness', () => {
         type GainAppAction = Extract<ExecutableAppAction, { type: 'setTrackGain' }>;
 
         expectTypeOf<ExecutableAppAction['type']>().toEqualTypeOf<DescriptorActionType>();
+        // The app payload carries the recording policy and the provider payload
+        // does not, which is what keeps a planner from selecting it.
         expectTypeOf<GainProviderAction['payload']>().toEqualTypeOf<{ trackId: string; gain: number }>();
         expectTypeOf<GainAppAction['payload']>().toEqualTypeOf<{
             trackId: string;
             gain: number;
             expectedGain: number;
+            automationRecordingPolicy?: AutomationRecordingPolicy;
         }>();
     });
 });

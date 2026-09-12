@@ -626,7 +626,9 @@ dependencies = [
  "assert_no_alloc",
  "cpal",
  "daw-dsp",
+ "proof-chamber",
  "rtrb",
+ "scoring",
  "triple_buffer",
  "windows",
 ]

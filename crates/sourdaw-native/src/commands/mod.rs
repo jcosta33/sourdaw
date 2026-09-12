@@ -1,3 +1,4 @@
+pub mod agent_asset_saga;
 pub mod ai_audio;
 pub mod collab;
 pub mod crumbs;
@@ -6,8 +7,10 @@ pub mod engine_lifecycle;
 pub mod engine_transport;
 pub mod filesystem;
 pub mod graph;
+pub mod levain;
 pub mod link;
 pub mod midi;
+pub mod midi_watcher;
 pub mod pitch_edit;
 pub mod plugin_gui;
 pub mod plugins;

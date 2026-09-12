@@ -2,6 +2,7 @@ export { compileToasterTrackStackActions } from './compileToasterTrackStackActio
 export { getDefaultPadNames } from './getDefaultPadNames';
 export { getToasterPresetDeviceState } from './getToasterPresetDeviceState';
 export { prepareOfflineToaster } from './prepareOfflineToaster';
+export { projectToasterKitToNativePatch } from './projectToasterKitToNativePatch';
 export { setToasterEventBus } from './toasterEventBus';
 export { initToasterSubscribers } from './toasterSubscriber';
 export { initToasterKitPersistence } from './initToasterKitPersistence';

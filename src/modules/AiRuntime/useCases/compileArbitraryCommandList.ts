@@ -6,6 +6,7 @@ import {
 } from '#/modules/Command/useCases';
 import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
+import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
@@ -89,6 +90,8 @@ export type ArbitraryCommandListEvidence = {
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
     commands: ToolCallResult[];
+    /** The admitted creative authority this batch was compiled under, or null when none was minted. */
+    creativeAuthorityId: string | null;
     /**
      * The transforms this batch expanded, in list order. Every command in the batch is an ordinary
      * catalog command, so without this record nothing downstream could tell a musician that the notes
@@ -873,6 +876,11 @@ function validateTargetArgumentsWithoutSelectors(input: {
     return { status: 'accepted', directTargets };
 }
 
+/**
+ * A `$binding` names one created object, so its item must compile to exactly one creation: a
+ * producer command, no repetition, and either no selector or one resolving exactly one target —
+ * which is the only way a created object can be placed on an object the batch did not create.
+ */
 function getDeclaredBatchLocalBinding(
     item: SemanticCommandListItem,
     repeat: number
@@ -885,12 +893,40 @@ function getDeclaredBatchLocalBinding(
         !BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(item.name) ||
         typeof binding !== 'string' ||
         !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
-        item.selector !== undefined ||
+        (item.selector !== undefined && item.selector.quantity.exactly !== 1) ||
         repeat !== 1
     ) {
         return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded creation item.' };
     }
     return binding;
+}
+
+/**
+ * Records the object a bound item creates under its binding, so every later reader — target
+ * validation, `dependsTransitivelyOn`, and the grounding bridge — reaches it the same way whether
+ * the item named its host directly or resolved it through a selector.
+ */
+function registerDeclaredBatchLocalProducer(input: {
+    arguments: Readonly<Record<string, unknown>>;
+    binding: string;
+    context: ProjectContext;
+    item: SemanticCommandListItem;
+    producersByBinding: Map<string, DeclaredBatchLocalProducer>;
+}): RejectedCompilation | null {
+    const producer = resolveBatchLocalBindingProducer({
+        arguments: input.arguments,
+        context: input.context,
+        name: input.item.name,
+        producersByBinding: input.producersByBinding,
+    });
+    if (producer === null) {
+        return {
+            status: 'rejected',
+            reason: `Batch-local binding producer does not create a typed object: ${input.binding}`,
+        };
+    }
+    input.producersByBinding.set(input.binding, { ...producer, itemId: input.item.id });
+    return null;
 }
 
 /**
@@ -1088,6 +1124,7 @@ export function compileArbitraryCommandList(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string;
+    creativeAuthority?: CreativeRequestAuthority;
 }): ArbitraryCommandListCompilation {
     const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
     if (proposalCalls.length === 0) {
@@ -1113,6 +1150,12 @@ export function compileArbitraryCommandList(input: {
         return {
             status: 'rejected',
             reason: 'Structured command list requires a revision-bearing immutable project snapshot.',
+        };
+    }
+    if (input.creativeAuthority !== undefined && input.creativeAuthority.revision !== input.revision) {
+        return {
+            status: 'rejected',
+            reason: 'Structured command list creative authority was admitted against a different project snapshot.',
         };
     }
     if (!hasOnlyKeys(proposal.arguments, ['list', 'plan']) || !isRecord(proposal.arguments.list)) {
@@ -1264,19 +1307,16 @@ export function compileArbitraryCommandList(input: {
                 commandCount: commands.length - commandStart,
             });
             if (typeof declaredBinding === 'string') {
-                const producer = resolveBatchLocalBindingProducer({
+                const registration = registerDeclaredBatchLocalProducer({
                     arguments: item.arguments,
+                    binding: declaredBinding,
                     context: input.context,
-                    name: item.name,
+                    item,
                     producersByBinding,
                 });
-                if (producer === null) {
-                    return {
-                        status: 'rejected',
-                        reason: `Batch-local binding producer does not create a typed object: ${declaredBinding}`,
-                    };
+                if (registration !== null) {
+                    return registration;
                 }
-                producersByBinding.set(declaredBinding, { ...producer, itemId: item.id });
             }
             continue;
         }
@@ -1419,6 +1459,18 @@ export function compileArbitraryCommandList(input: {
             ...(targetRule.cardinality === 'many' ? { targetCardinality: 'many' as const } : {}),
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
+        if (typeof declaredBinding === 'string') {
+            const registration = registerDeclaredBatchLocalProducer({
+                arguments: { ...item.arguments, [selector.targetArgument]: resolved.stableIds[0] },
+                binding: declaredBinding,
+                context: input.context,
+                item,
+                producersByBinding,
+            });
+            if (registration !== null) {
+                return registration;
+            }
+        }
     }
     const creationRejection = rejectOverCreationBudget(commands);
     if (creationRejection) {
@@ -1438,6 +1490,7 @@ export function compileArbitraryCommandList(input: {
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),
                       commands: structuredClone(commands),
+                      creativeAuthorityId: input.creativeAuthority?.authorityId ?? null,
                       expandedMidiTransforms: [...expandedMidiTransforms],
                   },
         calls: input.calls.map((call) =>

@@ -15,16 +15,21 @@
  * is pinned there; what this file owns is which law reaches it.
  */
 
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
+
+vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
+    getCompensationDelay: vi.fn(() => 0),
+}));
 
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { readLiveAutomationWrites } from '../readLiveAutomationWrites';
 
@@ -229,6 +234,7 @@ beforeEach(() => {
     // parameter needs are met, so the seam is the only thing left to decide it.
     nativeLiveGraphSession.carriedStripIds = new Set([TRACK.id]);
     nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK.id, [HOSTED_DEVICE.id]]]);
+    vi.mocked(getCompensationDelay).mockClear();
 });
 
 afterEach(() => {
@@ -251,6 +257,46 @@ describe('readLiveAutomationWrites', () => {
             deviceId: HOSTED_DEVICE.id,
             parameterId: '7',
         });
+    });
+
+    // A write's own delay has to match the programme's, and that programme
+    // named every strip whose engine-compensated devices the engine holds.
+    // Reading the arguments rather than a figure, because the correction is
+    // invisible in a project holding no such device.
+    it('delays its writes against the strips the session carries', () => {
+        fillSeam();
+
+        readOneRegion();
+
+        expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([
+            [TRACK.id, undefined, nativeLiveGraphSession.carriedStripIds],
+        ]);
+    });
+
+    // A claim is read off `create-track-strip` commands and never names a bus,
+    // but the engine's own compensation counts a Bacteria on a bus like any
+    // other. Delaying a write against a shallower set than its programme's
+    // lands the stamp off the material it is meant to move.
+    it('extends the carried strips with a bus holding a body the engine compensates', () => {
+        fillSeam();
+        const bus: Track = {
+            ...TRACK,
+            id: 'bus-fx',
+            kind: 'bus',
+            devices: [{ id: 'dev-bacteria', name: 'Bacteria', type: 'bacteria', bypassed: false, parameterValues: {} }],
+        };
+
+        readLiveAutomationWrites({
+            stripTracks: [TRACK, bus],
+            sampleRate: SAMPLE_RATE,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(vi.mocked(getCompensationDelay).mock.calls.map((call) => call[2])).toEqual([
+            new Set([TRACK.id, bus.id]),
+            new Set([TRACK.id, bus.id]),
+        ]);
     });
 
     it('admits no lane for a parameter id the seam’s law refuses', () => {

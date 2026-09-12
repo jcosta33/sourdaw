@@ -318,6 +318,43 @@ describe('agent run recovery', () => {
         });
     });
 
+    it('supersedes an artifact of the same identity in place and appends only a new identity', () => {
+        createAgentRun({
+            runId: 'run-artifact-identity',
+            request: 'Render two sections and analyze them.',
+            mode: 'macro',
+            createdRevision: 'heads-a',
+            createdAt: 100,
+        });
+        const record = (kind: 'render' | 'analysis', artifactId: string, status: 'pending' | 'completed') => {
+            recordAgentRunArtifact({
+                runId: 'run-artifact-identity',
+                kind,
+                artifact: {
+                    artifactId,
+                    workId: 'work-1',
+                    status,
+                    summary: status === 'completed' ? 'content-address-1' : null,
+                },
+            });
+        };
+
+        record('render', 'render-1', 'pending');
+        record('render', 'render-2', 'pending');
+        record('render', 'render-1', 'completed');
+        record('analysis', 'analysis-1', 'pending');
+        record('analysis', 'analysis-2', 'pending');
+
+        expect(getAgentRun('run-artifact-identity')?.renders).toEqual([
+            { artifactId: 'render-1', workId: 'work-1', status: 'completed', summary: 'content-address-1' },
+            { artifactId: 'render-2', workId: 'work-1', status: 'pending', summary: null },
+        ]);
+        expect(getAgentRun('run-artifact-identity')?.analyses).toEqual([
+            { artifactId: 'analysis-1', workId: 'work-1', status: 'pending', summary: null },
+            { artifactId: 'analysis-2', workId: 'work-1', status: 'pending', summary: null },
+        ]);
+    });
+
     it('leaves terminal runs unchanged during restart recovery', async () => {
         createAgentRun({
             runId: 'run-complete',

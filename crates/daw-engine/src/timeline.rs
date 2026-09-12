@@ -144,23 +144,35 @@ pub enum AutomationTarget {
 /// Bytes a [`BuiltinParamName`] holds. The longest name any built-in body
 /// spells today is well inside it, and the buffer is sized for those
 /// vocabularies to grow without the wire changing shape.
-pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
+///
+/// Levain's own vocabulary is the one that presses closest to it:
+/// `LevainEngine::set_param` (`crates/daw-dsp/src/levain/engine.rs`) owns
+/// `legato_portamento_velocity_threshold`, 36 bytes — four bytes of headroom
+/// under this ceiling. Grinder's dynamic `neuralCustomConvWeight{layer}_{idx}`
+/// family (`neural.rs`'s `parse_custom_conv_weight_param`, fed by
+/// `grinderProcessor.ts`'s `MAX_NEURAL_CONV_LAYERS` of 10 layers and a 3-wide
+/// weight index) tops out at `neuralCustomConvWeight9_2`, 25 bytes, well under
+/// both.
+pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 40;
 
 /// One built-in body's own parameter name, carried inline.
 ///
 /// Named rather than numbered because a modelled instrument's patch is a flat
-/// record of the instrument's own snake_case names, and its discrete selectors
-/// — the engine, the waveform, the modes, layer management, the temperament —
-/// are not in the automation table an ordinal addresses at all. Fixed-size and
-/// inline for the reason given on [`AutomationTarget`]: a command carrying a
-/// `String` would have its allocation freed on the audio thread. Matching a
-/// name on that thread is comparisons alone, so the write itself is real-time
-/// safe.
+/// record of the instrument's own names, spelled as its `set_param` takes
+/// them, and its discrete selectors — the engine, the waveform, the modes,
+/// layer management, the temperament — are not in the automation table an
+/// ordinal addresses at all. Fixed-size and inline for the reason given on
+/// [`AutomationTarget`]: a command carrying a `String` would have its
+/// allocation freed on the audio thread. Matching a name on that thread is
+/// comparisons alone, so the write itself is real-time safe.
 ///
 /// The type is body-neutral by construction and not by coincidence: the shape
 /// rule below is the only thing the engine knows about any of these names, so
 /// one carrier serves every built-in that answers to its own vocabulary rather
-/// than to the engine's.
+/// than to the engine's. Most built-ins spell that vocabulary in snake_case;
+/// Grinder spells its own in camelCase, and the shape admits both, because the
+/// carrier does not know which vocabulary a given name belongs to and has no
+/// business preferring one spelling over the other.
 ///
 /// Shape is the only refusal available here. The instrument owns its
 /// vocabulary and answers a name it does not know by doing nothing at all —
@@ -171,10 +183,10 @@ pub const BUILTIN_PARAM_NAME_CAPACITY: usize = 32;
 /// both runtimes alike.
 ///
 /// The buffer is carried by value everywhere the address travels, and that is
-/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
-/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
-/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
-/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// what it costs: [`DeviceParam`] is 42 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 64 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 4.0 KiB rather than
+/// 1.5 KiB — roughly 15 MiB more preallocated across a scheduler's whole
 /// effect table. That is a one-off cost at construction, paid for a wire that
 /// never has to enumerate a vocabulary `daw-dsp` owns.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -216,10 +228,11 @@ impl BuiltinParamName {
     }
 }
 
-/// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
-/// spells its parameters in.
+/// Whether `byte` belongs to the ASCII identifier vocabulary a built-in
+/// spells its parameters in — snake_case for most, camelCase for Grinder —
+/// the carrier does not know which.
 const fn is_builtin_name_byte(byte: u8) -> bool {
-    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// A parameter of a built-in device, addressed without an owned name for the
@@ -1451,8 +1464,12 @@ pub(crate) trait DeviceChain {
 /// latency and re-aims a generator's line: two closures over one table cannot
 /// hold the shared and the exclusive borrow at once.
 pub(crate) trait CompensationDevices {
-    /// What one device declares, bypassed or not: bypass keeps latency, so an
-    /// A/B never moves the mix.
+    /// What one device declares, bypassed or not: the pass reads the figure
+    /// the slot holds and never the bypass beside it. A hosted plugin's figure
+    /// stands through bypass, so an A/B never moves the mix. A body that
+    /// declares its own figure may have moved it on the bypass itself
+    /// (`ActiveEffect::refresh_declared_latency`), and the slot already holds
+    /// the moved figure by the time this pass reads it.
     fn device_latency(&self, effect_id: usize) -> usize;
 
     /// Aim one generator's input hold at `depth`, and answer whether the
@@ -3489,8 +3506,8 @@ mod tests {
         let size = std::mem::size_of::<DeviceParam>();
 
         assert_eq!(
-            size, 34,
-            "a device parameter address is {size} bytes, not the 34 documented on \
+            size, 42,
+            "a device parameter address is {size} bytes, not the 42 documented on \
              `BuiltinParamName` — move that figure, the `DeviceParamEvent` and per-queue \
              byte counts, and the per-scheduler total with it"
         );
@@ -3511,13 +3528,16 @@ mod tests {
         assert_eq!(parsed.as_str(), longest);
     }
 
-    /// A key that was never one of the instrument's names is refused by shape.
+    /// A key that was never shaped like any built-in's name is refused by
+    /// shape.
     ///
     /// The instrument answers a name it does not know by doing nothing, so a
     /// misspelled key would otherwise be a parameter write the producer
     /// believes landed and the mix never heard. Shape is the whole of the
     /// refusal the engine can make without keeping a copy of the instrument's
-    /// table, and each row here is a different way to miss the vocabulary.
+    /// table, and each row here is a different way to miss every built-in's
+    /// vocabulary — snake_case and camelCase alike, since the shape admits
+    /// both.
     #[test]
     fn a_key_shaped_unlike_a_builtin_param_name_is_refused() {
         let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
@@ -3528,25 +3548,38 @@ mod tests {
             "the empty key names no parameter"
         );
         assert_eq!(
-            BuiltinParamName::parse("Cutoff"),
-            None,
-            "the instrument spells its names in lowercase"
-        );
-        assert_eq!(
             BuiltinParamName::parse("cut off"),
             None,
-            "a space is not a character of the instrument's vocabulary"
+            "a space is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse("cut-off"),
             None,
-            "the instrument separates words with underscores, not hyphens"
+            "a hyphen is not a character of any built-in's vocabulary"
         );
         assert_eq!(
             BuiltinParamName::parse(&too_long),
             None,
             "a name past the buffer would be truncated into a different word"
         );
+    }
+
+    /// A camelCase name — Grinder's own spelling — parses exactly like a
+    /// snake_case one, and the dynamic `neuralCustomConvWeight{layer}_{idx}`
+    /// family the capacity doc cites round-trips at its longest.
+    ///
+    /// Shape admits both spellings because the carrier does not know which
+    /// vocabulary a name belongs to; it is the instrument's own `set_param`,
+    /// not this parser, that decides whether a camelCase key means anything.
+    #[test]
+    fn a_camel_case_builtin_param_name_parses() {
+        let longest_dynamic = BuiltinParamName::parse("neuralCustomConvWeight3_2")
+            .expect("a well-shaped camelCase name parses");
+        assert_eq!(longest_dynamic.as_str(), "neuralCustomConvWeight3_2");
+
+        let round_tripped =
+            BuiltinParamName::parse("inputGain").expect("a well-shaped camelCase name parses");
+        assert_eq!(round_tripped.as_str(), "inputGain");
     }
 
     #[test]

@@ -84,6 +84,7 @@ function artifactFor(
         frameCount: job.sampleRate,
         channelCount: 2,
         byteSize: job.sampleRate * 8,
+        contentAddress: 'content-address-fixture',
         warnings,
         buffer,
     };

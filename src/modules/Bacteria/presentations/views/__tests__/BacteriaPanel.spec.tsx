@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { DEFAULT_BACTERIA_STATE, bacteriaStore } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -10,6 +11,7 @@ vi.mock('#/infra/store/useStore', () => ({
 describe('BacteriaPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        bacteriaStore.set({});
     });
 
     it('should render without crashing', () => {
@@ -73,5 +75,25 @@ describe('BacteriaPanel', () => {
         const brothColumn = currentBrothHeader.closest('.bacteria-window')?.parentElement;
         expect(brothColumn).not.toBeNull();
         expect(brothColumn?.className).toContain('overflow-y-auto');
+    });
+
+    it('keeps scroll containers from collapsing raw Stack children with [&>*]:shrink-0', () => {
+        bacteriaStore.set({
+            'dev-1': {
+                ...DEFAULT_BACTERIA_STATE,
+                uiLevel: 2,
+            },
+        });
+        render(<BacteriaPanel deviceId="dev-1" />);
+
+        const presetDrawerHeader = screen.getByText('Preset drawer');
+        const presetScrollContainer = presetDrawerHeader.closest('.bacteria-window')?.querySelector('.overflow-y-auto');
+        expect(presetScrollContainer?.className).toContain('[&>*]:shrink-0');
+        expect(presetScrollContainer?.className).toContain('overflow-y-auto');
+
+        const editDeckHeader = screen.getByText('Pick the mutation');
+        const editDeckScrollContainer = editDeckHeader.closest('.overflow-y-auto');
+        expect(editDeckScrollContainer?.className).toContain('[&>*]:shrink-0');
+        expect(editDeckScrollContainer?.className).toContain('overflow-y-auto');
     });
 });

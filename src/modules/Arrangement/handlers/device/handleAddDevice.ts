@@ -1,5 +1,6 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
@@ -327,7 +328,10 @@ export const handleAddDevice = createHandler<'addDevice'>({
                 parameterInitializationSettled = true;
                 return;
             }
-            for (const [parameterId, value] of Object.entries(committedDevice.parameterValues)) {
+            for (const [parameterId, value] of orderDeviceParametersForReplay(
+                committedDevice.type,
+                committedDevice.parameterValues
+            )) {
                 updateDeviceParam(after.id, committedDevice.id, parameterId, value);
             }
             parameterInitializationSettled = true;

@@ -30,6 +30,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     preserveBranchStateForSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     replaceBranchState: vi.fn(),
     replaceCrdtDoc: vi.fn(),
@@ -88,6 +89,7 @@ describe('planPromptActions', () => {
         agentRunLifecycle.clear();
         mocks.captureProjectRevision.mockReset().mockReturnValue('rev-1');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReset().mockReturnValue('rev-1');
+        mocks.getProjectContext.mockReset().mockReturnValue({ tracks: [] });
         mocks.parsePromptToActions.mockReset();
         mocks.prepareStemImport.mockReset().mockResolvedValue({ status: 'prepared' });
         mocks.createStemImportPromptScope.mockReset().mockReturnValue(stemImportScope);
@@ -308,5 +310,130 @@ describe('planPromptActions', () => {
             stems: stemImportScope.actionSeed.stems,
         });
         expect(mocks.discardRawPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
+    describe('bounded correction under an admitted creative authority', () => {
+        const authority = {
+            schemaVersion: 1,
+            authorityId: 'creative-authority-fixed',
+            catalogId: 'creative-catalog-1',
+            requestDigest: 'digest-1',
+            revision: 'rev-1',
+            selection: { trackId: 'track-1', clipId: null, clipIds: [], activeView: 'arrange' },
+            mode: 'edit',
+            targets: [
+                {
+                    provenance: 'explicit-reference',
+                    objectType: 'track',
+                    objectIds: ['track-1'],
+                    parentTrackId: null,
+                },
+            ],
+            editDimensions: ['processing'],
+            prohibitions: [],
+            creationSlots: [],
+            uncertainty: 'none',
+        };
+
+        const contextSelecting = (selectedTrackId: string) => ({
+            tracks: [],
+            selectedTrackId,
+            selectedClipId: null,
+            selectedClipIds: [],
+            activeView: 'arrange',
+        });
+
+        const attempt = {
+            backend: 'webllm',
+            provider: 'webllm',
+            correlationId: 'correction-attempt-1',
+            request: {},
+            estimatedTotalTokens: 128,
+            estimate: { method: 'versioned-estimate' },
+        };
+
+        const correctableRejection = {
+            actions: [],
+            raw: 'rejected',
+            rejectionReason: 'The proposed action schema is invalid.',
+            creativeAuthority: authority,
+        };
+
+        it('hands the correction the authority the first attempt was admitted under', async () => {
+            mocks.getProjectContext.mockReturnValue(contextSelecting('track-1'));
+            mocks.parsePromptToActions
+                .mockResolvedValueOnce(correctableRejection)
+                .mockResolvedValueOnce({ actions: [{ type: 'testAction' }], raw: 'corrected' });
+
+            const result = await planPromptActions({
+                prompt: 'make the Bass sit further back',
+                onProviderAttempt: () => ({ status: 'admitted' }),
+            });
+
+            expect(result.result.actions).toHaveLength(1);
+            expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(2);
+            expect(mocks.parsePromptToActions.mock.calls[1]?.[8]).toEqual({ creativeAuthority: authority });
+        });
+
+        it('refuses the correction when the selection moved after the authority was captured', async () => {
+            mocks.getProjectContext
+                .mockReturnValueOnce(contextSelecting('track-1'))
+                .mockReturnValue(contextSelecting('track-2'));
+            let admission: unknown;
+            mocks.parsePromptToActions
+                .mockResolvedValueOnce(correctableRejection)
+                .mockImplementationOnce(async (...args: unknown[]) => {
+                    admission = (args[7] as (input: unknown) => unknown)(attempt);
+                    return { actions: [], raw: 'corrected' };
+                });
+
+            await planPromptActions({
+                prompt: 'make the Bass sit further back',
+                onProviderAttempt: () => ({ status: 'admitted' }),
+            });
+
+            expect(admission).toEqual({
+                status: 'rejected',
+                reason: 'The bounded correction attempt no longer has current application authority.',
+            });
+        });
+
+        it('refuses the correction when the run grants moved after the authority was captured', async () => {
+            const runId = 'creative-grants-run';
+            agentRunLifecycle.create({ runId, request: 'make it bigger', mode: 'apply', createdRevision: 'rev-1' });
+            const capturedRun = agentRunLifecycle.get(runId);
+            if (capturedRun === null) {
+                throw new Error('Fixture must seed an admitted run.');
+            }
+            const widenedRun = { ...capturedRun, grants: { ...capturedRun.grants, create: true } };
+            const getRun = vi
+                .spyOn(agentRunLifecycle, 'get')
+                .mockReturnValueOnce(capturedRun)
+                .mockReturnValueOnce(capturedRun)
+                .mockReturnValue(widenedRun);
+            mocks.getProjectContext.mockReturnValue(contextSelecting('track-1'));
+            let admission: unknown;
+            mocks.parsePromptToActions
+                .mockResolvedValueOnce(correctableRejection)
+                .mockImplementationOnce(async (...args: unknown[]) => {
+                    admission = (args[7] as (input: unknown) => unknown)(attempt);
+                    return { actions: [], raw: 'corrected' };
+                });
+
+            try {
+                await planPromptActions({
+                    prompt: 'make the Bass sit further back',
+                    streamIdentity: { runId, requestId: 'request-1', cancellationGeneration: 0 },
+                    onProviderAttempt: () => ({ status: 'admitted' }),
+                });
+            } finally {
+                getRun.mockRestore();
+            }
+
+            expect(admission).toEqual({
+                status: 'rejected',
+                reason: 'The bounded correction attempt no longer has current application authority.',
+            });
+        });
     });
 });

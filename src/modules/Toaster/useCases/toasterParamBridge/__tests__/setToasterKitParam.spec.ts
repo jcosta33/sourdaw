@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
-const { mockResolveDeviceTarget, mockGetTrackStrip, mockUpdateKit } = vi.hoisted(() => ({
-    mockResolveDeviceTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(),
-    mockGetTrackStrip: vi.fn(),
-    mockUpdateKit: vi.fn(),
-}));
+const { mockResolveDeviceTarget, mockGetTrackStrip, mockUpdateKit, mockWriteNativeBuiltinParameters } = vi.hoisted(
+    () => ({
+        mockResolveDeviceTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(),
+        mockGetTrackStrip: vi.fn(),
+        mockUpdateKit: vi.fn(),
+        mockWriteNativeBuiltinParameters:
+            vi.fn<(trackId: string, deviceId: string, values: Readonly<Record<string, number>>) => void>(),
+    })
+);
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
@@ -16,6 +20,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getTrackStrip: mockGetTrackStrip,
+    writeNativeBuiltinParameters: mockWriteNativeBuiltinParameters,
 }));
 
 // Keep the store write a no-op-on-absent path out of the way: updateKit only
@@ -133,6 +138,26 @@ describe('setToasterKitParam rAF coalescing', () => {
         setToasterKitParam('dev-1', 'masterGain', 0.8);
         flushFrame();
         expect(setParam).toHaveBeenCalledWith('master_gain', 0.8);
+    });
+
+    /**
+     * Toaster's kit is pushed as control writes, so a panel drag never reaches
+     * `updateDeviceParam` — the door that also writes the native session. Left
+     * worklet-only, a natively carried Toaster kept whatever kit the topology
+     * splice sent and nothing the musician moved was audible until a rebuild.
+     *
+     * The worklet write is asserted beside it because the native send is
+     * additive: the web node is the strip's fallback carrier and has to hold
+     * the current value for the moment the session's gate reopens at Stop.
+     */
+    it('also sends the kit write to the native session, in the engine’s own name', () => {
+        setToasterKitParam('dev-1', 'masterGain', 0.4);
+        flushFrame();
+
+        expect(mockWriteNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', 'dev-1', {
+            master_gain: 0.4,
+        });
+        expect(setParam).toHaveBeenCalledWith('master_gain', 0.4);
     });
 
     it('does not schedule a frame when the device is not on any track', () => {

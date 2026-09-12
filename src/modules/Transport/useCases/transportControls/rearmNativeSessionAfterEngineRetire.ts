@@ -32,7 +32,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 import { nativeEngineRearmStore } from '#/modules/AudioEngine/stores';
-import { claimNativeSessionRearm, nativeSessionRearmClaimHolds } from '#/modules/AudioEngine/useCases';
+import { claimNativeSessionRearm, getAudioContext, nativeSessionRearmClaimHolds } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -62,7 +62,18 @@ async function rearmNativeSession(claim: number): Promise<void> {
         logger.info('The play that lost its engine ended while the native session reloaded; the re-arm stays down.');
         return;
     }
-    startNativeSessionAtBeat(playheadPositionRef.current, state.tempo);
+    // Nothing waits on a re-arm, and nothing can: the transport keeps rolling
+    // through this start's own round trips, so by the time the roll is sent Web
+    // Audio is already past the beat read on the line below. The anchor and
+    // that beat are both read here, one statement after the other and after
+    // every await this function owes, so no time passes between them — which is
+    // what lets the roll land where Web Audio has reached rather than where the
+    // beat was read.
+    const ctxNow = getAudioContext().currentTime;
+    void startNativeSessionAtBeat(playheadPositionRef.current, state.tempo, {
+        kind: 'rolling',
+        anchoredAtContextSeconds: ctxNow,
+    });
 }
 
 /**

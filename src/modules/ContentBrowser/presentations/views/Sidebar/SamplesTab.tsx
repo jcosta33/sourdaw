@@ -8,6 +8,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';
@@ -40,7 +41,16 @@ export const SamplesTab = ({
             }
             trackId = newTrack.id;
         }
-        const durationBeats = sample.durationSeconds ? Math.max(1, Math.ceil(sample.durationSeconds * 2)) : 8;
+        const tempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
+        let cachedBuffer: AudioBuffer | null | undefined;
+        if (sample.audioBufferId) {
+            cachedBuffer = getCachedAudioBuffer({ bufferId: sample.audioBufferId });
+        }
+        const durationSeconds = sample.durationSeconds ?? cachedBuffer?.duration;
+        let durationBeats = 8;
+        if (durationSeconds !== undefined) {
+            durationBeats = Math.max(1, Math.ceil((durationSeconds / 60) * tempo));
+        }
         addClip({
             trackId,
             startBeat: 0,
@@ -82,6 +92,7 @@ export const SamplesTab = ({
                                         id: sample.id,
                                         duration: sample.duration,
                                         audioBufferId: sample.audioBufferId,
+                                        durationSeconds: sample.durationSeconds,
                                     };
                                     event.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';

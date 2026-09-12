@@ -1,17 +1,12 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 
+import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+
 type BulkDeviceInsertionTrackScope = {
     targetIds: string[];
     anchors: { trackId: string; afterDeviceId: string }[];
     excludedFrozenTrackIds: string[];
 };
-
-function normalizePromptText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
 
 function normalizeDeviceName(value: string): string {
     return normalizePromptText(value.replace(/^builtin-/u, ''));

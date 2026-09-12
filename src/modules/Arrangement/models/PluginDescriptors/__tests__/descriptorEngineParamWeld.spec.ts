@@ -203,14 +203,30 @@ type NameTranslation =
 const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
     fermenter: { kind: 'camelToSnake', source: `${SERVICES}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
     // Pad-scoped writes go through `set_pad_param` and PAD_PARAM_MAP; the
-    // device-level `param` message automation uses reads KIT_PARAM_MAP.
-    toaster: { kind: 'table', source: `${SERVICES}/toasterProcessor.ts`, constName: 'KIT_PARAM_MAP' },
+    // device-level `param` message automation reads `TOASTER_KIT_PARAM_NAMES`,
+    // which the worklet now imports from `models/` rather than keeping its own
+    // copy (#3124).
+    toaster: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/ToasterKitParamNames.ts',
+        constName: 'TOASTER_KIT_PARAM_NAMES',
+    },
     levain: { kind: 'table', source: `${SERVICES}/levainProcessor.ts`, constName: 'PARAM_MAP' },
     'builtin-crumbs': { kind: 'identity' },
     // Grand Boule's two processors share one core, and the map lives there.
     'grand-boule': { kind: 'table', source: `${WORKLETS}/grandBouleEngineCore.ts`, constName: 'PARAM_MAP' },
-    gluten: { kind: 'table', source: `${SERVICES}/glutenProcessor.ts`, constName: 'PARAM_MAP' },
-    crust: { kind: 'table', source: `${SERVICES}/crustProcessor.ts`, constName: 'PARAM_MAP' },
+    // Gluten's two hosts share one table, and the model file is where it lives.
+    gluten: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/GlutenDspParamNames.ts',
+        constName: 'GLUTEN_DSP_PARAM_NAMES',
+    },
+    // Crust's two hosts share one table, and the model file is where it lives.
+    crust: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/CrustDspParamNames.ts',
+        constName: 'CRUST_DSP_PARAM_NAMES',
+    },
     bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
     grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
     proof: { kind: 'identity' },

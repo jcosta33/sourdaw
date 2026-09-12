@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/Command/useCases';
+import {
+    type parseVersionedCommandBatchEnvelope,
+    commandBatchPreflightPort,
+    commandTrackDefaultsPort,
+} from '#/modules/Command/useCases';
 
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
@@ -34,6 +38,81 @@ import { sendChatMessage } from '../sendChatMessage';
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
 type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
+type ParsedCommandBatch = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>;
+type BatchEnvelope = ParsedCommandBatch['envelope'];
+type BatchCommandEnvelope = BatchEnvelope['commands'][number];
+
+const FIXTURE_BUDGETS: BatchEnvelope['budgets'] = {
+    maxCommands: 16,
+    maxCreatedTracks: 4,
+    maxDeletedObjects: 4,
+    maxAffectedTracks: 8,
+    maxAffectedClips: 8,
+    maxAutomationPoints: 64,
+    maxImportedAssets: 8,
+    maxRenderJobs: 2,
+};
+
+function fixtureCommandEnvelope(
+    commandId: string,
+    operation: BatchCommandEnvelope['operation'],
+    overrides: Partial<BatchCommandEnvelope> = {}
+): BatchCommandEnvelope {
+    return {
+        schemaVersion: 1,
+        commandId,
+        issuedAt: 0,
+        operation,
+        arguments: {},
+        argumentsDigest: `digest-${commandId}`,
+        dependencyIds: [],
+        reason: `Fixture ${operation}`,
+        expectedEffect: `Fixture ${operation} effect`,
+        objectReferences: [],
+        time: [],
+        parameterUnits: [],
+        seed: null,
+        normalizedProjectRevision: 'revision-fixture',
+        availableDeviceVersions: {},
+        applicationAssignedIds: [],
+        ...overrides,
+    };
+}
+
+/**
+ * The real parser hands back a whole batch envelope, and the confirmation path now reads the
+ * dependency and effect fields as well as the scope, so the mocked parse returns the whole shape.
+ */
+function validParsedBatch(input: {
+    batchId: string;
+    commands?: readonly BatchCommandEnvelope[];
+    grants: BatchEnvelope['grants'];
+    idempotencyKey: string;
+    preconditions?: BatchEnvelope['preconditions'];
+    scope: BatchEnvelope['scope'];
+}): ParsedCommandBatch {
+    return {
+        status: 'valid',
+        envelope: {
+            schemaVersion: 1,
+            runId: 'run-fixture',
+            batchId: input.batchId,
+            projectId: 'project-fixture',
+            baseRevision: 'revision-fixture',
+            idempotencyKey: input.idempotencyKey,
+            intent: 'Fixture batch',
+            mode: 'commit',
+            scope: input.scope,
+            preconditions: input.preconditions ?? [],
+            commands: input.commands ?? [],
+            postconditions: [],
+            dependencies: [],
+            batchLocalBindings: [],
+            grants: input.grants,
+            budgets: FIXTURE_BUDGETS,
+        },
+    };
+}
 
 const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
@@ -311,7 +390,7 @@ function createCommandGraphForwardingFixture() {
         throw new Error(guarded.reason);
     }
     const createdBus = guarded.actions.find((action) => action.type === 'createBus');
-    if (createdBus?.type !== 'createBus') {
+    if (createdBus?.type !== 'createBus' || createdBus.payload.busId === undefined) {
         throw new Error('Expected the compiler graph to retain its batch-local bus producer');
     }
     return {
@@ -408,16 +487,14 @@ function configureCommandPlanning(action: ExecutableRuntimeAction) {
         agentApproval: { policy: { risk: 'confirm', reasons: [] } },
         requiresConfirmation: true,
     });
-    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-        status: 'valid',
-        envelope: {
+    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+        validParsedBatch({
             batchId: 'batch-fixture',
-            commands: [],
+            grants,
             idempotencyKey: 'batch-fixture-idempotency',
-            preconditions: [],
             scope,
-        },
-    });
+        })
+    );
     return { grants, scope };
 }
 
@@ -498,20 +575,21 @@ function configureCommandGraphForwarding(
         agentApproval: { policy: { risk: requiresConfirmation ? 'confirm' : 'low', reasons: [] } },
         requiresConfirmation,
     });
-    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-        status: 'valid',
-        envelope: {
+    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+        validParsedBatch({
             batchId: 'batch-graph',
             commands: [
-                { commandId: 'command-create-bus' },
-                { commandId: 'command-gain-bus' },
-                { commandId: 'command-remove-kick' },
+                fixtureCommandEnvelope('command-create-bus', 'createBus'),
+                fixtureCommandEnvelope('command-gain-bus', 'setTrackGain', {
+                    dependencyIds: ['command-create-bus'],
+                }),
+                fixtureCommandEnvelope('command-remove-kick', 'removeTrack'),
             ],
+            grants,
             idempotencyKey: 'batch-graph-idempotency',
-            preconditions: [],
             scope,
-        },
-    });
+        })
+    );
     mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
@@ -759,7 +837,7 @@ describe('sendChatMessage retained-provider selection', () => {
                     },
                     provenance: 'provider-reported',
                 });
-                return { status: 'complete' };
+                return { status: 'complete', finishReason: 'stop', providerRequestId: null };
             }
         );
 
@@ -971,7 +1049,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 onToken(content);
                 markCompletionReady();
                 return new Promise<CloudChatCompletionOutcome>((resolve) => {
-                    releaseCompletion = () => resolve({ status: 'complete' });
+                    releaseCompletion = () =>
+                        resolve({ status: 'complete', finishReason: 'stop', providerRequestId: null });
                 });
             }
         );
@@ -2477,16 +2556,15 @@ describe('sendChatMessage retained-provider selection', () => {
                 agentApproval: { policy: { risk: 'confirm', reasons: [] } },
                 requiresConfirmation: true,
             });
-            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-                status: 'valid',
-                envelope: {
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+                validParsedBatch({
                     batchId: 'batch-application-assigned',
-                    commands: [],
+                    grants,
                     idempotencyKey: 'batch-application-assigned-idempotency',
                     preconditions: [{ kind: 'targets-absent', targetIds: ['track-application-assigned'] }],
                     scope,
-                },
-            });
+                })
+            );
 
             await sendChatMessage('Add a reference track', { mode });
 

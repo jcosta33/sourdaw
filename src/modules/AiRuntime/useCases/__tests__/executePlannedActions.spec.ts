@@ -23,7 +23,7 @@ import { notifyAiChange } from '../notifyAiChange';
 import { recordAiActionGroup } from '../recordAiActionGroup';
 
 vi.mock('#/infra/logger/appLogger', () => ({
-    logger: { error: vi.fn() },
+    logger: { error: vi.fn(), warn: vi.fn() },
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -743,6 +743,59 @@ describe('executePlannedActions', () => {
         });
 
         expect(result).toEqual({ status: 'failed', reason: 'The approved action hashes no longer match.' });
+    });
+
+    it('settles a conflicted incompatible divergence gate as invalidated with the unified sentence', async () => {
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'conflicted',
+            reason: 'Command batch project divergence is ambiguous-same-object',
+            actions: [],
+            divergence: {
+                kind: 'ambiguous-same-object',
+                mayReapply: false,
+                repairCandidates: [{ kind: 'review-ambiguous-target', targetIds: ['track-1'] }],
+                targetIds: ['track-1'],
+            },
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(vi.mocked(recordAiActionGroup)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Command batch project divergence is ambiguous-same-object')
+        );
+    });
+
+    it('keeps a conflicted result without an attached divergence failed on the planned-action route', async () => {
+        // The structural discriminator's other half: a production-brief-shaped
+        // conflict carries no gate classification, so it must not inherit the
+        // invalidated disposition.
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockResolvedValue({
+            status: 'conflicted',
+            reason: 'Action batch conflicts with locked production intent',
+            actions: [],
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({ status: 'failed', reason: 'Action batch conflicts with locked production intent' });
+        expect(vi.mocked(recordAiActionGroup)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
     });
 
     it('reports user cancellation separately from project invalidation', async () => {

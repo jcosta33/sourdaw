@@ -1,15 +1,15 @@
 import { ensureAdapterCapabilities } from '../../ensureAdapterCapabilities';
 import { runProviderGatewayRequest } from '../../providerGateway';
-import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
+import { type OpenAiCloudRuntime, type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
-type RequestOpenAiCompatibleProviderInput = {
-    runtime: OpenAiCompatibleCloudRuntime;
+type RequestHostedOpenAiProviderInput = {
+    runtime: OpenAiCloudRuntime | OpenAiCompatibleCloudRuntime;
     body: string;
     signal: AbortSignal;
     onBodyChunk: (chunk: Uint8Array) => void;
 };
 
-export type OpenAiCompatibleProviderResponse = {
+export type HostedOpenAiProviderResponse = {
     status: number;
     contentType: string | null;
 };
@@ -25,12 +25,12 @@ function addBoundedResponseBytes(current: number, chunk: Uint8Array): number {
     return next;
 }
 
-export async function requestOpenAiCompatibleProvider({
+export async function requestHostedOpenAiProvider({
     runtime,
     body,
     signal,
     onBodyChunk,
-}: RequestOpenAiCompatibleProviderInput): Promise<OpenAiCompatibleProviderResponse> {
+}: RequestHostedOpenAiProviderInput): Promise<HostedOpenAiProviderResponse> {
     if (new TextEncoder().encode(body).byteLength > MAX_PROVIDER_REQUEST_BYTES) {
         throw new Error('Hosted provider request exceeds its 1 MiB limit');
     }
@@ -69,6 +69,12 @@ export async function requestOpenAiCompatibleProvider({
             }
         }
         return { status: responseStatus, contentType: responseContentType };
+    }
+
+    // Only the chat-completions development path reaches renderer networking: a
+    // first-party OpenAI runtime always carries its privileged gateway session.
+    if (runtime.provider === 'openai') {
+        throw new Error('First-party OpenAI requires its privileged provider session');
     }
 
     const response = await fetch(`${runtime.base_url}/chat/completions`, {

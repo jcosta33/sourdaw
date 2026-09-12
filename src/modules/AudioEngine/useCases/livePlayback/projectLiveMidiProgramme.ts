@@ -38,6 +38,16 @@
  * earlier note just before the later one starts, and that is what happens here
  * — one frame before, on the pass's own grid, and the earlier note is dropped
  * outright when that would end it at or before its own start.
+ *
+ * ── Unless the sink holds no key at all ───────────────────────────────────
+ *
+ * A pad-addressed drum machine is the exception, declared per body as
+ * `takesClipNoteReleases` (`nativeBuiltinBodies.ts`). Its pads are struck and
+ * decay on their own envelopes, so a clip's release chokes a sound the web
+ * carrier lets ring, and there is no key for two hits to contend over: such a
+ * target gets strikes alone and no overlap trim. The engine's own stop still
+ * releases every pad it holds, which is why the exception lives here rather
+ * than in the body.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -54,6 +64,7 @@ import { type OfflinePpqEndpointProjector } from '../../repositories/offlineSche
 import { getSourceOccurrenceOffset } from '../offlineRender/getSourceOccurrenceOffset';
 import { resolveTrackClipsWithComping, type ResolvedClip } from '../offlineRender/resolveTrackClipsWithComping';
 
+import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeMidiNoteSink } from './nativeMidiNoteSink';
 
 /** The lowest velocity a sounding note may carry; `0` is a release on the wire. */
@@ -200,6 +211,30 @@ function eventsForSpan(notes: readonly ProjectedNote[], span: LiveMidiSpan): Aud
     return events.sort((left, right) => left.time - right.time || Number(left.isNoteOn) - Number(right.isNoteOn));
 }
 
+/**
+ * The strikes one target owes for the span, for a sink that takes no clip
+ * release (`takesClipNoteReleases`).
+ *
+ * A pad is struck and decays on its own envelope, so a note is a strike and
+ * nothing else — the same events the live Web Audio carrier posts
+ * (`scheduleMidiNotes` sends `noteOn` alone) and the same ones the bounce
+ * schedules (`scheduleTrackClips` withholds the release for the Toaster). Two
+ * hits on one pad are two strikes: nothing is trimmed, because there is no
+ * release to shorten and no key either hit is holding.
+ */
+function strikesForSpan(notes: readonly ProjectedNote[], span: LiveMidiSpan): AudioGraphMidiNoteEvent[] {
+    return notes
+        .filter((note) => note.onSeconds >= span.startSeconds && note.onSeconds < span.endSeconds)
+        .map((note): AudioGraphMidiNoteEvent => ({
+            time: note.onSeconds,
+            note: note.note,
+            velocity: clampVelocity(note.velocity),
+            channel: note.channel,
+            isNoteOn: true,
+        }))
+        .sort((left, right) => left.time - right.time);
+}
+
 type ClipProjectionInput = Readonly<{
     clip: ResolvedClip;
     track: Track;
@@ -330,10 +365,19 @@ export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMid
             .filter((clip) => clip.type === 'midi' && !clip.muted)
             .flatMap((clip) => projectClipNotes({ clip, track, input, projectBeatToSeconds }));
 
-        const sounded = [...groupByKey(notes).values()].flatMap((keyNotes) =>
-            resolveSameKeyOverlaps(keyNotes, frameSeconds)
-        );
-        const events = eventsForSpan(sounded, span);
+        // A hosted instrument reports no body here and always takes its
+        // releases: the engine holds one key per (channel, note) for it, so the
+        // overlap trim and the release both apply.
+        const body = nativeBuiltinBody(sink.device.type);
+        const events =
+            body && !body.takesClipNoteReleases
+                ? strikesForSpan(notes, span)
+                : eventsForSpan(
+                      [...groupByKey(notes).values()].flatMap((keyNotes) =>
+                          resolveSameKeyOverlaps(keyNotes, frameSeconds)
+                      ),
+                      span
+                  );
         if (events.length === 0) {
             continue;
         }

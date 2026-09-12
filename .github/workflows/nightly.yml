@@ -287,24 +287,24 @@ jobs:
         run: pnpm build
 
   rust:
-    name: Rust workspace and collaboration server
+    name: Rust workspace
     needs: decide
-    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
+    # The Linux leg of the crates that ship in the web bundle: daw-dsp,
+    # daw-wasm-decoder, proof-chamber and scoring ride `main` as the committed
+    # `public/wasm/*` packages, and this job is the only leg of the nightly
+    # train that tests them, so `deploy-web` waits on it. `sourdaw-native` is
+    # excluded for the platform reason `native-macos` records below.
+    #
+    # The collaboration server is deliberately not here: sharing one job made
+    # a server test failure freeze the web deploy even though the bundle ships
+    # nothing from `server/`, so it moved to its own `collab-server` leg
+    # (#3516), the same split #3305 gave the native legs.
+    if: needs.decide.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: server/package-lock.json
 
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
       - name: Install ALSA development headers
@@ -318,16 +318,46 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install server dependencies
-        working-directory: server
-        run: npm ci
-
       # One script so the local run and the CI run cannot drift. It keeps the
       # Rust legs in debug on purpose: `assert_no_alloc`'s `disable_release`
       # feature is on by default, so a release build turns every real-time
       # allocation guard into a no-op that passes while proving nothing.
-      - name: Server and Rust workspace health gates
-        run: pnpm health:server:full
+      - name: Rust workspace health gates
+        run: sh scripts/health-gates-rust.sh
+
+  collab-server:
+    name: Collaboration server
+    needs: decide
+    # The WebSocket relay under `server/`: its node:test suite and its build.
+    # `deploy-web` does not wait on this job because the web bundle ships
+    # nothing from `server/` — a relay failure reports through the nightly
+    # failure report, which observes this leg, without freezing production.
+    #
+    # The `server` scope output exists for the pull-request path filters, and
+    # the nightly's decide forces every scope true, so the condition below is
+    # uniform with the sibling legs rather than load-bearing on this train.
+    if: needs.decide.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # The gate script verifies rather than installs dependencies, so an
+      # unhydrated lockfile is a setup failure, not a gate verdict.
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Collaboration server health gates
+        run: sh scripts/health-gates-server.sh
 
   native-macos:
     name: Native audio backend (macOS)
@@ -476,10 +506,19 @@ jobs:
         run: pnpm harness:plugin:install
 
       - name: Build the packaged desktop app
+        id: build-packaged-app
         run: pnpm desktop:build
 
       - name: Measure the packaged app
         run: pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json
+
+      # The workspace proof answers a different question than the measurement
+      # — whether the agent workspace works in the shipped artefact at all —
+      # so a FAILED measurement must not skip it. It is guarded on the build
+      # instead: without a packaged app there is nothing to drive.
+      - name: Prove the agent workspace in the packaged app
+        if: always() && steps.build-packaged-app.outcome == 'success'
+        run: pnpm desktop:agent-proof --json measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
 
       # The harness writes a record only for a MEASURED run, so this carries a
       # baseline off the runner when the run earned one and reports no files
@@ -491,6 +530,17 @@ jobs:
         with:
           name: desktop-latency-${{ github.sha }}
           path: measurements/desktop-latency/nightly-${{ github.sha }}.json
+          retention-days: 90
+
+      # Unlike the measurement, the proof writes its record for every verdict
+      # it reaches: a FAILED run's step list is the finding, not a blob to
+      # discard.
+      - name: Upload the agent workspace proof record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-agent-workspace-${{ github.sha }}
+          path: measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
           retention-days: 90
 
   e2e:
@@ -750,11 +800,14 @@ jobs:
     # fresh, not that they are correct, so only the Rust leg's own tests do
     # that. The native macOS and Windows legs validate the desktop shell,
     # which this deployment does not ship, so their failures must not freeze
-    # the web. The implicit `success()` on `needs` keeps the job from starting
-    # unless each one succeeded — a failure, a cancellation or a skip leaves
-    # production untouched. The first step reads those same results
-    # explicitly, so the refusal survives a later condition that admits this
-    # job on a run it should not deploy from.
+    # the web. The collaboration-server leg stays out of `needs` for the same
+    # reason (#3516): the relay under `server/` ships nothing in this bundle,
+    # so its failures must reach the nightly failure report without holding
+    # production behind them. The implicit `success()` on `needs` keeps the
+    # job from starting unless each one succeeded — a failure, a cancellation
+    # or a skip leaves production untouched. The first step reads those same
+    # results explicitly, so the refusal survives a later condition that
+    # admits this job on a run it should not deploy from.
     #
     # It is deliberately absent from `gate`: the summary reports what a pull
     # request proved, and no pull request ever runs this job.
@@ -1012,6 +1065,7 @@ jobs:
         unit,
         build,
         rust,
+        collab-server,
         native-macos,
         native-windows,
         desktop-measure,

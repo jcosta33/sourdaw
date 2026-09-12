@@ -71,6 +71,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -91,6 +92,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
+    pushUndoEntry: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     isAppActionCommittedError: vi.fn(() => false),

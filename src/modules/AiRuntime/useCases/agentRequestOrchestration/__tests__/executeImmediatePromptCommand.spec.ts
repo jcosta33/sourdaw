@@ -16,10 +16,14 @@ import { type AppAction } from '#/utils/handlerContract';
 import { executeImmediatePromptCommand } from '../executeImmediatePromptCommand';
 
 import type { executePlannedActions } from '../../executePlannedActions';
+import type { issueAgentCommandApprovalBinding } from '../../issueAgentCommandApprovalBinding';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
     executePlannedActions: vi.fn(),
+    issueApprovalBinding: vi.fn<(input: Parameters<ApprovalBindingIssuer>[0]) => { token: string }>(() => ({
+        token: 'exact-approval',
+    })),
     recordReceiptSaga: vi.fn(),
     recordCommittedRecoveryFailure: vi.fn(),
     transitionPhase: vi.fn(),
@@ -28,6 +32,33 @@ const mocks = vi.hoisted(() => ({
     bindAbortController: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
+
+type ApprovalBindingIssuer = typeof issueAgentCommandApprovalBinding;
+type AgentApproval = Parameters<ApprovalBindingIssuer>[0]['approval'];
+
+function buildAgentApproval(sourceRevision: string): AgentApproval {
+    return {
+        schemaVersion: 1,
+        actionHashes: [],
+        sourceRevision,
+        targetFingerprints: {},
+        advertisedTargetFingerprints: {},
+        consequences: {
+            audioUpload: false,
+            fileAccess: false,
+            maxImportedAssets: 0,
+            maxRenderJobs: 0,
+            remoteGeneration: false,
+        },
+        localActorId: 'standalone',
+        policy: {
+            decision: 'allow',
+            reasons: [],
+            requiredTrustMode: 'apply-reversible',
+            risk: 'bounded-reversible',
+        },
+    };
+}
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
@@ -40,6 +71,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
     preserveBranchStateForSession: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     replaceBranchState: vi.fn(),
     replaceCrdtDoc: vi.fn(),
@@ -52,6 +84,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('../../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
+vi.mock('../../issueAgentCommandApprovalBinding', () => ({
+    issueAgentCommandApprovalBinding: mocks.issueApprovalBinding,
+}));
 vi.mock('../../recordAgentRunReceiptSaga', () => ({ recordAgentRunReceiptSaga: mocks.recordReceiptSaga }));
 vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
@@ -151,6 +186,7 @@ describe('executeImmediatePromptCommand', () => {
             projectRevision: 'revision-R1',
             executionMode: 'atomic',
             group: generateGroupId('Set tempo'),
+            agentApproval: buildAgentApproval('revision-R1'),
             commandBatch,
             parsedCommandBatch,
             onExecutionSettlementWarning: vi.fn(),
@@ -185,6 +221,7 @@ describe('executeImmediatePromptCommand', () => {
             projectRevision: 'revision-R1',
             executionMode: 'atomic',
             group: generateGroupId('Set tempo'),
+            agentApproval: buildAgentApproval('revision-R1'),
             commandBatch,
             parsedCommandBatch,
             onExecutionSettlementWarning: vi.fn(),
@@ -214,6 +251,7 @@ describe('executeImmediatePromptCommand', () => {
                 projectRevision: 'revision-R1',
                 executionMode: 'atomic',
                 group: generateGroupId('Set tempo'),
+                agentApproval: buildAgentApproval('revision-R1'),
                 commandBatch,
                 parsedCommandBatch,
                 onExecutionSettlementWarning: vi.fn(),
@@ -238,5 +276,114 @@ describe('executeImmediatePromptCommand', () => {
             })
         );
         expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
+    });
+
+    it('settles a stale-shaped allow-policy rejection as invalidated with the unified sentence', async () => {
+        const { commandBatch, parsedCommandBatch } = await createFixture();
+        const rejection = { reason: 'The approved source revision is stale.', stale: true };
+        mocks.issueApprovalBinding.mockImplementation(({ onRejection }) => {
+            onRejection?.(rejection);
+            return { token: 'exact-approval' };
+        });
+        let observedBySettlement: { reason: string; stale: boolean } | null | 'not-read' = 'not-read';
+        mocks.executePlannedActions.mockImplementation(async (input) => {
+            observedBySettlement = input.getApprovalBindingRejection?.() ?? null;
+            return {
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            };
+        });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            agentApproval: buildAgentApproval('revision-R1'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        expect(observedBySettlement).toEqual(rejection);
+        expect(mocks.issueApprovalBinding).toHaveBeenCalledWith(
+            expect.objectContaining({
+                approval: expect.objectContaining({ sourceRevision: 'revision-R1' }),
+                commandBatch,
+            })
+        );
+        expect(mocks.executePlannedActions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                commandBatch: expect.objectContaining({ approvalBinding: { token: 'exact-approval' } }),
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            'assistant-immediate',
+            expect.objectContaining({
+                error: 'The project changed after this proposal was created. Review and submit the command again.',
+                content: expect.stringContaining('The project changed before this command could commit.'),
+            })
+        );
+    });
+
+    it('renders a genuine allow-policy rejection through the failed settlement branch', async () => {
+        const { commandBatch, parsedCommandBatch } = await createFixture();
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'failed',
+            reason: 'The approved action hashes no longer match.',
+        });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            agentApproval: buildAgentApproval('revision-R1'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            'assistant-immediate',
+            expect.objectContaining({
+                error: 'The approved action hashes no longer match.',
+                content: expect.stringContaining(
+                    'Failed to execute prompt command atomically: The approved action hashes no longer match.'
+                ),
+            })
+        );
+    });
+
+    it('executes on the compile-minted binding when no compiled approval is available', async () => {
+        const { commandBatch, parsedCommandBatch } = await createFixture();
+        mocks.executePlannedActions.mockResolvedValue({ status: 'no-op' });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        expect(mocks.issueApprovalBinding).not.toHaveBeenCalled();
+        const input = mocks.executePlannedActions.mock.calls[0]?.[0];
+        expect(input?.commandBatch).toBe(commandBatch);
+        expect(input?.commandBatch).not.toHaveProperty('approvalBinding');
     });
 });

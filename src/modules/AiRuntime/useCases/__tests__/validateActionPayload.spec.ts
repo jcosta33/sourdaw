@@ -845,6 +845,17 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', clipType: 'audio', offset: 1.5, extra: true },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'selectTake',
+        validPayload: { trackId: 'track-1', takeId: 'take-1' },
+        invalidPayloads: [
+            { trackId: '', takeId: 'take-1' },
+            { trackId: 'track-1', takeId: '' },
+            { trackId: 'track-1' },
+            // `expectedSelectedTakeId` is internal replay metadata, rejected for providers.
+            { trackId: 'track-1', takeId: 'take-1', expectedSelectedTakeId: 'take-2' },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

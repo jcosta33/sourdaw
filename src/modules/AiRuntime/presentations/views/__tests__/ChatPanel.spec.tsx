@@ -218,6 +218,7 @@ function createRetainedReview(input: {
                     frameCount: 48_000,
                     channelCount: 2,
                     byteSize: 384_000,
+                    contentAddress: 'content-address-fixture',
                     warnings: [],
                     buffer: input.buffer,
                 },

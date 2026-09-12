@@ -33,12 +33,21 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
 
     setCrustParam(key, value);
 
+    let derivedAlgorithm: number | undefined;
     if (key === 'style' && typeof value === 'string') {
         const algorithm = algorithmFromStyle(value);
         if (algorithm !== null) {
-            // Engine already applied from_style_index from the style param;
-            // a second algorithm flush can race. Store-only so L2 chips follow.
+            // Engine already applied from_style_index from the style write, so
+            // the derived key never reaches the engine; it is persisted from
+            // the same flush as style, after it, because the web host replays
+            // a record in first-insertion order and style must precede the
+            // algorithm it derives.
             setCrustParam('algorithm', algorithm);
+
+            const encodedAlgorithm = encodeCrustValue('algorithm', algorithm);
+            if (typeof encodedAlgorithm === 'number') {
+                derivedAlgorithm = encodedAlgorithm;
+            }
         }
     }
 
@@ -47,5 +56,5 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
     }
 
     const compositeKey = `${deviceId}:${key}`;
-    paramBatcher.schedule(compositeKey, { deviceId, key, value: encodedValue }, flushCrustParam);
+    paramBatcher.schedule(compositeKey, { deviceId, key, value: encodedValue, derivedAlgorithm }, flushCrustParam);
 }

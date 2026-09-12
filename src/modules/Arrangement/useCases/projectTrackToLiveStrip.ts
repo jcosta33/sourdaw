@@ -10,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
@@ -116,7 +117,7 @@ export function projectTrackToLiveStrip({
                 onExternalPluginActivation?.(activation);
             }
         }
-        for (const [parameterId, value] of Object.entries(device.parameterValues)) {
+        for (const [parameterId, value] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
             if (typeof value === 'number') {
                 updateDeviceParam(track.id, device.id, parameterId, value);
             }

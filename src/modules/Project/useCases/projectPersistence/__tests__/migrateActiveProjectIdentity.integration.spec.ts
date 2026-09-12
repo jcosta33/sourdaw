@@ -28,6 +28,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     audioEngine: {},

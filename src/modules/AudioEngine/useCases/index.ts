@@ -60,6 +60,7 @@ export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { writeNativeBuiltinParameters } from './deviceControls/writeNativeBuiltinParameters';
 export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
@@ -89,6 +90,7 @@ export { getMasterAnalyser } from './engineAccess/getMasterAnalyser';
 export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalysers';
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
+export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
@@ -116,9 +118,13 @@ export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm'
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+// Published because the composition root decides which of the Tuner's two carriers publishes a reading.
+export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
 export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+// Published because the transport has to know, before it can await anything, whether a play here is offered a session.
+export { nativeLiveGraphSessionOffered } from './livePlayback/nativeLiveGraphSessionOffered';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';

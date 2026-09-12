@@ -30,7 +30,14 @@ type UseTimelineFileDropResult = {
 };
 
 type AiRenderPayload = { name: string; bufferId: string; durationSeconds: number };
-type SamplePayload = { name: string; id: string; path: string; libraryRootId: string; durationSeconds?: number };
+type SamplePayload = {
+    name: string;
+    id: string;
+    path?: string;
+    libraryRootId?: string;
+    audioBufferId?: string;
+    durationSeconds?: number;
+};
 type PluginPayload = { name: string; id: string };
 type AudioTargetIntent = { kind: 'existing'; trackId: string } | { kind: 'create' };
 
@@ -47,6 +54,13 @@ function requireString(value: unknown, field: string): string {
         throw new TypeError(`drag payload field "${field}" is not a non-empty string`);
     }
     return value;
+}
+
+function parseOptionalString(value: unknown, field: string): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return requireString(value, field);
 }
 
 function requireFiniteNumber(value: unknown, field: string): number {
@@ -80,8 +94,9 @@ function parseSample(raw: string): SamplePayload {
     return {
         name: requireString(obj.name, 'name'),
         id: requireString(obj.id, 'id'),
-        path: requireString(obj.path, 'path'),
-        libraryRootId: requireString(obj.libraryRootId, 'libraryRootId'),
+        path: parseOptionalString(obj.path, 'path'),
+        libraryRootId: parseOptionalString(obj.libraryRootId, 'libraryRootId'),
+        audioBufferId: parseOptionalString(obj.audioBufferId, 'audioBufferId'),
         durationSeconds,
     };
 }
@@ -175,7 +190,9 @@ export const useTimelineFileDrop = ({
                 let decodedAudioBufferId: string | undefined;
                 let assetHash: string | undefined;
                 let assetLeaseId: string | undefined;
-                let durationBeats = sample.durationSeconds ? Math.max(1, Math.ceil(sample.durationSeconds * 2)) : 4;
+                let durationBeats = sample.durationSeconds
+                    ? Math.max(1, Math.ceil((sample.durationSeconds / 60) * buildTimelineRenderModel().tempo))
+                    : 4;
                 const assetTransfer = getAssetTransfer();
 
                 discardPreparedSampleResources = () => {
@@ -193,9 +210,10 @@ export const useTimelineFileDrop = ({
                 // so the SampleLibrary file resolver would have nothing to resolve.
                 // Resolve the buffer id straight from the cache before attempting
                 // any file access or decode.
-                const cachedBuffer = getCachedAudioBuffer({ bufferId: sample.id });
+                const candidateBufferId = sample.audioBufferId ?? sample.id;
+                const cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
                 if (cachedBuffer) {
-                    audioBufferId = sample.id;
+                    audioBufferId = candidateBufferId;
                     durationBeats = Math.max(
                         1,
                         Math.ceil((cachedBuffer.duration / 60) * buildTimelineRenderModel().tempo)
@@ -208,6 +226,15 @@ export const useTimelineFileDrop = ({
                 // no audio behind it.
                 try {
                     if (!audioBufferId) {
+                        if (!sample.libraryRootId || !sample.path) {
+                            if (authority.isCurrent()) {
+                                notifyUser(
+                                    `Could not access "${sample.name}" — audio buffer is not available.`,
+                                    'error'
+                                );
+                            }
+                            return;
+                        }
                         const resolvedSampleFile = await resolveDroppedSampleFile({
                             libraryRootId: sample.libraryRootId,
                             relativePath: sample.path,

@@ -1,28 +1,31 @@
 //! The process-exit cascade, in the one order that is correct.
 //!
-//! Quit is the only chance to run all four of these, and they are ordered by
+//! Quit is the only chance to run all five of these, and they are ordered by
 //! what stops being possible if they are late:
 //!
 //! 1. Retire the mDNS advertisement and the discovery threads. Skipping it
 //!    leaves peers a joinable ghost session until the record's TTL expires.
-//! 2. Give every open plugin editor its CLAP `gui.destroy` while there is still
+//! 2. Release the open MIDI input. The device handle is quick to close and
+//!    nothing after this step needs it; leaving it open pins the controller
+//!    for every other application until the OS notices the process is gone.
+//! 3. Give every open plugin editor its CLAP `gui.destroy` while there is still
 //!    a process to run it in. A plugin that refuses is reported, never fatal:
 //!    exit must not be blocked by a third-party editor.
-//! 3. Sweep the retirement vec. Load and unload are the only other sweep sites,
+//! 4. Sweep the retirement vec. Load and unload are the only other sweep sites,
 //!    so without this terminal one the last retirement of a session is never
 //!    freed and a plugin that persists settings in `destroy` never gets to.
-//! 4. Retire every instance that is still *live* into that same vec and free it
+//! 5. Retire every instance that is still *live* into that same vec and free it
 //!    from there. Nothing else ever will: the host process does not run
 //!    destructors at exit, so a plugin left in the stores is a CLAP or VST3
 //!    binary killed mid-flight, without the `deactivate`/`destroy` or
 //!    `setActive(0)`/`terminate` its format requires.
 //!
-//! Step 3 has to follow step 2 — closing an editor is what can retire a runtime
-//! — and step 2 is best effort, so a failure there must not skip it. Step 4
+//! Step 4 has to follow step 3 — closing an editor is what can retire a runtime
+//! — and step 3 is best effort, so a failure there must not skip it. Step 5
 //! follows both, because an instance whose editor is still open would be torn
-//! down with its editor. Step 4 sweeps as it waits, which is what keeps the
+//! down with its editor. Step 5 sweeps as it waits, which is what keeps the
 //! retirement vec's reclamation terminal: a runtime the scheduler releases
-//! during step 4's wait window would otherwise be past its only sweep. That is
+//! during step 5's wait window would otherwise be past its only sweep. That is
 //! why this lives in the crate rather than in each shell: a shell that
 //! reimplements the cascade can silently drop a step, and the second shell has
 //! no `RunEvent::Exit` to hang it off.
@@ -32,6 +35,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::commands::collab::{shutdown_discovery, CollabState};
+use crate::commands::midi::MidiState;
 use crate::commands::plugin_gui::close_every_plugin_gui;
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
@@ -92,6 +96,9 @@ pub struct ShutdownReport {
     /// rather than left for a background thread to free. Non-zero means the
     /// terminal reclamation point was not reached for that many plugins.
     pub unreclaimed_retirements: usize,
+    /// Whether an open MIDI input connection was released. `false` for a
+    /// session that had none open; the close itself cannot fail the exit.
+    pub closed_midi_input: bool,
 }
 
 /// Run the exit cascade. Idempotent: a second call finds nothing left to do.
@@ -101,10 +108,16 @@ pub struct ShutdownReport {
 /// is skipped.
 pub fn shutdown(
     collab: &CollabState,
+    midi: &MidiState,
     app_state: &AppState,
     windows: Option<&dyn PluginWindowHost>,
 ) -> ShutdownReport {
     shutdown_discovery(collab);
+
+    // The MIDI step runs before the plugin passes: it is quick, bounded by the
+    // port close alone, and must not compete with a plugin teardown for the
+    // shell's force-exit deadline.
+    let closed_midi_input = midi.close_open_input();
 
     // A quit that has already lost its windows has also lost the shell thread
     // they lived on, and `NoWindowHost` says so: what is left of the cascade
@@ -112,6 +125,7 @@ pub fn shutdown(
     let editor_thread = windows.unwrap_or(&NoWindowHost);
 
     let mut report = ShutdownReport::default();
+    report.closed_midi_input = closed_midi_input;
     match close_every_plugin_gui(windows, app_state) {
         Ok(gui_report) => {
             report.closed_editors = gui_report.closed_instance_ids;
@@ -510,7 +524,12 @@ mod tests {
 
         let host = order_recording_host(&state);
 
-        shutdown(&CollabState::default(), &state, Some(&host));
+        shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&host),
+        );
 
         assert_eq!(
             host.destroyed
@@ -536,8 +555,18 @@ mod tests {
             .expect("plugin_windows lock should be available")
             .insert("instance-a".to_string(), "plugin-instance-a".to_string());
 
-        let first = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
-        let second = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let first = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
+        let second = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
 
         assert_eq!(first, ShutdownReport::default());
         assert_eq!(second, first);
@@ -556,7 +585,7 @@ mod tests {
         let state = AppState::default();
         retire_a_runtime(&state);
 
-        shutdown(&CollabState::default(), &state, None);
+        shutdown(&CollabState::default(), &MidiState::default(), &state, None);
 
         assert!(
             state
@@ -578,7 +607,12 @@ mod tests {
         let processing = insert_live_engine_plugin(&state, "engine-instance");
         insert_command_owned_plugin(&state, "command-instance");
 
-        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
 
         assert_eq!(
             processing.off_audio_thread_stops(),
@@ -619,7 +653,12 @@ mod tests {
 
         let host = order_recording_host(&state);
 
-        let report = shutdown(&CollabState::default(), &state, Some(&host));
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&host),
+        );
 
         assert_eq!(
             host.live_engine_plugins_at_destroy.load(Ordering::SeqCst),
@@ -644,7 +683,12 @@ mod tests {
         let scheduler_reference = engine_runtime(&state, "engine-instance");
 
         let started = Instant::now();
-        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
         let elapsed = started.elapsed();
 
         assert_eq!(report.destroyed_instances, 0);
@@ -701,6 +745,7 @@ mod tests {
         thread::spawn(move || {
             let _ = reported.send(shutdown(
                 &CollabState::default(),
+                &MidiState::default(),
                 &cascade_state,
                 Some(&NoWindowHost),
             ));
@@ -759,7 +804,12 @@ mod tests {
             drop(scheduler_reference);
         });
 
-        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
         blocker.join().expect("the blocking thread should finish");
         release.join().expect("the releasing thread should finish");
 
@@ -798,7 +848,12 @@ mod tests {
         });
 
         let started = Instant::now();
-        let report = shutdown(&CollabState::default(), &state, Some(&NoWindowHost));
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &state,
+            Some(&NoWindowHost),
+        );
         let elapsed = started.elapsed();
         release.join().expect("the releasing thread should finish");
 
@@ -814,5 +869,69 @@ mod tests {
             elapsed < SCHEDULER_RELEASE_BUDGET / 2,
             "the pass must return on the release at 50ms, not sleep out its budget first, took {elapsed:?}"
         );
+    }
+
+    /// The MIDI step is the one place the open input device is ever released
+    /// on the quit path, so removing it must be observable: with a connection
+    /// held, the report has to say the step ran and the slot has to come out
+    /// empty. The connection is opened against a virtual port, so no physical
+    /// device is needed — the stand-in for a hardware source is a virtual
+    /// output port, the only kind an input enumeration ever lists. Unix-only:
+    /// creating one requires `create_virtual`.
+    #[cfg(unix)]
+    #[test]
+    fn the_cascade_releases_the_open_midi_input() {
+        use midir::os::unix::VirtualOutput;
+
+        let midi_out = midir::MidiOutput::new("sourdaw-shutdown-fixture").expect("test MidiOutput");
+        let _virtual_source = midi_out
+            .create_virtual("sourdaw-cascade-open-input")
+            .expect("virtual source port");
+
+        let midi_in =
+            midir::MidiInput::new("sourdaw-shutdown-fixture-input").expect("test MidiInput");
+        let port = midi_in
+            .ports()
+            .into_iter()
+            .find(|port| {
+                midi_in
+                    .port_name(port)
+                    .is_ok_and(|name| name == "sourdaw-cascade-open-input")
+            })
+            .expect("the virtual source port must be visible to an input enumeration");
+        let connection = midi_in
+            .connect(&port, "sourdaw-shutdown-fixture", |_, _, _| {}, ())
+            .expect("opening the virtual source must succeed");
+        let midi = crate::commands::midi::MidiState::with_connection_for_test(connection);
+
+        let report = shutdown(
+            &CollabState::default(),
+            &midi,
+            &AppState::default(),
+            Some(&NoWindowHost),
+        );
+
+        assert!(
+            report.closed_midi_input,
+            "the cascade must report releasing the open device"
+        );
+        assert!(
+            !midi.close_open_input(),
+            "nothing may be left open for a second pass to find"
+        );
+    }
+
+    /// The complement, runnable everywhere: a session that never opened an
+    /// input reports no MIDI step, rather than a fabricated close.
+    #[test]
+    fn the_cascade_reports_no_midi_step_when_no_input_was_open() {
+        let report = shutdown(
+            &CollabState::default(),
+            &MidiState::default(),
+            &AppState::default(),
+            Some(&NoWindowHost),
+        );
+
+        assert!(!report.closed_midi_input);
     }
 }

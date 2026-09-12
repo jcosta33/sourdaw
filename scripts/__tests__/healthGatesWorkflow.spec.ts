@@ -213,7 +213,8 @@ const VERCEL_LINK_STEP = 'Link the Vercel CLI to the production project';
 // and scoring, which ship in the web bundle as the committed
 // `public/wasm/*` packages. The native macOS and Windows legs validate the
 // desktop shell instead, which this deployment does not ship, so their
-// failures must not freeze it.
+// failures must not freeze it. The collaboration-server leg (#3516) stays
+// out for the same reason: the bundle ships nothing from `server/`.
 const DEPLOY_WEB_NEEDS = [
     'static',
     'lint',
@@ -227,8 +228,9 @@ const DEPLOY_WEB_NEEDS = [
     'secrets',
 ] as const;
 // Every leg a scheduled run performs, in the workflow's own order. The deploy
-// deliberately does not wait for the native legs (DEPLOY_WEB_NEEDS), but the
-// reporter observes the whole train: a native failure must still file the issue.
+// deliberately does not wait for the native legs or the collaboration server
+// (DEPLOY_WEB_NEEDS), but the reporter observes the whole train: a native or
+// server failure must still file the issue.
 const NIGHTLY_REPORT_NEEDS = [
     'static',
     'lint',
@@ -236,6 +238,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'unit',
     'build',
     'rust',
+    'collab-server',
     'native-macos',
     'native-windows',
     'desktop-measure',
@@ -300,6 +303,20 @@ const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
 const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
 const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
 const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+// The nightly split its combined Rust job along the deploy seam (#3516): the
+// crate leg keeps the `rust` scope alone because the crates it tests ship in
+// the web bundle, and the collaboration-server leg answers to the `server`
+// scope alone because the bundle ships nothing from `server/`. Each gate is
+// its own script, so the legs can no longer fail for each other's reasons.
+const NIGHTLY_RUST_JOB = 'rust';
+const NIGHTLY_RUST_CONDITION = "needs.decide.outputs.rust == 'true'";
+const NIGHTLY_RUST_GATE_STEP = 'Rust workspace health gates';
+const NIGHTLY_RUST_GATE_COMMAND = 'sh scripts/health-gates-rust.sh';
+const COLLAB_SERVER_JOB = 'collab-server';
+const COLLAB_SERVER_JOB_NAME = 'Collaboration server';
+const COLLAB_SERVER_CONDITION = "needs.decide.outputs.server == 'true'";
+const COLLAB_SERVER_GATE_STEP = 'Collaboration server health gates';
+const COLLAB_SERVER_GATE_COMMAND = 'sh scripts/health-gates-server.sh';
 // The failed shard is already fatal, so these reporters are the one reason a
 // step may carry a condition at all; `!cancelled()` replaces the implicit
 // `success()` that would skip the annotation over the very failure it names.
@@ -317,6 +334,14 @@ const PATHS_FILTER_ACTION = 'dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec37
 const PATHS_FILTER_FIRST_ATTEMPT_STEP = 'Filter changed paths';
 const PATHS_FILTER_RETRY_STEP = 'Retry changed-paths filter after a transient API failure';
 const PATHS_FILTER_RETRY_CONDITION = "steps.filter.outcome == 'failure'";
+// The split's two gate scripts must stay claimed by the decide scopes. The
+// rust filter's claim of the server script dates from the combined gate; the
+// split added the rust script beside it. A gate script no scope claims is
+// invisible to the classifier — `unclassified` subtracts `scripts/**` — so a
+// pull request touching only that script resolves rust=false and the changed
+// crate gate first meets a real toolchain on the nightly, after merge.
+const SERVER_GATE_SCRIPT = 'scripts/health-gates-server.sh';
+const RUST_GATE_SCRIPT = 'scripts/health-gates-rust.sh';
 const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['RUST', 'rust'],
     ['SERVER', 'server'],
@@ -363,6 +388,23 @@ const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     // The measurement record is the diagnostic for a failed latency run, so it
     // uploads even when the measurement itself failed.
     { workflow: 'nightly.yml', job: 'desktop-measure', step: 'Upload the measurement record', condition: 'always()' },
+    // The proof answers a different question than the latency measurement, so a
+    // FAILED measurement must not skip it; it is guarded on the build step alone
+    // because without a packaged app there is nothing to drive.
+    {
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step: 'Prove the agent workspace in the packaged app',
+        condition: "always() && steps.build-packaged-app.outcome == 'success'",
+    },
+    // The proof record is the diagnostic for a failing run, so it uploads
+    // whatever the verdict.
+    {
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step: 'Upload the agent workspace proof record',
+        condition: 'always()',
+    },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
     {
@@ -562,14 +604,35 @@ function assertScopeContract(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
-function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+function scopeFilterPatterns(candidate: UnknownRecord, scope: string): string[] {
     const filterStep = stepNamed(jobAt(candidate, 'decide'), 'Filter changed paths');
     const options = recordAt(filterStep, 'with');
     if (options['predicate-quantifier'] !== 'some-with-excludes') {
         throw new Error('path filters must subtract negated patterns instead of matching on any one of them');
     }
     const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'path filters');
-    return arrayAt(filters, 'unclassified').map(String);
+    return arrayAt(filters, scope).map(String);
+}
+
+function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+    return scopeFilterPatterns(candidate, 'unclassified');
+}
+
+// A gate script no decide scope claims is invisible to the classifier, so a
+// pull request whose diff touches only the Rust gate resolves rust=false, the
+// PR-side rust job skips, and the changed crate gate is first exercised by
+// the nightly after merge. Both claims are exact literal paths, so the match
+// needs no glob semantics to prove. The retry step duplicates the first
+// attempt's filters verbatim (pinned in assertDecideFilterRetryContract), so
+// one claim here covers both filter steps.
+function assertGateScriptScopeClaims(candidate: UnknownRecord): void {
+    const rustPatterns = scopeFilterPatterns(candidate, 'rust');
+    if (!rustPatterns.includes(RUST_GATE_SCRIPT) || !rustPatterns.includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the rust scope must claim the rust and collaboration server gate scripts');
+    }
+    if (!scopeFilterPatterns(candidate, 'server').includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the server scope must claim the collaboration server gate script');
+    }
 }
 
 function assertUnclassifiedFallback(candidate: UnknownRecord): void {
@@ -1347,6 +1410,31 @@ function assertNightlyReportCoverage(set: WorkflowSet): void {
     }
 }
 
+// The nightly's split of the combined Rust job (#3516): each leg answers to
+// exactly one scope and runs exactly its own gate script. The seam matters
+// because the deploy waits on the crate leg and not the server leg — a job
+// that straddles it, or a gate command that silently recombines the two, puts
+// the old cross-coupled failure back behind green-looking pins.
+function assertNightlyRustServerSplit(candidate: UnknownRecord): void {
+    const rust = jobAt(candidate, NIGHTLY_RUST_JOB);
+    if (rust.needs !== 'decide' || rust.if !== NIGHTLY_RUST_CONDITION) {
+        throw new Error('the nightly Rust workspace leg must answer to the Rust scope alone');
+    }
+    if (stringAt(stepNamed(rust, NIGHTLY_RUST_GATE_STEP), 'run') !== NIGHTLY_RUST_GATE_COMMAND) {
+        throw new Error('the nightly Rust workspace leg must run the split Rust gate script');
+    }
+    const collabServer = jobAt(candidate, COLLAB_SERVER_JOB);
+    if (collabServer.name !== COLLAB_SERVER_JOB_NAME) {
+        throw new Error('the collaboration server leg must retain its stable name');
+    }
+    if (collabServer.needs !== 'decide' || collabServer.if !== COLLAB_SERVER_CONDITION) {
+        throw new Error('the collaboration server leg must answer to the server scope alone');
+    }
+    if (stringAt(stepNamed(collabServer, COLLAB_SERVER_GATE_STEP), 'run') !== COLLAB_SERVER_GATE_COMMAND) {
+        throw new Error('the collaboration server leg must run the server gate script');
+    }
+}
+
 function assertSummaryMembership(set: WorkflowSet): void {
     const gateNeeds = arrayAt(jobAt(set.health, 'gate'), 'needs');
     for (const job of GATE_MEMBERS) {
@@ -2045,6 +2133,7 @@ describe('health gates workflow contract', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         expect(() => assertUnclassifiedFallback(validationWorkflow)).not.toThrow();
         expect(() => assertProseSkippingJobs(validationWorkflow)).not.toThrow();
+        expect(() => assertGateScriptScopeClaims(validationWorkflow)).not.toThrow();
 
         expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
             heavy: 'false',
@@ -2088,6 +2177,20 @@ describe('health gates workflow contract', () => {
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
         delete jobAt(alwaysLinting, 'lint').if;
         expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
+
+        // Mutation-kill: the split's rust gate script dropping out of the rust
+        // scope re-opens the unclaimed-script hole — a pull request touching
+        // only that script resolves rust=false, because `unclassified`
+        // subtracts `scripts/**`, and skips every cargo leg.
+        const unclaimedRustGate = asRecord(structuredClone(validationWorkflow), 'unclaimed rust gate script');
+        const unclaimedFilterStep = stepNamed(jobAt(unclaimedRustGate, 'decide'), PATHS_FILTER_FIRST_ATTEMPT_STEP);
+        recordAt(unclaimedFilterStep, 'with').filters = stringAt(
+            recordAt(unclaimedFilterStep, 'with'),
+            'filters'
+        ).replace(`  - '${RUST_GATE_SCRIPT}'\n`, '');
+        expect(() => assertGateScriptScopeClaims(unclaimedRustGate)).toThrow(
+            'the rust scope must claim the rust and collaboration server gate scripts'
+        );
     });
 
     it('retries a transient changed-paths API failure and refuses to resolve an empty verdict', () => {
@@ -2808,6 +2911,71 @@ describe('health gates workflow contract', () => {
         jobAt(tokenBearingScanner, 'secrets').env = { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' };
         expect(() => assertCredentiallessScanner(tokenBearingScanner)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'
+        );
+    });
+
+    it('splits the nightly server gate from the crates the web deploy waits on', () => {
+        expect(() => assertNightlyRustServerSplit(nightly)).not.toThrow();
+
+        // The pre-split combined condition is the regression itself: it runs
+        // the crate leg on a server-only change and reads the deploy-relevant
+        // scope as covering the server. Each split leg answers to one scope.
+        const combinedScopes = asRecord(structuredClone(nightly), 'combined-scope nightly rust');
+        jobAt(combinedScopes, NIGHTLY_RUST_JOB).if = RUST_CONDITION;
+        expect(() => assertNightlyRustServerSplit(combinedScopes)).toThrow(
+            'the nightly Rust workspace leg must answer to the Rust scope alone'
+        );
+
+        // A server leg gated on nothing runs nowhere and proves nothing.
+        const ungatedServerLeg = cloneWorkflows('ungated collaboration server leg');
+        delete jobAt(ungatedServerLeg.nightly, COLLAB_SERVER_JOB).if;
+        expect(() => assertNightlyRustServerSplit(ungatedServerLeg.nightly)).toThrow(
+            'the collaboration server leg must answer to the server scope alone'
+        );
+
+        const renamedServerLeg = cloneWorkflows('renamed collaboration server leg');
+        jobAt(renamedServerLeg.nightly, COLLAB_SERVER_JOB).name = 'Collaboration relay';
+        expect(() => assertNightlyRustServerSplit(renamedServerLeg.nightly)).toThrow(
+            'the collaboration server leg must retain its stable name'
+        );
+
+        // A gate command that recombines both concerns puts the coupled
+        // failure back: the server leg would run the Rust workspace tests,
+        // and either concern could fail the other's leg again.
+        const recombinedServerGate = cloneWorkflows('recombined collaboration server gate');
+        stepNamed(jobAt(recombinedServerGate.nightly, COLLAB_SERVER_JOB), COLLAB_SERVER_GATE_STEP).run =
+            'pnpm health:server:full';
+        expect(() => assertNightlyRustServerSplit(recombinedServerGate.nightly)).toThrow(
+            'the collaboration server leg must run the server gate script'
+        );
+
+        const recombinedRustGate = cloneWorkflows('recombined nightly rust gate');
+        stepNamed(jobAt(recombinedRustGate.nightly, NIGHTLY_RUST_JOB), NIGHTLY_RUST_GATE_STEP).run =
+            'pnpm health:server:full';
+        expect(() => assertNightlyRustServerSplit(recombinedRustGate.nightly)).toThrow(
+            'the nightly Rust workspace leg must run the split Rust gate script'
+        );
+
+        // The freeze #3516 removes: a deploy train that waits on the server
+        // leg holds production behind a relay failure the bundle never ships.
+        // This is the server-side twin of the native-legs probe below.
+        const collabServerReintroducedTrain = asRecord(
+            structuredClone(nightly),
+            'collab-server-reintroduced deploy train'
+        );
+        arrayAt(jobAt(collabServerReintroducedTrain, DEPLOY_WEB_JOB), 'needs').push(COLLAB_SERVER_JOB);
+        expect(() => assertDailyDeployTrain(collabServerReintroducedTrain)).toThrow(
+            'the daily deploy train must depend on exactly the scheduled validation legs'
+        );
+
+        // Not freezing the deploy must not mean failing invisibly: the
+        // reporter observes every leg a scheduled run performs, server leg
+        // included.
+        const serverBlindReport = cloneWorkflows('server-blind nightly report');
+        const reportNeeds = arrayAt(jobAt(serverBlindReport.nightly, 'nightly-report'), 'needs');
+        reportNeeds.splice(reportNeeds.indexOf(COLLAB_SERVER_JOB), 1);
+        expect(() => assertJobGraph(serverBlindReport)).toThrow(
+            'the nightly reporter must depend on every leg a scheduled run performs'
         );
     });
 

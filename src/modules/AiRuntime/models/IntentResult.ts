@@ -1,6 +1,7 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
 import { type AgentRunProviderProposal } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
+import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
@@ -28,6 +29,8 @@ export type IntentResult = {
     providerProposal?: AgentRunProviderProposal;
     /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
     providerKnownTargetIds?: string[];
+    /** The immutable record of what this run's delegated request was admitted to mean. */
+    creativeAuthority?: CreativeRequestAuthority;
 };
 
 /** A result produced by the planner itself, which always classifies its own outcome. */

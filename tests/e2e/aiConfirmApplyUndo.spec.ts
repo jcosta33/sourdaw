@@ -1,34 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 
+import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
 
 const LOOPBACK_REPLY = 'Loopback provider reply for the confirm/apply/undo proof.';
-
-/**
- * Points the running app at the loopback endpoint through its own product use
- * cases, so admission is decided by `configureCloudProvider` and the backend
- * chain rather than by anything the test fakes.
- */
-async function admitLoopbackProvider(page: Page, provider: LoopbackOpenAiProvider): Promise<void> {
-    await page.evaluate(
-        async ({ baseUrl, model }) => {
-            const { configureCloudProvider } =
-                await import('/src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts');
-            const { setAiBackendPreference } =
-                await import('/src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/setAiBackendPreference.ts');
-            await configureCloudProvider({
-                provider: 'openai-compatible',
-                model,
-                baseUrl,
-                authentication: 'none',
-                apiKey: '',
-            });
-            setAiBackendPreference('cloud');
-        },
-        { baseUrl: provider.baseUrl, model: provider.model }
-    );
-}
 
 function trackArmButtons(page: Page) {
     return page

@@ -202,6 +202,9 @@ describe('Levain instrument persistence round trip', () => {
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: vi.fn().mockResolvedValue(undefined),
+            // This case follows project truth into the offline engine state;
+            // the native session is not part of that round trip.
+            writeNativeBuiltinParameters: vi.fn(),
         });
         await bridge.registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, fakePort().port);
 
@@ -301,6 +304,7 @@ describe('Levain instrument persistence round trip', () => {
         injectDependencies(levainBridge, {
             getAllTracks: () => [],
             persistDeviceParam: vi.fn(),
+            writeNativeBuiltinParameters: vi.fn(),
             autoLoadLevainSamples,
             resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
                 status: 'eligible' as const,

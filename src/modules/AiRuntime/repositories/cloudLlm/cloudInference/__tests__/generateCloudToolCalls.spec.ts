@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
-import { type ToolCallResult } from '../../../../transformers/toolCallParser';
-import { type AnthropicCloudRuntime, type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
+import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../../providerAdapterRegistry';
+import {
+    type AnthropicCloudRuntime,
+    type OpenAiCloudRuntime,
+    type OpenAiCompatibleCloudRuntime,
+} from '../../cloudSession';
 import { generateCloudToolCalls } from '../generateCloudToolCalls';
+import { type HostedToolPlan } from '../hostedToolPlan';
 
 const tools: ToolSchema[] = [
     {
@@ -17,9 +22,10 @@ const tools: ToolSchema[] = [
 ];
 
 const mocks = vi.hoisted(() => ({
-    getRuntime: vi.fn<() => AnthropicCloudRuntime | OpenAiCompatibleCloudRuntime | null>(),
-    generateAnthropic: vi.fn<() => Promise<ToolCallResult[]>>(),
-    generateOpenAi: vi.fn<() => Promise<ToolCallResult[]>>(),
+    getRuntime: vi.fn<() => AnthropicCloudRuntime | OpenAiCloudRuntime | OpenAiCompatibleCloudRuntime | null>(),
+    generateAnthropic: vi.fn<() => Promise<HostedToolPlan>>(),
+    generateOpenAi: vi.fn<() => Promise<HostedToolPlan>>(),
+    generateOpenAiResponses: vi.fn<() => Promise<HostedToolPlan>>(),
     info: vi.fn(),
 }));
 
@@ -27,6 +33,9 @@ vi.mock('../../getCloudProviderRuntime', () => ({ getCloudProviderRuntime: mocks
 vi.mock('../generateAnthropicToolCalls', () => ({ generateAnthropicToolCalls: mocks.generateAnthropic }));
 vi.mock('../generateOpenAiCompatibleToolCalls', () => ({
     generateOpenAiCompatibleToolCalls: mocks.generateOpenAi,
+}));
+vi.mock('../generateOpenAiResponsesToolCalls', () => ({
+    generateOpenAiResponsesToolCalls: mocks.generateOpenAiResponses,
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { info: mocks.info } }));
 
@@ -39,7 +48,10 @@ describe('generateCloudToolCalls', () => {
             model: 'claude-test',
             session_id: 'provider-session-00000000000000000000000000000000',
         });
-        mocks.generateAnthropic.mockResolvedValue([{ name: 'addTrack', arguments: { name: 'Vocals' } }]);
+        mocks.generateAnthropic.mockResolvedValue({
+            providerRequestId: 'msg_anthropic_1',
+            calls: [{ name: 'addTrack', arguments: { name: 'Vocals' } }],
+        });
     });
 
     it('rejects an unconfigured cloud runtime', async () => {
@@ -63,18 +75,22 @@ describe('generateCloudToolCalls', () => {
         );
         expect(result).toEqual([{ name: 'addTrack', arguments: { name: 'Vocals' } }]);
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('addTrack'));
+        expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('msg_anthropic_1'));
     });
 
     it('dispatches OpenAI-compatible planning through its adapter', async () => {
         const runtime: OpenAiCompatibleCloudRuntime = {
-            provider: 'openai',
-            authentication: 'api-key',
+            provider: 'openai-compatible',
+            authentication: 'none',
             model: 'gpt-test',
-            base_url: 'https://api.openai.com/v1',
-            session_id: 'provider-session-00000000000000000000000000000000',
+            base_url: 'http://localhost:1234/v1',
+            session_id: null,
         };
         mocks.getRuntime.mockReturnValue(runtime);
-        mocks.generateOpenAi.mockResolvedValue([{ name: 'addTrack', arguments: {} }]);
+        mocks.generateOpenAi.mockResolvedValue({
+            providerRequestId: 'chatcmpl-1',
+            calls: [{ name: 'addTrack', arguments: {} }],
+        });
 
         await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
             { name: 'addTrack', arguments: {} },
@@ -87,6 +103,44 @@ describe('generateCloudToolCalls', () => {
                 maxOutputTokens: 8192,
             })
         );
+        expect(mocks.generateOpenAiResponses).not.toHaveBeenCalled();
         expect(mocks.generateAnthropic).not.toHaveBeenCalled();
+    });
+
+    it('dispatches first-party OpenAI planning through the responses adapter', async () => {
+        const runtime: OpenAiCloudRuntime = {
+            provider: 'openai',
+            authentication: 'api-key',
+            model: 'gpt-test',
+            base_url: 'https://api.openai.com/v1',
+            adapter: compileProviderAdapterInstallation({
+                adapterId: OPENAI_RESPONSES_ADAPTER_ID,
+                providerId: 'openai',
+                modelId: 'gpt-test',
+                protocolFamily: 'openai-responses',
+                origin: 'https://api.openai.com',
+            }),
+            session_id: 'provider-session-00000000000000000000000000000000',
+        };
+        mocks.getRuntime.mockReturnValue(runtime);
+        mocks.generateOpenAiResponses.mockResolvedValue({
+            providerRequestId: 'resp_1',
+            calls: [{ name: 'addTrack', arguments: {} }],
+        });
+
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
+            { name: 'addTrack', arguments: {} },
+        ]);
+        expect(mocks.generateOpenAiResponses).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runtime,
+                userMessage: 'message',
+                toolSchemas: tools,
+                maxOutputTokens: 8192,
+            })
+        );
+        expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+        expect(mocks.generateAnthropic).not.toHaveBeenCalled();
+        expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('resp_1'));
     });
 });

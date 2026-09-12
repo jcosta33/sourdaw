@@ -66,6 +66,73 @@ export function parseArgs(argv: readonly string[]): DesktopLatencyArgs {
     };
 }
 
+export type StatusBarReading = {
+    sampleRateText: string;
+    latencyText: string;
+    latencyTitle: string;
+    engineTitle: string;
+    masterLevelText: string;
+};
+
+/**
+ * Reads the status bar by structure rather than by class name: a readout is the
+ * second of exactly two sibling spans whose first one is the label. Class names
+ * on these elements are styling and change without notice; the label beside the
+ * value is what the product means.
+ *
+ * `desktopLatencyConnect.ts`'s `readStatusBar` hands this exact function to
+ * `page.evaluate`, which serialises it by its own source text
+ * (`Function.prototype.toString()`) and runs that text inside the page — a
+ * realm carrying none of this module's imports, module-level constants, or
+ * sibling functions. This function must therefore be entirely self-contained:
+ * every identifier it touches beyond its own parameter has to be a name the
+ * target realm provides on its own — `document`, `window`, `Error` — never an
+ * import, a `const` declared elsewhere in this module, or a call to another
+ * function here. That is also why the missing-readout wording below is built
+ * inline with a template literal instead of formatted from a shared constant:
+ * there is nowhere outside this function's own body a shared value could
+ * safely live and still survive the trip into the page. One function evaluated
+ * in place cannot drift from a copy, because there is none.
+ */
+export function readStatusBarInDocument(input: { selector: string }): StatusBarReading {
+    const footer = document.querySelector(input.selector);
+    if (footer === null) {
+        throw new Error('the status bar is not in the document');
+    }
+    const valueSpan = (label: string): HTMLElement => {
+        for (const row of footer.querySelectorAll('div')) {
+            const spans = row.querySelectorAll(':scope > span');
+            const first = spans[0];
+            const second = spans[1];
+            if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
+                return second;
+            }
+        }
+        const hasMoreTrigger = footer.querySelector('button[aria-label="More application status"]') !== null;
+        throw new Error(
+            hasMoreTrigger
+                ? `the status bar is in its compact layout at ${window.innerWidth} px; the "${label}" readout sits behind "More application status"`
+                : `the status bar has no readout labelled "${label}"`
+        );
+    };
+    const engineDot = footer.querySelector('[title^="Engine: "]');
+    if (engineDot === null) {
+        throw new Error('the status bar has no engine dot');
+    }
+    const latency = valueSpan('Latency');
+    const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
+    if (latencyTitle === undefined || latencyTitle === null) {
+        throw new Error('the Latency readout carries no title');
+    }
+    return {
+        sampleRateText: valueSpan('Rate').textContent ?? '',
+        latencyText: latency.textContent ?? '',
+        latencyTitle,
+        engineTitle: engineDot.getAttribute('title') ?? '',
+        masterLevelText: valueSpan('Out').textContent ?? '',
+    };
+}
+
 export type AppPageTarget = { url: string; title: string };
 
 /**

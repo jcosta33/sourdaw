@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getPrecedingBars } from '../../models/TimeSignatureMap';
@@ -8,11 +8,20 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
+import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
 
-export function startPlayback(): void {
+/**
+ * Resolves once the scheduler start has been decided, so a caller that has to
+ * know when the transport actually rolled — a take opened from a stopped
+ * transport, whose buffer is placed against that instant — can wait for it. A
+ * browser build decides synchronously; a desktop build decides when the native
+ * session settles or the hold cap expires.
+ */
+export async function startPlayback(): Promise<void> {
     const state = getTransportState();
     if (!state) {
         return;
@@ -56,9 +65,29 @@ export function startPlayback(): void {
         startPosition = Math.max(0, preRollBars[0]!.startBeat);
     }
 
-    startNativeSessionAtBeat(startPosition, state.tempo);
-
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
-    startPlayheadScheduler();
+
+    if (!nativeLiveGraphSessionOffered()) {
+        startPlayheadScheduler();
+        return;
+    }
+
+    // Claimed before the session is asked for, so the hold names the generation
+    // this play opened rather than one a stop inside the hold has since
+    // replaced, and so any session still ticking — one a pause left running
+    // because its teardown is deferred behind a recording flush — is retired
+    // now instead of advancing the playhead through the wait.
+    const generation = claimSchedulerSession();
+    // Held: the scheduler below waits for this session, so nothing has sounded
+    // between the gesture and the roll and the engine opens where play asked.
+    // The holder is what the hold writes if it gives up on a session slower
+    // than its cap; the session reads it as it rolls, and projects from there
+    // rather than opening behind a transport that is already sounding.
+    const release: HoldRelease = { contextSeconds: null };
+    const session = startNativeSessionAtBeat(startPosition, state.tempo, {
+        kind: 'held',
+        webAudioRollingSince: () => release.contextSeconds,
+    });
+    await startSchedulerWhenNativeSessionSettles(session, generation, release);
 }

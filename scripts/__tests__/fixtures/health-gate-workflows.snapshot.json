@@ -419,7 +419,7 @@
             "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
             "with": {
               "predicate-quantifier": "some-with-excludes",
-              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
             }
           },
           {
@@ -429,7 +429,7 @@
             "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
             "with": {
               "predicate-quantifier": "some-with-excludes",
-              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\n  - 'scripts/health-gates-rust.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
             }
           },
           {
@@ -1297,28 +1297,15 @@
         ]
       },
       "rust": {
-        "name": "Rust workspace and collaboration server",
+        "name": "Rust workspace",
         "needs": "decide",
-        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+        "if": "needs.decide.outputs.rust == 'true'",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 60,
         "steps": [
           {
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-          },
-          {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "${{ env.NODE_VERSION }}",
-              "cache": "npm",
-              "cache-dependency-path": "server/package-lock.json"
-            }
           },
           {
             "name": "Install ALSA development headers",
@@ -1333,13 +1320,39 @@
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Rust workspace health gates",
+            "run": "sh scripts/health-gates-rust.sh"
+          }
+        ]
+      },
+      "collab-server": {
+        "name": "Collaboration server",
+        "needs": "decide",
+        "if": "needs.decide.outputs.server == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "npm",
+              "cache-dependency-path": "server/package-lock.json"
+            }
+          },
+          {
             "name": "Install server dependencies",
             "working-directory": "server",
             "run": "npm ci"
           },
           {
-            "name": "Server and Rust workspace health gates",
-            "run": "pnpm health:server:full"
+            "name": "Collaboration server health gates",
+            "run": "sh scripts/health-gates-server.sh"
           }
         ]
       },
@@ -1453,11 +1466,17 @@
           },
           {
             "name": "Build the packaged desktop app",
+            "id": "build-packaged-app",
             "run": "pnpm desktop:build"
           },
           {
             "name": "Measure the packaged app",
             "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
+          },
+          {
+            "name": "Prove the agent workspace in the packaged app",
+            "if": "always() && steps.build-packaged-app.outcome == 'success'",
+            "run": "pnpm desktop:agent-proof --json measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json"
           },
           {
             "name": "Upload the measurement record",
@@ -1466,6 +1485,16 @@
             "with": {
               "name": "desktop-latency-${{ github.sha }}",
               "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
+              "retention-days": 90
+            }
+          },
+          {
+            "name": "Upload the agent workspace proof record",
+            "if": "always()",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "desktop-agent-workspace-${{ github.sha }}",
+              "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
               "retention-days": 90
             }
           }
@@ -1885,6 +1914,7 @@
           "unit",
           "build",
           "rust",
+          "collab-server",
           "native-macos",
           "native-windows",
           "desktop-measure",
@@ -2048,7 +2078,7 @@
           },
           {
             "name": "Verify measurement admission",
-            "run": "node --input-type=module <<'NODE'\nimport {\n    assertGrandBouleMeasurementAdmission,\n    assertWholeEngineQuantumCapability,\n} from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nassertWholeEngineQuantumCapability(root);\nNODE\n"
+            "run": "node --input-type=module <<'NODE'\n// assertWholeEngineQuantumCapability is deliberately absent here. This\n// step reads the table that run.mjs has just rewritten with fresh\n// measurements from a shared 2-vCPU hosted runner, so the whole-engine\n// comparison would bound that runner, not the engine — and it can\n// never pass there: every run since the workflow's first (2026-09-09,\n// runs 34320520521 through 34451256510, unrelated heads) measured the\n// Grand Boule worker median at ~6.7-6.8 ms against the physical\n// 128-frame/48 kHz budget of 2.667 ms under load 2.0, while the\n// recorded reference-machine (Apple M4 Pro) table fits at 84-88% of\n// budget (issue #4076). ADR 0038 keeps that gate on the recorded\n// table, enforced by `pnpm test:release-inventory` inside required\n// Gate. This step keeps the machine-independent admission: identity,\n// occupancy proofs, provenance digests, and generated-table agreement\n// of the fresh measurement.\nimport { assertGrandBouleMeasurementAdmission } from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nNODE\n"
           },
           {
             "name": "Assemble qualified artifact",

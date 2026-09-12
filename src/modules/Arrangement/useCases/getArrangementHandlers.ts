@@ -36,6 +36,7 @@ import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
 import { handleRestoreScratchPadState } from '../handlers/scratchPad/handleRestoreScratchPadState';
+import { handleSelectTake } from '../handlers/takeLane/selectTake';
 import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
 import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
 import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
@@ -158,6 +159,7 @@ export function getArrangementHandlers() {
         restoreTrackClipStates: handleRestoreTrackClipStates,
         restoreScratchPadState: handleRestoreScratchPadState,
         discardCreatedCompGroup: handleDiscardCreatedCompGroup,
+        selectTake: handleSelectTake,
         restoreTrackAlternativeState: handleRestoreTrackAlternativeState,
         zoomTracksVertical: handleZoomTracksVertical,
         addMarker: handleAddMarker,

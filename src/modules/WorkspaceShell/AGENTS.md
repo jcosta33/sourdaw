@@ -11,7 +11,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
     - **Dialogs & Window Chrome**: `openExportDialog`, `openPreferencesDialog`, `windowChromeControls`, `setWorkspaceEventBus`.
     - **Handlers**: `getWorkspaceHandlers`, `getScratchPadHandlers`.
 - `stores`: `workspaceStore` (`WorkspaceState`, `EditingTool`, `defaultWorkspaceState`), `toolSwapStore`, `alphaNoticeStore`.
-- `presentations/views`: `AppShell`, `WorkspaceAppBoundary`, `WorkspaceMobileGate`, `WorkspaceProjectLoadingFallback`, `WorkspaceRouteView`.
+- `presentations/views`: `AgentWorkspace`, `AppShell`, `WorkspaceAppBoundary`, `WorkspaceMobileGate`, `WorkspaceProjectLoadingFallback`, `WorkspaceRouteView`.
 - Shell-private presentation: `presentations/hooks/useProjectMutationRefusal` (`ProjectMutationRefusal`, `deriveProjectMutationRefusal`) and `presentations/components/ProjectMutationRefusedBanner`. Not exported across modules — the shell is the only surface that renders them.
 - `events`: `ShowDevicePanelPayload`, `NotifyPayload`, `ConfirmPayload`, `PromptPayload`, `ZoomToSelectionPayload`, `ToggleVoiceCommandPayload`, `ImportMidiPayload`, MIDI payload types.
 - Handlers: `getWorkspaceHandlers`, `getScratchPadHandlers`.
@@ -20,6 +20,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 
 - **App Layout & Panel Toggles**: `presentations/views/AppShell.tsx` coordinates main multi-pane workspace layout (sidebar, inspector, mixer, timeline, session grid).
 - **Editing Tool & Spring-Loaded Swaps**: `stores/toolSwapStore.ts` tracks active tools (`select`, `cut`, `draw`, `erase`, `smart`) and handles temporary modifier/key-hold tool switching.
+- **Agent Workspace**: `presentations/views/AgentWorkspace.tsx` composes AiRuntime's agent run, approval and provider-route projections into one bottom-dock surface; it owns no store of its own and mutates only through AiRuntime use cases.
 - **Window Chrome Integration**: `useCases/windowChrome.ts` interfaces with native desktop Electron window framing (minimize, maximize, close).
 - **Workspace Event Bus**: Inter-panel UI event routing for confirmation dialogs, notifications, and device panel triggers (`useCases/workspaceEventBus.ts`).
 

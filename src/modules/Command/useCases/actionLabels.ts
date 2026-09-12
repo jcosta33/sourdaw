@@ -14,6 +14,7 @@ export const ACTION_LABELS: Record<string, string> = {
     selectTrack: 'Select track',
     muteTrack: 'Mute/unmute',
     soloTrack: 'Solo/unsolo',
+    selectTake: 'Select take',
     setSoloSafe: 'Set solo safe',
     clearSolos: 'Clear solos',
     armTrack: 'Arm/disarm',
@@ -76,6 +77,12 @@ export const ACTION_LABELS: Record<string, string> = {
     addAutomationPoint: 'Set automation',
     undo: 'Undo',
     redo: 'Redo',
+    setYeastProcessorParam: 'Set Yeast parameter',
+    setYeastArpPattern: 'Set arp pattern',
+    setYeastProcessorBypass: 'Set Yeast bypass',
+    addYeastProcessor: 'Add Yeast processor',
+    removeYeastProcessor: 'Remove Yeast processor',
+    reorderYeastProcessor: 'Reorder Yeast processor',
 };
 
 /**

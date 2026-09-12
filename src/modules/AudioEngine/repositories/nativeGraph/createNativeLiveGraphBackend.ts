@@ -30,7 +30,13 @@
  * so it throws — a caller cannot degrade sensibly against a seam it can no
  * longer read.
  *
- * ── No sample pool ───────────────────────────────────────────────────────
+ * ── Material before the batch ────────────────────────────────────────────
+ *
+ * One kind of material is staged here: a device built from a *sample bank*
+ * rather than from its record is refused by `map_device` until that bank is
+ * committed, so `registerNativeSampleBanks` runs ahead of the apply and the
+ * process-wide memo of what the store holds keeps a second play from paying for
+ * the instrument twice.
  *
  * This slice's producer emits no `schedule-clip`, so nothing here registers
  * timeline material. When a live programme arrives, clip material has to reach
@@ -49,6 +55,7 @@ import {
 
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { readNativeStripReports } from './readNativeStripReports';
+import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
 
 export const NATIVE_LIVE_BACKEND_ID = 'native/live';
@@ -60,6 +67,13 @@ export type NativeLiveGraphBackendDeps = Readonly<{
      * side of it.
      */
     transport: NativeGraphTransport;
+    /**
+     * Leases the decoded bank one device's `sampleBankKey` names, so the batch
+     * can stage it before the engine is asked to map that device. Absent in a
+     * caller whose producer emits no bank-carrying device, which then stages
+     * nothing.
+     */
+    acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
 function rejected(reason: string): AudioGraphApplyResult {
@@ -156,7 +170,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
 }
 
 export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
-    const { transport } = deps;
+    const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
 
     return {
@@ -168,6 +182,17 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
             }
             if (batch.schemaVersion !== 1) {
                 return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
+            }
+            if (acquireNativeSampleBank) {
+                // Before the apply, never after: `map_device` refuses a Levain
+                // device whose bank is not committed yet, and the refusal takes
+                // the whole batch — every other strip in this play with it.
+                await registerNativeSampleBanks({
+                    transport,
+                    commands: batch.commands,
+                    acquire: acquireNativeSampleBank,
+                    replaceTopology: batch.replaceTopology,
+                });
             }
             let raw: unknown;
             try {

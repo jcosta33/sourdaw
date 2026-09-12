@@ -20,13 +20,22 @@ const INDEXED_VALUES: Partial<Record<keyof GrinderPatch, readonly string[]>> = {
     neuralTier: ['standard', 'lite', 'nano', 'recurrent'],
     routingMode: ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'],
 };
-export const GRINDER_PROJECT_PARAM_KEYS = (Object.keys(DEFAULT_PATCH) as Array<keyof GrinderPatch>).filter((key) => {
+const rawKeys = (Object.keys(DEFAULT_PATCH) as Array<keyof GrinderPatch>).filter((key) => {
     const value = DEFAULT_PATCH[key];
     return (
         !['neuralWarmupProgress', 'activeSnapshot'].includes(key) &&
         (typeof value === 'number' || typeof value === 'boolean' || INDEXED_VALUES[key] !== undefined)
     );
 });
+// neuralEnabled must precede engineMode so the exact engineMode pick lands last
+// and overwrites the coarse boolean on both audio sync and persisted record replay.
+const neuralIdx = rawKeys.indexOf('neuralEnabled');
+const engineIdx = rawKeys.indexOf('engineMode');
+if (neuralIdx >= 0 && engineIdx >= 0 && engineIdx < neuralIdx) {
+    rawKeys.splice(neuralIdx, 1);
+    rawKeys.splice(engineIdx, 0, 'neuralEnabled');
+}
+export const GRINDER_PROJECT_PARAM_KEYS = rawKeys;
 const MIC_TYPES: readonly GrinderMic['type'][] = ['dynamic', 'ribbon', 'condenser', 'room'];
 const PEDAL_DEFAULTS = {
     compressor: { id: 'comp1', params: { threshold: -24, ratio: 3, attack: 16, release: 220 } },

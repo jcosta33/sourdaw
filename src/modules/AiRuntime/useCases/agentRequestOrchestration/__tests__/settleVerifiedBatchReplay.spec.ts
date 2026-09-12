@@ -129,6 +129,8 @@ const confirmation = {
     error: null,
     followUpProjectRevision: null,
     followUpStatus: null,
+    supersedes: null,
+    supersededBy: null,
     createdAt: 0,
     resolvedAt: null,
     kind: 'app_actions',

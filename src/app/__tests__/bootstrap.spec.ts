@@ -1,6 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
+// The kit chunk the native-device-state assertion reads comes out of Toaster's
+// own device-state serializer, not from a hand-written shape: a hand-written one
+// could drift from what `fromToasterKitState` accepts and degrade to the default
+// kit, which would assert the default gain rather than the stored one. The
+// factory kit arrives through the module's contract barrel, which is the only
+// door a test outside the module may use.
+import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
@@ -54,6 +61,34 @@ type RuntimeSinkUnderTest = {
         port: MessagePort;
         signal?: AbortSignal;
     }) => Promise<void>;
+    projectNativeDeviceState: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => Readonly<Record<string, number>> | null;
+    nativeSampleBankKey: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => string | null;
+    acquireNativeSampleBank: (bankKey: string) => Promise<unknown>;
+    nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
+    updateTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
+    updateNativeTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
+};
+
+/**
+ * The reading both of the Tuner's publishes carry (`TunerTelemetry`,
+ * `#/modules/AudioEngine/engine/ScoringNode.ts`), restated here because this
+ * spec mocks the whole barrel it would otherwise be imported through.
+ */
+type TunerReadingUnderTest = {
+    active: boolean;
+    frequency: number;
+    cents: number;
+    confidence: number;
+    noteIndex: number;
+    octave: number;
+    midiNote: number;
+    noteName: string;
 };
 
 const {
@@ -81,6 +116,8 @@ const {
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
+    isTunerTelemetryNativelyOwnedMock,
+    updateTunerTelemetryMock,
     canExecuteCommandBatchMock,
     configureCollaborationAssetOwnerMock,
     configureDurableAssetCommitProofMock,
@@ -88,6 +125,10 @@ const {
     getDurableProjectOwnerIdMock,
     getVersionedCommandBatchCommitDispositionMock,
     prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBankMock,
+    getLevainEngineParameterNameMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffectsMock,
@@ -158,7 +199,19 @@ const {
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
+        isTunerTelemetryNativelyOwnedMock: vi.fn<(deviceId: string) => boolean>(() => false),
+        updateTunerTelemetryMock: vi.fn(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
+        projectLevainDeviceStateToNativePatchMock: vi.fn<
+            (input: { deviceState: unknown }) => Readonly<Record<string, number>> | null
+        >(() => ({ current_articulation: 4 })),
+        nativeBankKeyForLevainDeviceStateMock: vi.fn<(input: { deviceState: unknown }) => string | null>(
+            () => 'levain:violin-1'
+        ),
+        acquireLevainNativeBankMock: vi.fn(() => Promise.resolve(null)),
+        getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
+            paramId === 'masterGain' ? 'master_gain' : null
+        ),
         initBranchStateMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
             Promise.resolve({ recoveredRunIds: [] })
@@ -249,6 +302,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getDeviceTypesForCommandDeviceIds: () => ({}),
     reserveNextTrackColorForCommand: () => 'oklch(0.40 0.08 250)',
     getAllTracks: noop,
+    // Reached only because the Toaster barrel is loaded for real below, which
+    // pulls its preset-loading compiler into this spec's graph.
+    compileLoadPresetActions: noop,
     getAutomationParameterRange: getAutomationParameterRangeMock,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -273,6 +329,9 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: noop,
+    // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
+    // brings its subscriber and note-release paths into this spec's graph.
+    getToasterDeviceControls: noop,
     updateDevicePatch: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
@@ -289,6 +348,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
     configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
+    isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -425,6 +485,10 @@ vi.mock('#/modules/Levain/useCases', () => ({
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
+    projectLevainDeviceStateToNativePatch: projectLevainDeviceStateToNativePatchMock,
+    nativeBankKeyForLevainDeviceState: nativeBankKeyForLevainDeviceStateMock,
+    acquireLevainNativeBank: acquireLevainNativeBankMock,
+    getLevainEngineParameterName: getLevainEngineParameterNameMock,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -441,6 +505,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
+    destroyWebMidi: noop,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -494,13 +559,23 @@ vi.mock('#/modules/Setlist/useCases', () => ({
     setSetlistEventBus: noop,
 }));
 
-vi.mock('#/modules/Toaster/useCases', () => ({
-    initToasterSubscribers: noop,
-    initToasterKitPersistence: noop,
-    setToasterEventBus: noop,
-    setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
-    prepareOfflineToaster: noop,
-}));
+vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
+    // The projection and the preset serializer are taken from the real barrel:
+    // the registration assertion below reads a real engine name out of a real
+    // kit chunk, which a stub could not produce. Both are pure — kit models and
+    // the engine-message projection, no store or runtime.
+    const real = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
+
+    return {
+        initToasterSubscribers: noop,
+        initToasterKitPersistence: noop,
+        setToasterEventBus: noop,
+        setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
+        prepareOfflineToaster: noop,
+        projectToasterKitToNativePatch: real.projectToasterKitToNativePatch,
+        getToasterPresetDeviceState: real.getToasterPresetDeviceState,
+    };
+});
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportHandlers: sentinelHandlers('Transport'),
@@ -517,7 +592,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
 }));
 
-vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
+vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: updateTunerTelemetryMock }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     getWorkspaceHandlers: sentinelHandlers('Workspace'),
@@ -530,6 +605,7 @@ vi.mock('#/modules/Yeast/stores', () => ({ setYeastEventBus: noop }));
 vi.mock('#/modules/Yeast/useCases', () => ({
     configureYeastRuntime: noop,
     createOfflineYeastMidiProcessor: noop,
+    getYeastHandlers: sentinelHandlers('Yeast'),
     processRealtimeMidiInput: noop,
     teardownYeastRuntime: noop,
 }));
@@ -622,6 +698,7 @@ describe('bootstrap', () => {
         'WebMidiInput',
         'Rave',
         'ControlRoom',
+        'Yeast',
     ];
 
     it('validates LLM strategy names against the command catalogue before handler registration', () => {
@@ -907,6 +984,146 @@ describe('bootstrap', () => {
                 getSink().prepareOfflineInstrument({ deviceId: 'gluten-1', deviceType: 'gluten', port })
             ).resolves.toBeUndefined();
             expect(prepareOfflineLevainMock).not.toHaveBeenCalled();
+        });
+
+        /**
+         * The native mirror of the rows above, and the only place that knows a
+         * Toaster's kit is not a `parameterValues` table: the mapper may not
+         * import a device module's use cases, so an unwired `toaster` row
+         * leaves a natively carried Toaster playing the engine's built-in kit
+         * instead of the project's, with nothing reporting it.
+         *
+         * The chunk comes from the Toaster model's own serializer, so the row
+         * is read through the shape the document actually stores. Gluten is the
+         * counterpart: a body whose whole surface already arrives as
+         * `parameterValues` answers `null` rather than an empty record.
+         */
+        it('projects a toaster’s stored kit into the engine’s own names, and nothing for a body with no kit', () => {
+            const stored = getToasterPresetDeviceState('init');
+            if (!stored || typeof stored.data.kit !== 'object' || stored.data.kit === null) {
+                throw new Error('the factory kit chunk is missing its kit payload');
+            }
+            if (Array.isArray(stored.data.kit)) {
+                throw new TypeError('the factory kit chunk holds an array where the kit belongs');
+            }
+            const chunk = { ...stored, data: { kit: { ...stored.data.kit, masterGain: 0.4 } } };
+
+            expect(getSink().projectNativeDeviceState({ deviceType: 'toaster', deviceState: chunk })).toEqual(
+                expect.objectContaining({ master_gain: 0.4 })
+            );
+            expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The sampler's articulation rides `deviceState` as a string, so an
+         * unwired `levain` row leaves a natively carried strip sounding the
+         * engine's default articulation whatever the project saved.
+         */
+        it('projects a levain device’s articulation through the Levain module', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
+
+            expect(getSink().projectNativeDeviceState({ deviceType: 'levain', deviceState: chunk })).toEqual({
+                current_articulation: 4,
+            });
+            expect(projectLevainDeviceStateToNativePatchMock).toHaveBeenCalledWith({ deviceState: chunk });
+        });
+
+        /**
+         * The bank door beside the row above. `map_device` refuses a Levain
+         * device whose key holds no committed bank, so an unwired row is a
+         * strip the engine will not build at all — and a row wired for a body
+         * built from its own record would stage material nothing reads.
+         */
+        it('names the bank a levain device sounds, and nothing for a body built from its record', () => {
+            const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'sustain' } };
+
+            expect(getSink().nativeSampleBankKey({ deviceType: 'levain', deviceState: chunk })).toBe('levain:violin-1');
+            expect(nativeBankKeyForLevainDeviceStateMock).toHaveBeenCalledWith({ deviceState: chunk });
+            expect(getSink().nativeSampleBankKey({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
+            expect(getSink().nativeSampleBankKey({ deviceType: 'builtin-eq', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The vocabulary beside those two rows. Levain delivers its panel's
+         * live writes into AudioEngine, so AudioEngine asks here for the
+         * sampler's engine names rather than importing the module back. An
+         * unwired row leaves every natively carried Levain write addressed by a
+         * panel id the engine cannot resolve — and one unresolvable name
+         * refuses the whole batch, not just its own write.
+         */
+        it('spells a levain parameter through the Levain module, and nothing for a body that spells its own', () => {
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'levain', paramId: 'masterGain' })).toBe(
+                'master_gain'
+            );
+            expect(getLevainEngineParameterNameMock).toHaveBeenCalledWith({ paramId: 'masterGain' });
+            expect(getSink().nativeBuiltinParameterName({ deviceType: 'fermenter', paramId: 'oscEngine' })).toBeNull();
+        });
+
+        it('routes a bank acquisition to the module that minted the key', async () => {
+            await getSink().acquireNativeSampleBank('levain:violin-1');
+
+            expect(acquireLevainNativeBankMock).toHaveBeenCalledWith('levain:violin-1');
+        });
+    });
+
+    /**
+     * The Tuner is the one device two analysers can report for at once: the
+     * native body publishes on the transport poll, and the Web Audio twin's
+     * worklet keeps posting from a graph that goes on rendering behind a
+     * shadowed carrier. Both publishes land in one store, so the root is where
+     * one of them has to be dropped — and it is the only place that can, since
+     * neither producer can see the other.
+     */
+    describe('tuner telemetry arbitration', () => {
+        function getSink(): RuntimeSinkUnderTest {
+            const call = configureAudioDeviceRuntimeSinkMock.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never configured the audio device runtime sink');
+            }
+            return call[0];
+        }
+
+        const reading: TunerReadingUnderTest = {
+            active: true,
+            frequency: 439.5,
+            cents: -2,
+            confidence: 0.9,
+            noteIndex: 9,
+            octave: 4,
+            midiNote: 69,
+            noteName: 'A',
+        };
+
+        beforeEach(() => {
+            updateTunerTelemetryMock.mockClear();
+            isTunerTelemetryNativelyOwnedMock.mockReset();
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(false);
+        });
+
+        it('drops the web publish for a device the native session owns', () => {
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(true);
+
+            getSink().updateTunerTelemetry('d-tuner', reading);
+
+            expect(isTunerTelemetryNativelyOwnedMock).toHaveBeenCalledWith('d-tuner');
+            expect(updateTunerTelemetryMock).not.toHaveBeenCalled();
+        });
+
+        it('lets the web publish reach the store for a device the native session does not own', () => {
+            getSink().updateTunerTelemetry('d-tuner', reading);
+
+            expect(updateTunerTelemetryMock).toHaveBeenCalledExactlyOnceWith('d-tuner', reading);
+        });
+
+        // No predicate on this side: `publishNativeTunerTelemetry` already
+        // filtered the poll's map by the same answer, so a reading arriving
+        // here is one this session owns.
+        it('lets the native publish reach the store unconditionally', () => {
+            isTunerTelemetryNativelyOwnedMock.mockReturnValue(true);
+
+            getSink().updateNativeTunerTelemetry('d-tuner', reading);
+
+            expect(updateTunerTelemetryMock).toHaveBeenCalledExactlyOnceWith('d-tuner', reading);
         });
     });
 

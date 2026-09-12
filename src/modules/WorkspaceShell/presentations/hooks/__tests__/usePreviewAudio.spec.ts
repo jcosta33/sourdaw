@@ -290,6 +290,128 @@ describe('usePreviewAudio', () => {
             expect(ctx.createBufferSource).not.toHaveBeenCalled();
             expect(result.current.playingId).toBeNull();
         });
+
+        it('does not start audio source if stop() is called while decode is in-flight', async () => {
+            const { ctx, bufferSources } = makeFakeContext();
+            let resolveDecode!: (buffer: unknown) => void;
+            ctx.decodeAudioData = vi.fn(
+                () =>
+                    new Promise((resolve) => {
+                        resolveDecode = resolve;
+                    })
+            );
+            vi.mocked(getAudioContext).mockReturnValue(ctx as unknown as AudioContext);
+
+            const { result } = renderHook(() => usePreviewAudio());
+            const fakeFile = {
+                arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(8))),
+            } as unknown as File;
+
+            const playPromise = result.current.playFile('sample1', fakeFile);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            act(() => {
+                result.current.stop();
+            });
+
+            await act(async () => {
+                resolveDecode({ decoded: true });
+                await playPromise;
+            });
+
+            expect(result.current.playingId).toBeNull();
+            expect(ctx.createBufferSource).not.toHaveBeenCalled();
+            expect(bufferSources).toHaveLength(0);
+        });
+
+        it('does not start audio source if unmounted while decode is in-flight', async () => {
+            const { ctx, bufferSources } = makeFakeContext();
+            let resolveDecode!: (buffer: unknown) => void;
+            ctx.decodeAudioData = vi.fn(
+                () =>
+                    new Promise((resolve) => {
+                        resolveDecode = resolve;
+                    })
+            );
+            vi.mocked(getAudioContext).mockReturnValue(ctx as unknown as AudioContext);
+
+            const { result, unmount } = renderHook(() => usePreviewAudio());
+            const fakeFile = {
+                arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(8))),
+            } as unknown as File;
+
+            const playPromise = result.current.playFile('sample1', fakeFile);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            unmount();
+
+            await act(async () => {
+                resolveDecode({ decoded: true });
+                await playPromise;
+            });
+
+            expect(ctx.createBufferSource).not.toHaveBeenCalled();
+            expect(bufferSources).toHaveLength(0);
+        });
+
+        it('plays only the latest audition under reversed decode completion order', async () => {
+            const { ctx, bufferSources } = makeFakeContext();
+            let resolveDecode1!: (buffer: unknown) => void;
+            let resolveDecode2!: (buffer: unknown) => void;
+
+            ctx.decodeAudioData = vi
+                .fn()
+                .mockImplementationOnce(
+                    () =>
+                        new Promise((resolve) => {
+                            resolveDecode1 = resolve;
+                        })
+                )
+                .mockImplementationOnce(
+                    () =>
+                        new Promise((resolve) => {
+                            resolveDecode2 = resolve;
+                        })
+                );
+            vi.mocked(getAudioContext).mockReturnValue(ctx as unknown as AudioContext);
+
+            const { result } = renderHook(() => usePreviewAudio());
+            const fakeFile1 = {
+                arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(8))),
+            } as unknown as File;
+            const fakeFile2 = {
+                arrayBuffer: vi.fn(() => Promise.resolve(new ArrayBuffer(8))),
+            } as unknown as File;
+
+            const playPromise1 = result.current.playFile('s1', fakeFile1);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            const playPromise2 = result.current.playFile('s2', fakeFile2);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // Resolve decode 2 first
+            await act(async () => {
+                resolveDecode2({ id: 'buf2' });
+                await playPromise2;
+            });
+
+            expect(result.current.playingId).toBe('s2');
+            expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+            expect(bufferSources[0]!.start).toHaveBeenCalledTimes(1);
+
+            // Resolve decode 1 second
+            await act(async () => {
+                resolveDecode1({ id: 'buf1' });
+                await playPromise1;
+            });
+
+            expect(result.current.playingId).toBe('s2');
+            expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe('stop', () => {

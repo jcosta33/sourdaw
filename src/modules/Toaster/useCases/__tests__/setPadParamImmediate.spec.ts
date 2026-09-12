@@ -11,6 +11,9 @@ const mockResolveDeviceTarget = vi.hoisted(() =>
 );
 const mockGetTrackStrip = vi.hoisted(() => vi.fn<(trackId: string) => TrackStrip | undefined>());
 const mockUpdatePad = vi.hoisted(() => vi.fn<(deviceId: string, padIndex: number, updates: unknown) => void>());
+const mockWriteNativeBuiltinParameters = vi.hoisted(() =>
+    vi.fn<(trackId: string, deviceId: string, values: Readonly<Record<string, number>>) => void>()
+);
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
@@ -20,6 +23,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getTrackStrip: mockGetTrackStrip,
+    writeNativeBuiltinParameters: mockWriteNativeBuiltinParameters,
 }));
 
 vi.mock('../../stores/toasterStore', async (importOriginal) => ({
@@ -144,6 +148,19 @@ describe('setPadParamImmediate', () => {
 
         expect(setPadParam).toHaveBeenCalledWith(3, 'decay', 0.4);
         expect(setPadParam).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A pad edit never reaches `updateDeviceParam` — Toaster's pads are not
+     * `parameterValues` entries — so without this send a natively carried
+     * Toaster held the kit its topology splice shipped and ignored the knob.
+     */
+    it('also sends the pad write to the native session, with the index folded into the name', () => {
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 3, key: 'filterCutoff', value: 800 });
+
+        expect(mockWriteNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', 'dev-1', {
+            pad3_filter_cutoff: 800,
+        });
     });
 
     it.each(['missing', 'ineligible'] as const)('rejects a %s owner before store or runtime effects', (status) => {

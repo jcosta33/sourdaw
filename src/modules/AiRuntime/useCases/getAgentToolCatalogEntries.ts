@@ -16,6 +16,7 @@ import {
     PROJECT_RESOLVE_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
+import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 
 type CatalogCategory =
     | 'query'
@@ -63,6 +64,10 @@ type LifecycleAvailability = {
     authority: string;
 };
 
+type DeferredCapability = (typeof DEFERRED_AGENT_CAPABILITIES)[number];
+
+type CatalogEntry = ToolSchema | LifecycleAvailability | DeferredCapability;
+
 const MAX_DISCOVERED_SCHEMAS = 8;
 const MAX_CURSOR_LENGTH = 2048;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -94,9 +99,15 @@ const lifecycleAvailability: readonly LifecycleAvailability[] = [
     },
 ] as const;
 
-function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>) {
+function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>): readonly CatalogEntry[] {
     if (category === 'command') {
         return [...getExecutableAppActionToolSchemas(), ...getMidiTransformToolSchemas()];
+    }
+    if (category === 'capability') {
+        return [
+            ...getAgentToolCatalogSchemas().filter((schema) => schema.function.name === AGENT_CAPABILITIES_TOOL_NAME),
+            ...DEFERRED_AGENT_CAPABILITIES,
+        ];
     }
     if (category === 'preview') {
         return lifecycleAvailability.filter((entry) => entry.name === 'command.batch.preview');
@@ -110,7 +121,6 @@ function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>)
     const nameByCategory = {
         query: PROJECT_QUERY_TOOL_NAME,
         resolve: PROJECT_RESOLVE_TOOL_NAME,
-        capability: AGENT_CAPABILITIES_TOOL_NAME,
         catalog: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
         history: COMMAND_HISTORY_TOOL_NAME,
         render: RENDER_REQUEST_TOOL_NAME,
@@ -220,7 +230,7 @@ function requirePageLimit(limit: number | undefined): number {
     return limit;
 }
 
-function getCatalogEntryName(entry: ToolSchema | LifecycleAvailability): string {
+function getCatalogEntryName(entry: CatalogEntry): string {
     return 'function' in entry ? entry.function.name : entry.name;
 }
 

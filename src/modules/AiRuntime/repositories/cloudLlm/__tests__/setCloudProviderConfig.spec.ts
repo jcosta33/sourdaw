@@ -145,7 +145,7 @@ describe('setCloudProviderConfig', () => {
         });
 
         expect(mocks.invoke).toHaveBeenCalledWith('open_provider_gateway_session', {
-            adapterId: 'builtin.openai-compatible.chat-completions.v1',
+            adapterId: 'builtin.openai.responses.v1',
             origin: 'https://api.openai.com',
             credentialSource: 'openai',
             credential: 'sk-test-key',
@@ -165,6 +165,27 @@ describe('setCloudProviderConfig', () => {
             session_id: SESSION_ID,
         });
         expect(isCloudAvailable()).toBe(true);
+    });
+
+    it('installs the responses adapter for a first-party OpenAI profile', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+        });
+
+        const installed = getCloudProviderRuntime();
+        if (installed?.provider !== 'openai') {
+            throw new Error('Expected a first-party OpenAI runtime');
+        }
+        expect(installed.adapter).toMatchObject({
+            adapterId: 'builtin.openai.responses.v1',
+            protocolFamily: 'openai-responses',
+            requestPath: '/v1/responses',
+            origin: 'https://api.openai.com',
+        });
     });
 
     it('rejects a 401 probe without installing the runtime and closes the opened session', async () => {

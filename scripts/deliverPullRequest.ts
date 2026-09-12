@@ -414,8 +414,8 @@ function isSatisfiedRequiredContext(context: string, checkRuns: HeadCheckRun[]):
  * aggregate `UNSTABLE` when cancelled check runs remain on that head beside later successes on the
  * same commit. Tolerating that state means proving the head green here instead of trusting the
  * aggregate: no check name's newest attempt failed, nothing is still running, the one required check
- * succeeded, and every cancelled name also succeeded. Every other status still refuses, because it
- * reports something other than checks.
+ * succeeded, every cancelled name also succeeded, and every name the gate needs reported at least
+ * once. Every other status still refuses, because it reports something other than checks.
  */
 function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
@@ -497,13 +497,15 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: Chec
     if (!checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
-    const undecided = undecidedCancelledCheckName(
-        checkRuns,
-        checks.gateRequiredCheckNames(),
-        checks.gateRequiredSkipAliases()
-    );
+    const requiredNames = checks.gateRequiredCheckNames();
+    const skipAliases = checks.gateRequiredSkipAliases();
+    const undecided = undecidedCancelledCheckName(checkRuns, requiredNames, skipAliases);
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
+    }
+    const absent = absentRequiredCheckName(checkRuns, requiredNames, skipAliases);
+    if (absent !== undefined) {
+        fail(`${state} and required check ${absent} never reported on ${pullRequest.headRefOid}`);
     }
 }
 
@@ -635,6 +637,31 @@ function undecidedCancelledCheckName(
     )?.name;
 }
 
+/**
+ * GitHub reports a check run for every job a run executes, and a job its scope `if` or path filter
+ * excludes still reports — as a skip. A required name with no run on this head at all is therefore
+ * no decision in either direction: the job never ran here (a matrix shard that was never scheduled),
+ * or the name this workflow reader derived matches nothing GitHub reported. Both leave the merge
+ * with no verdict for a name the gate needs, which is a coverage gap rather than a pass.
+ *
+ * A scope-skipped matrix job is the one report that carries a different name than the required ones:
+ * GitHub labels its single check run with the raw template name, so the alias — the same map
+ * `skippedAfter` consults — is what makes that run count as the report for every shard it stands
+ * for. Without it, a head whose matrix leg was skipped outright would refuse on shard names that
+ * were decided, not absent.
+ */
+function absentRequiredCheckName(
+    checks: HeadCheckRun[],
+    required: ReadonlySet<string>,
+    skipAliases: ReadonlyMap<string, string>
+): string | undefined {
+    const reported = new Set(checks.map((check) => check.name));
+    return [...required].find((name) => {
+        const alias = skipAliases.get(name);
+        return !reported.has(name) && (alias === undefined || !reported.has(alias));
+    });
+}
+
 function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
     return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
 }
@@ -684,8 +711,11 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
         );
     }
     const names = new Set<string>();
+    const jobByReportedName = new Map<string, string>();
     for (const jobId of gateNeeds(gate.needs)) {
         for (const name of requiredCheckNames(jobId, jobs, called)) {
+            refuseCollidingCheckName(jobByReportedName, name, jobId);
+            jobByReportedName.set(name, jobId);
             names.add(name);
         }
     }
@@ -693,8 +723,34 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
 }
 
 /**
+ * GitHub reports one check per name on a head, so two gated jobs rendering one name leave the two
+ * verdicts indistinguishable in the rollup: the name carries whichever attempt landed last, and one
+ * job's success answers for the other job's cancellation. The `Set` this read returns would
+ * silently keep a single entry, so the read refuses instead — naming both jobs, or the one job
+ * twice when a reusable call renders two of its inner jobs under one name.
+ */
+function refuseCollidingCheckName(jobByReportedName: ReadonlyMap<string, string>, name: string, jobId: string): void {
+    const firstJobId = jobByReportedName.get(name);
+    if (firstJobId === undefined) {
+        return;
+    }
+    if (firstJobId === jobId) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} reports the check name ${name} more than once, ` +
+                `which GitHub reports as one check name this gate cannot tell apart`
+        );
+    }
+    fail(
+        `the ${firstJobId} and ${jobId} jobs in ${HEALTH_GATES_WORKFLOW_PATH} both report the check name ` +
+            `${name}, which GitHub reports as one check name this gate cannot tell apart`
+    );
+}
+
+/**
  * The raw template name a scope-skipped matrix run reports under, for every resolved matrix name in
- * the gating set — the alias only `skippedAfter` consults, never a required name itself.
+ * the gating set — the alias `skippedAfter` consults to prove a skip's recency and
+ * `absentRequiredCheckName` consults to read a skipped matrix run as the report for its shards;
+ * never a required name itself.
  */
 export function gateRequiredSkipAliases(serialized: string): ReadonlyMap<string, string> {
     const { jobs, called } = workflowSummary(serialized);

@@ -11,6 +11,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 const OPENAI_ADAPTER_ID: &str = "builtin.openai-compatible.chat-completions.v1";
+const OPENAI_RESPONSES_ADAPTER_ID: &str = "builtin.openai.responses.v1";
 const ANTHROPIC_ADAPTER_ID: &str = "builtin.anthropic.messages.v1";
 const OPENAI_ORIGIN: &str = "https://api.openai.com";
 const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
@@ -94,6 +95,11 @@ fn validate_adapter(adapter_id: &str, origin: &str) -> Result<(), String> {
         OPENAI_ADAPTER_ID => {
             parse_canonical_origin(origin)?;
         }
+        OPENAI_RESPONSES_ADAPTER_ID => {
+            if origin != OPENAI_ORIGIN {
+                return Err("OpenAI requires its compiled origin".to_string());
+            }
+        }
         ANTHROPIC_ADAPTER_ID => {
             if origin != ANTHROPIC_ORIGIN {
                 return Err("Anthropic requires its compiled origin".to_string());
@@ -121,7 +127,7 @@ fn validate_credential(source: &str, credential: &Zeroizing<String>) -> Result<(
 fn validate_credential_binding(adapter_id: &str, origin: &str, source: &str) -> Result<(), String> {
     let valid = match source {
         "anthropic" => adapter_id == ANTHROPIC_ADAPTER_ID && origin == ANTHROPIC_ORIGIN,
-        "openai" => adapter_id == OPENAI_ADAPTER_ID && origin == OPENAI_ORIGIN,
+        "openai" => adapter_id == OPENAI_RESPONSES_ADAPTER_ID && origin == OPENAI_ORIGIN,
         "openai-compatible" => adapter_id == OPENAI_ADAPTER_ID && origin != OPENAI_ORIGIN,
         _ => false,
     };
@@ -207,6 +213,35 @@ fn parse_canonical_origin(origin: &str) -> Result<(reqwest::Url, String, u16), S
         .port_or_known_default()
         .ok_or_else(|| "Provider gateway origin is missing a port".to_string())?;
     Ok((parsed, host, port))
+}
+
+fn validate_request_body(body: Option<&str>) -> Result<(), String> {
+    if body.is_some_and(|value| value.len() > MAX_REQUEST_BODY_BYTES) {
+        return Err("Provider gateway request exceeds its body limit".to_string());
+    }
+    Ok(())
+}
+
+fn compile_request_url(origin_url: &reqwest::Url, path: &str) -> Result<reqwest::Url, String> {
+    let request_url = origin_url
+        .join(path)
+        .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
+    if request_url.origin() != origin_url.origin() {
+        return Err("Provider gateway refused to forward a request across origins".to_string());
+    }
+    Ok(request_url)
+}
+
+fn build_provider_transport(
+    host: &str,
+    addresses: &[SocketAddr],
+) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, addresses)
+        .build()
+        .map_err(|_| "Provider gateway transport could not be initialized".to_string())
 }
 
 async fn register_cancellation(
@@ -401,6 +436,8 @@ fn resolve_provider_gateway_operation(
     match (adapter_id, operation) {
         (OPENAI_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (OPENAI_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/chat/completions")),
+        (OPENAI_RESPONSES_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
+        (OPENAI_RESPONSES_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/responses")),
         (ANTHROPIC_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
         (ANTHROPIC_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/messages")),
         _ => Err("Provider gateway operation is not supported by the compiled adapter".to_string()),
@@ -420,21 +457,11 @@ pub async fn provider_gateway_request(
     let (session, mut cancellation) =
         admit_provider_gateway_request(state, &request_id, &session_id).await?;
     let result = async {
-        if body
-            .as_ref()
-            .is_some_and(|value| value.len() > MAX_REQUEST_BODY_BYTES)
-        {
-            return Err("Provider gateway request exceeds its body limit".to_string());
-        }
+        validate_request_body(body.as_deref())?;
         let (origin_url, host, port) = parse_canonical_origin(&session.origin)?;
         let (method, path) =
             resolve_provider_gateway_operation(session.adapter_id.as_str(), operation.as_str())?;
-        let request_url = origin_url
-            .join(path)
-            .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
-        if request_url.origin() != origin_url.origin() {
-            return Err("Provider gateway refused to forward a request across origins".to_string());
-        }
+        let request_url = compile_request_url(&origin_url, path)?;
 
         let resolved_addresses = await_provider_step_or_cancellation(&mut cancellation, async {
             tokio::net::lookup_host((host.as_str(), port))
@@ -447,12 +474,7 @@ pub async fn provider_gateway_request(
         addresses.dedup();
         validate_resolved_addresses(&addresses)?;
 
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(&host, &addresses)
-            .build()
-            .map_err(|_| "Provider gateway transport could not be initialized".to_string())?;
+        let client = build_provider_transport(&host, &addresses)?;
         let mut request = client
             .request(method, request_url)
             .header("Accept", "application/json, text/event-stream");
@@ -561,17 +583,27 @@ pub async fn provider_gateway_request(
 mod tests {
     use super::{
         admit_provider_gateway_request, await_provider_step_or_cancellation,
-        close_provider_gateway_session, open_provider_gateway_session,
-        open_provider_gateway_session_with_credential, parse_canonical_origin,
-        register_cancellation, request_cancellation, resolve_provider_gateway_operation,
-        validate_credential_binding, validate_resolved_addresses, ProviderGatewayEvent,
-        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
-        MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID,
-        OPENAI_ORIGIN,
+        build_provider_transport, close_provider_gateway_session, compile_request_url,
+        open_provider_gateway_session, open_provider_gateway_session_with_credential,
+        parse_canonical_origin, register_cancellation, request_cancellation,
+        resolve_provider_gateway_operation, validate_adapter, validate_credential,
+        validate_credential_binding, validate_request_body, validate_resolved_addresses,
+        ProviderCredentialSession, ProviderGatewayEvent, ProviderGatewayState,
+        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
+        MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, MAX_REQUEST_BODY_BYTES,
+        OPENAI_ADAPTER_ID, OPENAI_ORIGIN, OPENAI_RESPONSES_ADAPTER_ID,
     };
+    use std::io::{Read, Write};
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
     use zeroize::Zeroizing;
+
+    /// Compiles only while the stored credential keeps its zeroize-on-drop type.
+    fn credential_type_is_zeroizing(session: &ProviderCredentialSession) -> &Zeroizing<String> {
+        &session.api_key
+    }
 
     #[test]
     fn provider_gateway_serializes_correlated_stream_events() {
@@ -852,8 +884,41 @@ mod tests {
     }
 
     #[test]
+    fn provider_gateway_resolves_openai_responses_paths() {
+        let (method, path) =
+            resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "probe")
+                .expect("openai responses probe must resolve");
+        assert_eq!(method, reqwest::Method::GET);
+        assert_eq!(path, "/v1/models");
+
+        let (method, path) =
+            resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "request")
+                .expect("openai responses request must resolve");
+        assert_eq!(method, reqwest::Method::POST);
+        assert_eq!(path, "/v1/responses");
+
+        assert!(resolve_provider_gateway_operation(OPENAI_RESPONSES_ADAPTER_ID, "delete").is_err());
+    }
+
+    #[test]
     fn first_party_credentials_are_bound_to_first_party_origins() {
-        assert!(validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai").is_ok());
+        assert!(
+            validate_credential_binding(OPENAI_RESPONSES_ADAPTER_ID, OPENAI_ORIGIN, "openai")
+                .is_ok()
+        );
+        assert!(validate_credential_binding(OPENAI_ADAPTER_ID, OPENAI_ORIGIN, "openai").is_err());
+        assert!(validate_credential_binding(
+            OPENAI_RESPONSES_ADAPTER_ID,
+            "https://provider.example",
+            "openai-compatible"
+        )
+        .is_err());
+        assert_eq!(
+            validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, "https://provider.example")
+                .expect_err("the responses adapter must refuse a third-party origin"),
+            "OpenAI requires its compiled origin"
+        );
+        assert!(validate_adapter(OPENAI_RESPONSES_ADAPTER_ID, OPENAI_ORIGIN).is_ok());
         assert!(
             validate_credential_binding(ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, "anthropic")
                 .is_ok()
@@ -896,7 +961,7 @@ mod tests {
         .await
         .is_err());
         assert!(open_provider_gateway_session(
-            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_RESPONSES_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
             "openai".to_string(),
             Zeroizing::new(String::new()),
@@ -923,7 +988,7 @@ mod tests {
         let state = ProviderGatewayState::default();
         let exact_limit = Zeroizing::new("é".repeat(MAX_API_KEY_BYTES / 2));
         assert!(open_provider_gateway_session(
-            OPENAI_ADAPTER_ID.to_string(),
+            OPENAI_RESPONSES_ADAPTER_ID.to_string(),
             OPENAI_ORIGIN.to_string(),
             "openai".to_string(),
             exact_limit,
@@ -935,7 +1000,7 @@ mod tests {
         let oversized = Zeroizing::new("é".repeat((MAX_API_KEY_BYTES / 2) + 1));
         assert_eq!(
             open_provider_gateway_session(
-                OPENAI_ADAPTER_ID.to_string(),
+                OPENAI_RESPONSES_ADAPTER_ID.to_string(),
                 OPENAI_ORIGIN.to_string(),
                 "openai".to_string(),
                 oversized,
@@ -945,5 +1010,102 @@ mod tests {
             .expect_err("credential over the byte limit must be rejected"),
             "Provider gateway credential exceeds its size limit"
         );
+    }
+
+    #[test]
+    fn provider_gateway_refuses_cross_origin_request_urls() {
+        let (origin_url, _host, _port) =
+            parse_canonical_origin(ANTHROPIC_ORIGIN).expect("anthropic origin");
+
+        assert_eq!(
+            compile_request_url(&origin_url, "/v1/messages")
+                .expect("a same-origin path must compile")
+                .as_str(),
+            "https://api.anthropic.com/v1/messages"
+        );
+
+        for crossed in [
+            "//evil.example/v1/messages",
+            "https://evil.example/v1/messages",
+        ] {
+            assert_eq!(
+                compile_request_url(&origin_url, crossed)
+                    .expect_err("a cross-origin path must be refused"),
+                "Provider gateway refused to forward a request across origins",
+                "accepted {crossed}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_gateway_webview_boundary_rejects_oversize_bodies_and_credentials() {
+        assert!(validate_request_body(None).is_ok());
+        assert!(validate_request_body(Some(&"a".repeat(MAX_REQUEST_BODY_BYTES))).is_ok());
+        assert_eq!(
+            validate_request_body(Some(&"a".repeat(MAX_REQUEST_BODY_BYTES + 1)))
+                .expect_err("a body one byte over the limit must be refused"),
+            "Provider gateway request exceeds its body limit"
+        );
+
+        assert!(
+            validate_credential("openai", &Zeroizing::new("a".repeat(MAX_API_KEY_BYTES))).is_ok()
+        );
+        assert_eq!(
+            validate_credential("openai", &Zeroizing::new("a".repeat(MAX_API_KEY_BYTES + 1)))
+                .expect_err("a credential over the limit must be refused"),
+            "Provider gateway credential exceeds its size limit"
+        );
+
+        let session = ProviderCredentialSession {
+            adapter_id: OPENAI_ADAPTER_ID.to_string(),
+            origin: OPENAI_ORIGIN.to_string(),
+            api_key: Zeroizing::new("sk-fixture".to_string()),
+        };
+        assert_eq!(
+            credential_type_is_zeroizing(&session).as_str(),
+            "sk-fixture"
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_transport_never_follows_redirects() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("redirect listener");
+        let address = listener.local_addr().expect("listener address");
+        let port = address.port();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let served = Arc::clone(&connections);
+        // Bounded so a client that never reconnects cannot leave the thread accepting forever.
+        let redirector = std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let Ok(mut stream) = stream else {
+                    break;
+                };
+                served.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let _ = stream.flush();
+            }
+        });
+
+        let client =
+            build_provider_transport("provider.test", &[address]).expect("provider transport");
+        let response = client
+            .get(format!("http://provider.test:{port}/"))
+            .send()
+            .await
+            .expect("the redirect must be returned rather than followed");
+
+        assert_eq!(response.status().as_u16(), 302);
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+
+        // Release the second bounded accept so the listener thread can finish.
+        drop(std::net::TcpStream::connect(address));
+        redirector.join().expect("listener thread");
     }
 }

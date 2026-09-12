@@ -25,6 +25,11 @@ dispatch.
 - When a spec pins a rule about repeated or overlapping events on one key, name the mutation that
   inverts the rule (last occurrence decides instead of first, a note-on covers instead of a note-off)
   and require the fixture to place the decisive event in the position that mutation would get wrong.
+- A regression suite for a detector that asserts an invariant over a registered population must
+  cover the invariant per adapter class, not replay the incident's fixture: enumerate the classes
+  the population actually has — an ordering normalizer, an encoding change, a dropped field — and
+  require a case in each that reverting the detector's invariant check fails. A suite green on the
+  incident fixture alone does not discharge the detector's global claim.
 
 ## Lessons from escapes
 
@@ -200,3 +205,29 @@ The same probe must publish newer same-slot authority from inside each independe
 and cover both later- and earlier-authored nested scopes. Bypass the authority-epoch check and the ambiguous terminal
 call separately; each must leave raw and cache divergent and fail. Include projectors that return `null` and throw with
 no configured initial value so nullish fallback cannot silently reinstate rejected document content.
+
+### 2026-09-10 — catalog cases asserted presence, never selectability (escaped via PR #4128)
+
+The catalog spec checked that the creation slots for a track target existed by object type and the
+admission spec selected targets and dimensions, but no case selected a clip, notes, or device slot by
+its published id and observed the minted authority carrying it. A duplicate-id defect that made
+three slots unselectable therefore left every case green.
+
+Mechanical probe: for each published id family (targets, dimensions, constraints, creation slots),
+one case must select the LAST published member by id through the real admission and assert it on
+the result; then mutate the id minting to collide and confirm that case goes red.
+
+### 2026-09-10 — no fixture ever tied an interval START to the outer callback (introduced in 4266e649b, repeated at 0a4efc74f)
+
+4266e649b's fixtures placed every handler and author start strictly inside or before the
+outer callback; 0a4efc74f added the handler/outer equal-END fixture and repeated the
+pattern, so both strict START comparisons were never exercised at equality. The first
+nightly trace refused 2256 of 24001 callbacks tied on handler start.
+
+Blind spot: the 2026-09-09 probe was phrased for one boundary only, and fixtures followed it
+literally without covering both boundaries (start and end) of the nesting pairs.
+
+Probe that would have caught it: for every nesting comparison independently validated, add one
+case with equal start timestamps and one with equal end timestamps; for each pair, add a third
+with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
+the narrower and existing overlap fixtures must refuse.

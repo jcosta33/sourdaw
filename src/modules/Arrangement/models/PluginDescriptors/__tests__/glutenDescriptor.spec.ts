@@ -50,7 +50,7 @@ describe('GLUTEN_DESCRIPTOR', () => {
     );
 
     // `style` is a real engine param the bridge pushes (loadGlutenPatchWithAudio)
-    // and the engine maps (glutenProcessor PARAM_MAP). It was the sole bridge-pushed
+    // and the engine maps (GLUTEN_DSP_PARAM_NAMES). It was the sole bridge-pushed
     // key absent from this descriptor, making it invisible to the generic param /
     // automation system. Encoded as an enum index (glue=0..pump=3), default 'glue' = 0.
     it('exposes style as an automatable enum parameter (glue=0..pump=3)', () => {
