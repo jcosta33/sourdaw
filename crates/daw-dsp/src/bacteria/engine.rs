@@ -2,7 +2,7 @@
 //!
 //! Routes audio through: crossover → per-band effect chains → summing.
 //! Handles multi-band splitting, serial/parallel/mid-side routing,
-//! oversampling, modulation routing, macro mapping, and XY morphing.
+//! oversampling, modulation routing, and macro mapping.
 
 use super::chorus::ChorusFlanger;
 use super::chorus::Phaser;
@@ -604,6 +604,37 @@ impl BandChain {
         self.peak_level = 0.0;
     }
 
+    /// Drop every stage's in-flight audio.
+    ///
+    /// Engine-level events that must leave the band silent regardless of what
+    /// it was doing — an engine rebuild, a program change — call this so no
+    /// stage hands the next block a tail from the previous one. Every member
+    /// that remembers a sample is cleared: the oversampler's halfband history,
+    /// each effect's delay or transform buffer, the alignment ring, and the
+    /// peak meter. Enable flags, levels and the smoother *targets* are
+    /// configuration, not signal memory, and survive; the smoother's current
+    /// value glides to its target in its usual few milliseconds.
+    fn reset(&mut self) {
+        self.distortion.reset();
+        self.waveshaper.reset();
+        self.filter_l.reset();
+        self.filter_r.reset();
+        self.chorus.reset();
+        self.phaser.reset();
+        self.granular_l.reset();
+        self.granular_r.reset();
+        self.stft_l.reset();
+        self.stft_r.reset();
+        self.hilbert_l.reset();
+        self.hilbert_r.reset();
+        self.lofi.reset();
+        self.convolution.reset();
+        self.oversampler_l.reset();
+        self.oversampler_r.reset();
+        self.alignment.reset();
+        self.peak_level = 0.0;
+    }
+
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
         if !self.enabled || self.mute {
             // Same reasoning as `skip_sample`: silence still has to flow
@@ -761,20 +792,6 @@ impl RoutingMode {
     }
 }
 
-/// Snapshot state for XY morph (A/B/C/D).
-#[allow(dead_code)]
-struct MorphSnapshot {
-    param_values: Vec<(String, f32)>,
-}
-
-impl MorphSnapshot {
-    fn new() -> Self {
-        Self {
-            param_values: Vec::new(),
-        }
-    }
-}
-
 #[allow(dead_code)]
 pub struct BacteriaEngine {
     sample_rate: f32,
@@ -824,11 +841,6 @@ pub struct BacteriaEngine {
 
     // Macros
     macros: [f32; MACRO_COUNT],
-
-    // XY morph
-    morph_x: f32,
-    morph_y: f32,
-    snapshots: [MorphSnapshot; 4],
 
     // Metering
     input_peak: f32,
@@ -908,6 +920,12 @@ impl StepSequencer {
         let idx = (self.position as usize) % self.num_steps;
         self.steps[idx]
     }
+
+    /// Restart the gate at step zero, so a program change begins the pattern
+    /// from its first step rather than wherever the old program's clock was.
+    fn reset(&mut self) {
+        self.position = 0.0;
+    }
 }
 
 impl BacteriaEngine {
@@ -938,14 +956,6 @@ impl BacteriaEngine {
             modulated_targets: [0; MAX_MODULATED_TARGETS],
             modulated_target_count: 0,
             macros: [DEFAULT_MACRO; MACRO_COUNT],
-            morph_x: 0.5,
-            morph_y: 0.5,
-            snapshots: [
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-            ],
             input_peak: 0.0,
             output_peak: 0.0,
             meter_decay_global: (-1.0 / (0.1 * sample_rate)).exp(), // ~100ms decay
@@ -977,6 +987,39 @@ impl BacteriaEngine {
         // over at most six bands.
         self.realign_bands();
         self.clear_inactive_band_levels();
+    }
+
+    /// Drop every stage's in-flight audio and restart the modulation sources.
+    ///
+    /// For the engine-level events that must leave the device silent whatever
+    /// it was doing — the engine being re-initialized, or a program change
+    /// handing the bands to a different patch — a transport stop is
+    /// deliberately *not* one of them: effect tails are supposed to survive
+    /// the transport, and a stop therefore never calls this.
+    ///
+    /// Parameter state (gains, mixes, modes, enable flags) is configuration
+    /// and survives; only signal memory and the modulation clocks are
+    /// dropped. The macros are mirrored back into their resting
+    /// [`MOD_VALUES_AT_REST`] slots by the same rule that orders them at
+    /// construction, so the first block after a reset reads the same source
+    /// table a fresh engine would.
+    pub fn reset(&mut self) {
+        self.crossover.reset();
+        for band in &mut self.bands {
+            band.reset();
+        }
+        self.lfo1.reset();
+        self.lfo2.reset();
+        self.env_follower.reset();
+        self.lorenz.reset();
+        self.step_seq.reset();
+        self.mod_values = MOD_VALUES_AT_REST;
+        self.input_peak = 0.0;
+        self.output_peak = 0.0;
+        self.band_levels = [0.0; MAX_BANDS];
+        self.dry_alignment.reset();
+        self.side_alignment.reset();
+        self.param_offsets = [0.0; PARAM_OFFSET_COUNT];
     }
 
     /// Give every band the group delay the routing needs it to present.
@@ -1193,10 +1236,6 @@ impl BacteriaEngine {
             "macro6" => self.set_macro(5, value),
             "macro7" => self.set_macro(6, value),
             "macro8" => self.set_macro(7, value),
-
-            // XY morph
-            "morphX" => self.morph_x = value,
-            "morphY" => self.morph_y = value,
 
             // LFO
             "lfo1Rate" => self.lfo1.set_rate(value),
@@ -2081,6 +2120,68 @@ mod tests {
             "unmuting over silence produced {burst} ({:.1} dBFS) — the frequency \
              shifter flushed what it was holding while muted",
             20.0 * burst.max(1e-12).log10()
+        );
+    }
+
+    /// An engine-level `reset` must hand the next block silence, whatever the
+    /// bands were holding. Every stage with signal memory is engaged at once —
+    /// the oversampled Smudge window, the filter, chorus, phaser, granular
+    /// buffer, spectral window, frequency shifter's all-pass network, the
+    /// lo-fi codec frame and the convolution buffer — loud noise is run
+    /// through long enough to fill all of them, and the block after the reset
+    /// is fed silence. Anything that comes out is stale state a program
+    /// change or an engine re-init should have dropped.
+    #[test]
+    fn resetting_the_engine_leaves_the_next_block_silent() {
+        const BLOCK: usize = 4_096;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("distortionEnabled", 1.0);
+        engine.set_param("distortionMode", 7.0); // Smudge — overlap-add window
+        engine.set_param("drive", 12.0);
+        engine.set_param("oversampling", 8.0);
+        engine.set_param("filterEnabled", 1.0);
+        engine.set_param("chorusEnabled", 1.0);
+        engine.set_param("phaserEnabled", 1.0);
+        engine.set_param("granularEnabled", 1.0);
+        engine.set_param("spectralEnabled", 1.0);
+        engine.set_param("freqShiftEnabled", 1.0);
+        engine.set_param("freqShiftHz", 200.0);
+        engine.set_param("lofiEnabled", 1.0);
+        engine.set_param("lofiAmount", 60.0);
+        engine.set_param("codecArtifact", 0.5);
+        engine.set_param("convolutionEnabled", 1.0);
+        engine.set_param("mix", 1.0);
+
+        let mut seed = 41u32;
+        for _ in 0..8 {
+            let mut left = noise_block(BLOCK, &mut seed);
+            let mut right = noise_block(BLOCK, &mut seed);
+            engine.process_block(&mut left, &mut right);
+        }
+
+        engine.reset();
+
+        assert!(
+            engine.band_levels().iter().all(|level| *level == 0.0),
+            "the reset left band meters standing: {:?}",
+            engine.band_levels()
+        );
+
+        // Silence in: any output is audio the reset failed to drop.
+        let mut silent_l = vec![0.0_f32; BLOCK];
+        let mut silent_r = vec![0.0_f32; BLOCK];
+        engine.process_block(&mut silent_l, &mut silent_r);
+
+        let leaked = silent_l
+            .iter()
+            .chain(silent_r.iter())
+            .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+        assert!(
+            leaked < 1.0e-6,
+            "the block after a reset emitted {leaked} — a stage handed the new \
+             program the previous one's tail"
         );
     }
 

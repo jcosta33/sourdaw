@@ -1,7 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
+import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -279,44 +280,86 @@ export const handleWebMidiNoteOn = inject({
                     device.type.startsWith('builtin-synth')
             );
 
-            if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
-                const kitIndex = synthDevice.parameterValues.kit ?? 0;
-                const kitDefinition = deps.getDrumKitDefByIndex(kitIndex);
-                if (kitDefinition) {
-                    deps.scheduleDrumKitNote(
-                        engine.context,
-                        strip.gainNode,
-                        kitDefinition,
-                        note,
-                        dispatchTime,
-                        velocity
-                    );
-                } else {
-                    const kit = deps.getDrumKitByIndex(kitIndex);
-                    if (kit) {
-                        oscillator = deps.scheduleKitNote(
+            if (synthDevice) {
+                if (synthDevice.type === 'builtin-drum-kit' || synthDevice.type.startsWith('builtin-drum-machine')) {
+                    const kitIndex = synthDevice.parameterValues.kit ?? 0;
+                    const kitDefinition = deps.getDrumKitDefByIndex(kitIndex);
+                    if (kitDefinition) {
+                        deps.scheduleDrumKitNote(
                             engine.context,
                             strip.gainNode,
-                            kit,
+                            kitDefinition,
                             note,
                             dispatchTime,
-                            60,
                             velocity
                         );
+                    } else {
+                        const kit = deps.getDrumKitByIndex(kitIndex);
+                        if (kit) {
+                            oscillator = deps.scheduleKitNote(
+                                engine.context,
+                                strip.gainNode,
+                                kit,
+                                note,
+                                dispatchTime,
+                                60,
+                                velocity
+                            );
+                        }
                     }
+                } else {
+                    const synthParams = deps.getSynthParamsForTrack(targetTrackId);
+                    oscillator = deps.scheduleNote(
+                        engine.context,
+                        strip.gainNode,
+                        note,
+                        dispatchTime,
+                        60,
+                        velocity,
+                        synthParams
+                    );
                 }
-            } else {
-                const synthParams = deps.getSynthParamsForTrack(targetTrackId);
-                oscillator = deps.scheduleNote(
-                    engine.context,
-                    strip.gainNode,
-                    note,
-                    dispatchTime,
-                    60,
-                    velocity,
-                    synthParams
-                );
+
+                if (oscillator) {
+                    noteData.osc = oscillator;
+                }
+                return;
             }
+
+            // A Faust pro-synth instrument (electric piano, FM synth, supersaw, …) voices
+            // its notes through the same live control path the piano-roll audition
+            // uses: `startFaustNote` writes freq/gain/gate on the device and hands
+            // back the release that gates it off. Without this branch the note fell
+            // through to the default-parameter builtin synth below, so monitoring
+            // played a different instrument from playback and the offline render
+            // (issue #3726). It sits after the builtin devices so a track carrying
+            // both keeps its existing builtin voice, and only the Faust-only track
+            // is rescued from the fallback.
+            // A Faust pro-synth instrument (electric piano, FM synth, supersaw, …) voices
+            // its notes through the same live control path the piano-roll audition
+            // uses: `startFaustNote` writes freq/gain/gate on the device and hands
+            // back the release that gates it off. Without this branch the note fell
+            // through to the default-parameter builtin synth below, so monitoring
+            // played a different instrument from playback and the offline render
+            // (issue #3726). It sits after the builtin devices so a track carrying
+            // both keeps its existing builtin voice, and only the Faust-only track
+            // is rescued from the fallback.
+            const faustDevice = instrumentTrack?.devices.find((device) => isFaustInstrumentModule(device.type));
+            if (faustDevice) {
+                noteData.faustRelease = startFaustNote(instrumentTrackId, faustDevice.id, note, velocity, dispatchTime);
+                return;
+            }
+
+            const synthParams = deps.getSynthParamsForTrack(targetTrackId);
+            oscillator = deps.scheduleNote(
+                engine.context,
+                strip.gainNode,
+                note,
+                dispatchTime,
+                60,
+                velocity,
+                synthParams
+            );
 
             if (oscillator) {
                 noteData.osc = oscillator;

@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
+import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
     canonicalPath,
@@ -1432,6 +1433,7 @@ export async function main(
         cwd?: string;
         detectLane?: (cwd: string) => DetectedLane | undefined;
         runCommand?: typeof runGuardedCommand;
+        assertModulesPreflight?: (cwd: string) => void;
         log?: (message: string) => void;
         error?: (message: string) => void;
     } = {}
@@ -1439,11 +1441,22 @@ export async function main(
     const cwd = options.cwd ?? process.cwd();
     const detectLane = options.detectLane ?? detectAuthorLane;
     const runCommand = options.runCommand ?? runGuardedCommand;
+    const assertModulesPreflight = options.assertModulesPreflight ?? assertCurrentCheckoutModulesBelongToCheckout;
     const log = options.log ?? console.log;
     const error = options.error ?? console.error;
 
     try {
         const input = parseCliArgs(argv);
+
+        // Issue #4118 preflight, before anything runs — including a `--recover` re-execution. The
+        // guarded pnpm command is the write event: from a lane whose `node_modules` symlinks into
+        // another checkout, it resolves the link and rewrites that checkout's install metadata,
+        // and the next pnpm run in the real owner aborts every trusted delivery script with
+        // ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. Refusing here prints the restore steps
+        // instead. The guard is the shared entry every local verification flows through, so this
+        // one check covers the fleet; `trustedGithubWriteBootstrap.ts` stays out of it by design
+        // (see scripts/pnpmModulesPreflight.ts).
+        assertModulesPreflight(cwd);
 
         if (input.recover) {
             const lane = detectLane(cwd);

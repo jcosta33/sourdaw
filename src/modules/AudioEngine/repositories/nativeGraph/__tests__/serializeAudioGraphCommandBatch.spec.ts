@@ -292,6 +292,36 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening as `set-device-parameters`, and a boolean that must
+     * travel as itself: a serializer that coerced the bypass to a presence
+     * flag would make "un-bypass" indistinguishable from "no write at all".
+     */
+    it('flattens a device bypass batch onto the graph.rs set-device-bypass spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: true,
+                },
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: false,
+                },
+            ],
+        });
+
+        expect(wire.commands).toEqual([
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: true },
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: false },
+        ]);
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(wire.commands[0] ?? {})).toEqual(['kind', 'trackId', 'deviceId', 'bypassed']);
+    });
+
+    /**
      * The same flattening for a live note, and one more thing the mapper turns
      * on: a note carries no timeline position, so every field it does carry is
      * the whole of what the engine has to place it by.

@@ -22,9 +22,11 @@ import { estimateRenderTailSeconds, MAX_AUTO_TAIL_SECONDS } from '../estimateRen
  * gaps hid a real defect:
  *
  *  - it only asked whether a declared tail evaluates non-zero, never whether
- *    the parameter it cites reaches any DSP. `builtin-reverb` cited `rev-decay`,
- *    which no audio node reads, so an "Ambient Wash" preset reserved 8 s of dead
- *    air while a "Tight Room" preset truncated the real 2 s tail;
+ *    the parameter it cites reaches any DSP. `builtin-reverb` once cited
+ *    `rev-decay` while its impulse was baked fixed, reserving 8 s of dead air
+ *    for "Ambient Wash" presets; today the knob re-renders the impulse (the
+ *    snapshot observes the convolver buffer swap), and the declaration follows
+ *    the rendered decay;
  *  - it only iterated devices that already declare a tail, so a device that
  *    *lost* its declaration was invisible. The four `builtin-synth` variants
  *    inherit nothing from the base descriptor and silently went back to a tail
@@ -118,13 +120,31 @@ function automatableEnabledParameterIds(tail: NonNullable<ReturnType<typeof getP
  * Snapshot of every settable audio value on a device node, so a parameter that
  * moves nothing is detectable without knowing the device's internals.
  */
+const bufferIdentityIds = new WeakMap<object, string>();
+let bufferIdentityCounter = 0;
+
 function snapshotNode(nodes: readonly object[]): string {
     return JSON.stringify(
         nodes.map((node) => {
-            const entries: Record<string, number> = {};
+            const entries: Record<string, unknown> = {};
             for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
                 if (typeof value === 'number') {
                     entries[key] = value;
+                    continue;
+                }
+                // A ConvolverNode's impulse re-render moves the DSP by swapping
+                // `buffer` — no number or AudioParam changes — so the swap's
+                // identity is the movement signal (issue #3731's rev-decay).
+                // String(value) is identical for every instance, so each buffer
+                // gets a stable per-instance id.
+                if (key === 'buffer' && value && typeof value === 'object') {
+                    let bufferId = bufferIdentityIds.get(value);
+                    if (bufferId === undefined) {
+                        bufferIdentityCounter += 1;
+                        bufferId = String(bufferIdentityCounter);
+                        bufferIdentityIds.set(value, bufferId);
+                    }
+                    entries[key] = `buffer-${bufferId}`;
                     continue;
                 }
                 const audioParam = value as { value?: unknown } | null;
@@ -386,12 +406,13 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
         expect(tailForDevice('builtin-synth-strings', { release: 1.2 })).toBe(1.2);
     });
 
-    it('declares the built-in reverb tail from its real impulse response, not the inert decay knob', () => {
-        // `createReverb` bakes a fixed `sampleRate * 2` impulse response and
-        // `applyReverbParams` has no `rev-decay` branch, so the audible tail is
-        // 2 s whatever the knob says.
-        expect(tailForDevice('builtin-reverb', { 'rev-decay': 8, 'rev-predelay': 0 })).toBe(2);
-        expect(tailForDevice('builtin-reverb', { 'rev-decay': 0.3, 'rev-predelay': 0 })).toBe(2);
+    it('declares the built-in reverb tail from its rendered impulse decay', () => {
+        // `applyReverbParams` re-renders the convolver impulse from the live
+        // shape (#3731) and the decay envelope reaches -60 dB at the buffer
+        // end, so the reserved tail is exactly the declared decay span plus
+        // the honoured pre-delay.
+        expect(tailForDevice('builtin-reverb', { 'rev-decay': 8, 'rev-predelay': 0 })).toBe(8);
+        expect(tailForDevice('builtin-reverb', { 'rev-decay': 0.3, 'rev-predelay': 0 })).toBe(0.3);
         // Pre-delay is honoured by the DSP and does shift the tail.
         expect(tailForDevice('builtin-reverb', { 'rev-predelay': 200 })).toBeCloseTo(2.2, 6);
     });

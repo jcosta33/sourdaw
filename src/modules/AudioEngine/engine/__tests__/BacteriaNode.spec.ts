@@ -187,6 +187,23 @@ describe('createBacteriaNode', () => {
         );
     });
 
+    // Mirrors GrinderNode's reset pin: the reset reaches the worklet as a bare
+    // `{ type: 'reset' }` message, and a destroyed node stays silent.
+    it('posts reset only while the worklet port is open', async () => {
+        const node = await createBacteriaNode(makeCtx());
+        postMessage.mockClear();
+
+        node.reset();
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'reset' });
+
+        node.destroy();
+        postMessage.mockClear();
+        node.reset();
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('should poll meter data only when a telemetry slot is available, converting band levels to dB', async () => {
         const { telemetryAllocator, BACTERIA_IDX } = await import('../telemetryAllocator');
         const raf = vi.fn();

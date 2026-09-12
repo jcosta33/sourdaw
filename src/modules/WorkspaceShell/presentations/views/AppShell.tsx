@@ -89,6 +89,7 @@ import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSid
 import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
+import { EngineFallbackNotice } from '../components/EngineFallbackNotice';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
@@ -98,6 +99,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useEngineFallbackNotice } from '../hooks/useEngineFallbackNotice';
 import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
@@ -231,6 +233,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const project = useProjectState();
     const projectLoadFailure = useProjectLoadFailure();
     const projectMutationRefusal = useProjectMutationRefusal();
+    const { showNotice: showEngineFallbackNotice, dismissNotice: dismissEngineFallbackNotice } =
+        useEngineFallbackNotice();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -664,6 +668,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {project.initialized && projectMutationRefusal !== null ? (
                     <ProjectMutationRefusedBanner refusal={projectMutationRefusal} />
                 ) : null}
+
+                {/* Whole-engine failure, not a per-device problem: mounted once at
+                    the shell (issue #3871) and non-modal like the refusal banner —
+                    the silent workspace it explains stays usable. */}
+                {showEngineFallbackNotice ? <EngineFallbackNotice onDismiss={dismissEngineFallbackNotice} /> : null}
 
                 {/* ─── Main horizontal layout ─── */}
                 <Row align="stretch" grow className="overflow-hidden">

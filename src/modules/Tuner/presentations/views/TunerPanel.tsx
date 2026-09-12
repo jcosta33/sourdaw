@@ -18,7 +18,7 @@ import {
     MAX_A4_REFERENCE_HZ,
     MIN_A4_REFERENCE_HZ,
 } from '../../models/A4Reference';
-import { tunerStore, getTunerState, type DisplayMode } from '../../stores/tunerStore';
+import { tunerStore, getTunerState, type DisplayMode, type TunerPolyStringState } from '../../stores/tunerStore';
 import { importTuningScale } from '../../useCases/importTuningScale';
 import { setA4Reference } from '../../useCases/setA4Reference';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
@@ -114,7 +114,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const a4Reference = previewA4Reference ?? storedA4Reference;
 
-    const { noteName, octave, cents, confidence, active, mode, frequency } = state;
+    const { noteName, octave, cents, confidence, active, mode, frequency, polyStrings } = state;
     // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
     // read and here enforces it. Clamp before any display use so the Conf tile cannot
     // read e.g. 120% and the needle alpha stays in range.
@@ -141,7 +141,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         centerGlow = 'rgba(255,100,100,0.14)';
     }
 
-    let displayComponent = <PolyDisplay />;
+    let displayComponent = <PolyDisplay strings={polyStrings} />;
     if (mode === 'needle') {
         displayComponent = <NeedleDisplay cents={cents} active={active} confidence={displayConfidence} />;
     } else if (mode === 'strobe') {
@@ -808,18 +808,38 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
     );
 };
 
-const PolyDisplay = (): ReactElement => {
+/**
+ * The per-string readout of the engine's polyphonic tracker. Each row is one
+ * string of the guitar set the tracker is configured with, low string first;
+ * `strings[index]` carries that string's live reading, and a string the
+ * tracker does not report (silent, muted, or beyond the configured count) is
+ * shown at rest with an em dash rather than a stale cents value.
+ */
+const PolyDisplay = ({ strings }: { strings: readonly TunerPolyStringState[] }): ReactElement => {
     return (
-        <Stack justify="center" gap={2} className="h-full px-4">
-            {GUITAR_STRINGS.map((label) => (
-                <Row key={label} gap={2}>
-                    <span className="w-6 text-right font-mono text-[10px] text-white/52">{label}</span>
-                    <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-black/28">
-                        <div className="absolute bottom-0 left-1/2 top-0 w-px bg-emerald-500/20" />
-                    </div>
-                    <span className="w-10 text-right font-mono text-[8px] text-white/36">—</span>
-                </Row>
-            ))}
+        <Stack justify="center" gap={2} className="h-full px-4" data-testid="tuner-poly-display">
+            {GUITAR_STRINGS.map((label, index) => {
+                const reading = strings[index];
+                const sounding = reading?.active ?? false;
+                const stringCents = reading?.cents ?? 0;
+                return (
+                    <Row key={label} gap={2}>
+                        <span className="w-6 text-right font-mono text-[10px] text-white/52">{label}</span>
+                        <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-black/28">
+                            <div className="absolute bottom-0 left-1/2 top-0 w-px bg-emerald-500/20" />
+                            {sounding ? (
+                                <div
+                                    className="absolute top-0 h-3 w-[3px] -translate-x-1/2 rounded-full bg-emerald-400"
+                                    style={{ left: `${50 + Math.max(-48, Math.min(48, stringCents))}%` }}
+                                />
+                            ) : null}
+                        </div>
+                        <span className="w-10 text-right font-mono text-[8px] text-white/36">
+                            {sounding ? `${stringCents >= 0 ? '+' : ''}${stringCents.toFixed(1)}c` : '—'}
+                        </span>
+                    </Row>
+                );
+            })}
             <span className="mt-1 text-center text-[8px] text-white/34">Strum all open strings</span>
         </Stack>
     );

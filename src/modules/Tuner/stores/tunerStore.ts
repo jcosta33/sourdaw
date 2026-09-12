@@ -14,12 +14,17 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-import { DEFAULT_TUNER_STATE, type DisplayMode, type TunerState } from '../models/TunerState';
+import {
+    DEFAULT_TUNER_STATE,
+    type DisplayMode,
+    type TunerPolyStringState,
+    type TunerState,
+} from '../models/TunerState';
 
 // Re-exported here so existing importers of this store path keep resolving the
 // canonical definitions from ../models/TunerState (no duplicate, no drift).
 export { DEFAULT_TUNER_STATE };
-export type { DisplayMode, TunerState };
+export type { DisplayMode, TunerPolyStringState, TunerState };
 
 type TunerInstances = Record<string, TunerState>;
 

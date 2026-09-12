@@ -447,6 +447,29 @@ describe('ClipMidiAiSection — in-flight render staleness (audit M-250)', () =>
         expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('ONNX session crashed', 'error');
     });
 
+    // Truncation refusal (#3761): renderKokoroTts refuses text the Kokoro tokenizer truncated.
+    // The panel must show that refusal as an error and must NOT announce "Vocal preview ready"
+    // for audio that only contains the text's prefix.
+    it('reports a Kokoro truncation refusal instead of announcing a vocal preview', async () => {
+        setKokoroReadyRegistry();
+        vi.mocked(renderKokoroTts).mockRejectedValue(
+            new Error(
+                'Vocal preview text too long — Kokoro input truncated: 700 tokens exceeded the 510-token limit, 190 dropped from the end. Shorten the text and render again.'
+            )
+        );
+        render(<ClipMidiAiSection clip={clipA} />);
+        launchTtsRender('far too much text');
+
+        await settleJobs(() => undefined);
+
+        // Mutation that reds this test: announce success regardless of the render outcome, or
+        // swallow the rejection — the user would see "Vocal preview ready" though the ending
+        // words were never synthesized.
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(expect.stringContaining('510-token limit'), 'error');
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+        expect(screen.queryAllByTestId('ai-render-preview')).toHaveLength(0);
+    });
+
     it("keeps the new clip's TTS spinner running when the abandoned render settles (audit M-250)", async () => {
         setKokoroReadyRegistry();
         installTtsMock();
@@ -1074,5 +1097,176 @@ describe('ClipMidiAiSection — DDSP instrument preview', () => {
         unmount();
 
         expect(signal?.aborted).toBe(true);
+    });
+});
+
+// Issue #3767 — a spoken preview must ask Kokoro to fit the clip's integrated tempo-map span
+// (secondsBetweenBeats over clip.startBeat→clip.endBeat with the transport fallback), because
+// renderKokoroTts resamples its final PCM to the requested targetDurationSec. The old flat-rate
+// line (`changes[0]?.tempo ?? 120`) ignored both the transport tempo and every marker or ramp
+// the clip crosses. The render boundary is mocked, so these tests observe the requested
+// duration, not the resampled PCM length.
+describe('ClipMidiAiSection — spoken preview duration (issue #3767)', () => {
+    const makeClip = (overrides: Partial<Clip> = {}): Clip => ({
+        id: 'tts-clip',
+        trackId: 'track-1',
+        name: 'TTS Clip',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ff0000',
+        locked: false,
+        muted: false,
+        ...overrides,
+    });
+
+    const setKokoroReady = (): void => {
+        modelRegistryStore.set({
+            ddspInstruments: [],
+            kokoroModel: {
+                id: 'kokoro-82m',
+                name: 'kokoro-82m',
+                family: 'kokoro' as const,
+                sizeBytes: 1000,
+                url: 'https://example.test/kokoro',
+                license: 'Apache-2.0' as const,
+                attribution: 'test',
+                nativeSampleRate: 24_000,
+                status: 'ready' as const,
+                downloadProgress: 1,
+                quantization: 'q8' as const,
+            },
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+    };
+
+    const makeRenderOutput = () => ({
+        audio: new Float32Array([0.25, -0.25]),
+        sampleRate: 44_100,
+        provenance: {
+            modelId: 'test-model',
+            renderQuality: 'standard' as const,
+            renderedAt: 0,
+            tier: 'browser-preview' as const,
+        },
+    });
+
+    const requestedDurations = (): Array<number | undefined> =>
+        vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.targetDurationSec);
+
+    /** Mount the panel for one clip, type preview text, and press the render button. */
+    const launchSpokenRender = (clip: Clip): void => {
+        render(<ClipMidiAiSection clip={clip} />);
+        fireEvent.change(screen.getByLabelText('TTS text'), { target: { value: 'spoken preview' } });
+        fireEvent.click(screen.getByRole('button', { name: /Render 3 Alternatives/ }));
+    };
+
+    /** Flush the three sequential mock renders inside act so their state updates are covered. */
+    const settleRenders = async (): Promise<void> => {
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        await screen.findAllByTestId('ai-render-preview');
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        midiStoreMock.state = null;
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState });
+    });
+
+    afterEach(() => {
+        vi.mocked(renderKokoroTts).mockReset();
+        modelRegistryStore.set({
+            ddspInstruments: [],
+            kokoroModel: null,
+            diffSingerVoicebanks: [],
+            vocoder: null,
+            storageUsedBytes: 0,
+        });
+    });
+
+    it('asks all three spoken alternatives to fit four seconds on an empty map at 60 BPM (issue repro)', async () => {
+        setKokoroReady();
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        vi.mocked(renderKokoroTts).mockResolvedValue(makeRenderOutput());
+
+        launchSpokenRender(makeClip());
+        await settleRenders();
+
+        // Mutation that reds this test: restore the old flat-rate line
+        // (`tempoMapStore.value?.changes[0]?.tempo ?? 120`) — the empty map then falls back to
+        // 120 and the four-beat clip is asked to fit two seconds.
+        expect(requestedDurations()).toEqual([4, 4, 4]);
+        // The duration fix must not disturb the voice and per-variant speed alternatives.
+        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.speakerId)).toEqual([
+            'af_heart',
+            'af_heart',
+            'af_heart',
+        ]);
+        expect(vi.mocked(renderKokoroTts).mock.calls.map((call) => call[0]?.speed)).toEqual([0.95, 1, 1.05]);
+    });
+
+    it('integrates a marker inside the clip and ignores the tempo before its start beat', async () => {
+        setKokoroReady();
+        tempoMapStore.set({
+            changes: [
+                { id: 'intro', beat: 0, tempo: 30, curve: 'instant' },
+                { id: 'marker', beat: 8, tempo: 120, curve: 'instant' },
+                { id: 'half', beat: 10, tempo: 60, curve: 'instant' },
+            ],
+        });
+        vi.mocked(renderKokoroTts).mockResolvedValue(makeRenderOutput());
+
+        launchSpokenRender(makeClip({ startBeat: 8, endBeat: 12 }));
+        await settleRenders();
+
+        // Beats 8–10 at 120 BPM plus beats 10–12 at 60 BPM. The 30 BPM intro before the clip's
+        // start beat must not leak in; the old line read changes[0].tempo = 30 → eight seconds.
+        expect(requestedDurations()).toEqual([3, 3, 3]);
+    });
+
+    it('integrates a linear ramp across the clip per secondsBetweenBeats semantics', async () => {
+        setKokoroReady();
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'ramp', beat: 10, tempo: 60, curve: 'linear' },
+                { id: 'target', beat: 12, tempo: 120, curve: 'instant' },
+            ],
+        });
+        vi.mocked(renderKokoroTts).mockResolvedValue(makeRenderOutput());
+
+        launchSpokenRender(makeClip({ startBeat: 8, endBeat: 12 }));
+        await settleRenders();
+
+        // One flat second at 120 BPM, then the log integral of the 120→60 ramp over beats
+        // 10–12 — the same value the DDSP sibling requests for this map (1 + 2·ln 2).
+        for (const targetDurationSec of requestedDurations()) {
+            expect(targetDurationSec).toBeCloseTo(1 + 2 * Math.LN2, 9);
+        }
+    });
+
+    it('falls back to the live transport tempo when the tempo map is empty', async () => {
+        setKokoroReady();
+        transportStore.set({ ...defaultTransportState, tempo: 90 });
+        vi.mocked(renderKokoroTts).mockResolvedValue(makeRenderOutput());
+
+        launchSpokenRender(makeClip({ endBeat: 8 }));
+        await settleRenders();
+
+        // An empty map consults the default tempo, which is the transport's current value:
+        // eight beats at 90 BPM. The old constant-120 line would have asked for four seconds.
+        for (const targetDurationSec of requestedDurations()) {
+            expect(targetDurationSec).toBeCloseTo(16 / 3, 12);
+        }
     });
 });

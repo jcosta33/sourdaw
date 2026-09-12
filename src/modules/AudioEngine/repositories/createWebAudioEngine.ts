@@ -45,10 +45,12 @@ import type {
     AudioEngineState,
     BusStrip,
     BuiltinDeviceNode,
+    ControlRoomMonitoring,
     SendNode,
     ToasterDeviceControls,
     TrackChannelStrip,
 } from '../models/AudioEngineState';
+import type { BuiltinLufsMeterReading } from '../models/BuiltinLufsMeterReader';
 
 type NoopMeterNode = {
     connect(): void;
@@ -323,6 +325,19 @@ class AudioEngineImpl implements AudioEngine {
     public masterAnalyserLeft!: AnalyserNode;
     public masterAnalyserRight!: AnalyserNode;
     /**
+     * The control-room listening insert, sitting strictly downstream of the
+     * programme: masterAnalyser (and through it the fader, the master meter and
+     * the stereo analysis tap) carries the mix itself, so a monitoring gesture
+     * changes what the musician hears and nothing an export, an offline render
+     * or a meter reads. `monitorMonoNode` folds the feed to mono by the Web
+     * Audio channel-count idiom — an explicit single-channel count downmixes
+     * stereo per the speakers interpretation, (L+R)/2, and the mono result
+     * upmixes back onto both output channels; 'max' returns it to pass-through.
+     * `monitorDimNode` is the dim attenuation.
+     */
+    private monitorMonoNode!: GainNode;
+    private monitorDimNode!: GainNode;
+    /**
      * Silent (gain 0) sink the stereo tap analysers connect through to the
      * destination. Web Audio only pulls nodes with a path to the destination,
      * so a dead-end analyser branch never processes a render quantum — routing
@@ -430,8 +445,15 @@ class AudioEngineImpl implements AudioEngine {
             this.masterAnalyser.fftSize = 256;
             this.masterAnalyser.smoothingTimeConstant = 0.8;
 
+            this.monitorMonoNode = this.context.createGain();
+            this.monitorDimNode = this.context.createGain();
+
             this.masterGainNode.connect(this.masterAnalyser);
-            this.masterAnalyser.connect(this.context.destination);
+            // The listening leg runs through the control-room insert; the
+            // programme (everything upstream of this edge) stays untouched by it.
+            this.masterAnalyser.connect(this.monitorMonoNode);
+            this.monitorMonoNode.connect(this.monitorDimNode);
+            this.monitorDimNode.connect(this.context.destination);
 
             // Genuine stereo tap: branch off masterAnalyser's pass-through output
             // (it forwards audio unchanged; only its own analysis reads are
@@ -473,6 +495,8 @@ class AudioEngineImpl implements AudioEngine {
         this.context = createNoopAudioContext();
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
+        this.monitorMonoNode = this.context.createGain();
+        this.monitorDimNode = this.context.createGain();
         this.masterMeterNode = {
             connect: () => {},
             disconnect: () => {},
@@ -1156,6 +1180,22 @@ class AudioEngineImpl implements AudioEngine {
         return this.masterGainNode.gain.value;
     }
 
+    public setControlRoomMonitoring(monitoring: ControlRoomMonitoring): void {
+        if (this.fallbackMode) {
+            return;
+        }
+        if (monitoring.monoActive) {
+            // Explicit single-channel count + speakers interpretation is the
+            // spec's (L+R)/2 fold; the mono result upmixes onto both outputs.
+            this.monitorMonoNode.channelCount = 1;
+            this.monitorMonoNode.channelCountMode = 'explicit';
+            this.monitorMonoNode.channelInterpretation = 'speakers';
+        } else {
+            this.monitorMonoNode.channelCountMode = 'max';
+        }
+        this.monitorDimNode.gain.setTargetAtTime(Math.max(0, monitoring.dimGain), this.context.currentTime, 0.01);
+    }
+
     public getState(): AudioEngineState {
         if (this.fallbackMode) {
             return {
@@ -1768,6 +1808,40 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
         return undefined;
+    }
+
+    /**
+     * The loaded builtin LUFS meter's current reading, wherever its strip sits.
+     * `null` says the device has no loaded node yet, or is not a meter.
+     */
+    public findLufsMeterReading(deviceId: string): BuiltinLufsMeterReading | null {
+        for (const [, trackNode] of this.trackNodes) {
+            const deviceNode = trackNode.strip.deviceNodes.find((dn) => dn.deviceId === deviceId);
+            if (deviceNode?.lufsMeter) {
+                return deviceNode.lufsMeter.read();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The loaded device's own graph output, wherever it sits (track or bus —
+     * bus devices live on the paired TrackNode). `null` says the device has no
+     * loaded node in the graph yet: WASM worklets load asynchronously, so a
+     * just-inserted device is legitimately absent until its load resolves.
+     *
+     * Owns the strip/device-node traversal (same contract as
+     * `findToasterControls`) so foreign modules tap a device's signal without
+     * reaching into strip internals.
+     */
+    public findDeviceOutputNode(deviceId: string): AudioNode | null {
+        for (const [, trackNode] of this.trackNodes) {
+            const deviceNode = trackNode.strip.deviceNodes.find((dn) => dn.deviceId === deviceId);
+            if (deviceNode) {
+                return deviceNode.outputNode;
+            }
+        }
+        return null;
     }
 
     public setTrackGain(trackId: string, gain: number): void {
@@ -2583,6 +2657,10 @@ class AudioEngineImpl implements AudioEngine {
         // the last block happened to leave in the buffer.
         this.masterMeterBuffer = null;
         this.masterAnalyser.disconnect();
+        // Tear down the control-room listening insert alongside the chain it
+        // sits in, so nothing is left connected into the closed context.
+        this.monitorMonoNode.disconnect();
+        this.monitorDimNode.disconnect();
         // Tear down the stereo analysis tap alongside the mono analyser it
         // branches from, so nothing is left connected into the closed context.
         this.masterStereoSplitter.disconnect();

@@ -103,10 +103,17 @@ describe('handleCompleteMidi', () => {
         });
     });
 
-    it('generates forward completion notes', async () => {
+    it('generates forward completion notes into a continuation clip', async () => {
         const existing = [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 4, velocity: 100 }];
         mocks.getNotesForClip.mockReturnValue(existing);
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 62, startBeat: 4, duration: 1, velocity: 90 }]);
+        mocks.addClip.mockReturnValue({
+            id: 'continuation-1',
+            startBeat: 8,
+            endBeat: 9,
+            name: 'Lead (continuation)',
+            type: 'midi',
+        });
 
         const result = await handleCompleteMidi.execute({
             type: 'completeMidi',
@@ -121,14 +128,26 @@ describe('handleCompleteMidi', () => {
             { allowNegativeStartBeat: false }
         );
 
-        expect(mocks.addMidiNote).toHaveBeenCalledWith('c1', 62, 4, 1, 90);
+        // Source clip 4..8 whose material phrase ends at beat 4: the
+        // continuation clip opens at the source's end (material 4 maps to
+        // timeline 8) and holds the generated note relative to its own origin.
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                startBeat: 8,
+                endBeat: 9,
+                name: 'Lead (continuation)',
+                type: 'midi',
+            })
+        );
+        expect(mocks.addMidiNote).toHaveBeenCalledWith('continuation-1', 62, 0, 1, 90);
         expect(mocks.captureTransactionScope).toHaveBeenCalledTimes(1);
         expect(mocks.transactionScope).toHaveBeenCalledTimes(1);
         expect(mocks.captureTransactionScope.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.llmGenerateNotes.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
         expect(mocks.transactionScope.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.addMidiNote.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+            mocks.addClip.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
         expect(mocks.info).not.toHaveBeenCalled();
@@ -329,21 +348,18 @@ describe('handleCompleteMidi', () => {
     });
 
     it('provides a description', () => {
-        const existing = [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        const existing = [{ id: 'existing-note', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }];
         mocks.getNotesForClip.mockReturnValue(existing);
         const desc = handleCompleteMidi.describe({
             type: 'completeMidi',
             payload: { clipId: 'c1' },
         });
         expect(desc.label).toBe('AI: complete MIDI phrase');
-        expect(desc.inverseAction).toEqual({
-            type: 'restoreMidiClipNotes',
-            payload: {
-                clipId: 'c1',
-                notes: existing,
-                expectedNotes: [],
-            },
-        });
+        expect(desc.inverseAction?.type).toBe('discardDuplicatedClip');
+        if (desc.inverseAction?.type !== 'discardDuplicatedClip') {
+            throw new Error('Expected generated clip inverse');
+        }
+        expect(desc.inverseAction.payload.clipId).toMatch(/^clip-ai-/);
     });
 
     it('describes backward completion with an exact generated-clip inverse', () => {
@@ -364,6 +380,13 @@ describe('handleCompleteMidi', () => {
         const existing = [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         mocks.getNotesForClip.mockReturnValue(existing);
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 62, startBeat: 1, duration: 1, velocity: 90 }]);
+        mocks.addClip.mockReturnValue({
+            id: 'continuation-1',
+            startBeat: 5,
+            endBeat: 6,
+            name: 'Lead (continuation)',
+            type: 'midi',
+        });
         const action = {
             type: 'completeMidi' as const,
             payload: { clipId: 'c1', direction: 'forward' as const },
@@ -374,53 +397,22 @@ describe('handleCompleteMidi', () => {
         await handleCompleteMidi.execute(action);
 
         expect(mocks.llmGenerateNotes).toHaveBeenCalledTimes(1);
-        expect(mocks.setNotesForClip).toHaveBeenCalledWith('c1', [
-            ...existing,
-            {
-                id: 'written-c1',
-                pitch: 62,
-                startBeat: 1,
-                duration: 1,
-                velocity: 90,
-                probability: 100,
-            },
-        ]);
-        expect(description.inverseAction).toEqual({
-            type: 'restoreMidiClipNotes',
-            payload: {
-                clipId: 'c1',
-                notes: existing,
-                expectedNotes: [
-                    ...existing,
-                    {
-                        id: 'written-c1',
-                        pitch: 62,
-                        startBeat: 1,
-                        duration: 1,
-                        velocity: 90,
-                        probability: 100,
-                    },
-                ],
-            },
-        });
+        // The continuation clip receives exactly the generated note on first
+        // write and the replay rewrites the same material into it.
+        const writtenNotes = [
+            { id: 'written-continuation-1', pitch: 62, startBeat: 0, duration: 1, velocity: 90, probability: 100 },
+        ];
+        expect(mocks.addMidiNote).toHaveBeenCalledWith('continuation-1', 62, 0, 1, 90);
+        expect(mocks.setNotesForClip).toHaveBeenCalledWith('continuation-1', writtenNotes);
+        expect(description.inverseAction?.type).toBe('discardDuplicatedClip');
         if (description.redoAction?.type !== 'replayGeneratedMidi') {
             throw new Error('Expected exact generated MIDI replay');
         }
         expect(description.redoAction.payload.operation).toMatchObject({
-            kind: 'replace-notes',
-            trackId: 't1',
-            expectedNotes: existing,
-            replacementNotes: [
-                ...existing,
-                {
-                    id: 'written-c1',
-                    pitch: 62,
-                    startBeat: 1,
-                    duration: 1,
-                    velocity: 90,
-                    probability: 100,
-                },
-            ],
+            kind: 'create-clip',
+            targetTrackId: 't1',
+            clip: { id: 'continuation-1', trackId: 't1', startBeat: 5, endBeat: 6 },
+            notes: writtenNotes,
         });
     });
 

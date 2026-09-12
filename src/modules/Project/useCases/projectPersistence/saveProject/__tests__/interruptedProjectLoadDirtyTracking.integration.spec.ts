@@ -103,6 +103,7 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
@@ -203,13 +204,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    isFaustInstrumentModule: vi.fn(() => false),
+    registerFaustDSP: vi.fn(),
     unloadPlugin: mockUnloadLoadedExternalPlugins,
     activateExternalPlugin: vi.fn(),
     clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
-    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,

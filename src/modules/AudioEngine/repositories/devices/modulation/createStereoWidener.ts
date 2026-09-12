@@ -33,6 +33,11 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
     const sideInvert = ctx.createGain();
     sideInvert.gain.value = -1; // -S for Right channel reconstruction
 
+    // Side Level trim, in dB on the knob, applied after the width control and
+    // before the decode matrix; 0 dB (gain 1) leaves the side path untouched.
+    const sideLevel = ctx.createGain();
+    sideLevel.gain.value = 1;
+
     input.connect(splitter);
 
     // Create Mid: L + R
@@ -47,16 +52,17 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
     // Apply width control
     midSum.connect(midGain);
 
-    // Side goes through highpass to keep bass mono, then to side gain
+    // Side goes through highpass to keep bass mono, then width, then level
     sideSum.connect(monoBassFilter);
     monoBassFilter.connect(sideGain);
+    sideGain.connect(sideLevel);
 
     // Decode Matrix: L = M + S, R = M - S
-    sideGain.connect(sideInvert);
+    sideLevel.connect(sideInvert);
 
     // Left Out: M + S
     midGain.connect(merger, 0, 0);
-    sideGain.connect(merger, 0, 0);
+    sideLevel.connect(merger, 0, 0);
 
     // Right Out: M - S
     midGain.connect(merger, 0, 1);
@@ -79,6 +85,7 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
             sideGain,
             monoBassFilter,
             sideInvert,
+            sideLevel,
         ],
         namedNodes: {
             input,
@@ -92,6 +99,7 @@ export function createStereoWidener(ctx: BaseAudioContext): OfflineDeviceNode {
             sideGain,
             monoBassFilter,
             sideInvert,
+            sideLevel,
         },
     };
 }

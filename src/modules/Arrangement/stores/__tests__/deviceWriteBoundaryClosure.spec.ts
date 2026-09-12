@@ -183,6 +183,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Automation/useCases/modulation/modulationDependencies.ts': 1,
         'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts': 1,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts': 4,
+        // Count provenance: measured 2 — the `updateDeviceParam` and
+        // `persistDeviceParam` bridges the morph flush shares with the other
+        // panel param paths. Each interpolated scalar is one ordinary
+        // device-param write through the shared rAF batcher; the morph never
+        // touches a store directly.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 4,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
@@ -335,6 +341,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and carries the same `resolveEligibleDeviceWriteTarget` ownership gate
         // as every other device bridge.
         'src/modules/Tuner/useCases/setA4Reference.ts': 2,
+        // Poly-mode selection drives the scoring engine's instrument/poly
+        // params through the same eligible-target write (#2383): two writes
+        // entering Poly, one leaving it.
+        'src/modules/Tuner/useCases/setDisplayMode.ts': 3,
     },
     'strip-add': {
         // Count provenance: measured 4 — the identifier now lives only as the

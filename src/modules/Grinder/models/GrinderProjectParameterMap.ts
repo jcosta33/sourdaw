@@ -1,8 +1,14 @@
 import {
+    derivedGrinderNeuralModelId,
+    grinderNeuralProfileFromParamValues,
+    grinderNeuralProfilesEqual,
+} from './GrinderNeuralProfileParams';
+import {
     DEFAULT_PATCH,
     GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
+    type GrinderImportedNeuralModel,
     type GrinderMic,
     type GrinderPatch,
     type GrinderPedal,
@@ -127,7 +133,8 @@ function projectPedals(
 }
 export function applyGrinderProjectParameters(
     patch: GrinderPatch,
-    parameterValues: Readonly<Record<string, unknown>>
+    parameterValues: Readonly<Record<string, unknown>>,
+    libraryEntries: readonly GrinderImportedNeuralModel[] = []
 ): GrinderPatch {
     const cabSlot = Math.round(readNumber(parameterValues, 'cabIrSlot', 0));
     const neuralSlot = Math.round(readNumber(parameterValues, 'neuralModelSlot', -1));
@@ -155,6 +162,27 @@ export function applyGrinderProjectParameters(
             value = decodeProjectValue(key, raw);
         }
         Object.assign(next, { [key]: value });
+    }
+    if (importedModel) {
+        // The record's `neuralCustom*` keys are the only carrier of an
+        // imported capture across a project reload; without this
+        // reconstruction the rebuilt patch kept `builtin` with a null profile
+        // and the neural stage silently fell back (issue #4146). A library
+        // entry with the same audible identity restores the capture's full
+        // profile and name; otherwise the patch carries the record's own
+        // profile under a stable derived id, which the panel renders as the
+        // 'Selected in this patch' card.
+        const profile = grinderNeuralProfileFromParamValues(parameterValues);
+        if (profile) {
+            const match = libraryEntries.find((entry) => grinderNeuralProfilesEqual(entry.profile, profile));
+            Object.assign(next, {
+                neuralModelSource: 'imported',
+                neuralModelProfile: match?.profile ?? profile,
+                neuralModelId: match?.id ?? derivedGrinderNeuralModelId(profile),
+                neuralModelName: match?.name ?? 'Selected in this patch',
+                neuralModelFamily: match?.family ?? DEFAULT_PATCH.neuralModelFamily,
+            });
+        }
     }
     return next;
 }

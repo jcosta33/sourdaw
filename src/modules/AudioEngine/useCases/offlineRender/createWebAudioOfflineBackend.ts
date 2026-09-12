@@ -347,6 +347,11 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // a strip the native engine carries holds one — so a producer
                 // never aims one here.
                 return null;
+            case 'set-device-bypass':
+                // A live bypass toggle addresses the engine's carried body, and
+                // this carrier builds each device's bypass from the strip's
+                // devices at creation — so a producer never aims one here.
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;

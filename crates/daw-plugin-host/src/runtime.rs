@@ -210,6 +210,10 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.take_tail_change())
     }
 
+    fn is_tail_active(&self) -> bool {
+        delegate!(self, backend => backend.is_tail_active())
+    }
+
     fn report_plugin_observations(&mut self) {
         delegate!(self, backend => backend.report_plugin_observations())
     }

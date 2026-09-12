@@ -452,8 +452,6 @@ impl GrinderEngine {
             if has_automation {
                 self.apply_automatable_frame(automation, stride, i);
             }
-            let dry = left[i];
-
             // Mono processing (guitar is typically mono until cab/effects)
             let mut signal = (left[i] + right[i]) * 0.5;
 
@@ -575,23 +573,32 @@ impl GrinderEngine {
 
             signal *= og;
 
+            // The wet path is a mono sum, but the dry paths are per channel:
+            // at a fully dry mix or clean blend each output must carry its own
+            // input, not the left channel duplicated. Identical L/R inputs
+            // reproduce the previous scalar math bit for bit.
+            let dry_left = left[i];
+            let dry_right = right[i];
+
             // Clean blend (DI blending)
-            signal = signal * (1.0 - clean) + dry * clean;
+            let blended_left = signal * (1.0 - clean) + dry_left * clean;
+            let blended_right = signal * (1.0 - clean) + dry_right * clean;
 
             // Wet/dry mix
-            signal = dry * (1.0 - mix) + signal * mix;
+            let mut out_left = dry_left * (1.0 - mix) + blended_left * mix;
+            let mut out_right = dry_right * (1.0 - mix) + blended_right * mix;
 
             // Safety limiter
             if self.limiter_enabled {
-                signal = soft_limit_sample(signal, self.limiter_threshold);
+                out_left = soft_limit_sample(out_left, self.limiter_threshold);
+                out_right = soft_limit_sample(out_right, self.limiter_threshold);
             }
 
-            // Stereo output (cab processing creates slight stereo from mic positioning)
-            left[i] = signal;
-            right[i] = signal;
+            left[i] = out_left;
+            right[i] = out_right;
 
             // Update output peak
-            let out_peak = signal.abs();
+            let out_peak = out_left.abs().max(out_right.abs());
             if out_peak > self.output_peak {
                 self.output_peak = out_peak;
             } else {
@@ -1375,6 +1382,121 @@ mod tests {
             fresh.tone_stack.process_sample(probe),
             "the tone stack must return from Capture with cleared filter state"
         );
+    }
+
+    /// The wet path sums to mono, but the dry paths must stay per channel: at
+    /// a fully dry mix or clean blend each output carries its own input, so
+    /// stereo material survives the wet/dry endpoint. Distinct L/R inputs are
+    /// load-bearing here — identical inputs cannot expose the loss.
+    ///
+    /// The engine processes in place, so the stereo input is rewritten before
+    /// every block; otherwise the previous output would become the next input.
+    fn dry_path_final_block(
+        params: &[(&str, f32)],
+        left_input: f32,
+        right_input: f32,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut engine = GrinderEngine::new(48_000.0);
+        for &(name, value) in params {
+            engine.set_param(name, value);
+        }
+
+        let total = 128;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+
+        // 100 blocks of 128 frames sits far past the 5 ms output-mix and
+        // clean-blend smoothing, so the blends sit on their targets by the
+        // asserted final block.
+        for _ in 0..100 {
+            left.fill(left_input);
+            right.fill(right_input);
+            engine.process_block(&mut left, &mut right);
+        }
+        (left, right)
+    }
+
+    #[test]
+    fn fully_dry_mix_preserves_each_channel_dry_signal() {
+        let (left, right) =
+            dry_path_final_block(&[("outputMix", 0.0), ("limiterEnabled", 0.0)], 0.0, 0.25);
+
+        for (frame, (&dry_left, &dry_right)) in left.iter().zip(right.iter()).enumerate() {
+            assert!(
+                dry_left.abs() < 1.0e-4,
+                "frame {frame}: the left dry input 0 must stay 0 at outputMix=0, got {dry_left}"
+            );
+            assert!(
+                (dry_right - 0.25).abs() < 1.0e-4,
+                "frame {frame}: the right dry input 0.25 must survive at outputMix=0, got {dry_right}"
+            );
+        }
+    }
+
+    #[test]
+    fn full_clean_blend_preserves_each_channel_dry_signal() {
+        let (left, right) =
+            dry_path_final_block(&[("cleanBlend", 1.0), ("limiterEnabled", 0.0)], 0.0, 0.25);
+
+        for (frame, (&dry_left, &dry_right)) in left.iter().zip(right.iter()).enumerate() {
+            assert!(
+                dry_left.abs() < 1.0e-4,
+                "frame {frame}: the left dry input 0 must stay 0 at cleanBlend=1, got {dry_left}"
+            );
+            assert!(
+                (dry_right - 0.25).abs() < 1.0e-4,
+                "frame {frame}: the right dry input 0.25 must survive at cleanBlend=1, got {dry_right}"
+            );
+        }
+    }
+
+    #[test]
+    fn mono_input_at_fully_dry_mix_still_reaches_both_channels() {
+        let (left, right) =
+            dry_path_final_block(&[("outputMix", 0.0), ("limiterEnabled", 0.0)], 0.25, 0.25);
+
+        for (frame, (&dry_left, &dry_right)) in left.iter().zip(right.iter()).enumerate() {
+            assert!(
+                (dry_left - 0.25).abs() < 1.0e-4 && (dry_right - 0.25).abs() < 1.0e-4,
+                "frame {frame}: a mono dry input must reach both channels, got left {dry_left}, right {dry_right}"
+            );
+        }
+    }
+
+    /// The documented full-wet endpoint is unchanged: both channels carry the
+    /// same mono amp signal, whatever the stereo spread of the input was.
+    #[test]
+    fn full_wet_output_stays_the_mono_amp_signal_on_both_channels() {
+        let mut engine = GrinderEngine::new(48_000.0); // default outputMix is 1.0
+
+        let total = 128;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+        for block in 0..8 {
+            for (n, (left_sample, right_sample)) in
+                left.iter_mut().zip(right.iter_mut()).enumerate()
+            {
+                let index = block * total + n;
+                let phase = (index as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+                *left_sample = phase.sin() * 0.3;
+                *right_sample = 0.0;
+            }
+            engine.process_block(&mut left, &mut right);
+        }
+
+        let peak = left
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+        assert!(
+            peak > 1.0e-3,
+            "the wet path must produce audio, got peak {peak}"
+        );
+        for (frame, (&wet_left, &wet_right)) in left.iter().zip(right.iter()).enumerate() {
+            assert_eq!(
+                wet_left, wet_right,
+                "frame {frame}: full wet must duplicate the mono amp signal to both channels"
+            );
+        }
     }
 
     #[test]

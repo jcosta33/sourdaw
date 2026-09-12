@@ -69,7 +69,7 @@ export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'wasm-artifacts.yml',
 ] as const;
 
-const SETUP_NODE = ['Checkout', 'Enable Corepack', 'Set up Node', 'Install dependencies'] as const;
+const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const STATIC_SUITE_STEPS = [
     'Artifact freshness',
@@ -143,7 +143,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         build: [...SETUP_NODE, 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
@@ -168,7 +168,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install dependencies',
             'Build the native addon',

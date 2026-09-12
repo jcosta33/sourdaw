@@ -78,7 +78,7 @@ use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY
 use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
-use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_ERROR};
+use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_ERROR, CLAP_PROCESS_TAIL};
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
@@ -146,6 +146,13 @@ pub struct ClapWrapper {
     /// entitled to start again from zero. Written on the audio thread only, and
     /// a plain field because that thread is the only one that touches it.
     steady_time: i64,
+    /// Whether the plugin's most recent *successful* process call returned
+    /// `CLAP_PROCESS_TAIL` — the plugin's own word that the host should now
+    /// "rely upon the plugin's tail to determine if the plugin should continue
+    /// to process". Written by the audio thread from the status each block
+    /// answers with; read by [`Self::is_tail_active`] from the control path,
+    /// the same split the process-failure latch uses.
+    tail_mode_reported: bool,
     /// Whether the plugin has returned `CLAP_PROCESS_ERROR`. Raised by the audio
     /// thread, which may not allocate or take the I/O lock, and read by the
     /// control path, which is the only thread that may report it.
@@ -865,6 +872,7 @@ impl ClapWrapper {
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
             steady_time: 0,
+            tail_mode_reported: false,
             process_refused: false,
             process_refusal_reported: false,
             audio,
@@ -902,6 +910,7 @@ impl ClapWrapper {
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
             steady_time: 0,
+            tail_mode_reported: false,
             process_refused: false,
             process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
@@ -2005,6 +2014,8 @@ impl ClapWrapper {
                     // failure costs only the output events this call was made
                     // for. Recording it is all the host can honestly do.
                     self.latch_process_refusal();
+                } else {
+                    self.observe_tail_status(status);
                 }
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
@@ -2091,7 +2102,19 @@ impl ClapWrapper {
                 return;
             }
 
-            read_output_scratch(&self.audio, outputs, n_samp);
+            self.observe_tail_status(status);
+
+            if self.audio.output_buffers.is_empty() {
+                // A successful process with no declared output bus is an
+                // input-only analyzer: it taps the signal and produces none of
+                // its own, so the dry block continues past it — the same rule
+                // the VST3 backend applies when no output bus exists. Leaving
+                // the caller's buffers alone here mutes the track, because the
+                // slot copies its zeroed scratch back over them.
+                copy_inputs_to_outputs(inputs, outputs, num_samples);
+            } else {
+                read_output_scratch(&self.audio, outputs, n_samp);
+            }
         }
     }
 
@@ -2103,6 +2126,20 @@ impl ClapWrapper {
     /// plugin a counter that ran backwards.
     fn advance_steady_time(&mut self, frames: usize) {
         self.steady_time = self.steady_time.saturating_add(frames as i64);
+    }
+
+    /// Record what a successful process status said about the plugin's tail.
+    ///
+    /// Audio thread. `CLAP_PROCESS_TAIL` is the plugin entering tail mode: the
+    /// status whose answer is "rely upon the plugin's tail to determine if the
+    /// plugin should continue to process". Every other success answers the
+    /// question one way or another — `CONTINUE`, `CONTINUE_IF_NOT_QUIET` and
+    /// `SLEEP` all describe a plugin that is not deferring to its tail — so the
+    /// observation tracks the last status, it does not latch. Only a *success*
+    /// updates it: CLAP defines the error as output the host must discard, so an
+    /// error reports nothing about the tail and the last observation stands.
+    fn observe_tail_status(&mut self, status: clap_process_status) {
+        self.tail_mode_reported = status == CLAP_PROCESS_TAIL;
     }
 
     /// Record a process failure, and wake the control path the first time.
@@ -2140,8 +2177,9 @@ impl ClapWrapper {
 ///
 /// CLAP defines every other status as a success: `CONTINUE`,
 /// `CONTINUE_IF_NOT_QUIET`, `TAIL` and `SLEEP` all describe whether the plugin
-/// still has something to add, which is a scheduling hint this host does not act
-/// on because it processes continuously. Only the error invalidates the block.
+/// still has something to add. `TAIL` is recorded as the tail-mode observation
+/// (`observe_tail_status`); this host changes nothing about its pumping for any
+/// of them because it processes continuously.
 fn process_failed(status: clap_process_status) -> bool {
     status == CLAP_PROCESS_ERROR
 }
@@ -2443,6 +2481,24 @@ impl ClapWrapper {
             return None;
         }
         Some(self.tail_samples())
+    }
+
+    /// Whether the plugin is actively draining a tail it declared.
+    ///
+    /// True only while all three hold: the plugin is activated and still in the
+    /// processing state, its most recent *successful* process call returned
+    /// `CLAP_PROCESS_TAIL` — CLAP's "rely upon the plugin's tail to determine
+    /// if the plugin should continue to process" — and the tail it reports now
+    /// is non-zero. A plugin that answers `CONTINUE`, `CONTINUE_IF_NOT_QUIET`
+    /// or `SLEEP` has said the tail question is settled; a tail decayed to zero
+    /// is done draining; and a plugin that left the processing state has no
+    /// tail at all. Main/control thread only, like the other readers of what
+    /// the audio thread recorded.
+    pub fn is_tail_active(&self) -> bool {
+        self.activated
+            && self.processing.is_processing()
+            && self.tail_mode_reported
+            && self.tail_samples() > 0
     }
 
     /// Install the wake fired when this plugin flags a runtime latency change.
@@ -2898,6 +2954,10 @@ impl HostedPluginRuntime for ClapWrapper {
         ClapWrapper::tail_samples(self)
     }
 
+    fn is_tail_active(&self) -> bool {
+        ClapWrapper::is_tail_active(self)
+    }
+
     fn take_tail_change(&mut self) -> Option<u32> {
         ClapWrapper::take_tail_change(self)
     }
@@ -3117,6 +3177,7 @@ mod tests {
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
             steady_time: 0,
+            tail_mode_reported: false,
             process_refused: false,
             process_refusal_reported: false,
             audio,
@@ -4262,6 +4323,116 @@ mod tests {
             (left, right),
             (0.25, 0.5),
             "a note effect's slot passes audio through instead of muting the track"
+        );
+    }
+
+    // ── Input-only analyzers pass the dry block through ────────────────────
+    //
+    // A plugin with audio inputs and zero audio outputs — a spectrum analyzer,
+    // a loudness meter — is not the portless note effect: it has an input port
+    // to be fed every block, and its slot must still carry the dry signal.
+    // `HostedPluginSlot` hands the wrapper its zeroed scratch and copies
+    // whatever the wrapper leaves there back over the track, so a wrapper that
+    // leaves the caller's buffers alone mutes the input.
+
+    /// What the signal-inspecting stub saw, shared across the analyzer and
+    /// generator tests and serialised by `BUFFER_TEST_LOCK` like the other
+    /// capture statics.
+    static INSPECTED_SAW: std::sync::Mutex<Option<(f32, f32)>> = std::sync::Mutex::new(None);
+    static INSPECTED_PROCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    /// A plugin that inspects its input port's first frame and writes no audio
+    /// of its own, answering CONTINUE like a healthy plugin. The declared bus
+    /// layout makes it an input-only analyzer (`[2]` in, nothing out) or a
+    /// zero-input generator (nothing in, `[2]` out).
+    unsafe extern "C" fn stub_process_signal_inspecting(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> i32 {
+        INSPECTED_PROCESS_CALLS.fetch_add(1, Ordering::Relaxed);
+        *CAPTURED_BUFFERS.lock().unwrap() = Some(CapturedBuffers {
+            input_count: (*process).audio_inputs_count,
+            output_count: (*process).audio_outputs_count,
+            ..CapturedBuffers::default()
+        });
+        if (*process).audio_inputs_count > 0 {
+            let buffer = &*(*process).audio_inputs;
+            if buffer.channel_count >= 2 {
+                let left = *(*(buffer.data32));
+                let right = *(*(buffer.data32.add(1)));
+                *INSPECTED_SAW.lock().unwrap() = Some((left, right));
+            }
+        }
+        CLAP_PROCESS_CONTINUE
+    }
+
+    fn signal_inspecting_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_signal_inspecting);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    #[test]
+    fn an_input_only_analyzer_sees_the_block_on_its_input_port_and_the_dry_audio_survives() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        *INSPECTED_SAW.lock().unwrap() = None;
+        INSPECTED_PROCESS_CALLS.store(0, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[2], &[]).expect("analyzer layout builds");
+        let mut wrapper = stub_wrapper_over(layout, signal_inspecting_plugin_ptr());
+
+        // The output arrays start zeroed, exactly like the slot's out_l/out_r
+        // scratch that gets copied back over the engine's channels.
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (1, 0),
+            "the analyzer has its declared input port handed to it — not the portless note-effect shape"
+        );
+        assert_eq!(INSPECTED_PROCESS_CALLS.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            INSPECTED_SAW.lock().unwrap().unwrap(),
+            (0.25, 0.5),
+            "the analyzer receives the dry signal on its input port every process call"
+        );
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "the dry audio survives the slot instead of being muted by its zeroed scratch"
+        );
+    }
+
+    #[test]
+    fn a_zero_input_generator_yields_only_its_own_output_never_the_dry_input() {
+        let _guard = BUFFER_TEST_LOCK.lock().unwrap();
+        *INSPECTED_SAW.lock().unwrap() = None;
+        INSPECTED_PROCESS_CALLS.store(0, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[], &[2]).expect("generator layout builds");
+        let mut wrapper = stub_wrapper_over(layout, signal_inspecting_plugin_ptr());
+
+        let (left, right) = process_stereo_block(&mut wrapper, 0.25, 0.5);
+
+        let captured = captured_buffers();
+        assert_eq!(
+            (captured.input_count, captured.output_count),
+            (0, 1),
+            "the generator is handed its output port and no input buffer"
+        );
+        assert_eq!(INSPECTED_PROCESS_CALLS.load(Ordering::Relaxed), 1);
+        assert!(
+            INSPECTED_SAW.lock().unwrap().is_none(),
+            "no input port exists to inspect"
+        );
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a generator that writes nothing stays silent — the fed input must not pass through it"
         );
     }
 
@@ -6083,6 +6254,170 @@ mod tests {
             wrapper.take_tail_change(),
             None,
             "one flagged change is answered once"
+        );
+    }
+
+    /// The status stub answering `clap.tail` too, so a test can drive the
+    /// process result and the tail declaration independently — the two answers
+    /// [`ClapWrapper::is_tail_active`] reads together.
+    fn tail_status_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension_with_tail);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_with_status);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    /// The tests below stage both the process status and the tail, so both
+    /// locks are taken — STATUS first, the order the process-status tests
+    /// already use, so no two tests ever take the same two locks in opposite
+    /// orders.
+    fn lock_status_and_tail() -> (
+        std::sync::MutexGuard<'static, ()>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let status = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tail = TAIL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        (status, tail)
+    }
+
+    /// The plugin answers `CLAP_PROCESS_TAIL` and still declares frames to
+    /// drain: that is the state the spec tells the host to keep processing, and
+    /// it clears the moment the plugin stops claiming tail mode — `CONTINUE` is
+    /// its word that the tail question is settled, whatever the declared tail
+    /// says.
+    #[test]
+    fn a_tail_status_surfaces_while_it_lasts_and_clears_when_the_plugin_retracts_it() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_TAIL, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), tail_status_plugin_ptr());
+        assert!(
+            !HostedPluginRuntime::is_tail_active(&wrapper),
+            "nothing has been processed yet, so nothing claims a tail"
+        );
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(HostedPluginRuntime::is_tail_active(&wrapper));
+        assert_eq!(wrapper.tail_samples(), 4_800);
+
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_CONTINUE, Ordering::Relaxed);
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(
+            !HostedPluginRuntime::is_tail_active(&wrapper),
+            "a status that is not CLAP_PROCESS_TAIL ends tail mode"
+        );
+    }
+
+    /// `CONTINUE`, `CONTINUE_IF_NOT_QUIET` and `SLEEP` each answer the tail
+    /// question with "nothing to defer to", whatever the extension declares.
+    #[test]
+    fn the_other_success_statuses_never_surface_a_tail() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        for status in [
+            CLAP_PROCESS_CONTINUE,
+            CLAP_PROCESS_CONTINUE_IF_NOT_QUIET,
+            CLAP_PROCESS_SLEEP,
+        ] {
+            STUB_PROCESS_STATUS.store(status, Ordering::Relaxed);
+            let mut wrapper = stub_wrapper_over(stereo_layout(), tail_status_plugin_ptr());
+
+            process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+            assert!(
+                !HostedPluginRuntime::is_tail_active(&wrapper),
+                "status {status} is not a tail claim and must not surface one"
+            );
+        }
+    }
+
+    /// The spec keeps the host processing "while the tail is non-zero": a
+    /// `CLAP_PROCESS_TAIL` answer over a declaration that has decayed to zero
+    /// is a tail that is done, not one to schedule.
+    #[test]
+    fn a_tail_status_over_a_zero_declaration_is_not_active() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(0, Ordering::Relaxed);
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_TAIL, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), tail_status_plugin_ptr());
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(
+            !HostedPluginRuntime::is_tail_active(&wrapper),
+            "the plugin claims tail mode but declares nothing left to drain"
+        );
+    }
+
+    /// A plugin that left the processing state has no tail: the gate stop is
+    /// what `deactivate` waits for, and the observation reads it rather than
+    /// trusting a status from a block that will never come.
+    #[test]
+    fn leaving_the_processing_state_clears_the_tail_activity() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_TAIL, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), tail_status_plugin_ptr());
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(HostedPluginRuntime::is_tail_active(&wrapper));
+
+        // The stop the control path requests is performed by the next block's
+        // state sync — which is therefore also the last process call.
+        wrapper.processing.request_stop();
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(
+            !HostedPluginRuntime::is_tail_active(&wrapper),
+            "a plugin out of the processing state is not draining anything"
+        );
+    }
+
+    /// CLAP defines the error as output the host must discard — it is a failure,
+    /// not a word about the tail — so the last successful observation stands
+    /// until a successful status revises it.
+    #[test]
+    fn a_failed_block_leaves_the_last_tail_observation_standing() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_TAIL, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), tail_status_plugin_ptr());
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(HostedPluginRuntime::is_tail_active(&wrapper));
+
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(
+            HostedPluginRuntime::is_tail_active(&wrapper),
+            "an error block reports nothing about the tail; the last \
+             successful status still governs"
+        );
+    }
+
+    /// The portless path reads the status for its output events; a note
+    /// processor that reports a tail there is surfaced the same way.
+    #[test]
+    fn a_portless_plugin_that_reports_a_tail_is_surfaced_too() {
+        let (_status, _tail) = lock_status_and_tail();
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_TAIL, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(AudioBusLayout::portless(), tail_status_plugin_ptr());
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert!(
+            HostedPluginRuntime::is_tail_active(&wrapper),
+            "the portless process path reads the status too"
         );
     }
 }

@@ -6,3 +6,5 @@ export type { WorkspaceState, EditingTool } from './workspaceStore';
 export { toolSwapStore } from './toolSwapStore';
 
 export { alphaNoticeStore } from './alphaNoticeStore';
+
+export { engineFallbackNoticeStore } from './engineFallbackNoticeStore';

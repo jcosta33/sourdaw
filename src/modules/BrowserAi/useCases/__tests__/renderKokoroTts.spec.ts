@@ -71,6 +71,10 @@ import { supersedeBrowserRender } from '../supersedeBrowserRender';
 
 const logger = { info: vi.fn() };
 
+// The tokenizer's exact truncation warning (kokoroTokenizer.ts), pinned verbatim because
+// the render refusal is keyed on that warning reaching the caller.
+const TRUNCATION_WARNING = 'Kokoro input truncated: 700 tokens exceeded the 510-token limit, 190 dropped from the end';
+
 function voice_embedding_buffer(): ArrayBuffer {
     return new ArrayBuffer(522_240);
 }
@@ -168,6 +172,69 @@ describe('renderKokoroTts', () => {
         expect(loadOnnxSession).not.toHaveBeenCalled();
         expect(runKokoroTts).not.toHaveBeenCalled();
         expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    // Regression (#3761): the render used to destructure only inputIds/tokenCount, discarding
+    // the tokenizer's truncation warning — it rendered and cached just the text's prefix and
+    // the inspector announced success. The refusal is keyed on that warning: dropping it again
+    // lets this render reach inference and reds the test.
+    it('refuses to render text the tokenizer truncated, before queueing or inference', async () => {
+        textToKokoroInputIds.mockReturnValue({
+            inputIds: new BigInt64Array(512),
+            tokenCount: 510,
+            warnings: [TRUNCATION_WARNING],
+        });
+
+        await expect(callRender()).rejects.toThrow(TRUNCATION_WARNING);
+        await expect(callRender()).rejects.toThrow(/Shorten the text and render again/);
+
+        expect(renderQueueStore.value?.entries).toEqual([]);
+        expect(readRenderCache).not.toHaveBeenCalled();
+        expect(readVerifiedModel).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(runKokoroTts).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
+    });
+
+    // The refusal is a function of the text alone, so a render cached by a version that still
+    // truncated must never be served either.
+    it('refuses truncated text even when audio for the same input is already cached', async () => {
+        textToKokoroInputIds.mockReturnValue({
+            inputIds: new BigInt64Array(512),
+            tokenCount: 510,
+            warnings: [TRUNCATION_WARNING],
+        });
+        readRenderCache.mockResolvedValue(new Float32Array([0.1, 0.2, 0.3]));
+
+        await expect(callRender()).rejects.toThrow(/510-token limit/);
+        expect(readRenderCache).not.toHaveBeenCalled();
+    });
+
+    it('still renders when the tokenizer only warns about dropped unknown phonemes', async () => {
+        textToKokoroInputIds.mockReturnValue({
+            inputIds: [1n, 2n, 3n],
+            tokenCount: 3,
+            warnings: ['Kokoro tokenizer dropped 1 phoneme(s) absent from the vocabulary: ZZQ'],
+        });
+
+        await expect(callRender()).resolves.toMatchObject({ sampleRate: 44100 });
+        expect(runKokoroTts).toHaveBeenCalledOnce();
+    });
+
+    // End-to-end guard against the warning text drifting away from the refusal's matcher:
+    // real tokenizer, real phonemizer, no inference.
+    it('refuses real over-limit text through the actual tokenizer', async () => {
+        const actual = await vi.importActual<typeof import('../../services/kokoroTokenizer')>(
+            '../../services/kokoroTokenizer'
+        );
+        textToKokoroInputIds.mockImplementation(actual.textToKokoroInputIds);
+        // Repeated short words overflow the 510-phoneme-token budget and push the sentinel
+        // word past it — the exact silent ending-word loss the refusal must prevent.
+        const longText = `${Array.from({ length: 400 }, () => 'wonderful').join(' ')} sentinel`;
+
+        await expect(callRender({ text: longText })).rejects.toThrow(/510-token limit/);
+        expect(runKokoroTts).not.toHaveBeenCalled();
+        expect(writeRenderCache).not.toHaveBeenCalled();
     });
 
     it('does not resume preparation after its queued request is cancelled', async () => {

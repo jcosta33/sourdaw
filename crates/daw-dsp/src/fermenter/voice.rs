@@ -595,6 +595,14 @@ impl Voice {
             1.0
         };
 
+        // Sampler pitch reference, once per block: the note's trigger ratio and
+        // the frequency that ratio answers to. The per-sample rate is then
+        // `note_ratio * freq / note_freq` — exactly the trigger ratio when the
+        // modulated pitch equals the note's base frequency, scaled by every
+        // pitch control and modulation on top of it.
+        let sampler_note_ratio = 2.0f32.powf((self.note as f32 - 60.0) / 12.0);
+        let sampler_note_freq = note_frequency(self.note);
+
         // ── Per-sample inner loop ───────────────────────────────────────
 
         for i in 0..block_size {
@@ -696,12 +704,15 @@ impl Voice {
             // position. Restoring a "balance" from that divergence would turn a
             // bit-crusher into a random panner.
             let (mut osc_l, mut osc_r, osc_is_stereo) = if self.engine == 3 {
-                // Karplus-Strong: one string, one signal.
-                let string_freq = self.current_freq;
+                // Karplus-Strong: one string, one signal. The string follows
+                // the fully modulated `freq`, which is `current_freq` — the
+                // glide ramp, unchanged — multiplied by the coarse/fine
+                // offsets and the pitch modulation; consuming it here is how
+                // those controls reach the string at all.
                 let s = self
                     .ks_engine
                     .as_mut()
-                    .map(|ks| ks.tick(string_freq, p.sample_rate))
+                    .map(|ks| ks.tick(freq, p.sample_rate))
                     .unwrap_or(0.0);
                 (s, s, false)
             } else if self.engine == 4 {
@@ -723,11 +734,18 @@ impl Voice {
                     .unwrap_or(0.0);
                 (s, s, false)
             } else if self.engine == 6 {
-                // Sampler: `SamplerEngine::tick` returns one f32.
+                // Sampler: one signal, played at a rate that follows the fully
+                // modulated pitch. The note-on trigger only seeds position and
+                // rate; coarse/fine, MPE bend, glide and the rest of the pitch
+                // modulation arrive here, per sample, so a held note bends
+                // like every other engine.
                 let s = self
                     .sampler
                     .as_mut()
-                    .map(|sp| sp.tick(p.sample_rate))
+                    .map(|sp| {
+                        sp.set_rate(sampler_note_ratio * freq / sampler_note_freq);
+                        sp.tick(p.sample_rate)
+                    })
                     .unwrap_or(0.0);
                 (s, s, false)
             } else if has_unison {
@@ -941,7 +959,147 @@ impl Voice {
 
 #[cfg(test)]
 mod tests {
-    use super::{note_frequency, Voice};
+    use super::{note_frequency, FilterMode, ModMatrix, Voice, VoiceParams, Wavetable};
+
+    /// The sampler's source buffer is one second of 440 Hz sampled at 44.1 kHz,
+    /// so tests render at that rate and read pitch directly off the playback.
+    const SAMPLE_RATE: f32 = 44_100.0;
+    const BLOCK: usize = 128;
+    /// Blocks discarded before a measurement window: past the amp attack and
+    /// the Karplus-Strong pluck noise, but leaving the sampler's decaying
+    /// source buffer most of its second.
+    const WARMUP_BLOCKS: usize = 20;
+    /// Blocks in a measurement window — 0.19 s, dozens of periods even at
+    /// 880 Hz, so the autocorrelation estimate is far tighter than the bands.
+    const MEASURE_BLOCKS: usize = 60;
+    /// Warmup and window for the post-bend segment: shorter than the neutral
+    /// one so the sampler variant measures before the doubled rate exhausts
+    /// its one-second source buffer.
+    const BEND_MEASURE_PAD: usize = 20;
+    const BEND_MEASURE_BLOCKS: usize = 40;
+
+    /// A voice mid-note on `engine`, envelopes held at sustain, configured the
+    /// way `Layer::note_on_with_channel` does it: engine set, then note-on,
+    /// then the KS excitation the string engine needs.
+    fn sounding_voice(engine: u8, note: u8) -> Voice {
+        let mut voice = Voice::new(SAMPLE_RATE);
+        voice.set_envelopes(0.001, 5.0, 1.0, 0.3, 0.001, 5.0, 0.0, 0.3);
+        voice.note_on(note, 0, 0.8, note_frequency(note), SAMPLE_RATE);
+        voice.set_engine(engine, SAMPLE_RATE);
+        if engine == 3 {
+            voice.set_ks_damping(0.0);
+            voice.excite_ks(SAMPLE_RATE, 0.9);
+        }
+        voice
+    }
+
+    /// Render `blocks` blocks of a sounding voice at the given coarse/fine
+    /// offsets and return the left channel.
+    fn render_left(
+        voice: &mut Voice,
+        tables: &[Wavetable],
+        blocks: usize,
+        coarse: f32,
+        fine: f32,
+    ) -> Vec<f32> {
+        let mod_matrix = ModMatrix::new();
+        let params = VoiceParams {
+            tables,
+            base_cutoff: 18_000.0,
+            resonance: 0.5,
+            filter_mode: FilterMode::Lowpass,
+            filter_drive: 0.0,
+            filter_keytrack: 0.0,
+            lfo_rate: 0.0,
+            lfo_shape: 0,
+            lfo_filter_amount: 0.0,
+            mod_matrix: &mod_matrix,
+            sample_rate: SAMPLE_RATE,
+            osc_level: 0.8,
+            osc_coarse: coarse,
+            osc_fine: fine,
+            filter_model: 0,
+            mseg_to_filter: 0.0,
+            seq_rate: 4.0,
+            seq_to_pitch: 0.0,
+            per_voice_drive: 0.0,
+            warp_mode: 0,
+            warp_amount: 0.0,
+            audio_mod_rate: 0.0,
+            audio_mod_depth: 0.0,
+            audio_mod_target: 0,
+            chaos_amount: 0.0,
+            chaos_speed: 1.0,
+        };
+        let mut left = vec![0.0f32; BLOCK];
+        let mut right = vec![0.0f32; BLOCK];
+        let mut out = Vec::with_capacity(blocks * BLOCK);
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            voice.render(&mut left, &mut right, &params);
+            out.extend_from_slice(&left);
+        }
+        out
+    }
+
+    /// Normalized-autocorrelation pitch estimate, the same probe
+    /// `tests/fermenter_karplus_glide.rs` uses: the lag maximizing correlation
+    /// inside a ±25% window around `expected`.
+    fn estimated_frequency(samples: &[f32], expected: f32) -> f32 {
+        let min_lag = (SAMPLE_RATE / (expected * 1.25)) as usize;
+        let max_lag = (SAMPLE_RATE / (expected * 0.8)) as usize;
+        let mut best_lag = min_lag;
+        let mut best_correlation = f32::NEG_INFINITY;
+        for lag in min_lag..=max_lag {
+            let mut product_sum = 0.0;
+            let mut leading_energy = 0.0;
+            let mut trailing_energy = 0.0;
+            for index in 0..samples.len() - lag {
+                let leading = samples[index];
+                let trailing = samples[index + lag];
+                product_sum += leading * trailing;
+                leading_energy += leading * leading;
+                trailing_energy += trailing * trailing;
+            }
+            let normalization = (leading_energy * trailing_energy).sqrt();
+            if normalization <= f32::EPSILON {
+                continue;
+            }
+            let correlation = product_sum / normalization;
+            if correlation > best_correlation {
+                best_correlation = correlation;
+                best_lag = lag;
+            }
+        }
+        SAMPLE_RATE / best_lag as f32
+    }
+
+    /// Render a fresh voice for `blocks`, then estimate its pitch over the
+    /// post-warmup window, searching around `expected` hertz.
+    fn measured_pitch(
+        engine: u8,
+        note: u8,
+        tables: &[Wavetable],
+        blocks: usize,
+        coarse: f32,
+        fine: f32,
+        expected: f32,
+    ) -> f32 {
+        let mut voice = sounding_voice(engine, note);
+        let rendered = render_left(&mut voice, tables, WARMUP_BLOCKS + blocks, coarse, fine);
+        estimated_frequency(&rendered[WARMUP_BLOCKS * BLOCK..], expected)
+    }
+
+    fn assert_ratio(measured: f32, neutral: f32, expected: f64, tolerance: f64, context: &str) {
+        let ratio = measured / neutral;
+        let octaves = ((ratio as f64) / expected).log2().abs();
+        assert!(
+            octaves < tolerance,
+            "{context}: measured {measured:.2} Hz against neutral {neutral:.2} Hz is a \
+             {ratio:.4}x ratio, expected {expected:.4}x (off by {octaves:.4} octaves)"
+        );
+    }
 
     #[test]
     fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
@@ -972,5 +1130,134 @@ mod tests {
         assert_eq!(voice.expr_bend_semitones, -96.0);
         assert_eq!(voice.expr_pressure, 0.0);
         assert_eq!(voice.expr_slide, -1.0);
+    }
+
+    // ── Pitch controls must reach every engine (#3712) ─────────────────────
+    //
+    // String (3) read `current_freq` and Sampler (6) a rate frozen at note-on,
+    // so Coarse/Fine and pitch modulation rendered bit-identically at any
+    // setting on those two engines. Every assertion here measures the rendered
+    // frequency, so a pitch control that fails to reach the engine fails the
+    // band, not a state read.
+
+    /// The engine is the sounding note, so the neutral pitch a ratio is taken
+    /// against is the note the voice was started on — at neutral offsets the
+    /// string and the sampler's 440 Hz source both measure their base pitch.
+    #[test]
+    fn string_engine_reaches_the_computed_pitch_coarse_and_fine() {
+        let tables: [Wavetable; 0] = [];
+        let neutral = measured_pitch(3, 69, &tables, MEASURE_BLOCKS, 0.0, 0.0, 440.0);
+
+        let up_an_octave = measured_pitch(3, 69, &tables, MEASURE_BLOCKS, 12.0, 0.0, 880.0);
+        assert_ratio(up_an_octave, neutral, 2.0, 0.02, "String Coarse +12");
+
+        let up_a_semitone = measured_pitch(3, 69, &tables, MEASURE_BLOCKS, 0.0, 100.0, 466.16);
+        assert_ratio(up_a_semitone, neutral, 1.059_463, 0.015, "String Fine +100");
+    }
+
+    #[test]
+    fn string_engine_follows_a_bend_on_a_held_note() {
+        let tables: [Wavetable; 0] = [];
+        let mut voice = sounding_voice(3, 69);
+
+        let before = {
+            let rendered = render_left(
+                &mut voice,
+                &tables,
+                WARMUP_BLOCKS + MEASURE_BLOCKS,
+                0.0,
+                0.0,
+            );
+            estimated_frequency(&rendered[WARMUP_BLOCKS * BLOCK..], 440.0)
+        };
+
+        // The note stays held; only the member-channel bend moves. The bend is
+        // a fifth, not an octave: an octave's new period is an integer
+        // multiple of the old one, and an autocorrelation search can mistake
+        // the unbent signal's half-period lobe for the bent pitch. No integer
+        // multiple exists at +7 semitones.
+        voice.set_expression(7.0, 0.0, 0.0);
+        let after = {
+            let rendered = render_left(
+                &mut voice,
+                &tables,
+                BEND_MEASURE_PAD + BEND_MEASURE_BLOCKS,
+                0.0,
+                0.0,
+            );
+            estimated_frequency(&rendered[BEND_MEASURE_PAD * BLOCK..], 659.26)
+        };
+
+        assert_ratio(after, before, 1.498_307, 0.02, "String held-note bend +7");
+    }
+
+    #[test]
+    fn sampler_engine_reaches_the_computed_pitch_coarse_and_fine() {
+        // Note 60 is the sampler's unity trigger ratio, so at neutral offsets
+        // its 440 Hz source plays at exactly 440 Hz.
+        let tables: [Wavetable; 0] = [];
+        let neutral = measured_pitch(6, 60, &tables, MEASURE_BLOCKS, 0.0, 0.0, 440.0);
+
+        let up_an_octave = measured_pitch(6, 60, &tables, MEASURE_BLOCKS, 12.0, 0.0, 880.0);
+        assert_ratio(up_an_octave, neutral, 2.0, 0.02, "Sampler Coarse +12");
+
+        let up_a_semitone = measured_pitch(6, 60, &tables, MEASURE_BLOCKS, 0.0, 100.0, 466.16);
+        assert_ratio(
+            up_a_semitone,
+            neutral,
+            1.059_463,
+            0.015,
+            "Sampler Fine +100",
+        );
+    }
+
+    #[test]
+    fn sampler_engine_follows_a_bend_on_a_held_note() {
+        let tables: [Wavetable; 0] = [];
+        let mut voice = sounding_voice(6, 60);
+
+        let before = {
+            let rendered = render_left(
+                &mut voice,
+                &tables,
+                WARMUP_BLOCKS + MEASURE_BLOCKS,
+                0.0,
+                0.0,
+            );
+            estimated_frequency(&rendered[WARMUP_BLOCKS * BLOCK..], 440.0)
+        };
+
+        voice.set_expression(7.0, 0.0, 0.0);
+        let after = {
+            let rendered = render_left(
+                &mut voice,
+                &tables,
+                BEND_MEASURE_PAD + BEND_MEASURE_BLOCKS,
+                0.0,
+                0.0,
+            );
+            estimated_frequency(&rendered[BEND_MEASURE_PAD * BLOCK..], 659.26)
+        };
+
+        assert_ratio(after, before, 1.498_307, 0.02, "Sampler held-note bend +7");
+    }
+
+    /// Engines 0 and 1 always consumed the computed pitch; the fix must not
+    /// have moved them. Coarse +12 stays an octave on both.
+    #[test]
+    fn wavetable_and_polyblep_engines_keep_responding_to_coarse() {
+        let tables = [
+            Wavetable::sine(),
+            Wavetable::saw(),
+            Wavetable::square(),
+            Wavetable::triangle(),
+        ];
+
+        for engine in [0_u8, 1] {
+            let neutral = measured_pitch(engine, 69, &tables, MEASURE_BLOCKS, 0.0, 0.0, 440.0);
+            let octave = measured_pitch(engine, 69, &tables, MEASURE_BLOCKS, 12.0, 0.0, 880.0);
+            let label = format!("Coarse +12 on engine {engine}");
+            assert_ratio(octave, neutral, 2.0, 0.02, &label);
+        }
     }
 }

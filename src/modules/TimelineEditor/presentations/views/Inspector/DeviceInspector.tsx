@@ -13,6 +13,7 @@ import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 
 import './layouts/BuiltinSynthLayout';
+import './layouts/BuiltinLufsMeterLayout';
 import './layouts/FaustInstrumentLayout';
 import './layouts/HammondB3Layout';
 import './layouts/LufsMeterLayout';

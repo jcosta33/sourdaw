@@ -92,6 +92,26 @@ export function loadBacteriaPatch(deviceId: string, patch: BacteriaPatch): void 
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch } });
 }
 
+/**
+ * Store the flattened values one morph corner holds, keeping the corner's id
+ * and name. Out-of-range corner indices are a no-op, mirroring the band
+ * setter's bounds guard.
+ */
+export function setBacteriaSnapshotValues(
+    deviceId: string,
+    cornerIndex: number,
+    paramValues: Record<string, number>
+): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    const snapshots = [...state.patch.snapshots];
+    if (cornerIndex < 0 || cornerIndex >= snapshots.length) {
+        return;
+    }
+    snapshots[cornerIndex] = { ...snapshots[cornerIndex]!, paramValues: { ...paramValues } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, snapshots } } });
+}
+
 export function updateBacteriaMeters(
     deviceId: string,
     inputDb: number,

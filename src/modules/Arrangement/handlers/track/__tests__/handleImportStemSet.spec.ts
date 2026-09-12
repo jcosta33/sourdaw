@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
@@ -87,8 +88,9 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     }),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    activateExternalPlugin: mocks.activateExternalPlugin,
+    isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),
+    activateExternalPlugin: mocks.activateExternalPlugin,
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: () => [],

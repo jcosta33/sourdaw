@@ -41,7 +41,9 @@ import {
     stepRecordNoteOn,
     stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -80,6 +82,21 @@ function buildNoteOwnershipMaps(
     return { noteToClip, allNotesMap };
 }
 
+/**
+ * Velocity for a created note when the preferences store holds no value yet.
+ * Mirrors `defaultPreferences.defaultVelocity`; the store normally supplies
+ * the user's Default Velocity preference.
+ */
+const FALLBACK_NOTE_VELOCITY = 100;
+
+/**
+ * Default Velocity preference for every note created without an explicit
+ * velocity — step entry, chord stamp, paint, click stamp, and drag draw.
+ * Read at gesture time so a preference edit reaches the next created note
+ * without re-mounting the editor.
+ */
+const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
+
 function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -87,6 +104,67 @@ function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     }
     const track = tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
     return track ? track.id : defaultTrackId;
+}
+
+/** The arrangement placement fields the playhead conversion needs from a clip. */
+type ClipPlacement = {
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats: number;
+    loopEnabled: boolean;
+    configuredLoopLengthBeats?: number;
+};
+
+/**
+ * Read a clip's arrangement placement from the arrangement store. Clips opened
+ * alongside the primary one may live on any track, so every track is searched.
+ * Placement fields absent from the store fall back to an unplaced clip at the
+ * origin with no known end — those clips keep splitting at raw playhead beats,
+ * exactly as clips placed at beat zero always have.
+ */
+function resolveClipPlacement(clipId: string): ClipPlacement | undefined {
+    for (const track of trackStore.value?.tracks ?? []) {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (clip) {
+            return {
+                startBeat: clip.startBeat ?? 0,
+                endBeat: clip.endBeat ?? Number.POSITIVE_INFINITY,
+                midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                loopEnabled: clip.loopEnabled ?? false,
+                configuredLoopLengthBeats: clip.loopLength,
+            };
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Convert an arrangement playhead beat into the clip-relative beat the MIDI
+ * note transforms expect — MIDI note starts are stored clip-relative, not as
+ * arrangement beats. Scheduling projects a stored note into the arrangement as
+ * `iterationStartBeat + (startBeat - midiOffsetBeats)` with
+ * `iterationStartBeat = clip.startBeat + iteration * loopLengthBeats`
+ * (`projectClipMidiEvents`); this is that projection's inverse: the playhead's
+ * offset into the loop iteration it falls in, restored to media coordinates by
+ * adding the clip's MIDI offset.
+ *
+ * Returns `undefined` when the playhead sits outside the clip's visible span —
+ * a cursor that is not over the clip must not split anything.
+ */
+function arrangementPlayheadToClipBeat(playheadBeat: number, placement: ClipPlacement): number | undefined {
+    if (playheadBeat < placement.startBeat || playheadBeat >= placement.endBeat) {
+        return undefined;
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: placement.endBeat - placement.startBeat,
+        configuredLoopLengthBeats: placement.configuredLoopLengthBeats,
+        loopEnabled: placement.loopEnabled,
+    });
+    const intoClip =
+        placement.loopEnabled && loopLengthBeats > 0 && Number.isFinite(loopLengthBeats)
+            ? (playheadBeat - placement.startBeat) % loopLengthBeats
+            : playheadBeat - placement.startBeat;
+    return intoClip + placement.midiOffsetBeats;
 }
 
 /**
@@ -542,7 +620,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
                     if (stepInput) {
-                        const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, stepBeat, gridSnap, getDefaultNoteVelocity());
                         pushUndoEntry(
                             'Add MIDI note',
                             () => removeMidiNote(targetClipId, note.id),
@@ -552,7 +630,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         setSelectedNoteIds(new Set());
                     } else if (chordMode) {
                         const beat = snap(x / beatWidth);
-                        const created = stampChord(targetClipId, pitch, beat, gridSnap, 100, chordType);
+                        const created = stampChord(
+                            targetClipId,
+                            pitch,
+                            beat,
+                            gridSnap,
+                            getDefaultNoteVelocity(),
+                            chordType
+                        );
                         if (created.length > 0) {
                             const createdIds = created.map((node) => node.id);
                             pushUndoEntry(
@@ -564,7 +649,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                     } else if (paintMode) {
                         const beat = snap(x / beatWidth);
-                        const note = addMidiNote(targetClipId, pitch, beat, gridSnap, 100);
+                        const note = addMidiNote(targetClipId, pitch, beat, gridSnap, getDefaultNoteVelocity());
                         paintNotesRef.current = new Set([note.id]);
                         dragRef.current = {
                             mode: 'paint',
@@ -589,7 +674,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // clip on another track would otherwise audition
                         // through the primary's instrument.
                         const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
-                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, 100);
+                        auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
                         const beat = snap(x / beatWidth);
                         pendingStampRef.current = { pitch, beat };
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
@@ -736,7 +821,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     (node) => Math.abs(node.startBeat - snappedB) < 0.001 && node.pitch === drag.origPitch
                 );
                 if (!exists) {
-                    const note = addMidiNote(targetClipId, drag.origPitch, snappedB, gridSnap, 100);
+                    const note = addMidiNote(
+                        targetClipId,
+                        drag.origPitch,
+                        snappedB,
+                        gridSnap,
+                        getDefaultNoteVelocity()
+                    );
                     paintNotesRef.current.add(note.id);
                 }
             }
@@ -843,7 +934,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 setSelectedNoteIds(event.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
             } else if (pendingStamp) {
                 // Click without drag — stamp a note at the click location.
-                const note = addMidiNote(targetClipId, pendingStamp.pitch, pendingStamp.beat, gridSnap, 100);
+                const note = addMidiNote(
+                    targetClipId,
+                    pendingStamp.pitch,
+                    pendingStamp.beat,
+                    gridSnap,
+                    getDefaultNoteVelocity()
+                );
                 pushUndoEntry(
                     'Draw MIDI note',
                     () => removeMidiNote(targetClipId, note.id),
@@ -866,7 +963,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'draw') {
             const dp = drawPreviewRef.current;
             if (dp) {
-                const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, 100);
+                const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, getDefaultNoteVelocity());
                 pushUndoEntry(
                     'Draw MIDI note',
                     () => removeMidiNote(targetClipId, note.id),
@@ -1361,19 +1458,28 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (event.key === 'S' && event.shiftKey && !event.metaKey && !event.ctrlKey && selectedNoteIds.size > 0) {
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
-                event.preventDefault();
-                event.stopPropagation();
-                const playheadBeat = getTransportState()?.playheadPosition ?? 0;
-                const ids = [...selectedNoteIds];
-                const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                splitNoteAtBeat(singleClip, ids, playheadBeat);
-                const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                pushUndoEntry(
-                    'Split notes at cursor',
-                    () => setNotesForClip(singleClip, snapshotBefore),
-                    () => setNotesForClip(singleClip, snapshotAfter)
-                );
-                setSelectedNoteIds(new Set());
+                // The transport playhead is an arrangement beat; the transform
+                // wants the clip-relative beat under it. A playhead outside the
+                // clip's visible span splits nothing.
+                const placement = resolveClipPlacement(singleClip);
+                const splitBeat =
+                    placement !== undefined
+                        ? arrangementPlayheadToClipBeat(getTransportState()?.playheadPosition ?? 0, placement)
+                        : undefined;
+                if (splitBeat !== undefined) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const ids = [...selectedNoteIds];
+                    const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                    splitNoteAtBeat(singleClip, ids, splitBeat);
+                    const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                    pushUndoEntry(
+                        'Split notes at cursor',
+                        () => setNotesForClip(singleClip, snapshotBefore),
+                        () => setNotesForClip(singleClip, snapshotAfter)
+                    );
+                    setSelectedNoteIds(new Set());
+                }
             }
         }
 

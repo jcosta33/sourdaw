@@ -11774,6 +11774,13 @@ mod timeline_tests {
         Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
     }
 
+    /// The frames one callback renders to let a 5 ms mute glide finish. The
+    /// gate covers all but a millionth of the distance in ~3316 frames at
+    /// 48 kHz and then snaps exactly onto its target, so a test that mutes a
+    /// strip to take its direct arm out of the mix renders this much and
+    /// asserts on the settled tail — never on the glide itself.
+    const MUTE_SETTLE_FRAMES: usize = 4_096;
+
     /// The command the control thread builds for a declared latency: the figure
     /// and the dry line that holds a bypassed pass at it travel together, so no
     /// caller can publish one without the other.
@@ -12145,7 +12152,7 @@ mod timeline_tests {
     fn a_pre_fader_send_survives_the_mute_that_silences_the_tracks_own_output() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -12159,8 +12166,10 @@ mod timeline_tests {
         // The mute sits after the fader and before the panner, so the muted
         // track contributes nothing directly while its pre-fader send keeps
         // feeding the bus — the whole reason a cue mix is taken pre-fader.
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![1.0; 4]);
+        // The gate declicks, so the strip's own arm glides away across the
+        // callback; settled, the master reads the send alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
         assert_eq!(
             harness.scheduler.timeline().send_tap(1, 50),
             Some(SendTap::PreFader)
@@ -12171,7 +12180,7 @@ mod timeline_tests {
     fn a_post_fader_send_is_silenced_by_the_same_mute() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -12182,8 +12191,11 @@ mod timeline_tests {
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.0; 4]);
+        // The post-fader tap sits behind the mute gate, so the mute silences
+        // the send exactly as it silences the strip: settled, both arms are
+        // exactly gone. A tap ahead of the gate would leave this at 1.0.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
     }
 
     #[test]
@@ -12262,7 +12274,7 @@ mod timeline_tests {
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
-        track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 2, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::SetTrackMute(2, true));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
@@ -12278,8 +12290,11 @@ mod timeline_tests {
             harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
             Some(RouteTarget::Track(1))
         );
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.5; 4]);
+        // The mute gate declicks, so the read comes from the settled tail:
+        // track 2's own arm is exactly gone and the bus's contribution has
+        // been through track 1's insert alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.5; 96]);
     }
 
     #[test]
@@ -13539,7 +13554,7 @@ mod timeline_tests {
     fn a_removed_send_stops_feeding_its_bus() {
         let mut harness = Harness::new(32);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -13549,19 +13564,20 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the bus hears the send alone and nothing of the track's
-        // own output.
+        // own output. The gate declicks, so both reads come from the settled
+        // tail of their callback.
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (before, _) = harness.render(4);
-        assert_eq!(before, vec![1.0; 4]);
+        let (before, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(before[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
 
         harness.send(GraphCommand::RemoveSend {
             track_id: 1,
             bus_id: 50,
         });
         harness.send(GraphCommand::SeekFrames(0));
-        let (after, _) = harness.render(4);
-        assert_eq!(after, vec![0.0; 4]);
+        let (after, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(after[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
         assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 
@@ -14521,6 +14537,112 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
+    /// Records the block length every pass hands it, so a divergence between
+    /// the ask a callback made and the frames the master chain ran over is
+    /// readable off the device rather than inferred from the mix.
+    struct BlockLengthRecordingPlugin {
+        frames_seen: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for BlockLengthRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.frames_seen.fetch_add(num_samples, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "block-length-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The master insert chain runs on the same clock domain as the strip
+    /// render: an ask past [`MAX_CALLBACK_FRAMES`] renders exactly that many
+    /// frames of timeline, so the master chain over the same callback must run
+    /// over exactly those frames — the unclamped ask would process a tail the
+    /// timeline never wrote.
+    #[test]
+    fn a_master_insert_processes_exactly_the_clamped_frames_when_the_ask_exceeds_the_callback_ceiling(
+    ) {
+        const ASK: usize = MAX_CALLBACK_FRAMES + 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, ASK);
+
+        let frames_seen = Arc::new(AtomicUsize::new(0));
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(BlockLengthRecordingPlugin {
+                frames_seen: Arc::clone(&frames_seen),
+            })),
+            None,
+        ));
+
+        let (left, right) = harness.render(ASK);
+
+        assert_eq!(
+            frames_seen.load(Ordering::Relaxed),
+            MAX_CALLBACK_FRAMES,
+            "the master insert runs over exactly the frames the timeline rendered, \
+             never the unclamped ask"
+        );
+        // Nothing may touch the tail the clamped render never wrote: the
+        // timeline stopped at the ceiling and the master chain followed it.
+        assert_eq!(
+            &left[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+        assert_eq!(
+            &right[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+    }
+
+    /// A bypassed master insert's dry line walks only the frames the buffers
+    /// hold: the ask is a request, and the line indexes the pair it was handed
+    /// by the clamped count rather than past it.
+    #[test]
+    fn a_bypassed_master_inserts_dry_line_walks_only_the_frames_the_buffers_hold() {
+        const LATENCY: usize = 5;
+        const BUFFER: usize = 256;
+        const ASK: usize = 1024;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, BUFFER);
+
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(LATENCY)),
+                LATENT_PLUGIN_CAPACITY,
+            ))),
+            None,
+        ));
+        harness.send(set_latency(900, LATENCY));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        // An ask larger than the pair itself, the shape of a callback whose
+        // sample count outruns the buffers: only the clamped count exists in
+        // them, so a pass indexing the ask would run past the slice.
+        let mut left = vec![0.0; BUFFER];
+        let mut right = vec![0.0; BUFFER];
+        harness.scheduler.process_block(&mut left, &mut right, ASK);
+
+        // Returning is the pin; the content says the line walked exactly the
+        // frames the buffers hold — the constant, delayed by the declared
+        // latency, reading silence ahead of it.
+        let mut expected = vec![0.0; BUFFER];
+        expected[LATENCY..].fill(1.0);
+        assert_eq!(left, expected);
+        assert_eq!(right, expected);
+    }
+
     /// A route line holding nothing is written all the same. Skipped, it
     /// freezes with the audio it held when its hold was dropped, and the next
     /// hold the graph aims it at bursts that era into every sibling route.
@@ -15010,7 +15132,7 @@ mod timeline_tests {
         let mut harness = Harness::new(64);
         harness.playing();
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
-        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        track_with_ramp_clip(&mut harness, 1, 101, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddSend {
             track_id: 1,
             bus_id: 50,
@@ -15019,8 +15141,13 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the master reads the bus alone and every assertion is
-        // about the send's own line rather than the strip's output.
+        // about the send's own line rather than the strip's output. The gate
+        // declicks, so one callback settles it before any window the send
+        // line is read on; every window below is shifted past it, and the
+        // ramp clip is long enough to still be sounding through all of them.
         harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         insert_latent_device(&mut harness, 2, 900, FIRST);
         harness.send(GraphCommand::AddSend {
@@ -15035,7 +15162,7 @@ mod timeline_tests {
         let (held, _) = harness.render(16);
         assert_eq!(
             held,
-            delayed_ramp(0, 16, FIRST),
+            delayed_ramp(MUTE_SETTLE_FRAMES, 16, FIRST),
             "the send off the dry track waits for the send off the latent one"
         );
 
@@ -15043,7 +15170,7 @@ mod timeline_tests {
         let (unheld, _) = harness.render(32);
         assert_eq!(
             unheld,
-            delayed_ramp(16, 32, 0),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 16, 32, 0),
             "with nothing left to wait for the send lands where it is taken"
         );
 
@@ -15060,7 +15187,7 @@ mod timeline_tests {
         let (re_aimed, _) = harness.render(16);
         assert_eq!(
             re_aimed,
-            delayed_ramp(48, 16, SECOND),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 48, 16, SECOND),
             "the re-aimed send line reads on from the passage it was just written with"
         );
 
@@ -15069,7 +15196,7 @@ mod timeline_tests {
         let (deeper, _) = harness.render(16);
         assert_eq!(
             deeper,
-            delayed_ramp(64, 16, THIRD),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 64, 16, THIRD),
             "deepening the hold reads further back into current audio, never into the \
              era the line spent at zero"
         );
@@ -15083,8 +15210,18 @@ mod timeline_tests {
         const LATENCY: usize = 7;
         let mut harness = Harness::new(64);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
-        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        // Muted so the only thing reaching the master is the bus, and the
+        // assertion is about the sends rather than the direct outputs. The
+        // gates declick, so the mutes land before anything is placed on the
+        // bus and one callback settles both strips to exact silence — the
+        // send lines the assertion reads are placed after that, so the
+        // latency hole they pin sits at the head of the asserted window.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         insert_latent_device(&mut harness, 1, 900, LATENCY);
         for track_id in [1, 2] {
@@ -15096,10 +15233,6 @@ mod timeline_tests {
                 delay: uncompensated(),
             });
         }
-        // Muted so the only thing reaching the master is the bus, and the
-        // assertion is about the sends rather than the direct outputs.
-        harness.send(GraphCommand::SetTrackMute(1, true));
-        harness.send(GraphCommand::SetTrackMute(2, true));
 
         let (left, _) = harness.render(16);
         let mut expected = vec![1.0; 16];

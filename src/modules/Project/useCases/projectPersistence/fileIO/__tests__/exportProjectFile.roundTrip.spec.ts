@@ -48,6 +48,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),

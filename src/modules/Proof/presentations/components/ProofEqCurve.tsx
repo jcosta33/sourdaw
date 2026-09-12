@@ -48,6 +48,27 @@ const gainToY = (gain: number, h: number): number => h / 2 - (gain / DB_RANGE) *
 
 const yToGain = (y: number, h: number): number => (-(y - h / 2) / (h / 2)) * DB_RANGE;
 
+/**
+ * Pointer position converted from visual pixels (the bounding box's space) to
+ * the canvas's layout pixels — the space every band position (`freqToX`,
+ * `gainToY`) is computed in. The two spaces diverge whenever the canvas is
+ * displayed at a scale (200% UI scale, browser zoom), and using client coords
+ * directly doubles every pointer position there, so the hit test never finds a
+ * band. A zero-size rect (canvas not yet laid out, jsdom) maps 1:1.
+ */
+const pointerToCanvasPoint = (
+    canvas: HTMLCanvasElement,
+    w: number,
+    h: number,
+    clientX: number,
+    clientY: number
+): { x: number; y: number } => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? w / rect.width : 1;
+    const scaleY = rect.height > 0 ? h / rect.height : 1;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+};
+
 /** EQ band type ids (mirror of the engine's filter kinds). */
 export const EQ_PEAK = 0;
 export const EQ_LOW_SHELF = 1;
@@ -491,9 +512,7 @@ export const ProofEqCurve = ({
         if (!canvas) {
             return;
         }
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const { x: mx, y: my } = pointerToCanvasPoint(canvas, width, height, e.clientX, e.clientY);
 
         // Find closest band dot
         let closestIdx = -1;
@@ -548,9 +567,7 @@ export const ProofEqCurve = ({
         if (!startBand || !currentBand || !dragValue) {
             return;
         }
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const { x: mx, y: my } = pointerToCanvasPoint(canvas, width, height, e.clientX, e.clientY);
 
         const newFreq = Math.round(Math.max(20, Math.min(20000, xToFreq(mx, width))));
 

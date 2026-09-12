@@ -11,6 +11,10 @@ import {
     spawnCapture,
     spawnRun,
 } from './githubAppIdentity.ts';
+import {
+    nodeModulesLinkTarget as resolveNodeModulesLinkTarget,
+    outsideSymlinkRefusal,
+} from './pnpmModulesPreflight.ts';
 import { assertIssueNumber, assertLaneSlug, fail, isIssueArgument, laneBranchName } from './prContract.ts';
 
 export const OPEN_LANE_USAGE = 'usage: pnpm lane:open [issue-number] [slug]';
@@ -23,6 +27,8 @@ export type OpenLanePort = {
     ensureWorktreeParent: (path: string) => void;
     fetchMain: () => void;
     worktreeAdd: (path: string, branch: string) => void;
+    /** Realpath of the lane's node_modules when it is a symlink; undefined when absent or a real directory. */
+    nodeModulesLinkTarget: (lanePath: string) => string | undefined;
     lock: (path: string) => void;
     log: (message: string) => void;
 };
@@ -72,6 +78,22 @@ export function openLane(issue: number | undefined, slug: string, port: OpenLane
     port.ensureWorktreeParent(lanePath);
     port.fetchMain();
     port.worktreeAdd(lanePath, branch);
+    // Issue #4118: a lane node_modules that symlinks into another checkout makes every pnpm run
+    // through it rewrite that checkout's install metadata, which later aborts every trusted
+    // delivery script. Refusing before the lock leaves the created worktree unlocked, so the fix
+    // (the lane's own install) or `git worktree remove` stays uncomplicated; a link created after
+    // opening is caught by the guard preflight instead.
+    const linkTarget = port.nodeModulesLinkTarget(lanePath);
+    if (linkTarget !== undefined) {
+        const refusal = outsideSymlinkRefusal({
+            laneRoot: lanePath,
+            linkPath: join(lanePath, 'node_modules'),
+            linkTarget,
+        });
+        if (refusal !== undefined) {
+            fail(refusal);
+        }
+    }
     port.lock(lanePath);
     port.log(lanePath);
     return lanePath;
@@ -98,6 +120,7 @@ export function shellPort(
         worktreeAdd: (path, branch) => {
             run('git', ['worktree', 'add', '-b', branch, path, 'origin/main'], { cwd: primaryRoot });
         },
+        nodeModulesLinkTarget: (path) => resolveNodeModulesLinkTarget(path),
         lock: (path) => {
             run('git', ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, path], { cwd: primaryRoot });
         },

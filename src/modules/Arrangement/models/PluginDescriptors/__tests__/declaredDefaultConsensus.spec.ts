@@ -518,7 +518,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                 file: 'src/modules/Bacteria/models/BacteriaPatch.ts',
                 exportName: 'DEFAULT_PATCH',
                 shape: 'object',
-                resolved: 28,
+                resolved: 26,
                 unresolved: [
                     'crossoverMode',
                     'distortionMode',
@@ -587,8 +587,6 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                     'macro6',
                     'macro7',
                     'macro8',
-                    'morphX',
-                    'morphY',
                     'lfo1Rate',
                     'lfo1Shape',
                     'lfo1Amount',

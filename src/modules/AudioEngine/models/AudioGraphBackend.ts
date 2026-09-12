@@ -527,6 +527,26 @@ export type AudioGraphSetDeviceParametersCommand = Readonly<{
  */
 export const MAX_IMMEDIATE_DEVICE_PARAMETERS = 128;
 
+/**
+ * Set a device's bypass on the engine's own chain, at the next audio callback.
+ *
+ * The live counterpart of the `bypassed` field a device's topology carries: the
+ * engine learns a mid-roll toggle when the toggle happens, rather than at the
+ * next strip rebuild that re-sends the whole topology. Addresses the chain slot
+ * the device is spliced into — the same address
+ * {@link AudioGraphSetDeviceParametersCommand} writes values through — so the
+ * carrier skips the device's pass and runs its dry line in place of it.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's bypass
+ * is owned by the plugin host's own control path, which the plugin's device node
+ * writes directly; a second live writer would race that ordered path.
+ */
+export type AudioGraphSetDeviceBypassCommand = Readonly<{
+    kind: 'set-device-bypass';
+    target: AudioGraphDeviceTarget;
+    bypassed: boolean;
+}>;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;
@@ -724,6 +744,7 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetDeviceBypassCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand

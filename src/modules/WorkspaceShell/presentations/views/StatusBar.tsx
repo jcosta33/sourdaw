@@ -242,7 +242,8 @@ export const StatusBar = (): ReactElement => {
                 ref={memContainerRef}
                 aria-hidden="true"
                 className="shrink-0 whitespace-nowrap"
-                label="MEM"
+                label="JS MEM"
+                title="Renderer JavaScript heap (performance.memory.usedJSHeapSize). Not total process usage — excludes native audio, plugins, sample pools, workers, and GPU memory."
                 style={{ display: 'none' }}
                 value={
                     <span ref={memTextRef} className="font-mono text-[10px] text-muted-foreground">

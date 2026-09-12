@@ -636,65 +636,45 @@ impl Layer {
             chaos_speed: self.chaos_speed,
         };
 
-        // Apply level and pan
+        // Apply level and pan — the repo's equal-power law, as in
+        // `crumbs::voice` and the unison panner: pan -1 is full left, +1 full
+        // right, centre -3 dB per channel. The law applies at every
+        // (level, pan); there is deliberately no unity/centre fast path,
+        // because skipping the centre gains made level 1.0 render ~3 dB above
+        // its 0.998 neighbour — a step every automation through centre crossed.
         let level = self.level;
-        let pan = self.pan;
-        // Equal power pan
-        let pan_l = ((1.0 - pan) * 0.5 * std::f32::consts::FRAC_PI_2)
-            .cos()
-            .min(1.0);
-        let pan_r = ((1.0 + pan) * 0.5 * std::f32::consts::FRAC_PI_2)
-            .cos()
-            .min(1.0);
-        let gain_l = level * pan_l;
-        let gain_r = level * pan_r;
+        let pan = self.pan.clamp(-1.0, 1.0);
+        let theta = (pan + 1.0) * 0.5 * std::f32::consts::FRAC_PI_2;
+        let gain_l = level * theta.cos();
+        let gain_r = level * theta.sin();
 
-        // If level is 1.0 and pan is centered, render directly (no extra multiply)
-        let direct = (level - 1.0).abs() < 0.001 && pan.abs() < 0.001;
+        // Reuse construction-time scratch. Chunking keeps large offline
+        // blocks bounded without growing or allocating on the audio thread.
+        let block_size = left.len().min(right.len());
+        for chunk_start in (0..block_size).step_by(MAX_SCRATCH_FRAMES) {
+            let chunk_end = (chunk_start + MAX_SCRATCH_FRAMES).min(block_size);
+            let chunk_size = chunk_end - chunk_start;
+            let scratch_left = &mut self.scratch_left[..chunk_size];
+            let scratch_right = &mut self.scratch_right[..chunk_size];
+            scratch_left.fill(0.0);
+            scratch_right.fill(0.0);
 
-        if direct {
-            // Render directly into output buffers (same as original code path)
             for voice in &mut self.voices {
                 if voice.is_active() {
-                    voice.render(left, right, &voice_params);
+                    voice.render(scratch_left, scratch_right, &voice_params);
                 }
             }
             Self::render_steal_tails(
                 &mut self.steal_tails,
                 &mut self.active_steal_tails,
-                left,
-                right,
+                scratch_left,
+                scratch_right,
                 &voice_params,
             );
-        } else {
-            // Reuse construction-time scratch. Chunking keeps large offline
-            // blocks bounded without growing or allocating on the audio thread.
-            let block_size = left.len().min(right.len());
-            for chunk_start in (0..block_size).step_by(MAX_SCRATCH_FRAMES) {
-                let chunk_end = (chunk_start + MAX_SCRATCH_FRAMES).min(block_size);
-                let chunk_size = chunk_end - chunk_start;
-                let scratch_left = &mut self.scratch_left[..chunk_size];
-                let scratch_right = &mut self.scratch_right[..chunk_size];
-                scratch_left.fill(0.0);
-                scratch_right.fill(0.0);
 
-                for voice in &mut self.voices {
-                    if voice.is_active() {
-                        voice.render(scratch_left, scratch_right, &voice_params);
-                    }
-                }
-                Self::render_steal_tails(
-                    &mut self.steal_tails,
-                    &mut self.active_steal_tails,
-                    scratch_left,
-                    scratch_right,
-                    &voice_params,
-                );
-
-                for index in 0..chunk_size {
-                    left[chunk_start + index] += scratch_left[index] * gain_l;
-                    right[chunk_start + index] += scratch_right[index] * gain_r;
-                }
+            for index in 0..chunk_size {
+                left[chunk_start + index] += scratch_left[index] * gain_l;
+                right[chunk_start + index] += scratch_right[index] * gain_r;
             }
         }
     }
@@ -991,5 +971,187 @@ mod tests {
             .map(|voice| voice.held)
             .collect();
         assert_eq!(held, vec![false, false]);
+    }
+
+    // ── Layer level and pan (#3714) ────────────────────────────────────────
+    //
+    // The layer's pan gains used to be mirrored — pan -1 fed the right
+    // channel — and a unity/centre fast path skipped the centre gains, so
+    // level 1.0 rendered ~3 dB above its 0.998 neighbour. Every probe below
+    // measures rendered channel RMS: the source is a steady mono engine, so
+    // the two channels are identical before the layer gain and any mirrored
+    // or discontinuous law lands on the wrong numbers by construction.
+
+    const PAN_SR: f32 = 48_000.0;
+    const PAN_BLOCK: usize = 128;
+
+    /// A layer holding one polyblep note — steady, deterministic, mono —
+    /// configured for a settled sustain, ready to render at whatever
+    /// `layer_level`/`layer_pan` say.
+    fn panned_layer() -> Layer {
+        let mut layer = Layer::new(PAN_SR, 2);
+        layer.set_param("engine", 1.0);
+        layer.set_param("amp_attack", 0.001);
+        layer.set_param("amp_decay", 5.0);
+        layer.set_param("amp_sustain", 1.0);
+        layer.set_param("amp_release", 0.3);
+        layer.set_param("cutoff", 18_000.0);
+        layer.set_param("resonance", 0.5);
+        layer.set_param("osc_level", 0.8);
+        layer.note_on(69, 100, note_frequency(69));
+        layer
+    }
+
+    /// Render `blocks` blocks of one layer at the given level and pan,
+    /// returning (left, right).
+    fn rendered_layer_channels(level: f32, pan: f32, blocks: usize) -> (Vec<f32>, Vec<f32>) {
+        let mut layer = panned_layer();
+        layer.set_param("layer_level", level);
+        layer.set_param("layer_pan", pan);
+        let mut left = vec![0.0f32; PAN_BLOCK];
+        let mut right = vec![0.0f32; PAN_BLOCK];
+        let mut out_l = Vec::with_capacity(blocks * PAN_BLOCK);
+        let mut out_r = Vec::with_capacity(blocks * PAN_BLOCK);
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            layer.render(&mut left, &mut right, &[], PAN_SR);
+            out_l.extend_from_slice(&left);
+            out_r.extend_from_slice(&right);
+        }
+        (out_l, out_r)
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    /// Pan -1 must put the signal in the left channel and pan +1 in the right
+    /// — the convention the mirrored gains got backwards — and centre must
+    /// feed both channels equally.
+    #[test]
+    fn pan_extremes_route_the_signal_to_the_correct_channel() {
+        const WARM_BLOCKS: usize = 40;
+        const MEASURE_BLOCKS: usize = 360;
+        let (left_full_left, right_full_left) =
+            rendered_layer_channels(1.0, -1.0, WARM_BLOCKS + MEASURE_BLOCKS);
+        let (left_centred, right_centred) =
+            rendered_layer_channels(1.0, 0.0, WARM_BLOCKS + MEASURE_BLOCKS);
+        let (left_full_right, right_full_right) =
+            rendered_layer_channels(1.0, 1.0, WARM_BLOCKS + MEASURE_BLOCKS);
+
+        let steady = WARM_BLOCKS * PAN_BLOCK..;
+        let centre_left = rms(&left_centred[steady.clone()]);
+        let centre_right = rms(&right_centred[steady.clone()]);
+        assert!(centre_left > 0.01, "no signal to pan: {centre_left}");
+        assert!(
+            (centre_left - centre_right).abs() < 1e-6,
+            "centre pan must feed both channels equally: {centre_left} vs {centre_right}"
+        );
+
+        // Full left: the left channel carries the mono source at the law's
+        // cos(0) = 1 (√2 above the centre gains), the right is silent — to
+        // f32 resolution: sin(0) is exact 0, and the minority channel at the
+        // opposite extreme is cos(FRAC_PI_2) ≈ -4.4e-8, ≈ -147 dBFS, so the
+        // leak bound here is a -140 dB silence claim, not bit-exact zero.
+        let quiet_left = rms(&right_full_left[steady.clone()]);
+        let full_left = rms(&left_full_left[steady.clone()]);
+        assert!(
+            quiet_left < 1e-7,
+            "pan -1 leaked into the right channel: {quiet_left}"
+        );
+        let left_boost = full_left / centre_left;
+        assert!(
+            (left_boost - std::f32::consts::SQRT_2).abs() < 0.05,
+            "pan -1 left channel should be √2 above centre, measured {left_boost}"
+        );
+
+        // Full right: the mirror image.
+        let quiet_right = rms(&left_full_right[steady.clone()]);
+        let full_right = rms(&right_full_right[steady.clone()]);
+        assert!(
+            quiet_right < 1e-7,
+            "pan +1 leaked into the left channel: {quiet_right}"
+        );
+        let right_boost = full_right / centre_right;
+        assert!(
+            (right_boost - std::f32::consts::SQRT_2).abs() < 0.05,
+            "pan +1 right channel should be √2 above centre, measured {right_boost}"
+        );
+    }
+
+    /// Level 1.0 at centre must render the same gains as its 0.998 neighbour:
+    /// the fast path that skipped the centre gains made unity ~3 dB — 29% —
+    /// louder than the level just below it.
+    #[test]
+    fn level_unity_is_continuous_with_its_neighbour() {
+        const BLOCKS: usize = 400;
+        let (left_unity, _) = rendered_layer_channels(1.0, 0.0, BLOCKS);
+        let (left_below, _) = rendered_layer_channels(0.998, 0.0, BLOCKS);
+
+        let steady = 40 * PAN_BLOCK..;
+        let rms_unity = rms(&left_unity[steady.clone()]);
+        let rms_below = rms(&left_below[steady]);
+        let relative = (rms_unity - rms_below) / rms_unity;
+        assert!(
+            relative.abs() < 0.005,
+            "levels 1.0 and 0.998 must differ by ~0.2%, measured {relative:.4} \
+             (unity {rms_unity:.4} RMS, 0.998 {rms_below:.4} RMS)"
+        );
+    }
+
+    /// Automating pan through centre must be a continuous gain curve. The old
+    /// fast path put a ~3 dB cliff at pan 0; fine steps across centre now
+    /// move the group RMS by fractions of a percent.
+    #[test]
+    fn pan_automation_across_centre_has_no_gain_jump() {
+        const GROUP_BLOCKS: usize = 20;
+        const WARM_BLOCKS: usize = 8;
+        const STEPS: i32 = 41; // pan -0.02 to +0.02 in 0.001 steps, centre included
+
+        let mut layer = panned_layer();
+        let mut left = vec![0.0f32; PAN_BLOCK];
+        let mut right = vec![0.0f32; PAN_BLOCK];
+
+        // Settle the attack before the sweep starts.
+        layer.set_param("layer_level", 1.0);
+        for _ in 0..WARM_BLOCKS {
+            left.fill(0.0);
+            right.fill(0.0);
+            layer.render(&mut left, &mut right, &[], PAN_SR);
+        }
+
+        let mut render_group = |layer: &mut Layer, group_rms: &mut Vec<f32>| {
+            let mut squares = 0.0f64;
+            let mut frames = 0usize;
+            for _ in 0..GROUP_BLOCKS {
+                left.fill(0.0);
+                right.fill(0.0);
+                layer.render(&mut left, &mut right, &[], PAN_SR);
+                for s in &left {
+                    squares += (*s as f64) * (*s as f64);
+                }
+                frames += left.len();
+            }
+            group_rms.push((squares / frames as f64).sqrt() as f32);
+        };
+
+        let mut group_rms = Vec::with_capacity(STEPS as usize);
+        for step in 0..STEPS {
+            layer.set_param("layer_pan", -0.02 + 0.001 * step as f32);
+            render_group(&mut layer, &mut group_rms);
+        }
+
+        for (index, window) in group_rms.windows(2).enumerate() {
+            let relative = (window[1] - window[0]).abs() / window[0];
+            assert!(
+                relative < 0.02,
+                "gain jumped {relative:.4} between pan steps {index} and {} \
+                 (group RMS {} → {})",
+                index + 1,
+                window[0],
+                window[1]
+            );
+        }
     }
 }

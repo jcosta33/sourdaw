@@ -232,6 +232,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),

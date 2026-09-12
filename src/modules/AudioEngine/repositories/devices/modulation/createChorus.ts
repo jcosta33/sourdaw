@@ -2,6 +2,15 @@ import { type OfflineDeviceNode } from '../types';
 
 // ── Chorus ───────────────────────────────────────────────────────────────
 
+/**
+ * Descriptor default and ceiling for `chorus-feedback`. The feedback loop is
+ * `delay2 -> feedback -> delay2`, so its loop gain equals the knob value:
+ * staying strictly below 1 keeps every recirculation contractive and rules
+ * out runaway for any value the parameter can hold.
+ */
+export const CHORUS_FEEDBACK_RANGE = { min: 0, max: 0.9 } as const;
+export const DEFAULT_CHORUS_FEEDBACK = 0.2;
+
 export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     const splitter = ctx.createGain();
     const dry = ctx.createGain();
@@ -12,6 +21,8 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     delay1.delayTime.value = 0.02;
     const delay2 = ctx.createDelay(0.05);
     delay2.delayTime.value = 0.025;
+    const feedback = ctx.createGain();
+    feedback.gain.value = DEFAULT_CHORUS_FEEDBACK;
     const lfo1 = ctx.createOscillator();
     lfo1.frequency.value = 0.5;
     lfo1.type = 'sine';
@@ -26,6 +37,10 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(dry);
     splitter.connect(delay1);
     splitter.connect(delay2);
+    // Recirculation on the second delay line only: one loop, loop gain = the
+    // feedback value itself, so the declared 0..0.9 range cannot diverge.
+    delay2.connect(feedback);
+    feedback.connect(delay2);
     lfo1.connect(lfoGain1);
     lfoGain1.connect(delay1.delayTime);
     lfo2.connect(lfoGain2);
@@ -39,8 +54,20 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     return {
         inputNode: splitter,
         outputNode: merger,
-        nodes: [splitter, dry, wet, delay1, delay2, lfo1, lfo2, lfoGain1, lfoGain2, merger],
-        namedNodes: { splitter, dry, wet, delay1, delay2, lfo1, lfo2, lfoGain1, lfoGain2, merger },
+        nodes: [splitter, dry, wet, delay1, delay2, lfo1, lfo2, lfoGain1, lfoGain2, merger, feedback],
+        namedNodes: {
+            splitter,
+            dry,
+            wet,
+            delay1,
+            delay2,
+            lfo1,
+            lfo2,
+            lfoGain1,
+            lfoGain2,
+            merger,
+            feedback,
+        },
         dispose() {
             lfo1.stop();
             lfo2.stop();

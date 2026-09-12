@@ -16,14 +16,14 @@ describe('createStereoWidener', () => {
         // Splitter + merger for the M/S matrix.
         expect(ctx.createChannelSplitter).toHaveBeenCalledTimes(1);
         expect(ctx.createChannelMerger).toHaveBeenCalledTimes(1);
-        // Exactly 11 nodes in the device graph.
-        expect(device.nodes).toHaveLength(11);
+        // Exactly 12 nodes in the device graph.
+        expect(device.nodes).toHaveLength(12);
     });
 
-    it('creates exactly 8 gain nodes for the mid/side matrix', () => {
+    it('creates exactly 9 gain nodes for the mid/side matrix', () => {
         createStereoWidener(ctx as never);
-        // input, output, midSum, sideSum, rightInvert, midGain, sideGain, sideInvert.
-        expect(ctx.createGain).toHaveBeenCalledTimes(8);
+        // input, output, midSum, sideSum, rightInvert, midGain, sideGain, sideInvert, sideLevel.
+        expect(ctx.createGain).toHaveBeenCalledTimes(9);
     });
 
     it('creates one highpass biquad filter for the mono-bass side path', () => {
@@ -49,10 +49,11 @@ describe('createStereoWidener', () => {
         expect(filter.frequency.value).toBe(200);
     });
 
-    it('exposes named nodes for mid/side width control and the bass filter', () => {
+    it('exposes named nodes for mid/side width control, side level, and the bass filter', () => {
         const device = createStereoWidener(ctx as never);
         expect(device.namedNodes).toHaveProperty('midGain');
         expect(device.namedNodes).toHaveProperty('sideGain');
+        expect(device.namedNodes).toHaveProperty('sideLevel');
         expect(device.namedNodes).toHaveProperty('monoBassFilter');
         expect(device.namedNodes).toHaveProperty('input');
         expect(device.namedNodes).toHaveProperty('output');
