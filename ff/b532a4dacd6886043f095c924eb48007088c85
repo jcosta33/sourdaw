@@ -1,0 +1,14 @@
+tests/e2e/statusBarResponsive.spec.ts
+  h_1228e573df1f42 9-10,256,284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ffb532a4dacd6886043f095c924eb48007088c85",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
