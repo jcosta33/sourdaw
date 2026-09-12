@@ -3,7 +3,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../services/mainThreadLongTaskLatch';
-import { engineRtDiagnosticsStore } from '../stores/engineRtDiagnosticsStore';
+import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../stores/engineRtDiagnosticsStore';
 
 import { getEngineState } from './engineAccess/getEngineState';
 
@@ -12,6 +12,7 @@ import type {
     AudioDeadlineWorkload,
     DeadlineCategoryReading,
 } from '../models/AudioDeadlineEvidence';
+import type { EngineRtDiagnostics } from '../models/EngineRtDiagnostics';
 
 /**
  * No external loopback signal is captured anywhere in the product. The desktop
@@ -43,13 +44,37 @@ function readEngineUnderruns(): DeadlineCategoryReading {
     return { coverage: 'observed', events: dropoutCounters.read().detectedUnderrunBlocks };
 }
 
-function readNativeStreamFaults(): DeadlineCategoryReading {
-    const diagnostics = engineRtDiagnosticsStore.value;
+/**
+ * Whether a reading came from a native engine that exists.
+ *
+ * `sampleRate` is the discriminator, not `running`. The rate is taken from the
+ * output stream's negotiated format when the engine handle is built and is
+ * never rewritten afterwards, while the shape reported with no handle at all —
+ * the native command's default payload, and what the browser build reports —
+ * carries zero in it along with every other reading.
+ */
+function isExistingEngineReading(latest: EngineRtDiagnostics | null): latest is EngineRtDiagnostics {
+    return latest !== null && latest.sampleRate > 0;
+}
 
-    if (diagnostics?.latest?.running !== true) {
+/**
+ * Count the stream faults an existing native engine has reported, whether or
+ * not it is still rendering.
+ *
+ * Liveness is not the condition. The watchdog clears `running` once the output
+ * stream stops, and a stream stopping is exactly what the faults being counted
+ * describe: the backend's error callback records one as it happens, the store
+ * accumulates it, and the poll that drains the engine's events keeps reading it
+ * either way. Gating on `running` would discard the fault at the moment it
+ * occurs, which is the only moment it matters.
+ */
+function readNativeStreamFaults(): DeadlineCategoryReading {
+    const diagnostics = engineRtDiagnosticsStore.value ?? defaultEngineRtDiagnosticsState;
+
+    if (!isExistingEngineReading(diagnostics.latest)) {
         return {
             coverage: 'unavailable',
-            reason: 'the native engine is not running, so no stream report is being collected from it',
+            reason: 'no reading from a native engine is on record, so there are no native stream faults to count',
         };
     }
 
@@ -87,18 +112,23 @@ function readWebEngine(): AudioDeadlineWorkload['webEngine'] {
  * recent callback asked for — both figures `nativeStreamFaults` was counted
  * against, and neither one describing the web carrier beside it.
  *
+ * Present for any reading from an engine that exists, on the same condition
+ * `nativeStreamFaults` uses rather than on liveness: an entry that went null
+ * once the stream stopped would leave the fault count with no carrier named
+ * precisely when that count holds the fault which stopped it.
+ *
  * The frames slot is written only from inside the render callback, so it holds
  * zero on a stream that has opened but never rendered. That zero is a figure
  * nobody produced and is reported as absent.
  */
 function readNativeEngine(): AudioDeadlineWorkload['nativeEngine'] {
-    const diagnostics = engineRtDiagnosticsStore.value?.latest;
+    const latest = engineRtDiagnosticsStore.value?.latest ?? null;
 
-    if (diagnostics?.running !== true) {
+    if (!isExistingEngineReading(latest)) {
         return null;
     }
 
-    const { sampleRate, outputBufferFrames } = diagnostics;
+    const { sampleRate, outputBufferFrames } = latest;
 
     return { sampleRate, outputBufferFrames: outputBufferFrames === 0 ? null : outputBufferFrames };
 }

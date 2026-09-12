@@ -4,6 +4,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
+import { notRunningEngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../../services/mainThreadLongTaskLatch';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
 import { collectAudioDeadlineEvidence } from '../collectAudioDeadlineEvidence';
@@ -188,15 +189,31 @@ describe('collectAudioDeadlineEvidence', () => {
         expect(collectAudioDeadlineEvidence().nativeStreamFaults).toEqual({ coverage: 'observed', events: 2 });
     });
 
-    it('reports no native coverage when the native engine is not running, even with events on record', () => {
+    it('counts the fault that stopped the stream, on the reading taken after rendering ceased', () => {
+        // The live sequence: the error callback pushes the fault the instant
+        // the output device fails, and the watchdog clears `running` about a
+        // second later. A poll after that still reads an engine that exists —
+        // its rate is the one its stream opened at — with the fault standing.
         engineRtDiagnosticsStore.set({
-            latest: { ...runningNativeDiagnostics, running: false },
+            latest: { ...runningNativeDiagnostics, running: false, outputStreamFault: 'deviceChanged' },
             events: [{ type: 'streamError', side: 'output', kind: 'deviceChanged' }],
         });
 
+        expect(collectAudioDeadlineEvidence().nativeStreamFaults).toEqual({ coverage: 'observed', events: 1 });
+    });
+
+    it('reports no native coverage when no native engine has been started', () => {
+        // The shape the native command answers with no engine handle, and the
+        // shape the browser build reports: every reading zeroed, so there is no
+        // engine whose faults could have been counted.
+        engineRtDiagnosticsStore.set({ latest: notRunningEngineRtDiagnostics, events: [] });
+
         const reading = collectAudioDeadlineEvidence().nativeStreamFaults;
 
-        expect(reading.coverage).toBe('unavailable');
+        expect(reading).toEqual({
+            coverage: 'unavailable',
+            reason: expect.stringContaining('no reading from a native engine'),
+        });
         expect('events' in reading).toBe(false);
     });
 
@@ -267,21 +284,40 @@ describe('collectAudioDeadlineEvidence', () => {
         });
     });
 
-    it('leaves a carrier entry null while that carrier is not running', () => {
+    it('leaves the web carrier entry null while its context is not running', () => {
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, state: 'closed', isReady: false });
+        engineRtDiagnosticsStore.set({ latest: runningNativeDiagnostics, events: [] });
 
-        const stopped = collectAudioDeadlineEvidence().workload;
+        const workload = collectAudioDeadlineEvidence().workload;
 
-        expect(stopped.webEngine).toBeNull();
-        expect(stopped.nativeEngine).toBeNull();
+        expect(workload.webEngine).toBeNull();
+        expect(workload.nativeEngine).toEqual({ sampleRate: 48_000, outputBufferFrames: 256 });
+    });
 
+    it('keeps naming the native carrier on a reading taken after rendering stopped', () => {
+        // The fault count beside it was taken against this engine, so the entry
+        // that names the rate it was counted at has to survive the stream
+        // stopping.
         vi.mocked(getEngineState).mockReturnValue({ ...runningEngineState, sampleRate: 44_100 });
-        engineRtDiagnosticsStore.set({ latest: { ...runningNativeDiagnostics, running: false }, events: [] });
+        engineRtDiagnosticsStore.set({
+            latest: { ...runningNativeDiagnostics, running: false, sampleRate: 44_100, outputBufferFrames: 512 },
+            events: [{ type: 'streamError', side: 'output', kind: 'deviceNotAvailable' }],
+        });
 
-        const webOnly = collectAudioDeadlineEvidence().workload;
+        const workload = collectAudioDeadlineEvidence().workload;
 
-        expect(webOnly.webEngine).toEqual({ sampleRate: 44_100 });
-        expect(webOnly.nativeEngine).toBeNull();
+        expect(workload.webEngine).toEqual({ sampleRate: 44_100 });
+        expect(workload.nativeEngine).toEqual({ sampleRate: 44_100, outputBufferFrames: 512 });
+    });
+
+    it('leaves the native carrier entry null when no native engine reading is on record', () => {
+        engineRtDiagnosticsStore.set({ latest: notRunningEngineRtDiagnostics, events: [] });
+
+        expect(collectAudioDeadlineEvidence().workload.nativeEngine).toBeNull();
+
+        engineRtDiagnosticsStore.set(defaultEngineRtDiagnosticsState);
+
+        expect(collectAudioDeadlineEvidence().workload.nativeEngine).toBeNull();
     });
 
     it('reads the transport state a reading was taken under', () => {
