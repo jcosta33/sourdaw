@@ -1,0 +1,40 @@
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidiContinuation.integration.spec.ts
+  h_1228e573df1f42 150,161-172
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  h_1228e573df1f42 71,78-98
+src/modules/AiGeneration/handlers/generation/__tests__/fillPlacementUndo.integration.spec.ts
+  h_1228e573df1f42 111
+src/modules/AiGeneration/handlers/generation/fillPlacement.ts
+  h_1228e573df1f42 96-105,108,144,147,161-167
+src/modules/AiGeneration/handlers/generation/handleGenerateAllTransitions.ts
+  h_1228e573df1f42 33-36
+src/modules/AiGeneration/useCases/__tests__/generateMidiVariationsProjection.integration.spec.ts
+  h_1228e573df1f42 125-142,199
+src/modules/Arrangement/models/TakeLane.ts
+  h_1228e573df1f42 40,48-53
+src/modules/Arrangement/stores/takeLaneStore.ts
+  h_1228e573df1f42 88,96-99
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/reverbImpulse.spec.ts
+  h_1228e573df1f42 101-111
+src/modules/AudioEngine/repositories/devices/reverbDelay/reverbImpulse.ts
+  h_1228e573df1f42 144
+src/modules/AudioEngine/useCases/livePlayback/publishNativeTunerTelemetry.ts
+  h_1228e573df1f42 47,59-61
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.morph.spec.tsx
+  h_1228e573df1f42 49
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  h_1228e573df1f42 872,874,878
+src/modules/Yeast/workers/processors/__tests__/CCGenerator.spec.ts
+  h_1228e573df1f42 317-323,336-341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aeb866e17b39e2b93aeff52fb7299bdb0eb28172",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
