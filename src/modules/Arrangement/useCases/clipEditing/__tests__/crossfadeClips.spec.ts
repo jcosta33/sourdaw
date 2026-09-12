@@ -267,6 +267,33 @@ describe('crossfadeClips', () => {
         expect(clipA?.fadeOutBeats).toBeCloseTo(0.6);
     });
 
+    it('clamps stretched clip B extension to audioOffsetBeats scaled by stretch factor', () => {
+        const clips = [
+            makeClip('a', 0, 4),
+            makeClip('b', 4, 8, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2.0,
+                audioOffsetBeats: 0.2,
+            }),
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
+
+        const result = capturedMapper()(makeTrack(clips));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        // Available pre-roll handle on timeline is 0.2 / 2.0 = 0.1 beats
+        // unclamped start would be 4 - 0.5 = 3.5; clamped start is 4 - 0.1 = 3.9
+        // clipBDelta is -0.1, contentDelta is -0.1 * 2.0 = -0.2 -> audioOffsetBeats becomes 0
+        // clipA ends at 4.5 -> actualOverlap is 4.5 - 3.9 = 0.6
+        expect(clipB?.startBeat).toBeCloseTo(3.9);
+        expect(clipB?.fadeInBeats).toBeCloseTo(0.6);
+        expect(clipB?.audioOffsetBeats).toBeCloseTo(0);
+        expect(clipA?.endBeat).toBeCloseTo(4.5);
+        expect(clipA?.fadeOutBeats).toBeCloseTo(0.6);
+    });
+
     it('clamps clip B start at its original start when audioOffsetBeats is 0 (zero pre-roll handle)', () => {
         const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8, { audioOffsetBeats: 0 })];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });

@@ -384,6 +384,58 @@ describe('handleCrossfadeClips', () => {
         });
     });
 
+    it('describes compensating undo and redo snapshots with handle clamping on a stretched clip B', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            stretchMode: 'timestretch',
+                            stretchRatio: 2.0,
+                            audioOffsetBeats: 0.2,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.2,
+                },
+            },
+        });
+    });
+
     it('restores audioOffsetBeats on clip B when executing compensation', () => {
         const trackState = {
             tracks: [
