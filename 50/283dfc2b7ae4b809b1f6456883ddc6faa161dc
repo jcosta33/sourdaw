@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_87ab0a2f60ccf8::t_b91b75d84518ca 3-4,9-115,130-131,141-142,150-151
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_87ab0a2f60ccf8::t_82c9d86b98412a 10-11,20-62,72,82,97,102-108
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_87ab0a2f60ccf8::t_f27712fe5cc863 2938-2939
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_c05609ea2b5c53 1835-1836,1843-1844
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_fcc00bfc1947db::t_bad4f514b626a8 6-7,42-53,55-61,68-69,75-79,91-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50283dfc2b7ae4b809b1f6456883ddc6faa161dc",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fcc00bfc1947db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09669-3071-74e3-92af-082fee9ddf97",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
