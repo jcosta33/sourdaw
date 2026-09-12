@@ -258,3 +258,15 @@ also passes when those properties are absent.
 Probe that would have caught it: compare generated optional-field objects with `toStrictEqual` or
 explicit `Object.hasOwn` assertions before a serialized undo round trip. Require absent optionals to
 stay absent, defined zero values to survive, and changed values and array order to remain distinct.
+
+### 2026-09-12 — Replacement clones materialized absent clip fields (escaped via PR #2169)
+
+PR #2169 introduced the shared replacement-clip clone with unconditional `overrides` and
+`kneadState` properties. Inserting a captured clip that omitted those optionals therefore produced
+own keys set to `undefined`; the strict glue freshness guard then rejected the live replacement even
+though its serialized values were unchanged.
+
+Probe that would have caught it: clone snapshots with each optional absent, explicitly present as
+`undefined`, and populated. Use `toStrictEqual` plus `Object.hasOwn` to verify exact property presence,
+mutate every populated nested container to prove source isolation, then run the connected glue
+apply/undo/redo path and retain a changed-value conflict case.
