@@ -330,8 +330,10 @@ function totalNodeCreationCalls(mockCtx: MockAudioContext, workletNodeCallCount:
     );
 }
 
-/** The four master-tap nodes the engine wires in its constructor — the whole
- *  set a rejected call could reach without creating a new node at all. */
+/** Connect calls on the master-tap nodes the harness exposes: the master gain
+ *  and the three analysers. The constructor also wires a stereo splitter and a
+ *  tap sink, which stay private to the engine, so this sum is bounded to those
+ *  four nodes rather than every master-tap node. */
 function totalMasterNodeConnectCalls(engine: AudioEngineTopologyTestHarness): number {
     return (
         (engine.masterGainNode.connect as unknown as Mock).mock.calls.length +
@@ -437,12 +439,17 @@ describe('agent runtime graph boundary — preview isolation from offline render
         vi.unstubAllGlobals();
     });
 
-    // Every node the render creates *after* the master gain forwards its
-    // `connect` argument here — the master gain's own unconditional wiring to
-    // `offlineCtx.destination` (`renderOffline.ts:277`) is excluded so the
-    // vacuity guard below cannot pass on that one connect alone; it can only
-    // pass once the strip-building loop actually runs.
+    // Every `connect` the render makes forwards its argument here, the master
+    // gain's included: the master gain is the render's output boundary
+    // (`renderOffline.ts:277`), so a leak into a live preview node would reach
+    // this recording through it, and the leak assertions must see it.
     let recordedOfflineConnectArgs: unknown[];
+
+    // Connects made by nodes created *after* the master gain, counted apart
+    // from the recording above so the master's own unconditional wiring to
+    // `offlineCtx.destination` cannot satisfy the vacuity guard on its own; the
+    // guard can only pass once the strip-building loop actually runs.
+    let offlineConnectsAfterMasterGain: number;
 
     // Local fake sized to what this case drives: a gain/panner factory so
     // `createOfflineTrackStrip` (renderOffline.spec.ts:154-161's pattern, run
@@ -450,7 +457,7 @@ describe('agent runtime graph boundary — preview isolation from offline render
     // `startRendering` so the unsegmented fallback in `renderInSegments` (no
     // `suspend`/`resume` here) resolves. The very first `createGain()` call is
     // always the master gain (`renderOffline.ts:275`, before any strip is
-    // built), so it alone is excluded from the recording.
+    // built), so it alone is left out of the post-master count.
     class RecordingOfflineAudioContext {
         readonly destination = {};
         readonly sampleRate = 48_000;
@@ -467,8 +474,9 @@ describe('agent runtime graph boundary — preview isolation from offline render
                 gain: { value: 0 },
                 pan: { value: 0 },
                 connect: (dest: unknown) => {
+                    recordedOfflineConnectArgs.push(dest);
                     if (!isMasterGain) {
-                        recordedOfflineConnectArgs.push(dest);
+                        offlineConnectsAfterMasterGain += 1;
                     }
                     return dest;
                 },
@@ -511,6 +519,7 @@ describe('agent runtime graph boundary — preview isolation from offline render
 
     it('connects no node an offline render creates to a preview node playing on the live context', async () => {
         recordedOfflineConnectArgs = [];
+        offlineConnectsAfterMasterGain = 0;
         const livePreviewDestination = { role: 'live-preview-destination' };
         const livePreviewSource = {
             buffer: null as unknown,
@@ -549,7 +558,7 @@ describe('agent runtime graph boundary — preview isolation from offline render
         // only from nodes created *after* the master gain, so the master's own
         // unconditional wiring to `offlineCtx.destination` cannot satisfy this
         // on its own the way it did before the strip actually built.
-        expect(recordedOfflineConnectArgs.length).toBeGreaterThan(0);
+        expect(offlineConnectsAfterMasterGain).toBeGreaterThan(0);
         expect(recordedOfflineConnectArgs).not.toContain(livePreviewSource);
         expect(recordedOfflineConnectArgs).not.toContain(livePreviewDestination);
     });
