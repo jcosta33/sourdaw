@@ -77,6 +77,7 @@ describe('getProductionCommandHandlerMaps', () => {
 
         expect(handlerMaps).toHaveLength(36);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
+        expect(actionTypes).toContain('setCompRegion');
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)
         ).toEqual([]);
@@ -86,7 +87,7 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(109);
+        expect(registrations).toHaveLength(110);
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);
         expect(
             registrations
