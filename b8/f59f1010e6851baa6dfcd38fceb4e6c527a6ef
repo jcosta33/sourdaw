@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_810e439bd9b214 211-215,358,360-366,368-374,376
+  s_87ab0a2f60ccf8::t_03cde0640350da 262-284,344-355,357,377,379
+  s_87ab0a2f60ccf8::t_d7af0f968f0ab7 198,204,221-226,293
+  s_87ab0a2f60ccf8::t_98f0247f1fb7b4 285-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b8f59f1010e6851baa6dfcd38fceb4e6c527a6ef",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
