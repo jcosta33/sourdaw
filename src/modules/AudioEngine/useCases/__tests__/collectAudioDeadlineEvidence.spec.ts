@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
-import { dropoutCounters } from '../../engine/dropoutCounter';
+import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../../services/mainThreadLongTaskLatch';
 import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
 import { collectAudioDeadlineEvidence } from '../collectAudioDeadlineEvidence';
@@ -13,9 +13,6 @@ import type { AudioEngineState } from '../../models/AudioEngineState';
 import type { EngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
 
 vi.mock('../engineAccess/getEngineState', () => ({ getEngineState: vi.fn() }));
-vi.mock('../../engine/dropoutCounter', () => ({
-    dropoutCounters: { hasCoverage: vi.fn(), read: vi.fn() },
-}));
 vi.mock('../../services/mainThreadLongTaskLatch', () => ({
     LONG_TASK_OBSERVATION_UNSUPPORTED: 'unsupported',
     readMainThreadLongTasks: vi.fn(),
@@ -31,15 +28,47 @@ const runningEngineState: AudioEngineState = {
     outputLatency: 0.01,
 };
 
-/** Stands in for the counter's own tally; `detectedUnderrunBlocks` is the figure the collector reads. */
-function dropoutTally(detectedUnderrunBlocks: number) {
-    return { detectedUnderrunBlocks, silentFrames: detectedUnderrunBlocks * 128, lastUnderrunAtFrame: 0 };
+/**
+ * Transports this file opened, so a case hands the shared counter back closed.
+ * Tracked here rather than read back from `hasCoverage()`, which would make the
+ * wind-down depend on the very behaviour these cases are pinning.
+ */
+let openTransports = 0;
+
+/** Stand in for a transport whose worklet has taken the buffer and is counting. */
+function startCountingTransport(): void {
+    dropoutCounters.openCoverage();
+    openTransports++;
 }
 
-/** Coverage and count come from the same object, so a case states both together. */
+/** Stand in for that transport tearing down. */
+function stopCountingTransport(): void {
+    dropoutCounters.closeCoverage();
+    openTransports--;
+}
+
+/**
+ * Drives the real counter rather than a stand-in, so a case that claims "no
+ * coverage" is answered by the class the collector actually asks. Coverage and
+ * count come from that one object, so a case states both together: the tally is
+ * written straight into the shared buffer, as the worklet writes it.
+ */
 function wireDropoutCounter(coverage: boolean, detectedUnderrunBlocks = 0): void {
-    vi.mocked(dropoutCounters.hasCoverage).mockReturnValue(coverage);
-    vi.mocked(dropoutCounters.read).mockReturnValue(dropoutTally(detectedUnderrunBlocks));
+    const sab = dropoutCounters.getSab();
+    if (sab === null) {
+        throw new Error('this runtime has no SharedArrayBuffer for the dropout tally');
+    }
+
+    while (openTransports > 0) {
+        stopCountingTransport();
+    }
+    dropoutCounters.reset();
+
+    if (coverage) {
+        startCountingTransport();
+    }
+
+    Atomics.store(new Int32Array(sab), DROPOUT_IDX.detectedUnderrunBlocks, detectedUnderrunBlocks);
 }
 
 const runningNativeDiagnostics: EngineRtDiagnostics = {
@@ -131,6 +160,22 @@ describe('collectAudioDeadlineEvidence', () => {
         expect(Reflect.get(reading, 'events')).toBeUndefined();
     });
 
+    it('reports no underrun coverage once the transport that took the buffer has stopped', () => {
+        wireDropoutCounter(false);
+        // The buffer is allocated and handed out for the life of the page, so a
+        // transport that took it and then stopped leaves it in place with its
+        // tally standing. That tally is a finished run, not a live observation.
+        expect(dropoutCounters.getSab()).not.toBeNull();
+        startCountingTransport();
+        stopCountingTransport();
+
+        const reading = collectAudioDeadlineEvidence().engineUnderruns;
+
+        expect(reading.coverage).toBe('unavailable');
+        expect('events' in reading).toBe(false);
+        expect(Reflect.get(reading, 'events')).toBeUndefined();
+    });
+
     it('counts the accumulated stream-error events while the native engine runs', () => {
         engineRtDiagnosticsStore.set({
             latest: runningNativeDiagnostics,
@@ -181,6 +226,21 @@ describe('collectAudioDeadlineEvidence', () => {
 
         expect(workload.webEngine).toEqual({ sampleRate: 48_000 });
         expect(workload.nativeEngine).toEqual({ sampleRate: 44_100, outputBufferFrames: 512 });
+    });
+
+    it('leaves the native frames entry absent until a callback has published one', () => {
+        // The slot is written only from inside the render callback, so an output
+        // stream that has opened but never rendered still reads zero. Carrying
+        // that zero beside a fault count would claim a buffer size nobody
+        // produced.
+        engineRtDiagnosticsStore.set({
+            latest: { ...runningNativeDiagnostics, outputBufferFrames: 0 },
+            events: [],
+        });
+
+        const { nativeEngine } = collectAudioDeadlineEvidence().workload;
+
+        expect(nativeEngine).toEqual({ sampleRate: 48_000, outputBufferFrames: null });
     });
 
     it('correlates the reading to the workload it was taken under', () => {

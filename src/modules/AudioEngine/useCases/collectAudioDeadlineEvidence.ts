@@ -86,6 +86,10 @@ function readWebEngine(): AudioDeadlineWorkload['webEngine'] {
  * The rate the native output stream actually opened at and the frames its most
  * recent callback asked for — both figures `nativeStreamFaults` was counted
  * against, and neither one describing the web carrier beside it.
+ *
+ * The frames slot is written only from inside the render callback, so it holds
+ * zero on a stream that has opened but never rendered. That zero is a figure
+ * nobody produced and is reported as absent.
  */
 function readNativeEngine(): AudioDeadlineWorkload['nativeEngine'] {
     const diagnostics = engineRtDiagnosticsStore.value?.latest;
@@ -94,7 +98,9 @@ function readNativeEngine(): AudioDeadlineWorkload['nativeEngine'] {
         return null;
     }
 
-    return { sampleRate: diagnostics.sampleRate, outputBufferFrames: diagnostics.outputBufferFrames };
+    const { sampleRate, outputBufferFrames } = diagnostics;
+
+    return { sampleRate, outputBufferFrames: outputBufferFrames === 0 ? null : outputBufferFrames };
 }
 
 function readTransport(): AudioDeadlineWorkload['transport'] {

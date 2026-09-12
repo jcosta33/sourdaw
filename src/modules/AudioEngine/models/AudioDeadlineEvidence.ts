@@ -21,10 +21,16 @@ export type DeadlineCategoryReading =
  * pair one engine's rate with the other's counts. A null entry means that
  * carrier is not running, the same reading rule `unavailable` carries: never a
  * zero standing in for a figure nobody produced.
+ *
+ * `outputBufferFrames` carries that rule one level down. The native slot is
+ * zero until the first render callback publishes a figure, so an output stream
+ * that has opened but never rendered would report zero frames beside a fault
+ * count — an unpublished reading, not a measured one. It is null until the
+ * callback has published.
  */
 export type AudioDeadlineWorkload = {
     webEngine: { sampleRate: number } | null;
-    nativeEngine: { sampleRate: number; outputBufferFrames: number } | null;
+    nativeEngine: { sampleRate: number; outputBufferFrames: number | null } | null;
     trackCount: number;
     transport: 'stopped' | 'playing' | 'recording';
 };
