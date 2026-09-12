@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_87ab0a2f60ccf8::t_784147937b0a70 113,123,316-386
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreCrossfadeClips.spec.ts
+  s_87ab0a2f60ccf8::t_f174cc56eba365 218-236
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_87ab0a2f60ccf8::t_1b4e808f62e9ae 11-12,14-17,56,58
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_87ab0a2f60ccf8::t_2e3f9cb981dbb9 137,143,152,157,165,170-172,353-379
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_87ab0a2f60ccf8::t_914ff8c2cf969b 8-14,51,60-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4ab7bd4ea484e3aa7dd84d6e6b1ce1400e438861",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
