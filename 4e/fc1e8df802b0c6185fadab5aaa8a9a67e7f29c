@@ -1,0 +1,21 @@
+src/modules/PluginHost/useCases/faustEngine/__tests__/supersawDspBehavior.spec.ts
+  s_87ab0a2f60ccf8::t_732c66fc4e538d 1-158
+src/modules/PluginHost/useCases/faustEngine/dsp/supersaw-unison.dsp
+  s_87ab0a2f60ccf8::t_420b964f67a5e9 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4efc1e8df802b0c6185fadab5aaa8a9a67e7f29c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
