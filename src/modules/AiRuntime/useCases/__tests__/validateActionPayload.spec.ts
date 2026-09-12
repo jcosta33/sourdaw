@@ -905,31 +905,28 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             return;
         }
 
-        expect(
-            guard({
-                expected: { loopStart: 0, loopEnd: 4, isLooping: true },
-                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
-            })
-        ).toBe(true);
-        expect(guard({ loopStart: 0, loopEnd: 4, isLooping: true })).toBe(false);
-        expect(
-            guard({
-                expected: { loopStart: 0, loopEnd: 0, isLooping: true },
-                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
-            })
-        ).toBe(false);
-        expect(
-            guard({
-                expected: { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true },
-                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
-            })
-        ).toBe(false);
-        expect(
-            guard({
-                expected: { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true },
-                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
-            })
-        ).toBe(false);
+        const enabledRegion = { loopStart: 0, loopEnd: 4, isLooping: true };
+        const disabledRegion = { loopStart: 0, loopEnd: 0, isLooping: false };
+        expect(guard({ expected: enabledRegion, replacement: disabledRegion })).toBe(true);
+
+        const invalidRegions: readonly [string, unknown][] = [
+            ['enabled equal bounds', { loopStart: 0, loopEnd: 0, isLooping: true }],
+            ['nonfinite endpoint', { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true }],
+            ['negative endpoint', { loopStart: -1, loopEnd: 4, isLooping: true }],
+            ['reversed endpoints', { loopStart: 4, loopEnd: 0, isLooping: false }],
+            ['missing key', { loopStart: 0, loopEnd: 4 }],
+            ['extra key', { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true }],
+            ['wrong boolean', { loopStart: 0, loopEnd: 4, isLooping: 'true' }],
+        ];
+        for (const [label, invalidRegion] of invalidRegions) {
+            expect(guard({ expected: invalidRegion, replacement: disabledRegion }), `invalid expected: ${label}`).toBe(
+                false
+            );
+            expect(
+                guard({ expected: enabledRegion, replacement: invalidRegion }),
+                `invalid replacement: ${label}`
+            ).toBe(false);
+        }
     });
 
     it.each([
