@@ -1,0 +1,33 @@
+src/modules/Yeast/workers/processors/Transposer.ts
+  s_87ab0a2f60ccf8::t_017a9cbc070708 21-22,51-52,61
+src/modules/Yeast/workers/processors/__tests__/ScaleQuantizer.spec.ts
+  s_87ab0a2f60ccf8::t_cedd2aff952175 192-245
+src/modules/Yeast/workers/processors/ScaleQuantizer.ts
+  s_87ab0a2f60ccf8::t_017a9cbc070708 39-41,63-64,72
+src/modules/Yeast/workers/processors/NoteFilter.ts
+  s_87ab0a2f60ccf8::t_017a9cbc070708 19-20,30,43
+.agents/skills/testing-file-layout/SKILL.md
+  s_87ab0a2f60ccf8::t_67a46eb0f49f4d 46-54
+src/modules/Yeast/workers/processors/__tests__/NoteFilter.spec.ts
+  s_87ab0a2f60ccf8::t_cedd2aff952175 44-95
+src/modules/Yeast/workers/processors/__tests__/Transposer.spec.ts
+  s_87ab0a2f60ccf8::t_cedd2aff952175 90-142
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_87ab0a2f60ccf8::t_d814f5cc293fc9 684-891
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "47127165942b18906503b0143c1ebb7b828887e4",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
