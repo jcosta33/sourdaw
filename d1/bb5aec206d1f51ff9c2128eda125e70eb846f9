@@ -1,0 +1,99 @@
+src/modules/Transport/handlers/transport/handleToggleLoop.ts
+  s_87ab0a2f60ccf8::t_d07f6ffc0f21a1 7-14
+  s_87ab0a2f60ccf8::t_296509afc41c8c 3,5,15-16,19-32
+  s_87ab0a2f60ccf8::t_b3abddf3883434 6
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_87ab0a2f60ccf8::t_39161bd9aaba3a 11,44-54,257
+src/modules/Transport/handlers/transport/handleRestoreLoopRegion.ts
+  s_87ab0a2f60ccf8::t_296509afc41c8c 6,8
+src/modules/CommandInterface/useCases/commands/TransportCommands.ts
+  s_87ab0a2f60ccf8::t_d07f6ffc0f21a1 2
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  s_87ab0a2f60ccf8::t_531b9953b304e1 145,148
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_87ab0a2f60ccf8::t_556e75dfdf1218 901-934
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_81c11fce9b5890 1202
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_87ab0a2f60ccf8::t_39161bd9aaba3a 75-85
+  s_87ab0a2f60ccf8::t_99b3dd05c684d3 459-461
+src/modules/Transport/useCases/transportControls/__tests__/restoreLoopRegion.spec.ts
+  s_87ab0a2f60ccf8::t_3f6f776f4ecd16 21,23-28,34-39
+  s_87ab0a2f60ccf8::t_abc4c80200a4a0 40-44,52-55
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_5d556c82d5bbd9 6,9-15,36-40,49,52-55,66-72,76-87,91-92
+  s_87ab0a2f60ccf8::t_24c61567249265 88-90
+  s_87ab0a2f60ccf8::t_ba4dacbd61170c 1,73-75
+  s_87ab0a2f60ccf8::t_5a09cbbe42ae66 93-95
+src/modules/Transport/useCases/transportControls/resolveNextLoopRegion.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 1-49
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_87ab0a2f60ccf8::t_81c11fce9b5890 15
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_296509afc41c8c 1202-1205
+src/modules/Transport/useCases/transportControls/toggleLoop.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 4-9,11-13
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_87ab0a2f60ccf8::t_6550d3f2d6612a 117
+src/modules/Transport/useCases/transportControls/setLoopRegion.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 4,7,20,28
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_87ab0a2f60ccf8::t_6550d3f2d6612a 80
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_87ab0a2f60ccf8::t_531b9953b304e1 186-188
+src/modules/Transport/useCases/transportControls/__tests__/resolveNextLoopRegion.spec.ts
+  s_87ab0a2f60ccf8::t_adba6b378ec4c6 4,41,43-47
+  s_87ab0a2f60ccf8::t_491ea2811372f2 1-3,5-11,13-32,34-40,42,48,50-59,63-64
+  s_87ab0a2f60ccf8::t_81c11fce9b5890 12,33,49,60-62
+src/modules/Transport/useCases/transportControls/__tests__/toggleLoop.spec.ts
+  s_87ab0a2f60ccf8::t_e7cf8f0226e8a1 21,28
+src/modules/Transport/useCases/transportControls/restoreLoopRegion.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 1-2,6,12-33,35-36,38-46
+src/modules/Transport/handlers/transport/__tests__/handleRestoreLoopRegion.spec.ts
+  s_87ab0a2f60ccf8::t_3f6f776f4ecd16 12-15,24
+src/modules/Transport/handlers/transport/handleSetLoopRegion.ts
+  s_87ab0a2f60ccf8::t_296509afc41c8c 6-23,25-27,30,35-36,40-44,46-47
+  s_87ab0a2f60ccf8::t_bcd2a872919388 48-52
+src/modules/Transport/handlers/transport/__tests__/handleSetLoopRegion.spec.ts
+  s_87ab0a2f60ccf8::t_3f6f776f4ecd16 39-42
+src/modules/Arrangement/useCases/__tests__/getLastClipEndBeat.spec.ts
+  s_87ab0a2f60ccf8::t_adba6b378ec4c6 14
+  s_87ab0a2f60ccf8::t_81c11fce9b5890 11
+  s_87ab0a2f60ccf8::t_318d5e06b6414a 5-6,8,17-18,20-26
+  s_87ab0a2f60ccf8::t_531b9953b304e1 1,3-4,7,12-13,15-16,19,27-32
+src/modules/Arrangement/useCases/index.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 161
+src/modules/CommandInterface/useCases/commands/__tests__/TransportCommands.spec.ts
+  s_87ab0a2f60ccf8::t_531b9953b304e1 14
+  s_87ab0a2f60ccf8::t_d07f6ffc0f21a1 3
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_e7099b5d58aa89 75-78
+src/modules/Arrangement/useCases/getLastClipEndBeat.ts
+  s_87ab0a2f60ccf8::t_7f879d372f1e0c 1,8
+src/modules/Transport/handlers/transport/__tests__/loopUndoRedo.spec.ts
+  s_87ab0a2f60ccf8::t_2bd379b044f702 2,7-15,17-19,22,27-44,46,48-57,71-74,76-78,96-103,111-115,135-138,140-149
+  s_87ab0a2f60ccf8::t_ba4dacbd61170c 3,45
+  s_87ab0a2f60ccf8::t_bec604c64c87f4 4,16,21
+  s_87ab0a2f60ccf8::t_2eefb489cd7866 5-6,23-26,47,58-70,79-81,90-95,139
+  s_87ab0a2f60ccf8::t_8d4e75043b15fc 20,75
+  s_87ab0a2f60ccf8::t_4262d9364d1493 1,104-110
+  s_87ab0a2f60ccf8::t_ce15ce7b0e98de 82-89,116-134
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_87ab0a2f60ccf8::t_0d0c39535518c1 1132-1140,1153,1180,1190,1202,1206,1233,1241,1250-1251,1320,1325,1341,1353,1357,1366,1385,1408,1414,1433,1439,1457,1463,1471-1473,1482-1483,1485-1486,1498-1499,1526,1540,1558,1563,1569,1576,1589-1590,1608,1613,1622-1623,1669,1673,1676,1680,1686,1698,1702,1719,1725,1728,1746,1753,1764,1787,1799,1815,1823,1829,1838-1839,1855,1866,1901,1906,1949,1954,2040,2063-2064,2087,2106,2114,2123,2134-2136,2150-2152,2183,2189,2198,2209,2217,2228-2229,2243-2244,2269-2270,2328,2337,2369,2395,2413,2419,2441,2467,2475-2477,2484,2493-2494,2499-2504,2539,2546,2562,2570-2572,2595,2625-2626,2630-2631,2702,2713,2753,2759,2809,2824,2829,2847-2848,2855,2861,2868,2882-2883,2892,2894,2906-2907,2915-2916,2933,2943-2944,2956-2957,2999-3000,3074-3075,3153-3154,3270,3277,3280,3289,3291,3372-3373,3400-3401,3423,3437,3446,3468,3482,3489,3496-3498,3539-3542,3564,3569,3581,3588,3593,3595,3601,3606,3608-3609,3628,3635,3643-3644,3650,3653,3669,3687,3697-3698,3707-3708,3771,3777-3778,3789-3790,3812-3813,3839,3847,3854,3859-3860,3876,3881-3882,3894,3904,3911,3917,3922,3931-3932,3953,3958-3959,3996-3997,4017,4031-4032,4040-4041,4059-4060,4082,4130,4137,4143-4144,4151,4165,4180,4194,4199-4202,4231,4237,4251,4257,4302,4304-4306,4319-4320,4328-4329,4331-4332,4344-4345,4348-4349,4355,4360,4387,4392,4487,4494,4522,4530,4536,4544-4545,4585,4596,4604,4610,4617,4622,4630-4631,4842,4858,4875,4882-4883,4886,4917,4930-4933,4943-4944,4989,5003,5008,5010,5058,5063,5081,5086,5110,5115,5182,5191,5203,5215,5236,5248,5254,5260-5261,5286,5292-5293,5357,5363,5366,5373,5378,5380,5389,5391,5400,5461-5493,5500-5538,5542,5544-5563,5566,5568-5578,5580-5581,5588-5621,5627-5628,5631-5635,5637-5638,5640,5642-5654,5656-5658,5660-5666,5668-5670,5672-5684,5686,5688-5690,5695-5696,5698-5701,5705-5710,5715,5717-5718,5720-5721,5724-5738,5740-5744,5746-5748,5752-5762
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d1bb5aec206d1f51ff9c2128eda125e70eb846f9",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
