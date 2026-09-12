@@ -1,10 +1,10 @@
 # src/infra — Agent Guidelines
 
-Cross-cutting technical infrastructure: singleton AudioContext management, AudioWorklet module loaders, DI container, typed event bus, structured logging, dialog service, and store utilities.
+Cross-cutting technical infrastructure: audio latency-profile preferences, AudioWorklet module loaders, DI container, typed event bus, structured logging, dialog service, and store utilities.
 
 ## Domain Ownership
 
-- Owns app-wide WebAudio `AudioContext` lifecycle and audio clock references (`audioContext/`).
+- Owns the stored audio latency-profile preference (`audioContext/`), read by the single live `AudioContext` `src/modules/AudioEngine/repositories/createWebAudioEngine.ts` constructs.
 - Owns WASM and AudioWorklet processor module loading pipelines (`audioWorklet/`).
 - Owns core Dependency Injection container (`di/diContainer.ts`).
 - Owns base typed event bus primitive (`events/EventBus.ts`).

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import {
@@ -14,6 +14,7 @@ const previewSeamMocks = vi.hoisted(() => ({
     getAudioContext: vi.fn(),
     createBufferSource: vi.fn(),
     resolveRenderContext: vi.fn(),
+    scheduleTrackClips: vi.fn(),
 }));
 
 // The preview cache/playback seam: both run on the live context per
@@ -28,6 +29,12 @@ vi.mock('../scheduling/createBufferSource', () => ({
 }));
 vi.mock('../offlineRender/resolveRenderContext', () => ({
     resolveRenderContext: previewSeamMocks.resolveRenderContext,
+}));
+// Clip/note scheduling is exercised by `renderOffline.spec.ts`; this file only
+// needs the strip-building loop to run for real, so the clip seam stays a
+// no-op exactly as it does there.
+vi.mock('../offlineRender/scheduleTrackClips', () => ({
+    scheduleTrackClips: previewSeamMocks.scheduleTrackClips,
 }));
 
 const previewBufferStore = new Map<string, unknown>();
@@ -292,7 +299,10 @@ describe('agent runtime graph boundary', () => {
 // Every context node-factory the live engine's constructor and device chains
 // can call. Summing all of them, rather than one or two a test happens to
 // think of, is what proves "no node created" instead of "no node this
-// assertion bothered to check".
+// assertion bothered to check". `createWaveShaper` and `createIIRFilter` back
+// tone-shaping devices (`createDistortion.ts`, `createBitcrusher.ts`) on the
+// device-chain path these tests exercise; `createConstantSource` is summed for
+// the same completeness even though no current device chain calls it.
 const CONTEXT_NODE_FACTORY_NAMES = [
     'createGain',
     'createStereoPanner',
@@ -305,10 +315,19 @@ const CONTEXT_NODE_FACTORY_NAMES = [
     'createOscillator',
     'createDelay',
     'createBufferSource',
+    'createWaveShaper',
+    'createIIRFilter',
+    'createConstantSource',
 ] as const;
 
-function totalNodeCreationCalls(mockCtx: MockAudioContext): number {
-    return CONTEXT_NODE_FACTORY_NAMES.reduce((total, name) => total + mockCtx[name].mock.calls.length, 0);
+// Worklet devices build their node with `new AudioWorkletNode(ctx, …)`, which
+// no context factory above records — folding a live count of it into the
+// total is what makes "no node created" also cover the worklet route.
+function totalNodeCreationCalls(mockCtx: MockAudioContext, workletNodeCallCount: number): number {
+    return (
+        CONTEXT_NODE_FACTORY_NAMES.reduce((total, name) => total + mockCtx[name].mock.calls.length, 0) +
+        workletNodeCallCount
+    );
 }
 
 /** The four master-tap nodes the engine wires in its constructor — the whole
@@ -334,10 +353,32 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         return { engine, mockCtx };
     }
 
+    // A worklet device builds its node with `new AudioWorkletNode(ctx, …)`
+    // rather than through a `mockCtx` factory, so counting it needs a spy on
+    // the global constructor `src/setupTests.ts:261-269` installs — installed
+    // fresh per case and restored after, so no count leaks between tests.
+    let workletNodeCallCount: number;
+    let originalAudioWorkletNode: typeof AudioWorkletNode;
+
+    beforeEach(() => {
+        workletNodeCallCount = 0;
+        originalAudioWorkletNode = globalThis.AudioWorkletNode;
+        globalThis.AudioWorkletNode = new Proxy(originalAudioWorkletNode, {
+            construct(target, args) {
+                workletNodeCallCount += 1;
+                return Reflect.construct(target, args);
+            },
+        });
+    });
+
+    afterEach(() => {
+        globalThis.AudioWorkletNode = originalAudioWorkletNode;
+    });
+
     it('leaves the live graph unchanged when applyRuntimeGraphDelta rejects an invalid delta', () => {
         const { engine, mockCtx } = createHarness();
         const revisionBefore = engine.getRuntimeGraphRevision();
-        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx);
+        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
         const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
 
         const result = engine.applyRuntimeGraphDelta(INVALID_DELTA_INPUT);
@@ -350,14 +391,14 @@ describe('agent runtime graph boundary — live engine rejection', () => {
         // The returned result alone proves only what the function returned, not
         // that the graph was untouched — both halves are required.
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
-        expect(totalNodeCreationCalls(mockCtx)).toBe(nodeCreationsBefore);
+        expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
         expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
     });
 
     it('leaves the live graph unchanged when initializeTrackStripFromSnapshot rejects an invalid snapshot', () => {
         const { engine, mockCtx } = createHarness();
         const revisionBefore = engine.getRuntimeGraphRevision();
-        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx);
+        const nodeCreationsBefore = totalNodeCreationCalls(mockCtx, workletNodeCallCount);
         const masterConnectsBefore = totalMasterNodeConnectCalls(engine);
 
         const result = engine.initializeTrackStripFromSnapshot(INVALID_DELTA_INPUT);
@@ -368,7 +409,7 @@ describe('agent runtime graph boundary — live engine rejection', () => {
             reason: 'Runtime graph delta schema version or command is unsupported',
         });
         expect(engine.getRuntimeGraphRevision()).toBe(revisionBefore);
-        expect(totalNodeCreationCalls(mockCtx)).toBe(nodeCreationsBefore);
+        expect(totalNodeCreationCalls(mockCtx, workletNodeCallCount)).toBe(nodeCreationsBefore);
         expect(totalMasterNodeConnectCalls(engine)).toBe(masterConnectsBefore);
     });
 });
@@ -396,32 +437,77 @@ describe('agent runtime graph boundary — preview isolation from offline render
         vi.unstubAllGlobals();
     });
 
-    // Every node a render created on it forwards its `connect` argument here,
-    // so the offline render's own routing is observed rather than asserted.
+    // Every node the render creates *after* the master gain forwards its
+    // `connect` argument here — the master gain's own unconditional wiring to
+    // `offlineCtx.destination` (`renderOffline.ts:277`) is excluded so the
+    // vacuity guard below cannot pass on that one connect alone; it can only
+    // pass once the strip-building loop actually runs.
     let recordedOfflineConnectArgs: unknown[];
 
-    // Local fake sized to what this case drives (renderOffline.spec.ts:154-161's
-    // pattern): a gain factory for the unconditional master-gain connect at
-    // `renderOffline.ts:275-277`, and a `startRendering` so the unsegmented
-    // fallback in `renderInSegments` (no `suspend`/`resume` here) resolves.
+    // Local fake sized to what this case drives: a gain/panner factory so
+    // `createOfflineTrackStrip` (renderOffline.spec.ts:154-161's pattern, run
+    // for real here rather than mocked) can build a strip, and a
+    // `startRendering` so the unsegmented fallback in `renderInSegments` (no
+    // `suspend`/`resume` here) resolves. The very first `createGain()` call is
+    // always the master gain (`renderOffline.ts:275`, before any strip is
+    // built), so it alone is excluded from the recording.
     class RecordingOfflineAudioContext {
         readonly destination = {};
         readonly sampleRate = 48_000;
+        private nodeCount = 0;
 
-        createGain(): { gain: { value: number }; connect: (dest: unknown) => unknown } {
+        private createRecordingNode(paramName: 'gain' | 'pan'): {
+            gain: { value: number };
+            pan: { value: number };
+            connect: (dest: unknown) => unknown;
+        } {
+            this.nodeCount += 1;
+            const isMasterGain = paramName === 'gain' && this.nodeCount === 1;
             return {
                 gain: { value: 0 },
+                pan: { value: 0 },
                 connect: (dest: unknown) => {
-                    recordedOfflineConnectArgs.push(dest);
+                    if (!isMasterGain) {
+                        recordedOfflineConnectArgs.push(dest);
+                    }
                     return dest;
                 },
             };
+        }
+
+        createGain(): { gain: { value: number }; connect: (dest: unknown) => unknown } {
+            return this.createRecordingNode('gain');
+        }
+
+        createStereoPanner(): { pan: { value: number }; connect: (dest: unknown) => unknown } {
+            return this.createRecordingNode('pan');
         }
 
         startRendering(): Promise<AudioBuffer> {
             return Promise.resolve({} as AudioBuffer);
         }
     }
+
+    // Shape mirrors `renderOffline.spec.ts`'s `audioTrack` helper, extended
+    // with the strip-level fields that helper never needed: that spec mocks
+    // `createOfflineTrackStrip`, while this case runs the real builder (no
+    // devices are built here, so `buildDeviceChain` runs for real too), whose
+    // fader/pan law reads `gain`/`pan` directly.
+    const offlineRenderTrack = {
+        id: 'lead',
+        name: 'Lead',
+        kind: 'audio',
+        disabled: false,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        outputId: 'hw_out',
+        gain: 1,
+        pan: 0,
+        vcaGroupId: null,
+        devices: [],
+        sends: [],
+    };
 
     it('connects no node an offline render creates to a preview node playing on the live context', async () => {
         recordedOfflineConnectArgs = [];
@@ -439,7 +525,12 @@ describe('agent runtime graph boundary — preview isolation from offline render
             sampleRate: 48_000,
         });
         previewSeamMocks.createBufferSource.mockReturnValue(livePreviewSource);
-        previewSeamMocks.resolveRenderContext.mockReturnValue(createFakeRenderContext());
+        // `tracks`/`midi` must both be truthy for `renderOffline.ts:140-141` to
+        // build any strip at all — a null pair (the prior fixture default) makes
+        // `allRenderableTracks` empty and the strip-building loop dead code.
+        previewSeamMocks.resolveRenderContext.mockReturnValue(
+            createFakeRenderContext({ tracks: { tracks: [offlineRenderTrack] }, midi: {} })
+        );
 
         // Cache and start a preview on the live context (`cachePreviewAudioBuffer`/
         // `playCachedAudioBufferPreview`) before the offline render runs.
@@ -450,11 +541,14 @@ describe('agent runtime graph boundary — preview isolation from offline render
 
         vi.stubGlobal('OfflineAudioContext', RecordingOfflineAudioContext);
 
-        await renderOffline(4).catch(() => undefined);
+        await renderOffline(4);
 
-        // Vacuity guard: at least one node the fake itself created did connect
-        // something (renderOffline.ts:277's unconditional master-gain wiring),
-        // so an empty recording set cannot pass this silently.
+        // Vacuity guard: the strip-building loop this case exists to exercise
+        // must itself have connected something — `createOfflineTrackStrip`'s
+        // internal chain plus its `set-track-output` route to master — counted
+        // only from nodes created *after* the master gain, so the master's own
+        // unconditional wiring to `offlineCtx.destination` cannot satisfy this
+        // on its own the way it did before the strip actually built.
         expect(recordedOfflineConnectArgs.length).toBeGreaterThan(0);
         expect(recordedOfflineConnectArgs).not.toContain(livePreviewSource);
         expect(recordedOfflineConnectArgs).not.toContain(livePreviewDestination);
