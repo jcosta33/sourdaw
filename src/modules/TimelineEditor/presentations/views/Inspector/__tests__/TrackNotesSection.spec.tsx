@@ -1,12 +1,16 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { TrackNotesSection } from '../TrackNotesSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
-// Mock external dependencies
-const mockSetTrackNotes = vi.fn();
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
+}));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -15,7 +19,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         setTrackColor: vi.fn(),
         setTrackPan: vi.fn(),
         setTrackGain: vi.fn(),
-        setTrackNotes: (...args: unknown[]) => mockSetTrackNotes(...args),
     };
 });
 
@@ -130,14 +133,17 @@ describe('TrackNotesSection', () => {
         const textarea = screen.getByTestId('textarea');
         fireEvent.change(textarea, { target: { value: 'Updated notes' } });
         fireEvent.blur(textarea);
-        expect(mockSetTrackNotes).toHaveBeenCalledWith('track-1', 'Updated notes');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setTrackNotes',
+            payload: { trackId: 'track-1', notes: 'Updated notes' },
+        });
     });
 
     it('should not call setTrackNotes on blur when notes unchanged', () => {
         render(<TrackNotesSection track={mockTrack} />);
         const textarea = screen.getByTestId('textarea');
         fireEvent.blur(textarea);
-        expect(mockSetTrackNotes).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('should render inset panel', () => {
