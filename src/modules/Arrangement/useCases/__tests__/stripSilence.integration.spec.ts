@@ -154,7 +154,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             audioOffsetBeats: CLIP_AUDIO_OFFSET_BEATS,
         });
         const { audioOffsetBeats, ...clipWithoutOffset } = source;
-        const clip = { ...clipWithoutOffset, overrides: { gain: true }, audioOffsetBeats };
+        const clip = { ...clipWithoutOffset, overrides: { gain: true }, audioOffsetBeats, kneadState: undefined };
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: 'track-1', ghostClips: [] });
         mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(twoRegionChannelData()));
