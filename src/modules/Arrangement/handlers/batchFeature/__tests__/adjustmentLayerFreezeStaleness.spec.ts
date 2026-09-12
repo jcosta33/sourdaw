@@ -466,22 +466,22 @@ describe('adjustmentLayerFreezeStaleness', () => {
         adjustmentLayerStore.hydrate();
 
         const decodedBaseline = getLayerState();
-        const gain = decodedBaseline.layers[0]!.parameters[0]!;
-        const reorderedGain = {
-            unit: gain.unit,
-            max: gain.max,
-            min: gain.min,
-            value: gain.value,
-            name: gain.name,
+        const drive = decodedBaseline.layers[1]!.parameters[0]!;
+        const reorderedDrive = {
+            unit: drive.unit,
+            max: drive.max,
+            min: drive.min,
+            value: drive.value,
+            name: drive.name,
         };
-        const capturedParameterKeyOrder = Object.keys(reorderedGain);
+        const capturedParameterKeyOrder = Object.keys(reorderedDrive);
         adjustmentLayerStore.set({
             layers: [
+                decodedBaseline.layers[0]!,
                 {
-                    ...decodedBaseline.layers[0]!,
-                    parameters: [reorderedGain, ...decodedBaseline.layers[0]!.parameters.slice(1)],
+                    ...decodedBaseline.layers[1]!,
+                    parameters: [reorderedDrive, ...decodedBaseline.layers[1]!.parameters.slice(1)],
                 },
-                decodedBaseline.layers[1]!,
             ],
         });
         expect(capturedParameterKeyOrder).toEqual(['unit', 'max', 'min', 'value', 'name']);
@@ -498,7 +498,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
                 ],
             },
         });
-        expect(Object.keys(getLayerState().layers[0]!.parameters[0]!)).not.toEqual(capturedParameterKeyOrder);
+        expect(Object.keys(getLayerState().layers[1]!.parameters[0]!)).not.toEqual(capturedParameterKeyOrder);
         expect(getTrack('track-a').freezeState.status).toBe('stale');
         expect(getTrack('track-b').freezeState.status).toBe('frozen');
         expect(getLayerState().layers.map((layer) => layer.id)).toEqual(['layer-a', 'layer-b']);
