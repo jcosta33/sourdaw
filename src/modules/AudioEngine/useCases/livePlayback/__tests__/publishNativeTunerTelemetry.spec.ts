@@ -75,6 +75,7 @@ describe('publishNativeTunerTelemetry', () => {
             octave: 4,
             midiNote: 69,
             noteName: 'A',
+            polyStrings: [],
         });
     });
 
@@ -93,6 +94,7 @@ describe('publishNativeTunerTelemetry', () => {
             octave: 0,
             midiNote: 0,
             noteName: '',
+            polyStrings: [],
         });
     });
 
