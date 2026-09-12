@@ -99,6 +99,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         getEffectiveGain: vi.fn(),
         getFactoryPresets: vi.fn(),
         getGainAtBeat: vi.fn(),
+        getLastClipEndBeat: vi.fn(() => 0),
         getPlatformPlugins: actual.getPlatformPlugins,
         getPluginById: vi.fn(),
         getSynthParamsForTrack: vi.fn(),
