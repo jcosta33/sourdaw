@@ -1,0 +1,43 @@
+src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts
+  s_87ab0a2f60ccf8::t_c3c13dd46636e5 1-2,29
+.agents/skills/review-stances/test-validity.md
+  s_87ab0a2f60ccf8::t_c3c13dd46636e5 234-247
+src/modules/MIDI/useCases/grooveTemplates/createGrooveTemplate.ts
+  s_87ab0a2f60ccf8::t_c3c13dd46636e5 1-2,36
+src/modules/MIDI/useCases/grooveTemplates/restoreGrooveAssignment.ts
+  s_87ab0a2f60ccf8::t_c3c13dd46636e5 1-2,33
+src/modules/MIDI/useCases/grooveTemplates/__tests__/createGrooveTemplate.spec.ts
+  s_87ab0a2f60ccf8::t_9f4d8bbe58da61 5-6
+  s_87ab0a2f60ccf8::t_850e4d2375f534 86-107
+  s_87ab0a2f60ccf8::t_2d05d81ff58ceb 3,34
+  s_87ab0a2f60ccf8::t_be1afcfeb1284f 23-32
+  s_87ab0a2f60ccf8::t_87caac20d77944 1-2,4,7-22,33,35-85,108
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_87ab0a2f60ccf8::t_c3c13dd46636e5 3,22
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_87ab0a2f60ccf8::t_87caac20d77944 3,6,50-84,150-230
+  s_87ab0a2f60ccf8::t_3664eb067bd796 231
+src/modules/MIDI/useCases/grooveTemplates/__tests__/restoreGrooveAssignment.spec.ts
+  s_87ab0a2f60ccf8::t_87caac20d77944 124-153,163,166-167
+src/modules/MIDI/useCases/grooveTemplates/__tests__/restoreDeletedGrooveTemplate.spec.ts
+  s_87ab0a2f60ccf8::t_87caac20d77944 48,57,68,70-81,151-176
+  s_87ab0a2f60ccf8::t_be1afcfeb1284f 58-67
+  s_87ab0a2f60ccf8::t_2d05d81ff58ceb 4,69
+  s_87ab0a2f60ccf8::t_4bf136a34e98dd 177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c4c69ab34daa76b2683ee4dae4db4db3e3575b0c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
