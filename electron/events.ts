@@ -165,7 +165,7 @@ export const createEventForwarder = ({ target, schedule, channel }: CreateEventF
  * past that many events, so a deeper queue here could only ever hold events the
  * consumer has already decided to reject.
  */
-export const STREAM_QUEUE_CAPACITY = 256;
+export const STREAM_QUEUE_CAPACITY = 8192;
 
 export type CreateCommandStreamInput = {
     readonly streamId: string;
