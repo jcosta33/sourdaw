@@ -4481,3 +4481,114 @@ mod compensation_render_alloc_guards {
         );
     }
 }
+
+/// The callback-deadline contract read through [`crate::EngineHandle`]'s own
+/// public surface, which is what `cargo test -p daw-engine audio_deadline`
+/// names.
+///
+/// The sibling `capture_seam_tests` assert the same recording rule by
+/// loading the atomic slot directly. That oracle cannot fail if the accessor
+/// above it stops reading the slot the engine was built with, so these drive
+/// the sink and read [`crate::EngineHandle::output_stream_fault`], the figure a
+/// caller actually reaches.
+#[cfg(test)]
+mod audio_deadline {
+    use super::{new_output_stream_fault_slot, stream_error_sink};
+    use crate::engine_events::{engine_event_channel, StreamErrorKind, StreamSide};
+    use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+    use crate::scheduler::{graph_progress_channel, meter_channel, transport_position_channel};
+    use crate::timeline::timeline_rt_diagnostics_channel;
+    use crate::EngineHandle;
+    use rtrb::RingBuffer;
+    use std::sync::atomic::AtomicU8;
+    use std::sync::Arc;
+
+    /// An engine reading the same fault slot the returned sink writes, so a
+    /// report made on the stream side is visible through the public accessor.
+    fn engine_reading(slot: Arc<AtomicU8>) -> EngineHandle {
+        let (command_tx, _command_rx) = RingBuffer::new(64);
+        let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_meter_tx, meter_reader) = meter_channel();
+        let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (_capture_event_tx, capture_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+
+        crate::engine_handle_fixture(
+            command_tx,
+            retired_adoption_tx,
+            diagnostics_reader,
+            timeline_diagnostics_reader,
+            graph_progress_reader,
+            transport_position_reader,
+            meter_reader,
+            engine_event_rx,
+            capture_event_rx,
+            super::new_capture_refusal_slot(),
+            super::new_render_liveness().rendering,
+            slot,
+        )
+    }
+
+    /// An xrun is the deadline miss this evidence exists to count, and it is
+    /// reported by a stream that goes on rendering. Reading it as a fault
+    /// through the public accessor would say the output stream had failed
+    /// every time the device merely ran late.
+    #[test]
+    fn an_output_xrun_leaves_the_public_fault_accessor_empty() {
+        let slot = new_output_stream_fault_slot();
+        let engine = engine_reading(Arc::clone(&slot));
+        let (tx, _rx) = engine_event_channel();
+        let mut sink = stream_error_sink(StreamSide::Output, tx, slot);
+
+        sink(StreamErrorKind::Xrun);
+
+        assert_eq!(
+            engine.output_stream_fault(),
+            None,
+            "an xrun is a report from a stream that keeps running, so no fault is readable"
+        );
+    }
+
+    /// A stream on its way down reports more than once, and the accessor must
+    /// carry the newest report — the one that still describes the stream —
+    /// rather than the first thing that went wrong.
+    #[test]
+    fn the_public_fault_accessor_reports_the_last_non_xrun_output_error() {
+        let slot = new_output_stream_fault_slot();
+        let engine = engine_reading(Arc::clone(&slot));
+        let (tx, _rx) = engine_event_channel();
+        let mut sink = stream_error_sink(StreamSide::Output, tx, slot);
+
+        sink(StreamErrorKind::DeviceNotAvailable);
+        sink(StreamErrorKind::DeviceChanged);
+
+        assert_eq!(
+            engine.output_stream_fault(),
+            Some(StreamErrorKind::DeviceChanged),
+            "the newest output error is the one the accessor reports"
+        );
+    }
+
+    /// A lost capture stream costs the take being recorded, not the engine's
+    /// ability to render. Surfacing it as an output fault would blame the
+    /// playback path for a failure on the other side of the engine.
+    #[test]
+    fn an_input_stream_invalidation_leaves_the_public_fault_accessor_empty() {
+        let slot = new_output_stream_fault_slot();
+        let engine = engine_reading(Arc::clone(&slot));
+        let (tx, _rx) = engine_event_channel();
+        let mut sink = stream_error_sink(StreamSide::Input, tx, slot);
+
+        sink(StreamErrorKind::StreamInvalidated);
+
+        assert_eq!(
+            engine.output_stream_fault(),
+            None,
+            "an input-side failure is not an output fault"
+        );
+    }
+}
