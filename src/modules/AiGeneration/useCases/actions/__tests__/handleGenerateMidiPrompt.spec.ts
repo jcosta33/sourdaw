@@ -5,7 +5,7 @@ import { handleGenerateMidiPrompt } from '../handleGenerateMidiPrompt';
 type TaskPatch = {
     status: string;
     error?: string;
-    data?: { noteCount?: number; warning?: string };
+    data?: { noteCount?: number; warning?: string; clipId?: string; trackId?: string };
     durationMs?: number;
 };
 
@@ -107,6 +107,14 @@ describe('handleGenerateMidiPrompt', () => {
         expect(options.shouldExecute()).toBe(true);
         expect(mocks.selectClip).toHaveBeenCalledWith(addClip?.payload.id);
         expect(mocks.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+        const successUpdate = mocks.updateTask.mock.calls
+            .map(([, patch]) => patch)
+            .find((patch) => patch.status === 'success');
+        expect(successUpdate?.data).toMatchObject({
+            noteCount: 1,
+            clipId: addClip?.payload.id,
+            trackId: addTrack?.payload.id,
+        });
     });
 
     it('uses the selected MIDI track without creating another track', async () => {

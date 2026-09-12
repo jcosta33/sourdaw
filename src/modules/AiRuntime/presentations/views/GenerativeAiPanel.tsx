@@ -18,10 +18,12 @@ import {
     cancelProcessingTask,
     removeTask,
 } from '#/modules/AiGeneration/useCases';
+import { selectClip } from '#/modules/Arrangement/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
+import { type ClipAuditionTarget, useClipAudition } from '../hooks/useClipAudition';
 
 type GenerativeTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 
@@ -43,6 +45,22 @@ type GenerativeAiState = {
     tasks: GenerativeTaskResult[];
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+// Generation commits the clip into the arrangement before the task is marked
+// successful, so the payload's clip identity is what makes a result card's
+// actions real. Tasks created before the identity existed carry none and must
+// render no actions rather than enabled controls that would do nothing.
+function readCommittedClip(data: unknown): ClipAuditionTarget | null {
+    if (!isRecord(data)) {
+        return null;
+    }
+    const { clipId, trackId } = data;
+    return typeof clipId === 'string' && typeof trackId === 'string' ? { clipId, trackId } : null;
+}
+
 export const GenerativeAiPanel = (): ReactElement | null => {
     const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
@@ -52,6 +70,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const [midiInstrument, setMidiInstrument] = useState('');
     const [midiNotes, setMidiNotes] = useState(32);
     const [creativity, setCreativity] = useState(65);
+    const { playingClipId, toggleAudition } = useClipAudition();
 
     if (!state.isPanelOpen) {
         return null;
@@ -258,9 +277,25 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                             bodyClassName="px-2 py-2"
                         >
                             <Stack gap={1.5}>
-                                {state.tasks.map((task: GenerativeTaskResult) => (
-                                    <AiTaskResultCard key={task.id} task={task} onRemove={removeTask} />
-                                ))}
+                                {state.tasks.map((task: GenerativeTaskResult) => {
+                                    const clip = readCommittedClip(task.data);
+                                    return (
+                                        <AiTaskResultCard
+                                            key={task.id}
+                                            task={task}
+                                            onRemove={removeTask}
+                                            committedClipActions={
+                                                clip
+                                                    ? {
+                                                          isPreviewing: playingClipId === clip.clipId,
+                                                          togglePreview: () => toggleAudition(clip),
+                                                          select: () => selectClip(clip.clipId),
+                                                      }
+                                                    : undefined
+                                            }
+                                        />
+                                    );
+                                })}
                             </Stack>
                         </DawUtilitySection>
                     </div>

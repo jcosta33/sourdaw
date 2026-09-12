@@ -1,6 +1,12 @@
 import { type CommandBatchDynamicEffects } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import {
+    executableAppActionEffectsByType,
+    getExecutableAppActionEffect,
+    type ExecutableAppActionEffect,
+} from './executableAppActionEffects';
+
 type CommandGrant = 'create' | 'delete' | 'routing' | 'tempo' | 'master' | 'file' | 'audioUpload' | 'remoteGeneration';
 
 export type VersionedCommandBatchEffects = {
@@ -14,54 +20,33 @@ export type VersionedCommandBatchEffects = {
     renderJobs: number;
 };
 
-export const CREATE_OPERATIONS = new Set([
-    'importStemSet',
-    'addTrack',
-    'createBus',
-    'duplicateTrack',
-    'addClip',
-    'duplicateClip',
-    'duplicateClipToNextBar',
-    'splitClip',
-    'glueClips',
-    'createDrumPreviewBranches',
-    'createVcaGroup',
-    'addDevice',
-    'addSend',
-    'addSidechainRoute',
-    'addAdjustmentRegion',
-    'addAutomationLane',
-    'addAutomationPoint',
-    'automateSendRange',
-    'automateSendRanges',
-    'automateTrackGainRange',
-    'renderProjectSections',
-    'addMarker',
-    'addSection',
-]);
-export const DELETE_OPERATIONS = new Set([
-    'removeTrack',
-    'removeClip',
-    'removeMarker',
-    'removeSection',
-    'removeDevice',
-    'removeSend',
-    'removeSidechainRoute',
-    'removeAdjustmentRegion',
-    'glueClips',
-    'thinAutomation',
-]);
-export const ROUTING_OPERATIONS = new Set([
-    'createBus',
-    'addSend',
-    'setSend',
-    'removeSend',
-    'setTrackOutput',
-    'addSidechainRoute',
-    'removeSidechainRoute',
-]);
-export const TEMPO_OPERATIONS = new Set(['setTempo', 'setTimeSignature']);
-export const MASTER_OPERATIONS = new Set(['setMasterGain']);
+// The five governed grant families are derived from the effect map, whose rows are traced
+// through each production handler, so they cannot drift from what handlers actually do
+// (#4115): an action carries the create grant exactly when its row declares `creates`, the
+// delete grant exactly when it declares `removes`, and the routing, tempo, and master
+// grants exactly when its unconditional `dimensions` name routing, project-timing, or
+// master. Conditional dimensions stay out by design: they need an execution-time policy,
+// not a request-time grant (see executableAppActionEffects.ts).
+function collectGrantOperations(matches: (effect: ExecutableAppActionEffect) => boolean): ReadonlySet<string> {
+    const operations = new Set<string>();
+    for (const actionType of Object.keys(executableAppActionEffectsByType)) {
+        const effect = getExecutableAppActionEffect(actionType);
+        if (effect !== null && matches(effect)) {
+            operations.add(actionType);
+        }
+    }
+    return operations;
+}
+
+export const CREATE_OPERATIONS = collectGrantOperations((effect) => (effect.creates?.length ?? 0) > 0);
+export const DELETE_OPERATIONS = collectGrantOperations((effect) => (effect.removes?.length ?? 0) > 0);
+export const ROUTING_OPERATIONS = collectGrantOperations((effect) => effect.dimensions.includes('routing'));
+export const TEMPO_OPERATIONS = collectGrantOperations((effect) => effect.dimensions.includes('project-timing'));
+export const MASTER_OPERATIONS = collectGrantOperations((effect) => effect.dimensions.includes('master'));
+
+// No effect-map field separates file access, audio upload, or remote generation from one
+// another — importStemSet and renderProjectSections share the 'external' dimension while
+// needing different grants here — so these three families stay hand-maintained.
 const FILE_OPERATIONS = new Set(['importStemSet', 'renderProjectSections']);
 const AUDIO_UPLOAD_OPERATIONS = new Set(['importStemSet']);
 const REMOTE_GENERATION_OPERATIONS = new Set<string>();
