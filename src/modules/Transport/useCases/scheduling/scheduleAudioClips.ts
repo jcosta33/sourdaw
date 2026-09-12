@@ -71,8 +71,27 @@ export function scheduleAudioClips(
     const changes = tempoMapStore.value?.changes ?? [];
     const ctx = getAudioContext();
 
+    // #3651 — the live twin of the offline mixdown's FX-8 cue-send rule. The
+    // strip's mute node (`postFaderGain`) sits downstream of the pre-fader tap
+    // (`TrackNode.setMute`), so a muted track still feeds its pre-fader (cue)
+    // sends. Skipping the track here left the send with no source: the bus was
+    // silent live while the export, which schedules these tracks, played them.
+    // A muted track is therefore scheduled when a pre-fader send can still
+    // reach a bus; the strip's own mute keeps the direct path silent. A
+    // post-fader send dies with the mute, and a send to a bus that no longer
+    // exists reaches nothing, so both stay skipped. Solo gating keeps its
+    // stronger exclusion law in the engine: `setSoloGate` closes `preFaderTap`
+    // itself, upstream of every send tap, so a solo-gated track feeds nothing
+    // even when scheduled — the scheduler stays solo-blind, as it always has.
+    const busTrackIds = new Set(
+        tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
+    );
+
     for (const track of tracks) {
-        if (track.kind !== 'audio' || track.muted) {
+        if (track.kind !== 'audio') {
+            continue;
+        }
+        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             continue;
         }
 
