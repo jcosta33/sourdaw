@@ -285,17 +285,28 @@ export function startPlayheadScheduler(): void {
                     // offset comp resolution would read the first pass's PCM
                     // for every take. The initial take (from `startRecording`)
                     // is pass 1 at the clip origin; each take already minted
-                    // for THIS recording marks one more completed pass, so its
-                    // material begins that many loop lengths into the buffer —
-                    // after any run-up recorded before the playhead first
-                    // reached the loop start. The offset stays relative to the
-                    // clip's media origin, which is why the finalization-time
-                    // latency shift of `clip.startBeat` cannot invalidate it.
+                    // for THIS recording marks one more completed pass.
+                    //
+                    // Pass 1's media span depends on where recording began:
+                    // started before the loop, the run-up precedes it, so pass 1
+                    // begins `loopStart - clip.startBeat` into the buffer and
+                    // spans a full loop length; started inside the loop, there
+                    // is no run-up and the first pass is short — it ends when
+                    // the playhead wraps at loopEnd, so its media length is
+                    // `loopEnd - clip.startBeat` and pass 2 begins right after
+                    // it. Later passes always span the full loop length. The
+                    // offset stays relative to the clip's media origin, which
+                    // is why the finalization-time latency shift of
+                    // `clip.startBeat` cannot invalidate it.
                     const priorPassTakes = lane?.takes.filter((take) => recordingClipIds.has(take.clipId)).length ?? 0;
                     const passIndex = Math.max(0, priorPassTakes - 1);
                     const loopLength = current.loopEnd - current.loopStart;
+                    const runUpBeats = Math.max(0, current.loopStart - recordingClip.startBeat);
+                    const startedInsideLoop = recordingClip.startBeat > current.loopStart;
+                    const firstPassStart = runUpBeats;
+                    const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
                     const sourceOffsetBeats =
-                        Math.max(0, current.loopStart - recordingClip.startBeat) + passIndex * loopLength;
+                        firstPassStart + (passIndex === 0 ? 0 : firstPassLength + (passIndex - 1) * loopLength);
                     addTake(
                         track.id,
                         recordingClip.id,

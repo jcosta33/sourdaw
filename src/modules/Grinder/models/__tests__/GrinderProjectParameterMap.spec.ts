@@ -88,7 +88,7 @@ describe('Grinder project parameter projection', () => {
         expect(projected).toMatchObject({ cabType: 'both', neuralCpuBudget: 2, neuralModelId: 'custom' });
     });
 
-    it('reconstructs an imported capture from the neuralCustom* record keys (issue #4146 oracle)', () => {
+    it('refuses to reconstruct an imported capture from a partial neuralCustom* record (issue #4146 corrupt-record oracle)', () => {
         const values: Record<string, number> = { neuralModelMode: 1, neuralCustomTier: 1, neuralCustomInputDrive: 1.2 };
         // Today this oracle returns source 'builtin' with a null profile; a
         // partial scalar set stays there because fabricating the missing

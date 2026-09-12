@@ -25,6 +25,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -158,13 +159,13 @@ describe('forward MIDI completion extends the playable phrase (#3763)', () => {
     });
 
     async function createSourceClip(clip: Partial<Clip> & { id: string; endBeat: number }): Promise<Clip> {
-        const payload = {
+        const payload: Extract<AppAction, { type: 'addClip' }>['payload'] = {
             id: clip.id,
             trackId: 't1',
             startBeat: clip.startBeat ?? 0,
             endBeat: clip.endBeat,
             name: clip.name ?? 'Lead',
-            type: 'midi' as const,
+            type: 'midi',
         };
         if (clip.midiOffsetBeats !== undefined) {
             payload.midiOffsetBeats = clip.midiOffsetBeats;

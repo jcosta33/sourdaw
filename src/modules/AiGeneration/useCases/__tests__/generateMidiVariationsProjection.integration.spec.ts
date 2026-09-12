@@ -23,6 +23,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -122,13 +123,13 @@ function projectedEvents(clip: Clip): { startBeat: number; duration: number; pit
 }
 
 async function createSourceClip(clip: Partial<Clip> & { id: string; endBeat: number; name: string }): Promise<void> {
-    const payload = {
+    const payload: Extract<AppAction, { type: 'addClip' }>['payload'] = {
         id: clip.id,
         trackId: 't1',
         startBeat: clip.startBeat ?? 0,
         endBeat: clip.endBeat,
         name: clip.name,
-        type: 'midi' as const,
+        type: 'midi',
     };
     if (clip.midiOffsetBeats !== undefined) {
         payload.midiOffsetBeats = clip.midiOffsetBeats;

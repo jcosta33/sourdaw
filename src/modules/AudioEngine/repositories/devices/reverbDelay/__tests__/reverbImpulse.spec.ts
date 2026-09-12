@@ -231,6 +231,40 @@ describe('reverb impulse rendering (#3731)', () => {
         random.mockRestore();
     });
 
+    it('bounds the per-context shape cache: evicted shapes re-render, warm shapes stay shared', () => {
+        // The cache shares one rendered buffer among convolvers of the same
+        // shape, but it must not retain every shape a knob sweep produces:
+        // past the capacity the oldest shape is evicted (its buffer identity
+        // changes on re-render), while shapes still cached keep buffer identity
+        // stable across convolvers and re-apply.
+        const ctx = makeContext();
+        const shapeParams = (index: number): Record<string, number> => ({
+            'rev-size': 0.1 + index * 0.01,
+            'rev-decay': 1,
+            'rev-damping': 0,
+        });
+
+        const first = createReverb(asBaseAudioContext(ctx));
+        applyReverbParams(first, shapeParams(0));
+        const firstBuffer = impulseOf(first);
+
+        for (let index = 1; index < 10; index++) {
+            applyReverbParams(first, shapeParams(index));
+        }
+        const shapeNineBuffer = impulseOf(first);
+
+        // The oldest shape was evicted by the later writes.
+        applyReverbParams(first, shapeParams(0));
+        expect(impulseOf(first)).not.toBe(firstBuffer);
+        expect(impulseOf(first)).not.toBe(shapeNineBuffer);
+
+        // A recent shape (the last write) is still cached: a second convolver
+        // of the same shape shares the buffer object.
+        const second = createReverb(asBaseAudioContext(ctx));
+        applyReverbParams(second, shapeParams(9));
+        expect(impulseOf(second)).toBe(shapeNineBuffer);
+    });
+
     it('clamps out-of-range writes to the declared parameter window', () => {
         const ctx = makeContext();
         const dn = createReverb(asBaseAudioContext(ctx));

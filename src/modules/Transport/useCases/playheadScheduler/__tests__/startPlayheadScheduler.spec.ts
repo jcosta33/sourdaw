@@ -902,6 +902,51 @@ describe('startPlayheadScheduler', () => {
         expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 2', 0, 4, 0);
     });
 
+    it('offsets pass two past the short first pass when recording began mid-loop', async () => {
+        // Recording armed at beat 12 inside loop [8,16): pass 1 spans media
+        // [0,4) (loopEnd - record start), so pass 2 begins at media 4 — not at
+        // one full loop length, which would name pass 3's opening.
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 12 }] }],
+        };
+        activeRecordingRefState.current = ['clip-rec-1'];
+        takeLaneStoreState.value = {
+            lanes: [
+                {
+                    trackId: 'rec-1',
+                    takes: [
+                        { id: 'take-initial', clipId: 'clip-rec-1', name: 'Take 1', startBeat: 12, endBeat: 12 },
+                        {
+                            id: 'take-wrapped',
+                            clipId: 'clip-rec-1',
+                            name: 'Take 2',
+                            startBeat: 8,
+                            endBeat: 16,
+                            sourceOffsetBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+        transportStoreState.value = playingState({
+            playheadPosition: 15.9,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 16,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 3', 8, 16, 4);
+    });
+
     it('stops playback when a follow action requests a stop', async () => {
         const onStop = vi.fn();
         schedulerSession.onStopRequested = onStop;

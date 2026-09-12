@@ -48,6 +48,15 @@ type PartialShape = Partial<ReverbImpulseShape>;
 const clamp = (value: number, range: { min: number; max: number }): number =>
     Math.min(range.max, Math.max(range.min, value));
 
+/**
+ * How many distinct impulse shapes one audio context may keep rendered buffers
+ * for. Shape writes arrive at pointer-move rate while a musician sweeps a knob,
+ * so an unbounded map would retain hundreds of megabytes of dead AudioBuffers
+ * for the context's lifetime; a small FIFO serves the working set (a project
+ * uses a handful of shapes) and evicts the oldest rendered buffer instead.
+ */
+const IMPULSE_CACHE_CAPACITY = 8;
+
 const reverbImpulseCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
 
 /** Owning context of each factory-built convolver, so later writes can render. */
@@ -157,6 +166,13 @@ export function applyReverbImpulseShape(
     let buffer = cache.get(key);
     if (!buffer) {
         buffer = renderReverbImpulse(context, merged);
+        while (cache.size >= IMPULSE_CACHE_CAPACITY) {
+            const oldest = cache.keys().next().value;
+            if (oldest === undefined) {
+                break;
+            }
+            cache.delete(oldest);
+        }
         cache.set(key, buffer);
     }
     convolver.buffer = buffer;
