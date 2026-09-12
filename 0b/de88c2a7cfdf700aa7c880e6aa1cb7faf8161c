@@ -6,6 +6,11 @@ src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
   "git_ai_version": "1.7.4",
   "base_commit_sha": "0bde88c2a7cfdf700aa7c880e6aa1cb7faf8161c",
   "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
   "sessions": {
     "s_159146fff2d53c": {
       "agent_id": {
