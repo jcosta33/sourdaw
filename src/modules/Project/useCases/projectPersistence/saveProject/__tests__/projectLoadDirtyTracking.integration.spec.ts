@@ -195,23 +195,34 @@ vi.mock('../../helpers/runProjectLoadTransaction', async () => {
     };
 });
 
-import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { ArrangementEventBus } from '#/modules/Arrangement/useCases/arrangementEventBus';
+import { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { newProject } from '../../newProject';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
+import type {
+    TrackAddedPayload,
+    TrackRemovedPayload,
+    TrackSelectionChangedPayload,
+} from '#/modules/Arrangement/events';
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
 
 const LOADED_TRACK_ID = 'track-from-disk';
 const LOADED_TRACK_NAME = 'Vocals (from disk)';
+
+type ArrangementEvents = {
+    'track.added': TrackAddedPayload;
+    'track.removed': TrackRemovedPayload;
+    'track.selectionChanged': TrackSelectionChangedPayload;
+};
 
 function loadedProjectData(): HydratableProjectData {
     return {
@@ -248,13 +259,38 @@ function alwaysCurrentTransaction() {
     } as unknown as Parameters<typeof replaceProjectData>[0]['transaction'];
 }
 
+async function withRealAutomergeStoragePort<TResult>(
+    operation: (readMutationCount: () => number) => Promise<TResult>
+): Promise<TResult> {
+    configureAutomergeStoragePort(null);
+    flushAutomergeStorageWrites();
+    let doc = init<Record<string, unknown>>();
+    let mutations = 0;
+    configureAutomergeStoragePort({
+        getDoc: () => doc,
+        hasDoc: () => true,
+        getSemanticMessage: () => undefined,
+        mutateDoc: ({ changeFn }) => {
+            doc = change(doc, (draft) => changeFn(draft));
+            mutations += 1;
+        },
+    });
+
+    try {
+        return await operation(() => mutations);
+    } finally {
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
+    }
+}
+
 describe('project load dirty tracking (audit M-011)', () => {
     let stopDirtyTracking: () => void = () => {};
 
     beforeEach(() => {
         vi.clearAllMocks();
         mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
-        Container.set(ArrangementEventBus, { emit: () => Promise.resolve() } as ArrangementEventBus);
+        setArrangementEventBus(createEventBus<ArrangementEvents>());
         stopDirtyTracking();
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
@@ -305,40 +341,40 @@ describe('project load dirty tracking (audit M-011)', () => {
         expect(projectStore.value?.dirty).toBe(true);
     });
 
-    it('drains fresh-project track initialization before publishing its clean metadata', async () => {
-        configureAutomergeStoragePort(null);
-        flushAutomergeStorageWrites();
-        let doc = init<Record<string, unknown>>();
-        let mutations = 0;
-        configureAutomergeStoragePort({
-            getDoc: () => doc,
-            hasDoc: () => true,
-            getSemanticMessage: () => undefined,
-            mutateDoc: ({ changeFn }) => {
-                doc = change(doc, (draft) => changeFn(draft));
-                mutations += 1;
-            },
-        });
-
-        try {
-            await expect(newProject('Fresh Project')).resolves.toBe(true);
-
-            expect(mutations).toBeGreaterThan(0);
-            expect(trackStore.value?.tracks.some((track) => track.kind === 'master')).toBe(true);
-            expect(projectStore.value?.dirty).toBe(false);
-
-            const current = trackStore.value ?? defaultTrackState;
-            trackStore.set({
-                ...current,
-                tracks: current.tracks.map((track) =>
-                    track.kind === 'master' ? { ...track, name: 'Master (renamed by user)' } : track
-                ),
+    it.each([
+        { label: 'initial compaction persists', compactionRejects: false, identityPersistencePending: false },
+        { label: 'initial compaction rejects', compactionRejects: true, identityPersistencePending: true },
+    ])(
+        'drains fresh-project track initialization before publishing clean metadata when $label',
+        async ({ compactionRejects, identityPersistencePending }) => {
+            mockCompactProject.mockImplementationOnce(async () => {
+                flushAutomergeStorageWrites();
+                if (compactionRejects) {
+                    throw new Error('initial compaction failed');
+                }
             });
 
-            expect(projectStore.value?.dirty).toBe(true);
-        } finally {
-            configureAutomergeStoragePort(null);
-            flushAutomergeStorageWrites();
+            await withRealAutomergeStoragePort(async (readMutationCount) => {
+                await expect(newProject('Fresh Project')).resolves.toBe(true);
+
+                expect(readMutationCount()).toBeGreaterThan(0);
+                expect(trackStore.value?.tracks.some((track) => track.kind === 'master')).toBe(true);
+                expect(projectStore.value).toMatchObject({
+                    dirty: false,
+                    identityPersistencePending,
+                    loading: false,
+                });
+
+                const current = trackStore.value ?? defaultTrackState;
+                trackStore.set({
+                    ...current,
+                    tracks: current.tracks.map((track) =>
+                        track.kind === 'master' ? { ...track, name: 'Master (renamed by user)' } : track
+                    ),
+                });
+
+                expect(projectStore.value?.dirty).toBe(true);
+            });
         }
-    });
+    );
 });
