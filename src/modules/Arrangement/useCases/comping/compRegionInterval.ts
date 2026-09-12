@@ -1,56 +1,17 @@
 import { type CompSelectionSpanSnapshot } from '#/utils/handlerContract';
 
-import { type CompRegion, type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import {
+    applyTakeLaneCompRegionPatch,
+    captureCompSelection,
+    runWithTakeLaneWriteIntent,
+    type TakeLaneCompRegionPatch,
+} from '../../stores/takeLaneWriteJournal';
 
-export type CompRegionIntervalPatch = {
-    readonly laneId: string;
-    readonly trackId: string;
-    readonly startBeat: number;
-    readonly endBeat: number;
-    readonly expected: readonly CompSelectionSpanSnapshot[];
-    readonly replacement: readonly CompSelectionSpanSnapshot[];
-};
+export type CompRegionIntervalPatch = TakeLaneCompRegionPatch;
 
 function isValidInterval(startBeat: number, endBeat: number): boolean {
     return Number.isFinite(startBeat) && Number.isFinite(endBeat) && startBeat >= 0 && endBeat > startBeat;
-}
-
-function coalesceSelection(
-    spans: readonly CompSelectionSpanSnapshot[],
-    canJoinAt: (beat: number) => boolean
-): CompSelectionSpanSnapshot[] {
-    const result: CompSelectionSpanSnapshot[] = [];
-    for (const span of spans) {
-        const previous = result[result.length - 1];
-        if (
-            previous &&
-            previous.takeId === span.takeId &&
-            previous.endBeat === span.startBeat &&
-            canJoinAt(span.startBeat)
-        ) {
-            result[result.length - 1] = { ...previous, endBeat: span.endBeat };
-        } else {
-            result.push({ ...span });
-        }
-    }
-    return result;
-}
-
-function captureCompSelection(
-    regions: readonly CompRegion[],
-    startBeat: number,
-    endBeat: number
-): CompSelectionSpanSnapshot[] {
-    const clipped = regions
-        .map((region) => ({
-            startBeat: Math.max(region.startBeat, startBeat),
-            endBeat: Math.min(region.endBeat, endBeat),
-            takeId: region.takeId,
-        }))
-        .filter((region) => region.startBeat < region.endBeat)
-        .sort((alpha, beta) => alpha.startBeat - beta.startBeat);
-    return coalesceSelection(clipped, () => true);
 }
 
 function selectionsEqual(
@@ -115,14 +76,6 @@ function hasValidSnapshot(spans: readonly unknown[], startBeat: number, endBeat:
         previousTakeId = input.span.takeId;
     }
     return true;
-}
-
-function resolveLane(trackId: string, laneId: string): TakeLane | null {
-    const matches = takeLaneStore.value?.lanes.filter((lane) => lane.trackId === trackId) ?? [];
-    if (matches.length !== 1 || matches[0]?.id !== laneId) {
-        return null;
-    }
-    return matches[0];
 }
 
 function captureCompRegionIntervalPatch(input: {
@@ -196,55 +149,28 @@ function isCompleteRestoreCompRegionIntervalPayload(value: unknown): value is Co
 }
 
 function compRegionIntervalPatchApplies(patch: CompRegionIntervalPatch): boolean {
-    const lane = resolveLane(patch.trackId, patch.laneId);
-    if (!lane || !hasValidSnapshot(patch.expected, patch.startBeat, patch.endBeat)) {
+    const state = takeLaneStore.value;
+    if (!state || !hasValidSnapshot(patch.expected, patch.startBeat, patch.endBeat)) {
         return false;
     }
-    const takeIds = new Set(lane.takes.map((take) => take.id));
-    if (!patch.replacement.every((span) => takeIds.has(span.takeId))) {
-        return false;
-    }
-    return selectionsEqual(
-        captureCompSelection(lane.activeCompRegions, patch.startBeat, patch.endBeat),
-        patch.expected
-    );
+    return applyTakeLaneCompRegionPatch(state, patch) !== null;
 }
 
 function applyCompRegionIntervalPatch(patch: CompRegionIntervalPatch): 'written' | 'no-write' | 'conflict' {
-    if (!compRegionIntervalPatchApplies(patch)) {
+    const state = takeLaneStore.value;
+    if (!state) {
+        return 'conflict';
+    }
+    const next = applyTakeLaneCompRegionPatch(state, patch);
+    if (!next) {
         return 'conflict';
     }
     if (selectionsEqual(patch.expected, patch.replacement)) {
         return 'no-write';
     }
-    const state = takeLaneStore.value;
-    if (!state) {
-        return 'conflict';
-    }
-    const lanes = state.lanes.map((lane) => {
-        if (lane.id !== patch.laneId) {
-            return lane;
-        }
-        const retained = lane.activeCompRegions.flatMap((region) => {
-            if (region.endBeat <= patch.startBeat || region.startBeat >= patch.endBeat) {
-                return [{ ...region }];
-            }
-            const fragments: CompRegion[] = [];
-            if (region.startBeat < patch.startBeat) {
-                fragments.push({ ...region, endBeat: patch.startBeat });
-            }
-            if (region.endBeat > patch.endBeat) {
-                fragments.push({ ...region, startBeat: patch.endBeat });
-            }
-            return fragments;
-        });
-        const activeCompRegions = coalesceSelection(
-            [...retained, ...patch.replacement].sort((alpha, beta) => alpha.startBeat - beta.startBeat),
-            (beat) => beat >= patch.startBeat && beat <= patch.endBeat
-        );
-        return { ...lane, activeCompRegions };
+    runWithTakeLaneWriteIntent({ kind: 'comp-region-interval', patch }, () => {
+        takeLaneStore.set({ lanes: [...next.lanes] });
     });
-    takeLaneStore.set({ lanes });
     return 'written';
 }
 

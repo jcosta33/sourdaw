@@ -1681,4 +1681,130 @@ describe('createAutomergeStorage', () => {
         expect(storage.get()).toEqual({ count: 1 });
         expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
+
+    it('freezes owner metadata captured before hydration and passes it to rebase and mutation', () => {
+        type Metadata = { steps: Array<{ before: number | null; next: number | null }> };
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const rebasedMetadata: Metadata[] = [];
+        const mutatedMetadata: Metadata[] = [];
+        const storage = createAutomergeStorage<{ count: number }, Metadata>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue, nextValue }) => ({
+                    steps: [{ before: beforeValue?.count ?? null, next: nextValue?.count ?? null }],
+                }),
+                reduce: ({ current, captured }) => ({
+                    steps: (current?.steps ?? []).concat(captured.steps),
+                }),
+            },
+            rebasePending: ({ hydratedValue, metadata }) => {
+                expect(Object.isFrozen(metadata)).toBe(true);
+                expect(Object.isFrozen(metadata?.steps)).toBe(true);
+                rebasedMetadata.push(structuredClone(metadata!));
+                return { count: metadata?.steps.at(-1)?.next ?? hydratedValue.count };
+            },
+            mutateCrdt: ({ baseValue, metadata, reconcile, value }) => {
+                expect(Object.isFrozen(metadata)).toBe(true);
+                expect(Object.isFrozen(metadata?.steps)).toBe(true);
+                mutatedMetadata.push(structuredClone(metadata!));
+                reconcile(value, baseValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 1 }));
+        doc.state = { count: 2 };
+
+        expect(storage.hydrate?.()).toBe(true);
+        transaction.commit();
+
+        const expected = { steps: [{ before: 0, next: 1 }] };
+        expect(rebasedMetadata).toEqual([expected]);
+        expect(mutatedMetadata).toEqual([expected]);
+        expect(doc.state).toEqual({ count: 1 });
+    });
+
+    it('lets an opted-in mutation hook process a clear with its captured preimage', () => {
+        type Metadata = { before: number | null; next: number | null };
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 4 } } });
+        configureAutomergeStoragePort(port);
+        const observed: Array<{ metadata: Metadata | null; value: { count: number } | null }> = [];
+        const storage = createAutomergeStorage<{ count: number }, Metadata>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue, nextValue }) => ({
+                    before: beforeValue?.count ?? null,
+                    next: nextValue?.count ?? null,
+                }),
+                reduce: ({ captured }) => captured,
+            },
+            mutateCrdt: ({ baseValue, metadata, reconcile, value }) => {
+                observed.push({ metadata: structuredClone(metadata), value });
+                reconcile(value, baseValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.clear());
+
+        transaction.commit();
+
+        expect(observed).toEqual([{ metadata: { before: 4, next: null }, value: null }]);
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+    });
+
+    it('captures one-shot metadata before semantic-message callbacks can author another write', () => {
+        type Metadata = { intent: string | null };
+        let activeIntent: string | null = 'outer-intent';
+        let semanticCallbackRan = false;
+        let nestedStorage: ReturnType<typeof createAutomergeStorage<{ count: number }, Metadata>>;
+        const observed: Array<{ key: string; metadata: Metadata | null }> = [];
+        const { port } = createTestPort({ initialDoc: { outer: { count: 0 }, nested: { count: 0 } } });
+        configureAutomergeStoragePort({
+            ...port,
+            getSemanticMessage: () => {
+                if (!semanticCallbackRan) {
+                    semanticCallbackRan = true;
+                    nestedStorage.set({ count: 1 });
+                }
+                return undefined;
+            },
+        });
+        const options = {
+            writeMetadata: {
+                capture: () => {
+                    const intent = activeIntent;
+                    activeIntent = null;
+                    return { intent };
+                },
+                reduce: ({ captured }: { captured: Metadata }) => captured,
+            },
+            mutateCrdt: ({
+                baseValue,
+                key,
+                metadata,
+                reconcile,
+                value,
+            }: {
+                baseValue: Partial<{ count: number }> | null;
+                key: string;
+                metadata: Metadata | null;
+                reconcile(value: { count: number } | null, baseValue: Partial<{ count: number }> | null): void;
+                value: { count: number } | null;
+            }) => {
+                observed.push({ key, metadata: structuredClone(metadata) });
+                reconcile(value, baseValue);
+            },
+        };
+        const outerStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'outer', options);
+        nestedStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'nested', options);
+        expect(outerStorage.hydrate?.()).toBe(true);
+        expect(nestedStorage.hydrate?.()).toBe(true);
+
+        outerStorage.set({ count: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(semanticCallbackRan).toBe(true);
+        expect(observed).toEqual([
+            { key: 'nested', metadata: { intent: null } },
+            { key: 'outer', metadata: { intent: 'outer-intent' } },
+        ]);
+    });
 });

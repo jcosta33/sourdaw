@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
+    AutomergeStorageWriteConflictError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -278,6 +279,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     throw committed_error;
                 }
                 if (production_brief_commit_denied && error instanceof AutomergeStorageTransactionValidationError) {
+                    throw new AppActionConflictError(action.type);
+                }
+                if (error instanceof AutomergeStorageWriteConflictError) {
                     throw new AppActionConflictError(action.type);
                 }
                 logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));

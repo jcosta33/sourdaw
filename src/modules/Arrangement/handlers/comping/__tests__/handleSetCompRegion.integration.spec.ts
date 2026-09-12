@@ -10,14 +10,30 @@ import {
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
     executeAppAction,
     executeAppActionBatch,
+    executeVersionedCommandBatchEnvelope,
+    getExecutableAppActionEffect,
+    getExecutableAppActionToolSchemas,
+    getExecutableCommandRegistrations,
+    getVersionedCommandArgumentsDigest,
+    issueCommandApprovalBinding,
+    migrateLegacyAppActionToVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
+    parseVersionedCommandEnvelope,
     redo,
     resetActionReplayAuthority,
+    resetCommandBatchIdempotency,
+    serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
     mutateCrdtDoc,
@@ -33,7 +49,10 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -105,11 +124,12 @@ function holdSnapshotRegionEdit(nextRegions: typeof lane.activeCompRegions) {
         const current = takeLaneStore.value!;
         const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
             takeLaneStore.set({
-                lanes: current.lanes.map((candidate) =>
-                    candidate.id === 'lane-1'
-                        ? { ...candidate, activeCompRegions: structuredClone(nextRegions) }
-                        : candidate
-                ),
+                lanes: current.lanes.map((candidate) => {
+                    if (candidate.id === 'lane-1') {
+                        return { ...candidate, activeCompRegions: structuredClone(nextRegions) };
+                    }
+                    return candidate;
+                }),
             });
         });
         storageTransaction.commit();
@@ -150,6 +170,11 @@ describe('setCompRegion command integration', () => {
     });
 
     afterEach(() => {
+        commandBatchPreflightPort.setProvider(null);
+        commandProjectRevisionPort.setProvider(null);
+        resetCommandBatchIdempotency();
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
+        vi.unstubAllGlobals();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -204,6 +229,109 @@ describe('setCompRegion command integration', () => {
 
         expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
         expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('serializes a hidden guarded interval with exact target, effect, and time scope', () => {
+        const baseRevision = captureProjectRevision();
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            normalizedProjectRevision: baseRevision,
+        });
+        const parsedCommand = parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command));
+
+        expect(parsedCommand).toMatchObject({ status: 'valid' });
+        expect(command.arguments).toMatchObject({
+            trackId: 'track-1',
+            laneId: 'lane-1',
+            takeId: 'take-b',
+            startBeat: 2,
+            endBeat: 4,
+            expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+            replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+        });
+        expect(command.time).toEqual(
+            expect.arrayContaining([
+                { argument: 'startBeat', domain: 'musical', unit: 'beats', value: 2 },
+                { argument: 'endBeat', domain: 'musical', unit: 'beats', value: 4 },
+            ])
+        );
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-serialized-comp',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Serialize guarded comp interval',
+            projectId: 'project-serialized-comp',
+            runId: 'run-serialized-comp',
+        });
+        expect(parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority)).toMatchObject({
+            status: 'valid',
+            envelope: {
+                scope: {
+                    targetIds: ['track-1'],
+                    targetRanges: [{ startBeat: 2, endBeat: 4 }],
+                },
+            },
+        });
+        const registration = getExecutableCommandRegistrations().find(
+            (candidate) => candidate.actionType === 'setCompRegion'
+        );
+        expect(registration).toMatchObject({
+            discoverability: 'hidden',
+            mutationIdempotent: false,
+            mutationIdentityRules: [{ arguments: [{ argument: 'trackId' }] }],
+            providerSchema: {
+                required: ['trackId', 'takeId', 'startBeat', 'endBeat'],
+            },
+        });
+        expect(Object.keys(registration?.providerSchema.properties ?? {}).sort()).toEqual([
+            'endBeat',
+            'startBeat',
+            'takeId',
+            'trackId',
+        ]);
+        expect(getExecutableAppActionEffect('setCompRegion')).toEqual({
+            dimensions: ['arrangement'],
+            scope: 'target',
+        });
+        expect(getExecutableAppActionToolSchemas().some((schema) => schema.function.name === 'setCompRegion')).toBe(
+            false
+        );
+    });
+
+    it('refuses serialized comp commands with missing or malformed owner witnesses', () => {
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            normalizedProjectRevision: captureProjectRevision(),
+        });
+        const withoutWitness = structuredClone(command);
+        const missingArguments = withoutWitness.arguments as Record<string, unknown>;
+        delete missingArguments.expected;
+        withoutWitness.argumentsDigest = getVersionedCommandArgumentsDigest({
+            operation: withoutWitness.operation,
+            arguments: missingArguments,
+        });
+        const malformedWitness = structuredClone(command);
+        const malformedArguments = malformedWitness.arguments as Record<string, unknown>;
+        malformedArguments.expected = [{ startBeat: 4, endBeat: 2, takeId: 'take-a' }];
+        malformedWitness.argumentsDigest = getVersionedCommandArgumentsDigest({
+            operation: malformedWitness.operation,
+            arguments: malformedArguments,
+        });
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(withoutWitness))).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        });
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(malformedWitness))).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        });
     });
 
     it('undoes and redoes only the requested interval over later unrelated edits', async () => {
@@ -269,18 +397,19 @@ describe('setCompRegion command integration', () => {
         await applyBToTwoThroughFour();
         const current = takeLaneStore.value!;
         takeLaneStore.set({
-            lanes: current.lanes.map((candidate) =>
-                candidate.id === 'lane-1'
-                    ? {
-                          ...candidate,
-                          activeCompRegions: [
-                              { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-                              { startBeat: 2, endBeat: 4, takeId: 'take-c' },
-                              { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-                          ],
-                      }
-                    : candidate
-            ),
+            lanes: current.lanes.map((candidate) => {
+                if (candidate.id === 'lane-1') {
+                    return {
+                        ...candidate,
+                        activeCompRegions: [
+                            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+                            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+                        ],
+                    };
+                }
+                return candidate;
+            }),
         });
         flushAutomergeStorageWrites();
 
@@ -357,18 +486,19 @@ describe('setCompRegion command integration', () => {
             const current = takeLaneStore.value!;
             const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
                 takeLaneStore.set({
-                    lanes: current.lanes.map((candidate) =>
-                        candidate.id === 'lane-1'
-                            ? {
-                                  ...candidate,
-                                  activeCompRegions: [
-                                      { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-                                      { startBeat: 2, endBeat: 4, takeId: 'take-c' },
-                                      { startBeat: 4, endBeat: 8, takeId: 'take-a' },
-                                  ],
-                              }
-                            : candidate
-                    ),
+                    lanes: current.lanes.map((candidate) => {
+                        if (candidate.id === 'lane-1') {
+                            return {
+                                ...candidate,
+                                activeCompRegions: [
+                                    { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                                    { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+                                    { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+                                ],
+                            };
+                        }
+                        return candidate;
+                    }),
                 });
             });
             storageTransaction.commit();
@@ -479,6 +609,339 @@ describe('setCompRegion command integration', () => {
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 
+    it('preserves an outside edit committed after the handler returns but before its storage commit', async () => {
+        const outsideEdit = [
+            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            {
+                groupId: 'late-outside-comp-selection',
+                onProjectCommitPrepared: () => {
+                    mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const currentLane = document.takeLanes.lanes.find((candidate) => candidate.id === 'lane-1');
+                            if (!currentLane) {
+                                throw new Error('Expected the comp lane before the late edit');
+                            }
+                            currentLane.activeCompRegions = structuredClone(outsideEdit);
+                        },
+                    });
+                    expect(
+                        getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]
+                            ?.activeCompRegions
+                    ).toEqual(outsideEdit);
+                },
+            }
+        );
+
+        expect(result).toMatchObject({ status: 'committed' });
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('preserves a compatible outside edit in a single action commit window', async () => {
+        const outsideEdit = [
+            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        let scheduled = false;
+        const unsubscribe = takeLaneStore.subscribe((state) => {
+            if (scheduled || state?.lanes[0]?.activeCompRegions[1]?.takeId !== 'take-b') {
+                return;
+            }
+            scheduled = true;
+            queueMicrotask(() => {
+                mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(outsideEdit);
+                    },
+                });
+            });
+        });
+
+        try {
+            await executeAppAction({
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            });
+        } finally {
+            unsubscribe();
+        }
+
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(scheduled).toBe(true);
+        expect(activeRegions()).toEqual(expected);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('translates a single-action storage refusal and exposes authoritative selection', async () => {
+        const conflicting = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+        let scheduled = false;
+        const unsubscribe = takeLaneStore.subscribe((state) => {
+            if (scheduled || state?.lanes[0]?.activeCompRegions[1]?.takeId !== 'take-b') {
+                return;
+            }
+            scheduled = true;
+            queueMicrotask(() => {
+                mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(conflicting);
+                    },
+                });
+            });
+        });
+
+        try {
+            await expect(
+                executeAppAction({
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                })
+            ).rejects.toMatchObject({ name: 'AppActionConflictError' });
+        } finally {
+            unsubscribe();
+        }
+
+        expect(scheduled).toBe(true);
+        expect(activeRegions()).toEqual(conflicting);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(conflicting);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+        expect(() => flushAutomergeStorageWrites()).not.toThrow();
+        expect(activeRegions()).toEqual(conflicting);
+
+        mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(lane.activeCompRegions);
+            },
+        });
+        takeLaneStore.hydrate();
+        await expect(
+            executeAppAction({
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            })
+        ).resolves.toBeUndefined();
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('refuses when the full requested interval changes after the handler returns', async () => {
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...structuredClone(lane),
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                        { startBeat: 2, endBeat: 3, takeId: 'take-b' },
+                        { startBeat: 3, endBeat: 8, takeId: 'take-a' },
+                    ],
+                },
+                structuredClone(otherLane),
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const conflicting = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 3, takeId: 'take-c' },
+            { startBeat: 3, endBeat: 8, takeId: 'take-a' },
+        ];
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            {
+                groupId: 'late-inside-comp-selection',
+                onProjectCommitPrepared: () => {
+                    mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const currentLane = document.takeLanes.lanes.find((candidate) => candidate.id === 'lane-1');
+                            if (!currentLane) {
+                                throw new Error('Expected the comp lane before the late edit');
+                            }
+                            currentLane.activeCompRegions = structuredClone(conflicting);
+                        },
+                    });
+                },
+            }
+        );
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Take lane write conflicts with current authoritative state',
+        });
+        expect(activeRegions()).toEqual(conflicting);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(conflicting);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+        expect(() => flushAutomergeStorageWrites()).not.toThrow();
+        expect(activeRegions()).toEqual(conflicting);
+    });
+
+    it('executes the direct restore interval action and refuses a stale inverse without writing history', async () => {
+        await applyBToTwoThroughFour();
+        const restore = {
+            type: 'restoreCompRegionInterval' as const,
+            payload: {
+                laneId: 'lane-1',
+                trackId: 'track-1',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+            },
+        };
+
+        await executeAppAction(restore);
+        expect(activeRegions()).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'take-a' }]);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+
+        await expect(executeAppAction(restore)).rejects.toMatchObject({ name: 'AppActionConflictError' });
+        expect(activeRegions()).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'take-a' }]);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('captures a listener-authored nested write as its own delta after consuming the interval intent', async () => {
+        let wroteNestedRename = false;
+        const unsubscribe = takeLaneStore.subscribe((state) => {
+            const currentLane = state?.lanes.find((candidate) => candidate.id === 'lane-1');
+            if (wroteNestedRename || currentLane?.activeCompRegions[1]?.takeId !== 'take-b') {
+                return;
+            }
+            wroteNestedRename = true;
+            takeLaneStore.set({
+                lanes: state!.lanes.map((candidate) => {
+                    if (candidate.id !== 'lane-2') {
+                        return candidate;
+                    }
+                    return {
+                        ...candidate,
+                        takes: candidate.takes.map((take) =>
+                            take.id === 'take-d' ? { ...take, name: 'D renamed by listener' } : take
+                        ),
+                    };
+                }),
+            });
+        });
+
+        try {
+            await applyBToTwoThroughFour();
+        } finally {
+            unsubscribe();
+        }
+
+        expect(wroteNestedRename).toBe(true);
+        expect(takeLaneStore.value?.lanes[1]?.takes[0]?.name).toBe('D renamed by listener');
+        expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[1]?.takes[0]?.name).toBe(
+            'D renamed by listener'
+        );
+        expect(activeRegions()).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ]);
+    });
+
+    it('retains owner-local field intent across hydration between two writes', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            const first = takeLaneStore.value!;
+            takeLaneStore.set({
+                lanes: first.lanes.map((candidate) => {
+                    if (candidate.id !== 'lane-1') {
+                        return candidate;
+                    }
+                    return {
+                        ...candidate,
+                        takes: candidate.takes.map((take) =>
+                            take.id === 'take-a' ? { ...take, name: 'A local first' } : take
+                        ),
+                    };
+                }),
+            });
+            mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const remoteLane = document.takeLanes.lanes.find((candidate) => candidate.id === 'lane-2');
+                    if (!remoteLane) {
+                        throw new Error('Expected the unrelated lane before hydration');
+                    }
+                    remoteLane.takes[0]!.name = 'D authoritative';
+                },
+            });
+            takeLaneStore.hydrate();
+            expect(takeLaneStore.value?.lanes[0]?.takes[0]?.name).toBe('A local first');
+            expect(takeLaneStore.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');
+
+            const second = takeLaneStore.value!;
+            takeLaneStore.set({
+                lanes: second.lanes.map((candidate) => {
+                    if (candidate.id !== 'lane-1') {
+                        return candidate;
+                    }
+                    return {
+                        ...candidate,
+                        takes: candidate.takes.map((take) =>
+                            take.id === 'take-a' ? { ...take, name: 'A local final' } : take
+                        ),
+                    };
+                }),
+            });
+        });
+
+        transaction.commit();
+
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.name).toBe('A local final');
+        expect(takeLaneStore.value?.lanes[1]?.takes[0]?.name).toBe('D authoritative');
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes.map(
+                (candidate) => candidate.takes[0]?.name
+            )
+        ).toEqual(['A local final', 'D authoritative']);
+    });
+
     it('commits two disjoint comp selections as one batch', async () => {
         await expect(
             executeAppActionBatch(
@@ -509,6 +972,84 @@ describe('setCompRegion command integration', () => {
             getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
         ).toEqual(expected);
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }, { label: 'Set comp region' }]);
+    });
+
+    it('preserves an outside edit that lands while the batch awaits its next sibling', async () => {
+        const outsideEdit = [
+            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+        ];
+        let scheduled = false;
+        const unsubscribe = takeLaneStore.subscribe((state) => {
+            if (scheduled || state?.lanes[0]?.activeCompRegions[1]?.takeId !== 'take-b') {
+                return;
+            }
+            scheduled = true;
+            queueMicrotask(() => {
+                mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(outsideEdit);
+                    },
+                });
+            });
+        });
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 6, endBeat: 7, takeId: 'take-b' },
+                },
+            ],
+            { groupId: 'awaited-sibling-comp-selections' }
+        ).finally(unsubscribe);
+
+        expect(result).toMatchObject({ status: 'committed' });
+        expect(scheduled).toBe(true);
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
+            { startBeat: 6, endBeat: 7, takeId: 'take-b' },
+            { startBeat: 7, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+    });
+
+    it('does not resurrect a lane when a later action in the same batch removes its track', async () => {
+        setArrangementEventBus(createEventBus());
+        trackStore.set({ tracks: [TrackDummy.create({ id: 'track-1' })], selectedTrackId: 'track-1', ghostClips: [] });
+        flushAutomergeStorageWrites();
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+                { type: 'removeTrack', payload: { trackId: 'track-1' } },
+            ],
+            { groupId: 'comp-then-remove-track' }
+        );
+
+        expect(result).toMatchObject({ status: expect.stringMatching(/^committed/) });
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(takeLaneStore.value?.lanes.map((candidate) => candidate.id)).toEqual(['lane-2']);
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes.map(
+                (candidate) => candidate.id
+            )
+        ).toEqual(['lane-2']);
     });
 
     it('refuses a two-action batch atomically when one admitted interval changes', async () => {
@@ -549,5 +1090,145 @@ describe('setCompRegion command integration', () => {
             getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
         ).toEqual(insideEdit);
         expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('discards prepared recovery and permits an exact envelope retry after a commit-window conflict', async () => {
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const baseRevision = captureProjectRevision();
+        commandProjectRevisionPort.setProvider(() => baseRevision);
+        commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-comp-recovery',
+            projectInvariantsValid: true,
+            targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `present:${targetId}`])),
+        }));
+        const command = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            normalizedProjectRevision: baseRevision,
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-comp-recovery',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            idempotencyKey: 'comp-recovery-exact-retry',
+            intent: 'Set the comp interval',
+            mode: 'commit',
+            projectId: 'project-comp-recovery',
+            runId: 'run-comp-recovery',
+        });
+        const promote = vi.fn();
+        const discard = vi.fn();
+        const prepared = vi.fn(() => ({ promote, discard }));
+        const conflicting = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-c' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ];
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            approvalBinding: issueCommandApprovalBinding({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                validate: () => ({ status: 'valid' }),
+            }),
+            authority: batch.authority,
+            serialized: batch.serialized,
+            onProjectCommitPrepared: () => {
+                mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(conflicting);
+                    },
+                });
+            },
+            options: { onProjectCommitCheckpoint: prepared },
+        });
+
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Take lane write conflicts with current authoritative state',
+        });
+        expect(activeRegions()).toEqual(conflicting);
+        expect(
+            getCrdtDoc<{
+                commandBatchIdempotency?: { records: { state: string }[] };
+                takeLanes: { lanes: (typeof lane)[] };
+            }>('root')?.commandBatchIdempotency?.records ?? []
+        ).toEqual([]);
+        const durableReceipts = JSON.parse(
+            localStorage.getItem('sourdaw:command-batch-idempotency:v1') ?? '[]'
+        ) as Array<{ serializedReceipt?: string; state?: string }>;
+        expect(durableReceipts).toHaveLength(1);
+        expect(durableReceipts[0]?.state).toBe('complete');
+        expect(JSON.parse(durableReceipts[0]?.serializedReceipt ?? '{}')).toMatchObject({
+            outcome: 'verification-failed',
+        });
+        expect(prepared).toHaveBeenCalledOnce();
+        expect(promote).not.toHaveBeenCalled();
+        expect(discard).toHaveBeenCalledOnce();
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+        expect(() => flushAutomergeStorageWrites()).not.toThrow();
+        expect(activeRegions()).toEqual(conflicting);
+
+        const exactReplay = await executeVersionedCommandBatchEnvelope({
+            approvalBinding: issueCommandApprovalBinding({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                validate: () => ({ status: 'valid' }),
+            }),
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        expect(exactReplay).toMatchObject({ status: 'idempotent-replay', actions: [] });
+        expect('receipt' in result && 'receipt' in exactReplay ? exactReplay.receipt : null).toEqual(
+            'receipt' in result ? result.receipt : null
+        );
+
+        mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.takeLanes.lanes[0]!.activeCompRegions = structuredClone(lane.activeCompRegions);
+            },
+        });
+        takeLaneStore.hydrate();
+        const retryBatch = compileVersionedCommandBatchEnvelope({
+            baseRevision,
+            batchId: 'batch-comp-recovery-retry',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            idempotencyKey: 'comp-recovery-fresh-retry',
+            intent: 'Retry the comp interval',
+            mode: 'commit',
+            projectId: 'project-comp-recovery',
+            runId: 'run-comp-recovery-retry',
+        });
+        const retry = await executeVersionedCommandBatchEnvelope({
+            approvalBinding: issueCommandApprovalBinding({
+                authority: retryBatch.authority,
+                serialized: retryBatch.serialized,
+                validate: () => ({ status: 'valid' }),
+            }),
+            authority: retryBatch.authority,
+            serialized: retryBatch.serialized,
+        });
+
+        expect(retry).toMatchObject({ status: 'committed' });
+        expect(activeRegions()).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ]);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
     });
 });
