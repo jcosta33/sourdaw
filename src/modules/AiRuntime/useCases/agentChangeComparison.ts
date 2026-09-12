@@ -423,20 +423,10 @@ function end(): Promise<void> {
 
 export const agentChangeComparison = { availability, start, toggle, end };
 
-function copySession(session: AgentChangeComparisonSession | null): AgentChangeComparisonSession | null {
-    if (!session) {
-        return null;
-    }
-    return { ...session, loudness: { ...session.loudness } };
-}
-
 export function getAgentChangeComparisonView(): AgentChangeComparisonState {
     const state = agentChangeComparisonStore.value;
     if (!state) {
         return { active: null, lastEnded: null };
     }
-    return {
-        active: copySession(state.active),
-        lastEnded: state.lastEnded ? { ...state.lastEnded } : null,
-    };
+    return structuredClone(state);
 }

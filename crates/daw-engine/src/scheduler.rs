@@ -36,6 +36,8 @@ use daw_dsp::proof::chain::ProofChain;
 use daw_dsp::toaster::ToasterInstance;
 use proof_chamber::{ProofChamberInstance, PROOF_CHAMBER_BLOCK_FRAMES};
 use rtrb::{Consumer, Producer, PushError};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::sync::Arc;
 use triple_buffer::{Input, Output};
 
 /// The audio thread's progress echo, for the control-side queue ledger
@@ -299,6 +301,7 @@ pub enum BuiltinEffectType {
     DutchOven,
     Toaster,
     Levain,
+    Scoring,
 }
 
 impl BuiltinEffectType {
@@ -318,6 +321,7 @@ impl BuiltinEffectType {
             Self::DutchOven => "dutch-oven",
             Self::Toaster => "toaster",
             Self::Levain => "levain",
+            Self::Scoring => "native-scoring",
         }
     }
 
@@ -337,6 +341,7 @@ impl BuiltinEffectType {
             "dutch-oven" => Some(Self::DutchOven),
             "toaster" => Some(Self::Toaster),
             "levain" => Some(Self::Levain),
+            "native-scoring" => Some(Self::Scoring),
             _ => None,
         }
     }
@@ -372,6 +377,9 @@ impl BuiltinEffectType {
             // a note, what leaves it is the recording, and it processes no
             // input of its own either.
             Self::Levain => true,
+            // A tuner listens. It hands the block on unchanged and turns the
+            // pitch it heard into a reading, so it sounds nothing of its own.
+            Self::Scoring => false,
         }
     }
 
@@ -398,7 +406,7 @@ impl BuiltinEffectType {
             Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
             Self::Toaster => TOASTER_PATCH_PRECEDENCE,
             Self::Levain => LEVAIN_PATCH_PRECEDENCE,
-            Self::Knead | Self::GrandBoule => &[],
+            Self::Knead | Self::GrandBoule | Self::Scoring => &[],
         }
     }
 }
@@ -1045,6 +1053,7 @@ pub enum PluginCore {
     DutchOven(Box<DutchOvenBody>),
     Toaster(Box<ToasterBody>),
     Levain(Box<LevainBody>),
+    Scoring(Box<ScoringBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1083,6 +1092,7 @@ impl PluginCore {
             BuiltinEffectType::Levain => {
                 Self::levain_with_patch(LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES), &[])
             }
+            BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
         }
     }
 
@@ -1259,6 +1269,53 @@ impl PluginCore {
         Self::Levain(Box::new(body))
     }
 
+    /// Build a Tuner carrying `patch`, on the control thread.
+    ///
+    /// Built here rather than on the audio thread for the reason
+    /// [`ScoringBody::new`] states: the detector's analysis window and its two
+    /// autocorrelation buffers are allocations the callback may not perform
+    /// (ADR 0020).
+    ///
+    /// There is no ordering law over the writes — no name in this vocabulary
+    /// rewrites another, so every entry the body admits addresses the one
+    /// analyser whatever order the record is read in — and the patch is
+    /// applied through [`ScoringBody::load_patch`] all the same, so the record
+    /// build is one code path with the other bodies'. That door drops the two
+    /// [`SCORING_NATIVE_REFUSED`] names, so a record naming the poly tracker
+    /// still builds the monophonic analyser this device is.
+    pub fn scoring_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = ScoringBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Scoring(Box::new(body))
+    }
+
+    /// The detection channel of the Tuner this core is, or `None` for every
+    /// other core.
+    ///
+    /// The seam the mapper keeps its own handle through: a core is moved into
+    /// [`GraphCommand::AddDetachedEffect`] and crosses the ring, so the only
+    /// moment control-side code can take the handle is before that move. A
+    /// caller that took none can never reach the body again — the audio thread
+    /// owns it from then on — which is why this is asked at registration and
+    /// not from a later lookup.
+    pub fn scoring_telemetry(&self) -> Option<Arc<ScoringTelemetry>> {
+        match self {
+            Self::Scoring(body) => Some(body.telemetry()),
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::GrandBoule(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Levain(_)
+            | Self::Native(_) => None,
+        }
+    }
+
     /// The registry entry this instance was built from — the inverse of
     /// [`Self::builtin`] — or `None` for a native plugin, which has no
     /// registry entry.
@@ -1275,6 +1332,7 @@ impl PluginCore {
             Self::DutchOven(_) => Some(BuiltinEffectType::DutchOven),
             Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
             Self::Levain(_) => Some(BuiltinEffectType::Levain),
+            Self::Scoring(_) => Some(BuiltinEffectType::Scoring),
             Self::Native(_) => None,
         }
     }
@@ -1337,6 +1395,7 @@ impl PluginCore {
             | Self::Gluten(_)
             | Self::Crust(_)
             | Self::Grinder(_)
+            | Self::Scoring(_)
             | Self::Native(_) => None,
         }
     }
@@ -2282,6 +2341,39 @@ const BACTERIA_PATCH_PRECEDENCE: &[&str] = &[];
 /// drops it there. Either route leaves the parameter holding whatever value
 /// the record's own patch gave it.
 const BACTERIA_CONTROL_THREAD_ONLY: &[&str] = &["convolutionIr", "phaserStages"];
+
+/// The Tuner parameter names [`ScoringBody`] refuses at both of its doors —
+/// the live [`ScoringBody::set_param`] and the record's
+/// [`ScoringBody::load_patch`].
+///
+/// `instrument` allocates when it lands. Its arm calls
+/// `PolyStringTracker::set_guitar_standard` or `set_bass_4`, and both go
+/// through `set_strings` (`crates/scoring/src/poly.rs`), which builds a fresh
+/// `Vec` of targets, of band-pass filters and of detectors, one analysis
+/// buffer per string, a position table and a scratch window — plus a
+/// `YinDetector` per string, each of which allocates five `Vec`s of its own.
+///
+/// `poly` is a bool store, but what it stores is the enable on the tracker
+/// those strings were built for, and the bass configuration allocates *inside*
+/// `process`: `set_strings` sizes every per-string buffer for the lowest
+/// string's band, so at 88.2 and 96 kHz the A1, D2 and G2 detectors are each
+/// handed a window twice the length their own FFT scratch was built for and
+/// `YinDetector::detect` resizes it on the audio thread
+/// (`crates/scoring/src/yin.rs`, issue #4209). Arming the tracker is therefore
+/// the same hazard one hop later rather than a safe write.
+///
+/// Unlike [`BACTERIA_CONTROL_THREAD_ONLY`], whose two names are *allowed* on
+/// the control thread and land through [`BacteriaBody::load_patch`], these two
+/// are refused on BOTH doors. The reason is not which thread may run the
+/// allocation but that neither name belongs to this device: the Tuner's
+/// descriptor (`native-scoring`,
+/// `src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts`)
+/// declares `a4_hz`, `mute` and `tone` and nothing else, no producer spells
+/// either name, and the native Tuner is the monophonic analyser. A record or a
+/// live write carrying one is a producer that lost track of the device, and
+/// admitting it on the record door would arm a tracker the very next callback
+/// allocates for.
+const SCORING_NATIVE_REFUSED: &[&str] = &["poly", "instrument"];
 
 /// `name` with an optional `band{digit}` prefix stripped: the bare name the
 /// engine resolves once it has picked a band.
@@ -3730,6 +3822,216 @@ impl LevainBody {
     }
 }
 
+/// One coherent-enough reading of what the Tuner heard, in plain numbers.
+///
+/// `Copy` and field-for-field the atomics below, so a control-thread caller
+/// reads the channel once and then works from a value nothing can move under
+/// it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScoringReading {
+    pub active: bool,
+    pub frequency: f32,
+    pub cents: f32,
+    pub confidence: f32,
+    pub note_index: u32,
+    pub octave: i32,
+    pub midi_note: i32,
+}
+
+/// Where the Tuner publishes what it heard, for a reader on another thread.
+///
+/// This is the real-time-to-control seam for a body whose whole product is a
+/// reading rather than a signal. One writer — [`ScoringBody::process`], on the
+/// audio thread, once per block — and any number of readers on the command
+/// thread ([`GraphRegistry::scoring_readings`],
+/// `crates/sourdaw-native/src/commands/graph.rs`). Atomics only: no lock a
+/// callback could be made to wait on, and no allocation, because a publish
+/// happens inside the render callback (ADR 0020).
+///
+/// A read may tear across fields — a frequency from one block beside a note
+/// index from the next. That is accepted rather than fenced, because this is a
+/// meter and not project truth: the worst a torn read shows is one animation
+/// frame of a needle placed against the previous detection, which the next
+/// frame corrects. Nothing downstream stores it, and nothing decides anything
+/// from it. A seam that had to be coherent would need a sequence counter, and
+/// paying for one here would put a retry loop on the reader to fix a pixel.
+///
+/// The three `f32` fields travel as `f32::to_bits`, because the platform's
+/// atomics are integer-width: there is no `AtomicF32` in `core`, and a
+/// bit-pattern round trip is exact for every finite value and every NaN
+/// payload the detector can produce.
+#[derive(Debug, Default)]
+pub struct ScoringTelemetry {
+    active: AtomicBool,
+    frequency: AtomicU32,
+    cents: AtomicU32,
+    confidence: AtomicU32,
+    note_index: AtomicU32,
+    octave: AtomicI32,
+    midi_note: AtomicI32,
+}
+
+impl ScoringTelemetry {
+    /// Publish what `engine` is currently holding.
+    ///
+    /// `Relaxed` throughout: the fields carry no ordering claim about one
+    /// another (see the struct doc on tearing), and there is no other memory
+    /// whose visibility this publish is meant to release.
+    ///
+    /// Real-time safe — seven integer stores, no allocation, no lock.
+    pub fn publish(&self, engine: &scoring::ScoringEngine) {
+        self.frequency
+            .store(engine.frequency.to_bits(), Ordering::Relaxed);
+        self.cents.store(engine.cents.to_bits(), Ordering::Relaxed);
+        self.confidence
+            .store(engine.confidence.to_bits(), Ordering::Relaxed);
+        self.note_index
+            .store(engine.note_index as u32, Ordering::Relaxed);
+        self.octave.store(engine.octave, Ordering::Relaxed);
+        self.midi_note.store(engine.midi_note, Ordering::Relaxed);
+        self.active.store(engine.active, Ordering::Relaxed);
+    }
+
+    /// Read the channel once, as one value.
+    pub fn snapshot(&self) -> ScoringReading {
+        ScoringReading {
+            active: self.active.load(Ordering::Relaxed),
+            frequency: f32::from_bits(self.frequency.load(Ordering::Relaxed)),
+            cents: f32::from_bits(self.cents.load(Ordering::Relaxed)),
+            confidence: f32::from_bits(self.confidence.load(Ordering::Relaxed)),
+            note_index: self.note_index.load(Ordering::Relaxed),
+            octave: self.octave.load(Ordering::Relaxed),
+            midi_note: self.midi_note.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// The Tuner, hosted as a built-in effect body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's
+/// analysis window, its two autocorrelation buffers and the poly tracker's
+/// per-string state would set the size of every command the engine sends.
+///
+/// This hosts [`scoring::ScoringEngine`] rather than
+/// `scoring::ScoringInstance`, which is the wasm binding: the instance owns its
+/// own pair of output buffers so a worklet can read back through a pointer,
+/// and a host handed the callback's own pair has nothing to do with them.
+///
+/// The audio it is handed leaves unchanged — the analyser is an insert that
+/// listens. What it produces is the reading on [`Self::telemetry`], which
+/// leaves the audio thread through atomics rather than over a port: the native
+/// session has no worklet `MessagePort`, and the renderer already polls the
+/// engine's transport once an animation frame
+/// (`engine_transport_position`, `crates/sourdaw-native/src/commands/engine_transport.rs`),
+/// so the reading rides that poll rather than waking the renderer per block.
+pub struct ScoringBody {
+    engine: scoring::ScoringEngine,
+    telemetry: Arc<ScoringTelemetry>,
+}
+
+impl ScoringBody {
+    /// Build the analyser on the control thread — `ScoringEngine::new`
+    /// allocates the analysis ring, the extraction window, YIN's and MPM's
+    /// autocorrelation buffers and the poly tracker's per-string state, none of
+    /// which the audio thread may do (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            engine: scoring::ScoringEngine::new(sample_rate),
+            telemetry: Arc::new(ScoringTelemetry::default()),
+        }
+    }
+
+    /// Analyse the block and hand it on.
+    ///
+    /// One `process` call for the whole callback rather than fixed runs, unlike
+    /// every other body here: the analyser's hop is sample-counted inside
+    /// `ScoringEngine::process` (`AnalysisBuffer::push` answers when a hop has
+    /// filled), so the call length does not move an analysis tick and a block
+    /// split into runs would produce the same detections at the same samples.
+    ///
+    /// The samples are then scrubbed of non-finite values exactly as the
+    /// worklet scrubs its own output before returning it
+    /// (`ScoringInstance::process`). The scrubbed count is dropped here for the
+    /// reason [`GlutenBody::process`] gives: the web path reports it as device
+    /// health over a port this body does not have.
+    ///
+    /// The reading is published after the scrub, once per block, so a
+    /// control-side reader taking it between callbacks sees the newest
+    /// detection this body has made.
+    ///
+    /// Nothing here allocates: the engine's state is all preallocated, the
+    /// scrub is in place, and the publish is seven integer stores.
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.engine.process(left, right);
+        sanitize_block(left);
+        sanitize_block(right);
+        self.telemetry.publish(&self.engine);
+    }
+
+    /// Write one of the analyser's own parameters by name, from the audio
+    /// thread.
+    ///
+    /// Real-time safe, and the refusal is part of what makes it so. The name
+    /// arrives inline in the command ([`BuiltinParamName`]) and
+    /// `ScoringEngine::set_param` resolves it by comparison, but not every arm
+    /// it resolves to is a field write: the two names in
+    /// [`SCORING_NATIVE_REFUSED`] are dropped here rather than forwarded,
+    /// because `instrument` rebuilds the poly tracker's per-string state as it
+    /// lands and `poly` arms detectors that resize their own scratch inside
+    /// `process`. The comparison is against borrowed `&str`s, so the refusal
+    /// itself owns nothing.
+    ///
+    /// Everything forwarded is a field write or a fixed-size retune of state
+    /// the constructor already built: the concert-A reference, the transpose
+    /// and capo offsets, the tone generator and the output mute.
+    fn set_param(&mut self, name: &str, value: f32) {
+        if SCORING_NATIVE_REFUSED.contains(&name) {
+            return;
+        }
+        self.engine.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// The two [`SCORING_NATIVE_REFUSED`] names are dropped here too — this is
+    /// the one body whose refusal is not about which thread may allocate but
+    /// about what the device is, so a persisted record naming the poly tracker
+    /// leaves the native Tuner the monophonic analyser it is rather than
+    /// building strings the next callback would allocate for. Refused on this
+    /// door on its own account, against the engine directly as
+    /// [`BacteriaBody::load_patch`] writes it, so the record door does not
+    /// hold only for as long as the live one happens to.
+    ///
+    /// Ordered through [`precedence_first`] and
+    /// [`BuiltinEffectType::patch_precedence`] like every other body's patch,
+    /// even though this type's law is empty and the ordering is the identity:
+    /// one code path, so a future aliasing pair is answered where the others
+    /// are.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in precedence_first(
+            patch,
+            BuiltinParamName::as_str,
+            BuiltinEffectType::Scoring.patch_precedence(),
+        ) {
+            if SCORING_NATIVE_REFUSED.contains(&name.as_str()) {
+                continue;
+            }
+            self.engine.set_param(name.as_str(), value);
+        }
+    }
+
+    /// A second handle on this body's detection channel.
+    ///
+    /// Taken control-side before the body crosses the ring
+    /// ([`PluginCore::scoring_telemetry`]), because afterwards the body belongs
+    /// to the audio thread and nothing on this side can reach it again.
+    fn telemetry(&self) -> Arc<ScoringTelemetry> {
+        Arc::clone(&self.telemetry)
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -3789,6 +4091,10 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -7054,6 +7360,12 @@ fn process_device(
         PluginCore::DutchOven(body) => {
             body.process(left, right);
         }
+        // An analyser: the block leaves as it arrived, and what the pass
+        // produces is the reading the body publishes for the transport poll to
+        // carry.
+        PluginCore::Scoring(body) => {
+            body.process(left, right);
+        }
         // On the same law as the two instruments above: always processed, and
         // its MIDI always cleared.
         PluginCore::Toaster(body) => {
@@ -8108,6 +8420,7 @@ mod tests {
             BuiltinEffectType::DutchOven,
             BuiltinEffectType::Toaster,
             BuiltinEffectType::Levain,
+            BuiltinEffectType::Scoring,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -8122,7 +8435,8 @@ mod tests {
                 | BuiltinEffectType::Proof
                 | BuiltinEffectType::DutchOven
                 | BuiltinEffectType::Toaster
-                | BuiltinEffectType::Levain => {}
+                | BuiltinEffectType::Levain
+                | BuiltinEffectType::Scoring => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -22325,6 +22639,521 @@ mod timeline_tests {
             "the patched render does not differ from an unpatched body's render by more than \
              0.001, so the equalities above hold on two identical-by-default buffers rather than \
              because the patch landed"
+        );
+    }
+
+    // ── Scoring ────────────────────────────────────────────────────────────
+
+    /// The rate every Tuner spec here builds at. The analyser derives its
+    /// analysis hop, its bandpass and its detector search range from the rate,
+    /// so a reference instance built at any other one runs a different detector
+    /// and the parity spec below would be comparing two of them.
+    const SCORING_RATE: f32 = 48_000.0;
+
+    /// The pitch every Tuner spec here feeds in, and the pitch concert A names:
+    /// the note the detector must come back with is A4, MIDI 69.
+    const SCORING_TONE_HZ: f32 = 440.0;
+
+    /// The amplitude that tone is fed at — well above the analyser's own noise
+    /// gate (`GATE_THRESHOLD`, `crates/scoring/src/lib.rs`), so every spec here
+    /// observes the detecting path rather than the release path.
+    const SCORING_TONE_AMPLITUDE: f32 = 0.5;
+
+    /// Frames each spec feeds: a second at [`SCORING_RATE`], which is some
+    /// thirty analysis hops — enough for the temporal stabilizer to settle on a
+    /// pitch rather than still be filling its history.
+    const SCORING_FRAMES: usize = 48_000;
+
+    /// The callback length the hosted body is driven at. Deliberately not the
+    /// worklet's 128-frame quantum the reference below uses: the analyser's hop
+    /// is sample-counted, so the two must reach the same detection from
+    /// different call lengths or [`ScoringBody::process`]'s single whole-block
+    /// call is wrong.
+    const SCORING_CALLBACK: usize = 256;
+
+    /// The rate the two refusal specs below build at, and the reason they do:
+    /// the poly tracker's bass configuration sizes every per-string buffer for
+    /// the lowest string's band, and only at 88.2 and 96 kHz does that window
+    /// outgrow the FFT scratch its own detectors were built for, so three of
+    /// the four resize inside `process` (issue #4209). A spec at
+    /// [`SCORING_RATE`] would observe the `instrument` allocation alone and say
+    /// nothing about the tracker `poly` arms.
+    const SCORING_HIGH_RATE: f32 = 96_000.0;
+
+    /// Frames the refusal specs feed at [`SCORING_HIGH_RATE`]: one second,
+    /// which is thirty mono analysis hops (hop = rate / 30) and sixty poly
+    /// hops for a four-string bass (hop = rate / (15 * strings) = 1 600), so
+    /// every string's first detector tick falls inside it many times over.
+    const SCORING_HIGH_RATE_FRAMES: usize = 96_000;
+
+    /// One of the analyser's own parameter names, as the mapper resolves it.
+    fn scoring_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// `frames` of an `hz` sine at `sample_rate`, at the amplitude every spec
+    /// here feeds. The phase runs from frame zero across the whole slice, so a
+    /// spec that splits one call of this into a warm-up and a guarded pass
+    /// hands the analyser an unbroken tone across the join.
+    fn scoring_tone_at(frames: usize, hz: f32, sample_rate: f32) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                let phase = std::f32::consts::TAU * hz * frame as f32 / sample_rate;
+                phase.sin() * SCORING_TONE_AMPLITUDE
+            })
+            .collect()
+    }
+
+    /// `frames` of the test tone.
+    fn scoring_tone(frames: usize) -> Vec<f32> {
+        scoring_tone_at(frames, SCORING_TONE_HZ, SCORING_RATE)
+    }
+
+    /// A Tuner core carrying `patch` at `sample_rate`, built through the door
+    /// the mapper uses ([`PluginCore::scoring_with_patch`]) together with the
+    /// telemetry handle that core hands back — the pair the mapper itself
+    /// keeps.
+    fn scoring_core_at(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> (PluginCore, Arc<ScoringTelemetry>) {
+        let core = PluginCore::scoring_with_patch(sample_rate, patch);
+        let telemetry = core
+            .scoring_telemetry()
+            .expect("a scoring core publishes a telemetry channel");
+        (core, telemetry)
+    }
+
+    /// A Tuner core carrying `patch` at [`SCORING_RATE`].
+    fn scoring_core(patch: &[(BuiltinParamName, f32)]) -> (PluginCore, Arc<ScoringTelemetry>) {
+        scoring_core_at(SCORING_RATE, patch)
+    }
+
+    /// The body inside a core built above.
+    fn scoring_body(core: &mut PluginCore) -> &mut ScoringBody {
+        let PluginCore::Scoring(body) = core else {
+            panic!("scoring_with_patch built something other than a Tuner");
+        };
+        body
+    }
+
+    /// Drive buffers the caller already owns through `body` in
+    /// [`SCORING_CALLBACK`]-frame callbacks, in place.
+    ///
+    /// Separate from [`scoring_render`] because it allocates nothing: the
+    /// allocation specs below need the cutting inside their guard and the
+    /// copies outside it.
+    fn scoring_drive(body: &mut ScoringBody, left: &mut [f32], right: &mut [f32]) {
+        let mut rendered = 0;
+        while rendered < left.len() {
+            let end = (rendered + SCORING_CALLBACK).min(left.len());
+            body.process(&mut left[rendered..end], &mut right[rendered..end]);
+            rendered = end;
+        }
+    }
+
+    /// Drive `material` through `body` in [`SCORING_CALLBACK`]-frame callbacks,
+    /// answering what the body left in the buffers.
+    fn scoring_render(body: &mut ScoringBody, material: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let mut left = material.to_vec();
+        let mut right = material.to_vec();
+        scoring_drive(body, &mut left, &mut right);
+        (left, right)
+    }
+
+    /// The same material through the worklet's own binding, in the 128-frame
+    /// quanta an `AudioWorkletProcessor` hands it, answering the instance so a
+    /// spec can read its detection accessors.
+    ///
+    /// The instance's output pointers are deliberately never read: this
+    /// reference exists for the *detection* those accessors report, which is
+    /// the whole of what a Tuner produces.
+    fn scoring_reference(material: &[f32], writes: &[(&str, f32)]) -> scoring::ScoringInstance {
+        /// The worklet's own render quantum.
+        const QUANTUM: usize = 128;
+
+        let mut instance = scoring::ScoringInstance::new(SCORING_RATE);
+        for (name, value) in writes {
+            instance.set_param(name, *value);
+        }
+        for block in 0..material.len() / QUANTUM {
+            let run = &material[block * QUANTUM..(block + 1) * QUANTUM];
+            let _ = instance.process(run, run, QUANTUM as u32);
+        }
+        instance
+    }
+
+    /// The analyser is an insert that listens: with its tone generator off and
+    /// its output unmuted, every sample it was handed leaves bit-equal.
+    ///
+    /// Bit equality rather than a tolerance, because there is no arithmetic on
+    /// the signal path to drift: `ScoringEngine::process` preprocesses a *copy*
+    /// of the mono sum for the detector and adds only the tone generator's
+    /// output to the block, which is exactly `0.0` while the generator is off
+    /// (`ToneGenerator::tick`, `crates/scoring/src/tone.rs`). A body that
+    /// filtered, gated or gain-staged the programme would fail here rather than
+    /// leave a musician's insert quietly coloured.
+    #[test]
+    fn a_scoring_body_passes_its_input_through_unchanged() {
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, _telemetry) =
+            scoring_core(&[(scoring_name("tone"), 0.0), (scoring_name("mute"), 0.0)]);
+        let (left, right) = scoring_render(scoring_body(&mut core), &material);
+
+        assert_eq!(
+            left, material,
+            "the left channel is not the signal the body was handed"
+        );
+        assert_eq!(
+            right, material,
+            "the right channel is not the signal the body was handed"
+        );
+        assert!(
+            material.iter().any(|sample| *sample != 0.0),
+            "the material is silent, so the equalities above hold on two empty buffers"
+        );
+    }
+
+    /// A hosted Tuner reads the pitch the worklet's own `ScoringInstance`
+    /// reads for the same tone — the detection, not merely that both moved.
+    ///
+    /// The two are driven at different call lengths on purpose: the body takes
+    /// one whole 256-frame callback per call and the reference takes the
+    /// worklet's 128-frame quanta. The analyser's hop is counted in samples
+    /// inside `ScoringEngine::process`, so the same samples produce the same
+    /// analysis ticks at the same offsets whichever way the calls are cut, and a
+    /// body that re-cut the block into runs of its own — or reset anything per
+    /// call — would separate here.
+    ///
+    /// The absolute assertions beside the parity refuse a vacuous pass: two
+    /// analysers that both heard nothing would agree on zero, and `active` and
+    /// the 440 Hz bound are what say a detection happened at all.
+    #[test]
+    fn a_hosted_scoring_reads_the_worklet_pitch_for_the_same_tone() {
+        /// The tolerance the two readings are held to. They run the same
+        /// arithmetic over the same samples, so the figure is headroom against
+        /// a future reordering rather than an expected drift.
+        const TOLERANCE: f32 = 1e-3;
+        /// How far from concert A the reading may sit and still be A4. A pure
+        /// sine is the easiest material a pitch detector ever sees; a whole
+        /// hertz is orders looser than the interpolator's own resolution.
+        const PITCH_BOUND: f32 = 1.0;
+        /// A4 on the MIDI scale.
+        const A4_MIDI: i32 = 69;
+
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, telemetry) = scoring_core(&[]);
+        scoring_render(scoring_body(&mut core), &material);
+        let reading = telemetry.snapshot();
+        let reference = scoring_reference(&material, &[]);
+
+        assert!(
+            reading.active,
+            "the hosted body heard nothing, so the comparisons below prove nothing"
+        );
+        assert_eq!(
+            reading.active,
+            reference.is_active(),
+            "the hosted body and the worklet's instance disagree about whether a note sounds"
+        );
+        assert!(
+            (reading.frequency - SCORING_TONE_HZ).abs() < PITCH_BOUND,
+            "the hosted body read {} Hz for a {SCORING_TONE_HZ} Hz tone",
+            reading.frequency
+        );
+        assert!(
+            (reading.frequency - reference.get_frequency()).abs() < TOLERANCE,
+            "the hosted body read {} Hz where the worklet's instance read {} Hz",
+            reading.frequency,
+            reference.get_frequency()
+        );
+        assert!(
+            (reading.cents - reference.get_cents()).abs() < TOLERANCE,
+            "the hosted body read {} cents where the worklet's instance read {} cents",
+            reading.cents,
+            reference.get_cents()
+        );
+        assert_eq!(
+            reading.midi_note, A4_MIDI,
+            "a {SCORING_TONE_HZ} Hz tone is A4, and the body named MIDI {}",
+            reading.midi_note
+        );
+    }
+
+    /// A patch lands on the analyser before it hears anything, and the one name
+    /// that moves what a pitch *means* is what proves it.
+    ///
+    /// `a4_hz` retunes the concert-A reference the detected frequency is
+    /// measured against, so the same tone read against A4 = 445 Hz is flat by
+    /// `1200 * log2(440 / 445)` cents — about -19.56, where an unpatched body
+    /// reads it as very nearly in tune. The decisive expectation is the
+    /// *difference* between those two readings over the same samples: both
+    /// bodies detect the identical frequency, so the reference is the only term
+    /// that differs and the gap is the retune's own arithmetic. The absolute
+    /// figure is held too, at the detector's own pitch resolution rather than at
+    /// the ideal arithmetic — this analyser settles a little over a cent sharp
+    /// of a pure 440 Hz sine, which is a property of the detector and not of the
+    /// patch.
+    #[test]
+    fn a_scoring_patch_moves_the_reference_pitch_before_it_analyses() {
+        /// The reference the patch moves concert A to.
+        const RETUNED_A4: f32 = 445.0;
+        /// How far the reading may sit from the arithmetic the retune implies.
+        /// The detector's own estimate of a pure 440 Hz sine settles a little
+        /// over a cent sharp, and that error carries into the cents figure
+        /// whatever the reference is, so the bound admits it while staying an
+        /// order below the ~19.6 cents separating this answer from an unpatched
+        /// body's.
+        const CENTS_BOUND: f32 = 2.0;
+        /// How far the gap between the patched and unpatched readings may sit
+        /// from the retune's arithmetic. Both bodies analyse the same samples
+        /// and detect the same frequency, so the detector's own error cancels
+        /// out of the gap and only the moved reference is left in it.
+        const RETUNE_BOUND: f32 = 1e-2;
+        /// The tolerance against the reference instance, as in the parity spec
+        /// above: the same arithmetic over the same samples.
+        const TOLERANCE: f32 = 1e-3;
+
+        let expected_cents = 1200.0 * (SCORING_TONE_HZ / RETUNED_A4).log2();
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, telemetry) = scoring_core(&[(scoring_name("a4_hz"), RETUNED_A4)]);
+        scoring_render(scoring_body(&mut core), &material);
+        let reading = telemetry.snapshot();
+        let reference = scoring_reference(&material, &[("a4_hz", RETUNED_A4)]);
+        let (mut untouched, untouched_telemetry) = scoring_core(&[]);
+        scoring_render(scoring_body(&mut untouched), &material);
+        let unpatched = untouched_telemetry.snapshot();
+
+        assert!(
+            reading.active,
+            "the patched body heard nothing, so its cents reading says nothing"
+        );
+        assert!(
+            unpatched.active,
+            "the unpatched body heard nothing, so there is no gap to measure"
+        );
+        assert!(
+            (unpatched.cents - reading.cents + expected_cents).abs() < RETUNE_BOUND,
+            "moving concert A to {RETUNED_A4} Hz flattens the same tone by \
+             {} cents, and the two bodies read {} and {} cents",
+            -expected_cents,
+            unpatched.cents,
+            reading.cents
+        );
+        assert!(
+            (reading.cents - expected_cents).abs() < CENTS_BOUND,
+            "a {SCORING_TONE_HZ} Hz tone against A4 = {RETUNED_A4} Hz is {expected_cents} cents, \
+             and the body read {}",
+            reading.cents
+        );
+        assert!(
+            (reading.cents - reference.get_cents()).abs() < TOLERANCE,
+            "the patched body read {} cents where an instance given the same write read {}",
+            reading.cents,
+            reference.get_cents()
+        );
+    }
+
+    /// The one name that does change the signal: `mute` replaces the programme
+    /// with the reference tone, which is digital silence while the tone
+    /// generator is off.
+    ///
+    /// This is the tuner's own monitoring gesture — a player checking pitch
+    /// against the generator alone — and it has to be audible on the carrier
+    /// that is sounding, or a muted tuner on a natively carried strip keeps
+    /// passing the programme through.
+    #[test]
+    fn a_muted_scoring_body_renders_silence() {
+        let material = scoring_tone(SCORING_FRAMES);
+        let (mut core, _telemetry) =
+            scoring_core(&[(scoring_name("tone"), 0.0), (scoring_name("mute"), 1.0)]);
+        let (left, right) = scoring_render(scoring_body(&mut core), &material);
+
+        assert!(
+            left.iter().chain(right.iter()).all(|sample| *sample == 0.0),
+            "a muted tuner passed its programme through"
+        );
+    }
+
+    /// The body allocates nothing while analysing, which is the whole of what
+    /// makes it legal on the render callback (ADR 0020).
+    ///
+    /// The construction and the material stay outside the guard: the constructor
+    /// legitimately allocates the analysis ring, the extraction window and both
+    /// detectors' buffers, and building the tone's `Vec` allocates too. A
+    /// warming second runs first so the guarded pass falls on an analyser that
+    /// has already detected — the extraction, YIN, MPM, the stabilizer, the
+    /// vibrato detector and the publish have all run before the guard opens, and
+    /// the guarded pass runs them again over the state that second populated
+    /// rather than over empty buffers.
+    ///
+    /// What the guard covers is fifteen analysis hops, not one callback: the
+    /// hop is `sample_rate / 30` = 1 600 frames and [`SCORING_FRAMES`] is
+    /// exactly thirty of them, so a warm-up of that length leaves the counter
+    /// at a hop boundary and a single 256-frame guarded call never crosses the
+    /// next one — no extraction, no YIN, no MPM, no stabilizer and no vibrato
+    /// would run under the guard at all, and the `active` reading beside it
+    /// would be the warm-up's last publish rather than anything the guard saw.
+    ///
+    /// The guarded tone is a fourth below the warm-up's for the same reason:
+    /// the reading can only move from A4 to E4 if the analysis that names a
+    /// note ran inside the guard, so the note read before and after the guard
+    /// is what makes a vacuous pass impossible. The finiteness assertion stays
+    /// beside it — a guarded pass that left a non-finite sample would mean it
+    /// produced state the scrub had to catch rather than state it kept
+    /// coherent.
+    #[test]
+    fn a_scoring_body_does_not_allocate_while_analysing() {
+        /// The pitch the guarded pass feeds: E4, a fourth below the warm-up's
+        /// concert A and far enough from it that no detector error could
+        /// confuse the two.
+        const GUARDED_TONE_HZ: f32 = 329.63;
+        /// E4 on the MIDI scale.
+        const GUARDED_TONE_MIDI: i32 = 64;
+        /// A4 on the MIDI scale — the warm-up's own note.
+        const WARM_UP_MIDI: i32 = 69;
+
+        let warm_up = scoring_tone(SCORING_FRAMES);
+        let guarded = scoring_tone_at(SCORING_FRAMES / 2, GUARDED_TONE_HZ, SCORING_RATE);
+        let (mut core, telemetry) = scoring_core(&[]);
+        let body = scoring_body(&mut core);
+        scoring_render(body, &warm_up);
+
+        let warmed = telemetry.snapshot();
+        assert!(
+            warmed.active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+        assert_eq!(
+            warmed.midi_note, WARM_UP_MIDI,
+            "the warm-up fed a {SCORING_TONE_HZ} Hz tone and the analyser named MIDI {}, so the \
+             reading the guarded pass has to move is not the one this spec expects",
+            warmed.midi_note
+        );
+
+        let mut left = guarded.clone();
+        let mut right = guarded;
+        assert_no_alloc::assert_no_alloc(|| {
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        let reading = telemetry.snapshot();
+        assert!(
+            reading.active,
+            "the guarded pass left the analyser hearing nothing, so it covered no detection path"
+        );
+        assert_eq!(
+            reading.midi_note, GUARDED_TONE_MIDI,
+            "the guarded pass fed a {GUARDED_TONE_HZ} Hz tone and the analyser still names MIDI \
+             {}, so no analysis ran inside the guard",
+            reading.midi_note
+        );
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "the guarded pass left the analyser producing non-finite samples"
+        );
+    }
+
+    /// The live door refuses the two [`SCORING_NATIVE_REFUSED`] names, on the
+    /// audio thread, where forwarding either allocates.
+    ///
+    /// Both writes are made inside the guard in the order a panel would make
+    /// them — pick the instrument, then arm the tracker — because that is the
+    /// route a live write actually takes: `updateDeviceParam.ts` sends every
+    /// panel write natively without consulting `addressesParameter`, so
+    /// [`GraphCommand::SetParam`] reaches this door inside the render callback
+    /// through `apply_builtin_param`.
+    ///
+    /// Built at [`SCORING_HIGH_RATE`] so both halves of the hazard are in
+    /// range: the `instrument` arm rebuilds the tracker's per-string state as
+    /// it lands, and the bass strings it would build carry three detectors
+    /// that resize their own FFT scratch on their first tick at this rate. The
+    /// guarded pass is four poly hops long, so on revert the abort comes from
+    /// the `instrument` write itself and, failing that, from the first of those
+    /// ticks.
+    ///
+    /// The reading is asserted after the guard so the pass is not vacuous: a
+    /// guarded pass the analyser heard nothing in would have exercised no
+    /// analysis path for the refusal to sit beside.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_live_door() {
+        /// Frames driven under the guard: four poly hops at
+        /// [`SCORING_HIGH_RATE`], which is one tick per string of the bass a
+        /// forwarded `instrument` write would have built.
+        const GUARDED_FRAMES: usize = 4 * 1_600;
+
+        let tone = scoring_tone_at(
+            SCORING_HIGH_RATE_FRAMES + GUARDED_FRAMES,
+            SCORING_TONE_HZ,
+            SCORING_HIGH_RATE,
+        );
+        let (warm_up, guarded) = tone.split_at(SCORING_HIGH_RATE_FRAMES);
+        let (mut core, telemetry) = scoring_core_at(SCORING_HIGH_RATE, &[]);
+        let body = scoring_body(&mut core);
+        scoring_render(body, warm_up);
+
+        assert!(
+            telemetry.snapshot().active,
+            "the warm-up left the analyser hearing nothing, so the guarded pass runs over empty \
+             state rather than over a settled detection"
+        );
+
+        let mut left = guarded.to_vec();
+        let mut right = guarded.to_vec();
+        assert_no_alloc::assert_no_alloc(|| {
+            body.set_param("instrument", 1.0);
+            body.set_param("poly", 1.0);
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
+        );
+    }
+
+    /// The record door refuses the same two names, so a persisted patch naming
+    /// the poly tracker builds the monophonic analyser the native Tuner is.
+    ///
+    /// The whole drive is inside the guard, with no warm-up, and that is the
+    /// point: the allocation a reverted refusal performs here is a *first*-tick
+    /// resize. `set_strings` sizes every per-string buffer for the lowest
+    /// string's band, so the A1, D2 and G2 detectors are each handed a window
+    /// twice the length their own FFT scratch was built for and
+    /// `YinDetector::detect` grows it once, on that string's first tick. A
+    /// warming second would spend all three of those growths outside the guard
+    /// — sixty poly hops at [`SCORING_HIGH_RATE`] is fifteen round trips over
+    /// four strings — and the guarded pass would then be allocation-free with
+    /// the refusal reverted, which is a spec that proves nothing. The guard
+    /// therefore opens before the tracker's first tick.
+    ///
+    /// A second of material covers thirty mono analysis hops and sixty poly
+    /// hops, so the reading asserted afterwards is a detection the guard itself
+    /// produced, and the pass is not vacuous for want of a warm-up.
+    #[test]
+    fn a_scoring_body_refuses_the_poly_tracker_on_the_patch_door() {
+        let tone = scoring_tone_at(SCORING_HIGH_RATE_FRAMES, SCORING_TONE_HZ, SCORING_HIGH_RATE);
+        let (mut core, telemetry) = scoring_core_at(
+            SCORING_HIGH_RATE,
+            &[
+                (scoring_name("poly"), 1.0),
+                (scoring_name("instrument"), 1.0),
+            ],
+        );
+        let body = scoring_body(&mut core);
+
+        let mut left = tone.clone();
+        let mut right = tone;
+        assert_no_alloc::assert_no_alloc(|| {
+            scoring_drive(body, &mut left, &mut right);
+        });
+
+        assert!(
+            telemetry.snapshot().active,
+            "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
         );
     }
 }

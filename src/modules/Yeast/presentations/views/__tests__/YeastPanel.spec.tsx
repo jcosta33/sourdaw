@@ -679,5 +679,44 @@ describe('YeastPanel', () => {
                 expect(section?.className).toContain('yeast-window');
             }
         });
+
+        it('keeps Level 3 Build rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 3,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
+        });
+
+        it('keeps Level 4 Route rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 4,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
+        });
+
+        it('keeps Level 5 Lab rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 5,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
+        });
     });
 });

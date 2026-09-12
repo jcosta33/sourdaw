@@ -306,14 +306,15 @@ beforeEach(() => {
         const stored = pendingActionConfirmationStore.value?.confirmations.find(
             (candidate) => candidate.id === confirmationId
         );
-        return stored === undefined
-            ? null
-            : approvalView({
-                  confirmationId: stored.id,
-                  status: stored.status,
-                  prompt: stored.prompt,
-                  actionLabels: stored.actionLabels,
-              });
+        if (stored === undefined) {
+            return null;
+        }
+        return approvalView({
+            confirmationId: stored.id,
+            status: stored.status,
+            prompt: stored.prompt,
+            actionLabels: stored.actionLabels,
+        });
     });
     setRuns([]);
     aiActionHistoryStore.set({ groups: [], panelOpen: false });
@@ -347,6 +348,16 @@ describe('AgentWorkspace', () => {
         expect(options[1]).toHaveAttribute('aria-selected', 'false');
         const summary = within(screen.getByRole('region', { name: 'Run summary' }));
         expect(summary.getByText('Newest request')).toBeInTheDocument();
+    });
+
+    it('keeps the scrolling workspace column from collapsing its sections', () => {
+        agentRunControlsMock.list.mockReturnValue([projection({ runId: 'run-1', request: 'Some request' })]);
+        setRuns([run({ runId: 'run-1', request: 'Some request' })]);
+
+        render(<AgentWorkspace />);
+
+        const scrollingColumn = screen.getByRole('region', { name: 'Run summary' }).parentElement;
+        expect(scrollingColumn).toHaveClass('overflow-y-auto', '[&>*]:shrink-0');
     });
 
     it('moves selection with ArrowDown while focus stays on the listbox', () => {

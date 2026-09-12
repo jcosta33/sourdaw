@@ -54,6 +54,7 @@ import {
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
+    isTunerTelemetryNativelyOwned,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -506,7 +507,26 @@ configureAudioDeviceRuntimeSink({
     syncProofPatch: syncFullPatch,
     updateProofMeters,
     clearProofMeters,
-    updateTunerTelemetry,
+    // The Tuner is the one device two analysers can report for at once: the
+    // native body publishes on the transport poll and the Web Audio twin's
+    // worklet posts from a graph that goes on running behind a shadowed
+    // carrier. Both reach one store, so the arbitration belongs here, where
+    // both producers are visible — neither can see the other.
+    //
+    // The native reading wins for a device the session is carrying and
+    // sounding, and only there: everywhere else the web twin is what the
+    // musician hears, so its reading is the true one and the native map's
+    // entry for that device is stale or silent.
+    updateTunerTelemetry: (deviceId, telemetry) => {
+        if (isTunerTelemetryNativelyOwned(deviceId)) {
+            return;
+        }
+        updateTunerTelemetry(deviceId, telemetry);
+    },
+    // No predicate on this side: `publishNativeTunerTelemetry` already
+    // filtered the poll's map by that same answer, so a reading reaching here
+    // is one this session owns.
+    updateNativeTunerTelemetry: updateTunerTelemetry,
 });
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());

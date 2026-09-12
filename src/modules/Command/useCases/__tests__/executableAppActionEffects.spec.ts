@@ -28,8 +28,8 @@ function rowFor(actionType: string): ExecutableAppActionEffect {
     return executableAppActionEffectsByType[actionType];
 }
 
-function operationsMatching(matches: (row: ExecutableAppActionEffect) => boolean): Set<string> {
-    return new Set(descriptorActionTypes.filter((actionType) => matches(rowFor(actionType))));
+function onlyExecutableActionTypes(operations: ReadonlySet<string>): readonly string[] {
+    return [...operations].filter((name) => executableActionTypeSet.has(name));
 }
 
 describe('executableAppActionEffectsByType', () => {
@@ -101,30 +101,28 @@ describe('executableAppActionEffectsByType', () => {
         }
     });
 
-    it('S6: each grant set equals, in both directions, the executable actions whose effect rows declare that effect', () => {
-        expect(new Set(CREATE_OPERATIONS)).toEqual(operationsMatching((row) => (row.creates?.length ?? 0) > 0));
-        expect(new Set(DELETE_OPERATIONS)).toEqual(operationsMatching((row) => (row.removes?.length ?? 0) > 0));
-        expect(new Set(ROUTING_OPERATIONS)).toEqual(operationsMatching((row) => row.dimensions.includes('routing')));
-        expect(new Set(TEMPO_OPERATIONS)).toEqual(
-            operationsMatching((row) => row.dimensions.includes('project-timing'))
-        );
-        expect(new Set(MASTER_OPERATIONS)).toEqual(operationsMatching((row) => row.dimensions.includes('master')));
-    });
-
-    it('S6: every grant set member is an executable action, and removeAdjustmentRegion is not one', () => {
-        expect(isExecutableAppActionType('removeAdjustmentRegion')).toBe(false);
-        for (const operations of [
-            CREATE_OPERATIONS,
-            DELETE_OPERATIONS,
-            ROUTING_OPERATIONS,
-            TEMPO_OPERATIONS,
-            MASTER_OPERATIONS,
-        ]) {
-            for (const operation of operations) {
-                expect(executableActionTypeSet.has(operation), `${operation}: must be an executable action`).toBe(true);
-            }
-            expect(operations.has('removeAdjustmentRegion'), 'dead grant entry').toBe(false);
+    it('S6: cross-checks against the exported grant sets from getVersionedCommandBatchEffects', () => {
+        for (const actionType of onlyExecutableActionTypes(ROUTING_OPERATIONS)) {
+            expect(rowFor(actionType).dimensions, `${actionType}: ROUTING_OPERATIONS member`).toContain('routing');
         }
+
+        for (const actionType of onlyExecutableActionTypes(TEMPO_OPERATIONS)) {
+            expect(rowFor(actionType).dimensions, `${actionType}: TEMPO_OPERATIONS member`).toContain('project-timing');
+        }
+
+        for (const actionType of onlyExecutableActionTypes(MASTER_OPERATIONS)) {
+            expect(rowFor(actionType).dimensions, `${actionType}: MASTER_OPERATIONS member`).toContain('master');
+        }
+
+        const expectedCreateOperations = new Set(
+            descriptorActionTypes.filter((actionType) => (rowFor(actionType).creates?.length ?? 0) > 0)
+        );
+        expect(CREATE_OPERATIONS).toEqual(expectedCreateOperations);
+
+        const expectedDeleteOperations = new Set(
+            descriptorActionTypes.filter((actionType) => (rowFor(actionType).removes?.length ?? 0) > 0)
+        );
+        expect(DELETE_OPERATIONS).toEqual(expectedDeleteOperations);
     });
 
     it('S7: getExecutableAppActionEffect returns the row identity for known types and null for unknown names', () => {

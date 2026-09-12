@@ -96,6 +96,12 @@ describe('projectTrackToLiveStrip', () => {
         // `clearAllMocks` clears calls, not implementations, so a test that
         // takes the engine away has to hand it back here.
         mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
+        mocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            runtimeRevision: 1,
+        });
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
@@ -496,5 +502,26 @@ describe('projectTrackToLiveStrip', () => {
         projectTrackToLiveStrip({ trackId: 'audio-1' });
 
         expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('replays crust device parameters with style before algorithm', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio' });
+        track.devices = [
+            {
+                id: 'crust-1',
+                name: 'Crust',
+                type: 'crust',
+                bypassed: false,
+                parameterValues: { algorithm: 6, style: 2 },
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['audio-1', 'crust-1', 'style', 2],
+            ['audio-1', 'crust-1', 'algorithm', 6],
+        ]);
     });
 });

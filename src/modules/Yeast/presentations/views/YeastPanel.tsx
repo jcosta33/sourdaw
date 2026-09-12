@@ -851,7 +851,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     const hasArpPattern = state.processors.some((param) => param.type === 'arpeggiator');
 
     return (
-        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
+        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto [&>*]:shrink-0">
             {/* Rack chain with expandable params */}
             <ProcessorRackChain
                 processors={state.processors}
@@ -891,7 +891,7 @@ const Level4Route = ({
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     return (
-        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
+        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto [&>*]:shrink-0">
             {/* Keyboard visualization */}
             <Stack gap={1}>
                 <span className="text-nano text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
@@ -923,7 +923,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
     return (
         <Row grow className="min-h-0 overflow-hidden">
             {/* Left: Rack + generative tools */}
-            <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
+            <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto [&>*]:shrink-0">
                 {/* Rack chain with params */}
                 <ProcessorRackChain
                     processors={state.processors}

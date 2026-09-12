@@ -59,6 +59,7 @@
         "issue:file": "node scripts/fileTrackerIssue.ts",
         "audio:deadline": "node scripts/measureRenderDeadline.ts",
         "browser-ai:model-storage": "node scripts/measureBrowserAiModelStorage.ts",
+        "desktop:agent-proof": "node scripts/proveDesktopAgentWorkspace.ts",
         "desktop:measure": "node scripts/measureDesktopLatency.ts",
         "transport:clock": "node scripts/measureTransportClock.ts",
         "transport:yeast-drift": "node scripts/measureYeastGeneratorDrift.ts",

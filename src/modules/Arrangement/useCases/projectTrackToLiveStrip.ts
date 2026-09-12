@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { orderDevicePatchEntries } from '#/modules/AudioEngine/stores';
 import {
     getLiveEngineSampleRate,
     initializeTrackStripFromSnapshot,
@@ -11,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
@@ -117,14 +117,7 @@ export function projectTrackToLiveStrip({
                 onExternalPluginActivation?.(activation);
             }
         }
-        // Replay order is a law, not the record's draw order: `parameterValues`
-        // is an open map whose insertion order is an accident of the writes
-        // that built it, and a crust record holding `algorithm` before `style`
-        // (or a grinder one holding `engineMode` before `neuralEnabled`)
-        // would run the simplified pick after the exact one. The precedence
-        // table mirrors the native body's own law, so this rebuild resolves a
-        // record the same way the engine does.
-        for (const [parameterId, value] of orderDevicePatchEntries(device.type, device.parameterValues)) {
+        for (const [parameterId, value] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
             if (typeof value === 'number') {
                 updateDeviceParam(track.id, device.id, parameterId, value);
             }

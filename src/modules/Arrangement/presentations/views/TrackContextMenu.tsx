@@ -172,6 +172,16 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                   },
               ]
             : []),
+        {
+            label: track.disabled ? 'Enable Track' : 'Disable Track',
+            action: () => {
+                void executeUserAppAction({
+                    type: 'disableTrack',
+                    payload: { trackId: track.id, disabled: !track.disabled },
+                });
+                close();
+            },
+        },
         ...(track.kind === 'audio' || track.kind === 'midi'
             ? [
                   {

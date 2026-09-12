@@ -291,6 +291,31 @@ function isBacteriaControlThreadOnly(paramId: string): boolean {
  */
 const PROOF_GRAPH_OWNED: ReadonlySet<string> = new Set(['bypass']);
 
+/**
+ * `ScoringEngine::set_param` in `crates/scoring/src/lib.rs`: the closed set of
+ * names the Tuner's body resolves, less the ones it refuses.
+ *
+ * `reference` and `a4_hz` are two spellings the engine answers on one arm, and
+ * both are here because a record saved under either has to reach the body. A
+ * name outside the set has no arm at all, so the engine would drop it: the set
+ * is what keeps a command from being spent on a write nothing applies.
+ *
+ * `poly` and `instrument` do have arms and are still absent: `ScoringBody`
+ * refuses both at its live and its record door (`SCORING_NATIVE_REFUSED`,
+ * `crates/daw-engine/src/scheduler.rs`), because `instrument` allocates the
+ * poly tracker's per-string state as it lands and `poly` arms detectors that
+ * resize their own scratch inside `process` — so sending either would spend a
+ * command on a write the body drops.
+ */
+const SCORING_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
+    'a4_hz',
+    'reference',
+    'transpose',
+    'capo',
+    'tone',
+    'mute',
+]);
+
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
         'knead',
@@ -636,6 +661,40 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             // Sounds no notes, so no clip release is ever addressed to it.
             takesClipNoteReleases: true,
             latencyCompensatedByEngine: true,
+        },
+    ],
+    [
+        'native-scoring',
+        {
+            soundsNotes: false,
+            /**
+             * The one body whose product is a reading rather than a signal.
+             * The Tuner analyses the block and hands it on unchanged, and what
+             * it heard reaches the renderer on the transport poll, as
+             * `tunerTelemetry` on `EngineTransportPosition` — not over a
+             * worklet port, because a native body has no port to post from.
+             * The panel paints the same needle from either carrier;
+             * `isTunerTelemetryNativelyOwned` is what decides which carrier's
+             * reading it shows.
+             *
+             * No table, for the same reason as Knead's entry above: the ids
+             * project truth authors already are the engine's own snake_case
+             * names. Admission is the closed set the body's `set_param`
+             * answers rather than the wire's shape, because every one of those
+             * names is spelled by the panel and nothing wider can land.
+             */
+            parameterName: (paramId) => paramId,
+            projectPatch: (parameterValues) =>
+                Object.fromEntries(
+                    Object.entries(parameterValues).filter(
+                        (entry): entry is [string, number] =>
+                            typeof entry[1] === 'number' && SCORING_ENGINE_PARAM_NAMES.has(entry[0])
+                    )
+                ),
+            addressesParameter: (paramId) => SCORING_ENGINE_PARAM_NAMES.has(paramId),
+            // Sounds no notes, so no clip release is ever addressed to it.
+            takesClipNoteReleases: true,
+            latencyCompensatedByEngine: false,
         },
     ],
 ]);

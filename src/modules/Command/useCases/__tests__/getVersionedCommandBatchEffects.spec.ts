@@ -80,6 +80,37 @@ describe('getVersionedCommandBatchEffects', () => {
         expect(effects.requiredGrants).toContain('create');
     });
 
+    it('requires create authority for drawClip', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'drawClip' })]);
+
+        expect(effects.requiredGrants).toContain('create');
+    });
+
+    it('requires create authority for addNotes', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'addNotes' })]);
+
+        expect(effects.requiredGrants).toContain('create');
+    });
+
+    it('requires create authority for duplicateClipAt', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'duplicateClipAt' })]);
+
+        expect(effects.requiredGrants).toContain('create');
+    });
+
+    it('requires both create and delete authority for arpeggiate', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'arpeggiate' })]);
+
+        expect(effects.requiredGrants).toContain('create');
+        expect(effects.requiredGrants).toContain('delete');
+    });
+
+    it('requires delete authority for quantizeAutomation', () => {
+        const effects = getVersionedCommandBatchEffects([command({ operation: 'quantizeAutomation' })]);
+
+        expect(effects.requiredGrants).toContain('delete');
+    });
+
     it('counts every independently governed batch budget', () => {
         const effects = getVersionedCommandBatchEffects([
             command({

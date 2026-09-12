@@ -17,6 +17,7 @@ const readingAt = (stripPeaks: Readonly<Record<string, number>>, playing = true)
     timeSigDenom: 4,
     masterPeak: 0,
     stripPeaks,
+    tunerTelemetry: {},
 });
 
 describe('readNativeEngineStripPeak', () => {

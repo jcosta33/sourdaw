@@ -154,7 +154,7 @@ use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
     precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
-    TIMELINE_CHAIN_SLOT_BUDGET,
+    ScoringReading, ScoringTelemetry, TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipFade,
@@ -167,7 +167,7 @@ use daw_engine::timeline::{
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
@@ -935,6 +935,16 @@ struct DeviceEntry {
     /// and parameter vocabulary all follow from it, so none of the three can
     /// drift out of step with the others or with the body the engine holds.
     builtin: Option<BuiltinEffectType>,
+    /// The reading handle of the scoring body this device is, and `None` for
+    /// every other device.
+    ///
+    /// A tuner's detection is a value the audio thread computes and the panel
+    /// displays, so it travels as atomics the body writes and the control
+    /// thread reads, rather than as a message the callback would have to send.
+    /// The handle is cloned off the core at registration, because the command
+    /// that registers the body moves it onto the ring and that is the last
+    /// moment this thread holds it.
+    scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
 impl DeviceEntry {
@@ -1074,6 +1084,26 @@ impl GraphRegistry {
             .iter()
             .filter(|(_, entry)| entry.kind == StripKind::Track)
             .map(|(strip_id, entry)| (entry.native_id, strip_id.as_str()))
+            .collect()
+    }
+
+    /// What every scoring body this registry holds last detected, keyed by the
+    /// device id the app knows it by.
+    ///
+    /// Keyed for every such device the registry knows, on whatever strip and
+    /// carried or not — the same law the meters take: the renderer decides
+    /// which readings it may trust from its own carried set, and a map that
+    /// dropped the uncarried ones would leave a missing entry meaning either
+    /// "no such device" or "not yours to read".
+    pub(crate) fn scoring_readings(&self) -> BTreeMap<String, ScoringReading> {
+        self.devices
+            .iter()
+            .filter_map(|(device_id, entry)| {
+                entry
+                    .scoring_telemetry
+                    .as_ref()
+                    .map(|telemetry| (device_id.clone(), telemetry.snapshot()))
+            })
             .collect()
     }
 
@@ -1947,7 +1977,8 @@ fn builtin_parameter(
         | BuiltinEffectType::Proof
         | BuiltinEffectType::DutchOven
         | BuiltinEffectType::Toaster
-        | BuiltinEffectType::Levain => {
+        | BuiltinEffectType::Levain
+        | BuiltinEffectType::Scoring => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -2041,11 +2072,16 @@ struct EngineOwnedDevice {
 /// (`PluginRegistryEntry::chain_kind`), and a built-in carries the kind its
 /// body is — an instrument is a `Generator`, whose output the chain sums in,
 /// and everything else an `Effect` that processes the signal in place.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// `scoring_telemetry` is a tuner body's reading handle, carried out to the
+/// registry entry because the core it was cloned from is moved onto the
+/// command ring in this same function. Every other device carries `None`.
+#[derive(Clone, Debug)]
 struct MappedDevice {
     effect_id: usize,
     builtin: Option<BuiltinEffectType>,
     chain_kind: DeviceKind,
+    scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
 fn map_device(
@@ -2089,6 +2125,7 @@ fn map_device(
             effect_id,
             builtin: None,
             chain_kind,
+            scoring_telemetry: None,
         }));
     }
 
@@ -2233,6 +2270,16 @@ fn map_device(
                 },
             )
         }
+        BuiltinEffectType::Scoring => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::scoring_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
         // The one type whose body is not built from its parameters alone. A
         // sampler sounds the bank loaded into its instance and nothing else,
         // and loading one is a sequence of allocations the audio thread may
@@ -2291,6 +2338,10 @@ fn map_device(
     // here because the audio thread may not build one — without it the device
     // exists but nothing could ever be scheduled at it.
     let declared_latency = core.declared_latency_frames();
+    // A tuner's reading handle, cloned off the core while this thread still
+    // holds it: the registration below moves the body onto the ring, and
+    // nothing control-side can reach into it afterwards.
+    let scoring_telemetry = core.scoring_telemetry();
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
         core,
@@ -2332,6 +2383,7 @@ fn map_device(
         effect_id,
         builtin: Some(builtin),
         chain_kind: builtin_chain_kind(builtin),
+        scoring_telemetry,
     }))
 }
 
@@ -2703,6 +2755,7 @@ fn map_command(
                         native_effect_id: mapped.effect_id,
                         strip_id: track_id.clone(),
                         builtin: mapped.builtin,
+                        scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -2810,6 +2863,7 @@ fn map_command(
                         native_effect_id: mapped.effect_id,
                         strip_id: bus_id.clone(),
                         builtin: mapped.builtin,
+                        scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -3004,6 +3058,7 @@ fn map_command(
                     native_effect_id: mapped.effect_id,
                     strip_id: track_id.clone(),
                     builtin: mapped.builtin,
+                    scoring_telemetry: mapped.scoring_telemetry,
                 },
             );
             registry
@@ -5457,7 +5512,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "native-scoring", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "builtin-crumbs", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5475,7 +5530,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "native-scoring", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "builtin-crumbs", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5519,7 +5574,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "native-scoring", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "builtin-crumbs", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -5872,6 +5927,7 @@ mod tests {
                     native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
                     strip_id: "t1".to_string(),
                     builtin: Some(BuiltinEffectType::Knead),
+                    scoring_telemetry: None,
                 },
             );
         }
@@ -8060,6 +8116,7 @@ mod tests {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
                 builtin: Some(BuiltinEffectType::Knead),
+                scoring_telemetry: None,
             },
         );
 
@@ -8154,6 +8211,7 @@ mod tests {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
                 builtin: Some(BuiltinEffectType::Fermenter),
+                scoring_telemetry: None,
             },
         );
         let samples = TimelineSamplePool::default();
@@ -8250,6 +8308,7 @@ mod tests {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
                 builtin: Some(BuiltinEffectType::GrandBoule),
+                scoring_telemetry: None,
             },
         );
         let samples = TimelineSamplePool::default();
@@ -8341,6 +8400,7 @@ mod tests {
                 native_effect_id: IMMEDIATE_PARAM_EFFECT_ID,
                 strip_id: track_id.to_string(),
                 builtin: Some(builtin),
+                scoring_telemetry: None,
             },
         );
         registry
@@ -9030,6 +9090,7 @@ mod tests {
                 native_effect_id: MIDI_DEVICE_EFFECT_ID,
                 strip_id: track_id.to_string(),
                 builtin: None,
+                scoring_telemetry: None,
             },
         );
         registry
@@ -10778,7 +10839,7 @@ mod tests {
     #[test]
     fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
         let refusal = map_unbound_batch(
-            &batch(strip_with_device("d-scoring", "native-scoring", json!({}))),
+            &batch(strip_with_device("d-crumbs", "builtin-crumbs", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
@@ -10786,7 +10847,7 @@ mod tests {
         .expect_err("a type with no native body must refuse a contributing strip");
 
         assert!(
-            refusal.contains("d-scoring") && refusal.contains("native-scoring"),
+            refusal.contains("d-crumbs") && refusal.contains("builtin-crumbs"),
             "the refusal must name the device and the type it read, got: {refusal}"
         );
     }
@@ -11507,6 +11568,84 @@ mod tests {
             inserted_chain_kinds(&mapped.ops),
             vec![DeviceKind::Effect],
             "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// A scoring device is registered as an insert too: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// A tuner listens and hands the block on unchanged, so `sounds_notes` is
+    /// false for it and both decisions follow from that one registry. A store
+    /// would be a sink nothing could ever schedule at, and a `Generator`
+    /// splice would sum the analyser's pass-through into the strip alongside
+    /// the very signal it passed through — the tuner would double the
+    /// programme it was inserted to listen to.
+    #[test]
+    fn a_scoring_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-tuner", "native-scoring", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a scoring device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Scoring(_), None)
+            )),
+            "the tuner is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The registry keeps a reading handle for every scoring device it maps,
+    /// and for no other device.
+    ///
+    /// This is the seam the transport poll reads. Without an entry the panel
+    /// has nowhere to read a detection from at all, and an entry for a body
+    /// that publishes nothing would report a tuner on a strip that carries
+    /// none. A freshly mapped device reads inactive because its body has not
+    /// rendered a block yet: what the map carries is what the audio thread
+    /// last published, never a value the mapper supplied for it.
+    #[test]
+    fn the_registry_holds_a_reading_handle_for_each_scoring_device_and_no_other() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-tuner", "native-scoring", json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a scoring device has a native body");
+
+        let readings = registry.scoring_readings();
+        let reading = readings
+            .get("d-tuner")
+            .expect("the mapped scoring device must hold a reading handle");
+        assert!(
+            !reading.active,
+            "a body that has not rendered a block reported a detection"
+        );
+
+        let mut gluten_only = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-glu", "gluten", json!({}))),
+            &mut gluten_only,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a gluten device has a native body");
+
+        assert!(
+            gluten_only.scoring_readings().is_empty(),
+            "a strip carrying no tuner published readings: {:?}",
+            gluten_only.scoring_readings()
         );
     }
 

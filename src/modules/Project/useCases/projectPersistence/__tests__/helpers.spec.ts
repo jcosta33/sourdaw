@@ -73,10 +73,6 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
-    // The strip rebuild's replay-order law travels this barrel; this spec's
-    // graph reaches the strip projection through project rehydration.
-    orderDevicePatchEntries: (_deviceType: string, parameterValues: Record<string, number>) =>
-        Object.entries(parameterValues),
     audioBufferCache: { has: vi.fn(() => false) },
     nativeEngineRearmStore: { subscribe: vi.fn(() => vi.fn()) },
 }));
