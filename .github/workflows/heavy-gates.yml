@@ -98,7 +98,16 @@ jobs:
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm exec playwright install --with-deps chromium; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       - name: Run shard
         id: run_shard

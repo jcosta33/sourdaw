@@ -626,6 +626,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
+    const installStep = stepNamed(smoke, 'Install Playwright browsers');
+    const installRun = stringAt(installStep, 'run');
+    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
+        throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
+    }
+    if (!installRun.includes('for attempt in 1 2 3')) {
+        throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
+    }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
@@ -2191,6 +2199,23 @@ describe('health gates workflow contract', () => {
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
+        );
+
+        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
+        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
+            'pnpm exec playwright install --with-deps chromium';
+        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
+            'the offline smoke job must retry browser and dependency installation against mirror outages'
+        );
+
+        const missingDepsInstall = asRecord(
+            structuredClone(validationWorkflow),
+            'missing deps install validationWorkflow'
+        );
+        stepNamed(jobAt(missingDepsInstall, 'smoke'), 'Install Playwright browsers').run =
+            'for attempt in 1 2 3; do pnpm exec playwright install chromium; done';
+        expect(() => assertOfflineSmokeJob(missingDepsInstall)).toThrow(
+            'the offline smoke job must install Playwright chromium with system dependencies'
         );
 
         const eventGatedDiffScan = asRecord(
