@@ -1,0 +1,83 @@
+src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts
+  s_87ab0a2f60ccf8::t_437c426341d3c6 112-136
+src/modules/Command/useCases/executeAppAction.ts
+  s_87ab0a2f60ccf8::t_334be3fc07afd7 6,283-284
+  s_87ab0a2f60ccf8::t_7551c96703119e 285
+src/modules/Arrangement/useCases/resetArrangementStoresForProject.ts
+  s_87ab0a2f60ccf8::t_73d93230fb35e6 4,11-13
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_87ab0a2f60ccf8::t_44444f4c80b88d 1347-1363,2898,3013
+  s_87ab0a2f60ccf8::t_5b865e02b181cb 1346
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_87ab0a2f60ccf8::t_5a881ed4195f22 4
+  s_87ab0a2f60ccf8::t_5333ee5c6e61d1 1-3,5-15,17,19-52,58-71,78-125,130-132,137-306,320-333,335-347,349-358,360-431,436-440,442-464,469-478,480-483,493,495-531
+  s_87ab0a2f60ccf8::t_678e5031b8e7d1 16,18,53-57,72-77,126-129,133-136,307-319,334,359,432-435,441,465-468,479,484-492,494
+  s_87ab0a2f60ccf8::t_5a67f0fc541aa3 348
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_87ab0a2f60ccf8::t_d4fedc949d0daa 1752-1809
+  s_87ab0a2f60ccf8::t_7e09f43153bc06 1684-1696,1698-1751
+  s_87ab0a2f60ccf8::t_678e5031b8e7d1 1697
+src/modules/Arrangement/useCases/restoreArrangementMetadataSnapshot.ts
+  s_87ab0a2f60ccf8::t_73d93230fb35e6 3,12-14
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_87ab0a2f60ccf8::t_44444f4c80b88d 291-294
+src/modules/Arrangement/useCases/comping/compRegionInterval.ts
+  s_87ab0a2f60ccf8::t_7e0ac633f71143 4-9,11,152-153,156,160-165,171-172
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_87ab0a2f60ccf8::t_2ed6b85708582d 708-748,764-765
+  s_87ab0a2f60ccf8::t_5751a820f22f94 20-23,26-27,234-298,302-303,305-318,325-330,332-334
+  s_87ab0a2f60ccf8::t_a43b13f6809e93 612-631,633-661
+  s_87ab0a2f60ccf8::t_d53b2947204200 888-891,903-919,931-944
+  s_87ab0a2f60ccf8::t_a15d25a5c686c6 977-998,1012-1028
+  s_87ab0a2f60ccf8::t_6d7f44f8905e85 766-799,801-846
+  s_87ab0a2f60ccf8::t_049ff6ac374a13 847-855,867-877,881-887
+  s_87ab0a2f60ccf8::t_67deb095156989 52,54-55
+  s_87ab0a2f60ccf8::t_d06e1eeec6dbbf 127-132,299-301,400-412,489-501,632,800,856-866,878-880,892-902,920-930,1000-1011
+  s_87ab0a2f60ccf8::t_ea657beee9b93d 749-761,763
+  s_87ab0a2f60ccf8::t_ce43182a26da0e 999
+  s_87ab0a2f60ccf8::t_26a31fd7497c89 304,319-324,331
+  s_87ab0a2f60ccf8::t_8832a3be5ae5e7 13-16,19,24-25,30-31,36,173-177,1094-1169,1178-1183,1198-1205,1216-1217,1220-1221,1224-1232
+  s_87ab0a2f60ccf8::t_0f6bccd4154ee7 662-707
+  s_87ab0a2f60ccf8::t_fb9d1357bf4445 762
+  s_87ab0a2f60ccf8::t_deb70abb0efe98 335,1029-1054,1233
+  s_87ab0a2f60ccf8::t_802da0c3b059b0 1170-1177,1184-1197,1206-1215,1218-1219,1222-1223
+  s_87ab0a2f60ccf8::t_1b5f965d5659ae 336
+src/infra/store/storage/createAutomergeStorage.ts
+  s_87ab0a2f60ccf8::t_678e5031b8e7d1 91,114-115,1309,1349,1353,1642-1645,1647-1650,2098
+  s_87ab0a2f60ccf8::t_4e904ebe8b55a8 1913,1915-1919,1931,1933-1937
+  s_87ab0a2f60ccf8::t_a5bda1efa3c5b5 229,986-994
+  s_87ab0a2f60ccf8::t_f6ca807661dbc5 1326-1327,1355-1370,1374-1375
+  s_87ab0a2f60ccf8::t_359228710bb8c4 85-90,92-94,118-122,174,176-177
+  s_87ab0a2f60ccf8::t_b83998e7df51d7 1130,1133,1145,1149
+  s_87ab0a2f60ccf8::t_4bf2e83b292a78 1278-1308,1310-1320
+  s_87ab0a2f60ccf8::t_6ab8b98199cc66 1477,1528-1529
+  s_87ab0a2f60ccf8::t_89fbb27e5ceace 1629-1641,1646,1651-1663,1778
+  s_87ab0a2f60ccf8::t_d2b4faee96a88e 1733-1736,1770,1801
+  s_87ab0a2f60ccf8::t_8abcd8d37d00be 314-320
+  s_87ab0a2f60ccf8::t_7e881686b3f907 1376-1377
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_87ab0a2f60ccf8::t_5a881ed4195f22 321,338
+  s_87ab0a2f60ccf8::t_83d46227c49ca2 2-5,9-15,308,312-320,322,324-327,332-337,339
+  s_87ab0a2f60ccf8::t_c1627b0438cae2 328-331
+  s_87ab0a2f60ccf8::t_678e5031b8e7d1 323
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_87ab0a2f60ccf8::t_05ea4ad5fbd615 1-79,86-149,152-188,244
+  s_87ab0a2f60ccf8::t_d06e1eeec6dbbf 80-85,150-151,196-197,200-208,228-240
+  s_87ab0a2f60ccf8::t_6fb4c42c73dfb7 189-195,198-199,209-227,241-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ad5512abffa8737713073e7083502102ea1b7520",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
