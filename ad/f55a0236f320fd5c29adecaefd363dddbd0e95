@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/__tests__/clipReplacementSnapshot.spec.ts
+  s_87ab0a2f60ccf8::t_2f36d01ee8b0a9 63
+  s_87ab0a2f60ccf8::t_954292b8880669 1-62,64-71
+src/modules/Arrangement/useCases/clipReplacementSnapshot.ts
+  s_87ab0a2f60ccf8::t_f45bdfd9414e29 18-24,26-27,32-34
+.agents/skills/review-stances/test-validity.md
+  s_87ab0a2f60ccf8::t_04be42c28bfb7b 261-272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "adf55a0236f320fd5c29adecaefd363dddbd0e95",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
