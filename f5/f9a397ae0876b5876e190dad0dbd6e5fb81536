@@ -1,0 +1,47 @@
+src/modules/AudioEngine/engine/dropoutCounter.ts
+  s_06adf2b091dc62::t_5c9e21fdf72432 118
+  s_06adf2b091dc62::t_30614af10755e6 94-100,103-117
+  s_06adf2b091dc62::t_404fe489ee2b0a 75
+  s_06adf2b091dc62::t_8f28289fac8b28 119-120
+  s_06adf2b091dc62::t_1f2edf3804656f 121
+src/modules/AudioEngine/engine/__tests__/dropoutCounter.spec.ts
+  s_06adf2b091dc62::t_546c7c0cc1123d 38-39,42-45,49-62,66-69,74
+  s_06adf2b091dc62::t_120bbf4dc726b3 63-65,70-73
+  s_06adf2b091dc62::t_916dedcdc0302b 75
+src/modules/AudioEngine/models/AudioDeadlineEvidence.ts
+  s_06adf2b091dc62::t_c8e0ec9bf595b0 24-29,33
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_06adf2b091dc62::t_cefba7bfc9adbc 330-371
+  s_06adf2b091dc62::t_ce09b2c6bd98ae 216-218
+  s_06adf2b091dc62::t_9139e9035cefe9 214-215,219-220
+src/modules/AudioEngine/useCases/collectAudioDeadlineEvidence.ts
+  s_06adf2b091dc62::t_93c770d00310cf 89-92,101-103
+src/modules/AudioEngine/useCases/__tests__/collectAudioDeadlineEvidence.spec.ts
+  s_06adf2b091dc62::t_cc701fe13d3509 32-47,50,52-54,62-63,68
+  s_06adf2b091dc62::t_bd1eb1fa4b629e 169-170
+  s_06adf2b091dc62::t_0564b1247d8b3d 31,51,55,57-61,64-67,69-71
+  s_06adf2b091dc62::t_a13c6f03d4e2a6 6
+  s_06adf2b091dc62::t_32cfb277f1422a 163-168,171-178
+  s_06adf2b091dc62::t_0f4d11d2772425 231-245
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_06adf2b091dc62::t_e53581be6cc3ae 351
+  s_06adf2b091dc62::t_d9cdab5f57a582 321-323
+  s_06adf2b091dc62::t_e038af9c99c537 230-233
+  s_06adf2b091dc62::t_398c6b2f7977c0 253-266,272-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f5f9a397ae0876b5876e190dad0dbd6e5fb81536",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
