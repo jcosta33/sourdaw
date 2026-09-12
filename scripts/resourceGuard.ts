@@ -105,7 +105,7 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
 const measuredScriptBudgets = new Map<string, number>([
     ['lint', 4 * 1024 ** 3],
-    ['test:run', 1536 * 1024 ** 2],
+    ['test:run', 2048 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
     ['typecheck:test', 6 * 1024 ** 3],
     ['test:e2e', 5.5 * 1024 ** 3],

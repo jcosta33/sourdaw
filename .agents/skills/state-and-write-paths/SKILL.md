@@ -72,6 +72,10 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 **Why:** stored derivatives drift from source truth and become a second model.
 
+### Command entry must prove normalized state reaches every authority
+
+For a normalized project-state command, test the authoritative terminal projection through the public command entry: raw document, owning store projection, visible control state, and engine projection must agree on the same committed value. #4082 (commit `418906`, merged as `dcb995a`) showed that a Loop control could update a visible flag while leaving an invalid loop region that the document decoder rejected. A direct use-case or static-prop fixture cannot prove this agreement.
+
 ### 8. Async fetch/cache is not editable business state
 
 Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.

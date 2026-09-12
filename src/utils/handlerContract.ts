@@ -1199,7 +1199,10 @@ export type AppAction =
     | { type: 'setMetronomeEnabled'; payload: { enabled: boolean } }
     | {
           type: 'restoreLoopRegion';
-          payload: { loopStart: number; loopEnd: number; isLooping: boolean };
+          payload: {
+              expected: { loopStart: number; loopEnd: number; isLooping: boolean };
+              replacement: { loopStart: number; loopEnd: number; isLooping: boolean };
+          };
       }
     | {
           type: 'addClip';

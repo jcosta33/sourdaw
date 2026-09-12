@@ -12,6 +12,7 @@ import {
     selectAllClips,
     selectClipWithFocus,
     setMarqueeSelection,
+    getLastClipEndBeat,
 } from '#/modules/Arrangement/useCases';
 import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
@@ -35,7 +36,6 @@ import {
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
-import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';

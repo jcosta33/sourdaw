@@ -1,10 +1,14 @@
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-export function toggleLoop(): void {
-    const state = getTransportState();
-    if (!state) {
-        return;
+import { resolveNextLoopRegion } from './resolveNextLoopRegion';
+
+export function toggleLoop(): boolean {
+    const next = resolveNextLoopRegion(getTransportState());
+    if (!next) {
+        return false;
     }
-    updateTransportState({ isLooping: !state.isLooping });
+
+    updateTransportState(next);
+    return true;
 }

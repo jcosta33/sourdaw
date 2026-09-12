@@ -1,10 +1,18 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { useStore } from '#/infra/store/useStore';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, undo } from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
 
@@ -25,6 +33,11 @@ const defaultProps = {
     countInBars: 1,
 };
 
+function ConnectedTransportControls(): React.ReactElement {
+    const transport = useStore(transportStore, defaultTransportState);
+    return <TransportControls {...defaultProps} isLooping={transport.isLooping} />;
+}
+
 function renderControls(props: Partial<typeof defaultProps> = {}): void {
     render(
         <TooltipProvider delayDuration={0}>
@@ -33,9 +46,13 @@ function renderControls(props: Partial<typeof defaultProps> = {}): void {
     );
 }
 
-describe('TransportControls punch command integration', () => {
+describe('TransportControls command integration', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('transport controls integration');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getTransportHandlers());
         clearUndoHistory();
@@ -46,6 +63,36 @@ describe('TransportControls punch command integration', () => {
         clearUndoHistory();
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it('commits the Loop button through the command path and updates its pressed state', async () => {
+        transportStore.set({ ...defaultTransportState, loopStart: 0, loopEnd: 8, isLooping: false });
+        render(
+            <TooltipProvider delayDuration={0}>
+                <ConnectedTransportControls />
+            </TooltipProvider>
+        );
+
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText('Loop'));
+        });
+
+        await waitFor(() => {
+            expect(transportStore.value).toMatchObject({ loopStart: 0, loopEnd: 8, isLooping: true });
+            expect(screen.getByLabelText('Loop')).toHaveAttribute('aria-pressed', 'true');
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(getCrdtDoc<{ transport?: unknown }>('root')?.transport).toMatchObject({
+                loopStart: 0,
+                loopEnd: 8,
+                isLooping: true,
+            });
+        });
+
+        await act(async () => {
+            await undo();
+        });
+        await waitFor(() => expect(screen.getByLabelText('Loop')).toHaveAttribute('aria-pressed', 'false'));
     });
 
     it('creates one undoable action when clicked while stopped', async () => {

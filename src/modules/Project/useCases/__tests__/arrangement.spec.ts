@@ -147,6 +147,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         clampExternalPluginAutomationValue: vi.fn(),
         getEffectiveGain: vi.fn(),
         getGainAtBeat: vi.fn(),
+        getLastClipEndBeat: vi.fn(() => 0),
         getSynthParamsForTrack: vi.fn(),
         getTrackStoreState: vi.fn(),
         isDeviceParameterAutomatable: vi.fn(),

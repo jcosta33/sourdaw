@@ -898,6 +898,37 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         );
     });
 
+    it('admits only complete valid loop restore triples', () => {
+        const guard = PAYLOAD_VALIDATORS.restoreLoopRegion;
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+
+        const enabledRegion = { loopStart: 0, loopEnd: 4, isLooping: true };
+        const disabledRegion = { loopStart: 0, loopEnd: 0, isLooping: false };
+        expect(guard({ expected: enabledRegion, replacement: disabledRegion })).toBe(true);
+
+        const invalidRegions: readonly [string, unknown][] = [
+            ['enabled equal bounds', { loopStart: 0, loopEnd: 0, isLooping: true }],
+            ['nonfinite endpoint', { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true }],
+            ['negative endpoint', { loopStart: -1, loopEnd: 4, isLooping: true }],
+            ['reversed endpoints', { loopStart: 4, loopEnd: 0, isLooping: false }],
+            ['missing key', { loopStart: 0, loopEnd: 4 }],
+            ['extra key', { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true }],
+            ['wrong boolean', { loopStart: 0, loopEnd: 4, isLooping: 'true' }],
+        ];
+        for (const [label, invalidRegion] of invalidRegions) {
+            expect(guard({ expected: invalidRegion, replacement: disabledRegion }), `invalid expected: ${label}`).toBe(
+                false
+            );
+            expect(
+                guard({ expected: enabledRegion, replacement: invalidRegion }),
+                `invalid replacement: ${label}`
+            ).toBe(false);
+        }
+    });
+
     it.each([
         ['setTrackGain', { trackId: 'track-1', gain: 0 }],
         ['setTrackPan', { trackId: 'track-1', pan: 50 }],

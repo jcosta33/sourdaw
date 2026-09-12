@@ -8,6 +8,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -40,6 +41,17 @@ type DivergedFixture = {
 };
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    {
+        title: 'restoreLoopRegion refuses to write against a collaborator loop edit',
+        actionType: 'restoreLoopRegion',
+        divergedAction: {
+            type: 'restoreLoopRegion',
+            payload: {
+                expected: { loopStart: 0, loopEnd: 4, isLooping: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            },
+        },
+    },
     {
         // Live selection is take-a in [2,4); the captured forward guard expects take-b.
         title: 'setCompRegion refuses to write against a diverged interval',
@@ -242,6 +254,7 @@ const FIXTURE_PROVEN_ACTION_TYPES = [...new Set(CONFLICT_CAPABLE_FIXTURES.map((f
 
 /** The live project state every divergence guard above is checked against. */
 function seedLiveProjectState(): void {
+    transportStore.set({ ...defaultTransportState, loopStart: 0, loopEnd: 8, isLooping: true });
     setTrackStoreState({
         ...defaultTrackState,
         // No `gain` here: `CreateTrackInput` does not take one, so the track is
