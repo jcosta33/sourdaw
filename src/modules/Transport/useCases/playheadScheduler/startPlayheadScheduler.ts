@@ -258,7 +258,16 @@ export function startPlayheadScheduler(): void {
         let tickStartPosition = schedulerSession.accumulatedPosition;
         let rackDiscontinuity = false;
 
-        if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
+        // Only wrap when crossing loopEnd from inside (or before) the region. A
+        // playhead already at or past loopEnd plays straight through untouched:
+        // that is the native engine's stated meaning of a locate past loopEnd
+        // (scheduler.rs frames_until_loop_end) and projectRollPosition (#4117).
+        if (
+            current.isLooping &&
+            current.loopEnd > current.loopStart &&
+            schedulerSession.accumulatedPosition < current.loopEnd &&
+            newPosition >= current.loopEnd
+        ) {
             if (current.isRecording) {
                 const recordingClipIds = new Set(activeRecordingRef.current);
                 const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
