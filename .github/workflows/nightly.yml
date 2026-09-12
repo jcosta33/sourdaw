@@ -506,10 +506,19 @@ jobs:
         run: pnpm harness:plugin:install
 
       - name: Build the packaged desktop app
+        id: build-packaged-app
         run: pnpm desktop:build
 
       - name: Measure the packaged app
         run: pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json
+
+      # The workspace proof answers a different question than the measurement
+      # — whether the agent workspace works in the shipped artefact at all —
+      # so a FAILED measurement must not skip it. It is guarded on the build
+      # instead: without a packaged app there is nothing to drive.
+      - name: Prove the agent workspace in the packaged app
+        if: always() && steps.build-packaged-app.outcome == 'success'
+        run: pnpm desktop:agent-proof --json measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
 
       # The harness writes a record only for a MEASURED run, so this carries a
       # baseline off the runner when the run earned one and reports no files
@@ -521,6 +530,17 @@ jobs:
         with:
           name: desktop-latency-${{ github.sha }}
           path: measurements/desktop-latency/nightly-${{ github.sha }}.json
+          retention-days: 90
+
+      # Unlike the measurement, the proof writes its record for every verdict
+      # it reaches: a FAILED run's step list is the finding, not a blob to
+      # discard.
+      - name: Upload the agent workspace proof record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-agent-workspace-${{ github.sha }}
+          path: measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
           retention-days: 90
 
   e2e:

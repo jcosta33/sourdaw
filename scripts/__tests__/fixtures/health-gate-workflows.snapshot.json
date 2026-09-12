@@ -1466,11 +1466,17 @@
           },
           {
             "name": "Build the packaged desktop app",
+            "id": "build-packaged-app",
             "run": "pnpm desktop:build"
           },
           {
             "name": "Measure the packaged app",
             "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
+          },
+          {
+            "name": "Prove the agent workspace in the packaged app",
+            "if": "always() && steps.build-packaged-app.outcome == 'success'",
+            "run": "pnpm desktop:agent-proof --json measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json"
           },
           {
             "name": "Upload the measurement record",
@@ -1479,6 +1485,16 @@
             "with": {
               "name": "desktop-latency-${{ github.sha }}",
               "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
+              "retention-days": 90
+            }
+          },
+          {
+            "name": "Upload the agent workspace proof record",
+            "if": "always()",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "desktop-agent-workspace-${{ github.sha }}",
+              "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
               "retention-days": 90
             }
           }

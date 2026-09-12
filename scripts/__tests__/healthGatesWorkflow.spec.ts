@@ -388,6 +388,23 @@ const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     // The measurement record is the diagnostic for a failed latency run, so it
     // uploads even when the measurement itself failed.
     { workflow: 'nightly.yml', job: 'desktop-measure', step: 'Upload the measurement record', condition: 'always()' },
+    // The proof answers a different question than the latency measurement, so a
+    // FAILED measurement must not skip it; it is guarded on the build step alone
+    // because without a packaged app there is nothing to drive.
+    {
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step: 'Prove the agent workspace in the packaged app',
+        condition: "always() && steps.build-packaged-app.outcome == 'success'",
+    },
+    // The proof record is the diagnostic for a failing run, so it uploads
+    // whatever the verdict.
+    {
+        workflow: 'nightly.yml',
+        job: 'desktop-measure',
+        step: 'Upload the agent workspace proof record',
+        condition: 'always()',
+    },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
     {

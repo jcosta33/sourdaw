@@ -350,6 +350,16 @@ describe('AgentWorkspace', () => {
         expect(summary.getByText('Newest request')).toBeInTheDocument();
     });
 
+    it('keeps the scrolling workspace column from collapsing its sections', () => {
+        agentRunControlsMock.list.mockReturnValue([projection({ runId: 'run-1', request: 'Some request' })]);
+        setRuns([run({ runId: 'run-1', request: 'Some request' })]);
+
+        render(<AgentWorkspace />);
+
+        const scrollingColumn = screen.getByRole('region', { name: 'Run summary' }).parentElement;
+        expect(scrollingColumn).toHaveClass('overflow-y-auto', '[&>*]:shrink-0');
+    });
+
     it('moves selection with ArrowDown while focus stays on the listbox', () => {
         agentRunControlsMock.list.mockReturnValue([
             projection({ runId: 'run-3', request: 'Newest request' }),
