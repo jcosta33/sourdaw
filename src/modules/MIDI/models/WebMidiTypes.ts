@@ -81,6 +81,12 @@ export type ActiveNoteData = {
     levainDeviceId?: string;
     /** The device a native session voiced this note on, so the release goes to the same body. */
     nativeDeviceId?: string;
+    /**
+     * Release closure the Faust pro-synth note-on created (`startFaustNote`).
+     * It is bound to the same device instance, so note-off and panic gate the
+     * voice they started (issue #3726).
+     */
+    faustRelease?: () => void;
 };
 
 // MIDI message constants

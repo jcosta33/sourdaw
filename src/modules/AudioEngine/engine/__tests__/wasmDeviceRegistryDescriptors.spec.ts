@@ -1499,6 +1499,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 midiNote: 69,
                 noteName: 'A',
                 active: true,
+                polyStrings: [
+                    { active: true, cents: 4.7, confidence: 0.9 },
+                    { active: false, cents: -3.1, confidence: 0.4 },
+                ],
             });
 
             expect(updateTunerTelemetry).toHaveBeenCalledWith('tune-1', {
@@ -1510,6 +1514,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 midiNote: 69,
                 noteName: 'A',
                 active: true,
+                polyStrings: [
+                    { active: true, cents: 4.7, confidence: 0.9 },
+                    { active: false, cents: -3.1, confidence: 0.4 },
+                ],
             });
         });
     });

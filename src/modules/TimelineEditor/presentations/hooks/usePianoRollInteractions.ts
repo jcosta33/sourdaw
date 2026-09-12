@@ -43,6 +43,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -103,6 +104,67 @@ function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     }
     const track = tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
     return track ? track.id : defaultTrackId;
+}
+
+/** The arrangement placement fields the playhead conversion needs from a clip. */
+type ClipPlacement = {
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats: number;
+    loopEnabled: boolean;
+    configuredLoopLengthBeats?: number;
+};
+
+/**
+ * Read a clip's arrangement placement from the arrangement store. Clips opened
+ * alongside the primary one may live on any track, so every track is searched.
+ * Placement fields absent from the store fall back to an unplaced clip at the
+ * origin with no known end — those clips keep splitting at raw playhead beats,
+ * exactly as clips placed at beat zero always have.
+ */
+function resolveClipPlacement(clipId: string): ClipPlacement | undefined {
+    for (const track of trackStore.value?.tracks ?? []) {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (clip) {
+            return {
+                startBeat: clip.startBeat ?? 0,
+                endBeat: clip.endBeat ?? Number.POSITIVE_INFINITY,
+                midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                loopEnabled: clip.loopEnabled ?? false,
+                configuredLoopLengthBeats: clip.loopLength,
+            };
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Convert an arrangement playhead beat into the clip-relative beat the MIDI
+ * note transforms expect — MIDI note starts are stored clip-relative, not as
+ * arrangement beats. Scheduling projects a stored note into the arrangement as
+ * `iterationStartBeat + (startBeat - midiOffsetBeats)` with
+ * `iterationStartBeat = clip.startBeat + iteration * loopLengthBeats`
+ * (`projectClipMidiEvents`); this is that projection's inverse: the playhead's
+ * offset into the loop iteration it falls in, restored to media coordinates by
+ * adding the clip's MIDI offset.
+ *
+ * Returns `undefined` when the playhead sits outside the clip's visible span —
+ * a cursor that is not over the clip must not split anything.
+ */
+function arrangementPlayheadToClipBeat(playheadBeat: number, placement: ClipPlacement): number | undefined {
+    if (playheadBeat < placement.startBeat || playheadBeat >= placement.endBeat) {
+        return undefined;
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: placement.endBeat - placement.startBeat,
+        configuredLoopLengthBeats: placement.configuredLoopLengthBeats,
+        loopEnabled: placement.loopEnabled,
+    });
+    const intoClip =
+        placement.loopEnabled && loopLengthBeats > 0 && Number.isFinite(loopLengthBeats)
+            ? (playheadBeat - placement.startBeat) % loopLengthBeats
+            : playheadBeat - placement.startBeat;
+    return intoClip + placement.midiOffsetBeats;
 }
 
 /**
@@ -1396,19 +1458,28 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (event.key === 'S' && event.shiftKey && !event.metaKey && !event.ctrlKey && selectedNoteIds.size > 0) {
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
-                event.preventDefault();
-                event.stopPropagation();
-                const playheadBeat = getTransportState()?.playheadPosition ?? 0;
-                const ids = [...selectedNoteIds];
-                const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                splitNoteAtBeat(singleClip, ids, playheadBeat);
-                const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                pushUndoEntry(
-                    'Split notes at cursor',
-                    () => setNotesForClip(singleClip, snapshotBefore),
-                    () => setNotesForClip(singleClip, snapshotAfter)
-                );
-                setSelectedNoteIds(new Set());
+                // The transport playhead is an arrangement beat; the transform
+                // wants the clip-relative beat under it. A playhead outside the
+                // clip's visible span splits nothing.
+                const placement = resolveClipPlacement(singleClip);
+                const splitBeat =
+                    placement !== undefined
+                        ? arrangementPlayheadToClipBeat(getTransportState()?.playheadPosition ?? 0, placement)
+                        : undefined;
+                if (splitBeat !== undefined) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const ids = [...selectedNoteIds];
+                    const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                    splitNoteAtBeat(singleClip, ids, splitBeat);
+                    const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                    pushUndoEntry(
+                        'Split notes at cursor',
+                        () => setNotesForClip(singleClip, snapshotBefore),
+                        () => setNotesForClip(singleClip, snapshotAfter)
+                    );
+                    setSelectedNoteIds(new Set());
+                }
             }
         }
 

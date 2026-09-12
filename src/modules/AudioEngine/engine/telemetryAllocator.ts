@@ -88,7 +88,23 @@ export const CRUST_IDX = Object.freeze({
     latency: 9,
 });
 
-/** active (0/1), then pitch fields. noteName is derived from noteIndex on the main thread. */
+/**
+ * Scoring slot layout. `active` (0/1) then the mono pitch fields — noteName is
+ * derived from noteIndex on the main thread — then the polyphonic string
+ * tracker's per-string readings.
+ *
+ * `polyCount` is how many strings the tracker currently holds (0 = tracker off
+ * or not configured). From {@link SCORING_IDX.polyBase} sit
+ * {@link SCORING_POLY_STRING_COUNT} triplets of (active 0/1, cents,
+ * confidence), one per string slot. The tracker indexes strings low-to-high
+ * (E2 first for the guitar set), and the panel labels by that same index.
+ *
+ * Six triplets fit the pooled slot: polyBase 8 + 18 fields ends at 26, well
+ * below the seqlock counter at 31. The Rust tracker's MAX_STRINGS is 8, but
+ * only the 6-string guitar and 4-string bass sets exist; if a set ever exceeds
+ * the published count the worklet caps what it writes and this layout must
+ * grow with it.
+ */
 export const SCORING_IDX = Object.freeze({
     active: 0,
     frequency: 1,
@@ -97,7 +113,12 @@ export const SCORING_IDX = Object.freeze({
     noteIndex: 4,
     octave: 5,
     midiNote: 6,
+    polyCount: 7,
+    polyBase: 8,
 });
+
+/** Per-string triplets the Scoring slot publishes (the guitar set's size). */
+export const SCORING_POLY_STRING_COUNT = 6;
 
 export const PROOF_IDX = Object.freeze({
     inputLufs: 0,

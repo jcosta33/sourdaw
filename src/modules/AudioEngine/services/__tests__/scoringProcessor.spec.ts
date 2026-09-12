@@ -30,6 +30,12 @@ const paramCalls: Array<{ name: string; value: number }> = [];
 const processCalls: number[] = [];
 let isActive = false;
 let processShouldThrow = false;
+// Poly tracker stand-in: what the wasm instance would report through its
+// per-string accessors, driven per test.
+let polyStringCount = 0;
+let polyStringFlags: boolean[] = [];
+let polyStringCents: number[] = [];
+let polyStringConfidences: number[] = [];
 
 class ScoringInstanceMock {
     set_param(name: string, value: number): void {
@@ -71,6 +77,18 @@ class ScoringInstanceMock {
     get_midi_note(): number {
         return 69;
     }
+    get_poly_string_count(): number {
+        return polyStringCount;
+    }
+    is_poly_string_active(idx: number): boolean {
+        return polyStringFlags[idx] ?? false;
+    }
+    get_poly_string_cents(idx: number): number {
+        return polyStringCents[idx] ?? 0;
+    }
+    get_poly_string_confidence(idx: number): number {
+        return polyStringConfidences[idx] ?? 0;
+    }
 }
 
 vi.mock('../../wasm/scoring.js', () => ({
@@ -102,6 +120,10 @@ function resetRecording(): void {
     processCalls.length = 0;
     isActive = false;
     processShouldThrow = false;
+    polyStringCount = 0;
+    polyStringFlags = [];
+    polyStringCents = [];
+    polyStringConfidences = [];
 }
 
 describe('ScoringProcessor message handling', () => {
@@ -313,5 +335,128 @@ describe('ScoringProcessor bypass', () => {
         expect(view[1]).toBe(440);
         // Engine output again: the right channel now mirrors the left window.
         expect(Array.from(output[1]!)).toEqual(Array.from(input[0]!));
+    });
+});
+
+// Slot indices from engine/telemetryAllocator.ts's SCORING_IDX: polyCount 7,
+// then per-string (active, cents, confidence) triplets from 8. The worklet
+// publishes only while the `poly` param has it enabled, and reports zero
+// strings otherwise — the UI's silence state, never a stale chord.
+describe('ScoringProcessor poly string telemetry', () => {
+    const POLY_COUNT_IDX = 7;
+    const POLY_BASE_IDX = 8;
+
+    function seedPolyTracker(): void {
+        polyStringCount = 6;
+        polyStringFlags = [true, true, false, true, false, false];
+        polyStringCents = [-4.5, 2.25, 0, 31.75, 0, 0];
+        polyStringConfidences = [0.91, 0.82, 0, 0.55, 0, 0];
+    }
+
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    function runTelemetryTick(proc: ScoringProcessorLike): void {
+        for (let i = 0; i < 4; i++) {
+            proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        }
+    }
+
+    // Standard per-test setup: fresh processor, ready instance, slot attached,
+    // recorded calls cleared. The poly fixture must be seeded AFTER the reset
+    // this performs.
+    async function loadReadyProcessorWithSlot(): Promise<{ proc: ScoringProcessorLike; view: Float32Array }> {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        return { proc, view };
+    }
+
+    it('publishes no poly strings while the poly param is off, even though the tracker holds readings', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        seedPolyTracker();
+
+        runTelemetryTick(proc);
+
+        expect(view[POLY_COUNT_IDX]).toBe(0);
+    });
+
+    it('publishes per-string active, cents and confidence once the poly param enables the tracker', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        seedPolyTracker();
+        send(proc, { type: 'param', name: 'poly', value: 1 });
+
+        runTelemetryTick(proc);
+
+        expect(view[POLY_COUNT_IDX]).toBe(6);
+        // String 0 (E2): sounding, 4.5 cents flat.
+        expect(view[POLY_BASE_IDX]).toBe(1);
+        expect(view[POLY_BASE_IDX + 1]).toBeCloseTo(-4.5, 6);
+        expect(view[POLY_BASE_IDX + 2]).toBeCloseTo(0.91, 6);
+        // String 2 (D3): not sounding — active flag zeroed, readings carried but hidden.
+        expect(view[POLY_BASE_IDX + 2 * 3]).toBe(0);
+        expect(view[POLY_BASE_IDX + 2 * 3 + 1]).toBe(0);
+        // String 3 (G3): sounding, 31.75 cents sharp.
+        expect(view[POLY_BASE_IDX + 3 * 3]).toBe(1);
+        expect(view[POLY_BASE_IDX + 3 * 3 + 1]).toBeCloseTo(31.75, 6);
+        expect(view[POLY_BASE_IDX + 3 * 3 + 2]).toBeCloseTo(0.55, 6);
+    });
+
+    it('keeps publishing the poly block while the mono readout is inactive', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        seedPolyTracker();
+        send(proc, { type: 'param', name: 'poly', value: 1 });
+
+        runTelemetryTick(proc);
+
+        expect(view[0]).toBe(0); // mono inactive
+        expect(view[POLY_COUNT_IDX]).toBe(6);
+        expect(view[POLY_BASE_IDX]).toBe(1);
+        expect(view[POLY_BASE_IDX + 1]).toBeCloseTo(-4.5, 6);
+    });
+
+    it('zeroes the poly string count on the tick after the poly param disables the tracker', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        seedPolyTracker();
+        send(proc, { type: 'param', name: 'poly', value: 1 });
+        runTelemetryTick(proc);
+        expect(view[POLY_COUNT_IDX]).toBe(6);
+
+        send(proc, { type: 'param', name: 'poly', value: 0 });
+        runTelemetryTick(proc);
+
+        expect(view[POLY_COUNT_IDX]).toBe(0);
+    });
+
+    it('clears the published poly strings on the bypass transition, like the mono flag', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        seedPolyTracker();
+        send(proc, { type: 'param', name: 'poly', value: 1 });
+        runTelemetryTick(proc);
+        expect(view[POLY_COUNT_IDX]).toBe(6);
+
+        send(proc, { type: 'bypass', bypassed: true });
+        proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+
+        expect(view[0]).toBe(0);
+        expect(view[POLY_COUNT_IDX]).toBe(0);
+    });
+
+    it('caps the published string count at the slot layout capacity', async () => {
+        const { proc, view } = await loadReadyProcessorWithSlot();
+        polyStringCount = 8; // Rust MAX_STRINGS headroom the 32-float slot cannot carry
+        polyStringFlags = Array.from({ length: 8 }, () => true);
+        polyStringCents = Array.from({ length: 8 }, () => 0);
+        polyStringConfidences = Array.from({ length: 8 }, () => 0.5);
+        send(proc, { type: 'param', name: 'poly', value: 1 });
+
+        runTelemetryTick(proc);
+
+        expect(view[POLY_COUNT_IDX]).toBe(6);
     });
 });

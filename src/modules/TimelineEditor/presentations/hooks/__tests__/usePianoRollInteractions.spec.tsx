@@ -836,6 +836,153 @@ describe('usePianoRollInteractions', () => {
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
         });
 
+        // Issue #3665. The transport playhead is an arrangement beat while MIDI
+        // note starts are clip-relative, so the split beat is the playhead
+        // pushed through the inverse of the scheduling projection
+        // (`iterationStartBeat + storedBeat - midiOffsetBeats`). These specs
+        // assert the note segments the owner ends up with, not the transform
+        // call: the mock transform splits exactly like the real one, so a
+        // wrongly converted beat shows up as wrong or missing segments.
+        describe('shift+S split beat in a placed clip (issue #3665)', () => {
+            type ClipFixture = {
+                id: string;
+                type: string;
+                startBeat?: number;
+                endBeat?: number;
+                midiOffsetBeats?: number;
+                loopEnabled?: boolean;
+                loopLength?: number;
+            };
+
+            /** Replaces clip-1's arrangement placement; the default is an unplaced clip. */
+            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = {}): void => {
+                const [primaryTrack] = mocks.trackState.tracks;
+                if (primaryTrack) {
+                    primaryTrack.clips = [{ id: 'clip-1', type: 'midi', ...placement }];
+                }
+            };
+
+            /**
+             * A note store that the split transform mock reads and writes
+             * through, mirroring `splitNoteAtBeat`'s contract: each selected
+             * note strictly spanning the beat becomes a left half that keeps
+             * the id and a right half starting at the beat.
+             */
+            const installNoteStore = (clipId: string, notes: Note[]): { current: Note[] } => {
+                const store: { current: Note[] } = { current: notes.map((note) => ({ ...note })) };
+                mocks.getNotesForClip.mockImplementation((queried: string) =>
+                    queried === clipId ? store.current.map((note) => ({ ...note })) : []
+                );
+                mocks.setNotesForClip.mockImplementation((queried: string, next: Note[]) => {
+                    if (queried === clipId) {
+                        store.current = next.map((note) => ({ ...note }));
+                    }
+                });
+                mocks.splitNoteAtBeat.mockImplementation((queried: string, ids: string[], beat: number) => {
+                    if (queried !== clipId) {
+                        return;
+                    }
+                    const selected = new Set(ids);
+                    const result: Note[] = [];
+                    for (const note of store.current) {
+                        if (
+                            !selected.has(note.id) ||
+                            beat <= note.startBeat ||
+                            beat >= note.startBeat + note.duration
+                        ) {
+                            result.push(note);
+                            continue;
+                        }
+                        result.push({ ...note, duration: beat - note.startBeat });
+                        result.push({
+                            id: `${note.id}-right`,
+                            pitch: note.pitch,
+                            startBeat: beat,
+                            duration: note.startBeat + note.duration - beat,
+                            velocity: note.velocity,
+                        });
+                    }
+                    store.current = result;
+                });
+                return store;
+            };
+
+            afterEach(() => {
+                mocks.splitNoteAtBeat.mockReset();
+                mocks.setNotesForClip.mockReset();
+                mocks.getNotesForClip.mockReset();
+                placeClip();
+            });
+
+            it('translates the playhead into a clip placed away from beat zero', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                // Playhead 10 over clip [8, 12) is clip-relative beat 2, so the
+                // note spanning [1, 4) becomes [1, 2) and [2, 4).
+                expect(store.current).toEqual([
+                    { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                ]);
+                const redo = mocks.pushUndoEntry.mock.calls[0]?.[2];
+                expect(redo).toBeTypeOf('function');
+                redo?.();
+                expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [
+                    { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                ]);
+                expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
+            });
+
+            it('wraps the playhead through the clip loop and restores the media offset', () => {
+                placeClip({ startBeat: 4, endBeat: 16, loopEnabled: true, loopLength: 4, midiOffsetBeats: 2 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 3, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                // Forward projection: stored beat 4 - offset 2 = 2 beats into
+                // iteration 1 (iteration start 4 + one 4-beat loop = 8), so the
+                // note sounds at arrangement beat 10 and the playhead maps back
+                // to stored beat 4, where [3, 6) splits.
+                expect(store.current).toEqual([
+                    { id: 'n1', pitch: 60, startBeat: 3, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 4, duration: 2, velocity: 100 },
+                ]);
+            });
+
+            it('does not split when the playhead sits before the visible clip', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 5 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                expect(mocks.splitNoteAtBeat).not.toHaveBeenCalled();
+                expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+                expect(store.current).toEqual([makeNote('n1', 60, 1, 3)]);
+                expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            });
+
+            it('does not split when the playhead sits at the clip end', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 12 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                expect(mocks.splitNoteAtBeat).not.toHaveBeenCalled();
+                expect(store.current).toEqual([makeNote('n1', 60, 1, 3)]);
+            });
+        });
+
         it('step-input keys drive the step recorder', () => {
             const { canvas } = renderRoll({ stepInput: true });
 

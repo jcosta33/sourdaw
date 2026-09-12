@@ -3,13 +3,20 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { createTake } from '../../models/TakeLane';
 import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
 
-export function addTake(trackId: string, clipId: string, name: string, startBeat: number, endBeat: number): void {
+export function addTake(
+    trackId: string,
+    clipId: string,
+    name: string,
+    startBeat: number,
+    endBeat: number,
+    sourceOffsetBeats?: number
+): void {
     const state = takeLaneStore.value;
     if (!state) {
         return;
     }
 
-    const take = createTake(clipId, name, startBeat, endBeat);
+    const take = createTake(clipId, name, startBeat, endBeat, sourceOffsetBeats);
 
     const previous: TakeLaneStoreState = state;
     const next: TakeLaneStoreState = {

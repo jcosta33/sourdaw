@@ -277,10 +277,33 @@ export function startPlayheadScheduler(): void {
                     if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
                         addTakeLane(track.id);
                     }
-                    const takeNum =
-                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) +
-                        1;
-                    addTake(track.id, recordingClip.id, `Take ${takeNum}`, current.loopStart, current.loopEnd);
+                    const lane = takeLaneStore.value?.lanes.find((length) => length.trackId === track.id);
+                    const takeNum = (lane?.takes.length ?? 0) + 1;
+                    // Each pass needs its own identity inside the one
+                    // continuously recorded clip: every wrap take names the
+                    // same clipId and bounds, so without a per-take source
+                    // offset comp resolution would read the first pass's PCM
+                    // for every take. The initial take (from `startRecording`)
+                    // is pass 1 at the clip origin; each take already minted
+                    // for THIS recording marks one more completed pass, so its
+                    // material begins that many loop lengths into the buffer —
+                    // after any run-up recorded before the playhead first
+                    // reached the loop start. The offset stays relative to the
+                    // clip's media origin, which is why the finalization-time
+                    // latency shift of `clip.startBeat` cannot invalidate it.
+                    const priorPassTakes = lane?.takes.filter((take) => recordingClipIds.has(take.clipId)).length ?? 0;
+                    const passIndex = Math.max(0, priorPassTakes - 1);
+                    const loopLength = current.loopEnd - current.loopStart;
+                    const sourceOffsetBeats =
+                        Math.max(0, current.loopStart - recordingClip.startBeat) + passIndex * loopLength;
+                    addTake(
+                        track.id,
+                        recordingClip.id,
+                        `Take ${takeNum}`,
+                        current.loopStart,
+                        current.loopEnd,
+                        sourceOffsetBeats
+                    );
                 }
             }
 

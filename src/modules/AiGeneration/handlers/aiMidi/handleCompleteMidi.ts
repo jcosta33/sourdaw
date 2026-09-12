@@ -48,42 +48,42 @@ function createCompleteMidiRedoAction(input: {
     generatedClipId: string;
 }): ReplayGeneratedMidiAction {
     const sourceClip = {
-        ...input.source.clip,
+        id: input.source.clip.id,
+        name: input.source.clip.name,
+        startBeat: input.source.clip.startBeat,
+        endBeat: input.source.clip.endBeat,
         trackId: input.source.trackId,
         type: 'midi' as const,
     };
     const direction = input.action.payload.direction ?? 'forward';
-    if (direction === 'backward') {
-        const bars = input.action.payload.bars ?? 4;
-        return {
-            type: 'replayGeneratedMidi',
-            payload: {
-                operation: {
-                    kind: 'create-clip',
-                    source: { trackId: input.source.trackId, clip: sourceClip, notes: input.sourceNotes },
-                    targetTrackId: input.source.trackId,
-                    clip: {
-                        id: input.generatedClipId,
-                        trackId: input.source.trackId,
-                        name: `${input.source.clip.name} (intro)`,
-                        startBeat: Math.max(0, input.source.clip.startBeat - bars * 4),
-                        endBeat: input.source.clip.startBeat,
-                        type: 'midi',
-                    },
-                    notes: input.resultNotes,
-                },
-            },
-        };
-    }
+    const bars = input.action.payload.bars ?? 4;
+    // Both directions materialize as one created clip — backward prepends an
+    // intro, forward continues into a clip whose extent covers the generated
+    // notes (#3763) — so redo replays the same create-clip geometry for both.
+    // The placeholder extent is replaced with the committed geometry on write.
     return {
         type: 'replayGeneratedMidi',
         payload: {
             operation: {
-                kind: 'replace-notes',
-                trackId: input.source.trackId,
-                clip: sourceClip,
-                expectedNotes: input.sourceNotes,
-                replacementNotes: input.resultNotes,
+                kind: 'create-clip',
+                source: { trackId: input.source.trackId, clip: sourceClip, notes: input.sourceNotes },
+                targetTrackId: input.source.trackId,
+                clip: {
+                    id: input.generatedClipId,
+                    trackId: input.source.trackId,
+                    name:
+                        direction === 'backward'
+                            ? `${input.source.clip.name} (intro)`
+                            : `${input.source.clip.name} (continuation)`,
+                    startBeat:
+                        direction === 'backward'
+                            ? Math.max(0, input.source.clip.startBeat - bars * 4)
+                            : input.source.clip.endBeat,
+                    endBeat:
+                        direction === 'backward' ? input.source.clip.startBeat : input.source.clip.endBeat + bars * 4,
+                    type: 'midi',
+                },
+                notes: input.resultNotes,
             },
         },
     };
@@ -121,15 +121,6 @@ function ensureCompleteMidiState(action: CompleteMidiAction, source: MidiGenerat
     };
     completeMidiStates.set(action, state);
     return state;
-}
-
-function hasExactSourceResult(state: CompleteMidiState, notes: readonly MidiClipNoteSnapshot[]): boolean {
-    return hasDurableMidiGenerationResult({
-        trackId: state.sourceTrackId,
-        clip: state.sourceClip,
-        notes,
-        noteMatch: 'exact',
-    });
 }
 
 function createWrittenResult(input: {
@@ -178,26 +169,9 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
         const transactionScope = captureAutomergeStorageTransactionScope();
 
         if (state.materialized) {
-            if (direction === 'forward') {
-                if (hasExactSourceResult(state, state.resultNotes)) {
-                    return { status: 'no-write' };
-                }
-                if (!state.isOriginalSourceCurrent()) {
-                    return { status: 'conflict' };
-                }
-                transactionScope(() => {
-                    setNotesForClip(
-                        alpha.payload.clipId,
-                        state.resultNotes.map((note) => ({ ...note }))
-                    );
-                });
-                return createWrittenResult({
-                    direction,
-                    noteCount: state.resultNotes.length - state.sourceNotes.length,
-                    isDurable: () => hasExactSourceResult(state, state.resultNotes),
-                });
-            }
-
+            // Both directions materialize as one created clip, so replay is
+            // direction-agnostic: recreate the clip with its committed extent
+            // and notes, without invoking the model again.
             const generatedClip = state.generatedClip;
             if (!generatedClip || !state.isOriginalSourceCurrent()) {
                 return { status: 'conflict' };
@@ -372,26 +346,114 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
             });
         }
 
-        const writtenNotes: Array<ReturnType<typeof addMidiNote>> = [];
-        transactionScope(() => {
-            for (const note of notes) {
+        // Forward completion: the generated notes continue the phrase in the
+        // source's material coordinate space, where playback position is
+        // clip.startBeat + note.startBeat - clip.midiOffsetBeats. Appending
+        // them to the source clip left anything past the clip's playable
+        // extent inaudible (#3763), and the completion's notes-only inverse
+        // could not restore extent changes — so the continuation lands in its
+        // own clip whose extent covers exactly the written notes, placed at
+        // the timeline position the material coordinates map to. When the
+        // phrase resumes inside the source's silent tail the rectangles
+        // overlap silently, which keeps every generated onset where it was
+        // generated. Undo removes that clip whole (notes and geometry
+        // together) and redo replays it without an inference rerun.
+        const sourceOffsetBeats = source.clip.midiOffsetBeats ?? 0;
+        const placeableNotes = notes.filter(
+            (note) =>
+                Number.isFinite(note.startBeat) &&
+                note.startBeat >= 0 &&
+                Number.isFinite(note.duration) &&
+                note.duration > 0
+        );
+        if (placeableNotes.length === 0) {
+            notifyUser('Complete MIDI failed: the model returned no notes to append', 'error');
+            return { status: 'no-write' };
+        }
+        const continuationOriginBeat = Math.min(...placeableNotes.map((note) => note.startBeat));
+        const continuationStartBeat = source.clip.startBeat + continuationOriginBeat - sourceOffsetBeats;
+        const continuationNotes = placeableNotes
+            .map((note) => ({
+                pitch: note.pitch,
+                startBeat: note.startBeat - continuationOriginBeat,
+                duration: note.duration,
+                velocity: note.velocity ?? 100,
+            }))
+            .filter((note) => continuationStartBeat + note.startBeat >= 0);
+        if (continuationNotes.length === 0) {
+            notifyUser('Complete MIDI failed: generated notes land before the project start', 'error');
+            return { status: 'no-write' };
+        }
+        const continuationEndBeat =
+            continuationStartBeat + Math.max(...continuationNotes.map((note) => note.startBeat + note.duration));
+
+        const writeResult = transactionScope(() => {
+            const createdClip = addClip({
+                id: state.generatedClipId,
+                trackId: source.trackId,
+                startBeat: continuationStartBeat,
+                endBeat: continuationEndBeat,
+                name: `${source.clip.name} (continuation)`,
+                type: 'midi',
+            });
+            if (!createdClip) {
+                return null;
+            }
+            const writtenNotes: Array<ReturnType<typeof addMidiNote>> = [];
+            for (const note of continuationNotes) {
                 writtenNotes.push(
-                    addMidiNote(alpha.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100)
+                    addMidiNote(createdClip.id, note.pitch, note.startBeat, note.duration, note.velocity)
                 );
             }
+            return { clip: createdClip, notes: writtenNotes };
         });
-        state.resultNotes.splice(
-            0,
-            state.resultNotes.length,
-            ...state.sourceNotes.map((note) => ({ ...note })),
-            ...writtenNotes.map((note) => ({ ...note }))
-        );
+        if (!writeResult) {
+            notifyUser('Complete MIDI failed: could not create continuation clip', 'error');
+            return { status: 'no-write' };
+        }
+
+        const completedClip = writeResult.clip;
+        const writtenNotes = writeResult.notes;
+        state.generatedClipId = completedClip.id;
+        state.generatedClipInverse.clipId = completedClip.id;
+        state.generatedClip = {
+            id: completedClip.id,
+            name: completedClip.name,
+            startBeat: completedClip.startBeat,
+            endBeat: completedClip.endBeat,
+            type: completedClip.type,
+        };
+        const committedContinuationClip = state.generatedClip;
+        state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+        const replayOperation = state.redoAction.payload.operation;
+        if (replayOperation.kind === 'create-clip') {
+            replayOperation.targetTrackId = state.sourceTrackId;
+            replayOperation.clip = {
+                id: completedClip.id,
+                trackId: state.sourceTrackId,
+                name: completedClip.name,
+                startBeat: completedClip.startBeat,
+                endBeat: completedClip.endBeat,
+                type: 'midi',
+            };
+        }
+        populateGeneratedMidiStateGuard({
+            guard: state.generatedClipInverse.generatedMidiStateGuard,
+            entity: completedClip,
+            clipIds: [completedClip.id],
+        });
         state.materialized = true;
 
         return createWrittenResult({
             direction,
             noteCount: writtenNotes.length,
-            isDurable: () => hasExactSourceResult(state, state.resultNotes),
+            isDurable: () =>
+                hasDurableMidiGenerationResult({
+                    trackId: state.sourceTrackId,
+                    clip: committedContinuationClip,
+                    notes: state.resultNotes,
+                    noteMatch: 'exact',
+                }),
         });
     },
     describe: (action) => {
@@ -400,23 +462,13 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
             return { label: 'AI: complete MIDI phrase', inverseAction: null };
         }
         const state = ensureCompleteMidiState(action, source);
-        if (action.payload.direction === 'backward') {
-            return {
-                label: 'AI: complete MIDI phrase',
-                inverseAction: { type: 'discardDuplicatedClip', payload: state.generatedClipInverse },
-                redoAction: state.redoAction,
-            };
-        }
+        // Both directions materialize as one created clip, so the inverse
+        // discards it whole — notes and geometry together — and redo replays
+        // the committed clip without an inference rerun. The guard object is
+        // populated by execute through the shared reference.
         return {
             label: 'AI: complete MIDI phrase',
-            inverseAction: {
-                type: 'restoreMidiClipNotes',
-                payload: {
-                    clipId: action.payload.clipId,
-                    notes: state.sourceNotes,
-                    expectedNotes: state.resultNotes,
-                },
-            },
+            inverseAction: { type: 'discardDuplicatedClip', payload: state.generatedClipInverse },
             redoAction: state.redoAction,
         };
     },

@@ -1575,6 +1575,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                         midiNote: data.midiNote,
                         noteName: data.noteName,
                         active: data.active,
+                        polyStrings: data.polyStrings,
                     });
                 });
                 onLoaded({
