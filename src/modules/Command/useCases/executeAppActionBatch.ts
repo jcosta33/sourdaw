@@ -634,7 +634,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             const admissionMaterializedActions: Array<AdmissionMaterializedBatchAction | undefined> = [];
-            for (const action of actions) {
+            for (const [actionIndex, action] of actions.entries()) {
                 const handler = getCommandHandler(action);
                 if (handler?.materializeCommandArgumentsAt !== 'admission') {
                     admissionMaterializedActions.push(undefined);
@@ -642,7 +642,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     admissionMaterializedActions.push({
-                        action: materializeCommandHandlerArguments(action, handler),
+                        action: materializeCommandHandlerArguments(action, handler, { actions, actionIndex }),
                         handler,
                     });
                 } catch (error) {
@@ -720,7 +720,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     if (!admissionMaterialized) {
-                        action = materializeCommandHandlerArguments(action, handler);
+                        action = materializeCommandHandlerArguments(action, handler, { actions, actionIndex: index });
                     }
                     if (
                         suppliedEnvelope &&

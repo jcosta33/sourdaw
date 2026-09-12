@@ -974,11 +974,132 @@ describe('setCompRegion command integration', () => {
         expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }, { label: 'Set comp region' }]);
     });
 
-    it('preserves an outside edit that lands while the batch awaits its next sibling', async () => {
+    it('materializes overlapping forward comp siblings against their ordered prefix', async () => {
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
+                },
+            ],
+            { groupId: 'overlapping-comp-selections' }
+        );
+
+        expect(result).toMatchObject({ status: 'committed' });
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
+            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            { startBeat: 5, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+        flushAutomergeStorageWrites();
+        expect(
+            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+        ).toEqual(expected);
+    });
+
+    it('keeps an earlier overlapping sibling when the later selection is already exact', async () => {
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                },
+            ],
+            { groupId: 'repeated-overlapping-comp-selection' }
+        );
+
+        expect(result).toMatchObject({
+            status: 'committed',
+            actions: [{ action: { type: 'setCompRegion' } }],
+        });
+        expect(activeRegions()).toEqual([
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+        ]);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }]);
+    });
+
+    it('rejects a supplied comp envelope when its captured prefix is omitted', async () => {
+        const actions = [
+            {
+                type: 'setCompRegion' as const,
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            {
+                type: 'setCompRegion' as const,
+                payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            },
+        ];
+        const supplied = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action: actions[1],
+            expectedEffect: 'Set the second comp interval',
+            materializationContext: { actions, actionIndex: 1 },
+            options: { groupId: 'captured-comp-prefix' },
+        });
+
+        const result = await executeAppActionBatch([actions[1]], {
+            commandEnvelopes: [supplied],
+            groupId: 'captured-comp-prefix',
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Command envelope does not match action setCompRegion',
+            actions: [],
+        });
+        expect(activeRegions()).toEqual(lane.activeCompRegions);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('undoes and redoes overlapping comp actions grouped from sequential singles', async () => {
+        const options = { groupId: 'sequential-overlapping-comp', groupLabel: 'Overlapping comp' };
+        await executeAppAction(
+            {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            options
+        );
+        await executeAppAction(
+            {
+                type: 'setCompRegion',
+                payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            },
+            options
+        );
+        const expected = [
+            { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
+            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            { startBeat: 5, endBeat: 8, takeId: 'take-a' },
+        ];
+        expect(activeRegions()).toEqual(expected);
+
+        await undo();
+        expect(activeRegions()).toEqual(lane.activeCompRegions);
+        expect(undoStore.value?.past).toEqual([]);
+
+        await redo();
+        expect(activeRegions()).toEqual(expected);
+        expect(undoStore.value?.past).toEqual([{ label: 'Set comp region' }, { label: 'Set comp region' }]);
+    });
+
+    it('preserves an outside edit while overlapping siblings await sequential execution', async () => {
         const outsideEdit = [
-            { startBeat: 0, endBeat: 5, takeId: 'take-a' },
-            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 8, takeId: 'take-a' },
+            { startBeat: 0, endBeat: 6, takeId: 'take-a' },
+            { startBeat: 6, endBeat: 7, takeId: 'take-c' },
+            { startBeat: 7, endBeat: 8, takeId: 'take-a' },
         ];
         let scheduled = false;
         const unsubscribe = takeLaneStore.subscribe((state) => {
@@ -1004,7 +1125,7 @@ describe('setCompRegion command integration', () => {
                 },
                 {
                     type: 'setCompRegion',
-                    payload: { trackId: 'track-1', startBeat: 6, endBeat: 7, takeId: 'take-b' },
+                    payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
                 },
             ],
             { groupId: 'awaited-sibling-comp-selections' }
@@ -1014,10 +1135,10 @@ describe('setCompRegion command integration', () => {
         expect(scheduled).toBe(true);
         const expected = [
             { startBeat: 0, endBeat: 2, takeId: 'take-a' },
-            { startBeat: 2, endBeat: 4, takeId: 'take-b' },
-            { startBeat: 4, endBeat: 5, takeId: 'take-a' },
-            { startBeat: 5, endBeat: 6, takeId: 'take-c' },
-            { startBeat: 6, endBeat: 7, takeId: 'take-b' },
+            { startBeat: 2, endBeat: 3, takeId: 'take-b' },
+            { startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            { startBeat: 5, endBeat: 6, takeId: 'take-a' },
+            { startBeat: 6, endBeat: 7, takeId: 'take-c' },
             { startBeat: 7, endBeat: 8, takeId: 'take-a' },
         ];
         expect(activeRegions()).toEqual(expected);
@@ -1052,7 +1173,7 @@ describe('setCompRegion command integration', () => {
         ).toEqual(['lane-2']);
     });
 
-    it('refuses a two-action batch atomically when one admitted interval changes', async () => {
+    it('refuses overlapping siblings atomically when their admitted interval changes', async () => {
         const insideEdit = [
             { startBeat: 0, endBeat: 2, takeId: 'take-a' },
             { startBeat: 2, endBeat: 4, takeId: 'take-c' },
@@ -1065,11 +1186,11 @@ describe('setCompRegion command integration', () => {
             [
                 {
                     type: 'setCompRegion',
-                    payload: { trackId: 'track-1', startBeat: 5, endBeat: 6, takeId: 'take-c' },
+                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
                 },
                 {
                     type: 'setCompRegion',
-                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                    payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
                 },
             ],
             { groupId: 'atomic-comp-refusal' }
@@ -1090,6 +1211,40 @@ describe('setCompRegion command integration', () => {
             getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
         ).toEqual(insideEdit);
         expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('replays a populated clear and replacement in one take-lane owner', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.clear();
+            takeLaneStore.set({ lanes: [structuredClone(otherLane)] });
+        });
+
+        transaction.commit();
+
+        expect(takeLaneStore.value).toEqual({ lanes: [otherLane] });
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toEqual({
+            lanes: [otherLane],
+        });
+    });
+
+    it('writes the first take lane over an absent document slot', () => {
+        mutateCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                delete document.takeLanes;
+            },
+        });
+        takeLaneStore.hydrate();
+        expect(takeLaneStore.value).toEqual({ lanes: [] });
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            takeLaneStore.set({ lanes: [structuredClone(otherLane)] });
+        });
+        transaction.commit();
+
+        expect(getCrdtDoc<{ takeLanes?: { lanes: (typeof lane)[] } }>('root')?.takeLanes).toEqual({
+            lanes: [otherLane],
+        });
     });
 
     it('discards prepared recovery and permits an exact envelope retry after a commit-window conflict', async () => {

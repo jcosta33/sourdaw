@@ -358,6 +358,38 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('gives admission materializers the full ordered raw batch before the snapshot wait', async () => {
+        const events: string[] = [];
+        const actions: SetEditingToolAction[] = [
+            { type: 'setEditingTool', payload: { tool: 'select' } },
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+        ];
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: vi.fn(),
+            waitForSnapshotTransaction: () => {
+                events.push('wait');
+                return Promise.resolve();
+            },
+        });
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written' }),
+                materializeCommandArguments: (_action, context) => {
+                    expect(context?.actions).toBe(actions);
+                    events.push(`materialize:${String(context?.actionIndex)}`);
+                },
+                materializeCommandArgumentsAt: 'admission',
+            }),
+        });
+
+        await expect(executeAppActionBatch(actions)).resolves.toMatchObject({ status: 'committed' });
+
+        expect(events).toEqual(['materialize:0', 'materialize:1', 'wait']);
+    });
+
     it('authenticates supplied envelopes against admission-captured arguments', async () => {
         const execute = vi.fn();
         registerHandlerMap({

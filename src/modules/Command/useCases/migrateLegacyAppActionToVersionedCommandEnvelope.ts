@@ -1,4 +1,4 @@
-import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
+import { type AppAction, type ExecuteOptions, type HandlerMaterializationContext } from '#/utils/handlerContract';
 
 import { AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 
@@ -19,6 +19,7 @@ type MigrateLegacyAppActionToVersionedCommandEnvelopeInput = {
      * for the command that will actually run. Defaults to true.
      */
     reserveApplicationDefaults?: boolean;
+    materializationContext?: HandlerMaterializationContext;
 };
 
 export function migrateLegacyAppActionToVersionedCommandEnvelope(
@@ -31,7 +32,7 @@ export function migrateLegacyAppActionToVersionedCommandEnvelope(
     if (!handler) {
         throw new AppActionNotDispatchedError(input.action.type);
     }
-    const action = materializeCommandHandlerArguments(materialized.action, handler);
+    const action = materializeCommandHandlerArguments(materialized.action, handler, input.materializationContext);
     return createExecutionCommandEnvelope({
         action,
         applicationAssignedIds: materialized.applicationAssignedIds,

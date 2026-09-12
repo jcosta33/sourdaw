@@ -2685,6 +2685,8 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
+export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */
 export type HandlerSessionActionEntry = {
@@ -2728,7 +2730,7 @@ type ActionHandlerCommon<Action extends AppAction> = {
      */
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
-    materializeCommandArguments?: (action: Action) => void;
+    materializeCommandArguments?: (action: Action, context?: HandlerMaterializationContext) => void;
     /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
     materializeCommandArgumentsAt?: 'admission';
     /** Owner-provided strict validation for a payload after application-owned materialization. */

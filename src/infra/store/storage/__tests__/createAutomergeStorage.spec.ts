@@ -1098,6 +1098,21 @@ describe('createAutomergeStorage', () => {
         expect(doc.state).toEqual({ count: 0 });
     });
 
+    it('deletes a cleared slot without calling the legacy non-null mutation hook', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 4 } } });
+        configureAutomergeStoragePort(port);
+        const mutateCrdt = vi.fn();
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', { mutateCrdt });
+        expect(storage.hydrate?.()).toBe(true);
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.clear());
+        transaction.commit();
+
+        expect(mutateCrdt).not.toHaveBeenCalled();
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(storage.get()).toBeNull();
+    });
+
     it('preserves semantic messages across ordinary action scopes', () => {
         let semanticMessage: string | undefined = 'First action';
         const { doc, mutations, port } = createTestPort({
@@ -1703,7 +1718,7 @@ describe('createAutomergeStorage', () => {
                 rebasedMetadata.push(structuredClone(metadata!));
                 return { count: metadata?.steps.at(-1)?.next ?? hydratedValue.count };
             },
-            mutateCrdt: ({ baseValue, metadata, reconcile, value }) => {
+            mutateCrdtWithMetadata: ({ baseValue, metadata, reconcile, value }) => {
                 expect(Object.isFrozen(metadata)).toBe(true);
                 expect(Object.isFrozen(metadata?.steps)).toBe(true);
                 mutatedMetadata.push(structuredClone(metadata!));
@@ -1736,7 +1751,7 @@ describe('createAutomergeStorage', () => {
                 }),
                 reduce: ({ captured }) => captured,
             },
-            mutateCrdt: ({ baseValue, metadata, reconcile, value }) => {
+            mutateCrdtWithMetadata: ({ baseValue, metadata, reconcile, value }) => {
                 observed.push({ metadata: structuredClone(metadata), value });
                 reconcile(value, baseValue);
             },
@@ -1776,7 +1791,7 @@ describe('createAutomergeStorage', () => {
                 },
                 reduce: ({ captured }: { captured: Metadata }) => captured,
             },
-            mutateCrdt: ({
+            mutateCrdtWithMetadata: ({
                 baseValue,
                 key,
                 metadata,

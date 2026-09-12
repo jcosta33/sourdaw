@@ -111,6 +111,17 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     mutateCrdt?: (input: {
         doc: AutomergeStorageMutableDoc;
         key: string;
+        /** The value this write was derived from, already narrowed by `toCrdt`. */
+        baseValue: Partial<TData> | null;
+        value: TData;
+    }) => void;
+    /**
+     * Explicit metadata-aware mutation path. Unlike the legacy `mutateCrdt`
+     * hook, this receives whole-slot clears and fresh decoded authority.
+     */
+    mutateCrdtWithMetadata?: (input: {
+        doc: AutomergeStorageMutableDoc;
+        key: string;
         /** Fresh decoded slot authority from the draft being changed. */
         authorityValue: TData | null;
         /** The value this write was derived from, already narrowed by `toCrdt`. */
@@ -1143,6 +1154,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
     const writeMetadata = options?.writeMetadata;
+    const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
     type AdapterPendingWrite = {
         baseValue: TData | null;
@@ -1345,9 +1357,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             docId,
             key,
             changeFn: (doc) => {
-                if (mutateCrdt) {
+                if (mutateCrdtWithMetadata) {
                     const authorityValue = decodeDocumentValue(doc) ?? null;
-                    mutateCrdt({
+                    mutateCrdtWithMetadata({
                         doc,
                         key,
                         authorityValue,
@@ -1373,6 +1385,15 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 }
                 if (crdtValue === null) {
                     delete doc[key];
+                    return;
+                }
+                if (mutateCrdt) {
+                    mutateCrdt({
+                        doc,
+                        key,
+                        baseValue: crdtBaseValue,
+                        value: toDocSafe(crdtValue as TData),
+                    });
                     return;
                 }
                 reconcileCrdtSlot({

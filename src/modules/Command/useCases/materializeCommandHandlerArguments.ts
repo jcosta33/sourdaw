@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type HandlerMaterializationContext } from '#/utils/handlerContract';
 
 /**
  * Canonical command arguments are handler-owned. Clone only when a handler
@@ -6,12 +6,13 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
  */
 export function materializeCommandHandlerArguments<Action extends AppAction>(
     action: Action,
-    handler: Pick<ActionHandler<Action>, 'materializeCommandArguments'>
+    handler: Pick<ActionHandler<Action>, 'materializeCommandArguments'>,
+    context?: HandlerMaterializationContext
 ): Action {
     if (!handler.materializeCommandArguments) {
         return action;
     }
     const canonicalAction = structuredClone(action);
-    handler.materializeCommandArguments(canonicalAction);
+    handler.materializeCommandArguments(canonicalAction, context);
     return canonicalAction;
 }

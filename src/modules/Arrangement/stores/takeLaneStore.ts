@@ -320,7 +320,7 @@ export const takeLaneStore = createStore<TakeLaneStoreState>({
             const replay = replayTakeLaneWriteJournal(hydratedValue, metadata);
             return replay.status === 'applied' ? replay.value : hydratedValue;
         },
-        mutateCrdt: ({ authorityValue, baseValue, metadata, reconcile, value }) => {
+        mutateCrdtWithMetadata: ({ authorityValue, baseValue, metadata, reconcile, value }) => {
             if (!metadata) {
                 reconcile(value, baseValue);
                 return;

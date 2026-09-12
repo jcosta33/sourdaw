@@ -1,8 +1,31 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { takeLaneStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+import {
+    commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
+    executeVersionedCommandBatchEnvelope,
+    issueCommandApprovalBinding,
+    parseVersionedCommandEnvelope,
+    resetCommandBatchIdempotency,
+} from '#/modules/Command/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCommandEnvelopes';
@@ -123,6 +146,115 @@ describe('compilePendingActionCommandEnvelopes', () => {
                 },
             },
         });
+    });
+
+    it('compiles and executes overlapping comp commands with ordered captured guards', async () => {
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 8, selected: true },
+                { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 8, selected: false },
+                { id: 'take-c', clipId: 'clip-c', name: 'C', startBeat: 0, endBeat: 8, selected: false },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-a' }],
+        };
+        const actions = [
+            {
+                type: 'setCompRegion' as const,
+                payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            },
+            {
+                type: 'setCompRegion' as const,
+                payload: { trackId: 'track-1', startBeat: 3, endBeat: 5, takeId: 'take-c' },
+            },
+        ];
+        try {
+            Container.clear();
+            configureAutomergeStoragePort(null);
+            resetCrdtProjectAuthority('compile overlapping comp commands');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            registerHandlerMap(getArrangementHandlers());
+            takeLaneStore.set({ lanes: [structuredClone(lane)] });
+            flushAutomergeStorageWrites();
+            vi.stubGlobal('navigator', {
+                ...navigator,
+                locks: {
+                    request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+                },
+            });
+            configureCommandBatchIdempotency({ canExecute: () => true });
+            const revision = captureProjectRevision();
+            commandProjectRevisionPort.setProvider(() => revision);
+            commandBatchPreflightPort.setProvider(({ targetIds }) => ({
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: 'project-overlapping-comp',
+                projectInvariantsValid: true,
+                targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `present:${targetId}`])),
+            }));
+
+            const commands = compilePendingActionCommandEnvelopes({
+                actions,
+                actionLabels: ['Select B', 'Select C'],
+                group: { groupId: 'group-overlapping-comp', groupLabel: 'Select overlapping takes' },
+                projectRevision: revision,
+            });
+            const parsed = parseCommands(commands);
+            expect(parsed[1]?.arguments).toMatchObject({
+                expected: [
+                    { startBeat: 3, endBeat: 4, takeId: 'take-b' },
+                    { startBeat: 4, endBeat: 5, takeId: 'take-a' },
+                ],
+                replacement: [{ startBeat: 3, endBeat: 5, takeId: 'take-c' }],
+            });
+            const batch = compileVersionedCommandBatchEnvelope({
+                baseRevision: revision,
+                batchId: 'group-overlapping-comp',
+                commands,
+                idempotencyKey: 'overlapping-comp-compile-execute',
+                intent: 'Select overlapping takes',
+                mode: 'commit',
+                projectId: 'project-overlapping-comp',
+                runId: 'run-overlapping-comp',
+            });
+
+            const result = await executeVersionedCommandBatchEnvelope({
+                approvalBinding: issueCommandApprovalBinding({
+                    authority: batch.authority,
+                    serialized: batch.serialized,
+                    validate: () => ({ status: 'valid' }),
+                }),
+                authority: batch.authority,
+                serialized: batch.serialized,
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(
+                getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes[0]?.activeCompRegions
+            ).toEqual([
+                { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                { startBeat: 2, endBeat: 3, takeId: 'take-b' },
+                { startBeat: 3, endBeat: 5, takeId: 'take-c' },
+                { startBeat: 5, endBeat: 8, takeId: 'take-a' },
+            ]);
+        } finally {
+            commandBatchPreflightPort.setProvider(null);
+            commandProjectRevisionPort.setProvider(null);
+            resetCommandBatchIdempotency();
+            localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
+            vi.unstubAllGlobals();
+            clearHandlerRegistry();
+            takeLaneStore.set({ lanes: [] });
+            flushAutomergeStorageWrites();
+            removeCrdtDoc('root');
+            configureAutomergeStoragePort(null);
+            Container.clear();
+        }
     });
 
     it.each([

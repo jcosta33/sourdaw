@@ -15,11 +15,11 @@ function getPatch(action: SetCompRegionAction) {
 
 export const handleSetCompRegion = createHandler<'setCompRegion'>({
     canReportConflict: true,
-    materializeCommandArguments: (action) => {
+    materializeCommandArguments: (action, context) => {
         delete action.payload.laneId;
         delete action.payload.expected;
         delete action.payload.replacement;
-        const patch = compRegionInterval.capturePatch(action.payload);
+        const patch = compRegionInterval.capturePatchAfterPrefix(action.payload, context);
         if (!patch) {
             return;
         }
@@ -29,9 +29,13 @@ export const handleSetCompRegion = createHandler<'setCompRegion'>({
     },
     materializeCommandArgumentsAt: 'admission',
     validateMaterializedCommandArguments: compRegionInterval.isCompleteSetPayload,
-    validate: (action) => {
+    validate: (action, context) => {
         const patch = getPatch(action);
-        return patch !== null && compRegionInterval.patchApplies(patch);
+        return patch !== null && compRegionInterval.patchApplies(patch, context);
+    },
+    isNoop: (action) => {
+        const patch = getPatch(action);
+        return patch !== null && compRegionInterval.patchIsNoop(patch);
     },
     execute: (action) => {
         const patch = getPatch(action);

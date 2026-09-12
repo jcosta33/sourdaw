@@ -3,6 +3,7 @@ import {
     type AppAction,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
+    type HandlerMaterializationContext,
     type HandlerSessionActionEntry,
     type HandlerValidationContext,
 } from './handlerContract';
@@ -25,7 +26,10 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     ) => boolean;
     /** See `ActionHandlerCommon.canReportConflict`; only set it once `execute` has a genuine conflict path. */
     canReportConflict?: boolean;
-    materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
+    materializeCommandArguments?: (
+        action: Extract<AppAction, { type: ActionType }>,
+        context?: HandlerMaterializationContext
+    ) => void;
     materializeCommandArgumentsAt?: 'admission';
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     validateSessionActionArguments?: (payload: unknown) => boolean;

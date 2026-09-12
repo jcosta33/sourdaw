@@ -7,8 +7,11 @@ export const handleRestoreCompRegionInterval = createHandler<'restoreCompRegionI
     canReportConflict: true,
     validateMaterializedCommandArguments: compRegionInterval.isCompleteRestorePayload,
     validateSessionActionArguments: compRegionInterval.isCompleteRestorePayload,
-    validate: (action) =>
-        compRegionInterval.isCompleteRestorePayload(action.payload) && compRegionInterval.patchApplies(action.payload),
+    validate: (action, context) =>
+        compRegionInterval.isCompleteRestorePayload(action.payload) &&
+        compRegionInterval.patchApplies(action.payload, context),
+    isNoop: (action) =>
+        compRegionInterval.isCompleteRestorePayload(action.payload) && compRegionInterval.patchIsNoop(action.payload),
     execute: (action) => {
         if (!compRegionInterval.isCompleteRestorePayload(action.payload)) {
             return { status: 'conflict' };
