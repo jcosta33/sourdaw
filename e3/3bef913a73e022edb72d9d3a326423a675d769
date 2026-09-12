@@ -1,0 +1,41 @@
+.github/workflows/validation.yml
+  s_06adf2b091dc62::t_5430bb503d269a 295-303,381-389,419-427,460-468,521-529,540-543,545-557,574-582,606-614,624-627,629-641,749-757
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_06adf2b091dc62::t_9f4a91220ca48e 464-468,556-560,596-600,646-650,694-698,714-715,735-739,771-775,788-789,884-888
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_06adf2b091dc62::t_d06ab7b1e98f58 1-238
+scripts/__tests__/resourceGuard.spec.ts
+  s_06adf2b091dc62::t_2d0eca61211b72 1009-1089
+scripts/healthGateWorkflowContract.ts
+  s_06adf2b091dc62::t_277e990862ee21 120,139-141,144,150,153,178
+scripts/openLane.ts
+  s_06adf2b091dc62::t_c7ec9b09a2c861 14-17,30-31,81-96,123
+scripts/pnpmModulesPreflight.ts
+  s_06adf2b091dc62::t_f077a0edbf8a59 1-243
+scripts/__tests__/openLane.spec.ts
+  s_c74a982bc378d9::t_0ff863eb67e415 88,97,298-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e33bef913a73e022edb72d9d3a326423a675d769",
+  "prompts": {},
+  "sessions": {
+    "s_06adf2b091dc62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f360d652-e79b-4d46-926f-d39706a4a773",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c74a982bc378d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a748d603fb606b006",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
