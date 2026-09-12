@@ -1,3 +1,6 @@
+import { canonicalJson } from '#/utils/canonicalDigest';
+import { jsonNormalizedValue } from '#/utils/jsonSemanticEquality';
+
 type EffectiveAdjustmentLayer = {
     enabled: boolean;
     affectedTrackIds: readonly string[];
@@ -39,5 +42,5 @@ export function createEffectiveAdjustmentLayerSignature(input: CreateEffectiveAd
             regions: layer.regions,
             mix: layer.mix,
         }));
-    return JSON.stringify(effectiveLayers);
+    return canonicalJson(jsonNormalizedValue(effectiveLayers));
 }

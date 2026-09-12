@@ -3,6 +3,7 @@ import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { type projectMidiNotesByClipIdThroughRestores, serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
@@ -14,7 +15,6 @@ import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeCl
 import { serializeProjectedClipScopedAutomationLanes } from '../useCases/clip/serializeProjectedClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
-import { isJsonEntityEqual } from './isJsonEntityEqual';
 import { type ProjectedClipState } from './projectClipThroughPriorBatchActions';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -202,7 +202,7 @@ export function isGeneratedMidiStateCurrent({
     }
     const { entity, clipIds } = guarded;
 
-    if (!isJsonEntityEqual(entity, guard.entityJson)) {
+    if (!matchesJsonFingerprint(entity, guard.entityJson)) {
         return false;
     }
     if (

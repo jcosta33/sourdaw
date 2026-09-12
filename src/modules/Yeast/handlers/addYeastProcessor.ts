@@ -7,7 +7,7 @@ import { addYeastProcessor } from '../useCases/addYeastProcessor';
 import { commitYeastProjection } from '../useCases/commitYeastProjection';
 import { restoreYeastGrooveAssignments } from '../useCases/restoreYeastGrooveAssignments';
 
-import { findProcessor, isSameSnapshot, readYeastRackState } from './rackState';
+import { findProcessor, isSameProcessorSnapshot, readYeastRackState } from './rackState';
 
 type AddPayload = {
     processorId: string;
@@ -76,7 +76,7 @@ export const handleAddYeastProcessor = createHandler<'addYeastProcessor'>({
         }
         const state = readYeastRackState();
         const restored = state ? findProcessor(state, action.payload.processorId) : undefined;
-        return restored !== undefined && isSameSnapshot(restored, restore.processor);
+        return restored !== undefined && isSameProcessorSnapshot(restored, restore.processor);
     },
     describe: (action) => {
         const restore = action.payload.restore;

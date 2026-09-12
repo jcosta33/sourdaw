@@ -83,6 +83,22 @@ describe('restoreTrackAtIndexWithDeferredAddedEvent', () => {
         expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
     });
 
+    it('publishes after an ambiguous commit when durable track keys were decoded in a different order', async () => {
+        const track = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        const trackJson = JSON.stringify(track);
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        const result = restoreTrackAtIndexWithDeferredAddedEvent({ trackJson, trackIndex: 0 });
+        if (!result) {
+            throw new Error('Expected restoration');
+        }
+        const { id, ...trackWithoutId } = track;
+        mocks.getTrackById.mockReturnValue({ ...trackWithoutId, id });
+
+        await result.afterAmbiguousCommit();
+
+        expect(mocks.publishTrackAdded).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects device and ghost-clip identity collisions before writing', () => {
         const generatedTrack = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
         generatedTrack.devices[0]!.id = 'stable-device';

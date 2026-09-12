@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
+import { type AdjustmentLayer, type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 import { type TrackStoreState, type Track } from '../../../stores/trackStore';
 import { commitAdjustmentLayerMutation } from '../commitAdjustmentLayerMutation';
 
@@ -100,6 +100,31 @@ describe('commitAdjustmentLayerMutation', () => {
 
         // afterLayers derived from the (mocked) store value at commit time
         expect(inverse.payload.expectedLayersFingerprint).toBe('[]');
+    });
+
+    it('keeps the literal JSON fingerprint for nonempty post-mutation layers', () => {
+        const layer: AdjustmentLayer = {
+            id: 'L',
+            name: 'EQ',
+            effectType: 'eq',
+            parameters: [],
+            affectedTrackIds: [],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 1,
+            color: '#fff',
+        };
+        const inverse = makeInverse();
+
+        commitAdjustmentLayerMutation({
+            inverseAction: inverse as never,
+            mutation: () => {
+                mocks.layerValue.value = { layers: [layer] };
+            },
+        });
+
+        expect(inverse.payload.expectedLayersFingerprint).toBe(JSON.stringify([layer]));
     });
 
     it('throws when the mutation returns a value (must be synchronous)', () => {

@@ -8,6 +8,8 @@ import { TrackDummy } from '../../__tests__/TrackDummy';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
 import { trackStore } from '../../stores/trackStore';
 import { setWarpState, warpStates } from '../../stores/warpStates';
+import { prepareStripSilence } from '../prepareStripSilence';
+import { restoreStripSilenceState } from '../restoreStripSilenceState';
 import { stripSilence } from '../stripSilence';
 
 const mocks = vi.hoisted(() => ({
@@ -87,7 +89,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
-        const clip = ClipDummy.create({
+        const source = ClipDummy.create({
             id: 'clip-1',
             trackId: 'track-1',
             audioBufferId: 'buf-1',
@@ -95,6 +97,8 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             endBeat: CLIP_START_BEAT + 10,
             audioOffsetBeats: CLIP_AUDIO_OFFSET_BEATS,
         });
+        const { audioOffsetBeats, ...clipWithoutOffset } = source;
+        const clip = { ...clipWithoutOffset, overrides: { gain: true }, audioOffsetBeats };
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: 'track-1', ghostClips: [] });
         mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(twoRegionChannelData()));
@@ -123,6 +127,34 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         expect(clips[0]).toMatchObject({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 });
         expect(clips[1]).toMatchObject({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 });
         expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
+    });
+
+    it('round-trips prepared segments with overrides and an offset after their decoded key order changes', () => {
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+        expect(plan).not.toBeNull();
+
+        expect(restoreStripSilenceState({ expected: plan!.previous, replacement: plan!.next })).toBe(true);
+        const appliedSegment = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(appliedSegment.overrides).toEqual({ gain: true });
+        expect(Object.keys(appliedSegment).indexOf('overrides')).toBeGreaterThan(
+            Object.keys(appliedSegment).indexOf('audioOffsetBeats')
+        );
+
+        expect(restoreStripSilenceState({ expected: plan!.next, replacement: plan!.previous })).toBe(true);
+        expect(trackStore.value!.tracks[0]!.clips).toHaveLength(1);
+        expect(restoreStripSilenceState({ expected: plan!.previous, replacement: plan!.next })).toBe(true);
+    });
+
+    it('refuses a changed segment value without moving the prepared transition', () => {
+        const plan = prepareStripSilence({ clipId: 'clip-1' });
+        expect(plan).not.toBeNull();
+        expect(restoreStripSilenceState({ expected: plan!.previous, replacement: plan!.next })).toBe(true);
+        const state = trackStore.value!;
+        const changedClips = state.tracks[0]!.clips.map((clip, index) => (index === 0 ? { ...clip, gain: 0.5 } : clip));
+        trackStore.set({ ...state, tracks: [{ ...state.tracks[0]!, clips: changedClips }] });
+
+        expect(restoreStripSilenceState({ expected: plan!.next, replacement: plan!.previous })).toBe(false);
+        expect(trackStore.value!.tracks[0]!.clips[0]!.gain).toBe(0.5);
     });
 
     it('broadcasts the gain envelope, rebased, to every new segment and clears the target id (regression #2108)', () => {

@@ -75,6 +75,12 @@ old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
 
+## Lesson from PR #4111 and PR #2169 snapshot-guard escapes
+
+PR #4111 made Yeast processor undo guards compare captured snapshots after the CRDT codec had normalized an empty `params` map to an omitted field. PR #2169 made strip-silence restore guards compare prepared clip snapshots after replacement cloning changed object key insertion order. Both guards rejected an otherwise unchanged project during undo or redo.
+
+Review every serialized inverse guard through its real prepare, write, projected-store, undo, and redo route. Reorder nested object keys and pass optional fields through their owning codec; unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
+
 ## Lesson from the PR #806 transaction-scope escape
 
 PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until

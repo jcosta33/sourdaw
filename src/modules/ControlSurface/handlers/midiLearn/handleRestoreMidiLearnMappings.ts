@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiLearnMappingsActionSnapshot } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import {
     midiLearnStore,
@@ -184,7 +185,7 @@ export const handleRestoreMidiLearnMappings = createHandler<'restoreMidiLearnMap
         }
 
         const currentSnapshot = snapshotMappings(state.mappings);
-        const matchesExpected = JSON.stringify(currentSnapshot) === JSON.stringify(action.payload.expected);
+        const matchesExpected = jsonValuesEqual(currentSnapshot, action.payload.expected);
         if (!matchesExpected) {
             return { status: 'conflict' };
         }

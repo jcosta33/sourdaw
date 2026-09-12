@@ -129,4 +129,36 @@ describe('createEffectiveAdjustmentLayerSignature', () => {
         });
         expect(sigA).not.toBe(sigB);
     });
+
+    it('keeps nested object key order out of the signature while preserving layer order', () => {
+        const first = createEffectiveAdjustmentLayerSignature({
+            layers: [layer({ affectedTrackIds: ['t1'], parameters: [{ amount: 1, shape: { knee: 2 } }] })],
+            orderedTrackIds,
+            trackId: 't1',
+        });
+        const reordered = createEffectiveAdjustmentLayerSignature({
+            layers: [layer({ affectedTrackIds: ['t1'], parameters: [{ shape: { knee: 2 }, amount: 1 }] })],
+            orderedTrackIds,
+            trackId: 't1',
+        });
+        const reversed = createEffectiveAdjustmentLayerSignature({
+            layers: [
+                layer({ effectType: 'comp', affectedTrackIds: ['t1'] }),
+                layer({ effectType: 'eq', affectedTrackIds: ['t1'] }),
+            ],
+            orderedTrackIds,
+            trackId: 't1',
+        });
+        expect(reordered).toBe(first);
+        expect(reversed).not.toBe(
+            createEffectiveAdjustmentLayerSignature({
+                layers: [
+                    layer({ effectType: 'eq', affectedTrackIds: ['t1'] }),
+                    layer({ effectType: 'comp', affectedTrackIds: ['t1'] }),
+                ],
+                orderedTrackIds,
+                trackId: 't1',
+            })
+        );
+    });
 });
