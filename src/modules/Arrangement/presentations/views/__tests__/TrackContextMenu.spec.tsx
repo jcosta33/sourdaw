@@ -9,9 +9,6 @@ import { confirmUser } from '#/utils/Notification/confirmUser';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { addClip } from '../../../useCases/clip/addClip';
 import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
-import { flattenTrack } from '../../../useCases/freezeBounce/flattenTrack';
-import { freezeTrack } from '../../../useCases/freezeBounce/freezeTrack';
-import { unfreezeTrack } from '../../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../../useCases/importMidiFile';
 import { removeTrack } from '../../../useCases/removeTrack';
@@ -26,10 +23,6 @@ vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/flattenTrack', () => ({
-    flattenTrack: vi.fn(),
-}));
-
 vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: vi.fn(),
 }));
@@ -40,14 +33,6 @@ vi.mock('../../../useCases/toggleTrackState/toggleVariationLanes', () => ({
 
 vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/freezeBounce/unfreezeTrack', () => ({
-    unfreezeTrack: vi.fn(),
-}));
-
-vi.mock('../../../useCases/freezeBounce/freezeTrack', () => ({
-    freezeTrack: vi.fn(),
 }));
 
 vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
@@ -352,7 +337,10 @@ describe('TrackContextMenu', () => {
         fireEvent.contextMenu(screen.getByTestId('track'));
         // Frozen → label is "Unfreeze".
         fireEvent.click(screen.getByText('Unfreeze'));
-        expect(vi.mocked(unfreezeTrack)).toHaveBeenCalledWith('fz1');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'unfreezeTrack',
+            payload: { trackId: 'fz1' },
+        });
     });
 
     it('shows Update Freeze label when the freeze state is stale', () => {
@@ -383,7 +371,10 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Flatten Track'));
-        expect(vi.mocked(flattenTrack)).toHaveBeenCalledWith('fz2');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'flattenTrack',
+            payload: { trackId: 'fz2' },
+        });
     });
 
     it('deletes the track after confirming', async () => {
@@ -630,7 +621,10 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Freeze'));
-        expect(vi.mocked(freezeTrack)).toHaveBeenCalledWith('track1');
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'freezeTrack',
+            payload: { trackId: 'track1' },
+        });
     });
 
     it('duplicates the track', () => {

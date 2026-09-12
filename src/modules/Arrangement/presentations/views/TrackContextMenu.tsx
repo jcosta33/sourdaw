@@ -14,9 +14,6 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { bounceTrack, type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
-import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
-import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
-import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
@@ -199,9 +196,15 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             label: freezeLabel,
             action: () => {
                 if (track.frozen) {
-                    void unfreezeTrack(track.id);
+                    void executeUserAppAction({
+                        type: 'unfreezeTrack',
+                        payload: { trackId: track.id },
+                    });
                 } else {
-                    void freezeTrack(track.id);
+                    void executeUserAppAction({
+                        type: 'freezeTrack',
+                        payload: { trackId: track.id },
+                    });
                 }
                 close();
             },
@@ -212,7 +215,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                   {
                       label: 'Flatten Track',
                       action: () => {
-                          void flattenTrack(track.id);
+                          void executeUserAppAction({
+                              type: 'flattenTrack',
+                              payload: { trackId: track.id },
+                          });
                           close();
                       },
                       testId: 'track-flatten-item',
