@@ -1,0 +1,20 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_87ab0a2f60ccf8::t_4e94d54a7eeb7c 8-18,29-41,58,66,161-172
+  s_87ab0a2f60ccf8::t_e0777aaacc4bbf 173-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8c00ecac8cc410fad19a8ac5a83c18634a0317c6",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
