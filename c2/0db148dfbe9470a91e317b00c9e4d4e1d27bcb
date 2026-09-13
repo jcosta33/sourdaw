@@ -1,0 +1,25 @@
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_e440ffdc6997b7::t_bfbc8be55cdb0a 11,109-137
+  s_e440ffdc6997b7::t_748d2acf355629 138-139
+scripts/pruneRemoteBranches.ts
+  s_e440ffdc6997b7::t_fb5e9d82f19dd2 487,545
+AGENTS.md
+  s_e440ffdc6997b7::t_81eba0a02dc1c5 259-260
+  s_e440ffdc6997b7::t_7646cb74824217 439-440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c20db148dfbe9470a91e317b00c9e4d4e1d27bcb",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
