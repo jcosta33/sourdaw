@@ -41,6 +41,58 @@ describe('NoteFilter', () => {
         expect(offOut).toHaveLength(0); // matching Note Off suppressed
     });
 
+    it('keeps identified pass decisions paired when releases arrive out of order', () => {
+        const filter = new NoteFilter('overlap-filter');
+        const out: MidiEvent[] = [];
+        filter.processMidi(
+            [
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            out,
+            transport
+        );
+        filter.setParam('note_min', 61);
+        filter.processMidi(
+            [
+                {
+                    timeSamples: 1,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-b',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            out,
+            transport
+        );
+        filter.processMidi(
+            [
+                {
+                    timeSamples: 2,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-b',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+                {
+                    timeSamples: 3,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            out,
+            transport
+        );
+
+        expect(out.filter((event) => event.kind.type === 'noteOff')).toMatchObject([
+            { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } },
+        ]);
+    });
+
     it('clears filtered-note tracking on reset() so a later legitimate Note Off is not suppressed (no hung note)', () => {
         // Regression (round 2): reset() was a no-op that deliberately KEPT
         // filteredNotes, on the theory that an orphan Note Off for a filtered
