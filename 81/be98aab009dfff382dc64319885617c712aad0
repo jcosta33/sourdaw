@@ -1,0 +1,171 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_87ab0a2f60ccf8::t_87f44937644eee 12,20-23,31,135-177,193,325-328,375-569,803-804,806,830,1006-1108
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_87ab0a2f60ccf8::t_eea7f06782b911 25,33-34,182,203,207,230-232,235,240,268-270,276,300,809,832-837,849-851,936-1020,1026,1143
+src/modules/Crust/useCases/__tests__/setCrustPanelUiLevel.spec.ts
+  s_87ab0a2f60ccf8::t_fac141fc8687da 3,8-11,14-15,17-27,33
+src/modules/AiRuntime/useCases/completeMixAnalysis.ts
+  s_229a8547325a13::t_a6cac2d8258906 8-14,17-22
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_33857033b57b81::t_52e7b87eadf5ef 16-18,27-39,69,103-141
+crates/sourdaw-native/src/host/plugin_host_requests.rs
+  s_87ab0a2f60ccf8::t_7df6b05b43e36e 4-8,13,15-18,25-33,46-48,328-344,393-395,717-750
+src/modules/AiGeneration/useCases/actions/__tests__/handleGenerateMidiPrompt.spec.ts
+  s_87ab0a2f60ccf8::t_55bdbb0cd9466e 230-331
+src/modules/AiRuntime/presentations/components/mixAnalysis/__tests__/MixAnalysisSectionsBranches.spec.tsx
+  s_229a8547325a13::t_aec5082fb82577 9,79-115
+src/modules/Arrangement/useCases/index.ts
+  s_87ab0a2f60ccf8::t_5ebbbfa6e4ad2c 63-64
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_87ab0a2f60ccf8::t_c3dee3f460f99f 13-14,155,171-187,194,196-202,204-206,251-265
+src/modules/Crust/useCases/__tests__/resetCrustTruePeakIndicator.spec.ts
+  s_87ab0a2f60ccf8::t_3d2c1d27dccbf6 3-10,36-40,53-54,56,67-78,82,85,103
+src/modules/Crust/stores/crustStore.ts
+  s_87ab0a2f60ccf8::t_2fdfb186fac7b4 3-14,32,44-60,66-68,70-71,74-75,78-81,84-101,104-123,125-128
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_87ab0a2f60ccf8::t_00a4788c975c22 9,74,79-80,101,103-109,111-124,126-129,140-198,213-222,284-319,321-322,325-326,328-332,335,375-393,427-432,449-453,455-462
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_87ab0a2f60ccf8::t_9584702d93796c 111-123,236-238,242-249
+src/modules/AudioAnalysis/useCases/referenceMixComparison/__tests__/compareToReference.spec.ts
+  s_87ab0a2f60ccf8::t_3a5b1675b184d1 7,51-57,77-78,82-83,85,88-105
+src/modules/AiRuntime/useCases/__tests__/failMixAnalysis.spec.ts
+  s_87ab0a2f60ccf8::t_78acacc7867693 11,28
+src/modules/Crust/useCases/__tests__/resetCrustPanelMeters.spec.ts
+  s_87ab0a2f60ccf8::t_2d057f2875c7f6 3-11,16-21,34-35,37-40,44,46
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_87ab0a2f60ccf8::t_0158f87cc16dda 354-409
+crates/sourdaw-native/src/host/latency_watcher.rs
+  s_87ab0a2f60ccf8::t_c8451af5884e4a 9-22,26,29,32,43-56,175-197,199,201-226,231,235,238-260,271-304,458-639
+crates/daw-engine/src/midi_fx.rs
+  s_229a8547325a13::t_098b25c957e628 760-794
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_87ab0a2f60ccf8::t_6a67d23c106f03 5,24-26,58-59,252-291,347
+src/modules/AudioEngine/useCases/engineAccess/readNativeEngineStatus.ts
+  s_229a8547325a13::t_67e302f4da6465 1-35
+src/modules/Crust/useCases/resetCrustPanelMeters.ts
+  s_87ab0a2f60ccf8::t_5b63c3d3cec129 3-9
+src/modules/BrowserAi/services/midiToDdspInput.ts
+  s_87ab0a2f60ccf8::t_a7c1c7ebe72d2d 40-87,90-91,100-101
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_87ab0a2f60ccf8::t_290c235baf2b10 1,9,27,1775-1776,1780-1792
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_87ab0a2f60ccf8::t_04f816ec36ec58 5,88-92
+src/modules/AudioEngine/models/DeviceParamLaws.ts
+  s_229a8547325a13::t_9015271d64ef3f 1-17
+src/modules/AiRuntime/useCases/__tests__/completeMixAnalysis.spec.ts
+  s_229a8547325a13::t_443e296487b11e 10,27
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/trackRoutingDeviceStrategies.spec.ts
+  s_87ab0a2f60ccf8::t_5f1fd0850452ed 3-4,133-434
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_18993f6646ea4a::t_8747a65dc92a7e 286-290,292,2249-2257,2259-2262,2267-2272,2282,2622-2651,2898-2910,2998-3001,3320-3439,4506-4598
+src/modules/Crust/stores/__tests__/crustStore.spec.ts
+  s_87ab0a2f60ccf8::t_497087868ee767 6-7,9-14,20-22,24,38-43,48-49,52-54,56-61,64-66,68-70,76-77,80-83,85-87,93-94,97-98,101,103-104,110-111,114-115,117-118,121-123,125-131,134-135,137-138,144-145,148-151,153-157,159-172,174-177,179-182
+src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts
+  s_18993f6646ea4a::t_c02d8db4c46a95 34,45
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_87ab0a2f60ccf8::t_bc1b7298cb0260 79-94,651-668,682,853-856,971-974,994-1006,1019-1044,1046,1103-1112,1114-1128,1137,1165-1182,1218,2863-3158
+src/modules/Crust/stores/index.ts
+  s_18993f6646ea4a::t_dca2ddbc95c246 1-16
+src/modules/AudioAnalysis/useCases/__tests__/analyzeMix.spec.ts
+  s_87ab0a2f60ccf8::t_a5e6f3949ec3a6 5-8,20-49,54-127,131-135
+src/modules/AudioAnalysis/useCases/__tests__/setMixAnalysisDisplayLifecycle.spec.ts
+  s_d6045602c06d5d::t_ff050f8fdae5f1 8
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_87ab0a2f60ccf8::t_88cc2285cf23a0 3913-3919,3921-3938
+src/modules/AiRuntime/useCases/musicMentor/__tests__/generateLessons.spec.ts
+  s_87ab0a2f60ccf8::t_88195061856198 3-4,7-10,12,22,25-26,30-71
+src/modules/Crust/useCases/resetCrustTruePeakIndicator.ts
+  s_18993f6646ea4a::t_2fbccafc4830d1 14-16,18-19
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamWithAudio.spec.ts
+  s_87ab0a2f60ccf8::t_bb0d5caf2284d9 89,97-98,109,117-121
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_87ab0a2f60ccf8::t_1011e194d32edf 2,242-258
+src/modules/Crust/useCases/__tests__/crustParamBridge.spec.ts
+  s_87ab0a2f60ccf8::t_341535f6de208a 94,113-114,137
+crates/daw-plugin-host/src/clap_host.rs
+  s_87ab0a2f60ccf8::t_4c3d06c79d4238 48-54,80-90,120-123,142-147,165-182,263-285,407-434,505-508,510-515,517,525-538,724-728,740,744-747,758,771-774,778-783,791,796-901
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_de02db07113e8f 19,85
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_87ab0a2f60ccf8::t_6e07498fb4ba0f 215,232
+src/modules/AiRuntime/presentations/components/mixAnalysis/MixAnalysisSections.tsx
+  s_229a8547325a13::t_51210a8c920f8b 64,67-78,90-112
+src/modules/Crust/useCases/setCrustPanelUiLevel.ts
+  s_87ab0a2f60ccf8::t_8c3e2bb87b33bc 3-8
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_87ab0a2f60ccf8::t_514ed995876512 3,15-27,162-170,333,347-383,385-389
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_229a8547325a13::t_13f7f95af4f149 603-642
+src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/measureProgramAudio.ts
+  s_87ab0a2f60ccf8::t_efc34f3756ee12 1-203
+src/modules/AudioAnalysis/services/__tests__/mixAnalysisHelpers.spec.ts
+  s_87ab0a2f60ccf8::t_0f11b72aab1461 5,7-9,12-58,60-128,132,134,160,162,177,188-200,203,216,218,246-259,265,267,289,291,303,316,329,331,339-361
+src/modules/Crust/useCases/crustParamBridge/hydrateCrustPatchFromProject.ts
+  s_87ab0a2f60ccf8::t_1be5af706eda11 1-168
+src/modules/AiRuntime/useCases/__tests__/beginMixAnalysis.spec.ts
+  s_87ab0a2f60ccf8::t_d1bf5dc408da8f 9
+src/modules/AudioAnalysis/useCases/referenceMixComparison/__tests__/analyzeMix.spec.ts
+  s_87ab0a2f60ccf8::t_d0fd1758e54313 1,5-21,23-104,106-110
+src/modules/Crust/presentations/hooks/useCrustMeters.ts
+  s_87ab0a2f60ccf8::t_14758dac51af0a 1-20
+src/modules/AiRuntime/models/IntentResult.ts
+  s_87ab0a2f60ccf8::t_f9cc785b6b2a1d 7,17-18
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsCorrectionEvidence.spec.ts
+  s_87ab0a2f60ccf8::t_c2cbe58c7ecb0e 1-471
+src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts
+  s_87ab0a2f60ccf8::t_31d299a7f8d7f0 37
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_87ab0a2f60ccf8::t_3ad8a7efcbbb7e 1,16,19-20,31,100-105,107-116,120-136,164,449-454
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamStyleAlgorithm.spec.ts
+  s_87ab0a2f60ccf8::t_0802307292f273 6,47-48,62-63,82-83,87-88,116-117
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_87ab0a2f60ccf8::t_7bdae78c7fab76 43-55,157-158,171-180,224-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "81be98aab009dfff382dc64319885617c712aad0",
+  "prompts": {},
+  "sessions": {
+    "s_18993f6646ea4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a25-fd92-76f2-903f-879c9e5aea35",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_229a8547325a13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a37-ec7c-74a0-a086-edb4bd3d0bb0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_33857033b57b81": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09ad8-940d-7990-823e-161e9ca025fe",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d6045602c06d5d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09aec-27fc-7030-828e-3e18267be056",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
