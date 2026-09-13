@@ -144,6 +144,63 @@ describe('handleSelectTake', () => {
         expect(isValid).toBe(true);
     });
 
+    it('ignores a prior sibling selectTake captured for a replaced lane owner', () => {
+        const lane = { ...createTakeLaneFixture('track-1'), takes: [createTake('a', true), createTake('b', false)] };
+        seedLanes([lane]);
+        const context = {
+            actions: [
+                {
+                    type: 'selectTake' as const,
+                    payload: {
+                        trackId: 'track-1',
+                        takeId: 'b',
+                        expectedLaneId: 'replaced-lane',
+                        expectedSelectedTakeId: 'a',
+                    },
+                },
+            ],
+            actionIndex: 1,
+        };
+
+        const isValid = handleSelectTake.validate!(
+            {
+                type: 'selectTake',
+                payload: {
+                    trackId: 'track-1',
+                    takeId: 'b',
+                    expectedLaneId: lane.id,
+                    expectedSelectedTakeId: 'a',
+                },
+            },
+            context
+        );
+
+        expect(isValid).toBe(true);
+    });
+
+    it('refuses a replaced lane owner before execute or noop classification', () => {
+        const lane = { ...createTakeLaneFixture('track-1'), takes: [createTake('a', false), createTake('b', true)] };
+        seedLanes([lane]);
+        const action = {
+            type: 'selectTake' as const,
+            payload: {
+                trackId: 'track-1',
+                takeId: 'b',
+                expectedLaneId: 'lane-before-replacement',
+                expectedSelectedTakeId: 'b',
+            },
+        };
+
+        expect(handleSelectTake.validate!(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleSelectTake.isNoop?.(action)).toBe(false);
+        expect(handleSelectTake.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.takeLaneStoreValue.value!.lanes[0]).toBe(lane);
+        expect(handleSelectTake.describe(action)).toEqual({
+            label: 'Select take',
+            inverseAction: null,
+        });
+    });
+
     it('describes a self-inverse that restores the previously selected take', () => {
         seedLanes([{ ...createTakeLaneFixture('track-1'), takes: [createTake('a', true), createTake('b', false)] }]);
 
@@ -155,15 +212,25 @@ describe('handleSelectTake', () => {
         expect(described.label).toBe('Select take');
         expect(described.inverseAction).toEqual({
             type: 'selectTake',
-            payload: { trackId: 'track-1', takeId: 'a', expectedSelectedTakeId: 'b' },
+            payload: {
+                trackId: 'track-1',
+                takeId: 'a',
+                expectedLaneId: 'lane-track-1',
+                expectedSelectedTakeId: 'b',
+            },
         });
         expect(described.redoAction).toEqual({
             type: 'selectTake',
-            payload: { trackId: 'track-1', takeId: 'b', expectedSelectedTakeId: 'a' },
+            payload: {
+                trackId: 'track-1',
+                takeId: 'b',
+                expectedLaneId: 'lane-track-1',
+                expectedSelectedTakeId: 'a',
+            },
         });
     });
 
-    it('describes no inverse when no take was previously selected', () => {
+    it('describes an owner-guarded inverse that restores no prior selection', () => {
         seedLanes([{ ...createTakeLaneFixture('track-1'), takes: [createTake('a', false)] }]);
 
         const described = handleSelectTake.describe({
@@ -171,7 +238,45 @@ describe('handleSelectTake', () => {
             payload: { trackId: 'track-1', takeId: 'a' },
         });
 
-        expect(described.inverseAction).toBeNull();
+        expect(described.inverseAction).toEqual({
+            type: 'selectTake',
+            payload: {
+                trackId: 'track-1',
+                takeId: null,
+                expectedLaneId: 'lane-track-1',
+                expectedSelectedTakeId: 'a',
+            },
+        });
+        expect(described.redoAction).toEqual({
+            type: 'selectTake',
+            payload: {
+                trackId: 'track-1',
+                takeId: 'a',
+                expectedLaneId: 'lane-track-1',
+                expectedSelectedTakeId: null,
+            },
+        });
+    });
+
+    it('admits a null target only for owner-guarded internal replay', () => {
+        const lane = { ...createTakeLaneFixture('track-1'), takes: [createTake('a', true)] };
+        seedLanes([lane]);
+        const unguarded = { type: 'selectTake' as const, payload: { trackId: 'track-1', takeId: null } };
+        const guarded = {
+            type: 'selectTake' as const,
+            payload: {
+                trackId: 'track-1',
+                takeId: null,
+                expectedLaneId: lane.id,
+                expectedSelectedTakeId: 'a',
+            },
+        };
+
+        expect(handleSelectTake.validate!(unguarded, { actions: [unguarded], actionIndex: 0 })).toBe(false);
+        expect(handleSelectTake.execute(unguarded)).toEqual({ status: 'conflict' });
+        expect(handleSelectTake.validate!(guarded, { actions: [guarded], actionIndex: 0 })).toBe(true);
+        expect(handleSelectTake.execute(guarded)).toEqual({ status: 'written' });
+        expect(mocks.takeLaneStoreValue.value!.lanes[0]!.takes[0]!.selected).toBe(false);
     });
 
     it('is undoable and declares conflict capability', () => {

@@ -1,9 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
 } from '#/infra/testing/installTransactionalIndexedDb';
+import { takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, selectTake } from '#/modules/Arrangement/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     captureDurableDocumentWitness,
@@ -11,9 +14,11 @@ import {
     compactProject,
     createCrdtDoc,
     hasCrdtDoc,
+    getCrdtDoc,
     loadCrdtProject,
     markActionHistoryEntryReverted,
     persistCrdtProject,
+    projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -26,8 +31,11 @@ import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { reconcileSessionUndoForProject } from '../reconcileSessionUndoForProject';
+import { redo } from '../redo';
 import { stampSessionUndoWitness } from '../stampSessionUndoWitness';
+import { undo } from '../undo';
 import { validateVersionedCommandArguments } from '../versionedCommandArgumentKeys';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
@@ -49,6 +57,41 @@ const sessionActionContracts = [
         validateArguments: (payload: unknown) => validateVersionedCommandArguments('setTempo', payload),
     },
 ];
+
+function hydrateSelectTakeUndoSession(): void {
+    const registration = getExecutableCommandRegistration('selectTake');
+    hydrateUndoStoreFromSession([
+        {
+            actionType: registration.actionType,
+            operationVersion: registration.operationVersion,
+            role: 'forward',
+            validateArguments: registration.runtimeSchema.validate,
+            validateEntry: registration.sessionEntryValidator,
+        },
+    ]);
+}
+
+function selectedTakeId(lane: TakeLaneStoreState['lanes'][number]): string | null {
+    return lane.takes.find((take) => take.selected)?.id ?? null;
+}
+
+function projectedTakeLane(): TakeLaneStoreState['lanes'][number] {
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === 'track-1');
+    if (!lane) {
+        throw new Error('Expected projected take lane');
+    }
+    return lane;
+}
+
+function rawTakeLane(): TakeLaneStoreState['lanes'][number] {
+    const lane = getCrdtDoc<{ takeLanes?: TakeLaneStoreState }>('root')?.takeLanes?.lanes.find(
+        (candidate) => candidate.trackId === 'track-1'
+    );
+    if (!lane) {
+        throw new Error('Expected raw take lane');
+    }
+    return lane;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,9 +118,12 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
     let unsubscribeActionHistory: (() => void) | null = null;
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
+    beforeAll(() => {
+        indexedDb = installTransactionalIndexedDb();
+    });
+
     beforeEach(async () => {
         vi.clearAllMocks();
-        indexedDb = installTransactionalIndexedDb();
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
@@ -119,9 +165,12 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         sessionUndoWitnessStampPort.setProvider(null);
         removeCrdtDoc('root');
         sessionStorage.removeItem(UNDO_SESSION_KEY);
+        vi.restoreAllMocks();
+    });
+
+    afterAll(async () => {
         await indexedDb?.dispose();
         indexedDb = null;
-        vi.restoreAllMocks();
     });
 
     it('re-witnesses the mirror against the document state a persistence step actually saves, so a reload keeps the stacks', async () => {
@@ -174,5 +223,84 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
 
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.past[0]).toMatchObject({ label: 'Set tempo' });
+    });
+
+    it('persists and reloads a real take-selection inverse before undo and redo', async () => {
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        hydrateSelectTakeUndoSession();
+        reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+        const lane: TakeLaneStoreState['lanes'][number] = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                {
+                    id: 'take-a',
+                    clipId: 'clip-a',
+                    name: 'Take A',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: false,
+                },
+                {
+                    id: 'take-b',
+                    clipId: 'clip-b',
+                    name: 'Take B',
+                    startBeat: 4,
+                    endBeat: 8,
+                    selected: false,
+                },
+            ],
+            activeCompRegions: [],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await selectTake('track-1', 'take-a');
+        expect(selectedTakeId(rawTakeLane())).toBe('take-a');
+        expect(selectedTakeId(projectedTakeLane())).toBe('take-a');
+        expect(undoStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
+        const liveEntryBeforeReload = undoStore.value!.past[0]!;
+        await vi.waitFor(() => {
+            expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toContain('expectedLaneId');
+        });
+
+        await persistCrdtProject();
+        const persistedWitness = captureDurableDocumentWitness();
+        removeCrdtDoc('root');
+        expect(hasCrdtDoc('root')).toBe(false);
+        createCrdtDoc('root');
+        await expect(loadCrdtProject()).resolves.toBe(true);
+        projectCrdtToStores({ resetProjections: true });
+        expect(captureDurableDocumentWitness()).toBe(persistedWitness);
+        expect(selectedTakeId(rawTakeLane())).toBe('take-a');
+        expect(selectedTakeId(projectedTakeLane())).toBe('take-a');
+
+        hydrateSelectTakeUndoSession();
+        reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]).not.toBe(liveEntryBeforeReload);
+        expect(undoStore.value?.past[0]).toMatchObject({
+            label: 'Select take',
+            inverseAction: {
+                type: 'selectTake',
+                payload: {
+                    trackId: 'track-1',
+                    takeId: null,
+                    expectedLaneId: 'lane-1',
+                    expectedSelectedTakeId: 'take-a',
+                },
+            },
+        });
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeId(rawTakeLane())).toBeNull();
+        expect(selectedTakeId(projectedTakeLane())).toBeNull();
+        expect(undoStore.value).toMatchObject({ past: [], future: [expect.any(Object)] });
+
+        await redo();
+        expect(selectedTakeId(rawTakeLane())).toBe('take-a');
+        expect(selectedTakeId(projectedTakeLane())).toBe('take-a');
+        expect(undoStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
     });
 });

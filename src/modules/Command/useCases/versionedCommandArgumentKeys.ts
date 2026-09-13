@@ -918,7 +918,8 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             trackId: 0,
-            takeId: 0,
+            takeId: 36,
+            expectedLaneId: 0,
             expectedSelectedTakeId: 36,
         },
         required: ['trackId', 'takeId'],
