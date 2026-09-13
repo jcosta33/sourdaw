@@ -1,0 +1,54 @@
+release/open-source-inventory.json
+  h_1228e573df1f42 1335,1341,1722
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  h_1228e573df1f42 1-5,11,27,32,35,38-39,41-44,47,51,54,59-110,129,132-133,141,143,168-384
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1,100-140,197
+src/modules/AudioEngine/repositories/devices/toneShaping/createDeEsser.ts
+  h_1228e573df1f42 13-37,41-44,48-70,81-86,94-111,115-116,122-128,132-161,164-188
+public/wasm/manifest.json
+  h_1228e573df1f42 12,16-18,21
+src/helpers/__tests__/audioContext.mock.ts
+  h_1228e573df1f42 87,122,154,263-269,324-325,395
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/applyToneShapingParams.spec.ts
+  h_1228e573df1f42 50-51,56-58,66,69-70,72-75,81,83
+src/modules/AudioEngine/repositories/devices/toneShaping/applyDeEsserParams.ts
+  h_1228e573df1f42 12,14-17
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationBindingCensus.spec.ts
+  h_1228e573df1f42 40-44,121-122,124-125,142-160
+src/modules/AudioEngine/services/deviceResolution.ts
+  h_1228e573df1f42 124-127,144-149
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1,956-996,1053
+crates/daw-dsp/src/levain/voice.rs
+  h_1228e573df1f42 196-206,2000-2100
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1,956-996,1053
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/builtinDeviceAutomationUnits.spec.ts
+  h_1228e573df1f42 175,209-211,230,266-268
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  h_1228e573df1f42 324,361,388,414,465,504,530,555,577,629,657
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  h_1228e573df1f42 145
+src/modules/MIDI/repositories/__tests__/downloadFile.spec.ts
+  h_1228e573df1f42 12
+src/modules/Project/repositories/nativeFileDialog/__tests__/helpers.spec.ts
+  h_1228e573df1f42 54
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  h_1228e573df1f42 71
+src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
+  h_1228e573df1f42 64
+src/utils/__tests__/downloadFile.spec.ts
+  h_1228e573df1f42 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d426134545fde4f4752c1e4cdfa392cff3136ba0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
