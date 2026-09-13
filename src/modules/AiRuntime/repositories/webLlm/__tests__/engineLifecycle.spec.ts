@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
+import { retireWebLlmEngine } from '../retireWebLlmEngine';
 import { unloadWebLlmEngine } from '../unloadWebLlmEngine';
 
 const { admissionGate, artifactAdmissionMock, mockLogger, createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(
@@ -108,6 +109,16 @@ describe('WebLLM engineLifecycle injectables', () => {
     it('should unload engine and log', () => {
         unloadWebLlmEngine();
         expect(mockLogger.info).toHaveBeenCalledWith('[AI Engine] WebLLM unloaded from memory');
+    });
+
+    it('does not let a stale worker retirement clear its replacement engine', () => {
+        const staleEngine = { interruptGenerate: vi.fn(), chat: { completions: { create: vi.fn() } } };
+        const replacementEngine = { interruptGenerate: vi.fn(), chat: { completions: { create: vi.fn() } } };
+        engineState.engine = replacementEngine;
+
+        retireWebLlmEngine(staleEngine, new Error('stale worker failure'));
+
+        expect(engineState.engine).toBe(replacementEngine);
     });
 
     it('terminates the worker and discards the engine when initialization is aborted', async () => {
