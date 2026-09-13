@@ -9,6 +9,7 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppActionBatch,
     executeUserAppAction,
     redo,
     resetActionReplayAuthority,
@@ -218,6 +219,134 @@ describe('selectTake undo preservation (#4072)', () => {
         expect(selectedTakeIdOf('track-1')).toBe(takeA.id);
         expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
         expect(undoHistoryStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
+    });
+
+    it('undoes and redoes a grouped pair of selections from the sequentially captured predecessor', async () => {
+        const { other, takeA, takeB } = seedTakeLanes();
+        const takeC = createTake('clip-c', 'C', 8, 12);
+        takeLaneStore.set({
+            lanes: [{ ...getLane('track-1'), takes: [...getLane('track-1').takes, takeC] }, structuredClone(other)],
+        });
+        flushAutomergeStorageWrites();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeB } },
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeC.id } },
+                ],
+                { groupId: 'grouped-sequential-take-capture' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+        expect(selectedTakeIdOf('track-1')).toBe(takeC.id);
+        expect(getLane('track-2')).toEqual(other);
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+
+        await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeIdOf('track-1')).toBe(takeA);
+        expect(getLane('track-2')).toEqual(other);
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+
+        await redo();
+        expect(selectedTakeIdOf('track-1')).toBe(takeC.id);
+        expect(getLane('track-2')).toEqual(other);
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+    });
+
+    it('undoes and redoes grouped selections from an initially empty selection', async () => {
+        const takeA = createTake('clip-a', 'A', 0, 4);
+        const takeB = createTake('clip-b', 'B', 4, 8);
+        const takeC = createTake('clip-c', 'C', 8, 12);
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [takeA, takeB, takeC] }] });
+        flushAutomergeStorageWrites();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeB.id } },
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeC.id } },
+                ],
+                { groupId: 'grouped-empty-take-capture' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+        expect(selectedTakeIdOf('track-1')).toBe(takeC.id);
+
+        await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeIdOf('track-1')).toBeNull();
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+
+        await redo();
+        expect(selectedTakeIdOf('track-1')).toBe(takeC.id);
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+    });
+
+    it('does not misclassify a later sibling that returns the batch to its initial take as a noop', async () => {
+        const { takeA, takeB } = seedTakeLanes();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeB } },
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: takeA } },
+                ],
+                { groupId: 'grouped-return-to-initial-take' }
+            )
+        ).resolves.toMatchObject({ status: 'committed', actions: [{}, {}] });
+        expect(selectedTakeIdOf('track-1')).toBe(takeA);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+
+        await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeIdOf('track-1')).toBe(takeA);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+
+        await redo();
+        expect(selectedTakeIdOf('track-1')).toBe(takeA);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+    });
+
+    it('rejects an invalid selection prefix without writing project state or history', async () => {
+        const { takeA, takeB } = seedTakeLanes();
+        const takeC = createTake('clip-c', 'C', 8, 12);
+        const lane = getLane('track-1');
+        takeLaneStore.set({ lanes: [{ ...lane, takes: [...lane.takes, takeC] }, getLane('track-2')] });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(takeLaneStore.value!.lanes);
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'selectTake', payload: { trackId: lane.trackId, takeId: takeB } },
+                    {
+                        type: 'selectTake',
+                        payload: {
+                            trackId: lane.trackId,
+                            takeId: takeC.id,
+                            expectedLaneId: lane.id,
+                            expectedSelectedTakeId: takeA,
+                        },
+                    },
+                ],
+                { groupId: 'invalid-selection-prefix' }
+            )
+        ).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: selectTake',
+            actions: [],
+        });
+        expect(takeLaneStore.value?.lanes).toEqual(before);
+        flushAutomergeStorageWrites();
+        expect(rawTakeLanes().lanes).toEqual(before);
+        expect(undoHistoryStore.value).toEqual({ past: [], future: [] });
     });
 
     it('refuses undo after same-track lane owner replacement without state or history movement', async () => {
