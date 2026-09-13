@@ -1,0 +1,101 @@
+src/modules/Arrangement/useCases/setTrackGainPan/setInputMonitoring.ts
+  s_e440ffdc6997b7::t_100c67f41c2185 1,18-19,23
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoring.ts
+  s_e440ffdc6997b7::t_f9ee3b988e54d2 4,6-13,16-19,21-25,30-96
+src/modules/AudioEngine/repositories/audioRecorder/stopInputMonitoring.ts
+  s_e440ffdc6997b7::t_4e64163cbe9d59 2,4-8,10-14,17-21
+src/modules/AudioEngine/repositories/audioRecorder/stopTrackInputMonitoring.ts
+  s_e440ffdc6997b7::t_52fae1464aee7c 1-23
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setInputMonitoring.spec.ts
+  s_3fd2936080afd8::t_f4826e27b5e080 10,21,41,43-47,50,52-55,77,81,92
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleInputMonitoring.spec.ts
+  s_229a8547325a13::t_5722deaa32a9e7 11,26,39,63,65-66,68,71,75-77,97
+src/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring.ts
+  s_3fd2936080afd8::t_846887be37176e 1,33-35,39
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/inputMonitoring.spec.ts
+  s_229a8547325a13::t_b2e3da254b1fec 5,57-81,186-348
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  s_229a8547325a13::t_4be7ad623d1ef4 144-156
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopInputMonitoring.spec.ts
+  s_229a8547325a13::t_0fd8ffa9aa278e 116-119
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopTrackInputMonitoring.spec.ts
+  s_c471be48a6f54b::t_4662071f0df387 1-148
+src/modules/AudioEngine/repositories/audioRecorder/inputMonitoringSession.ts
+  s_c471be48a6f54b::t_b591b0e4290a8a 6-11,15-17,21-23
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_229a8547325a13::t_eddfbd11f07771 93-97
+src/modules/AudioEngine/repositories/audioRecorder/releaseMonitorCapture.ts
+  s_717436d59af040::t_0859038f7cee06 1-18
+src/modules/AudioEngine/repositories/audioRecorder/stopStreamTracks.ts
+  s_717436d59af040::t_1a2c1e2c0e30c7 1-6
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_f53e4514e9ccfe::t_8fd96aaf6e7bf3 7-12,21-32,36,76-141
+src/modules/AudioEngine/useCases/audioRecorder/startAudioRecording.ts
+  s_475fa898abfeb4::t_c1ba467cbbd077 1-2,5-6,8,14-36
+src/modules/AudioEngine/useCases/audioRecorder/stopTrackInputMonitoring.ts
+  s_c471be48a6f54b::t_5b0cda32c1e715 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "121c6edfd24cffaa30246c1c9b428bf5dd29514a",
+  "prompts": {},
+  "sessions": {
+    "s_229a8547325a13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a37-ec7c-74a0-a086-edb4bd3d0bb0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3fd2936080afd8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a47-cad0-7f80-b25c-e0b13b40c3d1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_475fa898abfeb4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a68-1629-70d3-9e3c-51b4527d0108",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_717436d59af040": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a68-558b-7cc2-9a36-e96e9d677a80",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c471be48a6f54b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a48-51bd-75a2-85b4-d650895baa6b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f53e4514e9ccfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a48-16df-7141-80ed-544231d24206",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
