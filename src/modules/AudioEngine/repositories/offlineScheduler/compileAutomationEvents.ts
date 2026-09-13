@@ -104,6 +104,16 @@ export type CompileAutomationEventsOptions = {
      * Keep it pure; it runs once per compiled event.
      */
     valueTransform?: (value: number) => number;
+    /**
+     * The AudioParam write-time conversion for a device binding whose static
+     * applier applies a non-affine law (dB→linear gain, a delay floor). It
+     * runs AFTER the slew — not before, like `valueTransform` — because the
+     * live path slews, clamps and quantises in device units and converts once
+     * at `updateDeviceParam`; slewing the converted values would low-pass a
+     * different curve than the monitor rides. Applied to every emitted event,
+     * slewed or not; kept pure.
+     */
+    emitTransform?: (value: number) => number;
 };
 function interpolateValue(
     first: AutomationPoint,
@@ -426,8 +436,12 @@ export function compileAutomationEvents(
             event.value = valueTransform ? valueTransform(scaled) : scaled;
         }
     }
-    if (options?.slew) {
-        return slewEvents(events, options.slew, windowEnd - regionStartSeconds);
+    const emitted = options?.slew ? slewEvents(events, options.slew, windowEnd - regionStartSeconds) : events;
+    const emitTransform = options?.emitTransform;
+    if (emitTransform) {
+        for (const event of emitted) {
+            event.value = emitTransform(event.value);
+        }
     }
-    return events;
+    return emitted;
 }

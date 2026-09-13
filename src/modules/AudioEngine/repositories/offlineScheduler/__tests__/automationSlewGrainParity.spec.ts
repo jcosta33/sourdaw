@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { gainToDb } from '#/utils/audioLevelLaw';
 import { AUTOMATION_SLEW_ALPHA, automationSlewTickSecondsForGrain, slewStep } from '#/utils/automationSlew';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
@@ -163,13 +164,17 @@ describe('offline automation slew follows the live scheduler grain', () => {
         expect(emitted.length).toBeGreaterThanOrEqual(tickCount);
         for (const [index, reference] of expected.entries()) {
             const actual = emitted[index]!;
+            // `gain-level` converts device dB to linear gain at write time
+            // (#3738); map back to device space, where the live recurrence
+            // this gate races against actually runs.
+            const actualDeviceValue = gainToDb(actual.value);
             expect(actual.timeSeconds, `tick ${index + 1} time at ${scheduleGrainMs}ms grain`).toBeCloseTo(
                 reference.timeSeconds,
                 10
             );
-            expect(actual.value, `tick ${index + 1} value at ${scheduleGrainMs}ms grain`).toBeCloseTo(
+            expect(actualDeviceValue, `tick ${index + 1} value at ${scheduleGrainMs}ms grain`).toBeCloseTo(
                 reference.value,
-                10
+                6
             );
         }
     });
@@ -233,8 +238,10 @@ describe('offline automation slew follows the live scheduler grain', () => {
             const timeSeconds = tick * tickSeconds;
             smoothed = slewStep(smoothed, trueCurveAt(timeSeconds), AUTOMATION_SLEW_ALPHA);
             const rendered = emitted[tick - 1];
+            // Map the converted write (#3738) back to device space before
+            // racing it against the live recurrence.
             expect(rendered?.timeSeconds, `tick ${tick} time`).toBeCloseTo(timeSeconds, 10);
-            expect(rendered?.value, `tick ${tick} value`).toBeCloseTo(smoothed, 6);
+            expect(gainToDb(rendered?.value ?? Number.NaN), `tick ${tick} value`).toBeCloseTo(smoothed, 6);
         }
         expect(tickCount).toBeGreaterThan(10);
     });

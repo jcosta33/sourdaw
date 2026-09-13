@@ -1,8 +1,15 @@
+import { dbToGain } from '#/utils/audioLevelLaw';
+
 import { type OfflineDeviceNode } from '../types';
 
 export function applyDeEsserParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
-    const bandpassDE = dn.nodes[3] as BiquadFilterNode;
-    const compDE = dn.nodes[4] as DynamicsCompressorNode;
+    const nn = dn.namedNodes;
+    const bandpassDE = (nn?.bandpass ?? dn.nodes[1]) as BiquadFilterNode;
+    const compDE = (nn?.comp ?? dn.nodes[2]) as DynamicsCompressorNode;
+    const wetDE = (nn?.wet ?? dn.nodes[3]) as GainNode;
+    const cancelDE = (nn?.cancel ?? dn.nodes[4]) as GainNode;
+    const listenDE = (nn?.listen ?? dn.nodes[5]) as GainNode;
+    const inputGainDE = (nn?.inputGain ?? dn.nodes[6]) as GainNode;
     if (params['deess-threshold'] !== undefined) {
         compDE.threshold.value = params['deess-threshold'];
     }
@@ -10,6 +17,18 @@ export function applyDeEsserParams(dn: OfflineDeviceNode, params: Record<string,
         bandpassDE.frequency.value = params['deess-freq'];
     }
     if (params['deess-range'] !== undefined) {
-        compDE.ratio.value = Math.max(1, Math.abs(params['deess-range']) / 2);
+        // Range is the reduction LIMIT in dB: both band taps carry
+        // 10^(range/20), so a fully compressed band is attenuated by exactly
+        // Range dB and an idle band cancels to unity.
+        const weight = dbToGain(params['deess-range']);
+        wetDE.gain.value = weight;
+        cancelDE.gain.value = -weight;
+    }
+    if (params['deess-listen'] !== undefined) {
+        // Listen isolates the selected band: the full-range path mutes and the
+        // raw detector band alone reaches the output.
+        const listening = params['deess-listen'] !== 0;
+        listenDE.gain.value = listening ? 1 : 0;
+        inputGainDE.gain.value = listening ? 0 : 1;
     }
 }
