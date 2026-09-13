@@ -1,0 +1,30 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/checkpointOwnerCatalog.spec.ts
+  s_87ab0a2f60ccf8::t_5e41b22d32242b 117-142,224-243,271-285,291-308,312-330,336-345,351-355,359-447
+  s_87ab0a2f60ccf8::t_ba0626e31d267e 244-270,286-290,309-311,331-335,346-350,356-358
+  s_87ab0a2f60ccf8::t_e038f46761dac7 12,52-55
+  s_87ab0a2f60ccf8::t_44a741e6bb26ab 448
+src/modules/CrdtDocument/useCases/__tests__/commitCheckpointCatalog.spec.ts
+  s_87ab0a2f60ccf8::t_03c145e7287c09 1-46
+src/modules/CrdtDocument/useCases/commitCheckpointCatalog.ts
+  s_87ab0a2f60ccf8::t_e038f46761dac7 4-5,7
+src/modules/CrdtDocument/repositories/crdtPersistence/commitCheckpointCatalog.ts
+  s_87ab0a2f60ccf8::t_f5ea556c343676 43-45
+  s_87ab0a2f60ccf8::t_e59e4c37a2cca2 58-66
+  s_87ab0a2f60ccf8::t_e038f46761dac7 21-26,33-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dfd43b8b28fb13d3f2e283b2250a2357f2444216",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
