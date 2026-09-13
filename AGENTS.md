@@ -43,12 +43,23 @@ For each PR, diversify delegated tasks among equally adequate models at the chea
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
 author's.
 
-Every dispatch includes objective, lane, branch, scope, exclusions, dependencies, acceptance
-conditions, and checks. Before writing it, trace each acceptance observable (event, counter, or
-caller-read figure) to its producing line, and each prescribed mechanism to every required code
-route. Unemitted observables and partially covered routes are orchestrator defects. Specify the
-whole design before dispatch, never one review finding at a time. Require back only status,
-changed paths, decisive evidence, and blockers.
+Design the whole requested outcome before dispatch, then give each agent one independently safe
+behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
+objective, lane, branch, paths, exclusions, dependencies, applicable preservation guarantees,
+acceptance conditions, integration observable, and exact checks. Before writing it, trace each
+acceptance observable (event, counter, or caller-read figure) to its producing line, and each
+prescribed mechanism to every required code route. Unemitted observables and partially covered routes
+are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
+check, or dispatch inventories into it, and do not require another plan file or issue for work the
+session owns. Require back only status, changed paths, decisive evidence, and blockers.
+
+Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
+together. Split distinct outcomes when separate review materially helps, provided each slice can land
+safely and final integration stays coherent. Stack only separately useful slices with a real dependency.
+A size report alone never requires a split, and no numeric threshold decides one. When distinct
+outcomes must land together, name the invariant or dependency that requires joint landing; a feature
+name or changed-line target is insufficient. If a review repair introduces a new mechanism or outcome,
+reassess the PR scope before dispatching more author work.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
 and overlapping files.
@@ -103,8 +114,8 @@ head, then dispatch repairs. The author pushes the fixed head, answers each thre
 the public record must retain the reviewer identity's findings against the original head and the
 author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its exclusive
 script calls, `review.json`, `discarded.json`, and the final `acceptance.json`. The reviewer App records
-independent review; the orchestrator records final acceptance on behalf of `jcosta33` through
-`review:accept`, then merges through `deliver` as that user.
+independent review; the orchestrator records final acceptance through `review:accept`, then merges
+through `deliver` as the verified orchestrator User.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Edit that stance's tracked dispatch guidance under
@@ -233,10 +244,28 @@ are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the cal
 and `.env.sourdaw-*` credentials live there.
 
 `pnpm lane:open [issue] [slug]` fetches and branches from `origin/main`, locks the lane
-`active:sourdaw-author`, then stays offline without minting or spawning `gh`. Slugs cannot be purely
-numeric: bare numbers mean issues. Supply the ticket number for `agent/<issue>/<slug>`; otherwise
-use `agent/<slug>`. PRs close their issue by default; campaign slices use `lane:publish --relates`
-to keep the umbrella open. Touch only your lane.
+`active:sourdaw-author`, then stays offline without minting or spawning `gh`. To create a dependent
+lane, pass `--stack-on <absolute-parent-lane>`; the clean, committed, owned parent must belong to the
+same primary repository, and the command records the exact parent lineage under
+`.agents/lane-stacks/`. The selector asserts caller ownership within the existing same-account trust
+boundary; role locks alone do not prove it. Slugs cannot be purely numeric: bare numbers mean issues.
+Supply the ticket number for `agent/<issue>/<slug>`; otherwise use `agent/<slug>`. PRs close their
+issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
+your lane.
+
+Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
+targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
+publication and approval require both the verified final parent head and its landed commit in the
+child history. A moved, missing, ambiguous, closed-unmerged, or racing parent blocks publication.
+`pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent head into
+only that clean owned child. After the parent squash lands, it merges the verified final parent head
+first, then the exact parent squash commit, then fetched current `main`, preserving all parent and
+child history while retaining later main edits and reversions. Resolve a conflict at any merge in
+the child, commit normally, and rerun synchronization. Never rebase,
+reset, force-push, cascade to siblings, or silently adopt a replacement parent. Deliver remains
+bottom-up and main-only; sync the child, then publish and obtain fresh Gate, review, and acceptance.
+Keep earlier slices related with `--relates` until closure is warranted, and verify the original
+end-to-end outcome on the final combined head.
 
 Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;
 global or destructive operations from any lane affect all lanes.
@@ -285,7 +314,8 @@ PR is merged or closed. Read-only `gh` is unrestricted; use it for live tracker 
 
 | Need                         | Command                                                                                                          |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Open a lane                  | `pnpm lane:open [issue] [slug]`                                                                                  |
+| Open a lane                  | `pnpm lane:open [issue] [slug] [--stack-on <absolute-parent-lane>]`                                              |
+| Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                             |
 | Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"]` |
 | Write the review bundle      | `pnpm review:prepare <pr>`                                                                                       |
 | Post `review.json`           | `pnpm review:publish <pr>`                                                                                       |
@@ -406,20 +436,23 @@ and expected results, not substituted author/CI checks; internal or developer wo
 actual validation interface. Exclude session diaries, unpublished rounds, and mutation tables.
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`, `diff.patch`,
-`pr.md`, and merge-base `contracts/`. `baseSha` and `diff.patch` use the merge-base of `origin/main`
-and PR head so advancing `main` is not shown as PR deletions. The caller adds head-specific
-`review.json` and later `discarded.json`. Paths are keyed by head sha; re-preparing the same head
-replaces only generated files, preserving caller files. Give reviewers the bundle and neutral
-acceptance conditions from the request or governing contract, not author transcripts or conclusions.
-`review:publish` prints the review id and posts as reviewer App only if GitHub's head still matches
-the bundle.
+`review-size.json`, `pr.md`, and merge-base `contracts/`. The manifest binds PR, base branch,
+merge-base, and head. The diff and deterministic size report use the actual base/head merge-base;
+handwritten, test, documentation, and generated changes (including lockfiles) remain visible as
+separate groups, and unknown paths count as handwritten. Paths are keyed by head sha. Re-preparing the same head replaces generated
+files and preserves caller files only while the bound base name and merge-base context match; a
+populated legacy bundle without base identity cannot be reused. Unrelated movement of the base tip is
+allowed when that context is unchanged. Give reviewers the bundle and neutral acceptance conditions
+from the request or governing contract, not author transcripts or conclusions. `review:publish`
+prints the review id and posts as reviewer App only if GitHub's live head matches the bundle; fresh
+approvals also require matching base context.
 
 After independent review, write `acceptance.json` beside `review.json` in that head's existing bundle.
 `review:accept <pr>` accepts only an APPROVE document with no inline comments and the same head-bound
 evidence schema as reviewer approval. It requires the reviewer Bot's current-head approval and all
-threads resolved before publishing final acceptance as the immutable orchestrator User. The public
-review identifies it as orchestrator acceptance on behalf of `jcosta33`; it does not claim the user
-personally reviewed the code. Preserve blind reviewer dispatch and independently inspect the final
+threads resolved before publishing final acceptance as the immutable orchestrator User. The posting
+identity supplies the role; generated text must not announce acceptance on another person's behalf or
+claim personal human review. Preserve blind reviewer dispatch and independently inspect the final
 head before accepting it.
 
 Read every changed line and surrounding code as needed. Comment on the defective line with one
@@ -436,15 +469,29 @@ Approve when the change improves the system, even if it is not perfect. Do not a
 makes it worse. Style-guide and code-craft violations block; personal style does not. An approval is
 never empty: its body states what the reviewer attacked and what held.
 
-New APPROVE publication requires `evidence: { headSha, claims: [{ observable, verification, observed }] }`
-in `review.json`. Bind `headSha` to the reviewed bundle head. Supply at least one claim, with every
-value a nonblank, trimmed, single-line string: `observable` is expected behavior from the request or
-contract, `verification` is the exact command, check URL, or source comparison, and `observed` is the
-decisive result or excerpt. `review:publish` appends this readable record to the public approval body
-before journaling its payload digest. Record completeness and head binding do not prove truthful
-execution; the orchestrator remains responsible for verifying the claims. REQUEST_CHANGES must not
-carry approval evidence. Historical documents remain readable for exact publication recovery;
-existing approvals are not invalidated, but new publication requires this record.
+New APPROVE publication requires `format: compact-v1` and
+`evidence: { headSha, claims: [{ observable, verification, observed }] }` in `review.json`. Bind
+`headSha` to the reviewed bundle head. Supply at least one claim, with every value a nonblank,
+trimmed, single-line string: `observable` is expected behavior from the request or contract,
+`verification` is the exact command, check URL, or source comparison, and `observed` is the decisive
+result or excerpt. Keep the body to a short conclusion. Publication renders a generated
+`Evidence SHA-256: <digest>` footer that binds the retained structured evidence without publishing
+its prose. The complete rendered body must fit 600 Unicode code points; reject excess and report the
+actual and allowed lengths, never truncate. Record completeness, the digest, and head binding do not
+prove truthful execution; the orchestrator remains responsible for verifying the claims.
+REQUEST_CHANGES must not carry approval evidence. Unknown fresh formats fail closed. Historical
+unversioned documents remain readable only for exact reconstruction and recovery; never rewrite old
+bundles or posted reviews.
+
+A stack child may receive `REQUEST_CHANGES` while its verified parent branch is its base. Fresh
+APPROVE publication and acceptance require base `main`; for a registered child they also require the
+bundle's live context and proof that reconciliation contains the recorded parent's landed commit.
+
+Do not fill approvals, acceptance, delivery summaries, or closing comments with routine successful-CI
+narration, passed-check inventories, or links that merely repeat required-check status. Keep
+discriminating checks in structured evidence and always disclose material failed, skipped, or
+incomplete verification. Report the delivered outcome and material exceptions; do not add a closing
+comment that only repeats the merged state.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
 Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
@@ -470,9 +517,10 @@ base compatibility: delivery retries one transient `UNKNOWN`, refusing conflicts
 `UNKNOWN`. CI's aggregate merge-state label cannot substitute.
 
 Every consequential claim needs discriminating proof, such as a test failing on revert or a
-measurement at the user boundary; approval alone is weak. Keep detailed logs in the session and put
-the concise head-bound verification record in the approval. Never include secrets or sensitive log
-data in the public review.
+measurement at the user boundary; approval alone is weak. Keep detailed logs in the session and the
+concise head-bound verification record in structured bundle evidence. The public approval carries
+only its short conclusion and evidence digest. Never include secrets or sensitive log data in the
+public review.
 
 `pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after BOTH validation points
 confirm both the immutable reviewer Bot and orchestrator User `APPROVED` the current head, with final
@@ -485,11 +533,14 @@ malformed, or unavailable evidence does not itself block delivery. GitHub still 
 ruleset's required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts
 or merge attempts. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
 rules from the launcher's pinned `origin/main` workflow copy; lanes cannot select or reshape it.
-`lane:publish` targets only `main`; `deliver` refuses any other base as an unsanctioned retarget to an
-unreviewed branch. Do not merge any other way.
+`lane:publish` targets `main` for ordinary lanes and the verified parent branch for registered stack
+children. `deliver` remains main-only and refuses any other base; reconcile a landed parent through
+`lane:sync-parent`, republish the child against main, and obtain fresh review before delivery. Do not
+merge any other way.
 
-Keep batches small, live lanes few, and merges prompt. Authors must split diffs reviewers cannot
-attack whole. Drain before filling: open no lane while a finished head waits only on review or merge.
+Keep batches small, live lanes few, and merges prompt. If reviewers cannot attack a diff whole,
+reassess its scope under Delegation before review. Drain before filling: open no lane while a finished
+head waits only on review or merge.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety

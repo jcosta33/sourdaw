@@ -27,6 +27,9 @@ target/
 # Review bundles produced by `pnpm review:prepare`
 .agents/review-bundles/
 
+# Native dependent-lane descriptors; kept in the protected primary checkout
+.agents/lane-stacks/
+
 # Strand receipts produced by `pnpm lane:strand`; they outlive the worktrees they record
 .agents/lane-strands/
 

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,10 +11,23 @@ import {
     parsePrepareReviewArgs,
     prepareReview,
     reviewBundlePath,
+    shellPort,
     sweepStaleBundleSiblings,
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
+
+import type { GhSession } from '../githubAppIdentity.ts';
+
+function git(root: string, ...args: string[]): string {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+function commitAll(root: string, message: string): string {
+    git(root, 'add', '.');
+    git(root, 'commit', '-m', message);
+    return git(root, 'rev-parse', 'HEAD');
+}
 
 function pullRequest(overrides: Partial<ReviewPullRequest> = {}): ReviewPullRequest {
     return {
@@ -41,6 +55,7 @@ function fakePort(root: string) {
             return 'mergebasesha';
         },
         diff: (base, head) => `diff ${base} ${head}\n`,
+        numstat: () => Buffer.from(['4\t1\tsrc/app.ts', '2\t2\tscripts/__tests__/app.spec.ts', ''].join('\0')),
         showFile: (sha, path) => {
             calls.push(`show:${sha}:${path}`);
             if (path === 'AGENTS.md') {
@@ -80,6 +95,7 @@ describe('review prepare', () => {
             expect(calls).toContain('show:mergebasesha:.agents/decisions/0026-ownership-by-exception.md');
             expect(JSON.parse(files['manifest.json'] ?? '{}')).toEqual({
                 pr: 42,
+                baseRefName: 'main',
                 baseSha: 'mergebasesha',
                 headSha: 'headsha',
                 generated: [
@@ -89,7 +105,17 @@ describe('review prepare', () => {
                     'diff.patch',
                     'manifest.json',
                     'pr.md',
+                    'review-size.json',
                 ],
+            });
+            expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
+                files: 2,
+                added: 6,
+                deleted: 3,
+                groups: {
+                    handwritten: { files: 1, added: 4, deleted: 1 },
+                    tests: { files: 1, added: 2, deleted: 2 },
+                },
             });
             expect(files['diff.patch']).toBe('diff mergebasesha headsha\n');
             expect(files['pr.md']).toContain('feat(vcs): add identities');
@@ -140,6 +166,100 @@ describe('review prepare', () => {
             expect(files['contracts/.agents/decisions/0026-ownership-by-exception.md']).toBe(
                 'base .agents/decisions/0026-ownership-by-exception.md\n'
             );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('summarizes only the child diff from the real base/head merge-base after main advances', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-git-'));
+        try {
+            git(root, 'init', '-b', 'main');
+            git(root, 'config', 'user.email', 'review-test@example.com');
+            git(root, 'config', 'user.name', 'Review Test');
+            writeFileSync(join(root, 'base.txt'), 'base\n');
+            commitAll(root, 'base');
+
+            git(root, 'switch', '-c', 'child');
+            writeFileSync(join(root, 'child.ts'), 'child one\nchild two\n');
+            const childHead = commitAll(root, 'child');
+
+            git(root, 'switch', 'main');
+            writeFileSync(join(root, 'main-only.ts'), 'main one\nmain two\nmain three\n');
+            const advancedMain = commitAll(root, 'advance main');
+
+            const session: GhSession = { configDir: join(root, '.gh'), env: process.env, dispose: () => undefined };
+            const actualShell = shellPort(session, root);
+            const { port, files } = fakePort(root);
+            port.pullRequest = () => pullRequest({ baseRefOid: advancedMain, headRefOid: childHead });
+            port.mergeBase = actualShell.mergeBase;
+            port.numstat = actualShell.numstat;
+
+            prepareReview(42, port);
+
+            expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
+                files: 1,
+                added: 2,
+                deleted: 0,
+                groups: { handwritten: { files: 1, added: 2, deleted: 0 } },
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves caller review files when the base tip moves but its name and merge-base stay unchanged', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'review.json'), 'caller review\n');
+            port.pullRequest = () => pullRequest({ baseRefOid: 'new-main-tip' });
+
+            expect(() => prepareReview(42, port)).not.toThrow();
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller review\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['base branch', { baseRefName: 'parent' }, 'mergebasesha'],
+        ['merge-base', {}, 'different-merge-base'],
+    ])('refuses to replace a populated same-head bundle when its %s changes', (_label, overrides, nextMergeBase) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'review.json'), 'caller review\n');
+            port.pullRequest = () => pullRequest(overrides);
+            port.mergeBase = () => nextMergeBase;
+
+            expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
+            expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller review\n');
+            expect(JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8'))).toMatchObject({
+                baseRefName: 'main',
+                baseSha: 'mergebasesha',
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses to replace a populated legacy same-head bundle that lacks base identity', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        const destination = reviewBundlePath(root, 42, 'headsha');
+        try {
+            mkdirSync(destination, { recursive: true });
+            writeFileSync(
+                join(destination, 'manifest.json'),
+                `${JSON.stringify({ pr: 42, baseSha: 'mergebasesha', headSha: 'headsha' })}\n`
+            );
+            writeFileSync(join(destination, 'acceptance.json'), 'caller acceptance\n');
+
+            expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
+            expect(readFileSync(join(destination, 'acceptance.json'), 'utf8')).toBe('caller acceptance\n');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
