@@ -1,0 +1,20 @@
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  s_87ab0a2f60ccf8::t_0753a2f6afb4cd 144-153,209-210
+  s_87ab0a2f60ccf8::t_1af555d91c27ea 1-143,154-208,211-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6f16026e7ebfdb1ccc897b414abaf38ef3e31253",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
