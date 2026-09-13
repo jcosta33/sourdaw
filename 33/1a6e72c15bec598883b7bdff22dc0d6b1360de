@@ -1,0 +1,14 @@
+crates/daw-collab/src/document_store.rs
+  h_1228e573df1f42 235-240,244,246,248-252,254-257,260-261,263-264,268-269,321-348,425-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "331a6e72c15bec598883b7bdff22dc0d6b1360de",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
