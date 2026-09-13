@@ -27,6 +27,7 @@ export type PullRequestListing = { pullRequests: BranchPullRequest[]; complete: 
 export type PruneRemoteBranchesPort = {
     listBranches: () => RemoteBranch[];
     pullRequestsFor: (branches: string[]) => Map<string, PullRequestListing>;
+    baseDependentsFor: (branches: string[]) => Map<string, PullRequestListing>;
     branchTip: (name: string) => string | undefined;
     deleteBranch: (name: string) => DeleteOutcome;
 };
@@ -120,6 +121,30 @@ function fetchPullRequestsInBatches(names: string[], port: PruneRemoteBranchesPo
         }
     }
     return result;
+}
+
+function fetchBaseDependentsInBatches(names: string[], port: PruneRemoteBranchesPort): Map<string, PullRequestListing> {
+    const result = new Map<string, PullRequestListing>();
+    for (const batch of batchNames(names, BATCH_SIZE)) {
+        let batchResult: Map<string, PullRequestListing>;
+        try {
+            batchResult = port.baseDependentsFor(batch);
+        } catch {
+            batchResult = new Map();
+        }
+        for (const name of batch) {
+            result.set(name, batchResult.get(name) ?? { pullRequests: [], complete: false });
+        }
+    }
+    return result;
+}
+
+function dependentBlockReason(listing: PullRequestListing): string | undefined {
+    if (!listing.complete) {
+        return 'base-dependent pull requests not fully listed';
+    }
+    const dependent = listing.pullRequests.find((pullRequest) => pullRequest.state === 'OPEN');
+    return dependent === undefined ? undefined : `open base-dependent pull request #${dependent.number}`;
 }
 
 function requireListing(prMap: Map<string, PullRequestListing>, name: string): PullRequestListing {
@@ -267,6 +292,18 @@ function applySpentBranches(
             log(`kept ${branch.name}: ${recheckDisplayClass(recheckClass, tipMoved)} at re-check`);
             continue;
         }
+        let freshDependents: PullRequestListing;
+        try {
+            freshDependents = requireListing(port.baseDependentsFor([branch.name]), branch.name);
+        } catch {
+            freshDependents = { pullRequests: [], complete: false };
+        }
+        const dependentReason = dependentBlockReason(freshDependents);
+        if (dependentReason !== undefined) {
+            keptAtRecheck += 1;
+            log(`kept ${branch.name}: ${dependentReason} at re-check`);
+            continue;
+        }
         let outcome: DeleteOutcome;
         try {
             outcome = applyDeletion(branch, freshPullRequests, port, log);
@@ -295,6 +332,20 @@ export function pruneRemoteBranches(
         port
     );
     const classes = classifyBranches(branches, prMap);
+    const dependents = fetchBaseDependentsInBatches(
+        branches.map((branch) => branch.name),
+        port
+    );
+    for (const branch of branches) {
+        if (classes.get(branch.name) !== 'spent') {
+            continue;
+        }
+        const reason = dependentBlockReason(requireListing(dependents, branch.name));
+        if (reason !== undefined) {
+            classes.set(branch.name, 'open');
+            log(`kept ${branch.name}: ${reason}`);
+        }
+    }
     printPlan(branches, classes, prMap, log);
     const spent = branches
         .filter((branch) => classes.get(branch.name) === 'spent')
@@ -391,6 +442,16 @@ function pullRequestBatchQuery(size: number): string {
     return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
 }
 
+function baseDependentBatchQuery(size: number): string {
+    const params = Array.from({ length: size }, (_unused, index) => `$n${index}:String!`).join(',');
+    const aliases = Array.from(
+        { length: size },
+        (_unused, index) =>
+            `b${index}: pullRequests(baseRefName:$n${index}, first:10, states:[OPEN], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
+    ).join(' ');
+    return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
+}
+
 export function parsePullRequestListing(alias: unknown, name: string): PullRequestListing {
     const node = alias as { nodes?: unknown; totalCount?: unknown } | undefined;
     if (node === undefined || !Array.isArray(node.nodes)) {
@@ -421,6 +482,22 @@ function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullReque
         result.set(name, parsePullRequestListing(repository[`b${index}`], name));
     }
     return result;
+}
+
+function baseDependentsForBranches(names: string[], gh: Gh): Map<string, PullRequestListing> {
+    if (names.length === 0) {
+        return new Map();
+    }
+    const query = baseDependentBatchQuery(names.length);
+    const fields = names.flatMap((name, index) => ['-f', `n${index}=${name}`]);
+    const response = graphql(gh, query, fields, 'base-dependent pull requests') as {
+        data?: { repository?: Record<string, unknown> };
+    };
+    const repository = response.data?.repository;
+    if (repository === undefined) {
+        fail('invalid base-dependent pull-request response');
+    }
+    return new Map(names.map((name, index) => [name, parsePullRequestListing(repository[`b${index}`], name)]));
 }
 
 function fetchBranchTip(name: string, gh: Gh): string | undefined {
@@ -465,6 +542,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
     return {
         listBranches: () => listRemoteBranches(gh),
         pullRequestsFor: (names) => pullRequestsForBranches(names, gh),
+        baseDependentsFor: (names) => baseDependentsForBranches(names, gh),
         branchTip: (name) => fetchBranchTip(name, gh),
         deleteBranch: (name) => deleteRemoteBranch(name, gh),
     };

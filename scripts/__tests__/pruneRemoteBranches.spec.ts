@@ -141,6 +141,7 @@ type FakePullRequestsResult = BranchPullRequest[] | PullRequestListing;
 type FakePortInput = {
     branches: RemoteBranch[];
     pullRequestsFor: (names: string[]) => Map<string, FakePullRequestsResult>;
+    baseDependentsFor?: (names: string[]) => Map<string, FakePullRequestsResult>;
     branchTip?: (name: string) => string | undefined;
     deleteBranch?: (name: string) => DeleteOutcome;
 };
@@ -166,6 +167,10 @@ function fakePort(input: FakePortInput): {
         pullRequestsFor: (names) => {
             pullRequestBatchSizes.push(names.length);
             const raw = input.pullRequestsFor(names);
+            return new Map(names.map((name) => [name, toListing(raw.get(name))]));
+        },
+        baseDependentsFor: (names) => {
+            const raw = input.baseDependentsFor?.(names) ?? new Map();
             return new Map(names.map((name) => [name, toListing(raw.get(name))]));
         },
         branchTip: (name) => {
@@ -203,6 +208,96 @@ function threeSpentMaster(): Map<string, BranchPullRequest[]> {
 }
 
 describe('pruneRemoteBranches', () => {
+    it('keeps a spent parent branch when a complete plan-time read finds an open base-dependent pull request', () => {
+        const target = branch('parent', 'tip-parent');
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['parent', [mergedPr(1, 'tip-parent')]]]),
+            baseDependentsFor: () => new Map([['parent', [openPr(2, 'tip-child')]]]),
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept parent: open base-dependent pull request #2');
+    });
+
+    it('keeps a spent branch when its plan-time base-dependent listing is incomplete', () => {
+        const target = branch('parent', 'tip-parent');
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['parent', [mergedPr(1, 'tip-parent')]]]),
+            baseDependentsFor: () => new Map([['parent', { pullRequests: [openPr(2, 'tip-child')], complete: false }]]),
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept parent: base-dependent pull requests not fully listed');
+    });
+
+    it('keeps every candidate in a batch when the plan-time base-dependent query fails', () => {
+        const targets = [branch('parent-a', 'tip-a'), branch('parent-b', 'tip-b')];
+        const { port, deleteCalls } = fakePort({
+            branches: targets,
+            pullRequestsFor: () =>
+                new Map([
+                    ['parent-a', [mergedPr(1, 'tip-a')]],
+                    ['parent-b', [mergedPr(2, 'tip-b')]],
+                ]),
+            baseDependentsFor: () => {
+                throw new Error('query failed');
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept parent-a: base-dependent pull requests not fully listed');
+        expect(lines).toContain('kept parent-b: base-dependent pull requests not fully listed');
+    });
+
+    it('keeps a spent branch when the final base-dependent reread finds a newly opened child', () => {
+        const target = branch('parent', 'tip-parent');
+        let dependentReads = 0;
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['parent', [mergedPr(1, 'tip-parent')]]]),
+            baseDependentsFor: () => {
+                dependentReads += 1;
+                return new Map([['parent', dependentReads === 1 ? [] : [openPr(3, 'tip-late-child')]]]);
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(dependentReads).toBe(2);
+        expect(lines).toContain('kept parent: open base-dependent pull request #3 at re-check');
+    });
+
+    it('keeps a spent branch when the final base-dependent reread is incomplete', () => {
+        const target = branch('parent', 'tip-parent');
+        let dependentReads = 0;
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['parent', [mergedPr(1, 'tip-parent')]]]),
+            baseDependentsFor: () => {
+                dependentReads += 1;
+                return new Map([
+                    [
+                        'parent',
+                        dependentReads === 1 ? [] : { pullRequests: [openPr(3, 'tip-late-child')], complete: false },
+                    ],
+                ]);
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept parent: base-dependent pull requests not fully listed at re-check');
+    });
     it('should make zero deleteBranch calls on a dry run and print the would-delete count', () => {
         const master = threeSpentMaster();
         const { port, deleteCalls } = fakePort({
