@@ -484,7 +484,7 @@ function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullReque
     return result;
 }
 
-function baseDependentsForBranches(names: string[], gh: Gh): Map<string, PullRequestListing> {
+export function queryBaseDependents(names: string[], gh: Gh): Map<string, PullRequestListing> {
     if (names.length === 0) {
         return new Map();
     }
@@ -542,7 +542,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
     return {
         listBranches: () => listRemoteBranches(gh),
         pullRequestsFor: (names) => pullRequestsForBranches(names, gh),
-        baseDependentsFor: (names) => baseDependentsForBranches(names, gh),
+        baseDependentsFor: (names) => queryBaseDependents(names, gh),
         branchTip: (name) => fetchBranchTip(name, gh),
         deleteBranch: (name) => deleteRemoteBranch(name, gh),
     };

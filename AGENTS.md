@@ -256,7 +256,8 @@ publication. `pnpm lane:sync-parent --lane <absolute-child-lane>` merges the ver
 head, or merges `main` after the parent lands, into only that clean owned child. Resolve conflicts in
 the child and commit normally. Never rebase, reset, force-push, cascade to siblings, or silently adopt
 a replacement parent. Deliver remains bottom-up and main-only; after a parent lands, sync and publish
-the child and obtain fresh Gate, review, and acceptance.
+the child and obtain fresh Gate, review, and acceptance. Keep earlier slices related with `--relates`
+until closure is warranted, and verify the original end-to-end outcome on the final combined head.
 
 Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;
 global or destructive operations from any lane affect all lanes.
@@ -435,8 +436,8 @@ files and preserves caller files only while the bound base name and merge-base c
 populated legacy bundle without base identity cannot be reused. Unrelated movement of the base tip is
 allowed when that context is unchanged. Give reviewers the bundle and neutral acceptance conditions
 from the request or governing contract, not author transcripts or conclusions. `review:publish`
-prints the review id and posts as reviewer App only if GitHub's live head and base context still match
-the bundle.
+prints the review id and posts as reviewer App only if GitHub's live head matches the bundle; fresh
+approvals also require matching base context.
 
 After independent review, write `acceptance.json` beside `review.json` in that head's existing bundle.
 `review:accept <pr>` accepts only an APPROVE document with no inline comments and the same head-bound

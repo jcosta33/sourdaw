@@ -8,6 +8,7 @@ import {
     parsePruneRemoteBranchesArgs,
     parsePullRequestListing,
     pruneRemoteBranches,
+    queryBaseDependents,
     type BranchPullRequest,
     type DeleteOutcome,
     type PruneRemoteBranchesArgs,
@@ -102,6 +103,37 @@ describe('parsePullRequestListing', () => {
         expect(() => parsePullRequestListing({ totalCount: 0 }, 'delta')).toThrow(
             'missing pull-request alias for delta'
         );
+    });
+});
+
+describe('queryBaseDependents', () => {
+    it('queries open pull requests by base branch with supplied variables and preserves incomplete pagination', () => {
+        const calls: string[][] = [];
+        const nodes = Array.from({ length: 10 }, (_unused, index) => openPr(index + 1, `child-tip-${index}`));
+        const runner = (args: string[]): string => {
+            calls.push(args);
+            return JSON.stringify({ data: { repository: { b0: { totalCount: 11, nodes } } } });
+        };
+
+        expect(queryBaseDependents(['parent/one'], runner).get('parent/one')).toEqual({
+            pullRequests: nodes,
+            complete: false,
+        });
+        expect(calls).toHaveLength(1);
+        const call = calls[0] ?? [];
+        expect(call).toContain('-f');
+        expect(call).toContain('n0=parent/one');
+        expect(call.join(' ')).toContain('pullRequests(baseRefName:$n0');
+        expect(call.join(' ')).toContain('states:[OPEN]');
+        expect(call.join(' ')).not.toContain('headRefName');
+    });
+
+    it('propagates query errors so the pruning guard can preserve the whole affected batch', () => {
+        const runner = (): string => {
+            throw new Error('GraphQL unavailable');
+        };
+
+        expect(() => queryBaseDependents(['parent'], runner)).toThrow('GraphQL unavailable');
     });
 });
 
