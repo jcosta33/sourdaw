@@ -165,6 +165,17 @@ function isCompleteRestoreCompRegionIntervalPayload(value: unknown): value is Co
 
 type CompPrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> | HandlerMaterializationContext;
 
+function canAppendRestoredLanes(state: TakeLaneStoreValue, restoredLanes: TakeLaneStoreValue['lanes']): boolean {
+    const laneIds = new Set(state.lanes.map((lane) => lane.id));
+    for (const lane of restoredLanes) {
+        if (laneIds.has(lane.id)) {
+            return false;
+        }
+        laneIds.add(lane.id);
+    }
+    return true;
+}
+
 function projectCompRegionPrefix(
     initialState: TakeLaneStoreValue,
     context: CompPrefixContext | undefined,
@@ -192,7 +203,7 @@ function projectCompRegionPrefix(
             patch = action.payload;
         } else if (action.type === 'restoreTrack') {
             const restoredLanes = decodeExactTakeLaneSnapshots(action.payload.takeLaneSnapshots);
-            if (!restoredLanes) {
+            if (!restoredLanes || !canAppendRestoredLanes(state, restoredLanes)) {
                 return null;
             }
             state = { lanes: [...state.lanes, ...restoredLanes] };

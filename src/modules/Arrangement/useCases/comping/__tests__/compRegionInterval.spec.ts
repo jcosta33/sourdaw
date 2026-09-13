@@ -221,6 +221,19 @@ describe('compRegionInterval', () => {
         expect(projected?.lanes[0]).not.toBe(restoredLane);
         expect(projected?.lanes[0]?.takes[0]).not.toBe(restoredLane.takes[0]);
 
+        const duplicateLaneId = { ...restoredLane, trackId: 'track-2' };
+        const duplicateSnapshotContext = {
+            actions: [restoreTrackAction([restoredLane, duplicateLaneId]), inverse],
+            actionIndex: 1,
+        };
+        expect(compRegionInterval.patchApplies(inverse.payload, duplicateSnapshotContext)).toBe(false);
+        expect(
+            compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(
+                { lanes: [] },
+                duplicateSnapshotContext
+            )
+        ).toBeNull();
+
         const missingLaneField = {
             id: restoredLane.id,
             trackId: restoredLane.trackId,
