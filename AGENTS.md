@@ -253,6 +253,11 @@ Supply the ticket number for `agent/<issue>/<slug>`; otherwise use `agent/<slug>
 issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
 your lane.
 
+A lane records its authoring model when opened: `--model <family>`, the lowercase public model
+family name without deployment prefixes or date suffixes. `lane:publish` labels the PR
+`model:<family>` and carries the milestone and project membership of the bound issue, or of
+`--milestone`/`--project` by open title on issueless lanes — left empty rather than forced.
+
 Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
 targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
 publication and approval require both the verified final parent head and its landed commit in the
@@ -297,24 +302,28 @@ After create, attach parent/child issues as GitHub sub-issues.
 Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
 milestone by title, never UI number (validation against **open** milestones rejects it before filing),
 and roadmap project membership when applicable; leave either empty rather than force a fit.
-No sanctioned script edits existing issues; later corrections require manual `gh`. Read live metadata
+No sanctioned script edits existing issues; later corrections require manual `gh`, as does
+backfilling a pull request's own labels, milestone, or project membership when it predates
+`lane:publish`'s metadata assertion. Read live metadata
 with `gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`,
 never a recorded list.
 
 ## Delivery
 
 Use trusted `pnpm` scripts for every covered GitHub write; their role identities and delivery gates
-exclude hand-rolled equivalents or bypasses. The only manual `gh` write exception is correcting an
-issue's own state, labels, milestone, project membership, or sub-issue links. Manual writes use the
-operator account. Scripts use their designated App identities except final orchestrator acceptance
-and merge, which use the verified `jcosta33` user identity. No manual `gh pr` write
-qualifies. Lane tooling owns every `git push`: other pushes break review anchors and can strand lanes.
+exclude hand-rolled equivalents or bypasses. The only manual `gh` write exceptions are correcting
+an issue's own state, labels, milestone, project membership, or sub-issue links, and backfilling a
+pull request's own labels, milestone, or project membership when it predates `lane:publish`'s
+metadata assertion. Manual writes use the operator account. Scripts use their designated App
+identities except final orchestrator acceptance and merge, which use the verified `jcosta33` user
+identity. No other manual `gh pr` write qualifies. Lane tooling owns every `git push`: other pushes
+break review anchors and can strand lanes.
 Use `branch:prune` for remote deletion; it defaults to dry run and deletes only branches whose every
 PR is merged or closed. Read-only `gh` is unrestricted; use it for live tracker state.
 
 | Need                         | Command                                                                                                          |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Open a lane                  | `pnpm lane:open [issue] [slug] [--stack-on <absolute-parent-lane>]`                                              |
+| Open a lane                  | `pnpm lane:open [issue] [slug] [--model <family>] [--stack-on <absolute-parent-lane>]`                           |
 | Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                             |
 | Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"]` |
 | Write the review bundle      | `pnpm review:prepare <pr>`                                                                                       |

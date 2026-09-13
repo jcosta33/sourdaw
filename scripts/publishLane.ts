@@ -75,7 +75,25 @@ export type StackPublicationContext = {
 };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <family>] [--milestone <title>] [--project <title>]';
+
+/**
+ * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
+ * trusted publish snapshot's dependency graph is closed, so `publishLane.ts` cannot take a new
+ * local dependency to reach `openLane.ts`'s copy. The specs hold the two spellings to one rule.
+ */
+const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
+
+const AUTHOR_MODEL_RULE =
+    'the lowercase public model family name, without deployment prefixes or date suffixes, e.g. glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
+
+function normalizeAuthorModel(token: string): string {
+    const normalized = token.trim().toLowerCase();
+    if (!AUTHOR_MODEL_PATTERN.test(normalized)) {
+        fail(`--model must be ${AUTHOR_MODEL_RULE}`);
+    }
+    return normalized;
+}
 
 const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
@@ -114,6 +132,172 @@ export function trustedPublishRuntime(env: NodeJS.ProcessEnv = process.env): Tru
     return { primaryRoot, commonDir, gitPath, ghPath, originCommit };
 }
 
+/**
+ * Flag-authored metadata overrides for one publication. `model` is pre-normalized by argv parsing;
+ * `milestone` and `projects` are validated against live tracker state before anything is written.
+ */
+export type PublishMetadataFlags = { model?: string; milestone?: string; projects?: string[] };
+
+export type PullRequestMetadata = { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
+
+/** The metadata a publication must leave on its pull request. */
+export type PublishMetadataTarget = {
+    model: string;
+    label: string;
+    milestoneTitle?: string;
+    projectTitles: string[];
+};
+
+/** The pieces of the target a pull request is missing, or `undefined` when it is already complete. */
+export type MetadataEditPlan = { addLabel: boolean; milestoneTitle?: string; addProjectTitles: string[] };
+
+export const MODEL_LABEL_COLOR = '8250df';
+
+export function modelLabelName(model: string): string {
+    return `model:${model}`;
+}
+
+/**
+ * `--force` turns create into create-or-update, so this is the idempotent way to make sure the
+ * label exists before any pull-request write references it.
+ */
+export function ensureModelLabelArgs(model: string): string[] {
+    return [
+        'label',
+        'create',
+        modelLabelName(model),
+        '--color',
+        MODEL_LABEL_COLOR,
+        '--description',
+        `Authored by ${model}`,
+        '--force',
+    ];
+}
+
+function titleOf(value: unknown): string | undefined {
+    if (typeof value === 'object' && value !== null && 'title' in value && typeof value.title === 'string') {
+        return value.title;
+    }
+    return undefined;
+}
+
+export type IssueTrackerRow = { milestone?: { title?: unknown } | null; projectItems?: unknown[] };
+
+export function trackerMetadataFromIssueRow(row: IssueTrackerRow): {
+    milestoneTitle?: string;
+    projectTitles: string[];
+} {
+    const milestoneTitle = titleOf(row.milestone);
+    const projectTitles = (row.projectItems ?? []).flatMap((item) => {
+        const title = titleOf(item);
+        return title === undefined ? [] : [title];
+    });
+    return {
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles: [...new Set(projectTitles)],
+    };
+}
+
+export function openMilestoneTitlesFromRows(rows: unknown): string[] {
+    if (!Array.isArray(rows)) {
+        fail('open milestone lookup returned malformed data');
+    }
+    return rows.flatMap((row) => {
+        const title = titleOf(row);
+        return title === undefined ? [] : [title];
+    });
+}
+
+/** `gh project list --format json` answers `{"projects":[...],"totalCount":N}`, not a bare array. */
+export function projectTitlesFromListing(listing: unknown): string[] {
+    if (
+        typeof listing !== 'object' ||
+        listing === null ||
+        !('projects' in listing) ||
+        !Array.isArray(listing.projects)
+    ) {
+        fail('project list returned malformed data');
+    }
+    return listing.projects.flatMap((project) => {
+        const title = titleOf(project);
+        return title === undefined ? [] : [title];
+    });
+}
+
+export type PullRequestMetadataRow = {
+    labels?: unknown[];
+    milestone?: { title?: unknown } | null;
+    projectItems?: unknown[];
+};
+
+export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullRequestMetadata {
+    const milestoneTitle = titleOf(row.milestone);
+    const labels = (row.labels ?? []).flatMap((label) => {
+        if (typeof label === 'string') {
+            return [label];
+        }
+        if (typeof label === 'object' && label !== null && 'name' in label && typeof label.name === 'string') {
+            return [label.name];
+        }
+        return [];
+    });
+    const projectTitles = (row.projectItems ?? []).flatMap((item) => {
+        const title = titleOf(item);
+        return title === undefined ? [] : [title];
+    });
+    return {
+        labels,
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles: [...new Set(projectTitles)],
+    };
+}
+
+export function assertOpenMilestoneTitle(title: string, openTitles: string[]): void {
+    if (!openTitles.some((open) => open.toLowerCase() === title.toLowerCase())) {
+        fail(`--milestone "${title}" matches no open milestone in ${REQUIRED_REPOSITORY}`);
+    }
+}
+
+export function assertKnownProjectTitle(title: string, knownTitles: string[]): void {
+    if (!knownTitles.some((known) => known.toLowerCase() === title.toLowerCase())) {
+        fail(`--project "${title}" matches no project in gh project list for ${REQUIRED_REPOSITORY}'s owner`);
+    }
+}
+
+/**
+ * The missing pieces only, so a rerun after a partial metadata write converges without churning
+ * what a previous publish already set. `undefined` means the pull request already carries the
+ * whole target and no `gh pr edit` is issued at all.
+ */
+export function metadataEditPlan(
+    target: PublishMetadataTarget,
+    current: PullRequestMetadata
+): MetadataEditPlan | undefined {
+    const addLabel = !current.labels.includes(target.label);
+    const milestoneTitle =
+        target.milestoneTitle !== undefined && current.milestoneTitle !== target.milestoneTitle
+            ? target.milestoneTitle
+            : undefined;
+    const addProjectTitles = target.projectTitles.filter((title) => !current.projectTitles.includes(title));
+    if (!addLabel && milestoneTitle === undefined && addProjectTitles.length === 0) {
+        return undefined;
+    }
+    return { addLabel, ...(milestoneTitle === undefined ? {} : { milestoneTitle }), addProjectTitles };
+}
+
+export function applyPullRequestMetadataArgs(number: number, label: string, plan: MetadataEditPlan): string[] {
+    return [
+        'pr',
+        'edit',
+        String(number),
+        '--repo',
+        REQUIRED_REPOSITORY,
+        ...(plan.addLabel ? ['--add-label', label] : []),
+        ...(plan.milestoneTitle === undefined ? [] : ['--milestone', plan.milestoneTitle]),
+        ...plan.addProjectTitles.flatMap((title) => ['--add-project', title]),
+    ];
+}
+
 export type PublishLanePort = {
     baseSha: () => string;
     worktrees: () => PublishWorktree[];
@@ -132,6 +316,14 @@ export type PublishLanePort = {
     reportDiff?: (lane: string, base: string, head: string) => void;
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
+    saveAuthorModel: (branch: string, model: string) => void;
+    readAuthorModel: (branch: string) => string | undefined;
+    ensureModelLabel: (model: string) => void;
+    readIssueTrackerMetadata: (issue: number) => { milestoneTitle?: string; projectTitles: string[] };
+    openMilestoneTitles: () => string[];
+    knownProjectTitles: () => string[];
+    readPullRequestMetadata: (number: number) => PullRequestMetadata;
+    applyPullRequestMetadata: (number: number, label: string, plan: MetadataEditPlan) => void;
     log: (message: string) => void;
     guardFailure: (laneName: string) => GuardFailureReceipt | undefined;
 };
@@ -142,6 +334,9 @@ export function parsePublishLaneArgs(args: string[]): {
     relationship?: IssueRelationship;
     testInstructions?: string;
     summary?: string;
+    model?: string;
+    milestone?: string;
+    projects?: string[];
     help: boolean;
 } {
     if (args[0] === '--help') {
@@ -155,6 +350,9 @@ export function parsePublishLaneArgs(args: string[]): {
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
     let summary: string | undefined;
+    let model: string | undefined;
+    let milestone: string | undefined;
+    const projects: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
         if (arg === '--relates') {
@@ -182,6 +380,33 @@ export function parsePublishLaneArgs(args: string[]): {
             index += 1;
             continue;
         }
+        if (arg === '--model') {
+            const value = args[index + 1];
+            if (model !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            model = normalizeAuthorModel(value);
+            index += 1;
+            continue;
+        }
+        if (arg === '--milestone') {
+            const value = args[index + 1];
+            if (milestone !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            milestone = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--project') {
+            const value = args[index + 1];
+            if (value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            projects.push(value);
+            index += 1;
+            continue;
+        }
         if (arg === '--lane') {
             const value = args[index + 1];
             if (lanePath !== undefined || issue !== undefined || value === undefined || value.startsWith('--')) {
@@ -205,6 +430,9 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
         ...(summary === undefined ? {} : { summary }),
+        ...(model === undefined ? {} : { model }),
+        ...(milestone === undefined ? {} : { milestone }),
+        ...(projects.length === 0 ? {} : { projects: [...new Set(projects)] }),
         help: false,
     };
 }
@@ -451,7 +679,8 @@ export function publishLane(
     relationship?: IssueRelationship,
     testInstructions?: string,
     summary?: string,
-    authorization?: AuthorizedResolvedLane
+    authorization?: AuthorizedResolvedLane,
+    metadataFlags?: PublishMetadataFlags
 ): number {
     const lane = resolveAuthorLane(
         issue,
@@ -516,6 +745,9 @@ export function publishLane(
         testInstructions,
         summary
     );
+    // Resolved before the push: every refusal it can raise (no model on record, an unknown flag
+    // title) must land with nothing written, not even the branch push.
+    const metadata = resolvePublishMetadata(lane, laneIssue, metadataFlags, port);
     port.reportDiff?.(lane.path, comparisonHead, headSha);
     if (stack !== undefined) {
         port.pinStackParent?.(lane.branch, stack.parentNumber);
@@ -555,6 +787,11 @@ export function publishLane(
         fail('origin/main changed after its permission-scoped token was minted');
     }
     assertStackContext();
+    // The label must exist before any pull-request write can reference it; `--force` makes this
+    // create-or-update, so it is safe on every publish.
+    if (metadata !== undefined) {
+        port.ensureModelLabel(metadata.model);
+    }
     const number = pullRequestNumber(lane, write, port, stack?.branch);
     if (stack !== undefined) {
         const after = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
@@ -568,8 +805,108 @@ export function publishLane(
             fail('stack publication changed during mutation; publication may be partial, reconcile before retrying');
         }
     }
+    if (metadata !== undefined) {
+        assertPullRequestMetadata(number, metadata, port);
+    }
     port.log(String(number));
     return number;
+}
+
+/**
+ * The metadata a publication must leave on its pull request, or `undefined` when this lane's pull
+ * request is not `lane:publish`'s to decorate: a legacy lane publishes without an explicit
+ * `--model` exactly as it always did, because its pull request predates this mechanism and the
+ * flag is the one thing that proves the operator wants it applied anyway.
+ *
+ * The model resolution order is the contract: an explicit `--model` wins and is persisted for
+ * later runs; otherwise the value `lane:open` recorded for the branch is used; a conforming lane
+ * with neither fails closed rather than pushing an unattributed pull request. Milestone and
+ * projects come from the lane's issue, and flag values override them per field after validation
+ * against live tracker state — left empty rather than forced onto the pull request.
+ */
+function resolvePublishMetadata(
+    lane: ResolvedLane,
+    laneIssue: number | undefined,
+    flags: PublishMetadataFlags | undefined,
+    port: PublishLanePort
+): PublishMetadataTarget | undefined {
+    const flaggedModel = flags?.model;
+    if (lane.legacy && flaggedModel === undefined) {
+        return undefined;
+    }
+    let model: string;
+    if (flaggedModel !== undefined) {
+        model = flaggedModel;
+        port.saveAuthorModel(lane.branch, model);
+    } else {
+        const recorded = port.readAuthorModel(lane.branch);
+        if (recorded === undefined) {
+            fail(
+                `${lane.branch} has no authoring model on record; backfill it with pnpm lane:publish --model <family>, ` +
+                    'the lowercase public model family name, e.g. glm-5.3'
+            );
+        }
+        model = normalizeAuthorModel(recorded);
+    }
+    const inherited = laneIssue === undefined ? undefined : port.readIssueTrackerMetadata(laneIssue);
+    let milestoneTitle: string | undefined;
+    if (flags?.milestone !== undefined) {
+        assertOpenMilestoneTitle(flags.milestone, port.openMilestoneTitles());
+        milestoneTitle = flags.milestone;
+    } else {
+        const inheritedMilestone = inherited?.milestoneTitle;
+        if (inheritedMilestone !== undefined) {
+            const openTitles = port.openMilestoneTitles();
+            if (openTitles.some((open) => open.toLowerCase() === inheritedMilestone.toLowerCase())) {
+                milestoneTitle = inheritedMilestone;
+            } else {
+                // An issue can hold a milestone that has since closed; publishing must not resurrect it.
+                port.log(
+                    `milestone "${inheritedMilestone}" on the lane's issue is no longer open; ` +
+                        'leaving the pull request milestone unset'
+                );
+            }
+        }
+    }
+    let projectTitles: string[] = [];
+    if (flags?.projects !== undefined) {
+        const knownTitles = port.knownProjectTitles();
+        for (const title of flags.projects) {
+            assertKnownProjectTitle(title, knownTitles);
+        }
+        projectTitles = flags.projects;
+    } else if (inherited !== undefined) {
+        projectTitles = inherited.projectTitles;
+    }
+    return {
+        model,
+        label: modelLabelName(model),
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles,
+    };
+}
+
+/**
+ * Metadata assertion is convergent, not transactional: the pull request already exists by the time
+ * this runs, so a failure here leaves a publishable pull request that a rerun completes. Reading
+ * current state first keeps a rerun — or a later publish of the same head — from churning metadata
+ * that is already right.
+ */
+function assertPullRequestMetadata(number: number, target: PublishMetadataTarget, port: PublishLanePort): void {
+    const current = port.readPullRequestMetadata(number);
+    const plan = metadataEditPlan(target, current);
+    if (plan === undefined) {
+        return;
+    }
+    try {
+        port.applyPullRequestMetadata(number, target.label, plan);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        fail(
+            `could not assert metadata on pull request #${number}: ${reason}; the pull request exists, and ` +
+                'rerunning pnpm lane:publish re-asserts its metadata safely'
+        );
+    }
 }
 
 /**
@@ -739,6 +1076,10 @@ export function shellPort(
             cwd
         );
     const token = session.env.GH_TOKEN ?? '';
+    const [repositoryOwner] = REQUIRED_REPOSITORY.split('/');
+    if (repositoryOwner === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
     const git = (args: string[], directory: string) =>
         spawnCapture(executables.git, gitAuthenticatedArgs(token, session.configDir, args), {
             cwd: directory,
@@ -912,6 +1253,41 @@ export function shellPort(
         updatePullRequest: (number, { body }) => {
             ghRun(updatePullRequestArgs(number, body));
         },
+        saveAuthorModel: (branch, model) => {
+            spawnRun(executables.git, ['config', `branch.${branch}.sourdaw-author-model`, model], {
+                cwd: primaryRoot,
+                env: session.env,
+            });
+        },
+        readAuthorModel: (branch) => {
+            const value = spawnCapture(
+                executables.git,
+                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-author-model`],
+                { cwd: primaryRoot, env: session.env }
+            );
+            return value === '' ? undefined : value;
+        },
+        ensureModelLabel: (model) => {
+            ghRun(ensureModelLabelArgs(model));
+        },
+        readIssueTrackerMetadata: (issue) =>
+            trackerMetadataFromIssueRow(
+                parseJson<IssueTrackerRow>(gh(issueTrackerMetadataArgs(issue)), `issue #${issue} tracker metadata`)
+            ),
+        openMilestoneTitles: () =>
+            openMilestoneTitlesFromRows(parseJson<unknown>(gh(openMilestoneTitlesArgs()), 'open milestone titles')),
+        knownProjectTitles: () =>
+            projectTitlesFromListing(parseJson<unknown>(gh(projectListArgs(repositoryOwner)), 'project list')),
+        readPullRequestMetadata: (number) =>
+            pullRequestMetadataFromRow(
+                parseJson<PullRequestMetadataRow>(
+                    gh(pullRequestMetadataArgs(number)),
+                    `pull request #${number} metadata`
+                )
+            ),
+        applyPullRequestMetadata: (number, label, plan) => {
+            ghRun(applyPullRequestMetadataArgs(number, label, plan));
+        },
         log: (message) => {
             console.log(message);
         },
@@ -991,6 +1367,22 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
 
 export function updatePullRequestArgs(number: number, body: string): string[] {
     return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
+}
+
+export function issueTrackerMetadataArgs(issue: number): string[] {
+    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'milestone,projectItems'];
+}
+
+export function openMilestoneTitlesArgs(): string[] {
+    return ['api', `repos/${REQUIRED_REPOSITORY}/milestones?state=open`];
+}
+
+export function projectListArgs(owner: string): string[] {
+    return ['project', 'list', '--owner', owner, '--format', 'json'];
+}
+
+export function pullRequestMetadataArgs(number: number): string[] {
+    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone,projectItems'];
 }
 
 export type OpenPullRequestRow = {
@@ -1138,7 +1530,12 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             parsed.relationship,
             parsed.testInstructions,
             parsed.summary,
-            { ...auth.authorization, legacy: authenticationLane.legacy }
+            { ...auth.authorization, legacy: authenticationLane.legacy },
+            {
+                ...(parsed.model === undefined ? {} : { model: parsed.model }),
+                ...(parsed.milestone === undefined ? {} : { milestone: parsed.milestone }),
+                ...(parsed.projects === undefined ? {} : { projects: parsed.projects }),
+            }
         );
         return 0;
     } finally {
