@@ -4,7 +4,7 @@ import {
     type HandlerValidationContext,
 } from '#/utils/handlerContract';
 
-import { takeLaneStore } from '../../stores/takeLaneStore';
+import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import {
     applyTakeLaneCompRegionPatch,
     captureCompSelection,
@@ -190,6 +190,13 @@ function projectCompRegionPrefix(
                 return null;
             }
             patch = action.payload;
+        } else if (action.type === 'restoreTrack') {
+            const restoredLanes = decodeExactTakeLaneSnapshots(action.payload.takeLaneSnapshots);
+            if (!restoredLanes) {
+                return null;
+            }
+            state = { lanes: [...state.lanes, ...restoredLanes] };
+            continue;
         } else {
             continue;
         }
@@ -215,6 +222,13 @@ function captureCompRegionIntervalPatchAfterPrefix(
     }
     const projected = projectCompRegionPrefix(state, context, 'capture');
     return projected ? captureCompRegionIntervalPatchFromState(projected, input) : null;
+}
+
+function projectStateThroughMaterializedCompPrefix(
+    state: TakeLaneStoreValue,
+    context?: CompPrefixContext
+): TakeLaneStoreValue | null {
+    return projectCompRegionPrefix(state, context, 'validate');
 }
 
 function compRegionIntervalPatchApplies(patch: CompRegionIntervalPatch, context?: HandlerValidationContext): boolean {
@@ -256,4 +270,5 @@ export const compRegionInterval = {
     isCompleteSetPayload: isCompleteSetCompRegionPayload,
     patchApplies: compRegionIntervalPatchApplies,
     patchIsNoop: compRegionIntervalPatchIsNoop,
+    projectTakeLaneStateThroughMaterializedCompPrefix: projectStateThroughMaterializedCompPrefix,
 };

@@ -53,6 +53,13 @@ transformed pitch or suppression, and make the fixture fail if instance
 correlation is replaced by channel/pitch FIFO. Keep identityless FIFO coverage
 separate.
 
+### 8. Prefix-dependent inverses need real grouped replay
+
+PR #4071's forward comp-then-remove case proved that the removed lane stayed absent, but it did not inspect the
+removal inverse's intermediate snapshot or run grouped undo and redo. When one batch member snapshots state produced
+by an earlier member, inspect the real history entry and replay the group against both raw CRDT authority and its store
+projection; a correct forward final state alone cannot prove the inverse was composed from the batch prefix.
+
 ## References
 
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest layout, mocks, DI in tests.

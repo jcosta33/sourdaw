@@ -254,6 +254,14 @@ function is_exact_take_lane(value: unknown): value is TakeLane {
     );
 }
 
+export function decodeExactTakeLaneSnapshots(value: readonly unknown[]): TakeLane[] | null {
+    if (!value.every(is_exact_take_lane)) {
+        return null;
+    }
+
+    return value.map((lane) => structuredClone(lane));
+}
+
 function normalize_take_lane(take_lane: SanitizableTakeLane): TakeLane {
     const takes = get_normalized_takes(take_lane.takes);
     const take_ids = new Set(takes.map((take) => take.id));

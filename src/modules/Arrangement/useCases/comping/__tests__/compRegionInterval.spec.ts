@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type CompRegion } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { compRegionInterval } from '../compRegionInterval';
@@ -25,6 +28,35 @@ function replace(startBeat: number, endBeat: number, takeId = 'b'): 'written' | 
         throw new Error('expected a valid comp interval patch');
     }
     return compRegionInterval.applyPatch(patch);
+}
+
+function restoreTrackAction(
+    takeLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[]
+): AppAction {
+    const track = TrackDummy.create({ id: 'track-1' });
+    return {
+        type: 'restoreTrack',
+        payload: {
+            trackId: track.id,
+            trackSnapshot: track,
+            trackName: track.name,
+            trackKind: track.kind,
+            trackGain: track.gain,
+            trackParentId: track.parentId,
+            trackIndex: 0,
+            wasSelected: true,
+            routingPatches: [],
+            automationLaneSnapshots: [],
+            clipSatellites: [],
+            midiNotesByClipId: {},
+            midiCcByClipId: {},
+            midiPitchBendByClipId: {},
+            takeLaneSnapshots,
+            sidechainRouteSnapshots: [],
+            ownedModulatorSnapshots: [],
+            incomingModulationMappingSnapshots: [],
+        },
+    };
 }
 
 describe('compRegionInterval', () => {
@@ -151,5 +183,74 @@ describe('compRegionInterval', () => {
                 replacement: [{ startBeat: 2, endBeat: 4, takeId: 'b', extra: true }],
             })
         ).toBe(false);
+    });
+
+    it('validates a comp inverse through an exact restored take lane and refuses inexact snapshots', () => {
+        const restoredTakes = takes.map((take, index) => (index === 0 ? { ...take, sourceOffsetBeats: 0.5 } : take));
+        const restoredLane = {
+            id: 'lane-restored',
+            trackId: 'track-1',
+            automationLaneId: 'automation-restored',
+            takes: restoredTakes,
+            activeCompRegions: [
+                { startBeat: 0, endBeat: 2, takeId: 'a' },
+                { startBeat: 2, endBeat: 4, takeId: 'b' },
+                { startBeat: 4, endBeat: 8, takeId: 'a' },
+            ],
+        };
+        const inverse = {
+            type: 'restoreCompRegionInterval',
+            payload: {
+                laneId: restoredLane.id,
+                trackId: restoredLane.trackId,
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'a' }],
+            },
+        } satisfies AppAction;
+        takeLaneStore.set({ lanes: [] });
+        const context = {
+            actions: [restoreTrackAction([restoredLane]), inverse],
+            actionIndex: 1,
+        };
+
+        expect(compRegionInterval.patchApplies(inverse.payload, context)).toBe(true);
+        const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix({ lanes: [] }, context);
+        expect(projected).toEqual({ lanes: [restoredLane] });
+        expect(projected?.lanes[0]).not.toBe(restoredLane);
+        expect(projected?.lanes[0]?.takes[0]).not.toBe(restoredLane.takes[0]);
+
+        const missingLaneField = {
+            id: restoredLane.id,
+            trackId: restoredLane.trackId,
+            automationLaneId: restoredLane.automationLaneId,
+            takes: restoredLane.takes,
+        };
+        const invalidLanes = [
+            missingLaneField,
+            { ...restoredLane, unexpected: true },
+            {
+                ...restoredLane,
+                takes: [{ ...restoredLane.takes[0], sourceOffsetBeats: -1 }, ...restoredLane.takes.slice(1)],
+            },
+        ];
+        for (const invalidLane of invalidLanes) {
+            expect(
+                compRegionInterval.patchApplies(inverse.payload, {
+                    actions: [restoreTrackAction([invalidLane]), inverse],
+                    actionIndex: 1,
+                })
+            ).toBe(false);
+            expect(
+                compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(
+                    { lanes: [] },
+                    {
+                        actions: [restoreTrackAction([invalidLane]), inverse],
+                        actionIndex: 1,
+                    }
+                )
+            ).toBeNull();
+        }
     });
 });

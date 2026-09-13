@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { captureTrackRemovalSnapshot } from '../captureTrackRemovalSnapshot';
@@ -96,6 +98,27 @@ describe('captureTrackRemovalSnapshot', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
         expect(captureTrackRemovalSnapshot('t1')).toBeNull();
+    });
+
+    it('fails preflight when a prior materialized comp action cannot be projected', () => {
+        const track = TrackDummy.create({ id: 't1' });
+        const malformedComp = {
+            type: 'setCompRegion',
+            payload: {
+                laneId: 'take1',
+                trackId: 't1',
+                startBeat: 2,
+                endBeat: 4,
+                takeId: 'take-b',
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+                replacement: [{ startBeat: 1, endBeat: 4, takeId: 'take-b' }],
+            },
+        } satisfies AppAction;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        expect(() => captureTrackRemovalSnapshot('t1', { actions: [malformedComp], actionIndex: 1 })).toThrow(
+            'Could not project prior comp actions for track removal snapshot'
+        );
     });
 
     it('captures the full removal snapshot: routing, automation, midi, take lanes, sidechain, modulation', () => {
