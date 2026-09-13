@@ -388,6 +388,66 @@ describe('durable asset ownership lifecycle', () => {
         recreated.dispose();
     });
 
+    it('keeps a prepared handoff behind source staging admitted before commit', async () => {
+        const provisionalOwner = 'collaboration-join:prepared-before-source-stage';
+        const sourceOwner = 'project:prepared-source-stage';
+        const hostOwner = 'project:prepared-source-stage-host';
+        const hashing = Promise.withResolvers<void>();
+        const hashingStarted = Promise.withResolvers<void>();
+        class DeferredBlob extends Blob {
+            override async arrayBuffer(): Promise<ArrayBuffer> {
+                hashingStarted.resolve();
+                await hashing.promise;
+                return new TextEncoder().encode('prepared-source-stage-late').buffer;
+            }
+        }
+
+        const source = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, sourceOwner);
+        const provisionalRepository = createDurableAssetRepository(provisionalOwner);
+        const provisionalCommit = vi.spyOn(provisionalRepository, 'commitOwnerRebind');
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            provisionalRepository,
+            { durableStagingReady: false, handoffSourceOwnerIds: [sourceOwner] }
+        );
+        const pending: Promise<unknown>[] = [];
+        try {
+            const prepared = await joining.prepareDurableOwnerRebind(hostOwner);
+            if (prepared.status === 'failed') {
+                throw new Error(`Expected source-inclusive owner handoff preparation: ${prepared.reason}`);
+            }
+
+            const lateStage = source.stageDurableAsset(
+                new DeferredBlob(['prepared-source-stage-late']),
+                'prepared-source-stage-late.wav',
+                'asset-stage-prepared-source-late'
+            );
+            pending.push(lateStage);
+            await hashingStarted.promise;
+
+            const commit = prepared.commit();
+            pending.push(commit);
+            expect(provisionalCommit).not.toHaveBeenCalled();
+
+            hashing.resolve();
+            const [staged, committed] = await Promise.all([lateStage, commit]);
+
+            expect(committed).toMatchObject({ status: 'committed' });
+            const freshHostRepository = createDurableAssetRepository(hostOwner);
+            await expect(freshHostRepository.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+                status: 'opened',
+                hash: staged.hash,
+            });
+        } finally {
+            hashing.resolve();
+            await Promise.allSettled(pending);
+            source.dispose();
+            joining.dispose();
+        }
+    });
+
     it('resumes a prepared owner handoff after restart before reopening its promoted original', async () => {
         const provisionalOwner = 'collaboration-join:crash-before-handoff-commit';
         const projectOwner = 'project:restart-authoritative';

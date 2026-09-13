@@ -159,6 +159,98 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
         expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
     });
 
+    it('keeps a refused backup read and failed trySet retryable without changing durable state', async () => {
+        const remoteState = {
+            branches: [validMainBranch, validFeatureBranch],
+            activeBranchId: validFeatureBranch.branchId,
+        } satisfies BranchStoreState;
+        const localState = {
+            branches: [validMainBranch],
+            activeBranchId: MAIN_BRANCH_ID,
+        } satisfies BranchStoreState;
+
+        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+        const module = await import('../branchStore');
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw new DOMException('The operation is insecure.', 'SecurityError');
+        });
+
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+        expect(module.branchStore.value).toEqual(remoteState);
+
+        refusedRead.mockRestore();
+        const blockedWrite = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        });
+
+        expect(module.branchStore.trySet({ ...remoteState, activeBranchId: MAIN_BRANCH_ID })).toBe(false);
+        blockedWrite.mockRestore();
+
+        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(window.localStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(remoteState));
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
+        expect(module.branchStore.value).toEqual(localState);
+    });
+
+    it('keeps a refused durable branch-state read retryable without applying the backup', async () => {
+        const remoteState = {
+            branches: [validMainBranch, validFeatureBranch],
+            activeBranchId: validFeatureBranch.branchId,
+        } satisfies BranchStoreState;
+        const localState = {
+            branches: [validMainBranch],
+            activeBranchId: MAIN_BRANCH_ID,
+        } satisfies BranchStoreState;
+
+        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+        const module = await import('../branchStore');
+        const getItem = Storage.prototype.getItem;
+        const durableStorage = window.localStorage;
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
+            if (key === BRANCH_STORAGE_KEY) {
+                throw new DOMException('The operation is insecure.', 'SecurityError');
+            }
+            return getItem.call(durableStorage, key);
+        });
+
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+        expect(module.branchStore.value).toEqual(remoteState);
+
+        refusedRead.mockRestore();
+
+        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
+        expect(module.branchStore.value).toEqual(localState);
+    });
+
+    it('fails closed when the first branch adapter read cannot establish durable authority', async () => {
+        const remoteState = {
+            branches: [validMainBranch, validFeatureBranch],
+            activeBranchId: validFeatureBranch.branchId,
+        } satisfies BranchStoreState;
+        const localState = {
+            branches: [validMainBranch],
+            activeBranchId: MAIN_BRANCH_ID,
+        } satisfies BranchStoreState;
+        const durableStorage = window.localStorage;
+
+        durableStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+        durableStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+        const refusedStorage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+            throw new DOMException('The operation is insecure.', 'SecurityError');
+        });
+        const module = await import('../branchStore');
+
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+        refusedStorage.mockRestore();
+
+        expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+        expect(durableStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(durableStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(remoteState));
+    });
+
     /**
      * A retained backup is a retry only while durable state has not moved on.
      * Once a later write lands it becomes a rollback: the next boot would revert
@@ -338,19 +430,23 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
 
                 window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
                 window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-                const blockedInitialOperation =
-                    blockedOperation === 'state persistence'
-                        ? vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-                              throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-                          })
-                        : vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-                              throw new DOMException('The operation is insecure.', 'SecurityError');
-                          });
+                let releaseInitialFailure: () => void;
+                if (blockedOperation === 'state persistence') {
+                    const blockedWrite = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+                    });
+                    releaseInitialFailure = () => blockedWrite.mockRestore();
+                } else {
+                    const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                        throw new DOMException('The operation is insecure.', 'SecurityError');
+                    });
+                    releaseInitialFailure = () => blockedRemoval.mockRestore();
+                }
 
                 const module = await import('../branchStore');
                 expect(module.restoreBranchStateFromSessionBackup()).toBe(expectedOutcome);
 
-                blockedInitialOperation.mockRestore();
+                releaseInitialFailure();
                 const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
                     throw new DOMException('The operation is insecure.', 'SecurityError');
                 });
@@ -368,5 +464,131 @@ describe('branchStore module evaluation with a rejecting localStorage', () => {
                 expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
             }
         );
+
+        it.each(['set', 'trySet'] as const)(
+            'removes an unread retained backup after a successful %s while reads remain blocked',
+            async (writeKind) => {
+                const remoteState = {
+                    branches: [validMainBranch, validFeatureBranch],
+                    activeBranchId: validFeatureBranch.branchId,
+                } satisfies BranchStoreState;
+                const localState = {
+                    branches: [validMainBranch],
+                    activeBranchId: MAIN_BRANCH_ID,
+                } satisfies BranchStoreState;
+                const branchCreatedAfterwards = {
+                    branches: [validMainBranch, { ...validFeatureBranch, branchId: 'later', name: 'Later' }],
+                    activeBranchId: MAIN_BRANCH_ID,
+                } satisfies BranchStoreState;
+
+                window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+                window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+                const module = await import('../branchStore');
+                const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+                    throw new DOMException('The operation is insecure.', 'SecurityError');
+                });
+                const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                    throw new DOMException('The operation is insecure.', 'SecurityError');
+                });
+
+                expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+                if (writeKind === 'set') {
+                    module.branchStore.set(branchCreatedAfterwards);
+                } else {
+                    expect(module.branchStore.trySet(branchCreatedAfterwards)).toBe(true);
+                }
+                expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+
+                refusedRead.mockRestore();
+                expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+                expect(module.restoreBranchStateFromSessionBackup()).toBe('backup-not-cleared');
+                expect(module.branchStore.value).toEqual(branchCreatedAfterwards);
+                expect(window.localStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(branchCreatedAfterwards));
+
+                blockedRemoval.mockRestore();
+                expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
+                expect(module.branchStore.value).toEqual(branchCreatedAfterwards);
+                expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+            }
+        );
+
+        it('keeps the earliest unread-backup authority across another refused backup read', async () => {
+            const remoteState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+            const localState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+            const branchCreatedAfterwards = {
+                branches: [validMainBranch, { ...validFeatureBranch, branchId: 'later', name: 'Later' }],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+            const module = await import('../branchStore');
+            const getItem = Storage.prototype.getItem;
+            const durableStorage = window.localStorage;
+            const refusedBackupRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
+                if (key === BRANCH_SESSION_BACKUP_STORAGE_KEY) {
+                    throw new DOMException('The operation is insecure.', 'SecurityError');
+                }
+                return getItem.call(durableStorage, key);
+            });
+            const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                throw new DOMException('The operation is insecure.', 'SecurityError');
+            });
+
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+            module.branchStore.set(branchCreatedAfterwards);
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('storage-unavailable');
+
+            refusedBackupRead.mockRestore();
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('backup-not-cleared');
+            expect(window.localStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(branchCreatedAfterwards));
+
+            blockedRemoval.mockRestore();
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+        });
+
+        it('removes a retained backup instead of replaying it over an external durable branch write', async () => {
+            const remoteState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+            const localState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+            const branchCreatedAfterwards = {
+                branches: [validMainBranch, { ...validFeatureBranch, branchId: 'later', name: 'Later' }],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+            const blockedWrite = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            });
+            const module = await import('../branchStore');
+
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
+            blockedWrite.mockRestore();
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(branchCreatedAfterwards));
+            const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                throw new DOMException('The operation is insecure.', 'SecurityError');
+            });
+
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('backup-not-cleared');
+            expect(window.localStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(branchCreatedAfterwards));
+
+            blockedRemoval.mockRestore();
+            expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+            expect(window.localStorage.getItem(BRANCH_STORAGE_KEY)).toBe(stringify(branchCreatedAfterwards));
+        });
     });
 });

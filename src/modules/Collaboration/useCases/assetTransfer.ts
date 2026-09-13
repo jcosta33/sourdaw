@@ -691,47 +691,48 @@ export class AssetTransfer {
                 previousOwnerId: this.ownerId,
                 ownerId: nextOwnerId,
                 progress: copyProgress(),
-                commit: async () => {
-                    if (phase === 'aborted' || phase === 'aborting') {
-                        return {
-                            status: 'retry-required',
-                            phase: 'abort',
-                            error: new Error('Durable asset owner handoff was already aborted'),
-                            progress: copyProgress(),
-                        };
-                    }
-                    if (phase === 'committed') {
-                        return { status: 'committed', phase: 'commit', progress: copyProgress() };
-                    }
-                    phase = 'committing';
-                    for (const source of sources) {
-                        if (source.progress.status === 'committed') {
-                            continue;
-                        }
-                        let committed: RebindDurableAssetOwnerResult;
-                        try {
-                            committed = await source.repository.commitOwnerRebind(nextOwnerId);
-                        } catch (error) {
-                            return { status: 'retry-required', phase: 'commit', error, progress: copyProgress() };
-                        }
-                        if (committed.status === 'failed') {
+                commit: () =>
+                    runDurableOwnerOperation(async () => {
+                        if (phase === 'aborted' || phase === 'aborting') {
                             return {
                                 status: 'retry-required',
-                                phase: 'commit',
-                                error: new Error(`Durable asset owner rebind failed: ${committed.reason}`),
+                                phase: 'abort',
+                                error: new Error('Durable asset owner handoff was already aborted'),
                                 progress: copyProgress(),
                             };
                         }
-                        source.progress.status = 'committed';
-                        source.progress.reboundHashes = [...committed.reboundHashes];
-                        rebindLiveStageRecoveries(committed.previousOwnerId, nextOwnerId);
-                    }
-                    phase = 'committed';
-                    if (!this.disposed) {
-                        this.installReboundDurableOwner(nextOwnerId);
-                    }
-                    return { status: 'committed', phase: 'commit', progress: copyProgress() };
-                },
+                        if (phase === 'committed') {
+                            return { status: 'committed', phase: 'commit', progress: copyProgress() };
+                        }
+                        phase = 'committing';
+                        for (const source of sources) {
+                            if (source.progress.status === 'committed') {
+                                continue;
+                            }
+                            let committed: RebindDurableAssetOwnerResult;
+                            try {
+                                committed = await source.repository.commitOwnerRebind(nextOwnerId);
+                            } catch (error) {
+                                return { status: 'retry-required', phase: 'commit', error, progress: copyProgress() };
+                            }
+                            if (committed.status === 'failed') {
+                                return {
+                                    status: 'retry-required',
+                                    phase: 'commit',
+                                    error: new Error(`Durable asset owner rebind failed: ${committed.reason}`),
+                                    progress: copyProgress(),
+                                };
+                            }
+                            source.progress.status = 'committed';
+                            source.progress.reboundHashes = [...committed.reboundHashes];
+                            rebindLiveStageRecoveries(committed.previousOwnerId, nextOwnerId);
+                        }
+                        phase = 'committed';
+                        if (!this.disposed) {
+                            this.installReboundDurableOwner(nextOwnerId);
+                        }
+                        return { status: 'committed', phase: 'commit', progress: copyProgress() };
+                    }),
                 abort: async () => {
                     if (phase === 'committing' || phase === 'committed') {
                         return {

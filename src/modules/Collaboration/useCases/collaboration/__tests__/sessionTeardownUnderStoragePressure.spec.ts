@@ -4,6 +4,7 @@ import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
 import { createCrdtDoc, hasCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { createSession } from '../createSession';
 import { leaveSession } from '../leaveSession';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
@@ -39,6 +40,10 @@ vi.mock('../../../repositories/peerConnection', () => ({
         runtimeIoMock.peerManagers.push(manager);
         return manager;
     }),
+}));
+
+vi.mock('../getCollaborationAssetOwnerId', () => ({
+    collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
 }));
 
 vi.mock('../../automergeSync', () => ({
@@ -159,6 +164,68 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         vi.restoreAllMocks();
         await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
         window.localStorage.clear();
+    });
+
+    it('retires replacement resources and retries after durable reads recover', async () => {
+        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
+        const { closeAll } = latestPeerManager();
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw refusal;
+        });
+        let failure: unknown;
+
+        try {
+            await createSession('Replacement');
+        } catch (error) {
+            failure = error;
+        }
+        refusedRead.mockRestore();
+
+        expect(closeAll).toHaveBeenCalledTimes(1);
+        expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
+        expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
+        expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
+        expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
+        expect(notifyUserMock.mock.calls[0]?.[0]).toContain('branch storage could not be read');
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+
+        await expect(createSession('Replacement')).resolves.toEqual(expect.any(String));
+        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+            MAIN_BRANCH_ID,
+            localOnlyBranch.branchId,
+        ]);
+    });
+
+    it('closes leave transport, clears runtime state, and retries after durable reads recover', async () => {
+        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
+        const { closeAll } = latestPeerManager();
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw refusal;
+        });
+        let failure: unknown;
+
+        try {
+            await leaveSession();
+        } catch (error) {
+            failure = error;
+        }
+        refusedRead.mockRestore();
+
+        expect(closeAll).toHaveBeenCalledTimes(1);
+        expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
+        expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
+        expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
+        expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+
+        await expect(leaveSession()).resolves.toBeUndefined();
+        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+            MAIN_BRANCH_ID,
+            localOnlyBranch.branchId,
+        ]);
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
     });
 
     it('closes every peer even when the pre-session branch list cannot be persisted', async () => {

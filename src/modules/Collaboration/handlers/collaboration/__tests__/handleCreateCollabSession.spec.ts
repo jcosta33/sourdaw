@@ -31,15 +31,16 @@ describe('collaborationHandlers', () => {
         vi.mocked(createSession).mockReturnValueOnce(creation.promise);
 
         const execution = handleCreateCollabSession.execute({ type: 'createCollabSession', payload: { name: 'Jam' } });
+        const completion = Promise.resolve(execution);
         let completed = false;
-        void execution.then(() => {
+        void completion.then(() => {
             completed = true;
         });
         await Promise.resolve();
         expect(completed).toBe(false);
 
         creation.resolve('session-id');
-        await execution;
+        await completion;
     });
 
     it('describes itself for the command palette / undo log', () => {

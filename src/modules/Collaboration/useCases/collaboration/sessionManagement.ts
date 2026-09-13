@@ -358,9 +358,9 @@ function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | n
  * synchronously before it can be rendered. That field is for errors raised
  * while a session is live; this one outlives the session by definition.
  *
- * The two failures are not the same failure and must not share a message: one
- * loses the branch list on reload, the other keeps it now and reverts to it
- * later. Both name the cause and an action. See #1557.
+ * The failures are not interchangeable: one loses the branch list on reload,
+ * one keeps it now and reverts to it later, and one cannot establish either
+ * durable fact. Each names the cause and an action. See #1557.
  */
 function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStateAfterSession> | null): void {
     if (outcome === 'state-not-persisted') {
@@ -374,6 +374,14 @@ function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStat
     if (outcome === 'backup-not-cleared') {
         notifyUser(
             'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
+            'error'
+        );
+        return;
+    }
+
+    if (outcome === 'storage-unavailable') {
+        notifyUser(
+            'Left the session, but branch storage could not be read — your local branch list is still protected by its session backup. Restore storage access and try again.',
             'error'
         );
     }
@@ -799,7 +807,10 @@ function branchRestoreError(outcome: Exclude<ReturnType<typeof restoreBranchStat
     if (outcome === 'state-not-persisted') {
         return new Error('Pre-session branch state could not be persisted');
     }
-    return new Error('Pre-session branch backup could not be cleared');
+    if (outcome === 'backup-not-cleared') {
+        return new Error('Pre-session branch backup could not be cleared');
+    }
+    return new Error('Pre-session branch state could not be read');
 }
 
 function settleRetainedSessionTeardown(): Promise<void> {

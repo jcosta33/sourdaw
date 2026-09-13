@@ -30,6 +30,7 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
+    runCrdtPersistenceBarrier,
 } from '#/modules/CrdtDocument/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
@@ -756,7 +757,7 @@ describe('AutomergeSync', () => {
             'asset-stage-persisted-owner'
         );
         transfer.protectDurableStagedAssetAcrossTransfer(staged.leaseId);
-        const commitHandoff = vi.fn(async (commit: () => Promise<void>) => commit());
+        const commitHandoff = vi.fn();
         const persistFailure = new Error('exact root save interrupted');
         let persistenceAttempts = 0;
         let restartedProjectOwnerId = previousOwnerId;
@@ -776,7 +777,11 @@ describe('AutomergeSync', () => {
                     throw new Error(transition.reason);
                 }
                 return {
-                    commit: () => commitHandoff(transition.commit),
+                    commit: async () => {
+                        const result = await transition.commit();
+                        commitHandoff(result);
+                        return result;
+                    },
                     abort: transition.abort,
                 };
             },
@@ -1386,6 +1391,131 @@ describe('AutomergeSync', () => {
         expect(commit).toHaveBeenCalledTimes(3);
         expect(persistCrdtProject).toHaveBeenCalledTimes(3);
         expect(abort).not.toHaveBeenCalled();
+    });
+
+    it('retries a before-admission superseded barrier against the current root during teardown', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const retryEntered = Promise.withResolvers<void>();
+        const releaseRetry = Promise.withResolvers<void>();
+        let retriedHeads: readonly string[] | undefined;
+        let persistenceAttempts = 0;
+        vi.mocked(persistCrdtProject).mockImplementation(async (expectedRootHeads) => {
+            persistenceAttempts += 1;
+            retriedHeads = expectedRootHeads;
+            retryEntered.resolve();
+            await releaseRetry.promise;
+        });
+        vi.mocked(runCrdtPersistenceBarrier).mockImplementationOnce(async () => ({
+            status: 'superseded',
+            durable: { write: 'none' },
+        }));
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: () => undefined,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'superseded-after-commit';
+        });
+
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+
+        await expect(sync.flushPersistence()).resolves.toMatchObject({ status: 'retry-required' });
+        expect(persistenceAttempts).toBe(0);
+
+        const settlement = sync.settleDurableTeardown();
+        try {
+            await retryEntered.promise;
+            expect(persistenceAttempts).toBe(1);
+            expect(retriedHeads).toEqual([...getHeads(live)].map(String).toSorted());
+        } finally {
+            releaseRetry.resolve();
+            await Promise.allSettled([settlement]);
+        }
+
+        await expect(settlement).resolves.toBeUndefined();
+    });
+
+    it('retries committed persistence superseded during the callback against the current root', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const retryEntered = Promise.withResolvers<void>();
+        const releaseRetry = Promise.withResolvers<void>();
+        const onPersistError = vi.fn();
+        let retriedHeads: readonly string[] | undefined;
+        let persistenceAttempts = 0;
+        vi.mocked(persistCrdtProject).mockImplementation(async (expectedRootHeads) => {
+            persistenceAttempts += 1;
+            if (persistenceAttempts === 2) {
+                retriedHeads = expectedRootHeads;
+                retryEntered.resolve();
+                await releaseRetry.promise;
+            }
+        });
+        const durable = {
+            write: 'committed' as const,
+            authority: { epoch: 'during-persist-supersession', revision: 2, rootLineage: 'main' },
+        };
+        let callbackFailure: Error | undefined;
+        vi.mocked(runCrdtPersistenceBarrier).mockImplementationOnce(async (operation) => {
+            try {
+                await operation({
+                    persistCurrentProject: async (expectedRootHeads) => {
+                        await persistCrdtProject(expectedRootHeads);
+                        return { status: 'superseded', durable };
+                    },
+                });
+            } catch (error) {
+                callbackFailure = error instanceof Error ? error : new Error(String(error));
+                return { status: 'failed', durable, error: callbackFailure };
+            }
+            throw new Error('Expected root persistence to reject the superseded callback result');
+        });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: () => undefined,
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'superseded-during-persist';
+        });
+
+        const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+        );
+        expect(editBearingMessage).toBeDefined();
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+
+        await expect(sync.flushPersistence()).resolves.toMatchObject({ status: 'retry-required' });
+        expect(persistenceAttempts).toBe(1);
+        expect(callbackFailure).toBeInstanceOf(Error);
+        expect(onPersistError).toHaveBeenCalledExactlyOnceWith(callbackFailure);
+
+        const settlement = sync.settleDurableTeardown();
+        try {
+            await retryEntered.promise;
+            expect(persistenceAttempts).toBe(2);
+            expect(retriedHeads).toEqual([...getHeads(live)].map(String).toSorted());
+        } finally {
+            releaseRetry.resolve();
+            await Promise.allSettled([settlement]);
+        }
+
+        await expect(settlement).resolves.toBeUndefined();
     });
 
     it('preserves the host project identity while applying other guest root changes', async () => {

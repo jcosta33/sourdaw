@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
+import { createLocalStorage, type LocalStorageAdapter } from '#/infra/store/storage/createLocalStorage';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { DEFAULT_CRDT_ROOT_LINEAGE, parseCrdtRootLineage } from '../models/CrdtRootLineage';
@@ -149,35 +149,63 @@ export function validateStoredBranchStoreState(value: unknown): BranchStoreState
  * - `backup-not-cleared` — the state is durable, but the backup could not be
  *   removed, so it will be applied again at the next boot and pin the branch
  *   list to this snapshot until `invalidateStaleSessionBackup` clears it.
+ * - `storage-unavailable` — durable storage could not be read, so neither the
+ *   backup nor the state it would replace was treated as authoritative.
  */
-export type BranchStateRestoreOutcome = 'restored' | 'state-not-persisted' | 'backup-not-cleared';
+export type BranchStateRestoreOutcome =
+    'restored' | 'state-not-persisted' | 'backup-not-cleared' | 'storage-unavailable';
+
+type DurableBranchStateRead = { status: 'read'; value: BranchStoreState | null } | { status: 'storage-unavailable' };
+
+type DurableSessionBackupRead = { status: 'read'; value: unknown } | { status: 'storage-unavailable' };
+
+type DurableBranchSnapshot = { status: 'known'; value: string | null } | { status: 'unknown' };
+
+type SessionBackupInvalidationAuthority = {
+    generation: number;
+    snapshot: DurableBranchSnapshot;
+};
 
 /**
  * The durable branch state as it stood when a restore failed to complete.
  *
- * `null` means nothing is pending. This cannot be read off the live adapter
- * later: `trySet` advances that adapter's cache whether or not the write
- * landed, so the cached value cannot answer "has a durable write happened
- * since?" — which is the only question that makes a retained backup stale.
+ * This cannot be read off the live adapter later: `trySet` advances that
+ * adapter's cache whether or not the write landed. The branch-local adapter
+ * records only successful durable writes and its first successful backing-store
+ * read, so a refused write cannot manufacture authority to discard the backup.
  */
-let durableStateAtRestoreFailure: BranchStoreState | null | undefined = undefined;
-let disarmSessionBackupInvalidation: (() => void) | null = null;
+let durableStateAtRestoreFailure: SessionBackupInvalidationAuthority | undefined = undefined;
+let durableBranchGeneration = 0;
+let durableBranchSnapshot: DurableBranchSnapshot = { status: 'unknown' };
+let suppressRestoreWriteInvalidation = false;
 
 /**
  * Read what `localStorage` actually holds, not what the live adapter is showing.
  * A fresh adapter starts with an empty cache, so its first `get()` is a durable
  * read by construction.
  */
-function readDurableBranchState(): BranchStoreState | null {
-    const durable = createLocalStorage<BranchStoreState>('sourdaw-branches').get();
-    if (durable === null) {
-        return null;
+function readDurableBranchState(): DurableBranchStateRead {
+    try {
+        const durable = createLocalStorage<BranchStoreState>('sourdaw-branches').get();
+        return {
+            status: 'read',
+            value: durable === null ? null : validateStoredBranchStoreState(durable),
+        };
+    } catch {
+        return { status: 'storage-unavailable' };
     }
-    return validateStoredBranchStoreState(durable);
 }
 
-function isSameBranchState(left: BranchStoreState | null, right: BranchStoreState | null): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+function readDurableSessionBackup(): DurableSessionBackupRead {
+    try {
+        return { status: 'read', value: readDurableBranchSessionBackup() };
+    } catch {
+        return { status: 'storage-unavailable' };
+    }
+}
+
+function snapshotBranchState(value: BranchStoreState | null): string | null {
+    return value === null ? null : JSON.stringify(validateStoredBranchStoreState(value));
 }
 
 /**
@@ -190,35 +218,62 @@ function isSameBranchState(left: BranchStoreState | null, right: BranchStoreStat
  * document created since, with nothing left to list it. So the backup is
  * dropped on the first durable write after the failure, and only then.
  */
-function invalidateStaleSessionBackup(): void {
-    if (durableStateAtRestoreFailure === undefined) {
-        return;
-    }
-
-    if (isSameBranchState(readDurableBranchState(), durableStateAtRestoreFailure)) {
-        // Nothing has reached the backing store since the failure. `set` cannot
-        // advance the adapter cache without a durable write, so this is also the
-        // state where a refused write leaves the store — the backup is still a
-        // faithful retry and stays.
-        return;
-    }
-
+function removeStaleSessionBackup(): boolean {
     if (!branchSessionBackupStorage.trySet(null)) {
-        // Still cannot remove it. Stay armed rather than claim it is gone.
-        return;
+        return false;
     }
 
-    durableStateAtRestoreFailure = undefined;
-    disarmSessionBackupInvalidation?.();
-    disarmSessionBackupInvalidation = null;
+    clearSessionBackupInvalidation();
+    return true;
 }
 
-function armSessionBackupInvalidation(durableAtFailure: BranchStoreState | null): void {
-    durableStateAtRestoreFailure = durableAtFailure;
-    if (disarmSessionBackupInvalidation) {
+function invalidateSessionBackupAfterDurableWrite(): void {
+    if (
+        suppressRestoreWriteInvalidation ||
+        durableStateAtRestoreFailure === undefined ||
+        durableBranchGeneration <= durableStateAtRestoreFailure.generation
+    ) {
         return;
     }
-    disarmSessionBackupInvalidation = branchStore.subscribe(invalidateStaleSessionBackup);
+
+    removeStaleSessionBackup();
+}
+
+function clearSessionBackupInvalidation(): void {
+    durableStateAtRestoreFailure = undefined;
+}
+
+function armSessionBackupInvalidation(durableAtFailure: DurableBranchStateRead): void {
+    if (durableStateAtRestoreFailure !== undefined) {
+        return;
+    }
+
+    let snapshot = durableBranchSnapshot;
+    if (durableAtFailure.status === 'read') {
+        snapshot = { status: 'known', value: snapshotBranchState(durableAtFailure.value) };
+    }
+    durableStateAtRestoreFailure = { generation: durableBranchGeneration, snapshot };
+}
+
+function armSessionBackupAfterRestoredWrite(restoredState: BranchStoreState): void {
+    durableStateAtRestoreFailure = {
+        generation: durableBranchGeneration,
+        snapshot: { status: 'known', value: snapshotBranchState(restoredState) },
+    };
+}
+
+function retainedBackupIsStale(durableNow: DurableBranchStateRead): 'stale' | 'current' | 'storage-unavailable' {
+    const retained = durableStateAtRestoreFailure;
+    if (retained === undefined) {
+        return 'current';
+    }
+    if (durableBranchGeneration > retained.generation) {
+        return 'stale';
+    }
+    if (durableNow.status === 'storage-unavailable' || retained.snapshot.status === 'unknown') {
+        return 'storage-unavailable';
+    }
+    return snapshotBranchState(durableNow.value) === retained.snapshot.value ? 'current' : 'stale';
 }
 
 /**
@@ -238,9 +293,7 @@ function armSessionBackupInvalidation(durableAtFailure: BranchStoreState | null)
  * fails, it arms again on its way out. See #1557.
  */
 export function suspendSessionBackupInvalidation(): void {
-    durableStateAtRestoreFailure = undefined;
-    disarmSessionBackupInvalidation?.();
-    disarmSessionBackupInvalidation = null;
+    clearSessionBackupInvalidation();
 }
 
 /**
@@ -258,22 +311,44 @@ export function suspendSessionBackupInvalidation(): void {
  * achieve — see `BranchStateRestoreOutcome`.
  */
 export function restoreBranchStateFromSessionBackup(): BranchStateRestoreOutcome {
-    const backup = readDurableBranchSessionBackup();
-    if (backup === null) {
+    const backup = readDurableSessionBackup();
+    if (backup.status === 'storage-unavailable') {
+        armSessionBackupInvalidation(readDurableBranchState());
+        return 'storage-unavailable';
+    }
+    if (backup.value === null) {
+        clearSessionBackupInvalidation();
         return 'restored';
     }
 
-    if (
-        durableStateAtRestoreFailure !== undefined &&
-        !isSameBranchState(readDurableBranchState(), durableStateAtRestoreFailure)
-    ) {
-        invalidateStaleSessionBackup();
-        return readDurableBranchSessionBackup() === null ? 'restored' : 'backup-not-cleared';
+    const durableBeforeRestore = readDurableBranchState();
+    if (durableBeforeRestore.status === 'storage-unavailable') {
+        armSessionBackupInvalidation(durableBeforeRestore);
+        return 'storage-unavailable';
     }
 
-    const durableBeforeRestore = readDurableBranchState();
+    const retainedStatus = retainedBackupIsStale(durableBeforeRestore);
+    if (retainedStatus === 'storage-unavailable') {
+        return 'storage-unavailable';
+    }
+    if (retainedStatus === 'stale') {
+        removeStaleSessionBackup();
+        const retainedBackup = readDurableSessionBackup();
+        if (retainedBackup.status === 'storage-unavailable') {
+            return 'storage-unavailable';
+        }
+        return retainedBackup.value === null ? 'restored' : 'backup-not-cleared';
+    }
 
-    if (!branchStore.trySet(validateStoredBranchStoreState(backup))) {
+    const restoredState = validateStoredBranchStoreState(backup.value);
+    let statePersisted: boolean;
+    suppressRestoreWriteInvalidation = true;
+    try {
+        statePersisted = branchStore.trySet(restoredState);
+    } finally {
+        suppressRestoreWriteInvalidation = false;
+    }
+    if (!statePersisted) {
         armSessionBackupInvalidation(durableBeforeRestore);
         return 'state-not-persisted';
     }
@@ -286,15 +361,58 @@ export function restoreBranchStateFromSessionBackup(): BranchStateRestoreOutcome
     // next boot, so reporting this as a clean restore would pin the branch list
     // to the pre-session snapshot silently and permanently.
     if (!branchSessionBackupStorage.trySet(null)) {
-        armSessionBackupInvalidation(durableBeforeRestore);
+        armSessionBackupAfterRestoredWrite(restoredState);
         return 'backup-not-cleared';
     }
 
+    clearSessionBackupInvalidation();
     return 'restored';
 }
 
+const baseBranchStorage = createLocalStorage<BranchStoreState>('sourdaw-branches');
+let firstDurableBranchReadRecorded = false;
+
+function recordDurableBranchState(value: BranchStoreState | null, write: boolean): void {
+    if (write) {
+        durableBranchGeneration += 1;
+    }
+    durableBranchSnapshot = { status: 'known', value: snapshotBranchState(value) };
+}
+
+const branchStorage: LocalStorageAdapter<BranchStoreState> = {
+    get(): BranchStoreState | null {
+        const value = baseBranchStorage.get();
+        if (!firstDurableBranchReadRecorded) {
+            firstDurableBranchReadRecorded = true;
+            recordDurableBranchState(value, false);
+        }
+        return value;
+    },
+    set(value): void {
+        baseBranchStorage.set(value);
+        recordDurableBranchState(value, true);
+        invalidateSessionBackupAfterDurableWrite();
+    },
+    trySet(value): boolean {
+        const persisted = baseBranchStorage.trySet(value);
+        if (persisted) {
+            recordDurableBranchState(value, true);
+            invalidateSessionBackupAfterDurableWrite();
+        }
+        return persisted;
+    },
+    clear(): void {
+        baseBranchStorage.clear();
+        recordDurableBranchState(null, true);
+        invalidateSessionBackupAfterDurableWrite();
+    },
+    isSupported(): boolean {
+        return baseBranchStorage.isSupported();
+    },
+};
+
 export const branchStore = createStore<BranchStoreState>({
-    storage: createLocalStorage<BranchStoreState>('sourdaw-branches'),
+    storage: branchStorage,
     initialData: createDefaultBranchStoreState(),
     sanitize: validateStoredBranchStoreState,
 });

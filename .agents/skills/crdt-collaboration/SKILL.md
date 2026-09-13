@@ -152,7 +152,14 @@ assertion does not establish durable teardown.
 Commit `51572a423a` in PR #1581 made non-throwing local-storage writes advance their cache after failure. When a durable
 session backup is consumed in stages, reject repeated removal failures until a fresh durable read proves the backup is
 gone. Write newer branch state while removal remains refused, then prove retry does not replay the stale backup and a
-later successful removal settles it.
+later successful removal settles it. Refuse both backup and branch-state reads after initialization, then prove recovery
+keeps the earliest durable witness: a failed `trySet` notification cannot authorize deletion, while a directly observed
+successful adapter write must protect the newer branch state even if reads remain blocked.
+
+PR #4248 introduced prepared asset-handoff commit closures that could bypass the durable owner operation queue. Prepare
+the handoff first, then admit and hold a source staging operation before invoking the returned commit; the commit must not
+reach any owner repository until that already-accepted operation settles, and both results must remain recoverable from
+fresh repository instances.
 
 ### Receive-side sync progress must be real, fenced transport work
 
