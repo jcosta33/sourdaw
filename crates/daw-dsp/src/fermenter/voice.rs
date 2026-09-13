@@ -748,9 +748,17 @@ impl Voice {
                     })
                     .unwrap_or(0.0);
                 (s, s, false)
-            } else if has_unison {
+            } else if has_unison && self.engine != 2 {
                 // Unison bank: `unison_spread` pans the detuned copies. The
                 // original — and until now the only — stereo source here.
+                //
+                // The bank owns WavetableOsc voices, so it can only ever
+                // render the wavetable engine. FM (2) must fall through to its
+                // own branch even when unisonVoices is still above one: the
+                // panel hides the unison controls on FM but nothing resets the
+                // stored voice count, so an unchecked `has_unison` here let a
+                // retained count capture the engine switch and render the
+                // wavetable bank under FM's operator controls (#3713).
                 let mut ul = 0.0f32;
                 let mut ur = 0.0f32;
                 self.unison_osc.process_sample_stereo(
@@ -775,6 +783,10 @@ impl Voice {
             if has_warp {
                 let phase = match self.engine {
                     1 => self.polyblep_osc.phase(),
+                    // FM reads the single-oscillator phase exactly as the
+                    // Voices=1 path does: the unison bank is idle under FM
+                    // (see the render branch above), so its phase is frozen.
+                    2 => self.osc.phase(),
                     _ => {
                         if has_unison {
                             self.unison_osc.phase()
@@ -1259,5 +1271,134 @@ mod tests {
             let label = format!("Coarse +12 on engine {engine}");
             assert_ratio(octave, neutral, 2.0, 0.02, &label);
         }
+    }
+
+    // ── FM must render even when a unison count is retained (#3713) ────────
+    //
+    // The unison bank owns WavetableOsc voices, but the render branch took
+    // `has_unison` before it ever looked at the engine — so a patch that was
+    // wavetable with Voices 2 and then switched to FM kept rendering the
+    // wavetable bank under FM's operator controls. The panel hides unison on
+    // FM without resetting the stored count, so the retained state must not
+    // capture the render.
+
+    /// Render `blocks` blocks of a sounding voice and return both channels.
+    fn render_stereo(
+        voice: &mut Voice,
+        tables: &[Wavetable],
+        blocks: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mod_matrix = ModMatrix::new();
+        let params = VoiceParams {
+            tables,
+            base_cutoff: 18_000.0,
+            resonance: 0.5,
+            filter_mode: FilterMode::Lowpass,
+            filter_drive: 0.0,
+            filter_keytrack: 0.0,
+            lfo_rate: 0.0,
+            lfo_shape: 0,
+            lfo_filter_amount: 0.0,
+            mod_matrix: &mod_matrix,
+            sample_rate: SAMPLE_RATE,
+            osc_level: 0.8,
+            osc_coarse: 0.0,
+            osc_fine: 0.0,
+            filter_model: 0,
+            mseg_to_filter: 0.0,
+            seq_rate: 4.0,
+            seq_to_pitch: 0.0,
+            per_voice_drive: 0.0,
+            warp_mode: 0,
+            warp_amount: 0.0,
+            audio_mod_rate: 0.0,
+            audio_mod_depth: 0.0,
+            audio_mod_target: 0,
+            chaos_amount: 0.0,
+            chaos_speed: 1.0,
+        };
+        let mut left = vec![0.0f32; BLOCK];
+        let mut right = vec![0.0f32; BLOCK];
+        let mut out_l = Vec::with_capacity(blocks * BLOCK);
+        let mut out_r = Vec::with_capacity(blocks * BLOCK);
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            voice.render(&mut left, &mut right, &params);
+            out_l.extend_from_slice(&left);
+            out_r.extend_from_slice(&right);
+        }
+        (out_l, out_r)
+    }
+
+    fn peak_delta(a: &[f32], b: &[f32]) -> f32 {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    fn switching_a_unison_patch_to_fm_still_renders_fm() {
+        let tables = [
+            Wavetable::sine(),
+            Wavetable::saw(),
+            Wavetable::square(),
+            Wavetable::triangle(),
+        ];
+        let total_blocks = WARMUP_BLOCKS + MEASURE_BLOCKS;
+
+        // The patch the defect starts from: wavetable, two detuned panned
+        // voices. The unison bank is the only stereo source in the oscillator
+        // stage, so its render must come out hard-panned.
+        let mut voice = sounding_voice(0, 69);
+        voice.set_unison(2, 15.0, 0.8);
+        let (wavetable_l, wavetable_r) = render_stereo(&mut voice, &tables, total_blocks);
+        let bank_stereo_width = peak_delta(&wavetable_l, &wavetable_r);
+        assert!(
+            bank_stereo_width > 0.01,
+            "fixture: the unison bank at spread 0.8 must render stereo, width {bank_stereo_width}"
+        );
+
+        // A twin voice follows the wavetable-unison path all the way, so the
+        // switched render can be checked against what the bank *would* have
+        // produced — including the envelope state the first render left.
+        let mut bank_twin = sounding_voice(0, 69);
+        bank_twin.set_unison(2, 15.0, 0.8);
+        let _ = render_stereo(&mut bank_twin, &tables, total_blocks);
+        let (continued_l, _) = render_stereo(&mut bank_twin, &tables, total_blocks);
+
+        // The defect: switch the same voice to FM with the stored count still
+        // at 2 and render again.
+        voice.set_engine(2, SAMPLE_RATE);
+        let (switched_l, switched_r) = render_stereo(&mut voice, &tables, total_blocks);
+
+        // FM renders as one mono signal, so the pan the bank would have
+        // applied must be gone — left and right are the same expression on
+        // the mono path, and equal to the last bit.
+        let switched_width = peak_delta(&switched_l, &switched_r);
+        assert!(
+            switched_width == 0.0,
+            "FM with a retained unison count must render mono FM, not the panned \
+             wavetable bank: stereo width {switched_width}"
+        );
+
+        // And the switch must actually change the sound rather than mute or
+        // pass through: not the bank's continuation.
+        let against_bank = peak_delta(&switched_l, &continued_l);
+        assert!(
+            against_bank > 0.1,
+            "the engine switch must hand rendering to FM: peak delta {against_bank}"
+        );
+
+        // Positive control: FM that never saw a unison bank still sounds, on
+        // the same mono path.
+        let mut fm_voice = sounding_voice(2, 69);
+        let (fm_l, fm_r) = render_stereo(&mut fm_voice, &tables, total_blocks);
+        assert!(
+            fm_l.iter().fold(0.0_f32, |peak, s| peak.max(s.abs())) > 0.01,
+            "fixture: plain FM at one voice must render audible output"
+        );
+        assert!(peak_delta(&fm_l, &fm_r) == 0.0, "plain FM must render mono");
     }
 }

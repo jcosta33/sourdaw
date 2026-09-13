@@ -54,7 +54,11 @@ impl DistortionMode {
 /// Per-band distortion processor.
 pub struct DistortionProcessor {
     mode: DistortionMode,
-    drive: f32,           // 0–100
+    drive: f32, // 0–100
+    /// Per-sample modulation offset on drive, added before the 0–100 clamp.
+    /// Written once per sample by the band chain from the modulation matrix;
+    /// never accumulates into the stored `drive` the knob set (#2389).
+    drive_offset: f32,
     asymmetry: f32,       // -1 to 1
     fold_threshold: f32,  // 0.1–1.0
     bit_depth: u32,       // 1–24
@@ -88,6 +92,7 @@ impl DistortionProcessor {
         Self {
             mode: DistortionMode::SoftClip,
             drive: 25.0,
+            drive_offset: 0.0,
             asymmetry: 0.0,
             fold_threshold: 0.7,
             bit_depth: 16,
@@ -166,12 +171,24 @@ impl DistortionProcessor {
 
     /// Process a single sample through the selected distortion algorithm.
     ///
+    /// Set this sample's modulation offset on drive.
+    ///
+    /// The engine's modulation pass resolves the matrix once per sample and
+    /// hands each band its resolved offsets; the offset lives one sample and
+    /// never accumulates into `drive` itself.
+    pub fn set_drive_offset(&mut self, offset: f32) {
+        self.drive_offset = offset;
+    }
+
+    /// Process a single sample through the selected distortion algorithm.
+    ///
     /// `channel` selects the per-channel state Smudge and Bitcrush need; every
     /// other mode ignores it. Out-of-range indices clamp to the right channel
     /// rather than panicking on the audio thread.
     pub fn process_sample(&mut self, input: f32, channel: usize) -> f32 {
         let channel = channel.min(CHANNELS - 1);
-        let drive_linear = 1.0 + self.drive * 0.2; // scale drive to useful range
+        let drive = (self.drive + self.drive_offset).max(0.0);
+        let drive_linear = 1.0 + drive * 0.2; // scale drive to useful range
         let driven = input * drive_linear;
 
         let shaped = match self.mode {

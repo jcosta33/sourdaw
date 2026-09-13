@@ -2134,6 +2134,45 @@ mod tests {
         );
     }
 
+    /// End-to-end form of #1891: an authored attack far past the f32 ramp
+    /// limit must still hand the voice an audible level once the floored
+    /// increment completes (1/EPSILON = 65,536 blocks at 128), instead of
+    /// holding the voice inaudible for as long as the stream plays.
+    #[test]
+    fn an_absurd_authored_attack_still_becomes_audible() {
+        /// Its raw increment is 2.4e-14, nine orders of magnitude under the
+        /// ULP near 1.0, so the unfloored ramp never moves.
+        const ABSURD_ATTACK_SECS: f32 = 1_000_000_000.0;
+        /// The floored ramp completes at 1/EPSILON samples = 65,536 blocks;
+        /// a little over measures the note in full-level sustain.
+        const BLOCKS: usize = 66_000;
+        /// Peak measured over the last 1,000 blocks — 2.7 s of audio.
+        const TAIL_BLOCKS: usize = 1_000;
+
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: ABSURD_ATTACK_SECS,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+            SAMPLE_FRAMES,
+        );
+        engine.note_on(60, 100);
+        let rendered = render(&mut engine, BLOCKS);
+
+        let tail_peak = rendered[rendered.len() - TAIL_BLOCKS * 128..]
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+        assert!(
+            tail_peak > 0.05,
+            "an authored attack the f32 ramp could not express must still complete: \
+             the note peaked at {tail_peak} after {} s of audio",
+            BLOCKS as f32 * 128.0 / SAMPLE_RATE
+        );
+    }
+
     /// Single-bin magnitude, so one note's fundamental can be tracked through
     /// a texture without pulling in an FFT.
     fn tone_magnitude(samples: &[f32], freq_hz: f32) -> f32 {
