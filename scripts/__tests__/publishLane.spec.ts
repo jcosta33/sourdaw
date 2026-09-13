@@ -22,10 +22,13 @@ import {
     resolvePrimaryRoot,
     type GhSession,
 } from '../githubAppIdentity.ts';
-import { AUTHOR_MODEL_RULE } from '../openLane.ts';
+import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } from '../openLane.ts';
 import { composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
+    AUTHOR_MODEL_PATTERN,
     applyPullRequestMetadataArgs,
+    canonicalMilestoneTitle,
+    canonicalProjectTitle,
     ensureModelLabelArgs,
     existingOpenPullRequestArgs,
     issueTrackerMetadataArgs,
@@ -140,6 +143,8 @@ type FakeInput = {
     issueTracker?: { milestone?: { title?: unknown } | null; projectItems?: unknown[] };
     openMilestoneTitles?: string[];
     knownProjects?: string[];
+    /** When set, `gh project list` fails under the App, as it does for user-owned Projects v2. */
+    projectListError?: string;
     /** Current pull-request metadata `gh pr view` would answer; defaults to a complete state. */
     currentMetadata?: { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
 };
@@ -217,6 +222,9 @@ function fakePort(input: FakeInput = {}) {
         },
         knownProjectTitles: () => {
             calls.push('projectList');
+            if (input.projectListError !== undefined) {
+                throw new Error(input.projectListError);
+            }
             return input.knownProjects ?? [];
         },
         readPullRequestMetadata: (number) => {
@@ -571,7 +579,7 @@ describe('lane publish', () => {
             );
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
-                permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+                permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
             });
             const push = JSON.parse(readFileSync(pushLog, 'utf8').trim()) as { cwd: string; args: string[] };
             const pushedRefspec = push.args.find((arg) => arg.includes(':refs/heads/'));
@@ -1441,6 +1449,9 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['12', '--model', 'builtin:glm-5.3'])).toThrow(
             /without deployment prefixes or date suffixes/
         );
+        expect(() => parsePublishLaneArgs(['12', '--model', 'glm_5.3'])).toThrow(
+            /--model must be the lowercase public model family name/
+        );
         expect(() => parsePublishLaneArgs(['12', '--model'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--model', 'glm-5.3', '--model', 'kimi-k2.5'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--milestone', 'v1.2', '--milestone', 'v1.3'])).toThrow(/usage/);
@@ -1809,6 +1820,37 @@ describe('lane publish', () => {
             expect(bodies).toEqual([]);
         });
 
+        it('refuses metadata flags on a legacy lane without --model instead of dropping them', () => {
+            // A parsed-then-silently-dropped flag is the worst outcome: the operator believes the
+            // milestone or project was applied and the publish exits 0. Without --model the whole
+            // mechanism is opted out for this lane, so the flags must refuse loudly.
+            const milestone = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            expect(() =>
+                publishLane(undefined, milestone.port, undefined, undefined, undefined, undefined, {
+                    milestone: 'v1.2',
+                })
+            ).toThrow(/metadata flags require --model on a legacy lane/);
+            expect(milestone.calls.some((call) => call.startsWith('push:'))).toBe(false);
+
+            const project = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            expect(() =>
+                publishLane(undefined, project.port, undefined, undefined, undefined, undefined, {
+                    projects: ['Roadmap'],
+                })
+            ).toThrow(/metadata flags require --model on a legacy lane/);
+            expect(project.calls.some((call) => call.startsWith('push:'))).toBe(false);
+        });
+
         it('publishes a legacy lane whose only commits above origin/main are merges', () => {
             // The newest-non-merge-commit title rule, and the refusal for a lane that has no such
             // commit, both exist to name a title this script is about to write. A legacy lane's
@@ -1895,15 +1937,16 @@ describe('lane publish', () => {
     });
 
     describe('authoring model and tracker metadata', () => {
-        it('refuses an invalid --model with the same rule lane:open quotes', () => {
-            // The rule is mirrored in publishLane rather than imported (the trusted publish
-            // snapshot's dependency graph is closed), so this is the pin against the two
-            // spellings drifting apart.
+        it('refuses an invalid --model with the same rule and pattern lane:open enforces', () => {
+            // The rule and pattern are mirrored in publishLane rather than imported (the trusted
+            // publish snapshot's dependency graph is closed), so these pins hold the two spellings
+            // to one contract: the quoted message alone would let a diverging pattern through.
             const message = refusalMessage(() => parsePublishLaneArgs(['12', '--model', 'glm 5.3']));
             expect(message).toBe(`--model must be ${AUTHOR_MODEL_RULE}`);
+            expect(AUTHOR_MODEL_PATTERN).toEqual(OPEN_LANE_MODEL_PATTERN);
         });
 
-        it('ensures the model label idempotently before any pull-request write', () => {
+        it('builds the idempotent model label creation command', () => {
             expect(ensureModelLabelArgs('glm-5.3')).toEqual([
                 'label',
                 'create',
@@ -2094,6 +2137,111 @@ describe('lane publish', () => {
             });
 
             expect(calls).toContain('metaEdit:88:model:glm-5.3:v1.3:Backlog');
+        });
+
+        it('resolves flag titles to the canonical spelling the tracker reports', () => {
+            expect(canonicalMilestoneTitle('V1.2', ['v1.1', 'v1.2'])).toBe('v1.2');
+            expect(() => canonicalMilestoneTitle('v9.9', ['v1.2'])).toThrow(/matches no open milestone/);
+            expect(canonicalProjectTitle('ROADMAP', ['Roadmap', 'Triage'])).toBe('Roadmap');
+            expect(() => canonicalProjectTitle('Nope', ['Roadmap'])).toThrow(/matches no project/);
+        });
+
+        it('carries the canonical milestone spelling so a case-variant flag converges', () => {
+            const { port, calls } = fakePort({
+                openMilestoneTitles: ['v1.2'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                milestone: 'V1.2',
+            });
+
+            // The edit carries the canonical 'v1.2', so a pull request that already stores it is
+            // complete and the second publish issues no metadata edit at all.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:v1.2:-');
+            const afterFirst = calls.length;
+            port.readPullRequestMetadata = () => ({
+                labels: ['model:glm-5.3'],
+                milestoneTitle: 'v1.2',
+                projectTitles: [],
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                milestone: 'V1.2',
+            });
+
+            expect(calls.slice(afterFirst).some((call) => call.startsWith('metaEdit:'))).toBe(false);
+        });
+
+        it('applies one project once across repeated case-variant --project spellings', () => {
+            const { port, calls } = fakePort({
+                knownProjects: ['Roadmap'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                projects: ['Roadmap', 'ROADMAP'],
+            });
+
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:-:Roadmap');
+            expect(calls).not.toContain('metaEdit:88:model:glm-5.3:-:Roadmap,Roadmap');
+        });
+
+        it('does not persist the model when a metadata validation refuses the run', () => {
+            const { port, calls } = fakePort({ openMilestoneTitles: ['v1.2'] });
+
+            expect(() =>
+                publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    model: 'kimi-k2.5',
+                    milestone: 'v9.9',
+                })
+            ).toThrow(/matches no open milestone/);
+            expect(calls.some((call) => call.startsWith('saveModel:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+        });
+
+        it("fails an explicit --project when the App cannot list the owner's projects", () => {
+            const { port, calls } = fakePort({ projectListError: 'gh: Must have admin rights' });
+
+            expect(() =>
+                publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    projects: ['Roadmap'],
+                })
+            ).toThrow(/installation tokens cannot access user-owned Projects v2/);
+            expect(calls).toContain('projectList');
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+        });
+
+        it("skips inherited projects loudly when the App cannot list the owner's projects", () => {
+            const { port, calls, logs } = fakePort({
+                issueTracker: { milestone: null, projectItems: [{ title: 'Roadmap' }] },
+                projectListError: 'gh: Must have admin rights',
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(logs).toContain(
+                "cannot list the owner's projects as the author App (gh: Must have admin rights); " +
+                    "leaving the pull request's project membership to the operator backfill"
+            );
+            // Label and nothing else: the skip must not drop the whole metadata assertion.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:-:-');
+        });
+
+        it("applies inherited projects when the App can list the owner's projects", () => {
+            const { port, calls } = fakePort({
+                issueTracker: { milestone: null, projectItems: [{ title: 'Roadmap' }] },
+                knownProjects: ['Roadmap'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+
+            expect(calls).toContain('projectList');
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:-:Roadmap');
         });
 
         it('refuses an unknown --milestone or --project before writing anything', () => {

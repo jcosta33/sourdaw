@@ -82,7 +82,7 @@ export const PUBLISH_LANE_USAGE =
  * trusted publish snapshot's dependency graph is closed, so `publishLane.ts` cannot take a new
  * local dependency to reach `openLane.ts`'s copy. The specs hold the two spellings to one rule.
  */
-const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
+export const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
 
 const AUTHOR_MODEL_RULE =
     'the lowercase public model family name, without deployment prefixes or date suffixes, e.g. glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
@@ -252,16 +252,25 @@ export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullReq
     };
 }
 
-export function assertOpenMilestoneTitle(title: string, openTitles: string[]): void {
-    if (!openTitles.some((open) => open.toLowerCase() === title.toLowerCase())) {
+/**
+ * Flags match live titles case-insensitively, but the target must carry the canonical spelling the
+ * tracker reports: a case-variant flag flowing through as typed would differ from what GitHub
+ * stores, and every republish would re-edit the pull request.
+ */
+export function canonicalMilestoneTitle(title: string, openTitles: string[]): string {
+    const canonical = openTitles.find((open) => open.toLowerCase() === title.toLowerCase());
+    if (canonical === undefined) {
         fail(`--milestone "${title}" matches no open milestone in ${REQUIRED_REPOSITORY}`);
     }
+    return canonical;
 }
 
-export function assertKnownProjectTitle(title: string, knownTitles: string[]): void {
-    if (!knownTitles.some((known) => known.toLowerCase() === title.toLowerCase())) {
+export function canonicalProjectTitle(title: string, knownTitles: string[]): string {
+    const canonical = knownTitles.find((known) => known.toLowerCase() === title.toLowerCase());
+    if (canonical === undefined) {
         fail(`--project "${title}" matches no project in gh project list for ${REQUIRED_REPOSITORY}'s owner`);
     }
+    return canonical;
 }
 
 /**
@@ -822,7 +831,9 @@ export function publishLane(
  * later runs; otherwise the value `lane:open` recorded for the branch is used; a conforming lane
  * with neither fails closed rather than pushing an unattributed pull request. Milestone and
  * projects come from the lane's issue, and flag values override them per field after validation
- * against live tracker state — left empty rather than forced onto the pull request.
+ * against live tracker state — left empty rather than forced onto the pull request. The model
+ * record is written only after every validation here has passed, so a refused run leaves the
+ * shared git config untouched.
  */
 function resolvePublishMetadata(
     lane: ResolvedLane,
@@ -832,27 +843,16 @@ function resolvePublishMetadata(
 ): PublishMetadataTarget | undefined {
     const flaggedModel = flags?.model;
     if (lane.legacy && flaggedModel === undefined) {
+        if (flags?.milestone !== undefined || flags?.projects !== undefined) {
+            fail('metadata flags require --model on a legacy lane; its pull request predates lane:publish');
+        }
         return undefined;
     }
-    let model: string;
-    if (flaggedModel !== undefined) {
-        model = flaggedModel;
-        port.saveAuthorModel(lane.branch, model);
-    } else {
-        const recorded = port.readAuthorModel(lane.branch);
-        if (recorded === undefined) {
-            fail(
-                `${lane.branch} has no authoring model on record; backfill it with pnpm lane:publish --model <family>, ` +
-                    'the lowercase public model family name, e.g. glm-5.3'
-            );
-        }
-        model = normalizeAuthorModel(recorded);
-    }
+    const model = flaggedModel !== undefined ? flaggedModel : readRecordedAuthorModel(lane.branch, port);
     const inherited = laneIssue === undefined ? undefined : port.readIssueTrackerMetadata(laneIssue);
     let milestoneTitle: string | undefined;
     if (flags?.milestone !== undefined) {
-        assertOpenMilestoneTitle(flags.milestone, port.openMilestoneTitles());
-        milestoneTitle = flags.milestone;
+        milestoneTitle = canonicalMilestoneTitle(flags.milestone, port.openMilestoneTitles());
     } else {
         const inheritedMilestone = inherited?.milestoneTitle;
         if (inheritedMilestone !== undefined) {
@@ -868,15 +868,9 @@ function resolvePublishMetadata(
             }
         }
     }
-    let projectTitles: string[] = [];
-    if (flags?.projects !== undefined) {
-        const knownTitles = port.knownProjectTitles();
-        for (const title of flags.projects) {
-            assertKnownProjectTitle(title, knownTitles);
-        }
-        projectTitles = flags.projects;
-    } else if (inherited !== undefined) {
-        projectTitles = inherited.projectTitles;
+    const projectTitles = resolveProjectTitles(inherited?.projectTitles ?? [], flags?.projects, port);
+    if (flaggedModel !== undefined) {
+        port.saveAuthorModel(lane.branch, model);
     }
     return {
         model,
@@ -884,6 +878,59 @@ function resolvePublishMetadata(
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles,
     };
+}
+
+function readRecordedAuthorModel(branch: string, port: PublishLanePort): string {
+    const recorded = port.readAuthorModel(branch);
+    if (recorded === undefined) {
+        fail(
+            `${branch} has no authoring model on record; backfill it with pnpm lane:publish --model <family>, ` +
+                'the lowercase public model family name, e.g. glm-5.3'
+        );
+    }
+    return normalizeAuthorModel(recorded);
+}
+
+/**
+ * Installation tokens cannot access user-owned Projects v2 — the platform offers no installation
+ * permission for them — so applying project membership depends on the owner's projects being
+ * reachable by this token at all. `gh project list` under the App is therefore a preflight, run
+ * before any pull-request write: with explicit `--project` flags an unreachable list is a hard
+ * failure (the operator asked for something this token cannot deliver and must know now), while
+ * inherited-only projects are skipped with one loud line and the publish continues, leaving the
+ * pull request's project membership to the operator backfill.
+ */
+function resolveProjectTitles(
+    inheritedTitles: string[],
+    flaggedTitles: string[] | undefined,
+    port: PublishLanePort
+): string[] {
+    if (flaggedTitles === undefined && inheritedTitles.length === 0) {
+        return [];
+    }
+    let knownTitles: string[];
+    try {
+        knownTitles = port.knownProjectTitles();
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (flaggedTitles !== undefined) {
+            fail(
+                `cannot list the owner's projects as the author App (${reason}); installation tokens cannot ` +
+                    'access user-owned Projects v2. Apply the project membership by hand under the operator ' +
+                    'backfill exception, or retry without --project'
+            );
+        }
+        port.log(
+            `cannot list the owner's projects as the author App (${reason}); leaving the pull request's ` +
+                'project membership to the operator backfill'
+        );
+        return [];
+    }
+    if (flaggedTitles !== undefined) {
+        const canonical = flaggedTitles.map((title) => canonicalProjectTitle(title, knownTitles));
+        return [...new Set(canonical)];
+    }
+    return inheritedTitles;
 }
 
 /**
