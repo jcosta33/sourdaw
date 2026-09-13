@@ -1,0 +1,22 @@
+tests/e2e/midiUndoPlaybackTestId.spec.ts
+  s_87ab0a2f60ccf8::t_665b49345d4cc7 1,46-61,98-112
+  s_87ab0a2f60ccf8::t_684f83e25ce989 62-64,97
+.agents/skills/ui-patterns/SKILL.md
+  s_87ab0a2f60ccf8::t_684f83e25ce989 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "de6242c632216075078ab17fae81ef1372806f33",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
