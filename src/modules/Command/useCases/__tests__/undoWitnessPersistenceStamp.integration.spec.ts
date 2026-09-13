@@ -303,4 +303,79 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         expect(selectedTakeId(projectedTakeLane())).toBe('take-a');
         expect(undoStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
     });
+
+    it('rejects a persisted take-selection entry whose replay owner relationships disagree', async () => {
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        hydrateSelectTakeUndoSession();
+        reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+        projectCrdtToStores({ resetProjections: true });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                        },
+                    ],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await selectTake('track-1', 'take-a');
+        await vi.waitFor(() => {
+            expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toContain('expectedLaneId');
+        });
+        await persistCrdtProject();
+        const persistedWitness = captureDurableDocumentWitness();
+
+        const rawMirror = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const mirror: unknown = rawMirror === null ? null : JSON.parse(rawMirror);
+        if (!isRecord(mirror) || !Array.isArray(mirror.past) || !isRecord(mirror.past[0])) {
+            throw new Error('Expected a persisted select-take undo entry');
+        }
+        expect(mirror.projectId).toBe(PROJECT_ID);
+        expect(mirror.witness).toBe(persistedWitness);
+        const entry = mirror.past[0];
+        if (
+            !isRecord(entry.action) ||
+            !isRecord(entry.action.payload) ||
+            !isRecord(entry.inverseAction) ||
+            !isRecord(entry.inverseAction.payload) ||
+            !isRecord(entry.redoAction) ||
+            !isRecord(entry.redoAction.payload)
+        ) {
+            throw new Error('Expected persisted select-take action payloads');
+        }
+        entry.redoAction.payload.expectedLaneId = 'different-lane-owner';
+        const registration = getExecutableCommandRegistration('selectTake');
+        expect(entry.actionOperationVersion).toBe(registration.operationVersion);
+        expect(entry.inverseActionOperationVersion).toBe(registration.operationVersion);
+        expect(entry.redoActionOperationVersion).toBe(registration.operationVersion);
+        expect(registration.runtimeSchema.validate(entry.action.payload)).toBe(true);
+        expect(registration.runtimeSchema.validate(entry.inverseAction.payload)).toBe(true);
+        expect(registration.runtimeSchema.validate(entry.redoAction.payload)).toBe(true);
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(mirror));
+
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        await expect(loadCrdtProject()).resolves.toBe(true);
+        projectCrdtToStores({ resetProjections: true });
+        expect(captureDurableDocumentWitness()).toBe(persistedWitness);
+        hydrateSelectTakeUndoSession();
+        reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+
+        expect(selectedTakeId(rawTakeLane())).toBe('take-a');
+        expect(selectedTakeId(projectedTakeLane())).toBe('take-a');
+        expect(undoStore.value).toMatchObject({ past: [], future: [] });
+    });
 });
