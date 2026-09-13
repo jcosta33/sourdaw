@@ -1086,11 +1086,18 @@ export type AppAction =
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | {
-          /** Guarded self-inverse of comp take selection. `expectedSelectedTakeId`
+          /** Guarded self-inverse of comp take selection. Fresh intent carries a
+           *  non-null `takeId`; replay also binds the captured lane owner and may
+           *  use `null` to restore an empty selection. `expectedSelectedTakeId`
            *  optimistic-locks the lane's current selection: `undefined` asserts
-           *  nothing (fresh user intent), `null` asserts no take is selected. */
+           *  nothing, `null` asserts no take is selected. */
           type: 'selectTake';
-          payload: { trackId: string; takeId: string; expectedSelectedTakeId?: string | null };
+          payload: {
+              trackId: string;
+              takeId: string | null;
+              expectedLaneId?: string;
+              expectedSelectedTakeId?: string | null;
+          };
       }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }

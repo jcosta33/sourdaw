@@ -685,7 +685,7 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloed']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloed === 'boolean',
-    // `expectedSelectedTakeId` is internal replay metadata, not a provider argument.
+    // Lane ownership and expected selection are internal replay metadata, not provider arguments.
     selectTake: (param): param is PayloadOf<'selectTake'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'takeId']) &&
